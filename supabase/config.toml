@@ -1,0 +1,28 @@
+project_id = "ppoawvxmquaftndorjea"
+
+[functions.initialize-payment]
+verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.verify-payment]
+verify_jwt = false
+
+[functions.agent-withdraw]
+verify_jwt = false
+
+[functions.wallet-topup]
+verify_jwt = false
+
+[functions.wallet-buy-data]
+verify_jwt = false
+
+[functions.admin-user-actions]
+verify_jwt = false
+
+[functions.admin-send-sms]
+verify_jwt = false
+
+[functions.admin-system-health]
+verify_jwt = false
