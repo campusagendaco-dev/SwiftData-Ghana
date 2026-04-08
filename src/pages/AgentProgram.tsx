@@ -14,7 +14,7 @@ const benefits = [
 ];
 
 const steps = [
-  "Create or sign in to your QuickData account",
+  "Create or sign in to your DataHive account",
   "Click Request Approval",
   "Pay GHS 50 approval fee and contact support on WhatsApp",
   "Wait for admin approval",
