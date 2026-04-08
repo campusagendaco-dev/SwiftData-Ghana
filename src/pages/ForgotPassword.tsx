@@ -45,7 +45,7 @@ const ForgotPassword = () => {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Zap className="w-8 h-8 text-primary" />
-            <span className="font-display text-2xl font-bold">QuickData GH</span>
+            <span className="font-display text-2xl font-bold">DataHive Ghana</span>
           </div>
           <h1 className="font-display text-2xl font-bold mb-2">Forgot Password</h1>
           <p className="text-muted-foreground text-sm">Enter your email and we will send a 6-digit OTP code.</p>

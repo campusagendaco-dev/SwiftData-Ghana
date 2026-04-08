@@ -16,7 +16,7 @@ const AgentPending = () => {
   const [adminWhatsapp, setAdminWhatsapp] = useState(DEFAULT_ADMIN_WHATSAPP);
   const approvedButSetupIncomplete = Boolean(profile?.agent_approved && !profile?.onboarding_complete);
   const whatsappMessage = encodeURIComponent(
-    `Hello, I have signed up as a reseller on QuickData GH and paid ${APPROVAL_PAYMENT_AMOUNT} to ${APPROVAL_PAYMENT_NUMBER} (${APPROVAL_PAYMENT_NAME}). Please approve my reseller account. Thank you!`
+    `Hello, I have signed up as a reseller on DataHive Ghana and paid ${APPROVAL_PAYMENT_AMOUNT} to ${APPROVAL_PAYMENT_NUMBER} (${APPROVAL_PAYMENT_NAME}). Please approve my reseller account. Thank you!`
   );
 
   useEffect(() => {

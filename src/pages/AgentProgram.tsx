@@ -14,7 +14,7 @@ const benefits = [
 ];
 
 const steps = [
-  "Create or sign in to your QuickData account",
+  "Create or sign in to your DataHive account",
   "Click Request Approval",
   "Pay GHS 50 approval fee and contact support on WhatsApp",
   "Wait for admin approval",
@@ -97,7 +97,7 @@ const AgentProgram = () => {
       <div className="container mx-auto max-w-4xl">
         <div className="text-center mb-16">
           <h1 className="font-display text-3xl md:text-5xl font-bold mb-4">
-            Become a <span className="text-gradient">QuickData Reseller</span>
+            Become a <span className="text-gradient">DataHive Reseller</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
             Start your own data reselling business. Approved resellers can set their own prices, run a branded store, and earn from each order.

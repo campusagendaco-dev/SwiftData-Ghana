@@ -36,7 +36,7 @@ const Index = () => {
     <div className="min-h-screen">
     {/* Hero */}
     <section className="relative pt-32 pb-20 px-4 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,hsl(48_100%_50%/0.06),transparent_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,hsl(48_96%_53%/0.08),transparent_60%)]" />
       <div className="container mx-auto text-center relative z-10">
         <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1.5 mb-6 text-sm text-primary font-medium animate-fade-in">
           <Zap className="w-4 h-4" /> Ghana's #1 Data Reselling Platform
@@ -71,7 +71,7 @@ const Index = () => {
     {/* Features */}
     <section className="py-20 px-4">
       <div className="container mx-auto">
-        <h2 className="font-display text-3xl md:text-4xl font-bold text-center mb-4">Why QuickData GH?</h2>
+        <h2 className="font-display text-3xl md:text-4xl font-bold text-center mb-4">Why DataHive Ghana?</h2>
         <p className="text-center text-muted-foreground mb-12 max-w-lg mx-auto">Everything you need to buy data or start your own data reselling business.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((f, i) => (
@@ -109,7 +109,7 @@ const Index = () => {
       href={supportChannelLink}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-[#25D366] hover:bg-[#1da851] text-white font-semibold px-5 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 animate-fade-in"
+      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-[#25D366] hover:bg-[#1da851] text-[hsl(0,0%,100%)] font-semibold px-5 py-3 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 animate-fade-in"
     >
       <MessageCircle className="w-5 h-5" />
       <span className="hidden sm:inline">Join WhatsApp Channel</span>

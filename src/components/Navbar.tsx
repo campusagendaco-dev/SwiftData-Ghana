@@ -29,8 +29,8 @@ const Navbar = () => {
       <div className="container mx-auto flex items-center justify-between h-16 px-4">
         <Link to="/" className="flex items-center gap-2 font-display font-bold text-xl">
           <Zap className="w-6 h-6 text-primary" />
-          <span className="text-foreground">Quick</span>
-          <span className="text-gradient">Data</span>
+          <span className="text-foreground">Data</span>
+          <span className="text-gradient">Hive</span>
           <span className="text-muted-foreground text-sm font-medium ml-1">GH</span>
         </Link>
 

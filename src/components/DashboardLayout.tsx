@@ -17,7 +17,7 @@ const DashboardLayout = () => {
           <button onClick={() => setSidebarOpen(true)} className="text-foreground">
             <Menu className="w-6 h-6" />
           </button>
-          <span className="ml-3 font-display font-bold text-sm">QuickData GH</span>
+          <span className="ml-3 font-display font-bold text-sm">DataHive GH</span>
         </div>
         <main className="flex-1">
           <Outlet />
