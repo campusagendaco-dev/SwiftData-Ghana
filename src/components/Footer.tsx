@@ -1,4 +1,4 @@
-﻿import { Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,8 +27,8 @@ const Footer = () => {
           <div>
             <div className="flex items-center gap-2 font-display font-bold text-lg mb-3">
               <Zap className="w-5 h-5 text-primary" />
-              <span className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground leading-none">Quick</span>
-              <span className="text-primary">Data</span>
+              <span className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground leading-none">Data</span>
+              <span className="text-primary">Hive</span>
               <span className="text-muted-foreground text-sm">GH</span>
             </div>
             <p className="text-sm text-muted-foreground">Ghana's fastest data reselling platform. Buy data for all networks instantly.</p>
@@ -50,7 +50,7 @@ const Footer = () => {
           <div>
             <h4 className="font-display font-semibold text-sm mb-3 text-foreground">Contact</h4>
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p>support@quickdatagh.com</p>
+              <p>support@datahiveghana.com</p>
               <p>{customerServiceNumber}</p>
               <a href={supportChannelLink} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">
                 Join Support Channel
@@ -60,7 +60,7 @@ const Footer = () => {
           </div>
         </div>
         <div className="border-t border-border mt-8 pt-6 text-center text-sm text-muted-foreground">
-          <p>(c) 2026 QuickData GH. All rights reserved.</p>
+          <p>(c) 2026 DataHive Ghana. All rights reserved.</p>
           <p className="mt-1">Developed by OB CodeLab</p>
         </div>
       </div>
