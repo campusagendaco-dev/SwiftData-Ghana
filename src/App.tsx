@@ -103,7 +103,7 @@ const AppContent = () => {
     is_enabled: false,
     message: "",
   });
-  const [darkModeEnabled, setDarkModeEnabled] = useState(false);
+  const [darkModeEnabled, setDarkModeEnabled] = useState(true);
   const [maintenanceLoading, setMaintenanceLoading] = useState(true);
 
   useEffect(() => {

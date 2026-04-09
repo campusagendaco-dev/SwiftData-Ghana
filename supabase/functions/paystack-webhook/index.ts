@@ -41,16 +41,6 @@ async function fetchWithRetry(url: string, options: RequestInit, maxAttempts = 3
   throw new Error("fetchWithRetry: should not reach here");
 }
 
-// Base prices for wallet deduction
-const basePrices: Record<string, Record<string, number>> = {
-  MTN: { "1GB": 4.45, "2GB": 8.9, "3GB": 13.1, "4GB": 17.3, "5GB": 21.2, "6GB": 25.7, "7GB": 29.6, "8GB": 33.2, "10GB": 42.5, "15GB": 62.0, "20GB": 80.2, "25GB": 100.8, "30GB": 124.0, "40GB": 159.0, "50GB": 199.3, "100GB": 385.0 },
-  Telecel: { "5GB": 23.0, "10GB": 41.8, "12GB": 49.0, "15GB": 58.99, "18GB": 71.8, "20GB": 78.5, "22GB": 82.5, "25GB": 102.0, "30GB": 125.5, "40GB": 166.0, "50GB": 190.0 },
-  AirtelTigo: { "1GB": 4.3, "2GB": 8.2, "3GB": 12.0, "4GB": 15.8, "5GB": 19.85, "6GB": 23.49, "7GB": 27.0, "8GB": 30.59, "9GB": 34.2 },
-};
-
-// Emergency safety switch: keep false to prevent double-charging agents on Paystack data purchases.
-const ENABLE_AGENT_WALLET_DEDUCTION = false;
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -62,7 +52,7 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !DATA_PROVIDER_BASE_URL) {
+  if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error("Missing required secrets");
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -96,7 +86,7 @@ serve(async (req) => {
     }
 
     const { reference, metadata } = body.data;
-    console.log("Payment successful for reference:", reference);
+    console.log("Webhook: Payment successful for reference:", reference);
 
     // Verify with Paystack
     const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
@@ -117,6 +107,22 @@ serve(async (req) => {
     // Update order to paid
     await supabase.from("orders").update({ status: "paid" }).eq("id", orderId);
 
+    // Handle agent activation
+    if (orderType === "agent_activation") {
+      const agentId = metadata?.agent_id;
+      if (agentId) {
+        await supabase
+          .from("profiles")
+          .update({ is_agent: true, agent_approved: true })
+          .eq("user_id", agentId);
+        await supabase.from("orders").update({ status: "fulfilled" }).eq("id", orderId);
+        console.log("Agent activated via webhook:", agentId);
+      }
+      return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Handle wallet top-up
     if (orderType === "wallet_topup") {
       const { data: order } = await supabase.from("orders").select("amount, agent_id").eq("id", orderId).maybeSingle();
@@ -135,23 +141,25 @@ serve(async (req) => {
       });
     }
 
-    // Fulfill based on order type
+    // Fulfill data/AFA orders
+    if (!DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
+      console.error("Data provider not configured for fulfillment");
+      await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Data provider not configured" }).eq("id", orderId);
+      return new Response(JSON.stringify({ received: true, fulfilled: false }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let fulfilled = false;
 
     if (orderType === "afa") {
-      if (!DATA_PROVIDER_API_KEY) {
-        return new Response(JSON.stringify({ error: "Server misconfigured: DATA_PROVIDER_API_KEY missing" }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       const afaData = {
-        fullName: metadata?.afa_full_name,
-        ghanaCardNumber: metadata?.afa_ghana_card,
+        full_name: metadata?.afa_full_name,
+        ghana_card: metadata?.afa_ghana_card,
         occupation: metadata?.afa_occupation,
         email: metadata?.afa_email,
-        placeOfResidence: metadata?.afa_residence,
-        dateOfBirth: metadata?.afa_date_of_birth,
+        residence: metadata?.afa_residence,
+        date_of_birth: metadata?.afa_date_of_birth,
       };
 
       const fulfillRes = await fetchWithRetry(
@@ -161,9 +169,7 @@ serve(async (req) => {
           headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "DataBossHub-API-Client/1.0",
-            "X-API-Key": DATA_PROVIDER_API_KEY,
-            "X-API-KEY": DATA_PROVIDER_API_KEY,
+            "Authorization": `Bearer ${DATA_PROVIDER_API_KEY}`,
           },
           body: JSON.stringify(afaData),
         }
@@ -175,77 +181,27 @@ serve(async (req) => {
         fulfilled = true;
       } else {
         let reason = "AFA registration failed";
-        try { reason = JSON.parse(fulfillData)?.message || reason; } catch { /* keep fallback reason */ }
+        try { reason = JSON.parse(fulfillData)?.message || reason; } catch { /* keep fallback */ }
         await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", orderId);
       }
     } else {
-      if (!DATA_PROVIDER_API_KEY) {
-        return new Response(JSON.stringify({ error: "Server misconfigured: DATA_PROVIDER_API_KEY missing" }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       const network = metadata?.network;
       const packageSize = metadata?.package_size;
       const customerPhone = metadata?.customer_phone;
-      const agentId = metadata?.agent_id;
-      const shouldDeductAgentWallet =
-        metadata?.deduct_agent_wallet === true || metadata?.deduct_agent_wallet === "true";
-      const walletSettlementMode = metadata?.wallet_settlement_mode === "manual" ? "manual" : "automatic";
-      const { data: orderRow } = await supabase
-        .from("orders")
-        .select("agent_id, profit")
-        .eq("id", orderId)
-        .maybeSingle();
-      const resolvedAgentId = orderRow?.agent_id || agentId;
-      const isAgentStoreSale =
-        metadata?.payment_source === "agent_store" || Number(orderRow?.profit || 0) > 0;
 
       if (network && packageSize && customerPhone) {
-        // Deduct base price only for flows that explicitly require agent-wallet settlement.
-        // This prevents double charging when an agent pays directly via Paystack from dashboard.
-        if (
-          ENABLE_AGENT_WALLET_DEDUCTION &&
-          shouldDeductAgentWallet &&
-          walletSettlementMode === "manual" &&
-          isAgentStoreSale &&
-          resolvedAgentId &&
-          resolvedAgentId !== "00000000-0000-0000-0000-000000000000"
-        ) {
-          const metadataBasePrice = Number(metadata?.base_price);
-          const basePrice = Number.isFinite(metadataBasePrice) && metadataBasePrice > 0
-            ? metadataBasePrice
-            : (basePrices[network]?.[packageSize] || 0);
-          if (basePrice > 0) {
-            const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", resolvedAgentId).maybeSingle();
-            if (wallet && wallet.balance >= basePrice) {
-              const newBalance = parseFloat((wallet.balance - basePrice).toFixed(2));
-              await supabase.from("wallets").update({ balance: newBalance }).eq("agent_id", resolvedAgentId);
-              console.log(`Deducted GH₵${basePrice} from agent ${resolvedAgentId} wallet. New balance: ${newBalance}`);
-            } else {
-              console.warn(`Agent ${resolvedAgentId} insufficient wallet balance for ${network} ${packageSize}. Balance: ${wallet?.balance || 0}, Required: ${basePrice}`);
-              // Still proceed with fulfillment but log the warning
-            }
-          }
-        }
-        if (shouldDeductAgentWallet && walletSettlementMode === "automatic") {
-          console.log(`Automatic settlement enabled for order ${orderId}; skipping wallet deduction.`);
-        }
-
         const apiNetwork = mapNetworkToApi(network);
         const dataPlan = formatDataPlan(packageSize);
         console.log("Fulfilling data order:", { orderId, network, apiNetwork, packageSize, dataPlan, customerPhone });
 
         const fulfillRes = await fetchWithRetry(
-          `${DATA_PROVIDER_BASE_URL}/api/v1/order`,
+          `${DATA_PROVIDER_BASE_URL}/api/order`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "Accept": "application/json",
-              "User-Agent": "DataBossHub-API-Client/1.0",
-              "X-API-Key": DATA_PROVIDER_API_KEY,
-              "X-API-KEY": DATA_PROVIDER_API_KEY,
+              "Authorization": `Bearer ${DATA_PROVIDER_API_KEY}`,
             },
             body: JSON.stringify({
               network: apiNetwork,
@@ -261,7 +217,7 @@ serve(async (req) => {
           fulfilled = true;
         } else {
           let reason = "Data delivery failed";
-          try { reason = JSON.parse(fulfillData)?.message || reason; } catch { /* keep fallback reason */ }
+          try { reason = JSON.parse(fulfillData)?.message || reason; } catch { /* keep fallback */ }
           await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", orderId);
         }
       }

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const Footer = () => {
-  const [customerServiceNumber, setCustomerServiceNumber] = useState("+233 20 325 6540");
+  const [customerServiceNumber, setCustomerServiceNumber] = useState("+233560042269");
   const [supportChannelLink, setSupportChannelLink] = useState("https://whatsapp.com/channel/0029Vb6Xwed60eBaztkH2B3m");
 
   useEffect(() => {
@@ -36,7 +36,7 @@ const Footer = () => {
           <div>
             <h4 className="font-display font-semibold text-sm mb-3 text-foreground">Quick Links</h4>
             <div className="space-y-2">
-              {[{ to: "/buy-data", label: "Buy Data" }, { to: "/agent-program", label: "Agent Program" }, { to: "/dashboard", label: "Dashboard" }].map((l) =>
+              {[{ to: "/buy-data", label: "Buy Data" }, { to: "/agent-program", label: "Reseller Program" }, { to: "/dashboard", label: "Dashboard" }].map((l) =>
                 <Link key={l.to} to={l.to} className="block text-sm text-muted-foreground hover:text-primary transition-colors">{l.label}</Link>
               )}
             </div>
@@ -60,8 +60,8 @@ const Footer = () => {
           </div>
         </div>
         <div className="border-t border-border mt-8 pt-6 text-center text-sm text-muted-foreground">
-          <p>(c) 2026 DataHive Ghana. All rights reserved.</p>
-          <p className="mt-1">Developed by OB CodeLab</p>
+          <p>&copy; 2026 DataHive Ghana. All rights reserved.</p>
+          <p className="mt-1">Developed by Scqeel Technologies</p>
         </div>
       </div>
     </footer>

@@ -74,7 +74,6 @@ const AgentStore = () => {
           .select("network, package_size, agent_price, public_price, is_unavailable"),
       ]);
 
-      // Global settings
       const gsMap: Record<string, GlobalPkgSetting> = {};
       (packageSettingsRes.data || []).forEach((r: any) => { gsMap[`${r.network}-${r.package_size}`] = r; });
       setGlobalSettings(gsMap);
@@ -108,7 +107,7 @@ const AgentStore = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h1 className="font-display text-3xl font-bold mb-2">Store Not Found</h1>
+          <h1 className="font-display text-3xl font-black mb-2">Store Not Found</h1>
           <p className="text-muted-foreground">This store doesn't exist or isn't active.</p>
         </div>
       </div>
@@ -119,7 +118,6 @@ const AgentStore = () => {
   const disabledPackages: Record<string, string[]> = agent.disabled_packages || {};
 
   const isPackageDisabled = (network: string, size: string) => {
-    // Check global unavailability first
     const gs = globalSettings[`${network}-${size}`];
     if (gs?.is_unavailable) return true;
     return disabledPackages[network]?.includes(size) || false;
@@ -286,7 +284,7 @@ const AgentStore = () => {
           <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1 mb-4 text-xs font-medium text-primary animate-fade-in">
             <Zap className="w-3.5 h-3.5" /> Instant Data Delivery
           </div>
-          <h2 className="font-display text-2xl md:text-3xl font-bold mb-2 animate-fade-in" style={{ animationDelay: "0.05s" }}>
+          <h2 className="font-display text-2xl md:text-3xl font-black mb-2 animate-fade-in" style={{ animationDelay: "0.05s" }}>
             Buy Affordable Data <span className="text-gradient">Instantly</span>
           </h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto animate-fade-in" style={{ animationDelay: "0.1s" }}>
@@ -298,7 +296,6 @@ const AgentStore = () => {
       {/* Main content */}
       <main className="flex-1 px-4 pb-10">
         <div className="container mx-auto max-w-3xl">
-          {/* Network selector */}
           <div className="mb-8">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Choose Network</p>
             <div className="grid grid-cols-3 gap-3">
@@ -314,11 +311,10 @@ const AgentStore = () => {
             </div>
           </div>
 
-          {/* Packages */}
           <div className="mb-14">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1 h-6 rounded-full bg-primary" />
-              <h2 className="font-display text-xl font-semibold">{selected} Bundles</h2>
+              <h2 className="font-display text-xl font-bold">{selected} Bundles</h2>
             </div>
             <div className="space-y-3">
               {basePackages[selected]?.map((pkg) => {
@@ -353,13 +349,12 @@ const AgentStore = () => {
             </div>
           </div>
 
-          {/* AFA section */}
           {afaPrice && (
             <div id="afa-section" className="pt-8">
               <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 md:p-8">
                 <div className="flex items-center gap-2 mb-1">
                   <Shield className="w-5 h-5 text-primary" />
-                  <h2 className="font-display text-xl font-semibold">AFA Bundle Registration</h2>
+                  <h2 className="font-display text-xl font-bold">AFA Bundle Registration</h2>
                 </div>
                 <p className="text-sm text-muted-foreground mb-6">
                   Fill in all required details to order an AFA bundle.
@@ -381,7 +376,6 @@ const AgentStore = () => {
         </div>
       </main>
 
-      {/* Confirmation Dialog */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -401,7 +395,6 @@ const AgentStore = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Footer */}
       <footer className="border-t border-border bg-card/30 py-6">
         <div className="container mx-auto max-w-3xl px-4">
           <div className="flex flex-col items-center gap-4 text-sm text-muted-foreground">
@@ -424,7 +417,7 @@ const AgentStore = () => {
               </span>
             </div>
             <div className="text-xs text-muted-foreground/60">
-              Developed by OB CodeLab
+              Developed by Scqeel Technologies
             </div>
           </div>
         </div>

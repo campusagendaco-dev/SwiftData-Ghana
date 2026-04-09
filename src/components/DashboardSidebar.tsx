@@ -48,8 +48,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         <div className="p-5 border-b border-border flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 font-display font-bold text-lg">
             <Zap className="w-5 h-5 text-primary" />
-            <span className="text-foreground">Quick</span>
-            <span className="text-gradient">Data</span>
+            <span className="text-foreground">Data</span>
+            <span className="text-gradient">Hive</span>
             <span className="text-muted-foreground text-xs font-medium ml-0.5">GH</span>
           </Link>
           <button onClick={onClose} className="md:hidden text-muted-foreground hover:text-foreground">

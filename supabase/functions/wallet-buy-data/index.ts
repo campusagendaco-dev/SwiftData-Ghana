@@ -52,52 +52,6 @@ async function resolveExpectedAmount(
   return Number((basePrice * PUBLIC_MARKUP).toFixed(2));
 }
 
-function normalizePhone(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const clean = raw.trim().replace(/[^\d+]/g, "");
-  if (!clean) return null;
-  if (clean.startsWith("+")) {
-    const normalized = `+${clean.slice(1).replace(/\D/g, "")}`;
-    return normalized.length >= 11 ? normalized : null;
-  }
-  const digits = clean.replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("233") && digits.length >= 12) return `+${digits}`;
-  if (digits.startsWith("0") && digits.length >= 10) return `+233${digits.slice(1)}`;
-  if (digits.startsWith("00") && digits.length > 2) return `+${digits.slice(2)}`;
-  return digits.length >= 10 ? `+${digits}` : null;
-}
-
-async function sendSmsIfConfigured(to: string, body: string): Promise<void> {
-  const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const TWILIO_FROM_NUMBER = Deno.env.get("TWILIO_FROM_NUMBER");
-
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
-    return;
-  }
-
-  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      To: to,
-      From: TWILIO_FROM_NUMBER,
-      Body: body,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Twilio send failed (${response.status}): ${text}`);
-  }
-}
-
 function mapNetworkToApi(network: string): string {
   const normalized = network.trim().toUpperCase();
   if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AIRTELTIGO";
@@ -119,14 +73,12 @@ async function placeDataOrder(
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const apiNetwork = mapNetworkToApi(network);
   const dataPlan = formatDataPlan(packageSize);
-  const response = await fetch(`${baseUrl}/api/v1/order`, {
+  const response = await fetch(`${baseUrl}/api/order`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/json",
-      "User-Agent": "DataBossHub-API-Client/1.0",
-      "X-API-Key": apiKey,
-      "X-API-KEY": apiKey,
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       network: apiNetwork,
@@ -145,12 +97,10 @@ serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const PRIMARY_DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY")?.trim();
-  const PRIMARY_DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
-  const SECONDARY_DATA_PROVIDER_API_KEY = Deno.env.get("SECONDARY_DATA_PROVIDER_API_KEY")?.trim();
-  const SECONDARY_DATA_PROVIDER_BASE_URL = Deno.env.get("SECONDARY_DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
+  const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY")?.trim();
+  const DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !PRIMARY_DATA_PROVIDER_API_KEY || !PRIMARY_DATA_PROVIDER_BASE_URL) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -180,7 +130,7 @@ serve(async (req) => {
 
     const { data: settings } = await supabaseAdmin
       .from("system_settings")
-      .select("auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering")
+      .select("disable_ordering, holiday_message")
       .eq("id", 1)
       .maybeSingle();
 
@@ -260,68 +210,27 @@ serve(async (req) => {
       status: "paid",
     });
 
-    const autoSwitch = Boolean(settings?.auto_api_switch);
-    const preferred = settings?.preferred_provider === "secondary" ? "secondary" : "primary";
-    const backup = settings?.backup_provider === "primary" ? "primary" : "secondary";
-
-    const providers = {
-      primary: { key: PRIMARY_DATA_PROVIDER_API_KEY, baseUrl: PRIMARY_DATA_PROVIDER_BASE_URL },
-      secondary: { key: SECONDARY_DATA_PROVIDER_API_KEY, baseUrl: SECONDARY_DATA_PROVIDER_BASE_URL },
-    };
-
-    console.log("Wallet buy data:", { network, package_size, customer_phone, autoSwitch, preferred, backup });
-    const firstProvider = providers[preferred];
-    const secondProvider = providers[backup];
+    console.log("Wallet buy data:", { network, package_size, customer_phone });
 
     let fulfillmentResult = await placeDataOrder(
-      firstProvider.baseUrl!,
-      firstProvider.key!,
+      DATA_PROVIDER_BASE_URL,
+      DATA_PROVIDER_API_KEY,
       network,
       package_size,
       customer_phone,
     );
 
-    if (!fulfillmentResult.ok && autoSwitch && secondProvider.baseUrl && secondProvider.key) {
-      console.log("Primary provider failed, retrying with backup provider");
-      const backupResult = await placeDataOrder(
-        secondProvider.baseUrl,
-        secondProvider.key,
-        network,
-        package_size,
-        customer_phone,
-      );
-      if (backupResult.ok) {
-        fulfillmentResult = backupResult;
-      }
-    }
-
     console.log("Fulfillment response:", fulfillmentResult.status, fulfillmentResult.body);
 
     if (fulfillmentResult.ok) {
-      const { data: transitioned } = await supabaseAdmin
-        .from("orders")
-        .update({ status: "fulfilled" })
-        .eq("id", orderId)
-        .neq("status", "fulfilled")
-        .select("id, amount")
-        .maybeSingle();
-
-      const to = normalizePhone(customer_phone);
-      if (transitioned && to) {
-        const amountText = Number(transitioned.amount || expectedAmount || 0).toFixed(2);
-        await sendSmsIfConfigured(
-          to,
-          `QuickData: ${network} ${package_size} to ${customer_phone} delivered. Amount: GHS ${amountText}. Ref: ${orderId}.`,
-        ).catch((smsError) => console.error("Wallet data SMS error:", smsError));
-      }
-
+      await supabaseAdmin.from("orders").update({ status: "fulfilled" }).eq("id", orderId);
       return new Response(JSON.stringify({ success: true, order_id: orderId, status: "fulfilled" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     let reason = "Data delivery failed";
-    try { reason = JSON.parse(fulfillmentResult.body)?.message || reason; } catch { /* keep fallback reason */ }
+    try { reason = JSON.parse(fulfillmentResult.body)?.message || reason; } catch { /* keep fallback */ }
     await supabaseAdmin.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", orderId);
     return new Response(JSON.stringify({ success: true, order_id: orderId, status: "fulfillment_failed", failure_reason: reason }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

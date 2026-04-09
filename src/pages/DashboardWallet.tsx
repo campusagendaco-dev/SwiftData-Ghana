@@ -368,11 +368,11 @@ const DashboardWallet = () => {
           <div className="bg-card border border-border rounded-xl p-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">MoMo Number</span>
-              <span className="font-bold text-foreground text-lg">0547116139</span>
+              <span className="font-bold text-foreground text-lg">0550617425</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Account Name</span>
-              <span className="font-semibold text-foreground">SAMUEL OWUSU BENSARFO KOFI</span>
+              <span className="font-semibold text-foreground">MICHAEL AKROFI JUNIOR</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Network</span>
