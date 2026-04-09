@@ -22,37 +22,6 @@ function normalizePhone(raw: string | null | undefined): string | null {
   return digits.length >= 10 ? `+${digits}` : null;
 }
 
-async function sendSmsIfConfigured(to: string, body: string): Promise<void> {
-  const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const TWILIO_FROM_NUMBER = Deno.env.get("TWILIO_FROM_NUMBER");
-
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
-    return;
-  }
-
-  const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      To: to,
-      From: TWILIO_FROM_NUMBER,
-      Body: body,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Twilio send failed (${response.status}): ${errorText}`);
-  }
-}
-
 function mapNetworkToApi(network: string): string {
   const normalized = network.trim().toUpperCase();
   if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AIRTELTIGO";
@@ -75,7 +44,7 @@ function normalizeProviderFailure(rawText: string | null | undefined, fallback: 
     lower.includes("cf_chl_opt") ||
     lower.includes("just a moment")
   ) {
-    return "Provider blocked server request (Cloudflare challenge). Contact DataBossHub support to whitelist API traffic.";
+    return "Provider blocked server request (Cloudflare challenge). Contact support.";
   }
   return text;
 }
@@ -102,68 +71,18 @@ async function fetchWithRetry(url: string, options: RequestInit, maxAttempts = 3
   throw new Error("fetchWithRetry: should not reach here");
 }
 
-type ProviderName = "primary" | "secondary";
-
-type ProviderConfig = {
-  name: ProviderName;
-  baseUrl: string;
-  apiKey: string;
-};
-
-async function callProviderWithFallback(
-  path: string,
-  body: Record<string, unknown>,
-  providers: ProviderConfig[],
-  autoSwitch: boolean,
-): Promise<{ response: Response; responseText: string; providerName: ProviderName }> {
-  const first = providers[0];
-  const firstResponse = await fetchWithRetry(`${first.baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "User-Agent": "DataBossHub-API-Client/1.0",
-      "X-API-Key": first.apiKey,
-      "X-API-KEY": first.apiKey,
-    },
-    body: JSON.stringify(body),
-  });
-  const firstText = await firstResponse.text();
-
-  if (firstResponse.ok || !autoSwitch || providers.length < 2) {
-    return { response: firstResponse, responseText: firstText, providerName: first.name };
-  }
-
-  const second = providers[1];
-  const secondResponse = await fetchWithRetry(`${second.baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "User-Agent": "DataBossHub-API-Client/1.0",
-      "X-API-Key": second.apiKey,
-      "X-API-KEY": second.apiKey,
-    },
-    body: JSON.stringify(body),
-  });
-  const secondText = await secondResponse.text();
-  return { response: secondResponse, responseText: secondText, providerName: second.name };
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
-  const PRIMARY_DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY")?.trim();
-  const PRIMARY_DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
-  const SECONDARY_DATA_PROVIDER_API_KEY = Deno.env.get("SECONDARY_DATA_PROVIDER_API_KEY")?.trim();
-  const SECONDARY_DATA_PROVIDER_BASE_URL = Deno.env.get("SECONDARY_DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
+  const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY")?.trim();
+  const DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !PRIMARY_DATA_PROVIDER_BASE_URL) {
+  if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -176,34 +95,6 @@ serve(async (req) => {
     if (!reference) {
       return new Response(JSON.stringify({ error: "Missing reference" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: systemSettings } = await supabase
-      .from("system_settings")
-      .select("auto_api_switch, preferred_provider, backup_provider")
-      .eq("id", 1)
-      .maybeSingle();
-
-    const providerMap: Record<ProviderName, ProviderConfig | null> = {
-      primary:
-        PRIMARY_DATA_PROVIDER_BASE_URL && PRIMARY_DATA_PROVIDER_API_KEY
-          ? { name: "primary", baseUrl: PRIMARY_DATA_PROVIDER_BASE_URL, apiKey: PRIMARY_DATA_PROVIDER_API_KEY }
-          : null,
-      secondary:
-        SECONDARY_DATA_PROVIDER_BASE_URL && SECONDARY_DATA_PROVIDER_API_KEY
-          ? { name: "secondary", baseUrl: SECONDARY_DATA_PROVIDER_BASE_URL, apiKey: SECONDARY_DATA_PROVIDER_API_KEY }
-          : null,
-    };
-
-    const preferredProvider: ProviderName = systemSettings?.preferred_provider === "secondary" ? "secondary" : "primary";
-    const backupProvider: ProviderName = systemSettings?.backup_provider === "primary" ? "primary" : "secondary";
-    const autoSwitch = Boolean(systemSettings?.auto_api_switch);
-    const orderedProviders = [providerMap[preferredProvider], providerMap[backupProvider]].filter(Boolean) as ProviderConfig[];
-
-    if (orderedProviders.length === 0) {
-      return new Response(JSON.stringify({ error: "No configured API provider available" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -244,8 +135,7 @@ serve(async (req) => {
     const metadata = verifyData.data.metadata || {};
     const orderType = order?.order_type || metadata.order_type;
     const agentId = order?.agent_id || metadata.agent_id;
-    const paidAmount = order?.amount || (verifyData.data.amount / 100); // Paystack returns amount in pesewas
-    let paymentMarkedPaid = false;
+    const paidAmount = order?.amount || (verifyData.data.amount / 100);
 
     // If order doesn't exist, recreate it from Paystack metadata
     if (!order && agentId) {
@@ -262,45 +152,29 @@ serve(async (req) => {
         package_size: metadata.package_size || null,
         customer_phone: metadata.customer_phone || null,
       });
-      paymentMarkedPaid = true;
     } else if (order?.status === "pending") {
       await supabase.from("orders").update({ status: "paid" }).eq("id", reference);
-      paymentMarkedPaid = true;
     }
 
     console.log("Payment verified for:", reference, "type:", orderType);
 
-    if (paymentMarkedPaid) {
-      if (orderType === "wallet_topup" && agentId) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("phone")
-          .eq("user_id", agentId)
-          .maybeSingle();
-        const to = normalizePhone(profile?.phone);
-        if (to) {
-          const amountText = Number(metadata.wallet_credit || order?.amount || paidAmount || 0).toFixed(2);
-          await sendSmsIfConfigured(
-            to,
-            `QuickData: Payment received for wallet top-up. Amount: GHS ${amountText}. Ref: ${reference}.`,
-          ).catch((smsError) => console.error("Payment receipt SMS error:", smsError));
-        }
-      } else {
-        const customerPhone = order?.customer_phone || metadata.customer_phone;
-        const to = normalizePhone(customerPhone);
-        if (to) {
-          const amountText = Number(order?.amount || paidAmount || 0).toFixed(2);
-          await sendSmsIfConfigured(
-            to,
-            `QuickData: Payment received. We are processing your ${orderType || "order"}. Amount: GHS ${amountText}. Ref: ${reference}.`,
-          ).catch((smsError) => console.error("Payment receipt SMS error:", smsError));
-        }
-      }
+    // Handle agent activation — auto-approve the reseller
+    if (orderType === "agent_activation" && agentId) {
+      console.log("Processing agent activation for:", agentId);
+      await supabase
+        .from("profiles")
+        .update({ is_agent: true, agent_approved: true })
+        .eq("user_id", agentId);
+
+      await supabase.from("orders").update({ status: "fulfilled" }).eq("id", reference);
+
+      return new Response(JSON.stringify({ status: "fulfilled" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Handle wallet top-up
     if (orderType === "wallet_topup") {
-      // Use the wallet_credit from metadata if available, otherwise fall back to order amount
       const creditAmount = metadata.wallet_credit || order?.amount || paidAmount;
       
       const { data: wallet } = await supabase
@@ -318,30 +192,7 @@ serve(async (req) => {
         console.log(`Created wallet for agent ${agentId} with balance: ${creditAmount}`);
       }
 
-      const { data: topupTransitioned } = await supabase
-        .from("orders")
-        .update({ status: "fulfilled" })
-        .eq("id", reference)
-        .neq("status", "fulfilled")
-        .select("id, amount, agent_id")
-        .maybeSingle();
-
-      if (topupTransitioned?.agent_id) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("phone")
-          .eq("user_id", topupTransitioned.agent_id)
-          .maybeSingle();
-
-        const to = normalizePhone(profile?.phone);
-        if (to) {
-          const amountText = Number(topupTransitioned.amount || creditAmount || 0).toFixed(2);
-          await sendSmsIfConfigured(
-            to,
-            `QuickData: Wallet top-up successful. GHS ${amountText} has been credited. Ref: ${reference}.`,
-          ).catch((smsError) => console.error("Top-up SMS error:", smsError));
-        }
-      }
+      await supabase.from("orders").update({ status: "fulfilled" }).eq("id", reference);
 
       return new Response(JSON.stringify({ status: "fulfilled" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -349,6 +200,14 @@ serve(async (req) => {
     }
 
     // Handle data/AFA fulfillment
+    if (!DATA_PROVIDER_BASE_URL || !DATA_PROVIDER_API_KEY) {
+      console.error("Data provider not configured");
+      await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Data provider not configured" }).eq("id", reference);
+      return new Response(JSON.stringify({ status: "fulfillment_failed", failure_reason: "Data provider not configured" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const needsFulfillment = !order || order.status === "pending" || order.status === "paid" || order.status === "fulfillment_failed";
     if (!needsFulfillment) {
       return new Response(JSON.stringify({ status: order?.status || "unknown" }), {
@@ -369,13 +228,20 @@ serve(async (req) => {
       };
 
       console.log("Fulfilling AFA order:", afaData);
-      const { response: fulfillRes, responseText: fulfillText, providerName } = await callProviderWithFallback(
-        "/api/afa-registration",
-        afaData,
-        orderedProviders,
-        autoSwitch,
+      const fulfillRes = await fetchWithRetry(
+        `${DATA_PROVIDER_BASE_URL}/api/afa-registration`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": `Bearer ${DATA_PROVIDER_API_KEY}`,
+          },
+          body: JSON.stringify(afaData),
+        },
       );
-      console.log("AFA fulfillment response:", providerName, fulfillRes.status, fulfillText);
+      const fulfillText = await fulfillRes.text();
+      console.log("AFA fulfillment response:", fulfillRes.status, fulfillText);
 
       if (fulfillRes.ok) {
         await supabase.from("orders").update({ status: "fulfilled" }).eq("id", reference);
@@ -394,43 +260,36 @@ serve(async (req) => {
         const dataPlan = formatDataPlan(packageSize);
         console.log("Fulfilling data order:", { network, apiNetwork, packageSize, dataPlan, customerPhone });
 
-        const { response: fulfillRes, responseText: fulfillText, providerName } = await callProviderWithFallback(
-          "/api/v1/order",
+        const fulfillRes = await fetchWithRetry(
+          `${DATA_PROVIDER_BASE_URL}/api/order`,
           {
-            network: apiNetwork,
-            data_plan: dataPlan,
-            beneficiary: customerPhone,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+              "Authorization": `Bearer ${DATA_PROVIDER_API_KEY}`,
+            },
+            body: JSON.stringify({
+              network: apiNetwork,
+              data_plan: dataPlan,
+              beneficiary: customerPhone,
+            }),
           },
-          orderedProviders,
-          autoSwitch,
         );
-        console.log("Data fulfillment response:", providerName, fulfillRes.status, fulfillText);
+        const fulfillText = await fulfillRes.text();
+        console.log("Data fulfillment response:", fulfillRes.status, fulfillText);
 
         if (fulfillRes.ok) {
-          const { data: transitioned } = await supabase
-            .from("orders")
-            .update({ status: "fulfilled" })
-            .eq("id", reference)
-            .neq("status", "fulfilled")
-            .select("id, amount, network, package_size, customer_phone")
-            .maybeSingle();
-
-          const to = normalizePhone(customerPhone);
-          if (transitioned && to) {
-            const amountText = Number(transitioned.amount || 0).toFixed(2);
-            const sms = `QuickData: ${network} ${packageSize} to ${customerPhone} delivered. Amount: GHS ${amountText}. Ref: ${reference}.`;
-            await sendSmsIfConfigured(to, sms).catch((smsError) => console.error("Data order SMS error:", smsError));
-          }
+          await supabase.from("orders").update({ status: "fulfilled" }).eq("id", reference);
           fulfilled = true;
         } else {
           let reason = fulfillText || "Data delivery failed";
           try {
             reason = JSON.parse(fulfillText)?.message || reason;
           } catch {
-            // Keep plain-text provider response as failure reason.
+            // keep plain text
           }
           reason = normalizeProviderFailure(reason, "Data delivery failed");
-          console.error("Fulfillment failed. Status:", fulfillRes.status, "Body:", fulfillText);
           await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", reference);
         }
       }
@@ -441,7 +300,6 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       status: resolvedStatus,
-      _internal_status: updatedOrder?.status || null,
       failure_reason: updatedOrder?.failure_reason || null,
     }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
