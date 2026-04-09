@@ -212,7 +212,7 @@ serve(async (req) => {
 
     console.log("Wallet buy data:", { network, package_size, customer_phone });
 
-    let fulfillmentResult = await placeDataOrder(
+    const fulfillmentResult = await placeDataOrder(
       DATA_PROVIDER_BASE_URL,
       DATA_PROVIDER_API_KEY,
       network,

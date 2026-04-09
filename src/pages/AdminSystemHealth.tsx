@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,7 +83,7 @@ const AdminSystemHealth = () => {
     });
   };
 
-  const loadHealth = async () => {
+  const loadHealth = useCallback(async () => {
     setLoading(true);
     let result = await callHealthFunction();
 
@@ -125,11 +125,11 @@ const AdminSystemHealth = () => {
 
     setHealth(finalData as HealthResponse);
     setLoading(false);
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadHealth();
-  }, []);
+  }, [loadHealth]);
 
   return (
     <div className="space-y-6">

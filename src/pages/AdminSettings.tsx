@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -55,7 +55,7 @@ const AdminSettings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.functions.invoke("system-settings", {
       body: { action: "get" },
@@ -86,11 +86,11 @@ const AdminSettings = () => {
 
     setSettings(toUiSettings(row));
     setLoading(false);
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadSettings();
-  }, []);
+  }, [loadSettings]);
 
   const saveSettings = async () => {
     if (!settings.table_ready) {
