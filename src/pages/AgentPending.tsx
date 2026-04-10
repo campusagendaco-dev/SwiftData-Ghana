@@ -55,20 +55,8 @@ const AgentPending = () => {
     setPaying(true);
 
     const orderId = crypto.randomUUID();
-    const { error: insertError } = await supabase.from("orders").insert({
-      id: orderId,
-      agent_id: user.id,
-      order_type: "agent_activation",
-      amount: ACTIVATION_TOTAL,
-      profit: 0,
-      status: "pending",
-    });
 
-    if (insertError) {
-      toast({ title: "Failed to create order", description: insertError.message, variant: "destructive" });
-      setPaying(false);
-      return;
-    }
+    // Order is created server-side by initialize-payment
 
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
