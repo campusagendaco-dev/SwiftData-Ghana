@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const PUBLIC_MARKUP = 1.12;
+
 const BASE_PACKAGE_PRICES: Record<string, Record<string, number>> = {
   MTN: {
     "1GB": 4.45, "2GB": 8.9, "3GB": 13.1, "4GB": 17.3, "5GB": 21.2, "6GB": 25.7, "7GB": 29.6, "8GB": 33.2,
@@ -32,21 +32,23 @@ async function resolveExpectedAmount(supabaseAdmin: any, network: string, packag
   const normalizedNetwork = normalizeNetworkForPricing(network);
   const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
 
+  // For wallet purchases (agent dashboard), use agent_price
   const { data: globalRow } = await supabaseAdmin
     .from("global_package_settings")
-    .select("public_price")
+    .select("agent_price")
     .eq("network", normalizedNetwork)
     .eq("package_size", normalizedPackage)
     .maybeSingle();
 
-  const configuredPrice = Number(globalRow?.public_price);
+  const configuredPrice = Number(globalRow?.agent_price);
   if (Number.isFinite(configuredPrice) && configuredPrice > 0) {
     return Number(configuredPrice.toFixed(2));
   }
 
+  // Fallback to base price (no markup for agents)
   const basePrice = BASE_PACKAGE_PRICES[normalizedNetwork]?.[normalizedPackage];
   if (!basePrice) return null;
-  return Number((basePrice * PUBLIC_MARKUP).toFixed(2));
+  return Number(basePrice.toFixed(2));
 }
 
 function mapNetworkToApi(network: string): string {

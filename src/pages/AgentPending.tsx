@@ -8,6 +8,10 @@ import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 
 const ACTIVATION_FEE = 20;
+const PAYSTACK_FEE_RATE = 0.0195;
+const PAYSTACK_FEE_CAP = 100;
+const paystackFee = Math.min(ACTIVATION_FEE * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
+const ACTIVATION_TOTAL = parseFloat((ACTIVATION_FEE + paystackFee).toFixed(2));
 
 const AgentPending = () => {
   const { user, profile, signOut, refreshProfile } = useAuth();
@@ -51,31 +55,21 @@ const AgentPending = () => {
     setPaying(true);
 
     const orderId = crypto.randomUUID();
-    const { error: insertError } = await supabase.from("orders").insert({
-      id: orderId,
-      agent_id: user.id,
-      order_type: "agent_activation",
-      amount: ACTIVATION_FEE,
-      profit: 0,
-      status: "pending",
-    });
 
-    if (insertError) {
-      toast({ title: "Failed to create order", description: insertError.message, variant: "destructive" });
-      setPaying(false);
-      return;
-    }
+    // Order is created server-side by initialize-payment
 
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
         email: profile.email || `${user.id}@agent.datahive.gh`,
-        amount: ACTIVATION_FEE,
+        amount: ACTIVATION_TOTAL,
         reference: orderId,
         callback_url: `${getAppBaseUrl()}/agent/pending?reference=${orderId}`,
         metadata: {
           order_id: orderId,
           order_type: "agent_activation",
           agent_id: user.id,
+          base_amount: ACTIVATION_FEE,
+          paystack_fee: paystackFee,
         },
       },
     });
@@ -103,7 +97,7 @@ const AgentPending = () => {
         <p className="text-muted-foreground mb-8">
           {approvedButSetupIncomplete
             ? "Your reseller request is approved. Click check status to continue with setup."
-            : "Pay a one-time activation fee of GHS 20 to activate your reseller account instantly."}
+            : `Pay a one-time activation fee of GHS ${ACTIVATION_FEE} + GHS ${paystackFee.toFixed(2)} transaction fee (Total: GHS ${ACTIVATION_TOTAL.toFixed(2)}) to activate your reseller account instantly.`}
         </p>
 
         {!approvedButSetupIncomplete && (
@@ -113,6 +107,7 @@ const AgentPending = () => {
                 <CreditCard className="w-5 h-5 text-primary flex-shrink-0" />
                 <div>
                   <p className="font-semibold text-foreground">Activation Fee: GHS {ACTIVATION_FEE}</p>
+                  <p className="text-xs text-muted-foreground">+ GHS {paystackFee.toFixed(2)} Paystack fee = GHS {ACTIVATION_TOTAL.toFixed(2)} total</p>
                   <p className="text-xs text-muted-foreground">One-time payment via Paystack (MoMo or Card)</p>
                 </div>
               </div>
@@ -131,7 +126,7 @@ const AgentPending = () => {
               ) : verifying ? (
                 <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Verifying...</>
               ) : (
-                <><CreditCard className="w-5 h-5 mr-2" /> Pay GHS {ACTIVATION_FEE} to Activate</>
+                <><CreditCard className="w-5 h-5 mr-2" /> Pay GHS {ACTIVATION_TOTAL.toFixed(2)} to Activate</>
               )}
             </Button>
           </div>

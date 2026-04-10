@@ -191,22 +191,8 @@ const DashboardWallet = () => {
     } else {
       setBuying(true);
       const orderId = crypto.randomUUID();
-      const { error: insertError } = await supabase.from("orders").insert({
-        id: orderId,
-        agent_id: user!.id,
-        order_type: "data",
-        customer_phone: customerPhone.replace(/\s/g, ""),
-        network: selectedNetwork,
-        package_size: selectedPackage,
-        amount: totalPaystack,
-        profit: 0,
-      });
 
-      if (insertError) {
-        toast({ title: "Order failed", description: insertError.message, variant: "destructive" });
-        setBuying(false);
-        return;
-      }
+      // Order is created server-side by initialize-payment
 
       const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
         body: {

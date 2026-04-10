@@ -61,13 +61,55 @@ serve(async (req) => {
     const amount = Number(payload?.amount);
     const reference = typeof payload?.reference === "string" ? payload.reference.trim() : "";
     const callback_url = payload?.callback_url;
-    const metadata = payload?.metadata;
+    const metadata = payload?.metadata || {};
 
     if (!email || !reference || !Number.isFinite(amount) || amount <= 0) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Server-side order creation — don't trust frontend to create orders
+    const orderType = metadata.order_type || "data";
+    const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
+
+    // Check if order already exists (idempotency)
+    const { data: existingOrder } = await supabaseAdmin
+      .from("orders")
+      .select("id")
+      .eq("id", reference)
+      .maybeSingle();
+
+    if (!existingOrder) {
+      const orderRow: Record<string, unknown> = {
+        id: reference,
+        agent_id: agentId,
+        order_type: orderType,
+        amount,
+        profit: 0,
+        status: "pending",
+      };
+      if (metadata.customer_phone) orderRow.customer_phone = metadata.customer_phone;
+      if (metadata.network) orderRow.network = metadata.network;
+      if (metadata.package_size) orderRow.package_size = metadata.package_size;
+      // AFA fields
+      if (metadata.afa_full_name) orderRow.afa_full_name = metadata.afa_full_name;
+      if (metadata.afa_ghana_card) orderRow.afa_ghana_card = metadata.afa_ghana_card;
+      if (metadata.afa_occupation) orderRow.afa_occupation = metadata.afa_occupation;
+      if (metadata.afa_email) orderRow.afa_email = metadata.afa_email;
+      if (metadata.afa_residence) orderRow.afa_residence = metadata.afa_residence;
+      if (metadata.afa_date_of_birth) orderRow.afa_date_of_birth = metadata.afa_date_of_birth;
+
+      const { error: insertError } = await supabaseAdmin.from("orders").insert(orderRow);
+      if (insertError) {
+        console.error("Failed to create order:", insertError);
+        return new Response(JSON.stringify({ error: "Failed to create order" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      console.log("Order created server-side:", reference, orderType);
     }
 
     const amountInPesewas = Math.round(amount * 100);

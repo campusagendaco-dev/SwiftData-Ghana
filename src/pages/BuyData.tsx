@@ -112,25 +112,11 @@ const BuyData = () => {
     const key = `${network}-${size}`;
     setBuyingPkg(key);
 
-    const { total, fee } = getTotal(price);
     const orderId = crypto.randomUUID();
 
-    const { error } = await supabase.from("orders").insert({
-      id: orderId,
-      agent_id: "00000000-0000-0000-0000-000000000000",
-      order_type: "data",
-      customer_phone: phone.replace(/\s/g, ""),
-      network,
-      package_size: size,
-      amount: total,
-      profit: 0,
-    });
+    // Order is created server-side by initialize-payment
 
-    if (error) {
-      toast({ title: "Order failed", description: error.message, variant: "destructive" });
-      setBuyingPkg(null);
-      return;
-    }
+    const { total, fee } = getTotal(price);
 
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
