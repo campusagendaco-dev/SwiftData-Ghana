@@ -48,7 +48,7 @@ async function callProviderApi(
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
+        "X-API-Key": apiKey,
         "User-Agent": "DataHiveGH/1.0",
       },
       body: JSON.stringify(body),

@@ -40,6 +40,7 @@ const AdminOrders = () => {
       .select("*")
       .neq("order_type", "wallet_topup")
       .neq("order_type", "agent_activation")
+      .neq("status", "pending")
       .order("created_at", { ascending: false })
       .limit(500);
     setOrders((data as OrderRow[]) || []);
