@@ -21,8 +21,7 @@ import DashboardWithdraw from "./pages/DashboardWithdraw";
 import DashboardWallet from "./pages/DashboardWallet";
 import DashboardFlyer from "./pages/DashboardFlyer";
 import DashboardSettings from "./pages/DashboardSettings";
-import AuthUser from "./pages/AuthUser";
-import AuthAgent from "./pages/AuthAgent";
+import AuthPage from "./pages/AuthPage";
 import AuthCallback from "./pages/AuthCallback";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyOtp from "./pages/VerifyOtp";
@@ -209,8 +208,8 @@ const AppContent = () => {
         <Route path="/order-status" element={<OrderStatus />} />
 
         {/* Auth pages */}
-        <Route path="/login" element={<AuthUser />} />
-        <Route path="/agent/login" element={<AuthAgent />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/agent/login" element={<AuthPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/verify-otp" element={<VerifyOtp />} />
