@@ -17,9 +17,11 @@ interface OrderRow {
   status: string;
   failure_reason: string | null;
   created_at: string;
+  agent_id: string;
 }
 
 const statusColors: Record<string, string> = {
+  pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   paid: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   fulfilled: "bg-green-500/20 text-green-400 border-green-500/30",
   fulfillment_failed: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -36,10 +38,10 @@ const AdminOrders = () => {
     const { data } = await supabase
       .from("orders")
       .select("*")
-      .in("status", ["paid", "fulfilled", "fulfillment_failed"])
       .neq("order_type", "wallet_topup")
+      .neq("order_type", "agent_activation")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(500);
     setOrders((data as OrderRow[]) || []);
     setLoading(false);
   };
@@ -55,13 +57,13 @@ const AdminOrders = () => {
 
       if (error) {
         toast({ title: "Retry failed", description: error.message, variant: "destructive" });
-      } else if (data?._internal_status === "fulfilled") {
+      } else if (data?.status === "fulfilled") {
         toast({ title: "Order fulfilled successfully!" });
       } else {
         toast({
           title: "Retry completed",
-          description: data?.failure_reason || `Status: ${data?._internal_status}`,
-          variant: data?._internal_status === "fulfilled" ? "default" : "destructive",
+          description: data?.failure_reason || `Status: ${data?.status}`,
+          variant: data?.status === "fulfilled" ? "default" : "destructive",
         });
       }
       await fetchOrders();
@@ -78,6 +80,7 @@ const AdminOrders = () => {
   );
 
   const unfulfilled = orders.filter((o) => o.status === "fulfillment_failed").length;
+  const pending = orders.filter((o) => o.status === "pending" || o.status === "paid").length;
 
   if (loading) return <div className="text-muted-foreground">Loading orders...</div>;
 
@@ -85,10 +88,16 @@ const AdminOrders = () => {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold">Successful Payment Orders</h1>
-          {unfulfilled > 0 && (
-            <p className="text-sm text-red-400 mt-1">⚠ {unfulfilled} order(s) paid but not fulfilled — retry needed</p>
-          )}
+          <h1 className="font-display text-2xl font-bold">All Data Orders</h1>
+          <div className="flex flex-wrap gap-3 mt-1 text-sm">
+            {unfulfilled > 0 && (
+              <span className="text-red-400">⚠ {unfulfilled} failed — retry needed</span>
+            )}
+            {pending > 0 && (
+              <span className="text-yellow-400">⏳ {pending} pending/paid</span>
+            )}
+            <span className="text-muted-foreground">{orders.length} total</span>
+          </div>
         </div>
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -133,7 +142,7 @@ const AdminOrders = () => {
                     )}
                   </td>
                   <td className="p-4">
-                    {order.status === "fulfillment_failed" && (
+                    {(order.status === "fulfillment_failed" || order.status === "paid") && (
                       <Button
                         size="sm" variant="outline" className="text-xs gap-1.5"
                         disabled={retrying === order.id}
