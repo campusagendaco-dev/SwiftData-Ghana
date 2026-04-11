@@ -208,8 +208,8 @@ const AppContent = () => {
         <Route path="/order-status" element={<OrderStatus />} />
 
         {/* Auth pages */}
-        <Route path="/login" element={<AuthUser />} />
-        <Route path="/agent/login" element={<AuthAgent />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/agent/login" element={<AuthPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/verify-otp" element={<VerifyOtp />} />
