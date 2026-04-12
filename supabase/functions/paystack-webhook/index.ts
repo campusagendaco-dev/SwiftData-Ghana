@@ -9,36 +9,190 @@ const corsHeaders = {
 
 function mapNetworkToApi(network: string): string {
   const normalized = network.trim().toUpperCase();
-  if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AIRTELTIGO";
+  if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO" || normalized === "AT") return "AIRTELTIGO_ISHARE";
   if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
   if (normalized === "MTN") return "MTN";
   return normalized;
 }
 
 function formatDataPlan(packageSize: string): string {
-  return packageSize.replace(/\s+/g, "").toUpperCase();
+  return packageSize.replace(/\s+/g, "").toUpperCase().replace(/GB$/, "");
 }
 
-async function fetchWithRetry(url: string, options: RequestInit, maxAttempts = 3): Promise<Response> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
+function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
+  const clean = baseUrl.trim().replace(/\/+$/, "");
+  if (!clean) return [];
+
+  const urls = new Set<string>();
+
+  if (clean.endsWith(`/${endpoint}`) || clean.endsWith(`/api/${endpoint}`)) {
+    urls.add(clean);
+  }
+
+  if (clean.endsWith("/api")) {
+    urls.add(`${clean}/${endpoint}`);
+    urls.add(`${clean.replace(/\/api$/, "")}/api/${endpoint}`);
+  } else {
+    urls.add(`${clean}/api/${endpoint}`);
+    urls.add(`${clean}/${endpoint}`);
+  }
+
+  return Array.from(urls);
+}
+
+function isHtmlResponse(contentType: string | null, body: string): boolean {
+  const preview = body.trim().slice(0, 200).toLowerCase();
+  return Boolean(
+    contentType?.includes("text/html") ||
+    preview.startsWith("<!doctype html") ||
+    preview.startsWith("<html") ||
+    preview.includes("<title>")
+  );
+}
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getProviderFailureReason(status: number, body: string, contentType: string | null): string {
+  let parsedMessage: string | null = null;
+
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.message === "string") parsedMessage = parsed.message;
+    else if (typeof parsed?.error === "string") parsedMessage = parsed.error;
+  } catch {
+    parsedMessage = null;
+  }
+
+  const normalized = `${parsedMessage || stripHtml(body)}`.toLowerCase();
+
+  if ((normalized.includes("insufficient") || normalized.includes("low")) && normalized.includes("balance")) {
+    return "Provider balance is too low. Refill the API source and retry this order.";
+  }
+
+  if (normalized.includes("cloudflare")) {
+    return "Provider blocked the server request. Ask the data source to allow this server and retry.";
+  }
+
+  if (status === 401 || status === 403) {
+    return "Provider rejected the API request. Check the data source API key and access permissions.";
+  }
+
+  if (status === 404) {
+    return "Provider endpoint not found. Update the data source API URL and retry.";
+  }
+
+  if (status >= 500 || status === 429) {
+    return "Provider is temporarily unavailable. Retry this order shortly.";
+  }
+
+  if (parsedMessage) {
+    return parsedMessage;
+  }
+
+  if (isHtmlResponse(contentType, body)) {
+    return "Provider returned an HTML error page. Check the data source API URL and retry.";
+  }
+
+  const cleaned = stripHtml(body);
+  if (!cleaned) return "Data delivery failed";
+  return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned;
+}
+
+type ProviderResult = {
+  ok: boolean;
+  status: number;
+  body: string;
+  reason: string;
+  url: string | null;
+};
+
+async function callProviderApi(
+  baseUrl: string,
+  apiKey: string,
+  endpoint: "order" | "afa-registration",
+  body: Record<string, unknown>,
+): Promise<ProviderResult> {
+  const urls = buildProviderUrls(baseUrl, endpoint);
+
+  let lastFailure: ProviderResult = {
+    ok: false,
+    status: 502,
+    body: "",
+    reason: "Provider request failed",
+    url: null,
+  };
+
+  for (const url of urls) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.status >= 400 && res.status < 500) return res;
-      if (res.ok) return res;
-      if (attempt < maxAttempts) {
-        await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
-      } else {
-        return res;
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Key": apiKey,
+            "User-Agent": "DataHiveGH/1.0",
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        const contentType = response.headers.get("content-type");
+        const text = await response.text();
+
+        if (response.ok) {
+          return { ok: true, status: response.status, body: text, reason: "", url };
+        }
+
+        const reason = getProviderFailureReason(response.status, text, contentType);
+        lastFailure = { ok: false, status: response.status, body: text, reason, url };
+
+        const retryable = response.status >= 500 || response.status === 429;
+        const tryNextUrl = response.status === 404 || (isHtmlResponse(contentType, text) && response.status !== 401 && response.status !== 403);
+
+        if (retryable && attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
+
+        if (tryNextUrl) break;
+        return lastFailure;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        lastFailure = {
+          ok: false,
+          status: 502,
+          body: "",
+          reason: error instanceof Error ? `Provider request failed: ${error.message}` : "Provider request failed",
+          url,
+        };
+
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
       }
-    } catch (err) {
-      if (attempt >= maxAttempts) throw err;
-      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
     }
   }
-  throw new Error("fetchWithRetry: should not reach here");
+
+  return lastFailure;
+}
+
+function buildAfaPayload(metadata: Record<string, unknown>) {
+  return {
+    fullName: metadata.afa_full_name,
+    ghanaCardNumber: metadata.afa_ghana_card,
+    occupation: metadata.afa_occupation,
+    email: metadata.afa_email,
+    placeOfResidence: metadata.afa_residence,
+    dateOfBirth: metadata.afa_date_of_birth,
+  };
 }
 
 serve(async (req) => {
@@ -55,7 +209,8 @@ serve(async (req) => {
   if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error("Missing required secrets");
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
@@ -64,14 +219,16 @@ serve(async (req) => {
 
   if (!signature) {
     return new Response(JSON.stringify({ error: "Missing signature" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
   const hash = createHmac("sha512", PAYSTACK_SECRET_KEY).update(rawBody).digest("hex");
   if (hash !== signature) {
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
@@ -81,14 +238,14 @@ serve(async (req) => {
     const body = JSON.parse(rawBody);
     if (body.event !== "charge.success") {
       return new Response(JSON.stringify({ received: true }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { reference, metadata } = body.data;
+    const { reference, metadata = {} } = body.data;
     console.log("Webhook: Payment successful for reference:", reference);
 
-    // Verify with Paystack
     const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
       headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, Accept: "application/json" },
     });
@@ -97,33 +254,29 @@ serve(async (req) => {
     if (!verifyData.status || verifyData.data.status !== "success") {
       console.error("Payment verification failed:", verifyData);
       return new Response(JSON.stringify({ error: "Payment verification failed" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const orderId = metadata?.order_id || reference;
     const orderType = metadata?.order_type;
 
-    // Update order to paid
-    await supabase.from("orders").update({ status: "paid" }).eq("id", orderId);
+    await supabase.from("orders").update({ status: "paid", failure_reason: null }).eq("id", orderId);
 
-    // Handle agent activation
     if (orderType === "agent_activation") {
       const agentId = metadata?.agent_id;
       if (agentId) {
-        await supabase
-          .from("profiles")
-          .update({ is_agent: true, agent_approved: true })
-          .eq("user_id", agentId);
-        await supabase.from("orders").update({ status: "fulfilled" }).eq("id", orderId);
+        await supabase.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", agentId);
+        await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
         console.log("Agent activated via webhook:", agentId);
       }
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Handle wallet top-up
     if (orderType === "wallet_topup") {
       const { data: order } = await supabase.from("orders").select("amount, agent_id").eq("id", orderId).maybeSingle();
       if (order) {
@@ -134,102 +287,107 @@ serve(async (req) => {
         } else {
           await supabase.from("wallets").insert({ agent_id: order.agent_id, balance: order.amount });
         }
-        await supabase.from("orders").update({ status: "fulfilled" }).eq("id", orderId);
+        await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
       }
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fulfill data/AFA orders
     if (!DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
       console.error("Data provider not configured for fulfillment");
-      await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Data provider not configured" }).eq("id", orderId);
+      await supabase.from("orders").update({
+        status: "fulfillment_failed",
+        failure_reason: "Data provider not configured",
+      }).eq("id", orderId);
       return new Response(JSON.stringify({ received: true, fulfilled: false }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let fulfilled = false;
-
     if (orderType === "afa") {
-      const afaData = {
-        full_name: metadata?.afa_full_name,
-        ghana_card: metadata?.afa_ghana_card,
-        occupation: metadata?.afa_occupation,
-        email: metadata?.afa_email,
-        residence: metadata?.afa_residence,
-        date_of_birth: metadata?.afa_date_of_birth,
-      };
-
-      const fulfillRes = await fetchWithRetry(
-        `${DATA_PROVIDER_BASE_URL}/api/afa-registration`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Key": DATA_PROVIDER_API_KEY,
-          },
-          body: JSON.stringify(afaData),
-        }
+      const result = await callProviderApi(
+        DATA_PROVIDER_BASE_URL,
+        DATA_PROVIDER_API_KEY,
+        "afa-registration",
+        buildAfaPayload(metadata),
       );
 
-      const fulfillData = await fulfillRes.text();
-      if (fulfillRes.ok) {
-        await supabase.from("orders").update({ status: "fulfilled" }).eq("id", orderId);
-        fulfilled = true;
-      } else {
-        let reason = "AFA registration failed";
-        try { reason = JSON.parse(fulfillData)?.message || reason; } catch { /* keep fallback */ }
-        await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", orderId);
+      console.log("Webhook AFA fulfillment response:", {
+        orderId,
+        status: result.status,
+        reason: result.reason,
+        url: result.url,
+      });
+
+      if (result.ok) {
+        await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-    } else {
-      const network = metadata?.network;
-      const packageSize = metadata?.package_size;
-      const customerPhone = metadata?.customer_phone;
 
-      if (network && packageSize && customerPhone) {
-        const apiNetwork = mapNetworkToApi(network);
-        const dataPlan = formatDataPlan(packageSize);
-        console.log("Fulfilling data order:", { orderId, network, apiNetwork, packageSize, dataPlan, customerPhone });
-
-        const fulfillRes = await fetchWithRetry(
-          `${DATA_PROVIDER_BASE_URL}/api/order`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-              "X-API-Key": DATA_PROVIDER_API_KEY,
-            },
-            body: JSON.stringify({
-              network: apiNetwork,
-              data_plan: dataPlan,
-              beneficiary: customerPhone,
-            }),
-          }
-        );
-
-        const fulfillData = await fulfillRes.text();
-        if (fulfillRes.ok) {
-          await supabase.from("orders").update({ status: "fulfilled" }).eq("id", orderId);
-          fulfilled = true;
-        } else {
-          let reason = "Data delivery failed";
-          try { reason = JSON.parse(fulfillData)?.message || reason; } catch { /* keep fallback */ }
-          await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", orderId);
-        }
-      }
+      await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", orderId);
+      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: result.reason }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    return new Response(JSON.stringify({ received: true, fulfilled }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const network = typeof metadata?.network === "string" ? metadata.network : "";
+    const packageSize = typeof metadata?.package_size === "string" ? metadata.package_size : "";
+    const customerPhone = typeof metadata?.customer_phone === "string" ? metadata.customer_phone : "";
+
+    if (!network || !packageSize || !customerPhone) {
+      await supabase.from("orders").update({
+        status: "fulfillment_failed",
+        failure_reason: "Missing order details for fulfillment.",
+      }).eq("id", orderId);
+      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing order details for fulfillment." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await callProviderApi(
+      DATA_PROVIDER_BASE_URL,
+      DATA_PROVIDER_API_KEY,
+      "order",
+      {
+        network: mapNetworkToApi(network),
+        data_plan: formatDataPlan(packageSize),
+        beneficiary: customerPhone,
+      },
+    );
+
+    console.log("Webhook data fulfillment response:", {
+      orderId,
+      status: result.status,
+      reason: result.reason,
+      url: result.url,
+    });
+
+    if (result.ok) {
+      await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+      return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", orderId);
+    return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: result.reason }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Webhook error:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Internal error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
