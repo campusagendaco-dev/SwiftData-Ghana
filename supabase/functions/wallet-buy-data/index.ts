@@ -60,8 +60,26 @@ function formatDataPlan(packageSize: string): string {
   return packageSize.replace(/\s+/g, "").toUpperCase().replace(/GB$/, "");
 }
 
-function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
+function normalizeProviderBaseUrl(baseUrl: string): string {
   const clean = baseUrl.trim().replace(/\/+$/, "");
+  if (!clean) return "";
+
+  try {
+    const parsed = new URL(clean);
+    const host = parsed.hostname.toLowerCase();
+
+    if (host === "spendless.top" || host === "www.spendless.top") {
+      return "https://backend.mycledanet.com/api";
+    }
+  } catch {
+    return clean;
+  }
+
+  return clean;
+}
+
+function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
+  const clean = normalizeProviderBaseUrl(baseUrl);
   if (!clean) return [];
 
   const urls = new Set<string>();
