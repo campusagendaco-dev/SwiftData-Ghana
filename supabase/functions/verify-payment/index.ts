@@ -23,12 +23,7 @@ function normalizeProviderBaseUrl(baseUrl: string): string {
   if (!clean) return "";
 
   try {
-    const parsed = new URL(clean);
-    const host = parsed.hostname.toLowerCase();
-
-    if (host === "spendless.top" || host === "www.spendless.top") {
-      return "https://backend.mycledanet.com/api";
-    }
+    new URL(clean);
   } catch {
     return clean;
   }
@@ -247,6 +242,57 @@ serve(async (req) => {
 
     if (order?.status === "fulfilled") {
       return new Response(JSON.stringify({ status: "fulfilled" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // For orders already paid/failed (e.g. wallet-paid orders retried by admin),
+    // skip Paystack verification and go straight to fulfillment.
+    if (order && (order.status === "paid" || order.status === "fulfillment_failed")) {
+      if (!DATA_PROVIDER_BASE_URL || !DATA_PROVIDER_API_KEY) {
+        return new Response(JSON.stringify({ status: "fulfillment_failed", failure_reason: "Data provider not configured" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      let fulfilled = false;
+      if (order.order_type === "afa") {
+        const afaData = buildAfaPayload(order);
+        const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "afa-registration", afaData);
+        if (result.ok) {
+          await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
+          fulfilled = true;
+        } else {
+          await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", reference);
+        }
+      } else {
+        const network = order.network;
+        const packageSize = order.package_size;
+        const customerPhone = order.customer_phone;
+        if (!network || !packageSize || !customerPhone) {
+          await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Missing order details" }).eq("id", reference);
+        } else {
+          const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
+            network: mapNetworkToApi(network),
+            data_plan: formatDataPlan(packageSize),
+            beneficiary: customerPhone,
+          });
+          if (result.ok) {
+            await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
+            fulfilled = true;
+          } else {
+            await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", reference);
+          }
+        }
+      }
+
+      const { data: updatedOrder } = await supabase.from("orders").select("status, failure_reason").eq("id", reference).maybeSingle();
+      return new Response(JSON.stringify({
+        status: updatedOrder?.status || (fulfilled ? "fulfilled" : "fulfillment_failed"),
+        failure_reason: updatedOrder?.failure_reason || null,
+      }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

@@ -24,12 +24,7 @@ function normalizeProviderBaseUrl(baseUrl: string): string {
   if (!clean) return "";
 
   try {
-    const parsed = new URL(clean);
-    const host = parsed.hostname.toLowerCase();
-
-    if (host === "spendless.top" || host === "www.spendless.top") {
-      return "https://backend.mycledanet.com/api";
-    }
+    new URL(clean);
   } catch {
     return clean;
   }
