@@ -26,3 +26,7 @@ dist-ssr
 .vercel
 .env
 .env*.local
+
+# Supabase CLI
+supabase.exe
+supabase/.temp/
