@@ -65,12 +65,7 @@ function normalizeProviderBaseUrl(baseUrl: string): string {
   if (!clean) return "";
 
   try {
-    const parsed = new URL(clean);
-    const host = parsed.hostname.toLowerCase();
-
-    if (host === "spendless.top" || host === "www.spendless.top") {
-      return "https://backend.mycledanet.com/api";
-    }
+    new URL(clean);
   } catch {
     return clean;
   }
@@ -174,7 +169,7 @@ async function placeDataOrder(
   packageSize: string,
   customerPhone: string,
 ): Promise<ProviderResult> {
-  const urls = buildProviderUrls(baseUrl, "order");
+  const urls = buildProviderUrls(baseUrl, "purchase");
   const requestBody = {
     network: mapNetworkToApi(network),
     data_plan: formatDataPlan(packageSize),
