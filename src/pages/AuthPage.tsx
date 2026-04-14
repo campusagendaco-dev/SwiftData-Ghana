@@ -97,7 +97,7 @@ const AuthPage = () => {
         <div className="text-center mb-6">
           <div className="flex items-center justify-center mb-4">
             <div className="w-16 h-16 rounded-full bg-[#162316] flex items-center justify-center shadow-lg">
-              <span className="text-white font-black text-[11px] text-center leading-tight">DATA<br/>HIVE</span>
+              <span className="text-white font-black text-[11px] text-center leading-tight">SWIFT<br/>DATA</span>
             </div>
           </div>
         </div>

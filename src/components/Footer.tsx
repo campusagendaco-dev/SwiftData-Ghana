@@ -26,10 +26,10 @@ const Footer = () => {
           <div>
             <div className="flex items-center gap-2.5 mb-4">
               <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0">
-                <span className="text-[#162316] font-black text-[9px] text-center leading-tight">DATA<br/>HIVE</span>
+                <span className="text-[#162316] font-black text-[9px] text-center leading-tight">SWIFT<br/>DATA</span>
               </div>
               <div>
-                <p className="text-white font-bold text-sm leading-none">DataHive GH</p>
+                <p className="text-white font-bold text-sm leading-none">SwiftData GH</p>
                 <p className="text-amber-400 text-[10px]">Data Reselling Platform</p>
               </div>
             </div>
@@ -54,7 +54,7 @@ const Footer = () => {
           <div>
             <h4 className="font-bold text-sm mb-3 text-amber-400">Contact</h4>
             <div className="space-y-2 text-sm text-white/70">
-              <p>support@datahiveghana.com</p>
+              <p>support@swiftdatagh.com</p>
               <p>{customerServiceNumber}</p>
               <a href={supportChannelLink} target="_blank" rel="noopener noreferrer" className="block hover:text-amber-400 transition-colors">
                 Join Support Channel
@@ -64,7 +64,7 @@ const Footer = () => {
           </div>
         </div>
         <div className="border-t border-white/10 pt-5 text-center text-sm text-white/50">
-          <p>&copy; 2026 DataHive Ghana. All rights reserved.</p>
+          <p>&copy; 2026 SwiftData Ghana. All rights reserved.</p>
           <p className="mt-1">Developed by Scqeel Technologies</p>
         </div>
       </div>

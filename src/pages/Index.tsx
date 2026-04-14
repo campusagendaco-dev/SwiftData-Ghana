@@ -101,7 +101,7 @@ const Index = () => {
       <section className="py-20 px-4">
         <div className="container mx-auto">
           <h2 className="font-display text-3xl md:text-4xl font-black text-center mb-4">
-            Why <span className="text-gradient">DataHive</span> Ghana?
+            Why <span className="text-gradient">SwiftData</span> Ghana?
           </h2>
           <p className="text-center text-muted-foreground mb-14 max-w-lg mx-auto">
             Everything you need to buy data or start your own data reselling business.

@@ -30,10 +30,10 @@ const Navbar = () => {
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center shrink-0">
-            <span className="text-[#162316] font-black text-[9px] text-center leading-tight">DATA<br/>HIVE</span>
+            <span className="text-[#162316] font-black text-[9px] text-center leading-tight">SWIFT<br/>DATA</span>
           </div>
           <div className="leading-tight">
-            <span className="text-white font-bold text-sm block leading-none">DataHive GH</span>
+            <span className="text-white font-bold text-sm block leading-none">SwiftData GH</span>
             <span className="text-amber-400 text-[10px] leading-none">Data Reselling Platform</span>
           </div>
         </Link>

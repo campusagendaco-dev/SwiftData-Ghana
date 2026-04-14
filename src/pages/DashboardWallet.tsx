@@ -196,7 +196,7 @@ const DashboardWallet = () => {
 
       const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
         body: {
-          email: profile?.email || `${user!.id}@agent.datahive.gh`,
+          email: profile?.email || `${user!.id}@agent.swiftdata.gh`,
           amount: totalPaystack,
           reference: orderId,
           callback_url: `${getAppBaseUrl()}/dashboard/wallet`,

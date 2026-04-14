@@ -52,10 +52,10 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         <div className="p-5 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shrink-0 shadow-md">
-              <span className="text-[#162316] font-black text-[10px] text-center leading-tight">DATA<br/>HIVE</span>
+              <span className="text-[#162316] font-black text-[10px] text-center leading-tight">SWIFT<br/>DATA</span>
             </div>
             <div>
-              <p className="text-white font-bold text-sm leading-tight">DataHive GH</p>
+              <p className="text-white font-bold text-sm leading-tight">SwiftData GH</p>
               <p className="text-white/50 text-xs">Agent Console</p>
             </div>
           </div>

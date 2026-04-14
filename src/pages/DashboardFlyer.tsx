@@ -110,7 +110,7 @@ body{font-family:'Poppins',sans-serif;background:#111;padding:24px;display:flex;
   <div class="footer">
     <a href="${storeUrl}" class="cta-btn">🛒 Order Now</a>
     ${contact ? `<p class="contact-text">${contact}</p>` : ''}
-    <p class="powered">Powered by DataHive Ghana</p>
+    <p class="powered">Powered by SwiftData Ghana</p>
   </div>
 </div>
 </body>
@@ -140,7 +140,7 @@ body{font-family:'Poppins',sans-serif;background:#111;padding:24px;display:flex;
 
       const flyerInfo = {
         storeName: profile.store_name,
-        storeUrl: profile.slug ? `https://datahiveghana.com/store/${profile.slug}` : 'https://datahiveghana.com',
+        storeUrl: profile.slug ? `https://swiftdatagh.com/store/${profile.slug}` : 'https://swiftdatagh.com',
         packages: pkgsByNetwork,
         networks,
         contact: profile.momo_number ? `Contact: ${profile.momo_number}` : '',
@@ -230,7 +230,7 @@ body{font-family:'Poppins',sans-serif;background:#111;padding:24px;display:flex;
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Store Info</h3>
               <div className="space-y-2 text-sm">
                 <p><span className="text-muted-foreground">Name:</span> <span className="font-semibold">{profile?.store_name || 'Not set'}</span></p>
-                <p><span className="text-muted-foreground">URL:</span> <span className="font-semibold">{profile?.slug ? `datahiveghana.com/store/${profile.slug}` : 'Not set'}</span></p>
+                <p><span className="text-muted-foreground">URL:</span> <span className="font-semibold">{profile?.slug ? `swiftdatagh.com/store/${profile.slug}` : 'Not set'}</span></p>
                 <p><span className="text-muted-foreground">Contact:</span> <span className="font-semibold">{profile?.momo_number || 'Not set'}</span></p>
               </div>
             </div>

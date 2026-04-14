@@ -14,7 +14,7 @@ const benefits = [
 ];
 
 const steps = [
-  "Create or sign in to your DataHive account",
+  "Create or sign in to your SwiftData account",
   "Click Request Approval below",
   "Pay GHS 20 activation fee via Paystack (MoMo or Card)",
   "Your account is automatically approved after payment",
@@ -97,7 +97,7 @@ const AgentProgram = () => {
       <div className="container mx-auto max-w-4xl">
         <div className="text-center mb-16">
           <h1 className="font-display text-3xl md:text-5xl font-black mb-4">
-            Become a <span className="text-gradient">DataHive Reseller</span>
+            Become a <span className="text-gradient">SwiftData Reseller</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
             Start your own data reselling business. Pay GHS 20 for instant activation, set your own prices, run a branded store, and earn from each order.

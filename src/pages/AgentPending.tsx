@@ -60,7 +60,7 @@ const AgentPending = () => {
 
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
-        email: profile.email || `${user.id}@agent.datahive.gh`,
+        email: profile.email || `${user.id}@agent.swiftdata.gh`,
         amount: ACTIVATION_TOTAL,
         reference: orderId,
         callback_url: `${getAppBaseUrl()}/agent/pending?reference=${orderId}`,

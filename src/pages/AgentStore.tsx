@@ -193,7 +193,7 @@ const AgentStore = () => {
 
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
-        email: `${phone.replace(/\s/g, "")}@customer.datahive.gh`,
+        email: `${phone.replace(/\s/g, "")}@customer.swiftdata.gh`,
         amount: total,
         reference: orderId,
         callback_url: `${getAppBaseUrl()}/order-status?reference=${orderId}`,
@@ -233,7 +233,7 @@ const AgentStore = () => {
         <div className="container mx-auto max-w-3xl flex items-center justify-between px-4 h-16">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center shrink-0">
-              <span className="text-[#162316] font-black text-[8px] text-center leading-tight">DATA<br/>HIVE</span>
+              <span className="text-[#162316] font-black text-[8px] text-center leading-tight">SWIFT<br/>DATA</span>
             </div>
             <h1 className="font-display text-lg font-bold text-white truncate">
               {agent.store_name}
@@ -417,7 +417,7 @@ const AgentStore = () => {
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
               Powered by
               <span className="inline-flex items-center gap-1 font-semibold text-foreground/50">
-                <Zap className="w-3 h-3 text-primary" /> DataHive Ghana
+                <Zap className="w-3 h-3 text-primary" /> SwiftData Ghana
               </span>
             </div>
             <div className="text-xs text-muted-foreground/60">
