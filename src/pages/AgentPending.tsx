@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 
-const ACTIVATION_FEE = 20;
+const ACTIVATION_FEE = 80;
 const PAYSTACK_FEE_RATE = 0.0195;
 const PAYSTACK_FEE_CAP = 100;
 const paystackFee = Math.min(ACTIVATION_FEE * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
