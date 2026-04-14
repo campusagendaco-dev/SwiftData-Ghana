@@ -148,7 +148,7 @@ const DashboardSubAgents = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="p-4 md:p-6 max-w-5xl space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold">Sub Agents</h1>
         <p className="text-muted-foreground text-sm mt-1">Manage your sub agent network, fees, and pricing.</p>
