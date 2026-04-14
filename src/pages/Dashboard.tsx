@@ -196,7 +196,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {packages.map((pkg) => {
           const displayPrice = getDisplayPrice(pkg.price);
-          const c = getNetworkCardColors(activeNetwork);
+          const c = getNetworkCardColors(apiNetwork);
           return (
             <div key={pkg.size} className={`${c.card} rounded-xl p-3 flex flex-col gap-2`}>
               <div className="flex justify-between items-start">
