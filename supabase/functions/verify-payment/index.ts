@@ -50,8 +50,8 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
     urls.add(`${clean}/${endpoint}`);
     urls.add(`${clean.replace(/\/api$/, "")}/api/${endpoint}`);
   } else {
-    urls.add(`${clean}/api/${endpoint}`);
     urls.add(`${clean}/${endpoint}`);
+    urls.add(`${clean}/api/${endpoint}`);
   }
 
   return Array.from(urls);
