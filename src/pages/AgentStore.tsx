@@ -9,7 +9,7 @@ import AfaOrderForm from "@/components/AfaOrderForm";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { getAppBaseUrl } from "@/lib/app-base-url";
-import { Menu, X, Users, Shield, AlertTriangle, Zap } from "lucide-react";
+import { Menu, X, Users, Shield, AlertTriangle, Zap, TrendingUp, ChevronRight } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +31,7 @@ interface AgentProfile {
   whatsapp_group_link: string | null;
   agent_prices: Record<string, any>;
   disabled_packages: Record<string, string[]>;
+  sub_agent_activation_markup: number | null;
 }
 
 interface GlobalPkgSetting {
@@ -58,13 +59,14 @@ const AgentStore = () => {
   const [pendingOrder, setPendingOrder] = useState<{ network: string; size: string; basePrice: number } | null>(null);
   const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>({});
   const [globalAfaPrice, setGlobalAfaPrice] = useState(DEFAULT_AFA_PRICE);
+  const [subAgentBaseFee, setSubAgentBaseFee] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchAgent = async () => {
-      const [agentRes, packageSettingsRes] = await Promise.all([
+      const [agentRes, packageSettingsRes, settingsRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages")
+          .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages, sub_agent_activation_markup")
           .eq("slug", slug)
           .eq("is_agent", true)
           .eq("onboarding_complete", true)
@@ -73,6 +75,11 @@ const AgentStore = () => {
         supabase
           .from("global_package_settings")
           .select("network, package_size, agent_price, public_price, is_unavailable"),
+        supabase
+          .from("system_settings")
+          .select("sub_agent_base_fee")
+          .eq("id", 1)
+          .maybeSingle(),
       ]);
 
       const gsMap: Record<string, GlobalPkgSetting> = {};
@@ -82,6 +89,15 @@ const AgentStore = () => {
       if (Number.isFinite(numericAfa) && numericAfa >= 0) {
         setGlobalAfaPrice(numericAfa);
       }
+
+      // Sub agent fee (gracefully handle if columns not yet in schema cache)
+      try {
+        const baseFee = Number(settingsRes.data?.sub_agent_base_fee);
+        const agentMarkup = Number((agentRes.data as any)?.sub_agent_activation_markup ?? 0);
+        if (Number.isFinite(baseFee) && baseFee > 0) {
+          setSubAgentBaseFee(baseFee + (Number.isFinite(agentMarkup) ? agentMarkup : 0));
+        }
+      } catch (_) { /* ignore if columns not available yet */ }
 
       if (agentRes.error || !agentRes.data) {
         setNotFound(true);
@@ -375,6 +391,54 @@ const AgentStore = () => {
               </div>
             </div>
           )}
+
+          {/* Sub Agent Recruitment Banner */}
+          <div className="mt-10 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-6 md:p-8">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-400/15 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-6 h-6 text-amber-500" />
+              </div>
+              <div className="flex-1">
+                <h2 className="font-display text-xl font-bold mb-1">Become a Sub Agent</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Get your own data reselling store under <strong>{agent.store_name || agent.full_name}</strong>.
+                  Start earning by selling data bundles to your own customers.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                  {[
+                    { icon: "🏪", label: "Your Own Store", desc: "Personalised store link for your customers" },
+                    { icon: "📊", label: "Full Dashboard", desc: "Orders, wallet, pricing — all in one place" },
+                    { icon: "💰", label: "Earn Income", desc: "Set your own margins and keep the profit" },
+                  ].map((b) => (
+                    <div key={b.label} className="rounded-xl bg-card border border-border p-3">
+                      <span className="text-xl">{b.icon}</span>
+                      <p className="font-semibold text-sm mt-1">{b.label}</p>
+                      <p className="text-xs text-muted-foreground">{b.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {subAgentBaseFee !== null ? (
+                    <p className="text-sm">
+                      Activation fee:{" "}
+                      <span className="font-bold text-foreground">GH&#8373; {subAgentBaseFee.toFixed(2)}</span>
+                      <span className="text-xs text-muted-foreground ml-1">+ processing fee</span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Contact agent for activation fee.</p>
+                  )}
+                  <a
+                    href={`/store/${slug}/sub-agent`}
+                    className="inline-flex items-center gap-2 bg-amber-400 hover:bg-amber-300 text-black font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shrink-0"
+                  >
+                    Join Now <ChevronRight className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
 
