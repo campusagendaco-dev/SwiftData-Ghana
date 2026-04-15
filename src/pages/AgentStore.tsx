@@ -66,7 +66,7 @@ const AgentStore = () => {
       const [agentRes, packageSettingsRes, settingsRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages, sub_agent_activation_markup")
+          .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages")
           .eq("slug", slug)
           .eq("is_agent", true)
           .eq("onboarding_complete", true)
@@ -90,14 +90,22 @@ const AgentStore = () => {
         setGlobalAfaPrice(numericAfa);
       }
 
-      // Sub agent fee (gracefully handle if columns not yet in schema cache)
+      // Sub agent fee: fetch separately to avoid schema cache issues
       try {
-        const baseFee = Number(settingsRes.data?.sub_agent_base_fee);
-        const agentMarkup = Number((agentRes.data as any)?.sub_agent_activation_markup ?? 0);
-        if (Number.isFinite(baseFee) && baseFee > 0) {
-          setSubAgentBaseFee(baseFee + (Number.isFinite(agentMarkup) ? agentMarkup : 0));
+        if (agentRes.data?.user_id) {
+          const { data: agentProfile } = await supabase
+            .from("profiles")
+            .select("sub_agent_activation_markup")
+            .eq("user_id", agentRes.data.user_id)
+            .maybeSingle();
+          
+          const baseFee = Number(settingsRes.data?.sub_agent_base_fee);
+          const agentMarkup = Number(agentProfile?.sub_agent_activation_markup ?? 0);
+          if (Number.isFinite(baseFee) && baseFee > 0) {
+            setSubAgentBaseFee(baseFee + (Number.isFinite(agentMarkup) ? agentMarkup : 0));
+          }
         }
-      } catch (_) { /* ignore if columns not available yet */ }
+      } catch (_) { /* gracefully skip if schema not ready */ }
 
       if (agentRes.error || !agentRes.data) {
         setNotFound(true);
