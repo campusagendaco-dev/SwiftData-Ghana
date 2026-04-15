@@ -96,11 +96,12 @@ const DashboardSubAgents = () => {
   const handleSaveMarkup = async () => {
     if (!user) return;
     setSavingMarkup(true);
-    const { data, error } = await supabase.functions.invoke("agent-sub-settings", {
-      body: { action: "set_markup", markup },
-    });
-    if (error || data?.error) {
-      toast({ title: "Failed to save", description: data?.error || error?.message, variant: "destructive" });
+    const { error } = await supabase
+      .from("profiles")
+      .update({ sub_agent_activation_markup: markup })
+      .eq("user_id", user.id);
+    if (error) {
+      toast({ title: "Failed to save", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Activation fee saved" });
       await refreshProfile();
@@ -111,11 +112,12 @@ const DashboardSubAgents = () => {
   const handleSavePrices = async () => {
     if (!user) return;
     setSavingPrices(true);
-    const { data, error } = await supabase.functions.invoke("agent-sub-settings", {
-      body: { action: "set_prices", prices: subAgentPrices },
-    });
-    if (error || data?.error) {
-      toast({ title: "Failed to save prices", description: data?.error || error?.message, variant: "destructive" });
+    const { error } = await supabase
+      .from("profiles")
+      .update({ sub_agent_prices: subAgentPrices })
+      .eq("user_id", user.id);
+    if (error) {
+      toast({ title: "Failed to save prices", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Sub agent prices saved" });
       await refreshProfile();
@@ -126,15 +128,17 @@ const DashboardSubAgents = () => {
   const handlePushPrices = async () => {
     if (!user || subAgents.length === 0) return;
     setPushingPrices(true);
-    const { data, error } = await supabase.functions.invoke("agent-sub-settings", {
-      body: { action: "push_prices", prices: subAgentPrices },
-    });
-    if (error || data?.error) {
-      toast({ title: "Push failed", description: data?.error || error?.message, variant: "destructive" });
-    } else if (data?.failed > 0) {
-      toast({ title: `Pushed to ${data.pushed}, ${data.failed} failed`, variant: "destructive" });
+    const updates = subAgents
+      .filter((sa) => sa.sub_agent_approved)
+      .map((sa) =>
+        supabase.from("profiles").update({ agent_prices: subAgentPrices }).eq("user_id", sa.user_id)
+      );
+    const results = await Promise.all(updates);
+    const failed = results.filter((r) => r.error).length;
+    if (failed > 0) {
+      toast({ title: `${failed} update(s) failed`, variant: "destructive" });
     } else {
-      toast({ title: `Prices pushed to ${data?.pushed ?? "all"} sub agent(s)` });
+      toast({ title: "Prices pushed to all sub agents" });
     }
     setPushingPrices(false);
   };
