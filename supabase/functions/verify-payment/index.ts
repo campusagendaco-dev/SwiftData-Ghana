@@ -241,7 +241,7 @@ serve(async (req) => {
 
   if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
-      status: 500,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -254,7 +254,7 @@ serve(async (req) => {
 
     if (!reference) {
       return new Response(JSON.stringify({ error: "Missing reference" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -326,7 +326,7 @@ serve(async (req) => {
     const verifyContentType = verifyRes.headers.get("content-type");
     if (!verifyContentType?.includes("application/json")) {
       return new Response(JSON.stringify({ status: order?.status || "unknown", error: "Verification failed" }), {
-        status: 502,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -521,7 +521,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("Verify payment error:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Internal error" }), {
-      status: 500,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

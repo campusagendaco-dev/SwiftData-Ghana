@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, RotateCcw, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 interface OrderRow {
   id: string;
@@ -57,7 +58,8 @@ const AdminOrders = () => {
       });
 
       if (error) {
-        toast({ title: "Retry failed", description: error.message, variant: "destructive" });
+        const description = await getFunctionErrorMessage(error, "Could not retry this order.");
+        toast({ title: "Retry failed", description, variant: "destructive" });
       } else if (data?.status === "fulfilled") {
         toast({ title: "Order fulfilled successfully!" });
       } else {
