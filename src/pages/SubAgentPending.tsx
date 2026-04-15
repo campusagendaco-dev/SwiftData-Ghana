@@ -6,9 +6,6 @@ import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { Loader2, CreditCard, Clock, Zap } from "lucide-react";
 
-const PAYSTACK_FEE_RATE = 0.0195;
-const PAYSTACK_FEE_CAP = 100;
-
 const SubAgentPending = () => {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -65,9 +62,7 @@ const SubAgentPending = () => {
     });
   }, [refreshProfile, navigate, toast]);
 
-  const totalFee = baseFee + parentMarkup;
-  const paystackFee = parseFloat(Math.min(totalFee * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP).toFixed(2));
-  const grandTotal = parseFloat((totalFee + paystackFee).toFixed(2));
+  const totalFee = parseFloat((baseFee + parentMarkup).toFixed(2));
 
   const handlePay = async () => {
     if (!user || !profile) return;
@@ -79,7 +74,7 @@ const SubAgentPending = () => {
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
         email: profile.email || `${user.id}@subagent.swiftdata.gh`,
-        amount: grandTotal,
+        amount: totalFee,
         reference: orderId,
         callback_url: `${getAppBaseUrl()}/sub-agent/pending?reference=${orderId}`,
         metadata: {
@@ -89,7 +84,7 @@ const SubAgentPending = () => {
           agent_id: user.id,
           parent_agent_id: parentId,
           base_amount: totalFee,
-          paystack_fee: paystackFee,
+          paystack_fee: 0,
           agent_profit: agentProfit,
         },
       },
@@ -150,18 +145,15 @@ const SubAgentPending = () => {
 
           <div className="space-y-1.5 text-sm border-t border-border pt-4">
             <div className="flex justify-between text-muted-foreground">
-              <span>Activation fee</span><span>GH₵ {baseFee.toFixed(2)}</span>
+              <span>Base fee</span><span>GH₵ {baseFee.toFixed(2)}</span>
             </div>
             {parentMarkup > 0 && (
               <div className="flex justify-between text-muted-foreground">
-                <span>Processing fee</span><span>GH₵ {parentMarkup.toFixed(2)}</span>
+                <span>Agent markup</span><span>GH₵ {parentMarkup.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between text-muted-foreground">
-              <span>Paystack fee</span><span>GH₵ {paystackFee.toFixed(2)}</span>
-            </div>
             <div className="flex justify-between font-bold text-foreground border-t border-border pt-1.5 mt-1.5">
-              <span>Total to pay</span><span>GH₵ {grandTotal.toFixed(2)}</span>
+              <span>Total to pay</span><span>GH₵ {totalFee.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -173,7 +165,7 @@ const SubAgentPending = () => {
             className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-bold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
           >
             {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-            {paying ? "Redirecting to Paystack..." : `Pay GH₵ ${grandTotal.toFixed(2)} to Activate`}
+            {paying ? "Redirecting to Paystack..." : `Pay GH₵ ${totalFee.toFixed(2)} to Activate`}
           </button>
 
           <button

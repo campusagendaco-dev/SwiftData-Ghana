@@ -285,7 +285,7 @@ const DashboardSubAgents = () => {
               </div>
               <div className="flex justify-between text-sm font-bold border-t border-border pt-3">
                 <span>Total sub agent pays</span>
-                <span>GH₵ {totalFee.toFixed(2)} + Paystack fee</span>
+                <span>GH₵ {totalFee.toFixed(2)}</span>
               </div>
             </div>
 

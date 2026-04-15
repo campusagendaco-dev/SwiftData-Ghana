@@ -11,9 +11,6 @@ interface ParentAgent {
   sub_agent_activation_markup: number;
 }
 
-const PAYSTACK_FEE_RATE = 0.0195;
-const PAYSTACK_FEE_CAP = 100;
-
 function generateSlug(name: string, parentSlug: string): string {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 20);
   const rand = Math.floor(Math.random() * 9000 + 1000);
@@ -89,9 +86,7 @@ const SubAgentSignup = () => {
   }
 
   const markup = Number(agent.sub_agent_activation_markup || 0);
-  const totalFee = baseFee + markup;
-  const paystackFee = parseFloat(Math.min(totalFee * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP).toFixed(2));
-  const grandTotal = parseFloat((totalFee + paystackFee).toFixed(2));
+  const totalFee = parseFloat((baseFee + markup).toFixed(2));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,14 +179,11 @@ const SubAgentSignup = () => {
               </div>
               {markup > 0 && (
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Processing fee</span><span>GH₵ {markup.toFixed(2)}</span>
+                  <span>Agent markup</span><span>GH₵ {markup.toFixed(2)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-muted-foreground">
-                <span>Paystack fee</span><span>GH₵ {paystackFee.toFixed(2)}</span>
-              </div>
               <div className="flex justify-between font-bold text-foreground border-t border-border pt-1.5 mt-1.5">
-                <span>Total</span><span>GH₵ {grandTotal.toFixed(2)}</span>
+                <span>Total</span><span>GH₵ {totalFee.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -260,7 +252,7 @@ const SubAgentSignup = () => {
               className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-bold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />}
-              {submitting ? "Creating account..." : `Create Account & Pay GH₵ ${grandTotal.toFixed(2)}`}
+              {submitting ? "Creating account..." : `Create Account & Pay GH₵ ${totalFee.toFixed(2)}`}
             </button>
           </form>
 
