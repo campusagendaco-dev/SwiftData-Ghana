@@ -46,6 +46,11 @@ const DashboardWallet = () => {
   const [recentTopups, setRecentTopups] = useState<WalletTopupRow[]>([]);
   const [referenceToVerify, setReferenceToVerify] = useState("");
 
+  const verifyHeaders = () => {
+    const anonKey = (supabase as any)?.supabaseKey as string | undefined;
+    return anonKey ? { Authorization: `Bearer ${anonKey}` } : undefined;
+  };
+
   // Fetch global package settings (admin-set agent prices)
   useEffect(() => {
     supabase.from("global_package_settings").select("*").then(({ data }) => {
@@ -103,7 +108,7 @@ const DashboardWallet = () => {
     const params = new URLSearchParams(window.location.search);
     const reference = params.get("reference") || params.get("trxref");
     if (reference) {
-      supabase.functions.invoke("verify-payment", { body: { reference } }).then(async (res) => {
+      supabase.functions.invoke("verify-payment", { body: { reference }, headers: verifyHeaders() }).then(async (res) => {
         const status = res.data?.status;
         if (status === "fulfilled") {
           toast({ title: "Wallet topped up successfully!" });
@@ -233,7 +238,7 @@ const DashboardWallet = () => {
       if (!pendingRows || pendingRows.length === 0) { toast({ title: "No pending deposits found" }); return; }
 
       const checks = await Promise.allSettled(
-        pendingRows.map((row) => supabase.functions.invoke("verify-payment", { body: { reference: row.id } })),
+        pendingRows.map((row) => supabase.functions.invoke("verify-payment", { body: { reference: row.id }, headers: verifyHeaders() })),
       );
 
       const fulfilledCount = checks.filter((result) => result.status === "fulfilled" && result.value?.data?.status === "fulfilled").length;
@@ -256,7 +261,7 @@ const DashboardWallet = () => {
     if (!reference) { toast({ title: "Enter a payment reference", variant: "destructive" }); return; }
     setSyncingDeposits(true);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-payment", { body: { reference } });
+      const { data, error } = await supabase.functions.invoke("verify-payment", { body: { reference }, headers: verifyHeaders() });
       if (error || data?.error) {
         toast({ title: "Verification failed", description: data?.error || error?.message || "Could not verify this reference.", variant: "destructive" });
       } else if (data?.status === "fulfilled") {

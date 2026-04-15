@@ -18,6 +18,11 @@ const SubAgentPending = () => {
   const [verifying, setVerifying] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
 
+  const verifyHeaders = () => {
+    const anonKey = (supabase as any)?.supabaseKey as string | undefined;
+    return anonKey ? { Authorization: `Bearer ${anonKey}` } : undefined;
+  };
+
   // Load fees + auto-verify on return from Paystack
   useEffect(() => {
     const load = async () => {
@@ -45,7 +50,7 @@ const SubAgentPending = () => {
     if (!reference) return;
 
     setVerifying(true);
-    supabase.functions.invoke("verify-payment", { body: { reference } }).then(async (res) => {
+    supabase.functions.invoke("verify-payment", { body: { reference }, headers: verifyHeaders() }).then(async (res) => {
       if (res.data?.status === "fulfilled") {
         toast({ title: "Activation successful!", description: "Welcome to the team!" });
         await refreshProfile();

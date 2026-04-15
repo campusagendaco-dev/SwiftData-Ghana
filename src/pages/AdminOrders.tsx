@@ -50,11 +50,17 @@ const AdminOrders = () => {
 
   useEffect(() => { fetchOrders(); }, []);
 
+  const verifyHeaders = () => {
+    const anonKey = (supabase as any)?.supabaseKey as string | undefined;
+    return anonKey ? { Authorization: `Bearer ${anonKey}` } : undefined;
+  };
+
   const handleRetry = async (orderId: string) => {
     setRetrying(orderId);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
         body: { reference: orderId },
+        headers: verifyHeaders(),
       });
 
       if (error) {

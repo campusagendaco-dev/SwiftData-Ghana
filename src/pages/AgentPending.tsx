@@ -21,13 +21,18 @@ const AgentPending = () => {
   const [verifying, setVerifying] = useState(false);
   const approvedButSetupIncomplete = Boolean(profile?.agent_approved && !profile?.onboarding_complete);
 
+  const verifyHeaders = () => {
+    const anonKey = (supabase as any)?.supabaseKey as string | undefined;
+    return anonKey ? { Authorization: `Bearer ${anonKey}` } : undefined;
+  };
+
   // Auto-verify on return from Paystack
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const reference = params.get("reference") || params.get("trxref");
     if (reference) {
       setVerifying(true);
-      supabase.functions.invoke("verify-payment", { body: { reference } }).then(async (res) => {
+      supabase.functions.invoke("verify-payment", { body: { reference }, headers: verifyHeaders() }).then(async (res) => {
         if (res.data?.status === "fulfilled") {
           toast({ title: "Activation successful!", description: "Your reseller account is now active." });
           await refreshProfile();

@@ -25,6 +25,11 @@ const OrderStatus = () => {
   const [notFound, setNotFound] = useState(false);
   const [verificationNote, setVerificationNote] = useState("");
 
+  const verifyHeaders = () => {
+    const anonKey = (supabase as any)?.supabaseKey as string | undefined;
+    return anonKey ? { Authorization: `Bearer ${anonKey}` } : undefined;
+  };
+
   const pollOrderStatus = async (ref: string, attempts = 20, delayMs = 3000) => {
     for (let i = 0; i < attempts; i++) {
       await new Promise(r => setTimeout(r, delayMs));
@@ -71,6 +76,7 @@ const OrderStatus = () => {
       try {
         const verifyPromise = supabase.functions.invoke("verify-payment", {
           body: { reference: ref },
+          headers: verifyHeaders(),
         });
         const verifyTimeout = new Promise<never>((_, reject) =>
           window.setTimeout(() => reject(new Error("verify-timeout")), 15000)
