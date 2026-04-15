@@ -46,7 +46,45 @@ const AuthCallback = () => {
 
       if (!mounted) return;
       setStatusText("Signed in. Redirecting...");
-      navigate(role === "agent" ? "/dashboard" : "/buy-data", { replace: true });
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        navigate(role === "agent" ? "/agent/login" : "/login", { replace: true });
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_sub_agent, sub_agent_approved, is_agent, agent_approved, onboarding_complete")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (profile?.is_sub_agent && !profile?.sub_agent_approved) {
+        navigate("/sub-agent/pending", { replace: true });
+        return;
+      }
+      if (profile?.is_sub_agent && profile?.sub_agent_approved) {
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+
+      if (profile?.is_agent && !profile?.agent_approved) {
+        navigate("/agent/pending", { replace: true });
+        return;
+      }
+      if (profile?.is_agent && profile?.agent_approved && !profile?.onboarding_complete) {
+        navigate("/onboarding", { replace: true });
+        return;
+      }
+      if (profile?.is_agent && profile?.agent_approved && profile?.onboarding_complete) {
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+
+      navigate(role === "agent" ? "/agent-program" : "/buy-data", { replace: true });
     };
 
     handleCallback();

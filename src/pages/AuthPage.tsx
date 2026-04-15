@@ -25,6 +25,30 @@ const AuthPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const getPostLoginRoute = async (selectedRole: Role) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return selectedRole === "reseller" ? "/agent/login" : "/buy-data";
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_sub_agent, sub_agent_approved, is_agent, agent_approved, onboarding_complete")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    // Sub-agent pending users must always continue activation payment.
+    if (profile?.is_sub_agent && !profile?.sub_agent_approved) return "/sub-agent/pending";
+    if (profile?.is_sub_agent && profile?.sub_agent_approved) return "/dashboard";
+
+    if (profile?.is_agent && !profile?.agent_approved) return "/agent/pending";
+    if (profile?.is_agent && profile?.agent_approved && !profile?.onboarding_complete) return "/onboarding";
+    if (profile?.is_agent && profile?.agent_approved && profile?.onboarding_complete) return "/dashboard";
+
+    return selectedRole === "reseller" ? "/agent-program" : "/buy-data";
+  };
+
   const resetForm = () => {
     setEmail("");
     setPassword("");
@@ -68,7 +92,8 @@ const AuthPage = () => {
       if (error) {
         toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
       } else {
-        navigate(role === "reseller" ? "/agent/pending" : "/buy-data");
+        const route = await getPostLoginRoute(role);
+        navigate(route);
       }
     }
     setLoading(false);

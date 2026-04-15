@@ -15,6 +15,9 @@ interface UserRow {
   is_agent: boolean;
   agent_approved: boolean;
   onboarding_complete: boolean;
+  is_sub_agent: boolean;
+  sub_agent_approved: boolean;
+  parent_agent_id: string | null;
   created_at: string;
 }
 
@@ -24,7 +27,7 @@ const AdminUsers = () => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [actionLoading, setActionLoading] = useState<Record<string, "reset" | "delete" | null>>({});
+  const [actionLoading, setActionLoading] = useState<Record<string, "reset" | "delete" | "approve-sub" | null>>({});
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -44,8 +47,66 @@ const AdminUsers = () => {
       .some((v) => v.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const setRowAction = (userId: string, action: "reset" | "delete" | null) => {
+  const setRowAction = (userId: string, action: "reset" | "delete" | "approve-sub" | null) => {
     setActionLoading((prev) => ({ ...prev, [userId]: action }));
+  };
+
+  const handleApproveSubAgent = async (row: UserRow) => {
+    if (!row.parent_agent_id) {
+      toast({
+        title: "Missing parent agent",
+        description: "Cannot approve this sub-agent because parent agent is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRowAction(row.user_id, "approve-sub");
+
+    // Pull parent-configured sub-agent prices to initialize the sub-agent store.
+    const { data: parent, error: parentErr } = await supabase
+      .from("profiles")
+      .select("sub_agent_prices")
+      .eq("user_id", row.parent_agent_id)
+      .maybeSingle();
+
+    if (parentErr) {
+      toast({ title: "Failed to load parent prices", description: parentErr.message, variant: "destructive" });
+      setRowAction(row.user_id, null);
+      return;
+    }
+
+    const parentSubAgentPrices = (parent?.sub_agent_prices && typeof parent.sub_agent_prices === "object")
+      ? parent.sub_agent_prices
+      : {};
+
+    // Admin approval bypasses payment and enables immediate dashboard access.
+    const { error: approveErr } = await supabase
+      .from("profiles")
+      .update({
+        is_agent: true,
+        agent_approved: true,
+        onboarding_complete: true,
+        sub_agent_approved: true,
+        agent_prices: parentSubAgentPrices,
+      })
+      .eq("user_id", row.user_id);
+
+    if (approveErr) {
+      toast({ title: "Failed to approve sub-agent", description: approveErr.message, variant: "destructive" });
+      setRowAction(row.user_id, null);
+      return;
+    }
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.user_id === row.user_id
+          ? { ...u, is_agent: true, agent_approved: true, onboarding_complete: true, sub_agent_approved: true }
+          : u
+      )
+    );
+    toast({ title: "Sub-agent approved", description: "Payment bypassed. User can now access dashboard." });
+    setRowAction(row.user_id, null);
   };
 
   const handleResetPassword = async (row: UserRow) => {
@@ -153,7 +214,14 @@ const AdminUsers = () => {
                   <td className="p-4 font-medium">{user.full_name || "—"}</td>
                   <td className="p-4 text-muted-foreground">{user.email}</td>
                   <td className="p-4">
-                    {user.is_agent ? (
+                    {user.is_sub_agent ? (
+                      <Badge className={user.sub_agent_approved
+                        ? "bg-green-500/20 text-green-400 border-green-500/30"
+                        : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                      }>
+                        {user.sub_agent_approved ? "Sub Agent (Approved)" : "Sub Agent (Pending Payment)"}
+                      </Badge>
+                    ) : user.is_agent ? (
                       <Badge className={user.agent_approved 
                         ? "bg-green-500/20 text-green-400 border-green-500/30" 
                         : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
@@ -193,6 +261,19 @@ const AdminUsers = () => {
                           "Delete"
                         )}
                       </Button>
+                      {user.is_sub_agent && !user.sub_agent_approved && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleApproveSubAgent(user)}
+                          disabled={!!actionLoading[user.user_id]}
+                        >
+                          {actionLoading[user.user_id] === "approve-sub" ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "Approve Sub-Agent"
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
