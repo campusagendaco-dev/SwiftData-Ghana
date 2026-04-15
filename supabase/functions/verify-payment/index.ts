@@ -16,7 +16,12 @@ function getFirstEnvValue(keys: string[]): string {
 
 function mapNetworkKey(network: string): string {
   const normalized = network.trim().toUpperCase();
-  if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO" || normalized === "AT") return "AT_PREMIUM";
+  if (
+    normalized === "AIRTELTIGO" ||
+    normalized === "AIRTEL TIGO" ||
+    normalized === "AIRTEL-TIGO" ||
+    normalized === "AT"
+  ) return "AT_PREMIUM";
   if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
   if (normalized === "MTN") return "YELLO";
   return normalized;
