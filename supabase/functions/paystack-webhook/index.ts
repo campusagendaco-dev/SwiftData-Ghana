@@ -188,8 +188,12 @@ async function callProviderApi(
   apiKey: string,
   endpoint: "purchase" | "afa-registration",
   body: Record<string, unknown>,
+  providerWebhookUrl = "",
 ): Promise<ProviderResult> {
   const urls = buildProviderUrls(baseUrl, endpoint);
+  const requestBody = endpoint === "purchase" && providerWebhookUrl && !Object.prototype.hasOwnProperty.call(body, "webhook_url")
+    ? { ...body, webhook_url: providerWebhookUrl }
+    : body;
 
   let lastFailure: ProviderResult = {
     ok: false,
@@ -213,7 +217,7 @@ async function callProviderApi(
             "X-API-Key": apiKey,
             "User-Agent": "DataHiveGH/1.0",
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         });
 
@@ -297,6 +301,11 @@ serve(async (req) => {
     "DATA_PROVIDER_PRIMARY_BASE_URL",
     "DATA_PROVIDER_SECONDARY_BASE_URL",
   ]).replace(/\/+$/, "");
+  const DATA_PROVIDER_WEBHOOK_URL = getFirstEnvValue([
+    "DATA_PROVIDER_WEBHOOK_URL",
+    "PRIMARY_DATA_PROVIDER_WEBHOOK_URL",
+    "SECONDARY_DATA_PROVIDER_WEBHOOK_URL",
+  ]);
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -497,6 +506,7 @@ serve(async (req) => {
         recipient: normalizeRecipient(customerPhone),
         capacity: parseCapacity(packageSize),
       },
+      DATA_PROVIDER_WEBHOOK_URL,
     );
 
     console.log("Webhook data fulfillment response:", {

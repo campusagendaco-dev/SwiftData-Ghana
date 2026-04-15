@@ -231,13 +231,17 @@ async function placeDataOrder(
   network: string,
   packageSize: string,
   customerPhone: string,
+  providerWebhookUrl: string,
 ): Promise<ProviderResult> {
   const urls = buildProviderUrls(baseUrl, "purchase");
-  const requestBody = {
+  const requestBody: Record<string, unknown> = {
     networkKey: mapNetworkKey(network),
     recipient: normalizeRecipient(customerPhone),
     capacity: parseCapacity(packageSize),
   };
+  if (providerWebhookUrl) {
+    requestBody.webhook_url = providerWebhookUrl;
+  }
   console.log("Provider request body:", requestBody);
 
   let lastFailure: ProviderResult = {
@@ -337,6 +341,11 @@ serve(async (req) => {
     "DATA_PROVIDER_PRIMARY_BASE_URL",
     "DATA_PROVIDER_SECONDARY_BASE_URL",
   ]).replace(/\/+$/, "");
+  const DATA_PROVIDER_WEBHOOK_URL = getFirstEnvValue([
+    "DATA_PROVIDER_WEBHOOK_URL",
+    "PRIMARY_DATA_PROVIDER_WEBHOOK_URL",
+    "SECONDARY_DATA_PROVIDER_WEBHOOK_URL",
+  ]);
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY || !DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
@@ -460,7 +469,14 @@ serve(async (req) => {
 
     console.log("Wallet buy data:", { orderId, network, package_size, customer_phone });
 
-    const fulfillmentResult = await placeDataOrder(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, network, package_size, customer_phone);
+    const fulfillmentResult = await placeDataOrder(
+      DATA_PROVIDER_BASE_URL,
+      DATA_PROVIDER_API_KEY,
+      network,
+      package_size,
+      customer_phone,
+      DATA_PROVIDER_WEBHOOK_URL,
+    );
     console.log("Fulfillment response:", {
       orderId,
       status: fulfillmentResult.status,
