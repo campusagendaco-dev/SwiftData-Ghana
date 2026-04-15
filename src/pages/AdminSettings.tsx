@@ -43,7 +43,8 @@ const defaultSettings: SystemSettings = {
 };
 
 const toUiSettings = (data: any): SystemSettings => ({
-  active_api_source: data?.active_api_source === "secondary" ? "secondary" : "primary",
+  active_api_source:
+    data?.active_api_source === "secondary" || data?.preferred_provider === "secondary" ? "secondary" : "primary",
   secondary_price_markup_pct: Number(data?.secondary_price_markup_pct ?? 8.11) || 8.11,
   auto_api_switch: Boolean(data?.auto_api_switch),
   preferred_provider: data?.preferred_provider === "secondary" ? "secondary" : "primary",
@@ -79,7 +80,7 @@ const AdminSettings = () => {
     // Fallback: direct table read if Edge Function is unreachable.
     const { data: row, error: rowError } = await supabase
       .from("system_settings")
-      .select("auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link")
+      .select("auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, sub_agent_base_fee")
       .eq("id", 1)
       .maybeSingle();
 
