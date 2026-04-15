@@ -19,6 +19,14 @@ const BASE_PACKAGE_PRICES: Record<string, Record<string, number>> = {
   },
 };
 
+function getFirstEnvValue(keys: string[]): string {
+  for (const key of keys) {
+    const value = Deno.env.get(key)?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function normalizeNetworkForPricing(network: string): "MTN" | "Telecel" | "AirtelTigo" {
   const normalized = network.trim().toUpperCase();
   if (normalized === "AT" || normalized === "AIRTEL TIGO" || normalized === "AIRTELTIGO") return "AirtelTigo";
@@ -254,8 +262,20 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-  const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY")?.trim();
-  const DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
+  const DATA_PROVIDER_API_KEY = getFirstEnvValue([
+    "DATA_PROVIDER_API_KEY",
+    "PRIMARY_DATA_PROVIDER_API_KEY",
+    "SECONDARY_DATA_PROVIDER_API_KEY",
+    "DATA_PROVIDER_PRIMARY_API_KEY",
+    "DATA_PROVIDER_SECONDARY_API_KEY",
+  ]);
+  const DATA_PROVIDER_BASE_URL = getFirstEnvValue([
+    "DATA_PROVIDER_BASE_URL",
+    "PRIMARY_DATA_PROVIDER_BASE_URL",
+    "SECONDARY_DATA_PROVIDER_BASE_URL",
+    "DATA_PROVIDER_PRIMARY_BASE_URL",
+    "DATA_PROVIDER_SECONDARY_BASE_URL",
+  ]).replace(/\/+$/, "");
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY || !DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {

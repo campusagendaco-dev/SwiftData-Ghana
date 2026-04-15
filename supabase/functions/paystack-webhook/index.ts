@@ -7,6 +7,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function getFirstEnvValue(keys: string[]): string {
+  for (const key of keys) {
+    const value = Deno.env.get(key)?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function mapNetworkKey(network: string): string {
   const normalized = network.trim().toUpperCase();
   if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO" || normalized === "AT") return "AT_PREMIUM";
@@ -215,8 +223,20 @@ serve(async (req) => {
   }
 
   const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
-  const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY")?.trim();
-  const DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL")?.trim().replace(/\/+$/, "");
+  const DATA_PROVIDER_API_KEY = getFirstEnvValue([
+    "DATA_PROVIDER_API_KEY",
+    "PRIMARY_DATA_PROVIDER_API_KEY",
+    "SECONDARY_DATA_PROVIDER_API_KEY",
+    "DATA_PROVIDER_PRIMARY_API_KEY",
+    "DATA_PROVIDER_SECONDARY_API_KEY",
+  ]);
+  const DATA_PROVIDER_BASE_URL = getFirstEnvValue([
+    "DATA_PROVIDER_BASE_URL",
+    "PRIMARY_DATA_PROVIDER_BASE_URL",
+    "SECONDARY_DATA_PROVIDER_BASE_URL",
+    "DATA_PROVIDER_PRIMARY_BASE_URL",
+    "DATA_PROVIDER_SECONDARY_BASE_URL",
+  ]).replace(/\/+$/, "");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 

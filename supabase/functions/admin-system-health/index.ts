@@ -109,12 +109,24 @@ serve(async (req) => {
       },
       {
         key: "DATA_PROVIDER_API_KEY",
-        present: !!Deno.env.get("DATA_PROVIDER_API_KEY"),
+        present: !!(
+          Deno.env.get("DATA_PROVIDER_API_KEY") ||
+          Deno.env.get("PRIMARY_DATA_PROVIDER_API_KEY") ||
+          Deno.env.get("SECONDARY_DATA_PROVIDER_API_KEY") ||
+          Deno.env.get("DATA_PROVIDER_PRIMARY_API_KEY") ||
+          Deno.env.get("DATA_PROVIDER_SECONDARY_API_KEY")
+        ),
         required_for: ["data/AFA fulfillment in verify-payment and webhook"],
       },
       {
         key: "DATA_PROVIDER_BASE_URL",
-        present: !!Deno.env.get("DATA_PROVIDER_BASE_URL"),
+        present: !!(
+          Deno.env.get("DATA_PROVIDER_BASE_URL") ||
+          Deno.env.get("PRIMARY_DATA_PROVIDER_BASE_URL") ||
+          Deno.env.get("SECONDARY_DATA_PROVIDER_BASE_URL") ||
+          Deno.env.get("DATA_PROVIDER_PRIMARY_BASE_URL") ||
+          Deno.env.get("DATA_PROVIDER_SECONDARY_BASE_URL")
+        ),
         required_for: ["data/AFA fulfillment endpoint host in verify-payment, webhook, and wallet-buy-data"],
       },
       {
