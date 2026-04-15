@@ -217,6 +217,38 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+async function sendPaymentSms(customerPhone: string) {
+  const smsApiKey = getFirstEnvValue(["TXTCONNECT_API_KEY"]);
+  const smsUrl = getFirstEnvValue(["TXTCONNECT_SMS_URL"]) || "https://api.txtconnect.net/dev/api/sms/send";
+  const senderId = getFirstEnvValue(["TXTCONNECT_SENDER_ID"]) || "SwiftDataGh";
+  const smsType = getFirstEnvValue(["TXTCONNECT_SMS_TYPE"]) || "regular";
+
+  if (!smsApiKey || !customerPhone.trim()) return;
+
+  try {
+    const res = await fetch(smsUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${smsApiKey}`,
+      },
+      body: JSON.stringify({
+        to: customerPhone.trim(),
+        from: senderId,
+        unicode: smsType,
+        sms: "Your data bundle is being processed. Thanks for choosing SwiftData GH",
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("SMS send failed:", res.status, text.slice(0, 300));
+    }
+  } catch (error) {
+    console.error("SMS send error:", error);
+  }
+}
+
 function getProviderFailureReason(status: number, body: string, contentType: string | null): string {
   let parsedMessage: string | null = null;
 
@@ -512,6 +544,9 @@ serve(async (req) => {
     const agentId = order?.agent_id || metadata.agent_id;
     const paidAmount = Number(order?.amount || (verifyData.data.amount / 100));
 
+    let shouldSendDataPaymentSms = false;
+    let smsPhone = "";
+
     if (!order) {
       console.log("Recreating order from Paystack metadata:", { reference, orderType, agentId });
       const walletCredit = Number(metadata.wallet_credit || metadata.amount || paidAmount);
@@ -526,8 +561,16 @@ serve(async (req) => {
         package_size: metadata.package_size || null,
         customer_phone: metadata.customer_phone || null,
       });
+      shouldSendDataPaymentSms = (orderType || "") === "data";
+      smsPhone = String(metadata.customer_phone || "");
     } else if (order?.status === "pending") {
       await supabase.from("orders").update({ status: "paid", failure_reason: null }).eq("id", reference);
+      shouldSendDataPaymentSms = (orderType || order?.order_type || "") === "data";
+      smsPhone = String(order?.customer_phone || metadata.customer_phone || "");
+    }
+
+    if (shouldSendDataPaymentSms && smsPhone) {
+      await sendPaymentSms(smsPhone);
     }
 
     console.log("Payment verified for:", reference, "type:", orderType);

@@ -267,6 +267,38 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+async function sendPaymentSms(customerPhone: string) {
+  const smsApiKey = getFirstEnvValue(["TXTCONNECT_API_KEY"]);
+  const smsUrl = getFirstEnvValue(["TXTCONNECT_SMS_URL"]) || "https://api.txtconnect.net/dev/api/sms/send";
+  const senderId = getFirstEnvValue(["TXTCONNECT_SENDER_ID"]) || "SwiftDataGh";
+  const smsType = getFirstEnvValue(["TXTCONNECT_SMS_TYPE"]) || "regular";
+
+  if (!smsApiKey || !customerPhone.trim()) return;
+
+  try {
+    const res = await fetch(smsUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${smsApiKey}`,
+      },
+      body: JSON.stringify({
+        to: customerPhone.trim(),
+        from: senderId,
+        unicode: smsType,
+        sms: "Your data bundle is being processed. Thanks for choosing SwiftData GH",
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("SMS send failed:", res.status, text.slice(0, 300));
+    }
+  } catch (error) {
+    console.error("SMS send error:", error);
+  }
+}
+
 function getProviderFailureReason(status: number, body: string, contentType: string | null): string {
   let parsedMessage: string | null = null;
 
@@ -576,6 +608,8 @@ serve(async (req) => {
       status: "paid",
       failure_reason: null,
     });
+
+    await sendPaymentSms(customer_phone);
 
     console.log("Wallet buy data:", { orderId, network, package_size, customer_phone });
 
