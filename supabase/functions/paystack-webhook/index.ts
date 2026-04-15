@@ -55,11 +55,32 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
     urls.add(`${clean}/${endpoint}`);
     urls.add(`${clean.replace(/\/api$/, "")}/api/${endpoint}`);
   } else {
-    urls.add(`${clean}/${endpoint}`);
     urls.add(`${clean}/api/${endpoint}`);
+    urls.add(`${clean}/${endpoint}`);
   }
 
   return Array.from(urls);
+}
+
+function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string } {
+  if (isHtmlResponse(contentType, body)) {
+    return { ok: false, reason: "Provider returned an HTML response. Check API URL configuration." };
+  }
+
+  try {
+    const parsed = JSON.parse(body);
+    const status = String(parsed?.status || "").toLowerCase();
+    const message = typeof parsed?.message === "string" ? parsed.message : undefined;
+
+    if (status === "success") return { ok: true };
+    if (status === "error" || status === "failed" || status === "failure") {
+      return { ok: false, reason: message || "Provider rejected this order." };
+    }
+  } catch {
+    // Non-JSON responses are handled below.
+  }
+
+  return { ok: true };
 }
 
 function isHtmlResponse(contentType: string | null, body: string): boolean {
@@ -169,7 +190,14 @@ async function callProviderApi(
         const text = await response.text();
 
         if (response.ok) {
-          return { ok: true, status: response.status, body: text, reason: "", url };
+          const semantic = parseProviderResponse(text, contentType);
+          if (semantic.ok) {
+            return { ok: true, status: response.status, body: text, reason: "", url };
+          }
+
+          const reason = semantic.reason || "Provider rejected this order.";
+          lastFailure = { ok: false, status: response.status, body: text, reason, url };
+          return lastFailure;
         }
 
         const reason = getProviderFailureReason(response.status, text, contentType);

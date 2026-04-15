@@ -104,6 +104,28 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   return Array.from(urls);
 }
 
+function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string } {
+  if (isHtmlResponse(contentType, body)) {
+    return { ok: false, reason: "Provider returned an HTML response. Check API URL configuration." };
+  }
+
+  try {
+    const parsed = JSON.parse(body);
+    const status = String(parsed?.status || "").toLowerCase();
+    const message = typeof parsed?.message === "string" ? parsed.message : undefined;
+
+    if (status === "success") return { ok: true };
+    if (status === "error" || status === "failed" || status === "failure") {
+      return { ok: false, reason: message || "Provider rejected this order." };
+    }
+  } catch {
+    // Non-JSON responses are handled below.
+  }
+
+  // If provider doesn't include a status field but responded with 2xx JSON/text, treat as success.
+  return { ok: true };
+}
+
 function isHtmlResponse(contentType: string | null, body: string): boolean {
   const preview = body.trim().slice(0, 200).toLowerCase();
   return Boolean(
@@ -218,7 +240,14 @@ async function placeDataOrder(
         const body = await response.text();
 
         if (response.ok) {
-          return { ok: true, status: response.status, body, reason: "", url };
+          const semantic = parseProviderResponse(body, contentType);
+          if (semantic.ok) {
+            return { ok: true, status: response.status, body, reason: "", url };
+          }
+
+          const reason = semantic.reason || "Provider rejected this order.";
+          lastFailure = { ok: false, status: response.status, body, reason, url };
+          return lastFailure;
         }
 
         const reason = getProviderFailureReason(response.status, body, contentType);
