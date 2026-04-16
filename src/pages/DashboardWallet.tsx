@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wallet, Loader2, Send, Copy, Check, Smartphone } from "lucide-react";
+import { Wallet, Loader2, Send, CreditCard } from "lucide-react";
 import { basePackages, networks, getPublicPrice } from "@/lib/data";
 
 interface WalletTopupRow {
@@ -34,7 +34,6 @@ const DashboardWallet = () => {
   const [balance, setBalance] = useState(0);
   const [availableProfit, setAvailableProfit] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
   const [priceMultiplier, setPriceMultiplier] = useState(1);
 
@@ -46,7 +45,8 @@ const DashboardWallet = () => {
   const [buying, setBuying] = useState(false);
   const [syncingDeposits, setSyncingDeposits] = useState(false);
   const [recentTopups, setRecentTopups] = useState<WalletTopupRow[]>([]);
-  const [referenceToVerify, setReferenceToVerify] = useState("");
+  const [topupAmount, setTopupAmount] = useState("");
+  const [toppingUp, setToppingUp] = useState(false);
 
   const verifyHeaders = () => {
     const anonKey = (supabase as any)?.supabaseKey as string | undefined;
@@ -136,13 +136,30 @@ const DashboardWallet = () => {
     }
   }, [fetchBalance, fetchRecentTopups, toast]);
 
-  const topupReference = (profile as any)?.topup_reference || "------";
+  const handlePaystackTopup = async () => {
+    const amount = Number(topupAmount);
+    if (!Number.isFinite(amount) || amount < 1) {
+      toast({ title: "Enter a valid top-up amount (minimum GHS 1)", variant: "destructive" });
+      return;
+    }
 
-  const copyReference = () => {
-    navigator.clipboard.writeText(topupReference);
-    setCopied(true);
-    toast({ title: "Reference copied!" });
-    setTimeout(() => setCopied(false), 2000);
+    setToppingUp(true);
+    const { data, error } = await supabase.functions.invoke("wallet-topup", {
+      body: {
+        amount,
+        wallet_credit: amount,
+        callback_url: `${getAppBaseUrl()}/dashboard/wallet`,
+      },
+    });
+
+    if (error || !data?.authorization_url) {
+      const description = data?.error || await getFunctionErrorMessage(error, "Could not initialize wallet top-up.");
+      toast({ title: "Top-up failed", description, variant: "destructive" });
+      setToppingUp(false);
+      return;
+    }
+
+    window.location.href = data.authorization_url;
   };
 
   // Build packages list using agent prices
@@ -259,36 +276,16 @@ const DashboardWallet = () => {
     }
   };
 
-  const handleVerifyByReference = async () => {
-    const reference = referenceToVerify.trim();
-    if (!reference) { toast({ title: "Enter a payment reference", variant: "destructive" }); return; }
-    setSyncingDeposits(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("verify-payment", { body: { reference }, headers: verifyHeaders() });
-      if (error || data?.error) {
-        toast({ title: "Verification failed", description: data?.error || error?.message || "Could not verify this reference.", variant: "destructive" });
-      } else if (data?.status === "fulfilled") {
-        toast({ title: "Deposit verified and credited!" });
-      } else {
-        toast({ title: "Verification completed", description: `Current status: ${data?.status || "unknown"}` });
-      }
-      await fetchBalance();
-      await fetchRecentTopups();
-    } finally {
-      setSyncingDeposits(false);
-    }
-  };
-
   if (loading) return <div className="text-muted-foreground p-8">Loading...</div>;
 
   return (
     <div className="space-y-6 p-6 md:p-8 max-w-4xl">
       <h1 className="font-display text-2xl font-black">Reseller Wallet</h1>
       <p className="text-sm text-muted-foreground -mt-3">
-        Reseller store orders do not require pre-funding. Wallet is optional for your own dashboard purchases and top-ups.
+        Top up with Paystack instantly, then use your wallet balance to buy data directly from your dashboard.
       </p>
 
-      {/* Balance + Topup Reference */}
+      {/* Balance + Paystack Topup */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card className="border-primary/30 bg-primary/5">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -308,65 +305,32 @@ const DashboardWallet = () => {
         </Card>
 
         <Card className="border-accent/30 bg-accent/5">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-accent-foreground">Topup Reference</CardTitle>
-            <button onClick={copyReference} className="p-1 rounded hover:bg-secondary transition-colors">
-              {copied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
-            </button>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-accent-foreground">Top Up with Paystack</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="font-display text-3xl font-black tracking-[0.3em] text-foreground">{topupReference}</p>
-            <p className="text-xs text-muted-foreground mt-1">Use this code as payment reference when sending MoMo</p>
+          <CardContent className="space-y-3">
+            <Label htmlFor="topup-amount" className="text-xs text-muted-foreground">Amount (GHS)</Label>
+            <Input
+              id="topup-amount"
+              type="number"
+              min="1"
+              step="0.01"
+              placeholder="e.g. 50"
+              value={topupAmount}
+              onChange={(e) => setTopupAmount(e.target.value)}
+              className="bg-secondary"
+            />
+            <Button onClick={handlePaystackTopup} disabled={toppingUp} className="w-full gap-2">
+              {toppingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+              {toppingUp ? "Initializing..." : "Top Up Now"}
+            </Button>
           </CardContent>
         </Card>
       </div>
 
-      {/* MoMo Top Up Instructions */}
-      <Card className="border-yellow-500/30 bg-yellow-500/5">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Smartphone className="w-5 h-5 text-yellow-600" />
-            How to Top Up Your Wallet
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Send your desired top-up amount via Mobile Money to the number below.
-            <strong className="text-foreground"> Use your Topup Reference ({topupReference}) as the payment reference.</strong>
-          </p>
-          <div className="bg-card border border-border rounded-xl p-4 space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">MoMo Number</span>
-              <span className="font-bold text-foreground text-lg">0246360392</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Account Name</span>
-              <span className="font-semibold text-foreground">MANFRED SUNU SENYO KWAME</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Network</span>
-              <span className="font-semibold text-yellow-600">MTN</span>
-            </div>
-          </div>
-          <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
-            <p className="text-xs text-destructive font-medium">
-              Warning: Always include your Topup Reference <strong>({topupReference})</strong> as the payment reference.
-              After sending, the admin will verify and credit your wallet.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader><CardTitle className="text-lg">Recent Deposits</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input value={referenceToVerify} onChange={(e) => setReferenceToVerify(e.target.value)} placeholder="Paste Paystack/reference ID to verify" className="bg-secondary" />
-            <Button variant="outline" onClick={handleVerifyByReference} disabled={syncingDeposits}>
-              {syncingDeposits ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Verify This Reference
-            </Button>
-          </div>
           {recentTopups.length === 0 ? (
             <p className="text-sm text-muted-foreground">No deposit history yet.</p>
           ) : (
