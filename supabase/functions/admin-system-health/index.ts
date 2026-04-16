@@ -130,19 +130,24 @@ serve(async (req) => {
         required_for: ["data/AFA fulfillment endpoint host in verify-payment, webhook, and wallet-buy-data"],
       },
       {
-        key: "TWILIO_ACCOUNT_SID",
-        present: !!Deno.env.get("TWILIO_ACCOUNT_SID"),
-        required_for: ["admin-send-sms"],
+        key: "TXTCONNECT_API_KEY",
+        present: !!Deno.env.get("TXTCONNECT_API_KEY"),
+        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
       },
       {
-        key: "TWILIO_AUTH_TOKEN",
-        present: !!Deno.env.get("TWILIO_AUTH_TOKEN"),
-        required_for: ["admin-send-sms"],
+        key: "TXTCONNECT_SMS_URL",
+        present: !!Deno.env.get("TXTCONNECT_SMS_URL"),
+        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
       },
       {
-        key: "TWILIO_FROM_NUMBER",
-        present: !!Deno.env.get("TWILIO_FROM_NUMBER"),
-        required_for: ["admin-send-sms"],
+        key: "TXTCONNECT_SENDER_ID",
+        present: !!Deno.env.get("TXTCONNECT_SENDER_ID"),
+        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
+      },
+      {
+        key: "TXTCONNECT_SMS_TYPE",
+        present: !!Deno.env.get("TXTCONNECT_SMS_TYPE"),
+        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
       },
       {
         key: "SITE_URL",
@@ -160,6 +165,7 @@ serve(async (req) => {
       { table: "notifications", probeColumn: "id" },
       { table: "maintenance_settings", probeColumn: "id" },
       { table: "global_package_settings", probeColumn: "id" },
+      { table: "system_settings", probeColumn: "id" },
     ];
 
     const tableChecks: TableCheck[] = [];
@@ -188,6 +194,7 @@ serve(async (req) => {
       "admin-send-sms",
       "admin-system-health",
       "maintenance-mode",
+      "system-settings",
     ];
 
     const functionChecks: FunctionCheck[] = [];
