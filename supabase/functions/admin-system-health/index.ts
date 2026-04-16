@@ -33,55 +33,17 @@ serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured: missing Supabase env" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const supabaseUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
 
   try {
-    const {
-      data: { user: actor },
-      error: actorError,
-    } = await supabaseUser.auth.getUser();
-
-    if (actorError || !actor) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: roles } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", actor.id)
-      .eq("role", "admin")
-      .limit(1);
-
-    if (!roles || roles.length === 0) {
-      return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const requiredSecrets: SecretCheck[] = [
       {
         key: "SUPABASE_URL",
@@ -221,11 +183,6 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         timestamp: new Date().toISOString(),
-        actor: {
-          id: actor.id,
-          email: actor.email,
-          is_admin: true,
-        },
         checks: {
           secrets: requiredSecrets,
           tables: tableChecks,
