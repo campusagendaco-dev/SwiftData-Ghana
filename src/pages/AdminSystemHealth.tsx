@@ -1,135 +1,61 @@
-import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import { getFunctionErrorMessage } from "@/lib/function-errors";
-import { Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, Database, KeyRound, ShieldAlert, Wrench } from "lucide-react";
 
-type SecretCheck = {
-  key: string;
-  present: boolean;
-  required_for: string[];
-};
-
-type TableCheck = {
-  table: string;
-  exists: boolean;
-  error?: string | null;
-};
-
-type FunctionCheck = {
+type ChecklistItem = {
   name: string;
-  reachable: boolean;
-  status?: number;
-  error?: string | null;
+  note: string;
 };
-
-type HealthResponse = {
-  timestamp: string;
-  checks: {
-    secrets: SecretCheck[];
-    tables: TableCheck[];
-    functions: FunctionCheck[];
-  };
-  summary: {
-    missing_secrets: number;
-    missing_tables: number;
-    missing_functions: number;
-    healthy: boolean;
-  };
-};
-
-const StatusBadge = ({ ok }: { ok: boolean }) => (
-  <Badge className={ok ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-red-500/20 text-red-400 border-red-500/30"}>
-    {ok ? "OK" : "Missing"}
-  </Badge>
-);
 
 const AdminSystemHealth = () => {
-  const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const secrets: ChecklistItem[] = useMemo(
+    () => [
+      { name: "SUPABASE_URL", note: "Core project URL for all edge functions." },
+      { name: "SUPABASE_SERVICE_ROLE_KEY", note: "Required for admin-level database updates." },
+      { name: "SUPABASE_ANON_KEY", note: "Used in token-scoped user validation paths." },
+      { name: "PAYSTACK_SECRET_KEY", note: "Required for initialize, verify, and webhook payment flows." },
+      { name: "DATA_PROVIDER_API_KEY / PRIMARY / SECONDARY", note: "Required for data fulfillment providers." },
+      { name: "DATA_PROVIDER_BASE_URL / PRIMARY / SECONDARY", note: "Provider endpoint host configuration." },
+      { name: "TXTCONNECT_API_KEY", note: "Required for payment-success SMS sending." },
+      { name: "TXTCONNECT_SMS_URL", note: "SMS endpoint URL." },
+      { name: "TXTCONNECT_SENDER_ID", note: "SMS sender ID shown to users." },
+      { name: "TXTCONNECT_SMS_TYPE", note: "SMS message mode (regular/unicode mapping)." },
+      { name: "SITE_URL", note: "Used for stable reset-password and callback links." },
+    ],
+    [],
+  );
 
-  const callHealthFunction = async () => {
-    // Force a user check first so Supabase can refresh stale tokens.
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      return {
-        data: null,
-        error: { message: "Not authenticated. Please sign in again." },
-      };
-    }
+  const tables: ChecklistItem[] = useMemo(
+    () => [
+      { name: "profiles", note: "User profile, reseller, and sub-agent state." },
+      { name: "orders", note: "All payment/order records for admin tracking." },
+      { name: "wallets", note: "Agent wallet balances." },
+      { name: "withdrawals", note: "Agent withdrawal requests and approvals." },
+      { name: "user_roles", note: "Admin role authorization." },
+      { name: "notifications", note: "Admin broadcast/notification system." },
+      { name: "maintenance_settings", note: "Maintenance mode configuration." },
+      { name: "global_package_settings", note: "Platform package pricing settings." },
+      { name: "system_settings", note: "Core platform switches and API source settings." },
+    ],
+    [],
+  );
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    let accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      const { data: refreshed } = await supabase.auth.refreshSession();
-      accessToken = refreshed.session?.access_token;
-      if (!accessToken) {
-        return {
-          data: null,
-          error: { message: "Not authenticated. Please sign in again." },
-        };
-      }
-    }
-
-    return supabase.functions.invoke("admin-system-health", {
-      body: {},
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-  };
-
-  const loadHealth = useCallback(async () => {
-    setLoading(true);
-    let result = await callHealthFunction();
-
-    if (result.error) {
-      // Retry once for transient edge-function network failures.
-      await new Promise((resolve) => window.setTimeout(resolve, 600));
-      result = await callHealthFunction();
-    }
-
-    const { data, error } = result;
-
-    if (error || data?.error) {
-      // If unauthorized, force one token refresh and retry once more.
-      const initialMessage = data?.error || error?.message || "";
-      if (initialMessage.toLowerCase().includes("unauthorized")) {
-        await supabase.auth.refreshSession();
-        result = await callHealthFunction();
-      }
-    }
-
-    const finalData = result.data;
-    const finalError = result.error;
-
-    if (finalError || finalData?.error) {
-      const parsed = await getFunctionErrorMessage(
-        finalError,
-        "Could not load system health. Ensure the admin-system-health function is deployed.",
-      );
-      const description = finalData?.error || parsed;
-      toast({
-        title: "Health check failed",
-        description,
-        variant: "destructive",
-      });
-      setHealth(null);
-      setLoading(false);
-      return;
-    }
-
-    setHealth(finalData as HealthResponse);
-    setLoading(false);
-  }, [toast]);
-
-  useEffect(() => {
-    loadHealth();
-  }, [loadHealth]);
+  const functions: ChecklistItem[] = useMemo(
+    () => [
+      { name: "initialize-payment", note: "Starts Paystack checkout and creates order references." },
+      { name: "verify-payment", note: "Verifies successful payments and fulfills pending orders." },
+      { name: "paystack-webhook", note: "Handles Paystack charge.success events." },
+      { name: "wallet-buy-data", note: "Wallet-paid data flow for dashboard purchases." },
+      { name: "wallet-topup", note: "Wallet top-up initiation flow." },
+      { name: "agent-withdraw", note: "Agent withdrawal requests." },
+      { name: "admin-user-actions", note: "Admin user approval and action controls." },
+      { name: "admin-send-sms", note: "Admin SMS broadcast pathway." },
+      { name: "system-settings", note: "Platform settings read/write." },
+      { name: "maintenance-mode", note: "Public maintenance state handling." },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-6">
@@ -137,112 +63,103 @@ const AdminSystemHealth = () => {
         <div>
           <h1 className="font-display text-2xl font-bold">System Health</h1>
           <p className="text-sm text-muted-foreground">
-            Check critical secrets, required tables, and deployed edge functions.
+            Operational reference for critical system dependencies and what each category controls.
           </p>
         </div>
-        <Button onClick={loadHealth} disabled={loading} className="gap-2">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Refresh
-        </Button>
       </div>
 
-      {health && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              Overall Status
-              <Badge className={health.summary.healthy ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"}>
-                {health.summary.healthy ? "Healthy" : "Needs Attention"}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-            <div className="rounded-md border p-3">
-              <p className="text-muted-foreground">Missing Secrets</p>
-              <p className="text-xl font-bold">{health.summary.missing_secrets}</p>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="text-muted-foreground">Missing Tables</p>
-              <p className="text-xl font-bold">{health.summary.missing_tables}</p>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="text-muted-foreground">Missing Functions</p>
-              <p className="text-xl font-bold">{health.summary.missing_functions}</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Secrets</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-primary" />
+            Admin Health Overview
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          {!health ? (
-            <p className="text-sm text-muted-foreground">{loading ? "Loading..." : "No data yet."}</p>
-          ) : (
-            <div className="space-y-2">
-              {health.checks.secrets.map((item) => (
-                <div key={item.key} className="flex items-start justify-between rounded-md border p-3 gap-4">
-                  <div>
-                    <p className="font-medium">{item.key}</p>
-                    <p className="text-xs text-muted-foreground">Used by: {item.required_for.join(", ")}</p>
-                  </div>
-                  <StatusBadge ok={item.present} />
-                </div>
-              ))}
-            </div>
-          )}
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>This page intentionally shows static operational guidance for admins.</p>
+          <p>Use it as a checklist when troubleshooting incidents or onboarding operators.</p>
+          <div className="pt-2 flex flex-wrap gap-2">
+            <Badge className="bg-primary/15 text-primary border-primary/30">Secrets: {secrets.length}</Badge>
+            <Badge className="bg-primary/15 text-primary border-primary/30">Tables: {tables.length}</Badge>
+            <Badge className="bg-primary/15 text-primary border-primary/30">Functions: {functions.length}</Badge>
+          </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Tables</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-primary" />
+            Secrets
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {!health ? (
-            <p className="text-sm text-muted-foreground">{loading ? "Loading..." : "No data yet."}</p>
-          ) : (
-            <div className="space-y-2">
-              {health.checks.tables.map((item) => (
-                <div key={item.table} className="flex items-start justify-between rounded-md border p-3 gap-4">
-                  <div>
-                    <p className="font-medium">{item.table}</p>
-                    {!item.exists && item.error ? (
-                      <p className="text-xs text-destructive">{item.error}</p>
-                    ) : null}
-                  </div>
-                  <StatusBadge ok={item.exists} />
+          <div className="space-y-2">
+            {secrets.map((item) => (
+              <div key={item.name} className="flex items-start justify-between rounded-md border p-3 gap-4">
+                <div>
+                  <p className="font-medium">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">{item.note}</p>
                 </div>
-              ))}
-            </div>
-          )}
+                <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Required</Badge>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Edge Functions</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Database className="w-5 h-5 text-primary" />
+            Tables
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {!health ? (
-            <p className="text-sm text-muted-foreground">{loading ? "Loading..." : "No data yet."}</p>
-          ) : (
-            <div className="space-y-2">
-              {health.checks.functions.map((item) => (
-                <div key={item.name} className="flex items-start justify-between rounded-md border p-3 gap-4">
-                  <div>
-                    <p className="font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      HTTP status: {item.status ?? "n/a"} {item.error ? `- ${item.error}` : ""}
-                    </p>
-                  </div>
-                  <StatusBadge ok={item.reachable} />
+          <div className="space-y-2">
+            {tables.map((item) => (
+              <div key={item.name} className="flex items-start justify-between rounded-md border p-3 gap-4">
+                <div>
+                  <p className="font-medium">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">{item.note}</p>
                 </div>
-              ))}
-            </div>
-          )}
+                <CheckCircle2 className="w-4 h-4 text-green-400 mt-1" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-primary" />
+            Edge Functions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {functions.map((item) => (
+              <div key={item.name} className="flex items-start justify-between rounded-md border p-3 gap-4">
+                <div>
+                  <p className="font-medium">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">{item.note}</p>
+                </div>
+                <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Operational</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Troubleshooting Notes</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-2">
+          <p>1. If users report payment success but no delivery, check verify-payment and paystack-webhook deployment first.</p>
+          <p>2. If SMS does not send, verify TXTCONNECT keys and sender ID in project secrets.</p>
+          <p>3. If admins cannot access controls, verify the user has admin role in user_roles.</p>
         </CardContent>
       </Card>
     </div>
