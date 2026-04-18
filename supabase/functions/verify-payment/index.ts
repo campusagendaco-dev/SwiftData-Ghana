@@ -594,7 +594,10 @@ serve(async (req) => {
     if (orderType === "sub_agent_activation") {
       const subAgentId = metadata?.sub_agent_id || agentId;
       const parentAgentId = metadata?.parent_agent_id;
-      const agentProfit = Number(metadata?.agent_profit || 0);
+      const activationAmount = Number(metadata?.activation_fee || order?.amount || paidAmount || 0);
+      const agentProfit = Number.isFinite(Number(metadata?.agent_profit))
+        ? Number(metadata?.agent_profit)
+        : parseFloat((activationAmount * 0.5).toFixed(2));
       if (subAgentId) {
         const { data: parentProfile } = await supabase
           .from("profiles").select("sub_agent_prices").eq("user_id", parentAgentId).maybeSingle();
@@ -611,7 +614,10 @@ serve(async (req) => {
             await supabase.from("wallets").insert({ agent_id: parentAgentId, balance: agentProfit });
           }
         }
-        await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
+        await supabase
+          .from("orders")
+          .update({ status: "fulfilled", failure_reason: null, profit: agentProfit })
+          .eq("id", reference);
       }
       return new Response(JSON.stringify({ status: "fulfilled" }), {
         status: 200,

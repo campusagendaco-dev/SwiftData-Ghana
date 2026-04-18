@@ -33,8 +33,7 @@ const DashboardSubAgents = () => {
   const [tab, setTab] = useState<Tab>("sub-agents");
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
   const [globalSettings, setGlobalSettings] = useState<GlobalPkgSetting[]>([]);
-  const [adminBaseFee, setAdminBaseFee] = useState(80);
-  const [markup, setMarkup] = useState(0);
+  const [activationFee, setActivationFee] = useState(0);
   const [savingMarkup, setSavingMarkup] = useState(false);
   const [subAgentPrices, setSubAgentPrices] = useState<Record<string, Record<string, string>>>({});
   const [savingPrices, setSavingPrices] = useState(false);
@@ -47,20 +46,17 @@ const DashboardSubAgents = () => {
     if (!user) return;
     setLoadingSubAgents(true);
 
-    const [saRes, gsRes, settingsRes] = await Promise.all([
+    const [saRes, gsRes] = await Promise.all([
       supabase
         .from("profiles")
         .select("user_id, full_name, email, phone, store_name, slug, sub_agent_approved, created_at")
         .eq("parent_agent_id", user.id)
         .order("created_at", { ascending: false }),
       supabase.from("global_package_settings").select("network, package_size, agent_price"),
-      supabase.from("system_settings").select("sub_agent_base_fee").eq("id", 1).maybeSingle(),
     ]);
 
     if (saRes.data) setSubAgents(saRes.data as SubAgent[]);
     if (gsRes.data) setGlobalSettings(gsRes.data as GlobalPkgSetting[]);
-    const fee = Number(settingsRes.data?.sub_agent_base_fee);
-    if (Number.isFinite(fee) && fee > 0) setAdminBaseFee(fee);
     setLoadingSubAgents(false);
   }, [user]);
 
@@ -75,7 +71,7 @@ const DashboardSubAgents = () => {
   // Init local markup + prices from profile
   useEffect(() => {
     if (!profile) return;
-    setMarkup(Number((profile as any).sub_agent_activation_markup || 0));
+    setActivationFee(Math.max(0, Number((profile as any).sub_agent_activation_markup || 0)));
     const stored = (profile as any).sub_agent_prices as Record<string, Record<string, string>> | undefined;
     if (stored && Object.keys(stored).length > 0) {
       setSubAgentPrices(stored);
@@ -104,7 +100,7 @@ const DashboardSubAgents = () => {
     setSavingMarkup(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ sub_agent_activation_markup: markup })
+      .update({ sub_agent_activation_markup: activationFee })
       .eq("user_id", user.id);
     if (error) {
       toast({ title: "Failed to save", description: error.message, variant: "destructive" });
@@ -149,7 +145,9 @@ const DashboardSubAgents = () => {
     setPushingPrices(false);
   };
 
-  const totalFee = adminBaseFee + markup;
+  const totalFee = activationFee;
+  const agentShare = parseFloat((totalFee * 0.5).toFixed(2));
+  const swiftDataShare = parseFloat((totalFee - agentShare).toFixed(2));
 
   const TABS: { id: Tab; label: string; icon: typeof Users2 }[] = [
     { id: "sub-agents", label: "Sub Agents", icon: Users2 },
@@ -268,26 +266,29 @@ const DashboardSubAgents = () => {
             <div className="rounded-lg bg-amber-400/10 border border-amber-400/30 p-3 text-sm">
               <p className="font-medium mb-1">How it works</p>
               <p className="text-muted-foreground text-xs">
-                Admin has set the base activation fee at <strong>GH₵ {adminBaseFee.toFixed(2)}</strong>. You can add your
-                own markup on top. The sub agent pays the total, and your markup is credited to your wallet.
+                Set the full activation price your sub agents will pay. SwiftData keeps 50% and you receive 50% on your profit dashboard.
               </p>
             </div>
 
             <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Admin base fee</span>
-                <span className="font-medium">GH₵ {adminBaseFee.toFixed(2)}</span>
-              </div>
               <div>
-                <label className="block text-sm font-medium mb-1.5">Your markup (GH₵)</label>
+                <label className="block text-sm font-medium mb-1.5">Your activation price (GH₵)</label>
                 <input
                   type="number"
                   min={0}
                   step={0.01}
-                  value={markup}
-                  onChange={(e) => setMarkup(Math.max(0, Number(e.target.value)))}
+                  value={activationFee}
+                  onChange={(e) => setActivationFee(Math.max(0, Number(e.target.value)))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-400 bg-transparent"
                 />
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Your share (50%)</span>
+                <span className="font-medium">GH₵ {agentShare.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">SwiftData share (50%)</span>
+                <span className="font-medium">GH₵ {swiftDataShare.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold border-t border-border pt-3">
                 <span>Total sub agent pays</span>

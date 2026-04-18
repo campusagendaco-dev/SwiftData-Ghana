@@ -11,8 +11,7 @@ const SubAgentPending = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [baseFee, setBaseFee] = useState(80);
-  const [parentMarkup, setParentMarkup] = useState(0);
+  const [activationFee, setActivationFee] = useState(0);
   const [parentId, setParentId] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -29,15 +28,14 @@ const SubAgentPending = () => {
       if (!profile?.parent_agent_id) { setLoadingData(false); return; }
       setParentId(profile.parent_agent_id);
 
-      const [settingsRes, parentRes] = await Promise.all([
-        supabase.from("system_settings").select("sub_agent_base_fee").eq("id", 1).maybeSingle(),
-        supabase.from("profiles").select("sub_agent_activation_markup").eq("user_id", profile.parent_agent_id).maybeSingle(),
-      ]);
+      const { data: parentRes } = await supabase
+        .from("profiles")
+        .select("sub_agent_activation_markup")
+        .eq("user_id", profile.parent_agent_id)
+        .maybeSingle();
 
-      const fee = Number(settingsRes.data?.sub_agent_base_fee);
-      if (Number.isFinite(fee) && fee > 0) setBaseFee(fee);
-      const markup = Number(parentRes.data?.sub_agent_activation_markup || 0);
-      setParentMarkup(markup);
+      const configuredFee = Number(parentRes?.sub_agent_activation_markup || 0);
+      setActivationFee(Number.isFinite(configuredFee) && configuredFee > 0 ? configuredFee : 0);
       setLoadingData(false);
     };
     load();
@@ -67,14 +65,19 @@ const SubAgentPending = () => {
     });
   }, [refreshProfile, navigate, toast]);
 
-  const totalFee = parseFloat((baseFee + parentMarkup).toFixed(2));
+  const totalFee = parseFloat(activationFee.toFixed(2));
 
   const handlePay = async () => {
     if (!user || !profile) return;
+    if (!Number.isFinite(totalFee) || totalFee < 1) {
+      toast({ title: "Activation fee not set", description: "This agent has not configured a valid sub-agent activation fee yet.", variant: "destructive" });
+      return;
+    }
     setPaying(true);
 
     const orderId = crypto.randomUUID();
-    const agentProfit = parentMarkup;
+    const agentProfitShare = parseFloat((totalFee * 0.5).toFixed(2));
+    const swiftDataShare = parseFloat((totalFee - agentProfitShare).toFixed(2));
 
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
@@ -86,11 +89,12 @@ const SubAgentPending = () => {
           order_id: orderId,
           order_type: "sub_agent_activation",
           sub_agent_id: user.id,
-          agent_id: user.id,
+          agent_id: parentId || user.id,
           parent_agent_id: parentId,
-          base_amount: totalFee,
+          activation_fee: totalFee,
           paystack_fee: 0,
-          agent_profit: agentProfit,
+          agent_profit: agentProfitShare,
+          swiftdata_share: swiftDataShare,
         },
       },
     });
@@ -150,13 +154,14 @@ const SubAgentPending = () => {
 
           <div className="space-y-1.5 text-sm border-t border-border pt-4">
             <div className="flex justify-between text-muted-foreground">
-              <span>Base fee</span><span>GH₵ {baseFee.toFixed(2)}</span>
+              <span>Activation fee</span><span>GH₵ {totalFee.toFixed(2)}</span>
             </div>
-            {parentMarkup > 0 && (
-              <div className="flex justify-between text-muted-foreground">
-                <span>Agent markup</span><span>GH₵ {parentMarkup.toFixed(2)}</span>
-              </div>
-            )}
+            <div className="flex justify-between text-muted-foreground">
+              <span>Agent share (50%)</span><span>GH₵ {(totalFee * 0.5).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>SwiftData share (50%)</span><span>GH₵ {(totalFee * 0.5).toFixed(2)}</span>
+            </div>
             <div className="flex justify-between font-bold text-foreground border-t border-border pt-1.5 mt-1.5">
               <span>Total to pay</span><span>GH₵ {totalFee.toFixed(2)}</span>
             </div>

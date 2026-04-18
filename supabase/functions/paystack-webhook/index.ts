@@ -567,7 +567,10 @@ serve(async (req) => {
     if (orderType === "sub_agent_activation") {
       const subAgentId = metadata?.sub_agent_id;
       const parentAgentId = metadata?.parent_agent_id;
-      const agentProfit = Number(metadata?.agent_profit || 0);
+      const activationAmount = Number(metadata?.activation_fee || existingOrder?.amount || verifiedAmount || 0);
+      const agentProfit = Number.isFinite(Number(metadata?.agent_profit))
+        ? Number(metadata?.agent_profit)
+        : parseFloat((activationAmount * 0.5).toFixed(2));
       if (subAgentId) {
         // Fetch parent's sub_agent_prices to copy as the sub agent's agent_prices
         const { data: parentProfile } = await supabase
@@ -597,7 +600,10 @@ serve(async (req) => {
           }
         }
 
-        await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        await supabase
+          .from("orders")
+          .update({ status: "fulfilled", failure_reason: null, profit: agentProfit })
+          .eq("id", orderId);
         console.log("Sub agent activated via webhook:", subAgentId, "parent:", parentAgentId);
       }
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {

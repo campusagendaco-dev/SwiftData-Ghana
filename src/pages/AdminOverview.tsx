@@ -10,7 +10,7 @@ import { Users, ShoppingCart, DollarSign, ShieldCheck } from "lucide-react";
 
 const AdminOverview = () => {
   const { toast } = useToast();
-  const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalUsers: 0, pendingAgents: 0 });
+  const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalUsers: 0, pendingAgents: 0, swiftDataSubAgentShare: 0 });
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState("We are performing scheduled maintenance. Please check back soon.");
   const [savingMaintenance, setSavingMaintenance] = useState(false);
@@ -20,7 +20,7 @@ const AdminOverview = () => {
   useEffect(() => {
     const fetchStats = async () => {
       const [ordersRes, profilesRes, maintenanceRes] = await Promise.all([
-        supabase.from("orders").select("id, amount, status"),
+        supabase.from("orders").select("id, amount, status, order_type"),
         supabase.from("profiles").select("id, is_agent, agent_approved, onboarding_complete"),
         supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       ]);
@@ -37,6 +37,9 @@ const AdminOverview = () => {
           .reduce((sum: number, o: any) => sum + (o.amount || 0), 0),
         totalUsers: profiles.length,
         pendingAgents: profiles.filter((p: any) => p.is_agent && p.onboarding_complete && !p.agent_approved).length,
+        swiftDataSubAgentShare: orders
+          .filter((o: any) => o.status === "fulfilled" && o.order_type === "sub_agent_activation")
+          .reduce((sum: number, o: any) => sum + ((Number(o.amount || 0) * 0.5)), 0),
       });
 
       if (maintenanceError) {
@@ -107,6 +110,7 @@ const AdminOverview = () => {
   const cards = [
     { title: "Total Orders", value: stats.totalOrders, icon: ShoppingCart, color: "text-blue-400" },
     { title: "Revenue (GH₵)", value: `GH₵ ${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, color: "text-green-400" },
+    { title: "SwiftData Sub-Agent Share", value: `GH₵ ${stats.swiftDataSubAgentShare.toFixed(2)}`, icon: DollarSign, color: "text-amber-500" },
     { title: "Total Users", value: stats.totalUsers, icon: Users, color: "text-purple-400" },
     { title: "Pending Agents", value: stats.pendingAgents, icon: ShieldCheck, color: "text-primary" },
   ];

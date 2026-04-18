@@ -65,7 +65,7 @@ const AgentStore = () => {
 
   useEffect(() => {
     const fetchAgent = async () => {
-      const [agentRes, packageSettingsRes, settingsRes] = await Promise.all([
+      const [agentRes, packageSettingsRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages")
@@ -77,11 +77,6 @@ const AgentStore = () => {
         supabase
           .from("global_package_settings")
           .select("network, package_size, agent_price, public_price, is_unavailable"),
-        supabase
-          .from("system_settings")
-          .select("sub_agent_base_fee")
-          .eq("id", 1)
-          .maybeSingle(),
       ]);
 
       const gsMap: Record<string, GlobalPkgSetting> = {};
@@ -103,11 +98,10 @@ const AgentStore = () => {
             .select("sub_agent_activation_markup")
             .eq("user_id", agentRes.data.user_id)
             .maybeSingle();
-          
-          const baseFee = Number(settingsRes.data?.sub_agent_base_fee);
-          const agentMarkup = Number(agentProfile?.sub_agent_activation_markup ?? 0);
-          if (Number.isFinite(baseFee) && baseFee > 0) {
-            setSubAgentBaseFee(baseFee + (Number.isFinite(agentMarkup) ? agentMarkup : 0));
+
+          const configuredFee = Number(agentProfile?.sub_agent_activation_markup ?? 0);
+          if (Number.isFinite(configuredFee) && configuredFee > 0) {
+            setSubAgentBaseFee(configuredFee);
           }
         }
       } catch (_) { /* gracefully skip if schema not ready */ }
@@ -439,7 +433,6 @@ const AgentStore = () => {
                     <p className="text-sm">
                       Activation fee:{" "}
                       <span className="font-bold text-foreground">GH&#8373; {subAgentBaseFee.toFixed(2)}</span>
-                      <span className="text-xs text-muted-foreground ml-1">+ processing fee</span>
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">Contact agent for activation fee.</p>

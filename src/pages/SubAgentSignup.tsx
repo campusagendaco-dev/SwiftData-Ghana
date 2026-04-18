@@ -23,7 +23,6 @@ const SubAgentSignup = () => {
   const { toast } = useToast();
 
   const [agent, setAgent] = useState<ParentAgent | null>(null);
-  const [baseFee, setBaseFee] = useState(80);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -36,31 +35,22 @@ const SubAgentSignup = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [agentRes, settingsRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("user_id, store_name, full_name, sub_agent_activation_markup")
-          .eq("slug", slug)
-          .eq("is_agent", true)
-          .eq("agent_approved", true)
-          .eq("onboarding_complete", true)
-          .eq("is_sub_agent", false)
-          .maybeSingle(),
-        supabase
-          .from("system_settings")
-          .select("sub_agent_base_fee")
-          .eq("id", 1)
-          .maybeSingle(),
-      ]);
+      const { data } = await supabase
+        .from("profiles")
+        .select("user_id, store_name, full_name, sub_agent_activation_markup")
+        .eq("slug", slug)
+        .eq("is_agent", true)
+        .eq("agent_approved", true)
+        .eq("onboarding_complete", true)
+        .eq("is_sub_agent", false)
+        .maybeSingle();
 
-      if (!agentRes.data) {
+      if (!data) {
         setNotFound(true);
         setLoading(false);
         return;
       }
-      setAgent(agentRes.data as ParentAgent);
-      const fee = Number(settingsRes.data?.sub_agent_base_fee);
-      if (Number.isFinite(fee) && fee > 0) setBaseFee(fee);
+      setAgent(data as ParentAgent);
       setLoading(false);
     };
     load();
@@ -85,8 +75,7 @@ const SubAgentSignup = () => {
     );
   }
 
-  const markup = Number(agent.sub_agent_activation_markup || 0);
-  const totalFee = parseFloat((baseFee + markup).toFixed(2));
+  const activationFee = Math.max(0, Number(agent.sub_agent_activation_markup || 0));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,16 +163,8 @@ const SubAgentSignup = () => {
               <span className="font-semibold text-sm">Activation Fee</span>
             </div>
             <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Base fee</span><span>GH₵ {baseFee.toFixed(2)}</span>
-              </div>
-              {markup > 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Agent markup</span><span>GH₵ {markup.toFixed(2)}</span>
-                </div>
-              )}
               <div className="flex justify-between font-bold text-foreground border-t border-border pt-1.5 mt-1.5">
-                <span>Total</span><span>GH₵ {totalFee.toFixed(2)}</span>
+                <span>Total</span><span>GH₵ {activationFee.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -252,7 +233,7 @@ const SubAgentSignup = () => {
               className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-bold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
             >
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users2 className="w-4 h-4" />}
-              {submitting ? "Creating account..." : `Create Account & Pay GH₵ ${totalFee.toFixed(2)}`}
+              {submitting ? "Creating account..." : `Create Account & Pay GH₵ ${activationFee.toFixed(2)}`}
             </button>
           </form>
 
