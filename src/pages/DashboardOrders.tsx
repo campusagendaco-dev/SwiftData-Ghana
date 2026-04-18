@@ -32,7 +32,7 @@ const getDisplayStatus = (status: string) => {
 };
 
 const DashboardOrders = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -40,10 +40,17 @@ const DashboardOrders = () => {
   const fetchOrders = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+
+    const candidateAgentIds = Array.from(new Set([
+      user.id,
+      profile?.user_id,
+      profile?.id,
+    ].filter(Boolean) as string[]));
+
     let query = supabase
       .from("orders")
       .select("*")
-      .eq("agent_id", user.id)
+      .in("agent_id", candidateAgentIds)
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -56,7 +63,7 @@ const DashboardOrders = () => {
     const { data } = await query;
     setOrders(data || []);
     setLoading(false);
-  }, [filter, user]);
+  }, [filter, profile?.id, profile?.user_id, user]);
 
   useEffect(() => {
     fetchOrders();

@@ -542,7 +542,17 @@ serve(async (req) => {
     } else {
       shouldSendDataPaymentSms = existingOrder.status === "pending" && (existingOrder.order_type || "") === "data";
       smsPhone = String(existingOrder.customer_phone || metadata?.customer_phone || "");
-      await supabase.from("orders").update({ status: "paid", failure_reason: null }).eq("id", orderId);
+      const patch: Record<string, unknown> = { status: "paid", failure_reason: null };
+      const recoveredAgentId = typeof metadata?.agent_id === "string" ? metadata.agent_id : "";
+      const hasPlaceholderAgentId = !existingOrder.agent_id || existingOrder.agent_id === "00000000-0000-0000-0000-000000000000";
+
+      if (hasPlaceholderAgentId && recoveredAgentId) patch.agent_id = recoveredAgentId;
+      if (!existingOrder.network && typeof metadata?.network === "string") patch.network = metadata.network;
+      if (!existingOrder.package_size && typeof metadata?.package_size === "string") patch.package_size = metadata.package_size;
+      if (!existingOrder.customer_phone && typeof metadata?.customer_phone === "string") patch.customer_phone = metadata.customer_phone;
+
+      await supabase.from("orders").update(patch).eq("id", orderId);
+      existingOrder = { ...existingOrder, ...patch };
     }
 
     if (shouldSendDataPaymentSms && smsPhone) {

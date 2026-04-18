@@ -501,6 +501,9 @@ serve(async (req) => {
           recoveredMetadata = (verifyData?.data?.metadata || {}) as Record<string, unknown>;
 
           const recoveredFields: Record<string, unknown> = {};
+          const recoveredAgentId = typeof recoveredMetadata.agent_id === "string" ? recoveredMetadata.agent_id : "";
+          const hasPlaceholderAgentId = !order.agent_id || order.agent_id === "00000000-0000-0000-0000-000000000000";
+          if (hasPlaceholderAgentId && recoveredAgentId) recoveredFields.agent_id = recoveredAgentId;
           if (!order.network && typeof recoveredMetadata.network === "string") recoveredFields.network = recoveredMetadata.network;
           if (!order.package_size && typeof recoveredMetadata.package_size === "string") recoveredFields.package_size = recoveredMetadata.package_size;
           if (!order.customer_phone && typeof recoveredMetadata.customer_phone === "string") recoveredFields.customer_phone = recoveredMetadata.customer_phone;
@@ -585,6 +588,22 @@ serve(async (req) => {
     const orderType = order?.order_type || metadata.order_type;
     const agentId = order?.agent_id || metadata.agent_id;
     const paidAmount = Number(order?.amount || (verifyData.data.amount / 100));
+
+    if (order) {
+      const recoveredAgentId = typeof metadata.agent_id === "string" ? metadata.agent_id : "";
+      const patch: Record<string, unknown> = {};
+      const hasPlaceholderAgentId = !order.agent_id || order.agent_id === "00000000-0000-0000-0000-000000000000";
+
+      if (hasPlaceholderAgentId && recoveredAgentId) patch.agent_id = recoveredAgentId;
+      if (!order.network && metadata.network) patch.network = metadata.network;
+      if (!order.package_size && metadata.package_size) patch.package_size = metadata.package_size;
+      if (!order.customer_phone && metadata.customer_phone) patch.customer_phone = metadata.customer_phone;
+
+      if (Object.keys(patch).length > 0) {
+        await supabase.from("orders").update(patch).eq("id", reference);
+        order = { ...order, ...patch };
+      }
+    }
 
     let shouldSendDataPaymentSms = false;
     let smsPhone = "";

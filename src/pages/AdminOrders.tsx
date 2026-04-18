@@ -39,7 +39,7 @@ const AdminOrders = () => {
     const { data } = await supabase
       .from("orders")
       .select("*")
-      .in("status", ["paid", "fulfilled", "fulfillment_failed"])
+      .in("status", ["pending", "paid", "fulfilled", "fulfillment_failed"])
       .order("created_at", { ascending: false })
       .limit(2000);
     setOrders((data as OrderRow[]) || []);
