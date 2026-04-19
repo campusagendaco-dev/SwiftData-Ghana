@@ -153,7 +153,7 @@ const AdminOrders = () => {
                     )}
                   </td>
                   <td className="p-4">
-                    {(order.status === "fulfillment_failed" || order.status === "paid") && (
+                    {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                       <Button
                         size="sm" variant="outline" className="text-xs gap-1.5"
                         disabled={retrying === order.id}
