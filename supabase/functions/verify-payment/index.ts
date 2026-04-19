@@ -172,13 +172,14 @@ function buildSecondaryOrderUrls(baseUrl: string, apiKey: string): string[] {
   const urls = new Set<string>();
   const token = apiKey.trim();
 
-  urls.add(`${clean}/order`);
-  urls.add(`${clean}/api/order`);
-
+  // Try tokenized variants first for providers that expect key in path.
   if (token) {
     urls.add(`${clean}/${token}/order`);
     urls.add(`${clean}/api/${token}/order`);
   }
+
+  urls.add(`${clean}/order`);
+  urls.add(`${clean}/api/order`);
 
   return Array.from(urls);
 }
@@ -384,7 +385,11 @@ async function callProviderApi(
         lastFailure = { ok: false, status: res.status, text, reason, url };
 
         const retryable = res.status >= 500 || res.status === 429;
-        const tryNextUrl = res.status === 404 || (isHtmlResponse(contentType, text) && res.status !== 401 && res.status !== 403);
+        const secondaryAuthFailure = providerSource === "secondary" && (res.status === 401 || res.status === 403);
+        const tryNextUrl =
+          res.status === 404 ||
+          (isHtmlResponse(contentType, text) && res.status !== 401 && res.status !== 403) ||
+          secondaryAuthFailure;
 
         if (retryable && attempt < 2) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
