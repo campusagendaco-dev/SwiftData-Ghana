@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Search, RotateCcw, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
+import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 
 interface OrderRow {
   id: string;
@@ -87,6 +88,13 @@ const AdminOrders = () => {
 
   return (
     <div>
+      <div className="mb-6">
+        <PhoneOrderTracker
+          title="Track Customer Order by Phone"
+          subtitle="Admin quick lookup for live delivery status and bundle size."
+        />
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="font-display text-2xl font-bold">All Orders</h1>

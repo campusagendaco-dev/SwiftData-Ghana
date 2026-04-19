@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Users, ShoppingCart, DollarSign, ShieldCheck } from "lucide-react";
+import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 
 const AdminOverview = () => {
   const { toast } = useToast();
@@ -122,6 +123,14 @@ const AdminOverview = () => {
   return (
     <div>
       <h1 className="font-display text-2xl font-bold mb-6">Admin Overview</h1>
+
+      <div className="mb-6">
+        <PhoneOrderTracker
+          title="Order Tracking (Phone Lookup)"
+          subtitle="Admin quick tracker: check Payment Verified, Pending Delivery, and Data Delivered by customer phone number."
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (
           <Card key={card.title}>
