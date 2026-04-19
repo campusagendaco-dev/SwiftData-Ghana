@@ -93,6 +93,43 @@ async function resolveExpectedAmount(supabaseAdmin: any, network: string, packag
 }
 
 // deno-lint-ignore no-explicit-any
+async function resolveExpectedAmountForUser(
+  supabaseAdmin: any,
+  userId: string,
+  network: string,
+  packageSize: string,
+  multiplier: number,
+): Promise<number | null> {
+  const normalizedNetwork = normalizeNetworkForPricing(network);
+  const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("is_sub_agent, agent_prices")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (profile?.is_sub_agent) {
+    const assigned = (profile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+    const networkCandidates = [normalizedNetwork, network, network.replace(/\s+/g, "")];
+    const packageCandidates = [normalizedPackage, packageSize, packageSize.replace(/\s+/g, "")];
+
+    for (const n of networkCandidates) {
+      const byNetwork = assigned[n];
+      if (!byNetwork || typeof byNetwork !== "object") continue;
+      for (const p of packageCandidates) {
+        const assignedPrice = Number(byNetwork[p]);
+        if (Number.isFinite(assignedPrice) && assignedPrice > 0) {
+          return Number((assignedPrice * multiplier).toFixed(2));
+        }
+      }
+    }
+  }
+
+  return await resolveExpectedAmount(supabaseAdmin, network, packageSize, multiplier);
+}
+
+// deno-lint-ignore no-explicit-any
 async function getPricingContext(supabaseAdmin: any): Promise<{ source: ProviderSource; multiplier: number }> {
   const { data } = await supabaseAdmin
     .from("system_settings")
@@ -549,7 +586,13 @@ serve(async (req) => {
       });
     }
 
-    const expectedAmount = await resolveExpectedAmount(supabaseAdmin, network, package_size, pricingContext.multiplier);
+    const expectedAmount = await resolveExpectedAmountForUser(
+      supabaseAdmin,
+      user.id,
+      network,
+      package_size,
+      pricingContext.multiplier,
+    );
     if (!expectedAmount) {
       return new Response(JSON.stringify({ error: "Package price not configured" }), {
         status: 200,

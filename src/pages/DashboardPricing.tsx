@@ -24,6 +24,32 @@ const buildDefaultPrices = (packageBasePrices: PackageBasePrices): AgentPrices =
   return defaults;
 };
 
+const getProfileAssignedPrice = (
+  agentPrices: Record<string, any> | undefined,
+  network: string,
+  size: string,
+): number | null => {
+  if (!agentPrices || typeof agentPrices !== "object") return null;
+
+  const networkCandidates = [
+    network,
+    network.replace(/\s+/g, ""),
+    network === "AT iShare" ? "AirtelTigo" : network,
+  ];
+  const sizeCandidates = [size, size.replace(/\s+/g, ""), size.toUpperCase()];
+
+  for (const n of networkCandidates) {
+    const byNetwork = agentPrices[n] as Record<string, string | number> | undefined;
+    if (!byNetwork) continue;
+    for (const s of sizeCandidates) {
+      const value = Number(byNetwork[s]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  }
+
+  return null;
+};
+
 const DashboardPricing = () => {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
@@ -55,11 +81,24 @@ const DashboardPricing = () => {
         nextBasePrices[row.network][row.package_size] = applyPriceMultiplier(numericAgentPrice, pricingContext.multiplier);
       });
 
+      // For sub-agents, base prices come from prices assigned by their parent agent.
+      if (profile?.is_sub_agent) {
+        const assigned = (profile.agent_prices || {}) as Record<string, any>;
+        for (const [network, pkgs] of Object.entries(basePackages)) {
+          for (const pkg of pkgs) {
+            const assignedPrice = getProfileAssignedPrice(assigned, network, pkg.size);
+            if (assignedPrice && assignedPrice > 0) {
+              nextBasePrices[network][pkg.size] = applyPriceMultiplier(assignedPrice, pricingContext.multiplier);
+            }
+          }
+        }
+      }
+
       setPackageBasePrices(nextBasePrices);
     };
 
     loadBasePrices();
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
     const defaults = buildDefaultPrices(packageBasePrices);

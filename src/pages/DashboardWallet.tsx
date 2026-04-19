@@ -36,6 +36,34 @@ const calculatePaystackFee = (amount: number) => {
   return Math.min(fee, PAYSTACK_FEE_CAP);
 };
 
+const getAssignedSubAgentPrice = (
+  profile: any,
+  network: string,
+  size: string,
+): number | null => {
+  if (!profile?.is_sub_agent) return null;
+  const assigned = profile?.agent_prices as Record<string, Record<string, string | number>> | undefined;
+  if (!assigned || typeof assigned !== "object") return null;
+
+  const networkCandidates = [
+    network,
+    network.replace(/\s+/g, ""),
+    network === "AT iShare" ? "AirtelTigo" : network,
+  ];
+  const sizeCandidates = [size, size.replace(/\s+/g, ""), size.toUpperCase()];
+
+  for (const n of networkCandidates) {
+    const byNetwork = assigned[n];
+    if (!byNetwork) continue;
+    for (const s of sizeCandidates) {
+      const value = Number(byNetwork[s]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  }
+
+  return null;
+};
+
 const DashboardWallet = () => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -70,6 +98,10 @@ const DashboardWallet = () => {
   }, []);
 
   const getAgentPrice = (network: string, size: string): number => {
+    // Sub-agents must use parent-assigned base prices.
+    const assignedPrice = getAssignedSubAgentPrice(profile, network, size);
+    if (assignedPrice && assignedPrice > 0) return applyPriceMultiplier(assignedPrice, priceMultiplier);
+
     // First check admin-set agent price from global_package_settings
     const setting = globalSettings.find(
       (s) => s.network === network && s.package_size === size.replace(/\s+/g, "").toUpperCase()

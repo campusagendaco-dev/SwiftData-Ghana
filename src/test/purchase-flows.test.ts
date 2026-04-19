@@ -36,4 +36,17 @@ describe("purchase flow guardrails", () => {
     expect(initializePayment).toContain("normalizedProfit");
     expect(initializePayment).toContain("profit: normalizedProfit");
   });
+
+  it("enforces assigned parent pricing for sub-agent wallet buys", () => {
+    const walletBuyData = read("supabase/functions/wallet-buy-data/index.ts");
+    expect(walletBuyData).toContain("resolveExpectedAmountForUser");
+    expect(walletBuyData).toContain("is_sub_agent");
+    expect(walletBuyData).toContain("agent_prices");
+  });
+
+  it("uses assigned sub-agent pricing in dashboard wallet UI", () => {
+    const dashboardWallet = read("src/pages/DashboardWallet.tsx");
+    expect(dashboardWallet).toContain("getAssignedSubAgentPrice");
+    expect(dashboardWallet).toContain("profile?.is_sub_agent");
+  });
 });
