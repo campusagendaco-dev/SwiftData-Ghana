@@ -164,6 +164,8 @@ function mapNetworkKey(network: string): string {
 
 function mapSecondaryNetwork(network: string): string {
   const normalized = network.trim().toUpperCase();
+  if (normalized.includes("BIGTIME")) return "AIRTELTIGO_BIGTIME";
+  if (normalized.includes("ISHARE")) return "AIRTELTIGO_ISHARE";
   if (
     normalized === "AIRTELTIGO" ||
     normalized === "AIRTEL TIGO" ||
@@ -196,21 +198,13 @@ function normalizeSecondaryPhone(phone: string): string {
   return digits;
 }
 
-function buildSecondaryOrderUrls(baseUrl: string, apiKey: string): string[] {
+function buildSecondaryOrderUrls(baseUrl: string): string[] {
   const clean = normalizeProviderBaseUrl(baseUrl);
   if (!clean) return [];
 
   const urls = new Set<string>();
-  const token = apiKey.trim();
-
-  // Try tokenized variants first for providers that expect key in path.
-  if (token) {
-    urls.add(`${clean}/${token}/order`);
-    urls.add(`${clean}/api/${token}/order`);
-  }
-
-  urls.add(`${clean}/order`);
   urls.add(`${clean}/api/order`);
+  urls.add(`${clean}/order`);
 
   return Array.from(urls);
 }
@@ -273,11 +267,22 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
 function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string } {
   try {
     const parsed = JSON.parse(body);
-    const status = String(parsed?.status || "").toLowerCase();
+    const rawStatus = parsed?.status;
+    const status = String(rawStatus || "").toLowerCase();
+    const statusCode = Number(parsed?.statusCode);
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
+
+    if (rawStatus === true || status === "true") return { ok: true };
+    if (rawStatus === false || status === "false") {
+      return { ok: false, reason: message || "Provider rejected this order." };
+    }
 
     if (status === "success") return { ok: true };
     if (status === "error" || status === "failed" || status === "failure") {
+      return { ok: false, reason: message || "Provider rejected this order." };
+    }
+
+    if (Number.isFinite(statusCode) && statusCode >= 400) {
       return { ok: false, reason: message || "Provider rejected this order." };
     }
   } catch {
@@ -407,7 +412,7 @@ async function placeDataOrder(
   providerWebhookUrl: string,
 ): Promise<ProviderResult> {
   const urls = providerSource === "secondary"
-    ? buildSecondaryOrderUrls(baseUrl, apiKey)
+    ? buildSecondaryOrderUrls(baseUrl)
     : buildProviderUrls(baseUrl, "purchase");
   const networkKey = mapNetworkKey(network);
   const capacity = parseCapacity(packageSize);
@@ -422,10 +427,12 @@ async function placeDataOrder(
       recipient: normalizeRecipient(customerPhone),
       capacity,
     };
+  if (providerSource === "secondary" && providerWebhookUrl) {
+    requestBody.callback = providerWebhookUrl;
+  }
   if (providerSource !== "secondary" && providerWebhookUrl) {
     requestBody.webhook_url = providerWebhookUrl;
   }
-  // API 2 integration intentionally omits callback.
 
   let lastFailure: ProviderResult = {
     ok: false,
