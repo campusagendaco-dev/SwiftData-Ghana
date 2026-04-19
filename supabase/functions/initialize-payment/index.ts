@@ -6,6 +6,25 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const PAYSTACK_FEE_RATE = 0.0195;
+const PAYSTACK_FEE_CAP = 100;
+
+function amountMatches(expected: number, actual: number, tolerance = 0.05): boolean {
+  return Math.abs(expected - actual) <= tolerance;
+}
+
+function calculatePaystackFee(amount: number): number {
+  return Math.min(amount * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
+}
+
+function normalizeNetwork(network: string): string {
+  const normalized = network.trim().toUpperCase();
+  if (normalized === "AT" || normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AirtelTigo";
+  if (normalized === "VODAFONE") return "Telecel";
+  if (normalized === "TELECEL") return "Telecel";
+  return "MTN";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -82,6 +101,119 @@ serve(async (req) => {
     // Server-side order creation — don't trust frontend to create orders
     const orderType = metadata.order_type || "data";
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
+
+    const { data: providerSettings } = await supabaseAdmin
+      .from("system_settings")
+      .select("preferred_provider")
+      .eq("id", 1)
+      .maybeSingle();
+    const priceMultiplier = providerSettings?.preferred_provider === "secondary" ? 1.0811 : 1;
+
+    if (orderType === "data") {
+      const network = typeof metadata.network === "string" ? metadata.network : "";
+      const packageSize = typeof metadata.package_size === "string" ? metadata.package_size : "";
+      if (!network || !packageSize || !agentId || agentId === "00000000-0000-0000-0000-000000000000") {
+        return new Response(JSON.stringify({ error: "Missing data order metadata" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const normalizedNetwork = normalizeNetwork(network);
+      const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
+      let basePrice = 0;
+
+      const { data: agentProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("agent_prices")
+        .eq("user_id", agentId)
+        .maybeSingle();
+
+      const agentPrices = (agentProfile?.agent_prices || {}) as Record<string, Record<string, string | number>>;
+      const candidates = [normalizedPackage, packageSize, packageSize.replace(/\s+/g, "")];
+      const byNetwork = agentPrices[normalizedNetwork] || agentPrices[network] || null;
+      if (byNetwork && typeof byNetwork === "object") {
+        for (const candidate of candidates) {
+          const value = Number(byNetwork[candidate]);
+          if (Number.isFinite(value) && value > 0) {
+            basePrice = value;
+            break;
+          }
+        }
+      }
+
+      if (!(Number.isFinite(basePrice) && basePrice > 0)) {
+        const { data: globalRow } = await supabaseAdmin
+          .from("global_package_settings")
+          .select("agent_price")
+          .eq("network", normalizedNetwork)
+          .eq("package_size", normalizedPackage)
+          .maybeSingle();
+        const fallback = Number(globalRow?.agent_price);
+        if (Number.isFinite(fallback) && fallback > 0) basePrice = fallback;
+      }
+
+      if (!(Number.isFinite(basePrice) && basePrice > 0)) {
+        return new Response(JSON.stringify({ error: "Package price is not configured" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const adjustedBase = Number((basePrice * priceMultiplier).toFixed(2));
+      const expectedTotal = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+      if (!amountMatches(expectedTotal, amount)) {
+        return new Response(JSON.stringify({
+          error: `Invalid amount for ${network} ${packageSize}. Expected GHS ${expectedTotal.toFixed(2)}.`,
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (orderType === "afa") {
+      const { data: afaSetting } = await supabaseAdmin
+        .from("global_package_settings")
+        .select("agent_price, public_price")
+        .eq("network", "AFA")
+        .eq("package_size", "BUNDLE")
+        .maybeSingle();
+
+      const baseAfa = Number(afaSetting?.agent_price ?? afaSetting?.public_price ?? 0);
+      if (Number.isFinite(baseAfa) && baseAfa > 0) {
+        const adjustedBase = Number((baseAfa * priceMultiplier).toFixed(2));
+        const expectedTotal = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        if (!amountMatches(expectedTotal, amount)) {
+          return new Response(JSON.stringify({
+            error: `Invalid AFA amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
+
+    if (orderType === "wallet_topup") {
+      const walletCredit = Number(metadata.wallet_credit);
+      if (!Number.isFinite(walletCredit) || walletCredit <= 0) {
+        return new Response(JSON.stringify({ error: "Missing valid wallet credit amount" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const expectedTotal = Number((walletCredit + calculatePaystackFee(walletCredit)).toFixed(2));
+      if (!amountMatches(expectedTotal, amount) || walletCredit > amount) {
+        return new Response(JSON.stringify({
+          error: `Invalid wallet top-up amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Check if order already exists (idempotency)
     const { data: existingOrder } = await supabaseAdmin

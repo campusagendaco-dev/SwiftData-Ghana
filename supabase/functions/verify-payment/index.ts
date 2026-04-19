@@ -437,6 +437,10 @@ function buildAfaPayload(source: Record<string, unknown>) {
   };
 }
 
+function amountMatches(expected: number, actual: number, tolerance = 0.05): boolean {
+  return Math.abs(expected - actual) <= tolerance;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -459,6 +463,7 @@ serve(async (req) => {
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const authHeader = req.headers.get("Authorization") || "";
 
   try {
     const activeSource = await getActiveProviderSource(supabase);
@@ -486,8 +491,36 @@ serve(async (req) => {
     }
 
     // For orders already paid/failed (e.g. wallet-paid orders retried by admin),
-    // skip Paystack verification and go straight to fulfillment.
+    // only allow trusted callers to skip Paystack verification.
     if (order && (order.status === "paid" || order.status === "fulfillment_failed")) {
+      let canRetryPaidOrder = false;
+      if (authHeader) {
+        const supabaseUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || "", {
+          global: { headers: { Authorization: authHeader } },
+        });
+        const { data: { user } } = await supabaseUser.auth.getUser();
+        if (user) {
+          const isOrderOwner = !!order.agent_id && user.id === order.agent_id;
+          const { data: adminRole } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", user.id)
+            .eq("role", "admin")
+            .maybeSingle();
+          canRetryPaidOrder = isOrderOwner || !!adminRole;
+        }
+      }
+
+      if (!canRetryPaidOrder) {
+        return new Response(JSON.stringify({
+          status: order.status,
+          failure_reason: "Retry requires authenticated order owner or admin.",
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       if (!DATA_PROVIDER_BASE_URL || !DATA_PROVIDER_API_KEY) {
         return new Response(JSON.stringify({ status: "fulfillment_failed", failure_reason: "Data provider not configured" }), {
           status: 200,
@@ -597,8 +630,45 @@ serve(async (req) => {
     }
 
     const metadata = verifyData.data.metadata || {};
+    const verifiedAmount = Number(verifyData.data.amount || 0) / 100;
     const orderType = order?.order_type || metadata.order_type;
-    const paidAmount = Number(order?.amount || (verifyData.data.amount / 100));
+    const paidAmount = Number(order?.amount || verifiedAmount);
+
+    if (order && orderType !== "wallet_topup") {
+      const expectedAmount = Number(order.amount || 0);
+      if (Number.isFinite(expectedAmount) && expectedAmount > 0 && !amountMatches(expectedAmount, verifiedAmount)) {
+        await supabase.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment amount mismatch. Expected GHS ${expectedAmount.toFixed(2)}, received GHS ${verifiedAmount.toFixed(2)}.`,
+        }).eq("id", reference);
+
+        return new Response(JSON.stringify({
+          status: "fulfillment_failed",
+          failure_reason: "Payment amount mismatch",
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (order && orderType === "wallet_topup") {
+      const creditAmount = Number(order.amount || 0);
+      if (!(Number.isFinite(creditAmount) && creditAmount > 0 && creditAmount <= (verifiedAmount + 0.05))) {
+        await supabase.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Wallet credit mismatch. Credit GHS ${creditAmount.toFixed(2)} exceeds payment GHS ${verifiedAmount.toFixed(2)}.`,
+        }).eq("id", reference);
+
+        return new Response(JSON.stringify({
+          status: "fulfillment_failed",
+          failure_reason: "Wallet credit exceeds verified payment",
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     if (order) {
       const recoveredAgentId = typeof metadata.agent_id === "string" ? metadata.agent_id : "";
@@ -625,7 +695,10 @@ serve(async (req) => {
 
     if (!order) {
       console.log("Recreating order from Paystack metadata:", { reference, orderType, agentId: resolvedAgentId });
-      const walletCredit = Number(metadata.wallet_credit || metadata.amount || paidAmount);
+      const requestedWalletCredit = Number(metadata.wallet_credit);
+      const safeWalletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
+        ? Math.min(requestedWalletCredit, verifiedAmount)
+        : verifiedAmount;
       const metadataProfit = Number(metadata.profit);
       const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
         ? parseFloat(metadataProfit.toFixed(2))
@@ -633,8 +706,8 @@ serve(async (req) => {
       await supabase.from("orders").insert({
         id: reference,
         agent_id: resolvedAgentId,
-        order_type: orderType || "wallet_topup",
-        amount: orderType === "wallet_topup" ? walletCredit : paidAmount,
+        order_type: orderType || "data",
+        amount: orderType === "wallet_topup" ? safeWalletCredit : verifiedAmount,
         profit: normalizedProfit,
         status: "paid",
         network: metadata.network || null,
@@ -700,7 +773,7 @@ serve(async (req) => {
     }
 
     if (orderType === "wallet_topup") {
-      const creditAmount = Number(metadata.wallet_credit || order?.amount || paidAmount);
+      const creditAmount = Number(order?.amount || paidAmount);
       const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", resolvedAgentId).maybeSingle();
       if (wallet) {
         const newBalance = parseFloat(((wallet.balance || 0) + creditAmount).toFixed(2));

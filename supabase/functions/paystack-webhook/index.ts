@@ -438,6 +438,10 @@ function buildAfaPayload(metadata: Record<string, unknown>) {
   };
 }
 
+function amountMatches(expected: number, actual: number, tolerance = 0.05): boolean {
+  return Math.abs(expected - actual) <= tolerance;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -535,10 +539,13 @@ serve(async (req) => {
       const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
         ? parseFloat(metadataProfit.toFixed(2))
         : 0;
-      const walletCredit = Number(metadata?.wallet_credit || metadata?.amount || verifiedAmount || 0);
+      const requestedWalletCredit = Number(metadata?.wallet_credit);
+      const walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
+        ? Math.min(requestedWalletCredit, verifiedAmount)
+        : verifiedAmount;
       const normalizedAmount = (orderTypeFromMetadata || "data") === "wallet_topup"
         ? walletCredit
-        : (Number.isFinite(verifiedAmount) && verifiedAmount > 0 ? verifiedAmount : Number(metadata?.amount || 0));
+        : (Number.isFinite(verifiedAmount) && verifiedAmount > 0 ? verifiedAmount : 0);
       const recreatedOrder = {
         id: orderId,
         agent_id: typeof metadata?.agent_id === "string" ? metadata.agent_id : "00000000-0000-0000-0000-000000000000",
@@ -594,6 +601,31 @@ serve(async (req) => {
     }
 
     const orderType = (existingOrder?.order_type || orderTypeFromMetadata || "data") as string;
+    const existingAmount = Number(existingOrder?.amount || 0);
+
+    if (orderType !== "wallet_topup" && Number.isFinite(existingAmount) && existingAmount > 0 && !amountMatches(existingAmount, verifiedAmount)) {
+      await supabase.from("orders").update({
+        status: "fulfillment_failed",
+        failure_reason: `Payment amount mismatch. Expected GHS ${existingAmount.toFixed(2)}, received GHS ${verifiedAmount.toFixed(2)}.`,
+      }).eq("id", orderId);
+
+      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Payment amount mismatch" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (orderType === "wallet_topup" && Number.isFinite(existingAmount) && existingAmount > (verifiedAmount + 0.05)) {
+      await supabase.from("orders").update({
+        status: "fulfillment_failed",
+        failure_reason: `Wallet credit mismatch. Credit GHS ${existingAmount.toFixed(2)} exceeds payment GHS ${verifiedAmount.toFixed(2)}.`,
+      }).eq("id", orderId);
+
+      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Wallet credit exceeds verified payment" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (orderType === "agent_activation") {
       const agentId = metadata?.agent_id;

@@ -49,4 +49,27 @@ describe("purchase flow guardrails", () => {
     expect(dashboardWallet).toContain("getAssignedSubAgentPrice");
     expect(dashboardWallet).toContain("profile?.is_sub_agent");
   });
+
+  it("rejects amount mismatch during verify and webhook fulfillment", () => {
+    const verifyPayment = read("supabase/functions/verify-payment/index.ts");
+    const webhook = read("supabase/functions/paystack-webhook/index.ts");
+
+    expect(verifyPayment).toContain("Payment amount mismatch");
+    expect(webhook).toContain("Payment amount mismatch");
+  });
+
+  it("caps recreated wallet topup credit by verified amount", () => {
+    const verifyPayment = read("supabase/functions/verify-payment/index.ts");
+    const webhook = read("supabase/functions/paystack-webhook/index.ts");
+
+    expect(verifyPayment).toContain("Math.min(requestedWalletCredit, verifiedAmount)");
+    expect(webhook).toContain("Math.min(requestedWalletCredit, verifiedAmount)");
+  });
+
+  it("validates initialize-payment amount server-side", () => {
+    const initializePayment = read("supabase/functions/initialize-payment/index.ts");
+
+    expect(initializePayment).toContain("Invalid amount for");
+    expect(initializePayment).toContain("Invalid wallet top-up amount");
+  });
 });
