@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Shield } from "lucide-react";
 import AfaOrderForm from "@/components/AfaOrderForm";
 import { supabase } from "@/integrations/supabase/client";
+import { applyPriceMultiplier, fetchApiPricingContext } from "@/lib/api-source-pricing";
 
 const DEFAULT_AFA_PRICE = "12.50";
 
@@ -19,7 +20,9 @@ const AfaBundles = () => {
 
       const numeric = Number((data as any)?.public_price);
       if (Number.isFinite(numeric) && numeric >= 0) {
-        setAfaPrice(numeric.toFixed(2));
+        const pricingContext = await fetchApiPricingContext();
+        const adjustedPrice = applyPriceMultiplier(numeric, pricingContext.multiplier);
+        setAfaPrice(adjustedPrice.toFixed(2));
       }
     };
 

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { getNetworkCardColors } from "@/lib/utils";
 import { basePackages } from "@/lib/data";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
+import { applyPriceMultiplier, fetchApiPricingContext } from "@/lib/api-source-pricing";
 
 interface DashboardStats {
   walletBalance: number;
@@ -37,6 +38,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false);
   const [agentMarkups, setAgentMarkups] = useState<Record<string, number>>({ MTN: 0, Telecel: 0, AirtelTigo: 0 });
   const [globalCostPrices, setGlobalCostPrices] = useState<Record<string, Record<string, number>>>({});
+  const [priceMultiplier, setPriceMultiplier] = useState(1);
 
   const apiNetwork = NETWORK_API_NAME[activeNetwork];
   const packages = basePackages[apiNetwork] ?? [];
@@ -47,11 +49,12 @@ const Dashboard = () => {
     const fetchData = async () => {
       const today = new Date().toISOString().split("T")[0];
 
-      const [walletRes, ordersRes, markupRes, globalSettingsRes] = await Promise.all([
+      const [walletRes, ordersRes, markupRes, globalSettingsRes, pricingContext] = await Promise.all([
         supabase.from("wallets").select("balance").eq("user_id", user.id).single(),
         supabase.from("orders").select("amount, package_size, status, created_at").eq("agent_id", user.id).gte("created_at", `${today}T00:00:00`),
         supabase.from("profiles").select("markups").eq("id", user.id).single(),
         supabase.from("global_package_settings").select("network, package_size, agent_price"),
+        fetchApiPricingContext(),
       ]);
 
       const balance = walletRes.data ? Number(walletRes.data.balance) : 0;
@@ -63,6 +66,7 @@ const Dashboard = () => {
       }, 0);
 
       setStats({ walletBalance: balance, ordersToday: todayOrders.length, amountToday, gbToday });
+      setPriceMultiplier(pricingContext.multiplier);
       if (markupRes.data?.markups) {
         const raw = markupRes.data.markups as Record<string, string | number>;
         setAgentMarkups({
@@ -97,10 +101,14 @@ const Dashboard = () => {
 
   const getCostPrice = (pkg: { size: string; price: number }) => {
     const costFromGlobal = globalCostPrices[apiNetwork]?.[pkg.size];
-    return costFromGlobal && costFromGlobal > 0 ? costFromGlobal : pkg.price;
+    const basePrice = costFromGlobal && costFromGlobal > 0 ? costFromGlobal : pkg.price;
+    return applyPriceMultiplier(basePrice, priceMultiplier);
   };
 
-  const getDisplayPrice = (basePrice: number) => basePrice + (agentMarkups[apiNetwork] ?? 0);
+  const getDisplayPrice = (basePrice: number) => {
+    const adjustedBase = applyPriceMultiplier(basePrice, priceMultiplier);
+    return adjustedBase + (agentMarkups[apiNetwork] ?? 0);
+  };
 
   const openBuy = (pkg: { size: string; price: number }) => {
     setPhone("");

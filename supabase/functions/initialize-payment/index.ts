@@ -25,6 +25,10 @@ function normalizeNetwork(network: string): string {
   return "MTN";
 }
 
+function hasValidAgentId(agentId: unknown): agentId is string {
+  return typeof agentId === "string" && agentId.length > 0 && agentId !== "00000000-0000-0000-0000-000000000000";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -101,6 +105,7 @@ serve(async (req) => {
     // Server-side order creation — don't trust frontend to create orders
     const orderType = metadata.order_type || "data";
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
+    const isAgentLinkedOrder = hasValidAgentId(agentId);
 
     const { data: providerSettings } = await supabaseAdmin
       .from("system_settings")
@@ -112,7 +117,7 @@ serve(async (req) => {
     if (orderType === "data") {
       const network = typeof metadata.network === "string" ? metadata.network : "";
       const packageSize = typeof metadata.package_size === "string" ? metadata.package_size : "";
-      if (!network || !packageSize || !agentId || agentId === "00000000-0000-0000-0000-000000000000") {
+      if (!network || !packageSize) {
         return new Response(JSON.stringify({ error: "Missing data order metadata" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -123,33 +128,44 @@ serve(async (req) => {
       const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
       let basePrice = 0;
 
-      const { data: agentProfile } = await supabaseAdmin
-        .from("profiles")
-        .select("agent_prices")
-        .eq("user_id", agentId)
-        .maybeSingle();
+      if (isAgentLinkedOrder) {
+        const { data: agentProfile } = await supabaseAdmin
+          .from("profiles")
+          .select("agent_prices")
+          .eq("user_id", agentId)
+          .maybeSingle();
 
-      const agentPrices = (agentProfile?.agent_prices || {}) as Record<string, Record<string, string | number>>;
-      const candidates = [normalizedPackage, packageSize, packageSize.replace(/\s+/g, "")];
-      const byNetwork = agentPrices[normalizedNetwork] || agentPrices[network] || null;
-      if (byNetwork && typeof byNetwork === "object") {
-        for (const candidate of candidates) {
-          const value = Number(byNetwork[candidate]);
-          if (Number.isFinite(value) && value > 0) {
-            basePrice = value;
-            break;
+        const agentPrices = (agentProfile?.agent_prices || {}) as Record<string, Record<string, string | number>>;
+        const candidates = [normalizedPackage, packageSize, packageSize.replace(/\s+/g, "")];
+        const byNetwork = agentPrices[normalizedNetwork] || agentPrices[network] || null;
+        if (byNetwork && typeof byNetwork === "object") {
+          for (const candidate of candidates) {
+            const value = Number(byNetwork[candidate]);
+            if (Number.isFinite(value) && value > 0) {
+              basePrice = value;
+              break;
+            }
           }
         }
-      }
 
-      if (!(Number.isFinite(basePrice) && basePrice > 0)) {
+        if (!(Number.isFinite(basePrice) && basePrice > 0)) {
+          const { data: globalRow } = await supabaseAdmin
+            .from("global_package_settings")
+            .select("agent_price")
+            .eq("network", normalizedNetwork)
+            .eq("package_size", normalizedPackage)
+            .maybeSingle();
+          const fallback = Number(globalRow?.agent_price);
+          if (Number.isFinite(fallback) && fallback > 0) basePrice = fallback;
+        }
+      } else {
         const { data: globalRow } = await supabaseAdmin
           .from("global_package_settings")
-          .select("agent_price")
+          .select("public_price")
           .eq("network", normalizedNetwork)
           .eq("package_size", normalizedPackage)
           .maybeSingle();
-        const fallback = Number(globalRow?.agent_price);
+        const fallback = Number(globalRow?.public_price);
         if (Number.isFinite(fallback) && fallback > 0) basePrice = fallback;
       }
 
@@ -180,7 +196,11 @@ serve(async (req) => {
         .eq("package_size", "BUNDLE")
         .maybeSingle();
 
-      const baseAfa = Number(afaSetting?.agent_price ?? afaSetting?.public_price ?? 0);
+      const baseAfa = Number(
+        isAgentLinkedOrder
+          ? (afaSetting?.agent_price ?? afaSetting?.public_price ?? 0)
+          : (afaSetting?.public_price ?? afaSetting?.agent_price ?? 0),
+      );
       if (Number.isFinite(baseAfa) && baseAfa > 0) {
         const adjustedBase = Number((baseAfa * priceMultiplier).toFixed(2));
         const expectedTotal = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
