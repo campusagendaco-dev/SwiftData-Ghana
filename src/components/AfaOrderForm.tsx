@@ -71,27 +71,6 @@ const AfaOrderForm = ({ price, agentId, profit = 0, onOrderSaved }: AfaOrderForm
     const orderId = crypto.randomUUID();
     const resolvedAgentId = agentId || "00000000-0000-0000-0000-000000000000";
 
-    // Create order in DB
-    const { error } = await supabase.from("orders").insert({
-      id: orderId,
-      agent_id: resolvedAgentId,
-      order_type: "afa",
-      amount: total,
-      profit,
-      afa_full_name: form.fullName.trim(),
-      afa_ghana_card: form.ghanaCardNumber.trim(),
-      afa_occupation: form.occupation.trim(),
-      afa_email: form.email.trim(),
-      afa_residence: form.placeOfResidence.trim(),
-      afa_date_of_birth: form.dateOfBirth,
-    });
-
-    if (error) {
-      toast({ title: "Order failed", description: error.message, variant: "destructive" });
-      setSubmitting(false);
-      return;
-    }
-
     // Initialize Paystack payment
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
@@ -108,6 +87,8 @@ const AfaOrderForm = ({ price, agentId, profit = 0, onOrderSaved }: AfaOrderForm
           afa_email: form.email.trim(),
           afa_residence: form.placeOfResidence.trim(),
           afa_date_of_birth: form.dateOfBirth,
+          agent_id: resolvedAgentId,
+          profit,
           fee,
         },
       },

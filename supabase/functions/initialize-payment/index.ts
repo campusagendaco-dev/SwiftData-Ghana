@@ -91,12 +91,17 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!existingOrder) {
+      const metadataProfit = Number(metadata.profit);
+      const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
+        ? parseFloat(metadataProfit.toFixed(2))
+        : 0;
+
       const orderRow: Record<string, unknown> = {
         id: reference,
         agent_id: agentId,
         order_type: orderType,
         amount,
-        profit: 0,
+        profit: normalizedProfit,
         status: "pending",
       };
       if (metadata.customer_phone) orderRow.customer_phone = metadata.customer_phone;

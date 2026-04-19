@@ -201,23 +201,6 @@ const AgentStore = () => {
     const profit = parseFloat((agentPrice - costBase).toFixed(2));
     const orderId = crypto.randomUUID();
 
-    const { error } = await supabase.from("orders").insert({
-      id: orderId,
-      agent_id: agent.user_id,
-      order_type: "data",
-      customer_phone: phone.replace(/\s/g, ""),
-      network,
-      package_size: size,
-      amount: total,
-      profit,
-    });
-
-    if (error) {
-      toast({ title: "Order failed", description: error.message, variant: "destructive" });
-      setBuyingPkg(null);
-      return;
-    }
-
     const { data: paymentData, error: paymentError } = await supabase.functions.invoke("initialize-payment", {
       body: {
         email: `${phone.replace(/\s/g, "")}@customer.swiftdata.gh`,
@@ -232,6 +215,7 @@ const AgentStore = () => {
           customer_phone: phone.replace(/\s/g, ""),
           fee,
           agent_id: agent.user_id,
+          profit,
           base_price: costBase,
           payment_source: "agent_store",
           deduct_agent_wallet: false,

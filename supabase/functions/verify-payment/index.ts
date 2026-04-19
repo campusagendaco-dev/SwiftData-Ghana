@@ -586,7 +586,6 @@ serve(async (req) => {
 
     const metadata = verifyData.data.metadata || {};
     const orderType = order?.order_type || metadata.order_type;
-    const agentId = order?.agent_id || metadata.agent_id;
     const paidAmount = Number(order?.amount || (verifyData.data.amount / 100));
 
     if (order) {
@@ -598,6 +597,9 @@ serve(async (req) => {
       if (!order.network && metadata.network) patch.network = metadata.network;
       if (!order.package_size && metadata.package_size) patch.package_size = metadata.package_size;
       if (!order.customer_phone && metadata.customer_phone) patch.customer_phone = metadata.customer_phone;
+      if ((!order.profit || Number(order.profit) === 0) && Number.isFinite(Number(metadata.profit))) {
+        patch.profit = parseFloat(Number(metadata.profit).toFixed(2));
+      }
 
       if (Object.keys(patch).length > 0) {
         await supabase.from("orders").update(patch).eq("id", reference);
@@ -607,16 +609,21 @@ serve(async (req) => {
 
     let shouldSendDataPaymentSms = false;
     let smsPhone = "";
+    const resolvedAgentId = order?.agent_id || metadata.agent_id || "00000000-0000-0000-0000-000000000000";
 
     if (!order) {
       console.log("Recreating order from Paystack metadata:", { reference, orderType, agentId });
       const walletCredit = Number(metadata.wallet_credit || metadata.amount || paidAmount);
+      const metadataProfit = Number(metadata.profit);
+      const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
+        ? parseFloat(metadataProfit.toFixed(2))
+        : 0;
       await supabase.from("orders").insert({
         id: reference,
-        agent_id: agentId || "00000000-0000-0000-0000-000000000000",
+        agent_id: resolvedAgentId,
         order_type: orderType || "wallet_topup",
         amount: orderType === "wallet_topup" ? walletCredit : paidAmount,
-        profit: 0,
+        profit: normalizedProfit,
         status: "paid",
         network: metadata.network || null,
         package_size: metadata.package_size || null,
@@ -636,9 +643,9 @@ serve(async (req) => {
 
     console.log("Payment verified for:", reference, "type:", orderType);
 
-    if (orderType === "agent_activation" && agentId) {
-      console.log("Processing agent activation for:", agentId);
-      await supabase.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", agentId);
+    if (orderType === "agent_activation" && resolvedAgentId) {
+      console.log("Processing agent activation for:", resolvedAgentId);
+      await supabase.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", resolvedAgentId);
       await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
       return new Response(JSON.stringify({ status: "fulfilled" }), {
         status: 200,
@@ -647,7 +654,7 @@ serve(async (req) => {
     }
 
     if (orderType === "sub_agent_activation") {
-      const subAgentId = metadata?.sub_agent_id || agentId;
+      const subAgentId = metadata?.sub_agent_id || resolvedAgentId;
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || order?.amount || paidAmount || 0);
       const agentProfit = Number.isFinite(Number(metadata?.agent_profit))
@@ -682,12 +689,12 @@ serve(async (req) => {
 
     if (orderType === "wallet_topup") {
       const creditAmount = Number(metadata.wallet_credit || order?.amount || paidAmount);
-      const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", agentId).maybeSingle();
+      const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", resolvedAgentId).maybeSingle();
       if (wallet) {
         const newBalance = parseFloat(((wallet.balance || 0) + creditAmount).toFixed(2));
-        await supabase.from("wallets").update({ balance: newBalance }).eq("agent_id", agentId);
+        await supabase.from("wallets").update({ balance: newBalance }).eq("agent_id", resolvedAgentId);
       } else {
-        await supabase.from("wallets").insert({ agent_id: agentId, balance: creditAmount });
+        await supabase.from("wallets").insert({ agent_id: resolvedAgentId, balance: creditAmount });
       }
       await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
       return new Response(JSON.stringify({ status: "fulfilled" }), {
