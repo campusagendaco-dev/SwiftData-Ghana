@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Wallet, Loader2 } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
+import { getNetworkCardColors } from "@/lib/utils";
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
 
@@ -133,6 +134,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   }, [user]);
 
   const selectedPackage = packages.find((item) => item.size === selectedSize);
+  const cardColors = getNetworkCardColors(network);
 
   const refreshBalance = async () => {
     if (!user) return;
@@ -233,16 +235,25 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         <CardContent className="space-y-4">
           <div>
             <Label>Package Size</Label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
               {packages.map((item) => (
                 <button
                   key={item.size}
                   type="button"
                   onClick={() => setSelectedSize(item.size)}
-                  className={`border rounded-lg px-3 py-2 text-left ${selectedSize === item.size ? "border-primary bg-primary/5" : "border-border"}`}
+                  className={`${cardColors.card} rounded-xl p-3 flex flex-col gap-2 border transition-colors ${selectedSize === item.size ? "ring-2 ring-primary/40" : ""}`}
                 >
-                  <p className="text-sm font-semibold">{item.size}</p>
-                  <p className="text-xs text-muted-foreground">GH₵ {item.price.toFixed(2)}</p>
+                  <div className="flex justify-between items-start">
+                    <span className={`${cardColors.label} text-xs font-semibold`}>{network}</span>
+                    <span className={`${cardColors.price} text-xs`}>Price</span>
+                  </div>
+                  <div className="flex justify-between items-end">
+                    <span className={`${cardColors.size} text-2xl font-black`}>{item.size}</span>
+                    <span className={`${cardColors.size} font-bold text-sm`}>GH₵ {item.price.toFixed(2)}</span>
+                  </div>
+                  <span className={`w-full ${cardColors.btn} text-sm font-semibold py-1.5 rounded-lg text-center`}>
+                    {selectedSize === item.size ? "Selected" : "Select"}
+                  </span>
                 </button>
               ))}
             </div>

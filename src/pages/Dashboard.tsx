@@ -1,91 +1,54 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Wallet, ShoppingCart, TrendingUp, Database, Home, X, Phone } from "lucide-react";
+import { Wallet, ShoppingCart, TrendingUp, Home, ArrowDownToLine, ArrowUpRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { cn } from "@/lib/utils";
-import { getNetworkCardColors } from "@/lib/utils";
-import { basePackages } from "@/lib/data";
-import { getFunctionErrorMessage } from "@/lib/function-errors";
-import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
-import { applyPriceMultiplier, fetchApiPricingContext } from "@/lib/api-source-pricing";
 
 interface DashboardStats {
   walletBalance: number;
-  ordersToday: number;
-  amountToday: number;
-  gbToday: number;
+  totalOrders: number;
+  totalDeposited: number;
+  totalSalesAmount: number;
 }
 
-const NETWORKS = ["MTN", "Telecel", "AT iShare"] as const;
-type Network = typeof NETWORKS[number];
-
-const NETWORK_API_NAME: Record<Network, string> = {
-  MTN: "MTN",
-  Telecel: "Telecel",
-  "AT iShare": "AirtelTigo",
-};
-
 const Dashboard = () => {
-  const { user, profile } = useAuth();
-  const { toast } = useToast();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [stats, setStats] = useState<DashboardStats>({ walletBalance: 0, ordersToday: 0, amountToday: 0, gbToday: 0 });
-  const [activeNetwork, setActiveNetwork] = useState<Network>("MTN");
-  const [buyDialog, setBuyDialog] = useState<{ open: boolean; pkg?: { size: string; price: number } }>({ open: false });
-  const [phone, setPhone] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [agentMarkups, setAgentMarkups] = useState<Record<string, number>>({ MTN: 0, Telecel: 0, AirtelTigo: 0 });
-  const [globalCostPrices, setGlobalCostPrices] = useState<Record<string, Record<string, number>>>({});
-  const [priceMultiplier, setPriceMultiplier] = useState(1);
-
-  const apiNetwork = NETWORK_API_NAME[activeNetwork];
-  const packages = basePackages[apiNetwork] ?? [];
+  const [stats, setStats] = useState<DashboardStats>({
+    walletBalance: 0,
+    totalOrders: 0,
+    totalDeposited: 0,
+    totalSalesAmount: 0,
+  });
 
   useEffect(() => {
     if (!user) return;
 
     const fetchData = async () => {
-      const today = new Date().toISOString().split("T")[0];
-
-      const [walletRes, ordersRes, markupRes, globalSettingsRes, pricingContext] = await Promise.all([
+      const [walletRes, ordersRes] = await Promise.all([
         supabase.from("wallets").select("balance").eq("agent_id", user.id).single(),
-        supabase.from("orders").select("amount, package_size, status, created_at").eq("agent_id", user.id).gte("created_at", `${today}T00:00:00`),
-        supabase.from("profiles").select("markups").eq("user_id", user.id).single(),
-        supabase.from("global_package_settings").select("network, package_size, agent_price"),
-        fetchApiPricingContext(),
+        supabase
+          .from("orders")
+          .select("amount, order_type, status")
+          .eq("agent_id", user.id)
+          .in("status", ["paid", "processing", "fulfilled", "fulfillment_failed"]),
       ]);
 
       const balance = walletRes.data ? Number(walletRes.data.balance) : 0;
-      const todayOrders = (ordersRes.data ?? []).filter((o) => ["paid", "fulfilled", "fulfillment_failed"].includes(o.status));
-      const amountToday = todayOrders.reduce((s, o) => s + Number(o.amount), 0);
-      const gbToday = todayOrders.reduce((s, o) => {
-        const match = o.package_size?.match(/^(\d+(\.\d+)?)/);
-        return s + (match ? parseFloat(match[1]) : 0);
-      }, 0);
+      const paidishOrders = (ordersRes.data ?? []).filter((o: any) => ["paid", "processing", "fulfilled", "fulfillment_failed"].includes(o.status));
+      const depositedOrders = paidishOrders.filter((o: any) => o.order_type === "wallet_topup");
+      const dataOrders = paidishOrders.filter((o: any) => o.order_type === "data");
 
-      setStats({ walletBalance: balance, ordersToday: todayOrders.length, amountToday, gbToday });
-      setPriceMultiplier(pricingContext.multiplier);
-      if (markupRes.data?.markups) {
-        const raw = markupRes.data.markups as Record<string, string | number>;
-        setAgentMarkups({
-          MTN: parseFloat(String(raw.MTN ?? 0)),
-          Telecel: parseFloat(String(raw.Telecel ?? 0)),
-          AirtelTigo: parseFloat(String(raw.AirtelTigo ?? 0)),
-        });
-      }
+      const totalDeposited = depositedOrders.reduce((sum: number, order: any) => sum + Number(order.amount || 0), 0);
+      const totalSalesAmount = dataOrders.reduce((sum: number, order: any) => sum + Number(order.amount || 0), 0);
 
-      // Build lookup of admin-configured cost prices per network/package
-      const costMap: Record<string, Record<string, number>> = {};
-      (globalSettingsRes.data ?? []).forEach((row: any) => {
-        const price = parseFloat(String(row.agent_price));
-        if (!Number.isFinite(price) || price <= 0) return;
-        if (!costMap[row.network]) costMap[row.network] = {};
-        costMap[row.network][row.package_size] = price;
+      setStats({
+        walletBalance: balance,
+        totalOrders: paidishOrders.length,
+        totalDeposited,
+        totalSalesAmount,
       });
-      setGlobalCostPrices(costMap);
     };
 
     fetchData();
@@ -100,53 +63,11 @@ const Dashboard = () => {
     return () => { supabase.removeChannel(walletChannel); };
   }, [user]);
 
-  const getCostPrice = (pkg: { size: string; price: number }) => {
-    const costFromGlobal = globalCostPrices[apiNetwork]?.[pkg.size];
-    const basePrice = costFromGlobal && costFromGlobal > 0 ? costFromGlobal : pkg.price;
-    return applyPriceMultiplier(basePrice, priceMultiplier);
-  };
-
-  const getDisplayPrice = (basePrice: number) => {
-    const adjustedBase = applyPriceMultiplier(basePrice, priceMultiplier);
-    return adjustedBase + (agentMarkups[apiNetwork] ?? 0);
-  };
-
-  const openBuy = (pkg: { size: string; price: number }) => {
-    setPhone("");
-    setBuyDialog({ open: true, pkg });
-  };
-
-  const handleBuy = async () => {
-    if (!buyDialog.pkg) return;
-    if (!/^0[235]\d{8}$/.test(phone)) {
-      toast({ title: "Invalid phone number", description: "Enter a valid Ghana number (e.g. 0241234567)", variant: "destructive" });
-      return;
-    }
-    setLoading(true);
-    try {
-      const costPrice = getCostPrice(buyDialog.pkg);
-      const { data, error } = await invokePublicFunctionAsUser("wallet-buy-data", {
-        body: { network: apiNetwork, package_size: buyDialog.pkg.size, customer_phone: phone, amount: costPrice },
-      });
-      if (error || data?.error) {
-        const message = data?.error || await getFunctionErrorMessage(error, "Purchase failed");
-        throw new Error(message);
-      }
-      toast({ title: "Order placed!", description: `${buyDialog.pkg.size} for ${phone}` });
-      setBuyDialog({ open: false });
-      setPhone("");
-    } catch (err: any) {
-      toast({ title: "Purchase failed", description: err.message, variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const statItems = [
     { label: "Wallet Balance", value: `GH₵ ${stats.walletBalance.toFixed(2)}`, icon: Wallet },
-    { label: "Today's Orders", value: String(stats.ordersToday), icon: ShoppingCart },
-    { label: "Today's Amount", value: `GH₵ ${stats.amountToday.toFixed(2)}`, icon: TrendingUp },
-    { label: "Today's Bundle", value: `${stats.gbToday.toFixed(0)} GB`, icon: Database },
+    { label: "Total Orders", value: String(stats.totalOrders), icon: ShoppingCart },
+    { label: "Total Deposited", value: `GH₵ ${stats.totalDeposited.toFixed(2)}`, icon: ArrowDownToLine },
+    { label: "Total Sales Amount", value: `GH₵ ${stats.totalSalesAmount.toFixed(2)}`, icon: ArrowUpRight },
   ];
 
   return (
@@ -165,8 +86,8 @@ const Dashboard = () => {
           <p className="text-white text-3xl font-bold">GH₵ {stats.walletBalance.toFixed(2)}</p>
         </div>
         <div className="sm:text-right">
-          <p className="text-white/50 text-xs mb-1">Today's Spent</p>
-          <p className="text-white text-2xl font-bold">GH₵ {stats.amountToday.toFixed(2)}</p>
+          <p className="text-white/50 text-xs mb-1">Total Deposited</p>
+          <p className="text-white text-2xl font-bold">GH₵ {stats.totalDeposited.toFixed(2)}</p>
         </div>
         <button
           onClick={() => navigate("/dashboard/wallet")}
@@ -186,87 +107,18 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* Network tabs */}
-      <div className="flex gap-2 mb-5 flex-wrap">
-        {NETWORKS.map((n) => (
-          <button
-            key={n}
-            onClick={() => setActiveNetwork(n)}
-            className={cn(
-              "px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors",
-              activeNetwork === n
-                ? "bg-amber-400 border-amber-400 text-black"
-                : "border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-600"
-            )}
-          >
-            {n}
-          </button>
-        ))}
+      <div className="bg-card border border-border rounded-xl p-4 md:p-5">
+        <p className="text-sm text-muted-foreground mb-3">
+          Overview now focuses on transaction health. Use Buy Data pages for package purchases.
+        </p>
+        <button
+          onClick={() => navigate("/dashboard/buy-data/mtn")}
+          className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-300 transition-colors"
+        >
+          Go To Buy Data
+          <TrendingUp className="w-4 h-4" />
+        </button>
       </div>
-
-      {/* Package cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {packages.map((pkg) => {
-          const displayPrice = getDisplayPrice(pkg.price);
-          const c = getNetworkCardColors(apiNetwork);
-          return (
-            <div key={pkg.size} className={`${c.card} rounded-xl p-3 flex flex-col gap-2`}>
-              <div className="flex justify-between items-start">
-                <span className={`${c.label} text-xs font-semibold`}>{activeNetwork}</span>
-                <span className={`${c.price} text-xs`}>Price</span>
-              </div>
-              <div className="flex justify-between items-end">
-                <span className={`${c.size} text-2xl font-black`}>{pkg.size}</span>
-                <span className={`${c.size} font-bold text-sm`}>GH₵ {displayPrice.toFixed(2)}</span>
-              </div>
-              <button
-                onClick={() => openBuy(pkg)}
-                className={`w-full ${c.btn} text-sm font-semibold py-1.5 rounded-lg transition-colors`}
-              >
-                Buy
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Buy Dialog */}
-      {buyDialog.open && buyDialog.pkg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-lg text-gray-900">
-                Buy {buyDialog.pkg.size} — {activeNetwork}
-              </h2>
-              <button onClick={() => setBuyDialog({ open: false })} className="text-gray-600 hover:text-gray-900">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-sm text-gray-900 mb-4">
-              Price: <span className="font-semibold text-gray-900">GH₵ {getDisplayPrice(buyDialog.pkg.price).toFixed(2)}</span>
-            </p>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Customer Phone Number</label>
-            <div className="flex items-center border border-gray-300 rounded-lg px-3 py-2 gap-2 mb-4 focus-within:border-amber-400">
-              <Phone className="w-4 h-4 text-gray-600 shrink-0" />
-              <input
-                type="tel"
-                placeholder="e.g. 0241234567"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="flex-1 outline-none text-sm"
-                maxLength={10}
-              />
-            </div>
-            <button
-              onClick={handleBuy}
-              disabled={loading || phone.length < 10}
-              className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold py-2.5 rounded-xl transition-colors"
-            >
-              {loading ? "Processing..." : "Confirm Purchase"}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

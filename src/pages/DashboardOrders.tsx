@@ -50,6 +50,7 @@ const DashboardOrders = () => {
       .from("orders")
       .select("*")
       .in("agent_id", candidateAgentIds)
+      .in("status", ["paid", "processing", "fulfilled", "fulfillment_failed"])
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -100,8 +101,8 @@ const DashboardOrders = () => {
             <SelectContent>
               <SelectItem value="all">All Orders</SelectItem>
               <SelectItem value="data">Data Only</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="processing">Processing</SelectItem>
               <SelectItem value="fulfilled">Fulfilled</SelectItem>
               <SelectItem value="fulfillment_failed">Failed</SelectItem>
             </SelectContent>
