@@ -41,32 +41,41 @@ function normalizePhoneForQuery(phone: string): string[] {
 type DisplayState = {
   key: "payment_verified" | "pending_delivery" | "delivered" | "payment_processing";
   label: string;
-  description: string;
   icon: typeof ShieldCheck;
   className: string;
 };
 
 function getDisplayState(order: TrackedOrder): DisplayState {
+  const now = Date.now();
+  const createdAt = new Date(order.created_at).getTime();
+  const updatedAt = new Date(order.updated_at || order.created_at).getTime();
+  const deliveryAt = updatedAt + DELIVERED_AFTER_MINUTES * 60 * 1000;
+  const pendingFallbackAt = createdAt + DELIVERED_AFTER_MINUTES * 60 * 1000;
+
   if (order.status === "paid") {
+    // Some legacy rows can remain in `paid`; still advance to success after timeout.
+    if (now >= pendingFallbackAt) {
+      return {
+        key: "delivered",
+        label: "Order Successful",
+        icon: CheckCircle2,
+        className: "text-green-600",
+      };
+    }
+
     return {
       key: "payment_verified",
       label: "Payment Verified",
-      description: "Payment has been confirmed successfully.",
       icon: ShieldCheck,
       className: "text-blue-600",
     };
   }
 
   if (order.status === "fulfilled" || order.status === "fulfillment_failed") {
-    const sentAt = new Date(order.updated_at || order.created_at).getTime();
-    const now = Date.now();
-    const deliveryAt = sentAt + DELIVERED_AFTER_MINUTES * 60 * 1000;
-
     if (now < deliveryAt) {
       return {
         key: "pending_delivery",
         label: "Pending Delivery",
-        description: "Order has been sent to API and delivery is in progress.",
         icon: Clock3,
         className: "text-amber-600",
       };
@@ -74,8 +83,7 @@ function getDisplayState(order: TrackedOrder): DisplayState {
 
     return {
       key: "delivered",
-      label: "Data Delivered",
-      description: "Your data delivery window is complete.",
+      label: "Order Successful",
       icon: CheckCircle2,
       className: "text-green-600",
     };
@@ -84,7 +92,6 @@ function getDisplayState(order: TrackedOrder): DisplayState {
   return {
     key: "payment_processing",
     label: "Processing Payment",
-    description: "Waiting for payment verification.",
     icon: Clock3,
     className: "text-yellow-600",
   };
@@ -227,7 +234,6 @@ const PhoneOrderTracker = ({
             <display.icon className={`w-5 h-5 ${display.className}`} />
             <p className={`font-semibold ${display.className}`}>{display.label}</p>
           </div>
-          <p className="text-sm text-muted-foreground mb-3">{display.description}</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div className="rounded-md bg-muted/50 px-3 py-2">
