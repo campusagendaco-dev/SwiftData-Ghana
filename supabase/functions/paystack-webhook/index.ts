@@ -445,7 +445,7 @@ serve(async (req) => {
 
     let { data: existingOrder } = await supabase
       .from("orders")
-      .select("id, order_type, agent_id, network, package_size, customer_phone, amount, status, profit")
+      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -464,6 +464,10 @@ serve(async (req) => {
       const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
         ? parseFloat(metadataProfit.toFixed(2))
         : 0;
+      const metadataParentProfit = Number(metadata?.parent_profit);
+      const normalizedParentProfit = Number.isFinite(metadataParentProfit) && metadataParentProfit > 0
+        ? parseFloat(metadataParentProfit.toFixed(2))
+        : 0;
       const requestedWalletCredit = Number(metadata?.wallet_credit);
       const walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
         ? Math.min(requestedWalletCredit, verifiedAmount)
@@ -474,9 +478,11 @@ serve(async (req) => {
       const recreatedOrder = {
         id: orderId,
         agent_id: typeof metadata?.agent_id === "string" ? metadata.agent_id : "00000000-0000-0000-0000-000000000000",
+        parent_agent_id: typeof metadata?.parent_agent_id === "string" ? metadata.parent_agent_id : null,
         order_type: orderTypeFromMetadata || "data",
         amount: normalizedAmount,
         profit: normalizedProfit,
+        parent_profit: normalizedParentProfit,
         status: "paid",
         failure_reason: null,
         network: typeof metadata?.network === "string" ? metadata.network : null,
@@ -511,6 +517,12 @@ serve(async (req) => {
       if (!existingOrder.customer_phone && typeof metadata?.customer_phone === "string") patch.customer_phone = metadata.customer_phone;
       if ((!existingOrder.profit || Number(existingOrder.profit) === 0) && Number.isFinite(Number(metadata?.profit))) {
         patch.profit = parseFloat(Number(metadata.profit).toFixed(2));
+      }
+      if (!existingOrder.parent_agent_id && typeof metadata?.parent_agent_id === "string" && metadata.parent_agent_id) {
+        patch.parent_agent_id = metadata.parent_agent_id;
+      }
+      if ((!existingOrder.parent_profit || Number(existingOrder.parent_profit) === 0) && Number.isFinite(Number(metadata?.parent_profit))) {
+        patch.parent_profit = parseFloat(Number(metadata.parent_profit).toFixed(2));
       }
 
       if (existingOrder.status === "pending" || existingOrder.status === "fulfillment_failed") {

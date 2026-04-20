@@ -25,6 +25,28 @@ function normalizeNetwork(network: string): string {
   return "MTN";
 }
 
+function resolvePriceFromMap(
+  prices: Record<string, Record<string, string | number>>,
+  normalizedNetwork: string,
+  network: string,
+  normalizedPackage: string,
+  packageSize: string,
+): number {
+  const networkCandidates = [normalizedNetwork, network, network.replace(/\s+/g, "")];
+  const packageCandidates = [normalizedPackage, packageSize, packageSize.replace(/\s+/g, "")];
+
+  for (const n of networkCandidates) {
+    const byNetwork = prices[n];
+    if (!byNetwork || typeof byNetwork !== "object") continue;
+    for (const p of packageCandidates) {
+      const value = Number(byNetwork[p]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  }
+
+  return 0;
+}
+
 function hasValidAgentId(agentId: unknown): agentId is string {
   return typeof agentId === "string" && agentId.length > 0 && agentId !== "00000000-0000-0000-0000-000000000000";
 }
@@ -109,6 +131,10 @@ serve(async (req) => {
 
     const priceMultiplier = 1;
     let resolvedAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
+    let resolvedProfit = 0;
+    let resolvedParentProfit = 0;
+    let resolvedParentAgentId: string | null = null;
+    let enrichedMetadata: Record<string, unknown> = { ...metadata };
 
     if (orderType === "data") {
       const network = typeof metadata.network === "string" ? metadata.network : "";
@@ -122,23 +148,111 @@ serve(async (req) => {
 
       const normalizedNetwork = normalizeNetwork(network);
       const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
-      const { data: globalRow } = await supabaseAdmin
-        .from("global_package_settings")
-        .select(isAgentLinkedOrder ? "agent_price" : "public_price")
-        .eq("network", normalizedNetwork)
-        .eq("package_size", normalizedPackage)
-        .maybeSingle();
-      const basePrice = Number(isAgentLinkedOrder ? globalRow?.agent_price : globalRow?.public_price);
+      if (isAgentLinkedOrder) {
+        const { data: globalRow } = await supabaseAdmin
+          .from("global_package_settings")
+          .select("agent_price")
+          .eq("network", normalizedNetwork)
+          .eq("package_size", normalizedPackage)
+          .maybeSingle();
 
-      if (!(Number.isFinite(basePrice) && basePrice > 0)) {
-        return new Response(JSON.stringify({ error: "Package price is not configured" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        const adminBase = Number(globalRow?.agent_price);
+        if (!(Number.isFinite(adminBase) && adminBase > 0)) {
+          return new Response(JSON.stringify({ error: "Package price is not configured" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: sellerProfile } = await supabaseAdmin
+          .from("profiles")
+          .select("is_sub_agent, parent_agent_id, agent_prices")
+          .eq("user_id", agentId)
+          .maybeSingle();
+
+        const sellerPrices = (sellerProfile?.agent_prices || {}) as Record<string, Record<string, string | number>>;
+        const sellerListed = resolvePriceFromMap(
+          sellerPrices,
+          normalizedNetwork,
+          network,
+          normalizedPackage,
+          packageSize,
+        );
+
+        let chargeBase = adminBase;
+
+        if (sellerProfile?.is_sub_agent) {
+          resolvedParentAgentId = sellerProfile.parent_agent_id || null;
+          let parentAssignedBase = 0;
+
+          if (resolvedParentAgentId) {
+            const { data: parentProfile } = await supabaseAdmin
+              .from("profiles")
+              .select("sub_agent_prices")
+              .eq("user_id", resolvedParentAgentId)
+              .maybeSingle();
+
+            const parentPrices = (parentProfile?.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+            parentAssignedBase = resolvePriceFromMap(
+              parentPrices,
+              normalizedNetwork,
+              network,
+              normalizedPackage,
+              packageSize,
+            );
+          }
+
+          if (!(Number.isFinite(parentAssignedBase) && parentAssignedBase > 0)) {
+            parentAssignedBase = adminBase;
+          }
+
+          chargeBase = Number.isFinite(sellerListed) && sellerListed > 0 ? sellerListed : parentAssignedBase;
+          resolvedParentProfit = Math.max(0, Number((parentAssignedBase - adminBase).toFixed(2)));
+          resolvedProfit = Math.max(0, Number((chargeBase - parentAssignedBase).toFixed(2)));
+        } else {
+          chargeBase = Number.isFinite(sellerListed) && sellerListed > 0 ? sellerListed : adminBase;
+          resolvedProfit = Math.max(0, Number((chargeBase - adminBase).toFixed(2)));
+        }
+
+        const adjustedBase = Number((chargeBase * priceMultiplier).toFixed(2));
+        resolvedAmount = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        enrichedMetadata = {
+          ...metadata,
+          agent_id: agentId,
+          network,
+          package_size: packageSize,
+          base_price: adjustedBase,
+          profit: resolvedProfit,
+          parent_profit: resolvedParentProfit,
+          parent_agent_id: resolvedParentAgentId,
+        };
+      } else {
+        const { data: globalRow } = await supabaseAdmin
+          .from("global_package_settings")
+          .select("public_price")
+          .eq("network", normalizedNetwork)
+          .eq("package_size", normalizedPackage)
+          .maybeSingle();
+        const publicBase = Number(globalRow?.public_price);
+
+        if (!(Number.isFinite(publicBase) && publicBase > 0)) {
+          return new Response(JSON.stringify({ error: "Package price is not configured" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const adjustedBase = Number((publicBase * priceMultiplier).toFixed(2));
+        resolvedAmount = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        enrichedMetadata = {
+          ...metadata,
+          network,
+          package_size: packageSize,
+          base_price: adjustedBase,
+          profit: 0,
+          parent_profit: 0,
+        };
       }
-
-      const adjustedBase = Number((basePrice * priceMultiplier).toFixed(2));
-      resolvedAmount = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
     }
 
     if (orderType === "afa") {
@@ -197,9 +311,11 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!existingOrder) {
-      const metadataProfit = Number(metadata.profit);
-      const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
-        ? parseFloat(metadataProfit.toFixed(2))
+      const normalizedProfit = Number.isFinite(resolvedProfit) && resolvedProfit > 0
+        ? parseFloat(resolvedProfit.toFixed(2))
+        : 0;
+      const normalizedParentProfit = Number.isFinite(resolvedParentProfit) && resolvedParentProfit > 0
+        ? parseFloat(resolvedParentProfit.toFixed(2))
         : 0;
 
       const orderRow: Record<string, unknown> = {
@@ -208,8 +324,10 @@ serve(async (req) => {
         order_type: orderType,
         amount: resolvedAmount,
         profit: normalizedProfit,
+        parent_profit: normalizedParentProfit,
         status: "pending",
       };
+      if (resolvedParentAgentId) orderRow.parent_agent_id = resolvedParentAgentId;
       if (metadata.customer_phone) orderRow.customer_phone = metadata.customer_phone;
       if (metadata.network) orderRow.network = metadata.network;
       if (metadata.package_size) orderRow.package_size = metadata.package_size;
@@ -231,7 +349,6 @@ serve(async (req) => {
       }
       console.log("Order created server-side:", reference, orderType);
     } else {
-      const metadataProfit = Number(metadata.profit);
       const patch: Record<string, unknown> = {};
 
       if (metadata.agent_id) patch.agent_id = metadata.agent_id;
@@ -244,8 +361,17 @@ serve(async (req) => {
       if (metadata.afa_email) patch.afa_email = metadata.afa_email;
       if (metadata.afa_residence) patch.afa_residence = metadata.afa_residence;
       if (metadata.afa_date_of_birth) patch.afa_date_of_birth = metadata.afa_date_of_birth;
-      if (Number.isFinite(metadataProfit) && metadataProfit > 0) {
-        patch.profit = parseFloat(metadataProfit.toFixed(2));
+
+      if (orderType === "data") {
+        patch.amount = resolvedAmount;
+        patch.profit = Number.isFinite(resolvedProfit) ? parseFloat(resolvedProfit.toFixed(2)) : 0;
+        patch.parent_profit = Number.isFinite(resolvedParentProfit) ? parseFloat(resolvedParentProfit.toFixed(2)) : 0;
+        patch.parent_agent_id = resolvedParentAgentId;
+      } else {
+        const metadataProfit = Number(metadata.profit);
+        if (Number.isFinite(metadataProfit) && metadataProfit > 0) {
+          patch.profit = parseFloat(metadataProfit.toFixed(2));
+        }
       }
 
       if (Object.keys(patch).length > 0) {
@@ -268,7 +394,7 @@ serve(async (req) => {
         amount: amountInPesewas,
         reference,
         callback_url,
-        metadata,
+        metadata: enrichedMetadata,
         currency: "GHS",
       }),
     });

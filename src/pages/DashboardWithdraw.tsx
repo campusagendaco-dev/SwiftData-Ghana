@@ -51,13 +51,15 @@ const DashboardWithdraw = () => {
   const fetchData = useCallback(async () => {
     if (!user) return;
 
-    const [ordersRes, withdrawalsRes] = await Promise.all([
+    const [ordersRes, parentRes, withdrawalsRes] = await Promise.all([
       supabase.from("orders").select("profit").eq("agent_id", user.id).in("status", ["paid", "fulfilled", "fulfillment_failed"]),
+      supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).in("status", ["paid", "fulfilled", "fulfillment_failed"]),
       supabase.from("withdrawals").select("*").eq("agent_id", user.id).order("created_at", { ascending: false }),
     ]);
 
     const profits = (ordersRes.data || []).reduce((sum, o: any) => sum + (o.profit || 0), 0);
-    setTotalProfit(profits);
+    const parentProfits = (parentRes.data || []).reduce((sum, o: any) => sum + (o.parent_profit || 0), 0);
+    setTotalProfit(profits + parentProfits);
 
     const wds = (withdrawalsRes.data || []) as Withdrawal[];
     setWithdrawals(wds);

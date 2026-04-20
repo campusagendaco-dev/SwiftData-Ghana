@@ -141,6 +141,8 @@ export type Database = {
           network: string | null
           order_type: string
           package_size: string | null
+          parent_agent_id: string | null
+          parent_profit: number
           profit: number
           status: string
           updated_at: string
@@ -161,6 +163,8 @@ export type Database = {
           network?: string | null
           order_type?: string
           package_size?: string | null
+          parent_agent_id?: string | null
+          parent_profit?: number
           profit?: number
           status?: string
           updated_at?: string
@@ -181,6 +185,8 @@ export type Database = {
           network?: string | null
           order_type?: string
           package_size?: string | null
+          parent_agent_id?: string | null
+          parent_profit?: number
           profit?: number
           status?: string
           updated_at?: string

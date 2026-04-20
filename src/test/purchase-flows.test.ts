@@ -42,11 +42,22 @@ describe("purchase flow guardrails", () => {
     expect(walletBuyData).toContain("agent_price");
   });
 
-  it("prevents sub-agents from overriding assigned base prices in dashboard pricing", () => {
+  it("lets sub-agents set selling prices above assigned base", () => {
     const dashboardPricing = read("src/pages/DashboardPricing.tsx");
     expect(dashboardPricing).toContain("const isSubAgent");
-    expect(dashboardPricing).toContain("disabled={isSubAgent}");
-    expect(dashboardPricing).toContain("Base prices remain controlled by your parent agent");
+    expect(dashboardPricing).toContain("sub_agent_prices");
+    expect(dashboardPricing).toContain("You can add your own profit above that base");
+  });
+
+  it("persists parent commissions for sub-agent sales", () => {
+    const initializePayment = read("supabase/functions/initialize-payment/index.ts");
+    const verifyPayment = read("supabase/functions/verify-payment/index.ts");
+    const webhook = read("supabase/functions/paystack-webhook/index.ts");
+
+    expect(initializePayment).toContain("parent_profit");
+    expect(initializePayment).toContain("parent_agent_id");
+    expect(verifyPayment).toContain("parent_profit");
+    expect(webhook).toContain("parent_profit");
   });
 
   it("uses assigned sub-agent pricing in dashboard wallet UI", () => {

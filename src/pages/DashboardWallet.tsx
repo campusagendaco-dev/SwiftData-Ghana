@@ -127,16 +127,19 @@ const DashboardWallet = () => {
   const fetchBalance = useCallback(async () => {
     if (!user) return;
 
-    const [walletRes, ordersRes, withdrawalsRes] = await Promise.all([
+    const [walletRes, ordersRes, parentProfitRes, withdrawalsRes] = await Promise.all([
       supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle(),
       supabase.from("orders").select("profit").eq("agent_id", user.id).in("status", ["paid", "fulfilled", "fulfillment_failed"]),
+      supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).in("status", ["paid", "fulfilled", "fulfillment_failed"]),
       supabase.from("withdrawals").select("amount, status").eq("agent_id", user.id).in("status", ["completed", "pending", "processing"]),
     ]);
 
     const walletBalance = walletRes.data?.balance || 0;
     const totalProfit = (ordersRes.data || []).reduce((sum, row: any) => sum + Number(row.profit || 0), 0);
+    const parentProfitRows = (parentProfitRes.data || []) as Array<{ parent_profit?: number }>;
+    const totalParentProfit = parentProfitRows.reduce((sum, row) => sum + Number(row.parent_profit || 0), 0);
     const withdrawnProfit = (withdrawalsRes.data || []).reduce((sum, row: any) => sum + Number(row.amount || 0), 0);
-    const profitBalance = parseFloat((totalProfit - withdrawnProfit).toFixed(2));
+    const profitBalance = parseFloat(((totalProfit + totalParentProfit) - withdrawnProfit).toFixed(2));
 
     setBalance(walletBalance);
     setAvailableProfit(Math.max(0, profitBalance));

@@ -600,6 +600,12 @@ serve(async (req) => {
       if ((!order.profit || Number(order.profit) === 0) && Number.isFinite(Number(metadata.profit))) {
         patch.profit = parseFloat(Number(metadata.profit).toFixed(2));
       }
+      if (!order.parent_agent_id && typeof metadata.parent_agent_id === "string" && metadata.parent_agent_id) {
+        patch.parent_agent_id = metadata.parent_agent_id;
+      }
+      if ((!order.parent_profit || Number(order.parent_profit) === 0) && Number.isFinite(Number(metadata.parent_profit))) {
+        patch.parent_profit = parseFloat(Number(metadata.parent_profit).toFixed(2));
+      }
 
       if (Object.keys(patch).length > 0) {
         await supabase.from("orders").update(patch).eq("id", reference);
@@ -621,12 +627,20 @@ serve(async (req) => {
       const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
         ? parseFloat(metadataProfit.toFixed(2))
         : 0;
+      const metadataParentProfit = Number(metadata.parent_profit);
+      const normalizedParentProfit = Number.isFinite(metadataParentProfit) && metadataParentProfit > 0
+        ? parseFloat(metadataParentProfit.toFixed(2))
+        : 0;
       await supabase.from("orders").insert({
         id: reference,
         agent_id: resolvedAgentId,
+        parent_agent_id: typeof metadata.parent_agent_id === "string" && metadata.parent_agent_id
+          ? metadata.parent_agent_id
+          : null,
         order_type: orderType || "data",
         amount: orderType === "wallet_topup" ? safeWalletCredit : verifiedAmount,
         profit: normalizedProfit,
+        parent_profit: normalizedParentProfit,
         status: "paid",
         network: metadata.network || null,
         package_size: metadata.package_size || null,

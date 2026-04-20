@@ -83,8 +83,13 @@ const DashboardPricing = () => {
       });
 
       // For sub-agents, base prices come from prices assigned by their parent agent.
-      if (profile?.is_sub_agent) {
-        const assigned = (profile.agent_prices || {}) as Record<string, any>;
+      if (profile?.is_sub_agent && profile.parent_agent_id) {
+        const { data: parentProfile } = await supabase
+          .from("profiles")
+          .select("sub_agent_prices")
+          .eq("user_id", profile.parent_agent_id)
+          .maybeSingle();
+        const assigned = (parentProfile?.sub_agent_prices || {}) as Record<string, any>;
         for (const [network, pkgs] of Object.entries(basePackages)) {
           for (const pkg of pkgs) {
             const assignedPrice = getProfileAssignedPrice(assigned, network, pkg.size);
@@ -167,25 +172,13 @@ const DashboardPricing = () => {
     }
 
     setSaving(true);
-    let error: any = null;
+    const existingPrices = (profile?.agent_prices || {}) as Record<string, any>;
+    const mergedPrices = { ...existingPrices, ...prices };
 
-    if (isSubAgent) {
-      // Sub-agent base prices are assigned by parent agent and should not be overwritten here.
-      const result = await supabase
-        .from("profiles")
-        .update({ disabled_packages: disabledPkgs } as any)
-        .eq("user_id", user.id);
-      error = result.error;
-    } else {
-      const existingPrices = (profile?.agent_prices || {}) as Record<string, any>;
-      const mergedPrices = { ...existingPrices, ...prices };
-
-      const result = await supabase
-        .from("profiles")
-        .update({ agent_prices: mergedPrices, disabled_packages: disabledPkgs } as any)
-        .eq("user_id", user.id);
-      error = result.error;
-    }
+    const { error } = await supabase
+      .from("profiles")
+      .update({ agent_prices: mergedPrices, disabled_packages: disabledPkgs } as any)
+      .eq("user_id", user.id);
 
     if (error) {
       toast({ title: "Error saving prices", description: error.message, variant: "destructive" });
@@ -193,7 +186,7 @@ const DashboardPricing = () => {
       await refreshProfile();
       toast({
         title: isSubAgent
-          ? "Settings saved. Base prices remain controlled by your parent agent."
+          ? "Prices saved! Your sub-agent store prices are updated."
           : "Prices saved! Your store has been updated.",
       });
     }
@@ -210,7 +203,7 @@ const DashboardPricing = () => {
 
       {isSubAgent && (
         <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          Your base prices are assigned by your parent agent and cannot be edited here.
+          Your parent agent sets your base prices. You can add your own profit above that base.
         </div>
       )}
 
@@ -263,7 +256,6 @@ const DashboardPricing = () => {
                         type="number"
                         step="0.50"
                         min={basePrice}
-                        disabled={isSubAgent}
                       />
                     </div>
                   </td>
