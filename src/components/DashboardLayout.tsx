@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import NotificationPopup from "@/components/NotificationPopup";
-import { Menu, User, Wallet } from "lucide-react";
+import { Menu, User, Wallet, MessageCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -12,6 +12,7 @@ const DashboardLayout = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [supportChannelLink, setSupportChannelLink] = useState<string>("");
 
   const firstName = profile?.full_name?.split(" ")[0] || "User";
 
@@ -42,6 +43,26 @@ const DashboardLayout = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSupportChannel = async () => {
+      const { data } = await supabase.functions.invoke("system-settings", {
+        body: { action: "get" },
+      });
+
+      if (!active) return;
+      const link = String(data?.support_channel_link || "").trim();
+      setSupportChannelLink(link);
+    };
+
+    loadSupportChannel();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -77,6 +98,20 @@ const DashboardLayout = () => {
           <Outlet />
         </main>
       </div>
+
+      {supportChannelLink && (
+        <a
+          href={supportChannelLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open WhatsApp channel"
+          className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-[#1fb85a]"
+        >
+          <MessageCircle className="h-5 w-5" />
+          WhatsApp
+        </a>
+      )}
+
       <NotificationPopup />
     </div>
   );
