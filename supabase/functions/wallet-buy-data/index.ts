@@ -132,8 +132,8 @@ async function resolveExpectedAmountForUser(
       );
       if (Number.isFinite(parentAssignedPrice) && parentAssignedPrice > 0) {
         return Number((parentAssignedPrice * multiplier).toFixed(2));
+      }
     }
-  }
 
     // Fallback to copied prices on sub-agent profile.
     const assigned = (profile.agent_prices || {}) as Record<string, Record<string, string | number>>;
@@ -147,6 +147,7 @@ async function resolveExpectedAmountForUser(
     if (Number.isFinite(assignedPrice) && assignedPrice > 0) {
       return Number((assignedPrice * multiplier).toFixed(2));
     }
+  }
 
   return await resolveExpectedAmount(supabaseAdmin, network, packageSize, multiplier);
 }
