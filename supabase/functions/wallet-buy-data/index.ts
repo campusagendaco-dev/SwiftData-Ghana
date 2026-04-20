@@ -40,6 +40,40 @@ function normalizeNetworkForPricing(network: string): "MTN" | "Telecel" | "Airte
   return "MTN";
 }
 
+function resolvePriceFromMap(
+  priceMap: Record<string, Record<string, string | number>>,
+  normalizedNetwork: string,
+  rawNetwork: string,
+  normalizedPackage: string,
+  rawPackage: string,
+): number {
+  const networkCandidates = [
+    normalizedNetwork,
+    rawNetwork,
+    rawNetwork.replace(/\s+/g, ""),
+  ];
+
+  const packageCandidates = [
+    normalizedPackage,
+    rawPackage,
+    rawPackage.replace(/\s+/g, ""),
+    rawPackage.toUpperCase(),
+  ];
+
+  for (const networkKey of networkCandidates) {
+    const byNetwork = priceMap[networkKey];
+    if (!byNetwork || typeof byNetwork !== "object") continue;
+    for (const packageKey of packageCandidates) {
+      const value = Number(byNetwork[packageKey]);
+      if (Number.isFinite(value) && value > 0) {
+        return value;
+      }
+    }
+  }
+
+  return 0;
+}
+
 // deno-lint-ignore no-explicit-any
 async function resolveExpectedAmount(supabaseAdmin: any, network: string, packageSize: string, multiplier: number): Promise<number | null> {
   const normalizedNetwork = normalizeNetworkForPricing(network);
@@ -62,10 +96,57 @@ async function resolveExpectedAmount(supabaseAdmin: any, network: string, packag
 // deno-lint-ignore no-explicit-any
 async function resolveExpectedAmountForUser(
   supabaseAdmin: any,
+  userId: string,
   network: string,
   packageSize: string,
   multiplier: number,
 ): Promise<number | null> {
+  const normalizedNetwork = normalizeNetworkForPricing(network);
+  const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("is_sub_agent, parent_agent_id, agent_prices")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (profile?.is_sub_agent) {
+    const ownPriceMap = (profile?.agent_prices || {}) as Record<string, Record<string, string | number>>;
+    const ownAssigned = resolvePriceFromMap(
+      ownPriceMap,
+      normalizedNetwork,
+      network,
+      normalizedPackage,
+      packageSize,
+    );
+    if (Number.isFinite(ownAssigned) && ownAssigned > 0) {
+      return Number((ownAssigned * multiplier).toFixed(2));
+    }
+
+    if (profile?.parent_agent_id) {
+      const { data: parentProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("sub_agent_prices")
+        .eq("user_id", profile.parent_agent_id)
+        .maybeSingle();
+
+      const parentMap = (parentProfile?.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+      const parentAssigned = resolvePriceFromMap(
+        parentMap,
+        normalizedNetwork,
+        network,
+        normalizedPackage,
+        packageSize,
+      );
+      if (Number.isFinite(parentAssigned) && parentAssigned > 0) {
+        return Number((parentAssigned * multiplier).toFixed(2));
+      }
+    }
+
+    // Parent-assigned price is required for sub-agent dashboard wallet purchases.
+    return null;
+  }
+
   return await resolveExpectedAmount(supabaseAdmin, network, packageSize, multiplier);
 }
 
@@ -478,12 +559,23 @@ serve(async (req) => {
 
     const expectedAmount = await resolveExpectedAmountForUser(
       supabaseAdmin,
+      user.id,
       network,
       package_size,
       pricingContext.multiplier,
     );
     if (!expectedAmount) {
-      return new Response(JSON.stringify({ error: "Package price not configured" }), {
+      const { data: priceProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("is_sub_agent")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const errorMessage = priceProfile?.is_sub_agent
+        ? "Sub-agent price is not configured by your assigned agent"
+        : "Package price not configured";
+
+      return new Response(JSON.stringify({ error: errorMessage }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

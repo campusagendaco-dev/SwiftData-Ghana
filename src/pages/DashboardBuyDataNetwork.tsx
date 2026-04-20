@@ -37,13 +37,11 @@ interface GlobalPackageSetting {
 const normalizePackageSize = (size: string) => size.replace(/\s+/g, "").toUpperCase();
 
 const getAssignedSubAgentPrice = (
-  profile: any,
+  assignedMap: Record<string, Record<string, string | number>> | undefined,
   network: string,
   size: string,
 ): number | null => {
-  if (!profile?.is_sub_agent) return null;
-  const assigned = profile?.agent_prices as Record<string, Record<string, string | number>> | undefined;
-  if (!assigned || typeof assigned !== "object") return null;
+  if (!assignedMap || typeof assignedMap !== "object") return null;
 
   const networkCandidates = [
     network,
@@ -53,7 +51,7 @@ const getAssignedSubAgentPrice = (
   const sizeCandidates = [size, size.replace(/\s+/g, ""), size.toUpperCase()];
 
   for (const n of networkCandidates) {
-    const byNetwork = assigned[n];
+    const byNetwork = assignedMap[n];
     if (!byNetwork) continue;
     for (const s of sizeCandidates) {
       const value = Number(byNetwork[s]);
@@ -73,6 +71,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
+  const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
@@ -85,10 +84,19 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       ]);
       setGlobalSettings((settingsRes.data || []) as GlobalPackageSetting[]);
       setPriceMultiplier(pricingContext.multiplier);
+
+      if (profile?.is_sub_agent && profile?.parent_agent_id) {
+        const { data: parentProfile } = await supabase
+          .from("profiles")
+          .select("sub_agent_prices")
+          .eq("user_id", profile.parent_agent_id)
+          .maybeSingle();
+        setParentAssignedPrices((parentProfile?.sub_agent_prices || {}) as Record<string, Record<string, string | number>>);
+      }
     };
 
     void loadPricing();
-  }, []);
+  }, [profile?.is_sub_agent, profile?.parent_agent_id]);
 
   const packages = useMemo(() => {
     return (basePackages[network] || [])
@@ -97,7 +105,13 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
         );
 
-        const assignedPrice = getAssignedSubAgentPrice(profile, network, item.size);
+        const assignedFromParent = getAssignedSubAgentPrice(parentAssignedPrices, network, item.size);
+        const assignedFromProfile = getAssignedSubAgentPrice(
+          profile?.agent_prices as Record<string, Record<string, string | number>> | undefined,
+          network,
+          item.size,
+        );
+        const assignedPrice = assignedFromParent || assignedFromProfile;
         const basePublic = Number(setting?.public_price);
         const baseAgent = Number(setting?.agent_price);
 
@@ -118,7 +132,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         };
       })
       .filter((item) => !item.isUnavailable);
-  }, [globalSettings, isPaidAgent, network, priceMultiplier, profile]);
+  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile]);
 
   useEffect(() => {
     const load = async () => {

@@ -39,13 +39,11 @@ const calculatePaystackFee = (amount: number) => {
 };
 
 const getAssignedSubAgentPrice = (
-  profile: any,
+  assignedMap: Record<string, Record<string, string | number>> | undefined,
   network: string,
   size: string,
 ): number | null => {
-  if (!profile?.is_sub_agent) return null;
-  const assigned = profile?.agent_prices as Record<string, Record<string, string | number>> | undefined;
-  if (!assigned || typeof assigned !== "object") return null;
+  if (!assignedMap || typeof assignedMap !== "object") return null;
 
   const networkCandidates = [
     network,
@@ -55,7 +53,7 @@ const getAssignedSubAgentPrice = (
   const sizeCandidates = [size, size.replace(/\s+/g, ""), size.toUpperCase()];
 
   for (const n of networkCandidates) {
-    const byNetwork = assigned[n];
+    const byNetwork = assignedMap[n];
     if (!byNetwork) continue;
     for (const s of sizeCandidates) {
       const value = Number(byNetwork[s]);
@@ -76,6 +74,7 @@ const DashboardWallet = () => {
   const [availableProfit, setAvailableProfit] = useState(0);
   const [loading, setLoading] = useState(true);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
+  const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
 
   // Buy data form
@@ -94,13 +93,30 @@ const DashboardWallet = () => {
       if (data) setGlobalSettings(data as GlobalPackageSetting[]);
     });
     fetchApiPricingContext().then((ctx) => setPriceMultiplier(ctx.multiplier));
-  }, []);
+
+    if (profile?.is_sub_agent && profile?.parent_agent_id) {
+      supabase
+        .from("profiles")
+        .select("sub_agent_prices")
+        .eq("user_id", profile.parent_agent_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          setParentAssignedPrices((data?.sub_agent_prices || {}) as Record<string, Record<string, string | number>>);
+        });
+    }
+  }, [profile?.is_sub_agent, profile?.parent_agent_id]);
 
   const getAgentPrice = (network: string, size: string): number => {
     const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
     // Sub-agents must use parent-assigned base prices.
-    const assignedPrice = getAssignedSubAgentPrice(profile, network, size);
+    const assignedFromParent = getAssignedSubAgentPrice(parentAssignedPrices, network, size);
+    const assignedFromProfile = getAssignedSubAgentPrice(
+      profile?.agent_prices as Record<string, Record<string, string | number>> | undefined,
+      network,
+      size,
+    );
+    const assignedPrice = assignedFromParent || assignedFromProfile;
     if (assignedPrice && assignedPrice > 0) return applyPriceMultiplier(assignedPrice, priceMultiplier);
 
     // Admin-set package prices drive dashboard pricing by role.
