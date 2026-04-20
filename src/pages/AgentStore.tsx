@@ -180,13 +180,19 @@ const AgentStore = () => {
     const costBase = applyPriceMultiplier(rawCostBase, priceMultiplier);
     const profit = parseFloat((agentPrice - costBase).toFixed(2));
     const orderId = crypto.randomUUID();
+    const callbackParams = new URLSearchParams({
+      reference: orderId,
+      network,
+      package: size,
+      phone: phone.replace(/\s/g, ""),
+    });
 
     const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
       body: {
         email: `${phone.replace(/\s/g, "")}@customer.swiftdata.gh`,
         amount: total,
         reference: orderId,
-        callback_url: `${getAppBaseUrl()}/order-status?reference=${orderId}`,
+        callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
         metadata: {
           order_id: orderId,
           order_type: "data",

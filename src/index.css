@@ -88,3 +88,91 @@
     @apply bg-card/80 backdrop-blur-xl border border-border;
   }
 }
+
+.purchase-success-page {
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 16%, hsl(48 100% 70% / 0.24), transparent 36%),
+    radial-gradient(circle at 88% 10%, hsl(202 100% 62% / 0.2), transparent 35%),
+    radial-gradient(circle at 50% 95%, hsl(22 100% 57% / 0.2), transparent 40%),
+    hsl(var(--background));
+  overflow: hidden;
+}
+
+.purchase-success-card {
+  position: relative;
+  z-index: 2;
+  animation: purchase-card-rise 0.65s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.purchase-success-badge {
+  animation: purchase-badge-pop 0.95s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+}
+
+.purchase-success-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.purchase-success-confetti-piece {
+  position: absolute;
+  top: -8%;
+  border-radius: 4px;
+  opacity: 0;
+  animation-name: confetti-fall;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-8px, 112vh, 0) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+@keyframes purchase-card-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes purchase-badge-pop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .purchase-success-card,
+  .purchase-success-badge,
+  .purchase-success-confetti-piece {
+    animation: none !important;
+  }
+
+  .purchase-success-confetti {
+    display: none;
+  }
+}

@@ -34,6 +34,7 @@ import ResetPassword from "./pages/ResetPassword";
 import AgentPending from "./pages/AgentPending";
 import AgentStore from "./pages/AgentStore";
 import OrderStatus from "./pages/OrderStatus";
+import PurchaseSuccess from "./pages/PurchaseSuccess";
 import AdminOverview from "./pages/AdminOverview";
 import AdminAgents from "./pages/AdminAgents";
 import AdminOrders from "./pages/AdminOrders";
@@ -227,6 +228,7 @@ const AppContent = () => {
         <Route path="/agent-program" element={<AgentProgram />} />
         <Route path="/store/:slug" element={<AgentStore />} />
         <Route path="/order-status" element={<OrderStatus />} />
+        <Route path="/purchase-success" element={<PurchaseSuccess />} />
 
         {/* Auth pages */}
         <Route path="/login" element={<AuthPage />} />

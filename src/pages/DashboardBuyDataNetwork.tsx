@@ -180,6 +180,19 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       description: data?.status === "fulfilled" ? "Data delivered successfully." : "Your order is being processed.",
     });
 
+    if (data?.status === "fulfilled") {
+      const successParams = new URLSearchParams({
+        source: "wallet",
+        network,
+        package: selectedPackage.size,
+        phone,
+      });
+      if (typeof data?.order_id === "string" && data.order_id) {
+        successParams.set("reference", data.order_id);
+      }
+      navigate(`/purchase-success?${successParams.toString()}`);
+    }
+
     setPhone("");
     setSelectedSize("");
     await refreshBalance();

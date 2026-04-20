@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -70,6 +71,7 @@ const normalizePackageSize = (size: string) => size.replace(/\s+/g, "").toUpperC
 const DashboardWallet = () => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [balance, setBalance] = useState(0);
   const [availableProfit, setAvailableProfit] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -264,6 +266,16 @@ const DashboardWallet = () => {
       toast({ title: "Purchase failed", description, variant: "destructive" });
     } else if (data?.status === "fulfilled") {
       toast({ title: "Data delivered successfully!" });
+      const successParams = new URLSearchParams({
+        source: "wallet",
+        network: selectedNetwork,
+        package: selectedPackage,
+        phone: customerPhone,
+      });
+      if (typeof data?.order_id === "string" && data.order_id) {
+        successParams.set("reference", data.order_id);
+      }
+      navigate(`/purchase-success?${successParams.toString()}`);
       setCustomerPhone("");
       setSelectedPackage("");
     } else {
