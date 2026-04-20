@@ -22,20 +22,7 @@ const DEFAULT_SETTINGS = {
   sub_agent_base_fee: 80,
 };
 
-const LEGACY_SUPPORT_NUMBERS = new Set([
-  "+23356042269",
-  "+233560042269",
-  "+233203256540",
-]);
-
-const normalizeSupportNumber = (value: unknown): string => {
-  const raw = String(value || "").trim();
-  if (!raw) return DEFAULT_SETTINGS.customer_service_number;
-  const compact = raw.replace(/\s+/g, "");
-  return LEGACY_SUPPORT_NUMBERS.has(compact)
-    ? DEFAULT_SETTINGS.customer_service_number
-    : raw;
-};
+const coerceText = (value: unknown): string => String(value ?? "").trim();
 
 const isMissingColumnError = (message: string, column: string) => {
   const lower = message.toLowerCase();
@@ -192,8 +179,10 @@ serve(async (req) => {
       holiday_message: String(data?.holiday_message || DEFAULT_SETTINGS.holiday_message),
       disable_ordering: Boolean(data?.disable_ordering),
       dark_mode_enabled: Boolean(data?.dark_mode_enabled),
-      customer_service_number: normalizeSupportNumber(data?.customer_service_number),
-      support_channel_link: String(data?.support_channel_link || DEFAULT_SETTINGS.support_channel_link),
+      customer_service_number:
+        coerceText(data?.customer_service_number) || DEFAULT_SETTINGS.customer_service_number,
+      support_channel_link:
+        coerceText(data?.support_channel_link) || DEFAULT_SETTINGS.support_channel_link,
       sub_agent_base_fee: Number(data?.sub_agent_base_fee ?? DEFAULT_SETTINGS.sub_agent_base_fee),
       table_ready: true,
       warning: null,
@@ -254,14 +243,29 @@ serve(async (req) => {
     const backupProvider = "primary";
     const activeApiSource = "primary";
     const secondaryMarkupPct = 0;
+
+    const { data: existingSettings } = await supabaseAdmin
+      .from("system_settings")
+      .select("customer_service_number, support_channel_link")
+      .eq("id", 1)
+      .maybeSingle();
+
+    const existingCustomerServiceNumber =
+      coerceText(existingSettings?.customer_service_number) || DEFAULT_SETTINGS.customer_service_number;
+    const existingSupportChannelLink =
+      coerceText(existingSettings?.support_channel_link) || DEFAULT_SETTINGS.support_channel_link;
+
+    const requestedCustomerServiceNumber = coerceText(payload?.customer_service_number);
+    const requestedSupportChannelLink = coerceText(payload?.support_channel_link);
+
     const subAgentBaseFeeRaw = Number(payload?.sub_agent_base_fee);
     const subAgentBaseFee = Number.isFinite(subAgentBaseFeeRaw)
       ? Math.max(0, Number(subAgentBaseFeeRaw.toFixed(2)))
       : DEFAULT_SETTINGS.sub_agent_base_fee;
     const holidayMessage =
       String(payload?.holiday_message || DEFAULT_SETTINGS.holiday_message).trim() || DEFAULT_SETTINGS.holiday_message;
-    const customerServiceNumber = normalizeSupportNumber(payload?.customer_service_number);
-    const supportChannelLink = String(payload?.support_channel_link || "").trim() || DEFAULT_SETTINGS.support_channel_link;
+    const customerServiceNumber = requestedCustomerServiceNumber || existingCustomerServiceNumber;
+    const supportChannelLink = requestedSupportChannelLink || existingSupportChannelLink;
 
     const row = {
       id: 1,

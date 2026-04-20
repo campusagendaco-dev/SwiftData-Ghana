@@ -8,11 +8,13 @@ const Footer = () => {
 
   useEffect(() => {
     const loadSupportSettings = async () => {
-      const { data } = await supabase.functions.invoke("system-settings", {
-        body: { action: "get" },
-      });
-      const number = String((data as any)?.customer_service_number || "").trim();
-      const link = String((data as any)?.support_channel_link || "").trim();
+      const { data } = await supabase
+        .from("system_settings")
+        .select("customer_service_number, support_channel_link")
+        .eq("id", 1)
+        .maybeSingle();
+      const number = String(data?.customer_service_number || "").trim();
+      const link = String(data?.support_channel_link || "").trim();
       if (number) setCustomerServiceNumber(number);
       if (link) setSupportChannelLink(link);
     };

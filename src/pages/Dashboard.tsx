@@ -9,6 +9,7 @@ interface DashboardStats {
   totalOrders: number;
   totalDeposited: number;
   totalSalesAmount: number;
+  subAgentEarnings: number;
 }
 
 const Dashboard = () => {
@@ -20,6 +21,7 @@ const Dashboard = () => {
     totalOrders: 0,
     totalDeposited: 0,
     totalSalesAmount: 0,
+    subAgentEarnings: 0,
   });
 
   useEffect(() => {
@@ -30,7 +32,7 @@ const Dashboard = () => {
         supabase.from("wallets").select("balance").eq("agent_id", user.id).single(),
         supabase
           .from("orders")
-          .select("amount, order_type, status")
+          .select("amount, order_type, status, profit")
           .eq("agent_id", user.id)
           .in("status", ["paid", "processing", "fulfilled", "fulfillment_failed"]),
       ]);
@@ -39,15 +41,18 @@ const Dashboard = () => {
       const paidishOrders = (ordersRes.data ?? []).filter((o: any) => ["paid", "processing", "fulfilled", "fulfillment_failed"].includes(o.status));
       const depositedOrders = paidishOrders.filter((o: any) => o.order_type === "wallet_topup");
       const dataOrders = paidishOrders.filter((o: any) => o.order_type === "data");
+      const subAgentActivationOrders = paidishOrders.filter((o: any) => o.order_type === "sub_agent_activation");
 
       const totalDeposited = depositedOrders.reduce((sum: number, order: any) => sum + Number(order.amount || 0), 0);
       const totalSalesAmount = dataOrders.reduce((sum: number, order: any) => sum + Number(order.amount || 0), 0);
+      const subAgentEarnings = subAgentActivationOrders.reduce((sum: number, order: any) => sum + Number(order.profit || 0), 0);
 
       setStats({
         walletBalance: balance,
         totalOrders: paidishOrders.length,
         totalDeposited,
         totalSalesAmount,
+        subAgentEarnings,
       });
     };
 
@@ -60,7 +65,17 @@ const Dashboard = () => {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(walletChannel); };
+    const ordersChannel = supabase
+      .channel("dashboard-orders")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `agent_id=eq.${user.id}` }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(walletChannel);
+      supabase.removeChannel(ordersChannel);
+    };
   }, [user]);
 
   const statItems = [
@@ -68,6 +83,7 @@ const Dashboard = () => {
     { label: "Total Orders", value: String(stats.totalOrders), icon: ShoppingCart },
     { label: "Total Deposited", value: `GH₵ ${stats.totalDeposited.toFixed(2)}`, icon: ArrowDownToLine },
     { label: "Total Sales Amount", value: `GH₵ ${stats.totalSalesAmount.toFixed(2)}`, icon: ArrowUpRight },
+    { label: "Sub-Agent Earnings", value: `GH₵ ${stats.subAgentEarnings.toFixed(2)}`, icon: TrendingUp },
   ];
 
   return (
@@ -97,7 +113,7 @@ const Dashboard = () => {
         </button>
       </div>
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         {statItems.map((s) => (
           <div key={s.label} className="bg-amber-400 rounded-xl p-3">
             <s.icon className="w-4 h-4 text-black/60 mb-1" />
