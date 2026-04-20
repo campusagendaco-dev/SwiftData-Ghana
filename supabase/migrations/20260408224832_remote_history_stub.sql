@@ -1,0 +1,2 @@
+-- Remote baseline migration history stub.
+-- Intentionally empty to keep local and remote migration versions aligned.
