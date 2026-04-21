@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Wallet, Loader2 } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors } from "@/lib/utils";
+import OrderStatusBanner from "@/components/OrderStatusBanner";
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
 
@@ -71,8 +73,12 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
+  const [lastOrder, setLastOrder] = useState<{
+    id: string; network: string; packageSize: string; phone: string; status: string;
+  } | null>(null);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
@@ -84,6 +90,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       ]);
       setGlobalSettings((settingsRes.data || []) as GlobalPackageSetting[]);
       setPriceMultiplier(pricingContext.multiplier);
+      setSettingsLoading(false);
 
       if (profile?.is_sub_agent && profile?.parent_agent_id) {
         const { data: parentProfile } = await supabase
@@ -189,22 +196,19 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       return;
     }
 
-    toast({
-      title: "Order placed",
-      description: data?.status === "fulfilled" ? "Data delivered successfully." : "Your order is being processed.",
-    });
-
-    if (data?.status === "fulfilled") {
-      const successParams = new URLSearchParams({
-        source: "wallet",
+    if (typeof data?.order_id === "string" && data.order_id) {
+      setLastOrder({
+        id: data.order_id,
         network,
-        package: selectedPackage.size,
+        packageSize: selectedPackage.size,
         phone,
+        status: data?.status || "paid",
       });
-      if (typeof data?.order_id === "string" && data.order_id) {
-        successParams.set("reference", data.order_id);
-      }
-      navigate(`/purchase-success?${successParams.toString()}`);
+    } else {
+      toast({
+        title: "Order placed",
+        description: data?.status === "fulfilled" ? "Data delivered successfully." : "Your order is being processed.",
+      });
     }
 
     setPhone("");
@@ -214,7 +218,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   };
 
   return (
-    <div className="p-6 md:p-8 max-w-3xl space-y-6">
+    <div className="p-4 sm:p-6 md:p-8 max-w-3xl space-y-5 sm:space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold">Buy {network} Data</h1>
@@ -222,6 +226,17 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         </div>
         <Button variant="outline" onClick={() => navigate("/dashboard/wallet")}>Load Wallet</Button>
       </div>
+
+      {lastOrder && (
+        <OrderStatusBanner
+          orderId={lastOrder.id}
+          network={lastOrder.network}
+          packageSize={lastOrder.packageSize}
+          customerPhone={lastOrder.phone}
+          initialStatus={lastOrder.status}
+          onDismiss={() => setLastOrder(null)}
+        />
+      )}
 
       <Card className="border-primary/25 bg-primary/5">
         <CardContent className="pt-6 space-y-3">
@@ -262,27 +277,31 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         <CardContent className="space-y-4">
           <div>
             <Label>Package Size</Label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
-              {packages.map((item) => (
-                <button
-                  key={item.size}
-                  type="button"
-                  onClick={() => setSelectedSize(item.size)}
-                  className={`${cardColors.card} rounded-xl p-3 flex flex-col gap-2 border transition-colors ${selectedSize === item.size ? "ring-2 ring-primary/40" : ""}`}
-                >
-                  <div className="flex justify-between items-start">
-                    <span className={`${cardColors.label} text-xs font-semibold`}>{network}</span>
-                    <span className={`${cardColors.price} text-xs`}>Price</span>
-                  </div>
-                  <div className="flex justify-between items-end">
-                    <span className={`${cardColors.size} text-2xl font-black`}>{item.size}</span>
-                    <span className={`${cardColors.size} font-bold text-sm`}>GH₵ {item.price.toFixed(2)}</span>
-                  </div>
-                  <span className={`w-full ${cardColors.btn} text-sm font-semibold py-1.5 rounded-lg text-center`}>
-                    {selectedSize === item.size ? "Selected" : "Select"}
-                  </span>
-                </button>
-              ))}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 mt-3">
+              {settingsLoading
+                ? Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="h-[108px] rounded-xl" />
+                  ))
+                : packages.map((item) => (
+                    <button
+                      key={item.size}
+                      type="button"
+                      onClick={() => setSelectedSize(item.size)}
+                      className={`${cardColors.card} rounded-xl p-3.5 sm:p-4 flex flex-col gap-2.5 border transition-colors ${selectedSize === item.size ? "ring-2 ring-primary/40" : ""}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className={`${cardColors.label} text-xs font-semibold`}>{network}</span>
+                        <span className={`${cardColors.price} text-xs`}>Price</span>
+                      </div>
+                      <div className="flex justify-between items-end">
+                        <span className={`${cardColors.size} text-2xl font-black`}>{item.size}</span>
+                        <span className={`${cardColors.size} font-bold text-sm`}>₵{item.price.toFixed(2)}</span>
+                      </div>
+                      <span className={`w-full ${cardColors.btn} text-sm font-semibold py-2 rounded-lg text-center`}>
+                        {selectedSize === item.size ? "Selected" : "Select"}
+                      </span>
+                    </button>
+                  ))}
             </div>
           </div>
 

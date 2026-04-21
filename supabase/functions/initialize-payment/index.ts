@@ -1,15 +1,44 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const PAYSTACK_FEE_RATE = 0.0195;
+const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100;
 
-function amountMatches(expected: number, actual: number, tolerance = 0.05): boolean {
+// Mirrors src/lib/data.ts — used when global_package_settings has no row for a package
+const BASE_PACKAGE_PRICES: Record<string, Record<string, number>> = {
+  MTN: {
+    "1GB": 4.45, "2GB": 8.9, "3GB": 13.1, "4GB": 17.3, "5GB": 21.2,
+    "6GB": 25.7, "7GB": 29.6, "8GB": 33.2, "10GB": 42.5, "15GB": 62.0,
+    "20GB": 80.2, "25GB": 100.8, "30GB": 124.0, "40GB": 159.0,
+    "50GB": 199.3, "100GB": 385.0,
+  },
+  Telecel: {
+    "5GB": 23.0, "10GB": 41.8, "12GB": 49.0, "15GB": 58.99, "18GB": 71.8,
+    "20GB": 78.5, "22GB": 82.5, "25GB": 102.0, "30GB": 125.5,
+    "40GB": 166.0, "50GB": 190.0,
+  },
+  AirtelTigo: {
+    "1GB": 4.3, "2GB": 8.2, "3GB": 12.0, "4GB": 15.8, "5GB": 19.85,
+    "6GB": 23.49, "7GB": 27.0, "8GB": 30.59, "9GB": 34.2,
+  },
+};
+
+function getHardcodedBasePrice(network: string, packageSize: string): number {
+  const byNet = BASE_PACKAGE_PRICES[network] ?? {};
+  const candidates = [...new Set([packageSize, packageSize.replace(/\s+/g, "").toUpperCase()])];
+  for (const c of candidates) {
+    if (Number.isFinite(byNet[c]) && byNet[c] > 0) return byNet[c];
+  }
+  return 0;
+}
+
+function amountMatches(expected: number, actual: number, tolerance = 0.01): boolean {
   return Math.abs(expected - actual) <= tolerance;
 }
 
@@ -148,15 +177,50 @@ serve(async (req) => {
 
       const normalizedNetwork = normalizeNetwork(network);
       const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
-      if (isAgentLinkedOrder) {
-        const { data: globalRow } = await supabaseAdmin
-          .from("global_package_settings")
-          .select("agent_price")
-          .eq("network", normalizedNetwork)
-          .eq("package_size", normalizedPackage)
-          .maybeSingle();
 
-        const adminBase = Number(globalRow?.agent_price);
+      // Helper: look up a package row trying normalised key then original key,
+      // with hardcoded base prices as final fallback so purchases never fail
+      // just because the admin hasn't seeded global_package_settings yet.
+      async function lookupGlobalRow(net: string, pkg: string) {
+        const candidates = [pkg, packageSize, packageSize.replace(/\s+/g, "")];
+        let dbRow: { agent_price: number | null; public_price: number | null; is_unavailable: boolean } | null = null;
+        for (const candidate of [...new Set(candidates)]) {
+          const { data } = await supabaseAdmin
+            .from("global_package_settings")
+            .select("agent_price, public_price, is_unavailable")
+            .eq("network", net)
+            .eq("package_size", candidate)
+            .maybeSingle();
+          if (data) { dbRow = data; break; }
+        }
+
+        const hasValidAgent = Number.isFinite(Number(dbRow?.agent_price)) && Number(dbRow?.agent_price) > 0;
+        const hasValidPublic = Number.isFinite(Number(dbRow?.public_price)) && Number(dbRow?.public_price) > 0;
+
+        // If DB row has at least one valid price, return it as-is
+        if (dbRow && (hasValidAgent || hasValidPublic)) return dbRow;
+
+        // DB row missing or has no valid prices — synthesise/merge from hardcoded prices
+        const fallbackBase = getHardcodedBasePrice(net, pkg) || getHardcodedBasePrice(normalizedNetwork, packageSize);
+        if (fallbackBase > 0) {
+          return {
+            agent_price: hasValidAgent ? dbRow!.agent_price : fallbackBase,
+            public_price: hasValidPublic ? dbRow!.public_price : Number((fallbackBase * 1.12).toFixed(2)),
+            is_unavailable: dbRow?.is_unavailable ?? false,
+          };
+        }
+        return dbRow;
+      }
+
+      if (isAgentLinkedOrder) {
+        const globalRow = await lookupGlobalRow(normalizedNetwork, normalizedPackage);
+
+        // Prefer agent_price; fall back to public_price so stores still work
+        // when the admin has only filled in the public column.
+        const adminBase = Number(globalRow?.agent_price) > 0
+          ? Number(globalRow!.agent_price)
+          : Number(globalRow?.public_price);
+
         if (!(Number.isFinite(adminBase) && adminBase > 0)) {
           return new Response(JSON.stringify({ error: "Package price is not configured" }), {
             status: 400,
@@ -183,7 +247,7 @@ serve(async (req) => {
 
         if (sellerProfile?.is_sub_agent) {
           resolvedParentAgentId = sellerProfile.parent_agent_id || null;
-          let parentAssignedBase = 0;
+          let parentAssignedBase = 0; // what parent charges sub-agent per bundle
 
           if (resolvedParentAgentId) {
             const { data: parentProfile } = await supabaseAdmin
@@ -192,25 +256,39 @@ serve(async (req) => {
               .eq("user_id", resolvedParentAgentId)
               .maybeSingle();
 
-            const parentPrices = (parentProfile?.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
-            parentAssignedBase = resolvePriceFromMap(
-              parentPrices,
-              normalizedNetwork,
-              network,
-              normalizedPackage,
-              packageSize,
-            );
+            if (parentProfile) {
+              const parentPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+              parentAssignedBase = resolvePriceFromMap(
+                parentPrices,
+                normalizedNetwork,
+                network,
+                normalizedPackage,
+                packageSize,
+              );
+            }
           }
 
+          // Fallback: parent hasn't assigned a price → use adminBase as sub-agent cost
           if (!(Number.isFinite(parentAssignedBase) && parentAssignedBase > 0)) {
             parentAssignedBase = adminBase;
           }
 
-          chargeBase = Number.isFinite(sellerListed) && sellerListed > 0 ? sellerListed : parentAssignedBase;
+          // Sub-agent's customer price:
+          // 1. Use their own listed price if set
+          // 2. Otherwise use the parent-assigned base (break-even for sub-agent)
+          chargeBase = Number.isFinite(sellerListed) && sellerListed > parentAssignedBase
+            ? sellerListed
+            : parentAssignedBase;
+
+          // Parent profit = parent's margin above admin wholesale
           resolvedParentProfit = Math.max(0, Number((parentAssignedBase - adminBase).toFixed(2)));
+          // Sub-agent profit = their markup above what they pay parent
           resolvedProfit = Math.max(0, Number((chargeBase - parentAssignedBase).toFixed(2)));
         } else {
-          chargeBase = Number.isFinite(sellerListed) && sellerListed > 0 ? sellerListed : adminBase;
+          // Regular agent: profit = their listed price − admin wholesale
+          chargeBase = Number.isFinite(sellerListed) && sellerListed > adminBase
+            ? sellerListed
+            : adminBase;
           resolvedProfit = Math.max(0, Number((chargeBase - adminBase).toFixed(2)));
         }
 
@@ -227,13 +305,11 @@ serve(async (req) => {
           parent_agent_id: resolvedParentAgentId,
         };
       } else {
-        const { data: globalRow } = await supabaseAdmin
-          .from("global_package_settings")
-          .select("public_price")
-          .eq("network", normalizedNetwork)
-          .eq("package_size", normalizedPackage)
-          .maybeSingle();
-        const publicBase = Number(globalRow?.public_price);
+        const globalRow = await lookupGlobalRow(normalizedNetwork, normalizedPackage);
+        // For public (non-agent) purchases prefer public_price, fall back to agent_price
+        const publicBase = Number(globalRow?.public_price) > 0
+          ? Number(globalRow!.public_price)
+          : Number(globalRow?.agent_price);
 
         if (!(Number.isFinite(publicBase) && publicBase > 0)) {
           return new Response(JSON.stringify({ error: "Package price is not configured" }), {

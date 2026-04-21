@@ -1,0 +1,32 @@
+{
+  "name": "SwiftData Ghana",
+  "short_name": "SwiftData",
+  "description": "Buy MTN, Telecel & AirtelTigo data bundles in Ghana. No account needed, instant delivery.",
+  "start_url": "/buy-data",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1a1a2e",
+  "theme_color": "#fbbf24",
+  "categories": ["shopping", "finance"],
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Buy MTN Data",
+      "short_name": "MTN",
+      "description": "Buy MTN data bundles",
+      "url": "/buy-data",
+      "icons": [{ "src": "/logo.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Track Order",
+      "short_name": "Track",
+      "description": "Track your data delivery",
+      "url": "/order-status",
+      "icons": [{ "src": "/logo.png", "sizes": "96x96" }]
+    }
+  ]
+}

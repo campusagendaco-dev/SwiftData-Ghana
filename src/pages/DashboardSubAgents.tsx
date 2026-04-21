@@ -70,6 +70,17 @@ const DashboardSubAgents = () => {
     fetchApiPricingContext().then((ctx) => setPriceMultiplier(ctx.multiplier));
   }, []);
 
+  const getParentAgentBasePrice = useCallback((network: string, size: string): number | null => {
+    const gs = globalSettings.find(
+      (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(size),
+    );
+    const adminAgentPrice = Number(gs?.agent_price || 0);
+    if (Number.isFinite(adminAgentPrice) && adminAgentPrice > 0) {
+      return applyPriceMultiplier(adminAgentPrice, priceMultiplier);
+    }
+    return null;
+  }, [globalSettings, priceMultiplier]);
+
   // Init local markup + prices from profile
   useEffect(() => {
     if (!profile) return;
@@ -88,18 +99,7 @@ const DashboardSubAgents = () => {
       }
       setSubAgentPrices(defaults);
     }
-  }, [profile, globalSettings, priceMultiplier]);
-
-  const getParentAgentBasePrice = (network: string, size: string): number | null => {
-    const gs = globalSettings.find(
-      (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(size),
-    );
-    const adminAgentPrice = Number(gs?.agent_price || 0);
-    if (Number.isFinite(adminAgentPrice) && adminAgentPrice > 0) {
-      return applyPriceMultiplier(adminAgentPrice, priceMultiplier);
-    }
-    return null;
-  };
+  }, [profile, getParentAgentBasePrice]);
 
   const handleSaveMarkup = async () => {
     if (!user) return;

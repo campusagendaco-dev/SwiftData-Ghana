@@ -89,6 +89,32 @@
   }
 }
 
+/* ── Glass mode overrides (dark themes) ───────────────── */
+[data-glass="1"] .bg-card {
+  background: rgba(var(--glass-rgb), 0.18) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(var(--glass-border-rgb), 0.15) !important;
+}
+
+[data-glass="1"] .glass-card {
+  background: rgba(var(--glass-rgb), 0.25) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(var(--glass-border-rgb), 0.2) !important;
+}
+
+/* ── Buy strip slide-in animation ─────────────────────── */
+@keyframes strip-in {
+  from { opacity: 0; transform: translateY(-6px); max-height: 0; }
+  to   { opacity: 1; transform: translateY(0);    max-height: 120px; }
+}
+
+.buy-strip-enter {
+  animation: strip-in 0.22s ease-out forwards;
+  overflow: hidden;
+}
+
 .purchase-success-page {
   position: relative;
   background:
@@ -175,4 +201,34 @@
   .purchase-success-confetti {
     display: none;
   }
+}
+
+/* ── WhatsApp floating button ─────────────────────────── */
+@keyframes wa-float {
+  0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 6px 20px rgba(37,211,102,0.45); }
+  50%       { transform: translateY(-5px) scale(1.04); box-shadow: 0 12px 28px rgba(37,211,102,0.6); }
+}
+
+@keyframes wa-ring {
+  0%   { transform: scale(1); opacity: 0.75; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.wa-float {
+  animation: wa-float 3s ease-in-out infinite;
+}
+
+.wa-float::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #25D366;
+  animation: wa-ring 2.4s ease-out infinite;
+  z-index: -1;
+}
+
+.wa-float:active {
+  animation: none;
+  transform: scale(0.96);
 }

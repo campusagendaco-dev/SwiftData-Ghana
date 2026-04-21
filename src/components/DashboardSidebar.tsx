@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppTheme } from "@/contexts/ThemeContext";
 import {
   LayoutDashboard,
   Wallet,
@@ -52,6 +53,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut } = useAuth();
+  const { theme } = useAppTheme();
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
   const topupRef = (profile as any)?.topup_reference;
@@ -123,12 +125,11 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                   onClick={onClose}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-[#243824] text-white"
-                      : "text-white/70 hover:text-white hover:bg-white/5"
+                    isActive ? "text-white" : "text-white/70 hover:text-white hover:bg-white/5"
                   )}
+                  style={isActive ? { background: `hsl(${theme.primary}/0.22)`, borderLeft: `3px solid hsl(${theme.primary})` } : {}}
                 >
-                  <item.icon className="w-4 h-4 shrink-0" />
+                  <item.icon className="w-4 h-4 shrink-0" style={isActive ? { color: `hsl(${theme.primary})` } : {}} />
                   {item.label}
                 </Link>
               );
@@ -152,12 +153,11 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                         onClick={onClose}
                         className={cn(
                           "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                          isActive
-                            ? "bg-[#243824] text-white"
-                            : "text-white/70 hover:text-white hover:bg-white/5"
+                          isActive ? "text-white" : "text-white/70 hover:text-white hover:bg-white/5"
                         )}
+                        style={isActive ? { background: `hsl(${theme.primary}/0.22)`, borderLeft: `3px solid hsl(${theme.primary})` } : {}}
                       >
-                        <item.icon className="w-4 h-4 shrink-0" />
+                        <item.icon className="w-4 h-4 shrink-0" style={isActive ? { color: `hsl(${theme.primary})` } : {}} />
                         {item.label}
                       </Link>
                     );

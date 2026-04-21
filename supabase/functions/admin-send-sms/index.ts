@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
@@ -75,19 +76,9 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-  const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const TWILIO_FROM_NUMBER = Deno.env.get("TWILIO_FROM_NUMBER");
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
-    return new Response(JSON.stringify({ error: "SMS service not configured" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -105,6 +96,35 @@ serve(async (req) => {
   const supabaseUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
+
+  // Twilio config: prefer env vars, fall back to admin-configured system_settings
+  let twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID") || "";
+  let twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN") || "";
+  let twilioFrom = Deno.env.get("TWILIO_FROM_NUMBER") || "";
+
+  if (!twilioSid || !twilioToken || !twilioFrom) {
+    try {
+      const { data: smsRow } = await supabaseAdmin
+        .from("system_settings")
+        .select("twilio_account_sid, twilio_auth_token, twilio_from_number")
+        .eq("id", 1)
+        .maybeSingle();
+      if (smsRow) {
+        twilioSid = twilioSid || String(smsRow.twilio_account_sid || "");
+        twilioToken = twilioToken || String(smsRow.twilio_auth_token || "");
+        twilioFrom = twilioFrom || String(smsRow.twilio_from_number || "");
+      }
+    } catch { /* columns may not exist yet — ignore */ }
+  }
+
+  if (!twilioSid || !twilioToken || !twilioFrom) {
+    return new Response(JSON.stringify({
+      error: "SMS not configured. Add Twilio credentials in Admin → Settings → SMS Configuration.",
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const {
@@ -134,13 +154,32 @@ serve(async (req) => {
     }
 
     const payload = await req.json();
-    const target_type = (payload?.target_type || "all") as TargetType;
+    const target_type = (payload?.target_type || "all") as TargetType | "test";
     const title = String(payload?.title || "").trim();
     const message = String(payload?.message || "").trim();
+    const test_phone = String(payload?.test_phone || "").trim();
 
     if (!message) {
       return new Response(JSON.stringify({ error: "Message is required" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const smsBody = title ? `${title}\n${message}` : message;
+
+    // Test mode: send to a single provided number
+    if (target_type === "test") {
+      const normalized = normalizePhone(test_phone);
+      if (!normalized) {
+        return new Response(JSON.stringify({ error: "Invalid test phone number" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await sendSmsViaTwilio(twilioSid, twilioToken, twilioFrom, normalized, smsBody);
+      return new Response(JSON.stringify({ success: true, sent: 1, target_type: "test", to: normalized }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -151,8 +190,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const smsBody = title ? `${title}\n${message}` : message;
 
     let profilesQuery = supabaseAdmin
       .from("profiles")
@@ -190,9 +227,9 @@ serve(async (req) => {
     for (const phone of uniquePhones) {
       try {
         await sendSmsViaTwilio(
-          TWILIO_ACCOUNT_SID,
-          TWILIO_AUTH_TOKEN,
-          TWILIO_FROM_NUMBER,
+          twilioSid,
+          twilioToken,
+          twilioFrom,
           phone,
           smsBody,
         );

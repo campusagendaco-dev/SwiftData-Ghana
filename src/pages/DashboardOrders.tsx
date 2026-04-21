@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ClipboardList, RefreshCw } from "lucide-react";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 
@@ -116,25 +117,52 @@ const DashboardOrders = () => {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-card border border-border rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold font-display">{orders.length}</p>
+          {loading ? <Skeleton className="h-8 w-12 mx-auto mb-1" /> : <p className="text-2xl font-bold font-display">{orders.length}</p>}
           <p className="text-xs text-muted-foreground">Transactions</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold font-display text-primary">GH₵ {totals.amount.toFixed(2)}</p>
+          {loading ? <Skeleton className="h-8 w-28 mx-auto mb-1" /> : <p className="text-2xl font-bold font-display text-primary">GH₵ {totals.amount.toFixed(2)}</p>}
           <p className="text-xs text-muted-foreground">Total Sales</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 text-center">
-          <p className="text-2xl font-bold font-display text-primary">GH₵ {totals.profit.toFixed(2)}</p>
+          {loading ? <Skeleton className="h-8 w-28 mx-auto mb-1" /> : <p className="text-2xl font-bold font-display text-primary">GH₵ {totals.profit.toFixed(2)}</p>}
           <p className="text-xs text-muted-foreground">Total Profit</p>
         </div>
       </div>
 
       {/* Orders table */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        {orders.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-12">
-            {loading ? "Loading orders..." : "No orders found."}
-          </p>
+        {loading ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary/50 text-muted-foreground">
+                  <th className="text-left py-3 px-4 font-medium">Date</th>
+                  <th className="text-left py-3 px-4 font-medium">Type</th>
+                  <th className="text-left py-3 px-4 font-medium">Customer</th>
+                  <th className="text-left py-3 px-4 font-medium">Details</th>
+                  <th className="text-right py-3 px-4 font-medium">Amount</th>
+                  <th className="text-right py-3 px-4 font-medium">Profit</th>
+                  <th className="text-center py-3 px-4 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="py-3 px-4"><Skeleton className="h-4 w-20" /></td>
+                    <td className="py-3 px-4"><Skeleton className="h-5 w-14 rounded-full" /></td>
+                    <td className="py-3 px-4"><Skeleton className="h-4 w-24" /></td>
+                    <td className="py-3 px-4"><Skeleton className="h-4 w-32" /></td>
+                    <td className="py-3 px-4 text-right"><Skeleton className="h-4 w-20 ml-auto" /></td>
+                    <td className="py-3 px-4 text-right"><Skeleton className="h-4 w-16 ml-auto" /></td>
+                    <td className="py-3 px-4 text-center"><Skeleton className="h-5 w-20 rounded-full mx-auto" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : orders.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-12">No orders found.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

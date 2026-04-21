@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, DatabaseZap } from "lucide-react";
 import { fetchApiPricingContext } from "@/lib/api-source-pricing";
 
 interface PackageSetting {
@@ -24,6 +24,7 @@ const AdminPackages = () => {
   const [settings, setSettings] = useState<Record<string, PackageSetting>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [userDiscountPercent, setUserDiscountPercent] = useState("");
 
   useEffect(() => {
@@ -54,6 +55,36 @@ const AdminPackages = () => {
     const key = `${network}-${size}`;
     const current = getSetting(network, size);
     setSettings((prev) => ({ ...prev, [key]: { ...current, [field]: value } }));
+  };
+
+  const seedDefaultPrices = async () => {
+    setSeeding(true);
+    const upserts: PackageSetting[] = [];
+    for (const n of networks) {
+      for (const pkg of basePackages[n.name] || []) {
+        upserts.push({
+          network: n.name,
+          package_size: pkg.size,
+          agent_price: pkg.price,
+          public_price: parseFloat((pkg.price * 1.12).toFixed(2)),
+          is_unavailable: false,
+        });
+      }
+    }
+    const { error } = await supabase
+      .from("global_package_settings")
+      .upsert(upserts.map((u) => ({ ...u, updated_at: new Date().toISOString() })), { onConflict: "network,package_size" });
+
+    if (error) {
+      toast({ title: "Seed failed", description: error.message, variant: "destructive" });
+    } else {
+      // Rebuild local state
+      const next: Record<string, PackageSetting> = {};
+      upserts.forEach((u) => { next[`${u.network}-${u.package_size}`] = u; });
+      setSettings((prev) => ({ ...prev, ...next }));
+      toast({ title: "Default prices seeded!", description: "All packages populated with base prices. Agent price = base, Public price = base × 1.12." });
+    }
+    setSeeding(false);
   };
 
   const handleSave = async () => {
@@ -146,17 +177,22 @@ const AdminPackages = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold">Package Management</h1>
-        <Button onClick={handleSave} disabled={saving} className="gap-2">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save All Changes
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={seedDefaultPrices} disabled={seeding || saving} className="gap-2">
+            {seeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <DatabaseZap className="w-4 h-4" />}
+            Seed Default Prices
+          </Button>
+          <Button onClick={handleSave} disabled={saving || seeding} className="gap-2">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save All Changes
+          </Button>
+        </div>
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Override prices for agents and users (public site). Leave blank to use default prices.
-        Toggle unavailable to hide packages site-wide.
+        Override prices for agents and users (public site). Use <strong>Seed Default Prices</strong> to auto-populate all packages from the base price list, then adjust as needed. Toggle unavailable to hide packages site-wide.
       </p>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 border border-border rounded-lg bg-card">

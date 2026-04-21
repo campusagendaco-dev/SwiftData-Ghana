@@ -27,7 +27,11 @@ import DashboardReportIssue from "./pages/DashboardReportIssue";
 import DashboardAccountSettings from "./pages/DashboardAccountSettings";
 import DashboardSubAgentPricing from "./pages/DashboardSubAgentPricing";
 import AuthPage from "./pages/AuthPage";
+import BuyData from "./pages/BuyData";
 import AuthCallback from "./pages/AuthCallback";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import ThemeSelector from "@/components/ThemeSelector";
+import WhatsAppButton from "@/components/WhatsAppButton";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyOtp from "./pages/VerifyOtp";
 import ResetPassword from "./pages/ResetPassword";
@@ -239,8 +243,8 @@ const AppContent = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/auth" element={<Navigate to="/login" replace />} />
 
-        {/* Legacy buy-data path now routes into dashboard buy flow */}
-        <Route path="/buy-data" element={<AuthGuard><Navigate to="/dashboard/buy-data/mtn" replace /></AuthGuard>} />
+        {/* Public buy page — no login required */}
+        <Route path="/buy-data" element={<BuyData />} />
 
         {/* Sub agent routes */}
         <Route path="/store/:slug/sub-agent" element={<SubAgentSignup />} />
@@ -303,15 +307,19 @@ const AppContent = () => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <AppContent />
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <AppContent />
+            <ThemeSelector />
+            <WhatsAppButton />
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

@@ -23,6 +23,9 @@ type SystemSettings = {
   support_channel_link: string;
   table_ready: boolean;
   sub_agent_base_fee: number;
+  twilio_account_sid: string;
+  twilio_auth_token: string;
+  twilio_from_number: string;
 };
 
 const defaultSettings: SystemSettings = {
@@ -39,6 +42,9 @@ const defaultSettings: SystemSettings = {
   support_channel_link: "https://whatsapp.com/channel/0029Vb6Xwed60eBaztkH2B3m",
   table_ready: true,
   sub_agent_base_fee: 80,
+  twilio_account_sid: "",
+  twilio_auth_token: "",
+  twilio_from_number: "",
 };
 
 const toUiSettings = (data: any): SystemSettings => ({
@@ -55,6 +61,9 @@ const toUiSettings = (data: any): SystemSettings => ({
   support_channel_link: String(data?.support_channel_link || defaultSettings.support_channel_link),
   table_ready: Boolean(data?.table_ready ?? true),
   sub_agent_base_fee: Number(data?.sub_agent_base_fee ?? 80) || 80,
+  twilio_account_sid: String(data?.twilio_account_sid || ""),
+  twilio_auth_token: String(data?.twilio_auth_token || ""),
+  twilio_from_number: String(data?.twilio_from_number || ""),
 });
 
 const extractMissingColumnFromError = (message: string): string | null => {
@@ -91,18 +100,38 @@ const AdminSettings = () => {
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
-    // Source of truth for admin-edited values (including support contact fields)
-    // stays in the system_settings table.
-    const { data: row, error: rowError } = await supabase
-      .from("system_settings")
-      .select("auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, sub_agent_base_fee")
+
+    // Try with new SMS columns first; fall back to base columns if migration hasn't run
+    const FULL_SELECT = "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, sub_agent_base_fee, twilio_account_sid, twilio_auth_token, twilio_from_number";
+    const BASE_SELECT = "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, sub_agent_base_fee";
+
+    let row: any = null;
+    const { data: fullData, error: fullError } = await (supabase.from("system_settings") as any)
+      .select(FULL_SELECT)
       .eq("id", 1)
       .maybeSingle();
 
-    if (rowError) {
-      toast({ title: "Failed to load settings", description: rowError.message || "Unknown error", variant: "destructive" });
-      setLoading(false);
-      return;
+    if (fullError) {
+      if (fullError.message?.includes("does not exist")) {
+        // SMS columns not yet added (migration pending) — load without them
+        const { data: baseData, error: baseError } = await supabase
+          .from("system_settings")
+          .select(BASE_SELECT)
+          .eq("id", 1)
+          .maybeSingle();
+        if (baseError) {
+          toast({ title: "Failed to load settings", description: baseError.message, variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        row = baseData;
+      } else {
+        toast({ title: "Failed to load settings", description: fullError.message, variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+    } else {
+      row = fullData;
     }
 
     setSettings(toUiSettings(row));
@@ -147,12 +176,15 @@ const AdminSettings = () => {
       customer_service_number: settings.customer_service_number.trim() || defaultSettings.customer_service_number,
       support_channel_link: settings.support_channel_link.trim() || defaultSettings.support_channel_link,
       sub_agent_base_fee: settings.sub_agent_base_fee,
+      twilio_account_sid: settings.twilio_account_sid.trim(),
+      twilio_auth_token: settings.twilio_auth_token.trim(),
+      twilio_from_number: settings.twilio_from_number.trim(),
       updated_at: new Date().toISOString(),
     };
 
     let upsertError: { message?: string } | null = null;
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const { error } = await supabase.from("system_settings").upsert(payload);
+      const { error } = await (supabase.from("system_settings") as any).upsert(payload);
       if (!error) {
         upsertError = null;
         break;
@@ -337,6 +369,58 @@ const AdminSettings = () => {
               className="mt-1 bg-secondary max-w-[180px]"
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">SMS Configuration (Twilio)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Enter your Twilio credentials to enable SMS notifications. Get these from{" "}
+            <a href="https://www.twilio.com/console" target="_blank" rel="noopener noreferrer" className="underline">twilio.com/console</a>.
+            The From Number must be a Twilio phone number in E.164 format (e.g. +12015555555).
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="twilio-sid">Account SID</Label>
+              <Input
+                id="twilio-sid"
+                value={settings.twilio_account_sid}
+                onChange={(e) => setSettings((prev) => ({ ...prev, twilio_account_sid: e.target.value }))}
+                className="mt-1 bg-secondary font-mono text-xs"
+                placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              />
+            </div>
+            <div>
+              <Label htmlFor="twilio-from">From Number</Label>
+              <Input
+                id="twilio-from"
+                value={settings.twilio_from_number}
+                onChange={(e) => setSettings((prev) => ({ ...prev, twilio_from_number: e.target.value }))}
+                className="mt-1 bg-secondary"
+                placeholder="+12015555555"
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="twilio-token">Auth Token</Label>
+            <Input
+              id="twilio-token"
+              type="password"
+              value={settings.twilio_auth_token}
+              onChange={(e) => setSettings((prev) => ({ ...prev, twilio_auth_token: e.target.value }))}
+              className="mt-1 bg-secondary font-mono text-xs"
+              placeholder="Your Twilio Auth Token"
+            />
+          </div>
+          {settings.twilio_account_sid && settings.twilio_auth_token && settings.twilio_from_number && (
+            <div className="flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/30 px-3 py-2 text-xs text-green-600 dark:text-green-400">
+              <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+              Twilio credentials configured — SMS sending is enabled.
+            </div>
+          )}
         </CardContent>
       </Card>
 

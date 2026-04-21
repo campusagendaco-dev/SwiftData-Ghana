@@ -30,7 +30,7 @@ interface GlobalPackageSetting {
   is_unavailable: boolean;
 }
 
-const PAYSTACK_FEE_RATE = 0.0195;
+const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100;
 
 const calculatePaystackFee = (amount: number) => {
@@ -381,7 +381,7 @@ const DashboardWallet = () => {
                   <span className="font-medium">GHS {topupRequestedAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Paystack Fee (1.95%)</span>
+                  <span className="text-muted-foreground">Paystack Fee (3%)</span>
                   <span className="font-medium">GHS {topupFee.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between border-t border-border pt-1">
