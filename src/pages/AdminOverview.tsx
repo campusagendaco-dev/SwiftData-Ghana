@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,8 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   Users, ShoppingCart, DollarSign, ShieldCheck,
-  Package, Bell, Wallet, ArrowUpRight, RefreshCw,
-  CheckCircle2, Clock, XCircle,
+  Package, Wallet, ArrowUpRight, RefreshCw,
+  CheckCircle2, Clock, XCircle, Activity, ChevronRight
 } from "lucide-react";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 
@@ -26,9 +25,9 @@ interface RecentOrder {
 }
 
 const statusIcon = (s: string) => {
-  if (s === "fulfilled") return <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />;
-  if (s === "fulfillment_failed") return <XCircle className="w-3.5 h-3.5 text-red-500" />;
-  return <Clock className="w-3.5 h-3.5 text-amber-500" />;
+  if (s === "fulfilled") return <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>;
+  if (s === "fulfillment_failed") return <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20"><XCircle className="w-4 h-4 text-red-500" /></div>;
+  return <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20"><Clock className="w-4 h-4 text-amber-500" /></div>;
 };
 
 const AdminOverview = () => {
@@ -137,146 +136,208 @@ const AdminOverview = () => {
   };
 
   const statCards = [
-    { title: "Total Orders", value: stats.totalOrders, icon: ShoppingCart, color: "text-blue-400" },
-    { title: "Revenue (GH₵)", value: `GH₵ ${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, color: "text-green-400" },
-    { title: "SwiftData Share", value: `GH₵ ${stats.swiftDataSubAgentShare.toFixed(2)}`, icon: DollarSign, color: "text-amber-500" },
-    { title: "Total Users", value: stats.totalUsers, icon: Users, color: "text-purple-400" },
-    { title: "Pending Agents", value: stats.pendingAgents, icon: ShieldCheck, color: stats.pendingAgents > 0 ? "text-red-400" : "text-primary" },
+    { title: "Total Revenue", value: `GH₵ ${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20" },
+    { title: "Platform Share", value: `GH₵ ${stats.swiftDataSubAgentShare.toFixed(2)}`, icon: Activity, color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20" },
+    { title: "Total Orders", value: stats.totalOrders.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+    { title: "Active Users", value: stats.totalUsers.toLocaleString(), icon: Users, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+    { title: "Pending Agents", value: stats.pendingAgents, icon: ShieldCheck, color: stats.pendingAgents > 0 ? "text-red-400" : "text-emerald-400", bg: stats.pendingAgents > 0 ? "bg-red-500/10" : "bg-emerald-500/10", border: stats.pendingAgents > 0 ? "border-red-500/20" : "border-emerald-500/20" },
   ];
 
-  if (loading) return <div className="text-muted-foreground p-4">Loading stats...</div>;
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
+        <p className="text-white/60 font-medium tracking-widest uppercase text-xs">Loading Dashboard...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold">Admin Overview</h1>
-        <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5">
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+    <div className="space-y-8 pb-10">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/5 pb-6">
+        <div>
+          <h1 className="font-display text-3xl font-black tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
+            Overview
+          </h1>
+          <p className="text-sm text-white/50 mt-1">Monitor platform metrics and recent activities.</p>
+        </div>
+        <Button onClick={fetchData} className="gap-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 shadow-lg rounded-xl transition-all">
+          <RefreshCw className="w-4 h-4" /> Refresh Data
         </Button>
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {statCards.map((card) => (
-          <Card key={card.title} className="hover:border-primary/30 transition-colors">
-            <CardHeader className="flex flex-row items-center justify-between pb-1 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground leading-tight">{card.title}</CardTitle>
-              <card.icon className={`w-4 h-4 shrink-0 ${card.color}`} />
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <p className="font-display text-xl font-bold">{card.value}</p>
-            </CardContent>
-          </Card>
+          <div key={card.title} className="relative group p-5 rounded-2xl bg-white/[0.02] border border-white/5 shadow-xl overflow-hidden hover:bg-white/[0.04] transition-all">
+            <div className={`absolute top-0 right-0 w-24 h-24 ${card.bg} blur-2xl -mr-10 -mt-10 rounded-full transition-transform group-hover:scale-150`} />
+            <div className="relative z-10 flex items-center justify-between mb-4">
+              <p className="text-xs font-semibold text-white/50 uppercase tracking-wider">{card.title}</p>
+              <div className={`w-8 h-8 rounded-xl ${card.bg} ${card.border} border flex items-center justify-center`}>
+                <card.icon className={`w-4 h-4 ${card.color}`} />
+              </div>
+            </div>
+            <div className="relative z-10">
+              <p className="font-display text-2xl font-black text-white tracking-tight">{card.value}</p>
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Quick actions */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Quick Actions</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { label: "Manage Agents", icon: Users, path: "/admin/agents" },
-            { label: "All Orders", icon: ShoppingCart, path: "/admin/orders" },
-            { label: "Packages", icon: Package, path: "/admin/packages" },
-            { label: "Notifications", icon: Bell, path: "/admin/notifications" },
-            { label: "Withdrawals", icon: Wallet, path: "/admin/withdrawals" },
-            { label: "Wallet Top-ups", icon: ArrowUpRight, path: "/admin/wallet-topup" },
-          ].map((a) => (
-            <button
-              key={a.label}
-              onClick={() => navigate(a.path)}
-              className="flex items-center gap-2.5 rounded-xl border border-border bg-card p-3 text-sm font-medium hover:border-primary/40 transition-colors text-left"
-            >
-              <a.icon className="w-4 h-4 text-primary shrink-0" />
-              <span className="truncate">{a.label}</span>
-            </button>
-          ))}
-          {stats.pendingAgents > 0 && (
-            <button
-              onClick={approveAllPending}
-              disabled={approvingPending}
-              className="flex items-center gap-2.5 rounded-xl border border-green-500/40 bg-green-500/5 p-3 text-sm font-medium hover:border-green-500/70 transition-colors text-left col-span-2 sm:col-span-2"
-            >
-              <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-              <span>{approvingPending ? "Approving..." : `Approve all ${stats.pendingAgents} pending agent${stats.pendingAgents !== 1 ? "s" : ""}`}</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Order tracker */}
-      <div>
-        <PhoneOrderTracker
-          title="Order Tracking (Phone Lookup)"
-          subtitle="Check payment and delivery status by customer phone number."
-        />
-      </div>
-
-      {/* Recent orders */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Recent Orders</CardTitle>
-          <Button variant="ghost" size="sm" onClick={() => navigate("/admin/orders")} className="text-xs gap-1">
-            View all <ArrowUpRight className="w-3 h-3" />
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {recentOrders.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-4">No orders yet.</p>
-            ) : recentOrders.map((o) => (
-              <div key={o.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-secondary/40 border border-border">
-                <div className="shrink-0">{statusIcon(o.status)}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {o.network && o.package_size ? `${o.network} ${o.package_size}` : "Order"}
-                    {o.customer_phone && <span className="text-muted-foreground font-normal"> → {o.customer_phone}</span>}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString()}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-bold">GH₵{Number(o.amount).toFixed(2)}</p>
-                  <Badge variant={o.status === "fulfilled" ? "default" : o.status === "fulfillment_failed" ? "destructive" : "secondary"} className="text-[10px] h-4">
-                    {o.status}
-                  </Badge>
-                </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="xl:col-span-2 space-y-8">
+          {/* Recent orders */}
+          <div className="rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
+              <div>
+                <h3 className="font-bold text-lg text-white tracking-tight">Recent Transactions</h3>
+                <p className="text-xs text-white/40 mt-1">The latest 8 orders on the platform.</p>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Maintenance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Site Maintenance Mode</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!maintenanceTableReady && (
-            <p className="text-sm text-destructive">Maintenance settings table missing. Run the latest Supabase migration and refresh.</p>
-          )}
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
-            <div>
-              <Label className="text-sm font-medium">Enable maintenance mode</Label>
-              <p className="text-xs text-muted-foreground">Non-admin visitors see a maintenance page.</p>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/admin/orders")} className="text-xs gap-1 hover:text-amber-400 hover:bg-amber-400/10 transition-colors">
+                View All <ArrowUpRight className="w-3.5 h-3.5" />
+              </Button>
             </div>
-            <Switch checked={maintenanceEnabled} onCheckedChange={setMaintenanceEnabled} />
+            <div className="p-2">
+              {recentOrders.length === 0 ? (
+                <div className="text-center py-10">
+                  <Package className="w-8 h-8 text-white/20 mx-auto mb-3" />
+                  <p className="text-white/40 text-sm">No recent orders found.</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {recentOrders.map((o) => (
+                    <div key={o.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5">
+                      <div className="flex items-center gap-4">
+                        {statusIcon(o.status)}
+                        <div>
+                          <p className="text-sm font-bold text-white/90">
+                            {o.network && o.package_size ? `${o.network} ${o.package_size}` : "General Order"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs font-mono text-white/50">{o.customer_phone || "No phone"}</span>
+                            <span className="w-1 h-1 rounded-full bg-white/20" />
+                            <span className="text-xs text-white/40">{new Date(o.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 w-full sm:w-auto">
+                        <p className="text-sm font-black text-amber-400">GH₵{Number(o.amount).toFixed(2)}</p>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-[9px] uppercase tracking-wider font-bold border ${o.status === 'fulfilled' ? 'bg-green-500/10 text-green-400 border-green-500/20' : o.status === 'fulfillment_failed' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}
+                        >
+                          {o.status.replace("_", " ")}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div>
-            <Label htmlFor="maintenance-message">Maintenance message</Label>
-            <Textarea
-              id="maintenance-message"
-              value={maintenanceMessage}
-              onChange={(e) => setMaintenanceMessage(e.target.value)}
-              className="mt-1 bg-secondary min-h-[80px]"
-              placeholder="Write a short message shown to visitors..."
+
+          {/* Order tracker */}
+          <div className="rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl p-6">
+            <PhoneOrderTracker
+              title="Manual Order Tracker"
+              subtitle="Quickly lookup the status of any order using the customer's phone number."
             />
           </div>
-          <Button onClick={saveMaintenance} disabled={savingMaintenance}>
-            {savingMaintenance ? "Saving..." : "Save Maintenance Settings"}
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="space-y-8">
+          {/* Quick actions */}
+          <div className="rounded-2xl bg-gradient-to-b from-white/[0.04] to-transparent border border-white/5 shadow-2xl p-6">
+            <h3 className="font-bold text-lg text-white tracking-tight mb-1">Quick Tools</h3>
+            <p className="text-xs text-white/40 mb-6">Access frequent admin functions.</p>
+            
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Agents", icon: Users, path: "/admin/agents", color: "text-blue-400", bg: "bg-blue-400/10" },
+                { label: "Orders", icon: ShoppingCart, path: "/admin/orders", color: "text-emerald-400", bg: "bg-emerald-400/10" },
+                { label: "Packages", icon: Package, path: "/admin/packages", color: "text-purple-400", bg: "bg-purple-400/10" },
+                { label: "Withdrawals", icon: Wallet, path: "/admin/withdrawals", color: "text-amber-400", bg: "bg-amber-400/10" },
+              ].map((a) => (
+                <button
+                  key={a.label}
+                  onClick={() => navigate(a.path)}
+                  className="group flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/10 transition-all gap-3"
+                >
+                  <div className={`w-10 h-10 rounded-full ${a.bg} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                    <a.icon className={`w-5 h-5 ${a.color}`} />
+                  </div>
+                  <span className="text-xs font-semibold text-white/70 group-hover:text-white transition-colors">{a.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {stats.pendingAgents > 0 && (
+              <button
+                onClick={approveAllPending}
+                disabled={approvingPending}
+                className="w-full mt-4 group flex items-center justify-between p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold text-amber-400">Action Required</p>
+                    <p className="text-[10px] text-amber-400/70">{stats.pendingAgents} agent{stats.pendingAgents !== 1 ? 's' : ''} awaiting approval</p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-400/50 group-hover:translate-x-1 transition-transform" />
+              </button>
+            )}
+          </div>
+
+          {/* Maintenance */}
+          <div className="rounded-2xl bg-white/[0.02] border border-white/5 shadow-2xl overflow-hidden relative">
+            <div className={`absolute top-0 left-0 w-full h-1 ${maintenanceEnabled ? 'bg-red-500' : 'bg-green-500'}`} />
+            <div className="p-6">
+              <h3 className="font-bold text-lg text-white tracking-tight mb-1">System Status</h3>
+              <p className="text-xs text-white/40 mb-6">Manage platform accessibility.</p>
+              
+              {!maintenanceTableReady && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <p className="text-xs text-red-400 font-medium">Database migration required for maintenance mode.</p>
+                </div>
+              )}
+              
+              <div className="space-y-5">
+                <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+                  <div>
+                    <Label className="text-sm font-bold text-white/90">Maintenance Mode</Label>
+                    <p className="text-[10px] text-white/40 mt-0.5">Restrict access to admins only</p>
+                  </div>
+                  <Switch checked={maintenanceEnabled} onCheckedChange={setMaintenanceEnabled} className="data-[state=checked]:bg-red-500" />
+                </div>
+                
+                <div>
+                  <Label htmlFor="maintenance-message" className="text-xs font-semibold text-white/60 mb-2 block">Display Message</Label>
+                  <Textarea
+                    id="maintenance-message"
+                    value={maintenanceMessage}
+                    onChange={(e) => setMaintenanceMessage(e.target.value)}
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/20 resize-none rounded-xl text-sm focus:border-amber-400/50 focus:ring-amber-400/20"
+                    placeholder="Enter message for visitors..."
+                    rows={3}
+                  />
+                </div>
+                
+                <Button 
+                  onClick={saveMaintenance} 
+                  disabled={savingMaintenance}
+                  className="w-full bg-white text-black hover:bg-white/90 font-bold rounded-xl h-11"
+                >
+                  {savingMaintenance ? "Saving..." : "Apply Changes"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
