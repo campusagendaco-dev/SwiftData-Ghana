@@ -69,40 +69,24 @@ serve(async (req) => {
       });
     }
 
-    // Only count profit from fulfilled orders — paid/failed orders have not delivered service
-    const { data: orders } = await supabaseAdmin
-      .from("orders")
-      .select("profit")
-      .eq("agent_id", agentId)
-      .in("status", ["fulfilled"]);
+    // Use atomic RPC to calculate balance and insert withdrawal safely
+    const { data: result, error: rpcError } = await supabaseAdmin.rpc("request_withdrawal", {
+      p_agent_id: agentId,
+      p_amount: amount,
+    });
 
-    const totalProfit = (orders || []).reduce((sum: number, o: any) => sum + (Number(o.profit) || 0), 0);
-
-    const { data: withdrawals } = await supabaseAdmin
-      .from("withdrawals")
-      .select("amount, status")
-      .eq("agent_id", agentId)
-      .in("status", ["completed", "pending", "processing"]);
-
-    const totalWithdrawn = (withdrawals || []).reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-    const availableBalance = parseFloat((totalProfit - totalWithdrawn).toFixed(2));
-
-    if (amount > availableBalance) {
-      return new Response(JSON.stringify({ error: `Insufficient balance. Available: GHS ${availableBalance.toFixed(2)}` }), {
+    if (rpcError || !result?.success) {
+      const errMsg = result?.error || "Withdrawal failed";
+      return new Response(JSON.stringify({
+        error: errMsg === "Insufficient balance"
+          ? `Insufficient balance. Available: GHS ${(result?.available || 0).toFixed(2)}`
+          : errMsg,
+      }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Create pending withdrawal request (admin will confirm manually)
-    const withdrawalId = crypto.randomUUID();
-    await supabaseAdmin.from("withdrawals").insert({
-      id: withdrawalId,
-      agent_id: agentId,
-      amount,
-      status: "pending",
-    });
-
-    return new Response(JSON.stringify({ success: true, withdrawal_id: withdrawalId }), {
+    return new Response(JSON.stringify({ success: true, withdrawal_id: result.withdrawal_id }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

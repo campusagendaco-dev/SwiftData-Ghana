@@ -33,7 +33,7 @@ const statusIcon = (s: string) => {
 const AdminOverview = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalUsers: 0, pendingAgents: 0, swiftDataSubAgentShare: 0 });
+  const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalUsers: 0, pendingAgents: 0, swiftDataSubAgentShare: 0, totalAgentProfit: 0, totalSubAgentProfit: 0 });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState("We are performing scheduled maintenance. Please check back soon.");
@@ -44,7 +44,7 @@ const AdminOverview = () => {
 
   const fetchData = async () => {
     const [ordersRes, profilesRes, maintenanceRes, recentRes] = await Promise.all([
-      supabase.from("orders").select("id, amount, status, order_type"),
+      supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit"),
       supabase.from("profiles").select("id, is_agent, agent_approved, onboarding_complete"),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase
@@ -67,6 +67,8 @@ const AdminOverview = () => {
       swiftDataSubAgentShare: orders
         .filter((o: any) => o.status === "fulfilled" && o.order_type === "sub_agent_activation")
         .reduce((s: number, o: any) => s + (Number(o.amount || 0) * 0.5), 0),
+      totalAgentProfit: orders.filter((o: any) => o.status === "fulfilled").reduce((s: number, o: any) => s + Number(o.profit || 0), 0),
+      totalSubAgentProfit: orders.filter((o: any) => o.status === "fulfilled").reduce((s: number, o: any) => s + Number(o.parent_profit || 0), 0),
     });
 
     setRecentOrders((recentRes.data || []) as RecentOrder[]);
@@ -137,8 +139,8 @@ const AdminOverview = () => {
 
   const statCards = [
     { title: "Total Revenue", value: `GH₵ ${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20" },
-    { title: "Platform Share", value: `GH₵ ${stats.swiftDataSubAgentShare.toFixed(2)}`, icon: Activity, color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20" },
-    { title: "Total Orders", value: stats.totalOrders.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+    { title: "Agent Profits", value: `GH₵ ${(stats.totalAgentProfit + stats.totalSubAgentProfit).toFixed(2)}`, icon: DollarSign, color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20" },
+    { title: "Platform Share", value: `GH₵ ${stats.swiftDataSubAgentShare.toFixed(2)}`, icon: Activity, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20" },
     { title: "Active Users", value: stats.totalUsers.toLocaleString(), icon: Users, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20" },
     { title: "Pending Agents", value: stats.pendingAgents, icon: ShieldCheck, color: stats.pendingAgents > 0 ? "text-red-400" : "text-emerald-400", bg: stats.pendingAgents > 0 ? "bg-red-500/10" : "bg-emerald-500/10", border: stats.pendingAgents > 0 ? "border-red-500/20" : "border-emerald-500/20" },
   ];

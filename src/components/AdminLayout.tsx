@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import AdminNotifications from "@/components/AdminNotifications";
-import { LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu, Wallet, Bell, Package, CreditCard, Activity, Settings, ChevronRight, BarChart3, Ticket, LifeBuoy, FileSearch } from "lucide-react";
+import { LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu, Wallet, Bell, Package, CreditCard, Activity, Settings, ChevronRight, BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -20,6 +20,8 @@ const navItems = [
   { label: "Users", icon: Users, path: "/admin/users" },
   { label: "System Health", icon: Activity, path: "/admin/system-health" },
   { label: "Audit Logs", icon: FileSearch, path: "/admin/audit-logs" },
+  { label: "API Users", icon: Key, path: "/admin/api-users" },
+  { label: "Profits", icon: TrendingUp, path: "/admin/profits" },
   { label: "Settings", icon: Settings, path: "/admin/settings" },
 ];
 

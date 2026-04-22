@@ -54,6 +54,8 @@ import AdminAnalytics from "./pages/AdminAnalytics";
 import AdminPromotions from "./pages/AdminPromotions";
 import AdminTickets from "./pages/AdminTickets";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
+import AdminAPIUsers from "./pages/AdminAPIUsers";
+import AdminProfits from "./pages/AdminProfits";
 import SubAgentSignup from "./pages/SubAgentSignup";
 import SubAgentPending from "./pages/SubAgentPending";
 import DashboardDeveloperAPI from "./pages/DashboardDeveloperAPI";
@@ -312,6 +314,8 @@ const AppContent = () => {
           <Route path="promotions" element={<AdminPromotions />} />
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="audit-logs" element={<AdminAuditLogs />} />
+          <Route path="api-users" element={<AdminAPIUsers />} />
+          <Route path="profits" element={<AdminProfits />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

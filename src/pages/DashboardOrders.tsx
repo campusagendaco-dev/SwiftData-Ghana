@@ -14,6 +14,7 @@ interface Order {
   package_size: string | null;
   amount: number;
   profit: number;
+  parent_profit: number;
   status: string;
   created_at: string;
   updated_at: string | null;
@@ -152,7 +153,7 @@ const DashboardOrders = () => {
       else if (o.status === "paid" || o.status === "processing") acc.processing += 1;
       const isData = o.order_type === "data";
       acc.totalSales += Number(o.amount);
-      acc.totalProfit += Number(o.profit);
+      acc.totalProfit += Number(o.profit) + Number(o.parent_profit || 0);
       if (isData) acc.dataOrders += 1;
       return acc;
     },
@@ -288,11 +289,16 @@ const DashboardOrders = () => {
                   {/* Amount + profit */}
                   <div className="text-right shrink-0">
                     <p className="font-bold text-sm">GH₵ {Number(order.amount).toFixed(2)}</p>
-                    {Number(order.profit) > 0 && (
+                    {(Number(order.profit) > 0 || Number(order.parent_profit) > 0) && (
                       <div className="flex items-center justify-end gap-1 mt-0.5">
                         <span className={`w-1.5 h-1.5 rounded-full ${ds.dot} ${ds.spinning ? "animate-pulse" : ""}`} />
-                        <span className="text-[11px] text-primary font-semibold">+GH₵ {Number(order.profit).toFixed(2)}</span>
+                        <span className="text-[11px] text-primary font-semibold">
+                          +GH₵ {(Number(order.profit) + Number(order.parent_profit || 0)).toFixed(2)}
+                        </span>
                       </div>
+                    )}
+                    {Number(order.parent_profit) > 0 && (
+                      <p className="text-[10px] text-emerald-500/70 mt-0.5">incl. sub-agent profit</p>
                     )}
                   </div>
                 </div>

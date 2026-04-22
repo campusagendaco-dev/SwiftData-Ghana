@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { basePackages, networks } from "@/lib/data";
-import { Users2, Settings2, DollarSign, CheckCircle, Clock, Loader2, Save, RefreshCw } from "lucide-react";
+import { Users2, Settings2, DollarSign, CheckCircle, Clock, Loader2, Save, RefreshCw, ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
 
@@ -24,7 +24,20 @@ interface GlobalPkgSetting {
   agent_price: number | null;
 }
 
-type Tab = "sub-agents" | "activation-fee" | "pricing";
+type Tab = "sub-agents" | "activation-fee" | "pricing" | "transactions";
+
+interface SubAgentOrder {
+  id: string;
+  agent_id: string;
+  network: string | null;
+  package_size: string | null;
+  customer_phone: string | null;
+  amount: number;
+  parent_profit: number;
+  status: string;
+  created_at: string;
+  agent_name?: string;
+}
 
 const normalizePackageSize = (size: string) => size.replace(/\s+/g, "").toUpperCase();
 
@@ -40,6 +53,9 @@ const DashboardSubAgents = () => {
   const [subAgentPrices, setSubAgentPrices] = useState<Record<string, Record<string, string>>>({});
   const [savingPrices, setSavingPrices] = useState(false);
   const [pushingPrices, setPushingPrices] = useState(false);
+  const [subAgentOrders, setSubAgentOrders] = useState<SubAgentOrder[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [orderFilter, setOrderFilter] = useState("all");
   const [loadingSubAgents, setLoadingSubAgents] = useState(true);
   const [selectedNetwork, setSelectedNetwork] = useState(networks[0].name);
   const [priceMultiplier, setPriceMultiplier] = useState(1);
@@ -60,6 +76,30 @@ const DashboardSubAgents = () => {
     if (saRes.data) setSubAgents(saRes.data as SubAgent[]);
     if (gsRes.data) setGlobalSettings(gsRes.data as GlobalPkgSetting[]);
     setLoadingSubAgents(false);
+  }, [user]);
+
+  const fetchSubAgentOrders = useCallback(async () => {
+    if (!user) return;
+    setLoadingOrders(true);
+    // Get all sub-agent user IDs under this parent agent
+    const { data: sas } = await supabase
+      .from("profiles")
+      .select("user_id, full_name")
+      .eq("parent_agent_id", user.id)
+      .eq("sub_agent_approved", true);
+    const saIds = (sas ?? []).map((s) => s.user_id);
+    const nameMap: Record<string, string> = {};
+    (sas ?? []).forEach((s) => { nameMap[s.user_id] = s.full_name; });
+    if (saIds.length === 0) { setSubAgentOrders([]); setLoadingOrders(false); return; }
+    const { data: orders } = await supabase
+      .from("orders")
+      .select("id, agent_id, network, package_size, customer_phone, amount, parent_profit, status, created_at")
+      .in("agent_id", saIds)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    const enriched = (orders ?? []).map((o: any) => ({ ...o, agent_name: nameMap[o.agent_id] ?? "Unknown" }));
+    setSubAgentOrders(enriched as SubAgentOrder[]);
+    setLoadingOrders(false);
   }, [user]);
 
   useEffect(() => {
@@ -159,7 +199,13 @@ const DashboardSubAgents = () => {
     { id: "sub-agents", label: "Sub Agents", icon: Users2 },
     { id: "activation-fee", label: "Activation Fee", icon: DollarSign },
     { id: "pricing", label: "Pricing", icon: Settings2 },
+    { id: "transactions", label: "Transactions", icon: ClipboardList },
   ];
+
+  // Fetch sub-agent orders when tab is opened
+  useEffect(() => {
+    if (tab === "transactions") fetchSubAgentOrders();
+  }, [tab, fetchSubAgentOrders]);
 
   return (
     <div className="p-4 md:p-6 max-w-5xl space-y-6">
@@ -411,6 +457,101 @@ const DashboardSubAgents = () => {
               </button>
             )}
           </div>
+        </div>
+      )}
+      {/* Sub-Agent Transactions */}
+      {tab === "transactions" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">Sub-Agent Transactions</p>
+              <p className="text-xs text-muted-foreground mt-0.5">All orders placed by your sub-agents. Your profit per order is shown.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select value={orderFilter} onChange={(e) => setOrderFilter(e.target.value)}
+                className="text-xs bg-transparent border border-border rounded-lg px-3 py-1.5 text-foreground outline-none">
+                <option value="all">All Statuses</option>
+                <option value="fulfilled">Fulfilled</option>
+                <option value="fulfillment_failed">Failed</option>
+                <option value="paid">Processing</option>
+              </select>
+              <button onClick={fetchSubAgentOrders} className="p-1.5 rounded-lg border border-border hover:bg-accent transition-colors">
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Profit summary */}
+          {subAgentOrders.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Total Orders", value: subAgentOrders.length },
+                { label: "Total Volume", value: `GH₵ ${subAgentOrders.reduce((s, o) => s + Number(o.amount), 0).toFixed(2)}` },
+                { label: "Your Total Profit", value: `GH₵ ${subAgentOrders.reduce((s, o) => s + Number(o.parent_profit || 0), 0).toFixed(2)}`, highlight: true },
+              ].map((s) => (
+                <div key={s.label} className={`rounded-xl p-3 text-center border ${s.highlight ? "bg-amber-400/10 border-amber-400/30" : "bg-card border-border"}`}>
+                  <p className={`font-black text-lg ${s.highlight ? "text-amber-400" : "text-foreground"}`}>{s.value}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {loadingOrders ? (
+            <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading transactions...
+            </div>
+          ) : subAgentOrders.filter(o => orderFilter === "all" || o.status === orderFilter).length === 0 ? (
+            <div className="py-12 text-center">
+              <ClipboardList className="w-10 h-10 mx-auto text-muted-foreground/30 mb-3" />
+              <p className="text-sm text-muted-foreground">No transactions found.</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Date</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Sub-Agent</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Phone</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground">Package</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Amount</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-muted-foreground">Your Profit</th>
+                      <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {subAgentOrders
+                      .filter(o => orderFilter === "all" || o.status === orderFilter)
+                      .map((order) => (
+                        <tr key={order.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(order.created_at).toLocaleDateString("en-GH", { day: "2-digit", month: "short" })}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs font-medium truncate max-w-[100px]">{order.agent_name}</td>
+                          <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground hidden sm:table-cell">{order.customer_phone || "—"}</td>
+                          <td className="px-4 py-2.5 text-xs">{order.network} {order.package_size}</td>
+                          <td className="px-4 py-2.5 text-xs font-bold text-right">GH₵{Number(order.amount).toFixed(2)}</td>
+                          <td className="px-4 py-2.5 text-right">
+                            {Number(order.parent_profit) > 0
+                              ? <span className="text-xs font-bold text-emerald-500">+GH₵{Number(order.parent_profit).toFixed(2)}</span>
+                              : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              order.status === "fulfilled" ? "bg-green-500/10 text-green-500 border-green-500/20"
+                              : order.status === "fulfillment_failed" ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                            }`}>{order.status.replace(/_/g, " ")}</span>
+                          </td>
+                        </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

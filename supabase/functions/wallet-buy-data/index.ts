@@ -622,7 +622,52 @@ serve(async (req) => {
       });
     }
 
-    const walletProfit = 0;
+    // ── PROFIT LOGIC ──────────────────────────────────────────────────────────
+    // Fetch the buyer's profile to check if they are a sub-agent
+    const { data: buyerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("is_sub_agent, parent_agent_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const isSubAgent = buyerProfile?.is_sub_agent === true;
+    const parentAgentId: string | null = buyerProfile?.parent_agent_id ?? null;
+
+    // Profit for the sub-agent's own order is 0 (they pay a fixed price set by parent)
+    // Profit for the parent agent = what sub-agent paid minus the global base price (agent_price)
+    let parentProfit = 0;
+
+    if (isSubAgent && parentAgentId) {
+      // Resolve global agent base price (what the parent agent normally pays per unit)
+      const globalBasePrice = await resolveExpectedAmount(
+        supabaseAdmin,
+        network,
+        package_size,
+        pricingContext.multiplier,
+      );
+
+      if (globalBasePrice && globalBasePrice > 0 && expectedAmount > globalBasePrice) {
+        parentProfit = parseFloat((expectedAmount - globalBasePrice).toFixed(2));
+      }
+
+      // Credit the parent agent's wallet with their profit margin
+      if (parentProfit > 0) {
+        // Ensure parent wallet is credited atomically
+        const { error: creditError } = await supabaseAdmin.rpc("credit_wallet", {
+          p_agent_id: parentAgentId,
+          p_amount: parentProfit,
+        });
+
+        if (creditError) {
+          console.error("Failed to credit parent profit:", creditError);
+        } else {
+          console.log(`Parent profit credited atomically: GHS ${parentProfit} to agent ${parentAgentId}`);
+        }
+
+        console.log(`Parent profit credited: GHS ${parentProfit} to agent ${parentAgentId}`);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const orderId = crypto.randomUUID();
     await supabaseAdmin.from("orders").insert({
@@ -633,7 +678,9 @@ serve(async (req) => {
       package_size,
       customer_phone,
       amount: expectedAmount,
-      profit: walletProfit,
+      profit: 0, // Sub-agent's own profit is 0 (they buy at fixed price)
+      parent_agent_id: parentAgentId,
+      parent_profit: parentProfit,
       status: "paid",
       failure_reason: null,
     });

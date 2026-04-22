@@ -720,12 +720,7 @@ serve(async (req) => {
           onboarding_complete: true, agent_prices: subAgentPrices,
         }).eq("user_id", subAgentId);
         if (parentAgentId && agentProfit > 0) {
-          const { data: pw } = await supabase.from("wallets").select("balance").eq("agent_id", parentAgentId).maybeSingle();
-          if (pw) {
-            await supabase.from("wallets").update({ balance: parseFloat(((Number(pw.balance) || 0) + agentProfit).toFixed(2)) }).eq("agent_id", parentAgentId);
-          } else {
-            await supabase.from("wallets").insert({ agent_id: parentAgentId, balance: agentProfit });
-          }
+          await supabase.rpc("credit_wallet", { p_agent_id: parentAgentId, p_amount: agentProfit });
         }
         await supabase
           .from("orders")
@@ -740,13 +735,7 @@ serve(async (req) => {
 
     if (orderType === "wallet_topup") {
       const creditAmount = Number(order?.amount || paidAmount);
-      const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", resolvedAgentId).maybeSingle();
-      if (wallet) {
-        const newBalance = parseFloat(((wallet.balance || 0) + creditAmount).toFixed(2));
-        await supabase.from("wallets").update({ balance: newBalance }).eq("agent_id", resolvedAgentId);
-      } else {
-        await supabase.from("wallets").insert({ agent_id: resolvedAgentId, balance: creditAmount });
-      }
+      await supabase.rpc("credit_wallet", { p_agent_id: resolvedAgentId, p_amount: creditAmount });
       await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
       return new Response(JSON.stringify({ status: "fulfilled" }), {
         status: 200,
