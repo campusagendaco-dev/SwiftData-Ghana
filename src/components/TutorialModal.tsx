@@ -8,28 +8,6 @@ import {
 
 const STORAGE_KEY = "swiftdata-tutorial-seen";
 
-/* ── Shared animated illustration atoms ── */
-
-const PulseRing = ({ color }: { color: string }) => (
-  <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: color }} />
-);
-
-const PhoneFrame = ({ children }: { children: React.ReactNode }) => (
-  <div className="relative mx-auto w-28 h-48 rounded-2xl border-2 border-white/20 flex flex-col items-center justify-center overflow-hidden"
-    style={{ background: "linear-gradient(180deg, #111124 0%, #0d0d18 100%)" }}>
-    <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-white/20" />
-    {children}
-  </div>
-);
-
-const NetworkBadge = ({ name, color, delay = 0 }: { name: string; color: string; delay?: number }) => (
-  <div
-    className="rounded-lg px-2 py-1 text-center font-black text-xs text-black transition-all"
-    style={{ background: color, animation: `tutorial-bob 2s ease-in-out ${delay}ms infinite` }}
-  >
-    {name}
-  </div>
-);
 
 const StepDot = ({ active, done }: { active: boolean; done: boolean }) => (
   <div className={`rounded-full transition-all duration-300 ${
@@ -454,6 +432,13 @@ export default function TutorialModal() {
   useEffect(() => {
     const seen = localStorage.getItem(STORAGE_KEY);
     if (!seen) setVisible(true);
+  }, []);
+
+  // Allow external callers (e.g. Navbar) to open the tutorial via a custom event
+  useEffect(() => {
+    const handler = () => { setFlow(null); setStep(0); setVisible(true); };
+    window.addEventListener("open-tutorial", handler);
+    return () => window.removeEventListener("open-tutorial", handler);
   }, []);
 
   const dismiss = () => {
