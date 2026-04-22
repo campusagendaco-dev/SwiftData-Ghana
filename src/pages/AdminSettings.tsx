@@ -22,6 +22,12 @@ interface SystemSettings {
   sub_agent_base_fee: string;
   txtconnect_api_key: string;
   txtconnect_sender_id: string;
+  paystack_secret_key: string;
+  hubtel_client_id: string;
+  hubtel_client_secret: string;
+  mtn_markup_percentage: string;
+  telecel_markup_percentage: string;
+  at_markup_percentage: string;
 }
 
 const AdminSettings = () => {
@@ -41,6 +47,12 @@ const AdminSettings = () => {
     sub_agent_base_fee: "5.00",
     txtconnect_api_key: "",
     txtconnect_sender_id: "",
+    paystack_secret_key: "",
+    hubtel_client_id: "",
+    hubtel_client_secret: "",
+    mtn_markup_percentage: "0",
+    telecel_markup_percentage: "0",
+    at_markup_percentage: "0",
   });
 
   useEffect(() => {
@@ -67,6 +79,12 @@ const AdminSettings = () => {
           sub_agent_base_fee: String(data.sub_agent_base_fee || "5.00"),
           txtconnect_api_key: String(data.txtconnect_api_key || ""),
           txtconnect_sender_id: String(data.txtconnect_sender_id || ""),
+          paystack_secret_key: String(data.paystack_secret_key || ""),
+          hubtel_client_id: String(data.hubtel_client_id || ""),
+          hubtel_client_secret: String(data.hubtel_client_secret || ""),
+          mtn_markup_percentage: String(data.mtn_markup_percentage || "0"),
+          telecel_markup_percentage: String(data.telecel_markup_percentage || "0"),
+          at_markup_percentage: String(data.at_markup_percentage || "0"),
         });
       }
       setLoading(false);
@@ -98,6 +116,12 @@ const AdminSettings = () => {
         sub_agent_base_fee: parseFloat(settings.sub_agent_base_fee) || 5.0,
         txtconnect_api_key: settings.txtconnect_api_key.trim(),
         txtconnect_sender_id: settings.txtconnect_sender_id.trim(),
+        paystack_secret_key: settings.paystack_secret_key.trim(),
+        hubtel_client_id: settings.hubtel_client_id.trim(),
+        hubtel_client_secret: settings.hubtel_client_secret.trim(),
+        mtn_markup_percentage: parseFloat(settings.mtn_markup_percentage) || 0,
+        telecel_markup_percentage: parseFloat(settings.telecel_markup_percentage) || 0,
+        at_markup_percentage: parseFloat(settings.at_markup_percentage) || 0,
       });
       dbError = error;
     } else {
@@ -116,6 +140,12 @@ const AdminSettings = () => {
           sub_agent_base_fee: parseFloat(settings.sub_agent_base_fee) || 5.0,
           txtconnect_api_key: settings.txtconnect_api_key.trim(),
           txtconnect_sender_id: settings.txtconnect_sender_id.trim(),
+          paystack_secret_key: settings.paystack_secret_key.trim(),
+          hubtel_client_id: settings.hubtel_client_id.trim(),
+          hubtel_client_secret: settings.hubtel_client_secret.trim(),
+          mtn_markup_percentage: parseFloat(settings.mtn_markup_percentage) || 0,
+          telecel_markup_percentage: parseFloat(settings.telecel_markup_percentage) || 0,
+          at_markup_percentage: parseFloat(settings.at_markup_percentage) || 0,
         })
         .eq("id", 1);
       dbError = error;
@@ -248,6 +278,29 @@ const AdminSettings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Network Markups (Profit Margins)</CardTitle>
+              <CardDescription>Automatically add a percentage markup to specific networks before selling to users.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>MTN (%)</Label>
+                  <Input type="number" step="0.5" value={settings.mtn_markup_percentage} onChange={(e) => setSettings({ ...settings, mtn_markup_percentage: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Telecel (%)</Label>
+                  <Input type="number" step="0.5" value={settings.telecel_markup_percentage} onChange={(e) => setSettings({ ...settings, telecel_markup_percentage: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>AT (%)</Label>
+                  <Input type="number" step="0.5" value={settings.at_markup_percentage} onChange={(e) => setSettings({ ...settings, at_markup_percentage: e.target.value })} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Messaging & Announcements */}
@@ -325,6 +378,29 @@ const AdminSettings = () => {
                   </AlertDescription>
                 </Alert>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Payment & Provider APIs</CardTitle>
+              <CardDescription>Manage credentials for your upstream providers.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Paystack Secret Key</Label>
+                <Input type="password" value={settings.paystack_secret_key} onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} placeholder="sk_live_..." />
+              </div>
+              <div className="pt-4 border-t border-white/5 space-y-4">
+                <div className="space-y-2">
+                  <Label>Hubtel Client ID</Label>
+                  <Input type="password" value={settings.hubtel_client_id} onChange={(e) => setSettings({ ...settings, hubtel_client_id: e.target.value })} placeholder="Your Hubtel ID" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Hubtel Client Secret</Label>
+                  <Input type="password" value={settings.hubtel_client_secret} onChange={(e) => setSettings({ ...settings, hubtel_client_secret: e.target.value })} placeholder="Your Hubtel Secret" />
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

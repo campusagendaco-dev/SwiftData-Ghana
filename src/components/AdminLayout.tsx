@@ -2,20 +2,24 @@ import { useState } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import AdminNotifications from "@/components/AdminNotifications";
-import { LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu, Wallet, Bell, Package, CreditCard, Activity, Settings, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu, Wallet, Bell, Package, CreditCard, Activity, Settings, ChevronRight, BarChart3, Ticket, LifeBuoy, FileSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const navItems = [
   { label: "Overview", icon: LayoutDashboard, path: "/admin" },
+  { label: "Analytics", icon: BarChart3, path: "/admin/analytics" },
   { label: "Agents", icon: ShieldCheck, path: "/admin/agents" },
   { label: "Orders", icon: ShoppingCart, path: "/admin/orders" },
   { label: "Packages", icon: Package, path: "/admin/packages" },
+  { label: "Promo Codes", icon: Ticket, path: "/admin/promotions" },
   { label: "Wallet Top-Up", icon: CreditCard, path: "/admin/wallet-topup" },
   { label: "Withdrawals", icon: Wallet, path: "/admin/withdrawals" },
+  { label: "Support Tickets", icon: LifeBuoy, path: "/admin/tickets" },
   { label: "Notifications", icon: Bell, path: "/admin/notifications" },
   { label: "Users", icon: Users, path: "/admin/users" },
   { label: "System Health", icon: Activity, path: "/admin/system-health" },
+  { label: "Audit Logs", icon: FileSearch, path: "/admin/audit-logs" },
   { label: "Settings", icon: Settings, path: "/admin/settings" },
 ];
 

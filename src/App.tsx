@@ -50,6 +50,10 @@ import AdminPackages from "./pages/AdminPackages";
 import AdminWalletTopup from "./pages/AdminWalletTopup";
 import AdminSystemHealth from "./pages/AdminSystemHealth";
 import AdminSettings from "./pages/AdminSettings";
+import AdminAnalytics from "./pages/AdminAnalytics";
+import AdminPromotions from "./pages/AdminPromotions";
+import AdminTickets from "./pages/AdminTickets";
+import AdminAuditLogs from "./pages/AdminAuditLogs";
 import SubAgentSignup from "./pages/SubAgentSignup";
 import SubAgentPending from "./pages/SubAgentPending";
 import Maintenance from "./pages/Maintenance";
@@ -298,6 +302,10 @@ const AppContent = () => {
           <Route path="wallet-topup" element={<AdminWalletTopup />} />
           <Route path="system-health" element={<AdminSystemHealth />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="analytics" element={<AdminAnalytics />} />
+          <Route path="promotions" element={<AdminPromotions />} />
+          <Route path="tickets" element={<AdminTickets />} />
+          <Route path="audit-logs" element={<AdminAuditLogs />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />
