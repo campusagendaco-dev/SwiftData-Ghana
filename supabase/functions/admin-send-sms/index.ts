@@ -83,7 +83,7 @@ serve(async (req) => {
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_ANON_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
-      status: 500,
+      status: 200, // Important: Changed to 200 so Supabase JS Client can parse data.error instead of throwing generic exception
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -91,7 +91,7 @@ serve(async (req) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -121,9 +121,9 @@ serve(async (req) => {
 
   if (!txtApiKey || !txtSenderId) {
     return new Response(JSON.stringify({
-      error: "SMS not configured. Add TxtConnect credentials in Admin → Settings → SMS Configuration.",
+      error: "SMS not configured. Please ensure you have added your TxtConnect API Key and Sender ID in the Admin Settings.",
     }), {
-      status: 500,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -136,7 +136,7 @@ serve(async (req) => {
 
     if (actorError || !actor) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -150,7 +150,7 @@ serve(async (req) => {
 
     if (!roles || roles.length === 0) {
       return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
-        status: 403,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -163,7 +163,7 @@ serve(async (req) => {
 
     if (!message) {
       return new Response(JSON.stringify({ error: "Message is required" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -175,7 +175,7 @@ serve(async (req) => {
       const normalized = normalizePhone(test_phone);
       if (!normalized) {
         return new Response(JSON.stringify({ error: "Invalid test phone number" }), {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -188,7 +188,7 @@ serve(async (req) => {
 
     if (!["all", "agents", "users"].includes(target_type)) {
       return new Response(JSON.stringify({ error: "Invalid target_type" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -206,7 +206,7 @@ serve(async (req) => {
     const { data: recipients, error: recipientsError } = await profilesQuery;
     if (recipientsError) {
       return new Response(JSON.stringify({ error: recipientsError.message }), {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -263,7 +263,7 @@ serve(async (req) => {
         error: error instanceof Error ? error.message : "Internal error",
       }),
       {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
