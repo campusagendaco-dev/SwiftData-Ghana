@@ -12,6 +12,7 @@ const Navbar = () => {
 
   const navLinks = [
     { to: "/", label: "Home" },
+    { to: "/buy-data", label: "Buy Data" },
     ...(user ? [{ to: "/dashboard", label: "Dashboard" }] : []),
     ...(user && !profile?.agent_approved ? [{ to: "/agent-program", label: "Become an Agent" }] : []),
     ...(user && isAdmin ? [{ to: "/admin", label: "Admin" }] : []),
@@ -26,11 +27,11 @@ const Navbar = () => {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-[#162316] shadow-lg">
       <div className="container mx-auto flex items-center justify-between h-16 px-4">
         {/* Logo */}
-        <Link to="/" className="flex items-center gap-2.5">
-          <img src="/logo.png" alt="SwiftData Ghana" className="w-9 h-9 shrink-0" />
+        <Link to="/" className="flex items-center gap-2.5" aria-label="SwiftData Ghana — Home">
+          <img src="/logo.png" alt="SwiftData Ghana logo" className="w-10 h-10 shrink-0 rounded-full" width={40} height={40} />
           <div className="leading-tight">
-            <span className="text-white font-bold text-sm block leading-none">SwiftData GH</span>
-            <span className="text-amber-400 text-[10px] leading-none">Data Reselling Platform</span>
+            <span className="text-white font-black text-sm block leading-none tracking-tight">SwiftData Ghana</span>
+            <span className="text-amber-400 text-[10px] leading-none">#1 Cheapest Data Bundles</span>
           </div>
         </Link>
 

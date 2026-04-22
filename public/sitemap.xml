@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+
+  <!-- Home -->
+  <url>
+    <loc>https://swiftdatagh.com/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://swiftdatagh.com/logo.png</image:loc>
+      <image:title>SwiftData Ghana Logo</image:title>
+      <image:caption>SwiftData Ghana — Buy Cheap Data Bundles in Ghana</image:caption>
+    </image:image>
+  </url>
+
+  <!-- Buy Data (main landing) -->
+  <url>
+    <loc>https://swiftdatagh.com/buy-data</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+    <image:image>
+      <image:loc>https://swiftdatagh.com/logo.png</image:loc>
+      <image:title>Buy Data Bundles Ghana</image:title>
+      <image:caption>Buy cheap MTN, Telecel and AirtelTigo data bundles in Ghana</image:caption>
+    </image:image>
+  </url>
+
+  <!-- Order Status / Track -->
+  <url>
+    <loc>https://swiftdatagh.com/order-status</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.70</priority>
+  </url>
+
+  <!-- Agent Programme -->
+  <url>
+    <loc>https://swiftdatagh.com/agent-program</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- Login / Sign Up -->
+  <url>
+    <loc>https://swiftdatagh.com/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+</urlset>
