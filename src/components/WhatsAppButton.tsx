@@ -29,12 +29,6 @@ const WhatsAppButton = () => {
   const dragOffset = useRef({ x: 0, y: 0 });
   const posRef = useRef(pos);
 
-  useEffect(() => {
-    supabase.functions.invoke("system-settings", { body: { action: "get" } }).then(({ data }) => {
-      const l = String((data as any)?.support_channel_link || "").trim();
-      if (l) setLink(l);
-    });
-  }, []);
 
   const startDrag = useCallback((clientX: number, clientY: number, rect: DOMRect) => {
     dragging.current = true;
