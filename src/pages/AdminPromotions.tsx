@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
   Ticket, Plus, Loader2, Trash2, Zap, AlertTriangle,
-  Gift, Wifi, ToggleLeft, ToggleRight, RefreshCw, Users
+  Gift, Wifi, ToggleLeft, ToggleRight, RefreshCw, Users,
+  Download, Copy, CheckCircle
 } from "lucide-react";
 
 interface PromoCode {
@@ -44,6 +45,8 @@ const AdminPromotions = () => {
   const [code, setCode] = useState("");
   const [discount, setDiscount] = useState("10");
   const [maxUses, setMaxUses] = useState("100");
+  const [bulkCount, setBulkCount] = useState("1");
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Free data campaign state
   const [freeData, setFreeData] = useState<FreeDataSettings>({
@@ -143,26 +146,82 @@ const AdminPromotions = () => {
     setSavingFreeData(false);
   };
 
+  const handleCopy = (codeToCopy: string) => {
+    navigator.clipboard.writeText(codeToCopy);
+    setCopiedCode(codeToCopy);
+    setTimeout(() => setCopiedCode(null), 2000);
+    toast({ title: "Copied to clipboard!" });
+  };
+
+  const handleExportCSV = () => {
+    if (promos.length === 0) {
+      toast({ title: "No promo codes to export", variant: "destructive" });
+      return;
+    }
+    
+    const headers = ["Code", "Discount Percentage", "Current Uses", "Max Uses", "Status", "Created At"];
+    const csvContent = [
+      headers.join(","),
+      ...promos.map(p => [
+        p.code,
+        p.discount_percentage,
+        p.current_uses,
+        p.max_uses,
+        p.is_active ? "Active" : "Disabled",
+        new Date(p.created_at).toLocaleString().replace(/,/g, "")
+      ].join(","))
+    ].join("\n");
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `promo_codes_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleGenerate = async () => {
-    if (!code.trim()) { toast({ title: "Code is required", variant: "destructive" }); return; }
+    if (!code.trim()) { toast({ title: "Code/Prefix is required", variant: "destructive" }); return; }
     const pct = parseFloat(discount);
     if (isNaN(pct) || pct <= 0 || pct > 100) { toast({ title: "Invalid discount %", variant: "destructive" }); return; }
     const max = parseInt(maxUses);
     if (isNaN(max) || max < 1) { toast({ title: "Invalid max uses", variant: "destructive" }); return; }
+    const count = parseInt(bulkCount);
+    if (isNaN(count) || count < 1 || count > 500) { toast({ title: "Count must be between 1 and 500", variant: "destructive" }); return; }
 
     setGenerating(true);
-    const { error } = await (supabase as any).from("promo_codes").insert({
-      code: code.trim().toUpperCase(),
-      discount_percentage: pct,
-      max_uses: max,
-      is_active: true,
-    });
+    
+    const codesToCreate = [];
+    if (count === 1) {
+      codesToCreate.push({
+        code: code.trim().toUpperCase(),
+        discount_percentage: pct,
+        max_uses: max,
+        is_active: true,
+      });
+    } else {
+      const prefix = code.trim().toUpperCase();
+      for (let i = 0; i < count; i++) {
+        // Generate random 5-char alphanumeric suffix
+        const suffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+        codesToCreate.push({
+          code: `${prefix}-${suffix}`,
+          discount_percentage: pct,
+          max_uses: max,
+          is_active: true,
+        });
+      }
+    }
+
+    const { error } = await (supabase as any).from("promo_codes").insert(codesToCreate);
 
     if (error) {
-      toast({ title: "Failed to create code", description: error.message, variant: "destructive" });
+      toast({ title: "Failed to create code(s)", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Promo code created!" });
-      setCode(""); setDiscount("10"); setMaxUses("100");
+      toast({ title: `${count} Promo code(s) created!` });
+      setCode(""); setDiscount("10"); setMaxUses("100"); setBulkCount("1");
       fetchPromos();
     }
     setGenerating(false);
@@ -342,9 +401,14 @@ const AdminPromotions = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2">
               <div className="rounded-2xl bg-white/[0.02] border border-white/5 overflow-hidden">
-                <div className="p-4 border-b border-white/5 bg-white/[0.01]">
-                  <h3 className="font-bold text-white">Active Codes</h3>
-                  <p className="text-xs text-white/40 mt-0.5">Click a code to disable or delete it.</p>
+                <div className="p-4 border-b border-white/5 bg-white/[0.01] flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-white">Active Codes</h3>
+                    <p className="text-xs text-white/40 mt-0.5">Click a code to disable or delete it.</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={handleExportCSV} disabled={promos.length === 0} className="text-xs border-white/10 text-white/60 hover:text-white rounded-xl">
+                    <Download className="w-4 h-4 mr-2" /> Export CSV
+                  </Button>
                 </div>
                 <div className="p-4">
                   {promoLoading ? (
@@ -361,6 +425,9 @@ const AdminPromotions = () => {
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                               <p className="font-mono font-black text-lg text-amber-400">{promo.code}</p>
+                              <button onClick={() => handleCopy(promo.code)} className="text-white/30 hover:text-amber-400 transition-colors p-1" title="Copy Code">
+                                {copiedCode === promo.code ? <CheckCircle className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                              </button>
                               <Badge variant={promo.is_active ? "default" : "secondary"}
                                 className={promo.is_active ? "bg-green-500/20 text-green-400 text-[10px]" : "text-[10px] text-white/30"}>
                                 {promo.is_active ? "Active" : "Disabled"}
@@ -396,7 +463,7 @@ const AdminPromotions = () => {
                   <Plus className="w-4 h-4 text-amber-400" /> New Code
                 </h3>
                 <div>
-                  <Label className="text-xs text-white/50 mb-1.5 block">Code</Label>
+                  <Label className="text-xs text-white/50 mb-1.5 block">Code (or Prefix)</Label>
                   <Input placeholder="e.g. FLASH20" className="uppercase font-mono bg-white/5 border-white/10 text-white rounded-xl focus:border-amber-400/40"
                     value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
                 </div>
@@ -410,9 +477,15 @@ const AdminPromotions = () => {
                   <Input type="number" placeholder="100" className="bg-white/5 border-white/10 text-white rounded-xl focus:border-amber-400/40"
                     value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
                 </div>
+                <div>
+                  <Label className="text-xs text-white/50 mb-1.5 block">How Many Codes?</Label>
+                  <Input type="number" placeholder="1" className="bg-white/5 border-white/10 text-white rounded-xl focus:border-amber-400/40"
+                    value={bulkCount} onChange={(e) => setBulkCount(e.target.value)} min="1" max="500" />
+                  <p className="text-[10px] text-white/30 mt-1">If &gt; 1, the Code above becomes a prefix.</p>
+                </div>
                 <Button className="w-full bg-amber-400 text-black font-bold hover:bg-amber-300 rounded-xl" onClick={handleGenerate} disabled={generating || !code}>
                   {generating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
-                  Generate Code
+                  Generate Code{parseInt(bulkCount) > 1 ? "s" : ""}
                 </Button>
               </div>
             </div>
