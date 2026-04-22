@@ -39,32 +39,36 @@ function normalizePhone(raw: string | null | undefined): string | null {
   return digits.length >= 10 ? `+${digits}` : null;
 }
 
-async function sendSmsViaTwilio(
-  accountSid: string,
-  authToken: string,
+async function sendSmsViaTxtConnect(
+  apiKey: string,
   from: string,
   to: string,
   body: string,
 ) {
-  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-  const auth = btoa(`${accountSid}:${authToken}`);
+  const endpoint = "https://api.txtconnect.net/v1/send";
 
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
-      "Authorization": `Basic ${auth}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
-      To: to,
-      From: from,
-      Body: body,
+      API_key: apiKey,
+      TO: to,
+      FROM: from,
+      SMS: body,
+      RESPONSE: "json",
     }),
   });
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Twilio send failed (${response.status}): ${text}`);
+    throw new Error(`TxtConnect send failed (${response.status}): ${text}`);
+  }
+  
+  const data = await response.json();
+  if (data && data.status !== "ok" && data.error) {
+     throw new Error(`TxtConnect API Error: ${data.error}`);
   }
 }
 
@@ -97,29 +101,27 @@ serve(async (req) => {
     global: { headers: { Authorization: authHeader } },
   });
 
-  // Twilio config: prefer env vars, fall back to admin-configured system_settings
-  let twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID") || "";
-  let twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN") || "";
-  let twilioFrom = Deno.env.get("TWILIO_FROM_NUMBER") || "";
+  // TxtConnect config: prefer env vars, fall back to admin-configured system_settings
+  let txtApiKey = Deno.env.get("TXTCONNECT_API_KEY") || "";
+  let txtSenderId = Deno.env.get("TXTCONNECT_SENDER_ID") || "";
 
-  if (!twilioSid || !twilioToken || !twilioFrom) {
+  if (!txtApiKey || !txtSenderId) {
     try {
       const { data: smsRow } = await supabaseAdmin
         .from("system_settings")
-        .select("twilio_account_sid, twilio_auth_token, twilio_from_number")
+        .select("txtconnect_api_key, txtconnect_sender_id")
         .eq("id", 1)
         .maybeSingle();
       if (smsRow) {
-        twilioSid = twilioSid || String(smsRow.twilio_account_sid || "");
-        twilioToken = twilioToken || String(smsRow.twilio_auth_token || "");
-        twilioFrom = twilioFrom || String(smsRow.twilio_from_number || "");
+        txtApiKey = txtApiKey || String(smsRow.txtconnect_api_key || "");
+        txtSenderId = txtSenderId || String(smsRow.txtconnect_sender_id || "");
       }
     } catch { /* columns may not exist yet — ignore */ }
   }
 
-  if (!twilioSid || !twilioToken || !twilioFrom) {
+  if (!txtApiKey || !txtSenderId) {
     return new Response(JSON.stringify({
-      error: "SMS not configured. Add Twilio credentials in Admin → Settings → SMS Configuration.",
+      error: "SMS not configured. Add TxtConnect credentials in Admin → Settings → SMS Configuration.",
     }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -177,7 +179,7 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      await sendSmsViaTwilio(twilioSid, twilioToken, twilioFrom, normalized, smsBody);
+      await sendSmsViaTxtConnect(txtApiKey, txtSenderId, normalized, smsBody);
       return new Response(JSON.stringify({ success: true, sent: 1, target_type: "test", to: normalized }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -226,10 +228,9 @@ serve(async (req) => {
 
     for (const phone of uniquePhones) {
       try {
-        await sendSmsViaTwilio(
-          twilioSid,
-          twilioToken,
-          twilioFrom,
+        await sendSmsViaTxtConnect(
+          txtApiKey,
+          txtSenderId,
           phone,
           smsBody,
         );
