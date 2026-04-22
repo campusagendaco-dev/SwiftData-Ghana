@@ -40,6 +40,7 @@ import AgentPending from "./pages/AgentPending";
 import AgentStore from "./pages/AgentStore";
 import OrderStatus from "./pages/OrderStatus";
 import PurchaseSuccess from "./pages/PurchaseSuccess";
+import DashboardLeaderboard from "./pages/DashboardLeaderboard";
 import AdminOverview from "./pages/AdminOverview";
 import AdminAgents from "./pages/AdminAgents";
 import AdminOrders from "./pages/AdminOrders";
@@ -288,6 +289,7 @@ const AppContent = () => {
           <Route path="flyer" element={<AgentFeatureGuard><DashboardFlyer /></AgentFeatureGuard>} />
           <Route path="/dashboard/api" element={<AgentFeatureGuard><DashboardDeveloperAPI /></AgentFeatureGuard>} />
           <Route path="result-checker" element={<AgentFeatureGuard><DashboardResultCheckers /></AgentFeatureGuard>} />
+          <Route path="leaderboard" element={<AgentFeatureGuard><DashboardLeaderboard /></AgentFeatureGuard>} />
 
           {/* Legacy aliases */}
           <Route path="orders" element={<Navigate to="/dashboard/transactions" replace />} />
