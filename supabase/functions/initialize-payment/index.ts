@@ -412,6 +412,27 @@ serve(async (req) => {
       resolvedAmount = amount;
     }
 
+    // ── Phone rate limiting for direct anonymous purchases ───────────────────
+    // Block the same phone from spamming orders (max 2 pending within 2 min).
+    if (orderType === "data" && !isAgentLinkedOrder) {
+      const customerPhone = (metadata.customer_phone || "").trim();
+      if (customerPhone) {
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const { count: recentPending } = await supabaseAdmin
+          .from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("customer_phone", customerPhone)
+          .eq("order_type", "data")
+          .eq("status", "pending")
+          .gte("created_at", twoMinutesAgo);
+        if ((recentPending ?? 0) >= 2) {
+          return new Response(JSON.stringify({
+            error: "Too many pending orders for this number. Please wait a moment before trying again.",
+          }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
     // Check if order already exists (idempotency)
     const { data: existingOrder } = await supabaseAdmin
       .from("orders")

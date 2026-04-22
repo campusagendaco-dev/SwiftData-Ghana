@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, CheckCircle2 } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,15 @@ import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-p
 import { invokePublicFunction } from "@/lib/public-function-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppTheme } from "@/contexts/ThemeContext";
+
+interface PromoResult {
+  valid: boolean;
+  promo_id?: string;
+  code?: string;
+  discount_percentage?: number;
+  is_free?: boolean;
+  error?: string;
+}
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
 const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
@@ -45,6 +54,14 @@ const BuyData = () => {
   const [orderingDisabled, setOrderingDisabled] = useState(false);
   const [priceMultiplier, setPriceMultiplier] = useState(1);
   const phoneInputRef = useRef<HTMLInputElement>(null);
+  const promoInputRef = useRef<HTMLInputElement>(null);
+
+  // Promo code state
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoValidating, setPromoValidating] = useState(false);
+  const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
+  const [claiming, setClaiming] = useState(false);
 
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
@@ -82,13 +99,80 @@ const BuyData = () => {
     })
     .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean }[];
 
-  const fee = selectedPkg ? calcFee(selectedPkg.price) : 0;
-  const total = selectedPkg ? parseFloat((selectedPkg.price + fee).toFixed(2)) : 0;
+  // Apply promo discount to price
+  const validPromo = promoResult?.valid ? promoResult : null;
+  const discountPct = validPromo?.discount_percentage ?? 0;
+  const isFreePromo = validPromo?.is_free === true;
+  const discountedPkgPrice = selectedPkg
+    ? isFreePromo ? 0 : parseFloat((selectedPkg.price * (1 - discountPct / 100)).toFixed(2))
+    : 0;
+  const fee = isFreePromo ? 0 : (selectedPkg ? calcFee(discountedPkgPrice) : 0);
+  const total = selectedPkg ? parseFloat((discountedPkgPrice + fee).toFixed(2)) : 0;
 
   const handleCardClick = useCallback((size: string, price: number) => {
     setSelectedPkg((prev) => (prev?.size === size ? null : { size, price }));
+    setPromoResult(null); setPromoCode(""); setPromoOpen(false);
     setTimeout(() => phoneInputRef.current?.focus(), 120);
   }, []);
+
+  const handleApplyPromo = async () => {
+    if (!promoCode.trim()) return;
+    if (!isPhoneValid) {
+      toast({ title: "Enter your phone number first", description: "We need it to check if you've already used this code.", variant: "destructive" });
+      phoneInputRef.current?.focus();
+      return;
+    }
+    setPromoValidating(true);
+    setPromoResult(null);
+    const { data, error } = await invokePublicFunction("validate-promo", {
+      body: { code: promoCode.trim(), phone: phoneDigits },
+    });
+    setPromoValidating(false);
+    if (error || !data) {
+      setPromoResult({ valid: false, error: "Could not validate code. Try again." });
+      return;
+    }
+    setPromoResult(data as PromoResult);
+    if (data.valid && data.is_free) {
+      toast({ title: "Free data code applied!", description: `${promoCode.trim().toUpperCase()} — your bundle is FREE. Tap Claim!` });
+    } else if (data.valid) {
+      toast({ title: `${data.discount_percentage}% discount applied!`, description: `Code: ${promoCode.trim().toUpperCase()}` });
+    }
+  };
+
+  const handleClaimFree = async () => {
+    if (!selectedPkg || !validPromo?.is_free) return;
+    if (!isPhoneValid) {
+      toast({ title: "Enter a valid phone number first", variant: "destructive" });
+      phoneInputRef.current?.focus();
+      return;
+    }
+    if (orderingDisabled) {
+      toast({ title: "Ordering disabled", description: holidayMessage, variant: "destructive" });
+      return;
+    }
+    setClaiming(true);
+    const { data, error } = await invokePublicFunction("claim-free-data", {
+      body: {
+        promo_code: promoCode.trim(),
+        phone: phoneDigits,
+        network: selectedNetwork,
+        package_size: selectedPkg.size,
+      },
+    });
+    setClaiming(false);
+    if (error || !data) {
+      toast({ title: "Claim failed", description: "Could not process your free data claim. Try again.", variant: "destructive" });
+      return;
+    }
+    if (data.success) {
+      toast({ title: "Free data sent!", description: `Your ${selectedPkg.size} ${selectedNetwork} bundle is on its way!` });
+      setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false);
+    } else {
+      toast({ title: "Claim failed", description: data.error || "Delivery failed. Contact support with ref: " + (data.order_id || "unknown"), variant: "destructive" });
+      setPromoResult(null); setPromoCode(""); // reset so they can try another code
+    }
+  };
 
   const handlePay = async () => {
     if (!selectedPkg) return;
@@ -124,6 +208,11 @@ const BuyData = () => {
           customer_phone: phoneDigits,
           fee,
           payment_source: "direct",
+          ...(validPromo && !validPromo.is_free ? {
+            promo_code: promoCode.trim(),
+            promo_id: validPromo.promo_id,
+            discount_percentage: validPromo.discount_percentage,
+          } : {}),
         },
       },
     });
@@ -253,67 +342,114 @@ const BuyData = () => {
       {selectedPkg && (
         <div
           className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10"
-          style={{
-            background: "rgba(8, 8, 18, 0.97)",
-            backdropFilter: "blur(28px)",
-            WebkitBackdropFilter: "blur(28px)",
-          }}
+          style={{ background: "rgba(8,8,18,0.97)", backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)" }}
         >
-          <div className="container mx-auto max-w-5xl px-4 pt-3 pb-4 sm:pb-5">
-            {/* Package summary + dismiss */}
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-white font-black text-base">{selectedNetwork} {selectedPkg.size}</span>
-                <span className="text-white/30">·</span>
-                <span className="text-white/55 text-xs">
-                  GH₵ {selectedPkg.price.toFixed(2)} + GH₵ {fee.toFixed(2)} Paystack fee
-                </span>
-                <span className="text-white/30">·</span>
-                <span className="font-bold text-sm" style={{ color: `hsl(${theme.primary})` }}>
-                  Total GH₵ {total.toFixed(2)}
-                </span>
+          <div className="container mx-auto max-w-5xl px-4 pt-3 pb-4 sm:pb-5 space-y-2.5">
+            {/* Package summary row */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap text-sm">
+                <span className="text-white font-black">{selectedNetwork} {selectedPkg.size}</span>
+                {isFreePromo ? (
+                  <span className="bg-green-500/20 text-green-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-green-500/30">FREE</span>
+                ) : (
+                  <>
+                    <span className="text-white/30">·</span>
+                    <span className="text-white/50 text-xs">
+                      {validPromo ? <><s className="text-white/25">GH₵{selectedPkg.price.toFixed(2)}</s> GH₵{discountedPkgPrice.toFixed(2)}</> : `GH₵${selectedPkg.price.toFixed(2)}`}
+                      {" "}+ GH₵{fee.toFixed(2)} fee
+                    </span>
+                    <span className="text-white/30">·</span>
+                    <span className="font-bold" style={{ color: `hsl(${theme.primary})` }}>Total GH₵{total.toFixed(2)}</span>
+                  </>
+                )}
               </div>
-              <button
-                onClick={() => { setSelectedPkg(null); setPhone(""); }}
-                className="text-white/35 hover:text-white/80 transition-colors p-1.5 rounded-lg hover:bg-white/10 ml-2 shrink-0"
-              >
+              <button onClick={() => { setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
+                className="text-white/35 hover:text-white/80 transition-colors p-1.5 rounded-lg hover:bg-white/10 ml-2 shrink-0">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Phone + Pay row */}
+            {/* Phone + action button */}
             <div className="flex gap-2 sm:gap-3">
               <input
                 ref={phoneInputRef}
-                type="tel"
-                inputMode="numeric"
+                type="tel" inputMode="numeric"
                 placeholder="Recipient number (0XXXXXXXXX)"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                value={phone} onChange={(e) => setPhone(e.target.value)}
                 maxLength={12}
                 className="flex-1 min-w-0 border border-white/15 rounded-xl px-4 py-3 text-white placeholder-white/30 text-sm focus:outline-none focus:border-white/45 transition-colors"
                 style={{ background: "rgba(255,255,255,0.07)" }}
               />
-              <button
-                onClick={handlePay}
-                disabled={buying}
-                className="shrink-0 font-black px-5 py-3 rounded-xl text-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center gap-1.5 whitespace-nowrap"
-                style={{ background: `hsl(${theme.primary})`, color: "#000" }}
-              >
-                {buying ? (
-                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing...</>
-                ) : (
-                  <><CreditCard className="w-3.5 h-3.5" /> Pay GH₵ {total.toFixed(2)}</>
-                )}
-              </button>
+              {isFreePromo ? (
+                <button onClick={handleClaimFree} disabled={claiming || !isPhoneValid}
+                  className="shrink-0 font-black px-5 py-3 rounded-xl text-sm bg-green-500 hover:bg-green-400 text-black transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap">
+                  {claiming ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Claiming...</> : <><Gift className="w-3.5 h-3.5" /> Claim Free Data</>}
+                </button>
+              ) : (
+                <button onClick={handlePay} disabled={buying}
+                  className="shrink-0 font-black px-5 py-3 rounded-xl text-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
+                  style={{ background: `hsl(${theme.primary})`, color: "#000" }}>
+                  {buying ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing...</> : <><CreditCard className="w-3.5 h-3.5" /> Pay GH₵{total.toFixed(2)}</>}
+                </button>
+              )}
             </div>
 
             {/* Validation hint */}
-            {phone.length > 0 && !isPhoneValid ? (
-              <p className="text-xs text-red-400 mt-1.5">Enter a valid 10-digit Ghana number</p>
-            ) : phone.length === 0 ? (
-              <p className="text-[11px] text-white/35 mt-1.5">Enter the recipient's phone number then tap Pay</p>
-            ) : null}
+            {phone.length > 0 && !isPhoneValid
+              ? <p className="text-xs text-red-400">Enter a valid 10-digit Ghana number</p>
+              : phone.length === 0
+              ? <p className="text-[11px] text-white/35">Enter the recipient's phone number then tap {isFreePromo ? "Claim" : "Pay"}</p>
+              : null}
+
+            {/* Promo code section */}
+            {!promoOpen && !validPromo ? (
+              <button onClick={() => { setPromoOpen(true); setTimeout(() => promoInputRef.current?.focus(), 80); }}
+                className="flex items-center gap-1.5 text-xs text-white/35 hover:text-amber-400 transition-colors">
+                <Tag className="w-3 h-3" /> Have a promo code?
+              </button>
+            ) : (
+              <div className="space-y-1.5">
+                {validPromo ? (
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border ${validPromo.is_free ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-amber-500/10 border-amber-500/30 text-amber-400"}`}>
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    {validPromo.is_free
+                      ? `Code ${validPromo.code}: 100% FREE — tap Claim Free Data!`
+                      : `Code ${validPromo.code}: ${validPromo.discount_percentage}% off applied`}
+                    <button onClick={() => { setPromoResult(null); setPromoCode(""); setPromoOpen(true); }}
+                      className="ml-auto text-white/30 hover:text-white/70">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      ref={promoInputRef}
+                      type="text"
+                      placeholder="Type promo code"
+                      value={promoCode}
+                      onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); }}
+                      onPaste={(e) => e.preventDefault()}
+                      onDrop={(e) => e.preventDefault()}
+                      autoComplete="off" autoCorrect="off" spellCheck={false}
+                      maxLength={24}
+                      className="flex-1 border border-white/15 rounded-xl px-3 py-2 text-white placeholder-white/25 text-xs font-mono uppercase focus:outline-none focus:border-amber-400/50 transition-colors"
+                      style={{ background: "rgba(255,255,255,0.06)" }}
+                    />
+                    <button onClick={handleApplyPromo} disabled={promoValidating || !promoCode.trim()}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-400 text-black hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1">
+                      {promoValidating ? <Loader2 className="w-3 h-3 animate-spin" /> : "Apply"}
+                    </button>
+                    <button onClick={() => { setPromoOpen(false); setPromoCode(""); setPromoResult(null); }}
+                      className="p-2 rounded-xl text-white/30 hover:text-white/70 hover:bg-white/8 transition-colors">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+                {promoResult && !promoResult.valid && (
+                  <p className="text-xs text-red-400 pl-1">{promoResult.error || "Invalid promo code"}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

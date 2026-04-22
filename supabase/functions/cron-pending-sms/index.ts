@@ -84,20 +84,19 @@ serve(async (req) => {
       });
     }
 
-    // 2. Find pending orders from today where sms_reminder_sent is false
+    // 2. Find pending orders from today, at least 10 minutes old, not yet reminded.
+    // We skip very recent orders to avoid reminding customers who are still mid-payment.
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
     const { data: pendingOrders, error: ordersError } = await supabaseAdmin
       .from("orders")
-      .select(`
-        id,
-        customer_phone,
-        profiles ( phone )
-      `)
+      .select("id, customer_phone")
       .eq("status", "pending")
       .eq("sms_reminder_sent", false)
-      .gte("created_at", startOfDay.toISOString());
+      .gte("created_at", startOfDay.toISOString())
+      .lte("created_at", tenMinutesAgo.toISOString());
 
     if (ordersError || !pendingOrders || pendingOrders.length === 0) {
       return new Response(JSON.stringify({ message: "No pending orders need reminders." }), {
@@ -108,11 +107,9 @@ serve(async (req) => {
     let sentCount = 0;
     const orderIdsToUpdate: string[] = [];
 
-    // 3. Send SMS to each order
+    // 3. Send SMS using customer_phone only (customers are anonymous, not in profiles)
     for (const order of pendingOrders) {
-      const cPhone = normalizePhone(order.customer_phone);
-      const aPhone = order.profiles ? normalizePhone((order.profiles as any).phone) : null;
-      const targetPhone = cPhone || aPhone;
+      const targetPhone = normalizePhone(order.customer_phone);
 
       if (targetPhone) {
         try {
@@ -122,7 +119,7 @@ serve(async (req) => {
           console.error(`Failed to send reminder to ${targetPhone} for order ${order.id}:`, error);
         }
       }
-      // Always mark as sent so we don't keep retrying invalid numbers every 30 mins
+      // Always mark as reminded so we don't retry invalid numbers every 30 min
       orderIdsToUpdate.push(order.id);
     }
 
