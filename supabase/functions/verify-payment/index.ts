@@ -60,6 +60,17 @@ function normalizeRecipient(phone: string): string {
   return phone.trim();
 }
 
+function generateSlug(name: string): string {
+  const base = name.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 30);
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  return `${base}-${rand}`;
+}
+
 function normalizeProviderBaseUrl(baseUrl: string): string {
   const clean = baseUrl.trim().replace(/\/+$/, "");
   if (!clean) return "";
@@ -747,7 +758,16 @@ serve(async (req) => {
 
     if (orderType === "agent_activation" && resolvedAgentId) {
       console.log("Processing agent activation for:", resolvedAgentId);
-      await supabase.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", resolvedAgentId);
+      const { data: profile } = await supabase.from("profiles").select("full_name, store_name, slug").eq("user_id", resolvedAgentId).maybeSingle();
+      const updates: Record<string, any> = { is_agent: true, agent_approved: true };
+      
+      if (!profile?.slug) {
+        const nameSource = profile?.store_name || profile?.full_name || "Agent";
+        updates.slug = generateSlug(nameSource);
+        if (!profile?.store_name) updates.store_name = profile?.full_name || "My Data Store";
+      }
+
+      await supabase.from("profiles").update(updates).eq("user_id", resolvedAgentId);
       await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
       return new Response(JSON.stringify({ status: "fulfilled" }), {
         status: 200,
