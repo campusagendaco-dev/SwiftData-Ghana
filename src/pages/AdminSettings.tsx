@@ -231,7 +231,7 @@ const AdminSettings = () => {
                 </Label>
                 <Input
                   id="cs-number"
-                  placeholder="e.g. 0547636024"
+                  placeholder="e.g. 0540309637"
                   value={settings.customer_service_number}
                   onChange={(e) => setSettings({ ...settings, customer_service_number: e.target.value })}
                 />
