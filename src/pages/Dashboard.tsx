@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import FreeDataClaimBanner from "@/components/FreeDataClaimBanner";
 
 interface DashboardStats {
   walletBalance: number;
@@ -88,6 +89,8 @@ const Dashboard = () => {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl space-y-5">
+
+      <FreeDataClaimBanner />
 
       {/* ── Hero balance card ── */}
       <div className="rounded-2xl p-5 sm:p-6 text-white" style={{ background: theme.heroHex }}>
