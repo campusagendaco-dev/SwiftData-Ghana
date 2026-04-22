@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { basePackages, networks } from "@/lib/data";
-import { Users2, Settings2, DollarSign, CheckCircle, Clock, Loader2, Save, RefreshCw, ClipboardList } from "lucide-react";
+import { Users2, Settings2, DollarSign, CheckCircle, Clock, Loader2, Save, RefreshCw, ClipboardList, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
 

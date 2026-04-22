@@ -4,7 +4,7 @@ import {
   Menu, X, ArrowLeft, MapPin, Users, TrendingUp,
   Phone, MessageCircle, Store,
   ShoppingBag, Zap, HelpCircle, BadgeCheck,
-  Sparkles, Clock, Shield,
+  Sparkles, Clock, Shield, ChevronRight,
 } from "lucide-react";
 
 const openTutorial = () => window.dispatchEvent(new CustomEvent("open-tutorial"));
