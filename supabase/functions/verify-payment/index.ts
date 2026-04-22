@@ -852,6 +852,16 @@ serve(async (req) => {
       if (result.ok) {
         await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
         fulfilled = true;
+        
+        // Credit profits
+        if (order?.agent_id && (order.profit > 0 || order.parent_profit > 0)) {
+          if (order.profit > 0) {
+            await supabase.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.profit });
+          }
+          if (order.parent_agent_id && order.parent_profit > 0) {
+            await supabase.rpc("credit_wallet", { p_agent_id: order.parent_agent_id, p_amount: order.parent_profit });
+          }
+        }
       } else {
         await supabase.from("orders").update({
           status: "fulfillment_failed",
@@ -889,6 +899,16 @@ serve(async (req) => {
         if (result.ok) {
           await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
           fulfilled = true;
+          
+          // Credit profits
+          if (order?.agent_id && (order.profit > 0 || order.parent_profit > 0)) {
+            if (order.profit > 0) {
+              await supabase.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.profit });
+            }
+            if (order.parent_agent_id && order.parent_profit > 0) {
+              await supabase.rpc("credit_wallet", { p_agent_id: order.parent_agent_id, p_amount: order.parent_profit });
+            }
+          }
         } else {
           await supabase.from("orders").update({
             status: "fulfillment_failed",
