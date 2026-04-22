@@ -8,7 +8,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-type TargetType = "all" | "agents" | "users";
+type TargetType = "all" | "agents" | "users" | "pending_orders";
 
 function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -190,26 +190,8 @@ serve(async (req) => {
       });
     }
 
-    if (!["all", "agents", "users"].includes(target_type)) {
+    if (!["all", "agents", "users", "pending_orders"].includes(target_type)) {
       return new Response(JSON.stringify({ error: "Invalid target_type" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    let profilesQuery = supabaseAdmin
-      .from("profiles")
-      .select("user_id, phone, is_agent");
-
-    if (target_type === "agents") {
-      profilesQuery = profilesQuery.eq("is_agent", true);
-    } else if (target_type === "users") {
-      profilesQuery = profilesQuery.eq("is_agent", false);
-    }
-
-    const { data: recipients, error: recipientsError } = await profilesQuery;
-    if (recipientsError) {
-      return new Response(JSON.stringify({ error: recipientsError.message }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -217,14 +199,62 @@ serve(async (req) => {
 
     const uniquePhones = new Set<string>();
     let skipped = 0;
+    let totalRecipients = 0;
 
-    for (const row of recipients || []) {
-      const normalized = normalizePhone(row.phone);
-      if (!normalized) {
-        skipped += 1;
-        continue;
+    if (target_type === "pending_orders") {
+      const { data: pendingOrders, error: ordersError } = await supabaseAdmin
+        .from("orders")
+        .select(`
+          customer_phone,
+          agent_id,
+          profiles ( phone )
+        `)
+        .eq("status", "pending");
+
+      if (ordersError) {
+        return new Response(JSON.stringify({ error: ordersError.message }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      uniquePhones.add(normalized);
+
+      for (const row of pendingOrders || []) {
+        totalRecipients += 1;
+        const cPhone = normalizePhone(row.customer_phone);
+        const aPhone = row.profiles ? normalizePhone((row.profiles as any).phone) : null;
+        
+        if (cPhone) uniquePhones.add(cPhone);
+        else if (aPhone) uniquePhones.add(aPhone);
+        else skipped += 1;
+      }
+    } else {
+      let profilesQuery = supabaseAdmin
+        .from("profiles")
+        .select("user_id, phone, is_agent");
+
+      if (target_type === "agents") {
+        profilesQuery = profilesQuery.eq("is_agent", true);
+      } else if (target_type === "users") {
+        profilesQuery = profilesQuery.eq("is_agent", false);
+      }
+
+      const { data: recipients, error: recipientsError } = await profilesQuery;
+      if (recipientsError) {
+        return new Response(JSON.stringify({ error: recipientsError.message }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      totalRecipients = (recipients || []).length;
+      for (const row of recipients || []) {
+        const normalized = normalizePhone(row.phone);
+        if (!normalized) {
+          skipped += 1;
+          continue;
+        }
+        uniquePhones.add(normalized);
+      }
     }
 
     let sent = 0;
@@ -250,7 +280,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       target_type,
-      total_recipients: (recipients || []).length,
+      total_recipients: totalRecipients,
       valid_numbers: uniquePhones.size,
       sent,
       failed: failures.length,

@@ -35,6 +35,7 @@ const targetLabels: Record<string, string> = {
   all: "Everyone",
   agents: "Agents Only",
   users: "Users Only",
+  pending_orders: "Pending Orders Only",
 };
 
 const AdminNotificationsPage = () => {
@@ -178,6 +179,7 @@ const AdminNotificationsPage = () => {
                   <SelectItem value="all">Everyone</SelectItem>
                   <SelectItem value="agents">Agents Only</SelectItem>
                   <SelectItem value="users">Users Only</SelectItem>
+                  <SelectItem value="pending_orders">Pending Orders Only</SelectItem>
                 </SelectContent>
               </Select>
             </div>
