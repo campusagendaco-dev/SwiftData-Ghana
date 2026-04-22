@@ -97,9 +97,7 @@ const AgentStore = () => {
           .from("profiles")
           .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages, is_sub_agent, parent_agent_id, sub_agent_activation_markup")
           .eq("slug", slug)
-          .eq("is_agent", true)
-          .eq("onboarding_complete", true)
-          .eq("agent_approved", true)
+          .or("agent_approved.eq.true,sub_agent_approved.eq.true")
           .maybeSingle(),
         supabase.from("global_package_settings").select("network, package_size, agent_price, public_price, is_unavailable"),
         fetchApiPricingContext(),
