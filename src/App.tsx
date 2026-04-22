@@ -32,6 +32,7 @@ import AuthCallback from "./pages/AuthCallback";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import ThemeSelector from "@/components/ThemeSelector";
 import WhatsAppButton from "@/components/WhatsAppButton";
+import TutorialModal from "@/components/TutorialModal";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyOtp from "./pages/VerifyOtp";
 import ResetPassword from "./pages/ResetPassword";
@@ -301,6 +302,7 @@ const AppContent = () => {
         <Route path="*" element={<NotFound />} />
       </Routes>
       {!isDashboard && !isAgentStore && !isAdmin && <Footer />}
+      {!isDashboard && !isAdmin && <TutorialModal />}
     </>
   );
 };
