@@ -55,7 +55,7 @@ const Footer = () => {
           <div className="md:col-span-2 md:col-start-6">
             <h4 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Quick Links</h4>
             <div className="space-y-4">
-              {[{ to: "/login", label: "Sign In" }, { to: "/agent-program", label: "Become an Agent" }, { to: "/dashboard", label: "Dashboard" }].map((l) =>
+              {[{ to: "/login", label: "Sign In" }, { to: "/agent-program", label: "Become an Agent" }, { to: "/developers", label: "Developers" }, { to: "/dashboard", label: "Dashboard" }].map((l) =>
                 <Link key={l.to} to={l.to} className="group flex items-center gap-2 text-sm text-white/60 hover:text-amber-400 transition-colors">
                   <span className="w-1.5 h-1.5 rounded-full bg-white/20 group-hover:bg-amber-400 transition-colors" />
                   {l.label}

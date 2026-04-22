@@ -58,6 +58,7 @@ import SubAgentSignup from "./pages/SubAgentSignup";
 import SubAgentPending from "./pages/SubAgentPending";
 import DashboardDeveloperAPI from "./pages/DashboardDeveloperAPI";
 import APIDocumentation from "./pages/APIDocumentation";
+import DeveloperPortal from "./pages/DeveloperPortal";
 import Maintenance from "./pages/Maintenance";
 import NotFound from "./pages/NotFound";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -242,6 +243,7 @@ const AppContent = () => {
         <Route path="/order-status" element={<OrderStatus />} />
         <Route path="/purchase-success" element={<PurchaseSuccess />} />
         <Route path="/api-docs" element={<APIDocumentation />} />
+        <Route path="/developers" element={<DeveloperPortal />} />
 
         {/* Auth pages */}
         <Route path="/login" element={<AuthPage />} />
