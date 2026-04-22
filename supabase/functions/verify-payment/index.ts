@@ -622,6 +622,57 @@ serve(async (req) => {
 
     if (!order) {
       console.log("Recreating order from Paystack metadata:", { reference, orderType, agentId: resolvedAgentId });
+
+      // Sanity-check: for data orders, verify the Paystack amount is in line with
+      // what the backend DB would price this package at. This catches any edge case
+      // where a transaction was initialised outside our initialize-payment function.
+      if ((orderType === "data" || !orderType) && metadata.network && metadata.package_size) {
+        const network = String(metadata.network).trim().toUpperCase();
+        const normalizedNet = (network === "AT" || network === "AIRTELTIGO" || network === "AIRTEL TIGO") ? "AirtelTigo"
+          : (network === "TELECEL" || network === "VODAFONE") ? "Telecel" : "MTN";
+        const normalizedPkg = String(metadata.package_size).replace(/\s+/g, "").toUpperCase();
+
+        const { data: priceRow } = await supabase
+          .from("global_package_settings")
+          .select("agent_price, public_price")
+          .eq("network", normalizedNet)
+          .eq("package_size", normalizedPkg)
+          .maybeSingle();
+
+        const dbAgentPrice = Number(priceRow?.agent_price);
+        const dbPublicPrice = Number(priceRow?.public_price);
+        const dbBase = (dbAgentPrice > 0 ? dbAgentPrice : dbPublicPrice) || 0;
+        if (dbBase > 0) {
+          const minExpected = Number((dbBase * 0.98).toFixed(2));
+          if (verifiedAmount < minExpected) {
+            console.error(
+              `[verify-payment] Orphan order ${reference}: Paystack amount GHS ${verifiedAmount.toFixed(2)} ` +
+              `is below DB floor GHS ${minExpected.toFixed(2)} for ${normalizedNet}/${normalizedPkg}. Blocking.`
+            );
+            await supabase.from("orders").insert({
+              id: reference,
+              agent_id: resolvedAgentId,
+              order_type: orderType || "data",
+              amount: verifiedAmount,
+              profit: 0,
+              parent_profit: 0,
+              status: "fulfillment_failed",
+              failure_reason: `Payment amount GHS ${verifiedAmount.toFixed(2)} is below the minimum expected price. Contact support.`,
+              network: metadata.network || null,
+              package_size: metadata.package_size || null,
+              customer_phone: metadata.customer_phone || null,
+            });
+            return new Response(JSON.stringify({
+              status: "fulfillment_failed",
+              failure_reason: "Payment amount is below the expected price. Contact support.",
+            }), {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
+
       const requestedWalletCredit = Number(metadata.wallet_credit);
       const safeWalletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
         ? Math.min(requestedWalletCredit, verifiedAmount)

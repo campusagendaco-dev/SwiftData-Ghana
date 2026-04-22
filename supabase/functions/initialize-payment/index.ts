@@ -178,10 +178,17 @@ serve(async (req) => {
       const normalizedNetwork = normalizeNetwork(network);
       const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
 
+      type GlobalRow = {
+        agent_price: number | null;
+        public_price: number | null;
+        is_unavailable: boolean;
+        pricing_source: "db" | "hardcoded_fallback";
+      };
+
       // Helper: look up a package row trying normalised key then original key,
       // with hardcoded base prices as final fallback so purchases never fail
       // just because the admin hasn't seeded global_package_settings yet.
-      async function lookupGlobalRow(net: string, pkg: string) {
+      async function lookupGlobalRow(net: string, pkg: string): Promise<GlobalRow | null> {
         const candidates = [pkg, packageSize, packageSize.replace(/\s+/g, "")];
         let dbRow: { agent_price: number | null; public_price: number | null; is_unavailable: boolean } | null = null;
         for (const candidate of [...new Set(candidates)]) {
@@ -197,23 +204,37 @@ serve(async (req) => {
         const hasValidAgent = Number.isFinite(Number(dbRow?.agent_price)) && Number(dbRow?.agent_price) > 0;
         const hasValidPublic = Number.isFinite(Number(dbRow?.public_price)) && Number(dbRow?.public_price) > 0;
 
-        // If DB row has at least one valid price, return it as-is
-        if (dbRow && (hasValidAgent || hasValidPublic)) return dbRow;
+        // If DB row has at least one valid price, return it with db source
+        if (dbRow && (hasValidAgent || hasValidPublic)) {
+          return { ...dbRow, pricing_source: "db" };
+        }
 
         // DB row missing or has no valid prices — synthesise/merge from hardcoded prices
         const fallbackBase = getHardcodedBasePrice(net, pkg) || getHardcodedBasePrice(normalizedNetwork, packageSize);
         if (fallbackBase > 0) {
+          console.warn(
+            `[pricing] Using hardcoded fallback for ${net}/${pkg}: agent=${fallbackBase}, public=${(fallbackBase * 1.12).toFixed(2)}. ` +
+            `Run "Seed Default Prices" in Admin > Package Management to remove this warning.`
+          );
           return {
             agent_price: hasValidAgent ? dbRow!.agent_price : fallbackBase,
             public_price: hasValidPublic ? dbRow!.public_price : Number((fallbackBase * 1.12).toFixed(2)),
             is_unavailable: dbRow?.is_unavailable ?? false,
+            pricing_source: "hardcoded_fallback",
           };
         }
-        return dbRow;
+        return null;
       }
 
       if (isAgentLinkedOrder) {
         const globalRow = await lookupGlobalRow(normalizedNetwork, normalizedPackage);
+
+        if (globalRow?.is_unavailable) {
+          return new Response(JSON.stringify({ error: "This package is currently unavailable." }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         // Prefer agent_price; fall back to public_price so stores still work
         // when the admin has only filled in the public column.
@@ -303,14 +324,43 @@ serve(async (req) => {
           profit: resolvedProfit,
           parent_profit: resolvedParentProfit,
           parent_agent_id: resolvedParentAgentId,
+          pricing_source: globalRow?.pricing_source ?? "unknown",
         };
       } else {
-        return new Response(JSON.stringify({ 
-          error: "Direct purchases are disabled. Please purchase through an official Agent's store link." 
-        }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Direct public purchase (no agent store) — use global public_price.
+        // The backend resolves the price server-side; the amount sent by the
+        // client is overwritten so the client can never choose a cheaper price.
+        const globalRow = await lookupGlobalRow(normalizedNetwork, normalizedPackage);
+
+        if (globalRow?.is_unavailable) {
+          return new Response(JSON.stringify({ error: "This package is currently unavailable." }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const publicBase = Number(globalRow?.public_price) > 0
+          ? Number(globalRow!.public_price)
+          : (Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : 0);
+
+        if (!(Number.isFinite(publicBase) && publicBase > 0)) {
+          return new Response(JSON.stringify({ error: "Package price is not configured" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const adjustedBase = Number((publicBase * priceMultiplier).toFixed(2));
+        resolvedAmount = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        enrichedMetadata = {
+          ...metadata,
+          network,
+          package_size: packageSize,
+          base_price: adjustedBase,
+          profit: 0,
+          parent_profit: 0,
+          pricing_source: globalRow?.pricing_source ?? "unknown",
+        };
       }
     }
 

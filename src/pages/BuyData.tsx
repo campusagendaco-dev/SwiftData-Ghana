@@ -123,6 +123,7 @@ const BuyData = () => {
           package_size: selectedPkg.size,
           customer_phone: phoneDigits,
           fee,
+          payment_source: "direct",
         },
       },
     });
