@@ -47,6 +47,7 @@ const BuyData = () => {
   const [selectedPkg, setSelectedPkg] = useState<{ size: string; price: number } | null>(null);
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);
+  const [email, setEmail] = useState("");
   const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>({});
   const [pkgLoading, setPkgLoading] = useState(true);
   const [holidayMode, setHolidayMode] = useState(false);
@@ -88,7 +89,7 @@ const BuyData = () => {
     load();
   }, []);
 
-  useEffect(() => { setSelectedPkg(null); setPhone(""); }, [selectedNetwork]);
+  useEffect(() => { setSelectedPkg(null); setPhone(""); setEmail(""); }, [selectedNetwork]);
 
   const packages = (basePackages[selectedNetwork] || [])
     .map((pkg) => {
@@ -196,7 +197,7 @@ const BuyData = () => {
 
     const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
       body: {
-        email: `${phoneDigits}@customer.swiftdata.gh`,
+        email: email.trim() || `${phoneDigits}@swiftdata-anon.gh`,
         amount: total,
         reference: orderId,
         callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
@@ -363,7 +364,7 @@ const BuyData = () => {
                   </>
                 )}
               </div>
-              <button onClick={() => { setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
+              <button onClick={() => { setSelectedPkg(null); setPhone(""); setEmail(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
                 className="text-white/35 hover:text-white/80 transition-colors p-1.5 rounded-lg hover:bg-white/10 ml-2 shrink-0">
                 <X className="w-4 h-4" />
               </button>
@@ -400,6 +401,20 @@ const BuyData = () => {
               : phone.length === 0
               ? <p className="text-[11px] text-white/35">Enter the recipient's phone number then tap {isFreePromo ? "Claim" : "Pay"}</p>
               : null}
+
+            {/* Optional email for receipt */}
+            {isPhoneValid && !isFreePromo && (
+              <input
+                type="email"
+                inputMode="email"
+                placeholder="Email for receipt (optional)"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                className="w-full border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 text-sm focus:outline-none focus:border-white/35 transition-colors"
+                style={{ background: "rgba(255,255,255,0.05)" }}
+              />
+            )}
 
             {/* Promo code section */}
             {!promoOpen && !validPromo ? (

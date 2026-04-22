@@ -131,16 +131,16 @@ const Index = () => {
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
             <Link
-              to="/agent-program"
+              to="/buy-data"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-bold text-base px-8 py-3.5 transition-colors shadow-lg"
             >
-              Start Selling Data <ArrowRight className="w-4 h-4" />
+              Buy Data Now <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
-              to="/login"
+              to="/agent-program"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 hover:border-white/40 text-white font-semibold text-base px-8 py-3.5 transition-colors"
             >
-              Agent Dashboard
+              Start Selling Data
             </Link>
           </div>
 
