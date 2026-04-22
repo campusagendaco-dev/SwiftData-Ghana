@@ -47,7 +47,6 @@ const SubAgentSignup = () => {
         .eq("slug", slug)
         .eq("is_agent", true)
         .eq("agent_approved", true)
-        .eq("onboarding_complete", true)
         .eq("is_sub_agent" as any, false)
         .maybeSingle();
 
