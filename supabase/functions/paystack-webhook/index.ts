@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
@@ -355,7 +356,7 @@ function buildAfaPayload(metadata: Record<string, unknown>) {
   };
 }
 
-function amountMatches(expected: number, actual: number, tolerance = 0.05): boolean {
+function amountMatches(expected: number, actual: number, tolerance = 0.01): boolean {
   return Math.abs(expected - actual) <= tolerance;
 }
 
@@ -392,7 +393,10 @@ serve(async (req) => {
   }
 
   const hash = createHmac("sha512", PAYSTACK_SECRET_KEY).update(rawBody).digest("hex");
-  if (hash !== signature) {
+  const hashBuf = Buffer.from(hash, "utf8");
+  const sigBuf = Buffer.from(signature, "utf8");
+  const signatureValid = hashBuf.length === sigBuf.length && timingSafeEqual(hashBuf, sigBuf);
+  if (!signatureValid) {
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -460,14 +464,9 @@ serve(async (req) => {
     let smsPhone = "";
 
     if (!existingOrder) {
-      const metadataProfit = Number(metadata?.profit);
-      const normalizedProfit = Number.isFinite(metadataProfit) && metadataProfit > 0
-        ? parseFloat(metadataProfit.toFixed(2))
-        : 0;
-      const metadataParentProfit = Number(metadata?.parent_profit);
-      const normalizedParentProfit = Number.isFinite(metadataParentProfit) && metadataParentProfit > 0
-        ? parseFloat(metadataParentProfit.toFixed(2))
-        : 0;
+      // Profit is always 0 for recreated orders — never trust client-supplied metadata values
+      const normalizedProfit = 0;
+      const normalizedParentProfit = 0;
       const requestedWalletCredit = Number(metadata?.wallet_credit);
       const walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
         ? Math.min(requestedWalletCredit, verifiedAmount)
@@ -515,14 +514,8 @@ serve(async (req) => {
       if (!existingOrder.network && typeof metadata?.network === "string") patch.network = metadata.network;
       if (!existingOrder.package_size && typeof metadata?.package_size === "string") patch.package_size = metadata.package_size;
       if (!existingOrder.customer_phone && typeof metadata?.customer_phone === "string") patch.customer_phone = metadata.customer_phone;
-      if ((!existingOrder.profit || Number(existingOrder.profit) === 0) && Number.isFinite(Number(metadata?.profit))) {
-        patch.profit = parseFloat(Number(metadata.profit).toFixed(2));
-      }
       if (!existingOrder.parent_agent_id && typeof metadata?.parent_agent_id === "string" && metadata.parent_agent_id) {
         patch.parent_agent_id = metadata.parent_agent_id;
-      }
-      if ((!existingOrder.parent_profit || Number(existingOrder.parent_profit) === 0) && Number.isFinite(Number(metadata?.parent_profit))) {
-        patch.parent_profit = parseFloat(Number(metadata.parent_profit).toFixed(2));
       }
 
       if (existingOrder.status === "pending" || existingOrder.status === "fulfillment_failed") {

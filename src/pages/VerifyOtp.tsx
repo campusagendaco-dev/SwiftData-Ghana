@@ -46,10 +46,8 @@ const VerifyOtp = () => {
       return;
     }
 
-    sessionStorage.setItem("password_reset_email", email);
-    sessionStorage.setItem("password_reset_token", resetToken);
     toast({ title: "Code verified", description: "Set your new password." });
-    navigate(`/reset-password?email=${encodeURIComponent(email)}&role=${role}`);
+    navigate(`/reset-password?email=${encodeURIComponent(email)}&token=${encodeURIComponent(resetToken)}&role=${role}`);
   };
 
   return (

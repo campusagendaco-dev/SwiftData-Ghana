@@ -1,5 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
+const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
 const authConfig = require("../config/authConfig");
 const { sendOtpEmail } = require("../services/emailService");
@@ -7,6 +8,15 @@ const { generateNumericOtp, sha256, createResetSessionToken } = require("../serv
 const { isEmail, normalizeEmail, isOtpCode, passwordRuleChecks, isStrongPassword } = require("../utils/validators");
 
 const router = express.Router();
+
+// IP-based rate limiting: max 10 OTP-related requests per IP per minute
+const otpRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests from this IP. Please try again in a minute." },
+});
 
 const buildPasswordRuleMessage = () =>
   "Password must be at least 8 characters and include uppercase, lowercase, number, and special character.";
@@ -60,7 +70,7 @@ const validateOtpForUser = async (user, otp) => {
   return { ok: true, resetState };
 };
 
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", otpRateLimit, async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
 
@@ -132,7 +142,7 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
-router.post("/verify-otp", async (req, res) => {
+router.post("/verify-otp", otpRateLimit, async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const otp = String(req.body?.otp || "").trim();
@@ -191,7 +201,7 @@ router.post("/verify-otp", async (req, res) => {
   }
 });
 
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", otpRateLimit, async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const otp = String(req.body?.otp || "").trim();
@@ -229,7 +239,13 @@ router.post("/reset-password", async (req, res) => {
       });
     }
 
-    // Endpoint contract requested by product: email + otp + newPassword
+    if (otp && resetToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Provide either OTP or reset token, not both.",
+      });
+    }
+
     if (otp) {
       if (!isOtpCode(otp, authConfig.otpLength)) {
         return res.status(400).json({

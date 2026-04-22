@@ -140,10 +140,9 @@ const AdminUsers = () => {
         variant: "destructive",
       });
     } else {
-      const tempPassword = data?.temporary_password as string | undefined;
       toast({
         title: `Password reset for ${row.email}`,
-        description: tempPassword ? `Temporary password: ${tempPassword}` : "Password updated successfully.",
+        description: "Password updated successfully. Share the new password with the user directly.",
       });
     }
     setRowAction(row.user_id, null);

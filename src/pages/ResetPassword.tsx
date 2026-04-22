@@ -21,10 +21,8 @@ const ResetPassword = () => {
   const [showPasswords, setShowPasswords] = useState(false);
   const [searchParams] = useSearchParams();
   const role = searchParams.get("role") === "agent" ? "agent" : "user";
-  const emailFromQuery = (searchParams.get("email") || "").trim().toLowerCase();
-  const emailFromSession = (sessionStorage.getItem("password_reset_email") || "").trim().toLowerCase();
-  const email = useMemo(() => emailFromQuery || emailFromSession, [emailFromQuery, emailFromSession]);
-  const resetToken = sessionStorage.getItem("password_reset_token") || "";
+  const email = useMemo(() => (searchParams.get("email") || "").trim().toLowerCase(), [searchParams]);
+  const resetToken = (searchParams.get("token") || "").trim();
 
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -67,8 +65,6 @@ const ResetPassword = () => {
       return;
     }
 
-    sessionStorage.removeItem("password_reset_email");
-    sessionStorage.removeItem("password_reset_token");
     toast({ title: "Password updated", description: "You can now sign in with your new password." });
     navigate(loginRoute, { replace: true });
   };

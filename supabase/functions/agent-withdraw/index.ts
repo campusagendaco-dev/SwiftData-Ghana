@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
@@ -68,14 +69,14 @@ serve(async (req) => {
       });
     }
 
-    // Calculate available balance: profit from paid/fulfilled/fulfillment_failed orders minus withdrawals
+    // Only count profit from fulfilled orders — paid/failed orders have not delivered service
     const { data: orders } = await supabaseAdmin
       .from("orders")
       .select("profit")
       .eq("agent_id", agentId)
-      .in("status", ["paid", "fulfilled", "fulfillment_failed"]);
+      .in("status", ["fulfilled"]);
 
-    const totalProfit = (orders || []).reduce((sum: number, o: any) => sum + (o.profit || 0), 0);
+    const totalProfit = (orders || []).reduce((sum: number, o: any) => sum + (Number(o.profit) || 0), 0);
 
     const { data: withdrawals } = await supabaseAdmin
       .from("withdrawals")

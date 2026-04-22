@@ -8,7 +8,7 @@ import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction, invokePublicFunctionAsUser } from "@/lib/public-function-client";
 
 const ACTIVATION_FEE = 80;
-const PAYSTACK_FEE_RATE = 0.0195;
+const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100;
 const paystackFee = Math.min(ACTIVATION_FEE * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
 const ACTIVATION_TOTAL = parseFloat((ACTIVATION_FEE + paystackFee).toFixed(2));

@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "authorization, x-user-access-token, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
@@ -545,6 +546,21 @@ serve(async (req) => {
       });
     }
 
+    const ALLOWED_NETWORKS = ["MTN", "Telecel", "AirtelTigo"];
+    if (!ALLOWED_NETWORKS.includes(network)) {
+      return new Response(JSON.stringify({ error: "Invalid network" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!/^\d+(\.\d+)?GB$/i.test(package_size.replace(/\s+/g, ""))) {
+      return new Response(JSON.stringify({ error: "Invalid package size" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const pricingContext = await getPricingContext(supabaseAdmin);
     const providerConfig = getProviderCredentials();
     const DATA_PROVIDER_API_KEY = providerConfig.apiKey;
@@ -581,23 +597,30 @@ serve(async (req) => {
       });
     }
 
-    let { data: wallet } = await supabaseAdmin.from("wallets").select("id, balance").eq("agent_id", user.id).maybeSingle();
-    if (!wallet) {
-      const { data: newWallet } = await supabaseAdmin.from("wallets").insert({ agent_id: user.id, balance: 0 }).select().single();
-      wallet = newWallet;
+    // Ensure wallet row exists before attempting atomic debit
+    const { data: existingWallet } = await supabaseAdmin.from("wallets").select("id").eq("agent_id", user.id).maybeSingle();
+    if (!existingWallet) {
+      await supabaseAdmin.from("wallets").insert({ agent_id: user.id, balance: 0 });
     }
 
-    if (!wallet || Number(wallet.balance) < expectedAmount) {
+    // Atomic read-check-debit via SQL function — prevents race conditions
+    const { data: debitResult, error: debitError } = await supabaseAdmin.rpc("debit_wallet", {
+      p_agent_id: user.id,
+      p_amount: expectedAmount,
+    });
+
+    if (debitError || !debitResult?.success) {
+      const errMsg = debitResult?.error || "Wallet debit failed";
+      const balance = Number(debitResult?.balance || 0);
       return new Response(JSON.stringify({
-        error: `Insufficient wallet balance. Available: GHS ${Number(wallet?.balance || 0).toFixed(2)}`,
+        error: errMsg === "Insufficient balance"
+          ? `Insufficient wallet balance. Available: GHS ${balance.toFixed(2)}`
+          : errMsg,
       }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const newBalance = parseFloat((Number(wallet.balance) - expectedAmount).toFixed(2));
-    await supabaseAdmin.from("wallets").update({ balance: newBalance }).eq("agent_id", user.id);
 
     const walletProfit = 0;
 
