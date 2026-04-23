@@ -12,6 +12,8 @@ import {
   Gift, Wifi, ToggleLeft, ToggleRight, RefreshCw, Users,
   Download, Copy, CheckCircle
 } from "lucide-react";
+import { logAudit } from "@/utils/auditLogger";
+import { useAuth } from "@/hooks/useAuth";
 
 interface PromoCode {
   id: string;
@@ -36,6 +38,7 @@ const NETWORK_COLORS: Record<string, string> = { MTN: "#FFC107", Telecel: "#E539
 
 const AdminPromotions = () => {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
 
   // Promo codes state
   const [promos, setPromos] = useState<PromoCode[]>([]);
@@ -141,6 +144,9 @@ const AdminPromotions = () => {
         toast({ title: "Failed to save", description: error.message, variant: "destructive" });
       }
     } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "update_free_data_settings", { enabled: freeData.free_data_enabled, network: freeData.free_data_network });
+      }
       toast({ title: freeData.free_data_enabled ? "Free Data Campaign is LIVE!" : "Campaign paused" });
     }
     setSavingFreeData(false);
@@ -220,6 +226,9 @@ const AdminPromotions = () => {
     if (error) {
       toast({ title: "Failed to create code(s)", description: error.message, variant: "destructive" });
     } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "generate_promo_codes", { count, prefix: count > 1 ? code : null, discount: pct });
+      }
       toast({ title: `${count} Promo code(s) created!` });
       setCode(""); setDiscount("100"); setMaxUses("1"); setBulkCount("1");
       fetchPromos();
@@ -229,12 +238,18 @@ const AdminPromotions = () => {
 
   const handleToggleActive = async (id: string, current: boolean) => {
     await (supabase as any).from("promo_codes").update({ is_active: !current }).eq("id", id);
+    if (currentUser) {
+      await logAudit(currentUser.id, "toggle_promo_code", { promo_id: id, active: !current });
+    }
     fetchPromos();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this promo code?")) return;
     await (supabase as any).from("promo_codes").delete().eq("id", id);
+    if (currentUser) {
+      await logAudit(currentUser.id, "delete_promo_code", { promo_id: id });
+    }
     fetchPromos();
   };
 

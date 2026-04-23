@@ -10,6 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Save, DatabaseZap } from "lucide-react";
 import { fetchApiPricingContext } from "@/lib/api-source-pricing";
+import { logAudit } from "@/utils/auditLogger";
+import { useAuth } from "@/hooks/useAuth";
 
 interface PackageSetting {
   network: string;
@@ -21,6 +23,7 @@ interface PackageSetting {
 
 const AdminPackages = () => {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [settings, setSettings] = useState<Record<string, PackageSetting>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -82,6 +85,11 @@ const AdminPackages = () => {
       const next: Record<string, PackageSetting> = {};
       upserts.forEach((u) => { next[`${u.network}-${u.package_size}`] = u; });
       setSettings((prev) => ({ ...prev, ...next }));
+      
+      if (currentUser) {
+        await logAudit(currentUser.id, "seed_default_prices", { timestamp: new Date().toISOString() });
+      }
+      
       toast({ title: "Default prices seeded!", description: "All packages populated with base prices. Agent price = base, Public price = base × 1.12." });
     }
     setSeeding(false);
@@ -133,6 +141,10 @@ const AdminPackages = () => {
         setSaving(false);
         return;
       }
+    }
+
+    if (currentUser) {
+      await logAudit(currentUser.id, "update_package_settings", { count: upserts.length });
     }
 
     toast({ title: "Package settings saved!" });

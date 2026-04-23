@@ -126,6 +126,9 @@ const AdminUsers = () => {
       const msg = data?.error || error?.message || "Unknown error";
       toast({ title: "Failed to reset password", description: msg, variant: "destructive" });
     } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "reset_password", { target_user_id: row.user_id, target_email: row.email });
+      }
       toast({ title: `Password reset for ${row.email}` });
     }
     setRowAction(row.user_id, null);
@@ -140,6 +143,9 @@ const AdminUsers = () => {
     if (error || data?.error) {
       toast({ title: "Failed to delete user", description: data?.error || error?.message, variant: "destructive" });
     } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "delete_user", { target_user_id: row.user_id, target_email: row.email });
+      }
       setUsers(prev => prev.filter(u => u.user_id !== row.user_id));
       toast({ title: "User deleted" });
     }

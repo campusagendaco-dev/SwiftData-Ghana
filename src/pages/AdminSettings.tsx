@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
+import { logAudit } from "@/utils/auditLogger";
 
 interface SystemSettings {
   auto_api_switch: boolean;
@@ -165,6 +166,14 @@ const AdminSettings = () => {
     if (dbError) {
       toast({ title: "Failed to save settings", description: dbError.message, variant: "destructive" });
     } else {
+      // Log the audit action
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        await logAudit(currentUser.id, "update_system_settings", {
+          updated_fields: Object.keys(settings).filter(k => (settings as any)[k] !== ""),
+          timestamp: new Date().toISOString()
+        });
+      }
       toast({ title: "Settings saved successfully" });
     }
     setSaving(false);

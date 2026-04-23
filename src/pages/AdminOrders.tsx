@@ -13,6 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
+import { logAudit } from "@/utils/auditLogger";
+import { useAuth } from "@/hooks/useAuth";
 
 interface OrderRow {
   id: string;
@@ -51,6 +53,7 @@ type FilterType = "all" | "agents" | "sub_agents";
 
 const AdminOrders = () => {
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, AgentProfile>>({});
   const [loading, setLoading] = useState(true);
@@ -107,6 +110,9 @@ const AdminOrders = () => {
         const description = await getFunctionErrorMessage(error, "Could not retry this order.");
         toast({ title: "Retry failed", description, variant: "destructive" });
       } else if (data?.status === "fulfilled") {
+        if (currentUser) {
+          await logAudit(currentUser.id, "manual_order_retry", { order_id: orderId, status: "fulfilled" });
+        }
         toast({ title: "Order fulfilled successfully!" });
       } else {
         toast({
