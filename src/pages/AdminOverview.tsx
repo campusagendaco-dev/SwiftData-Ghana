@@ -10,8 +10,12 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Users, ShoppingCart, DollarSign, ShieldCheck,
   Package, Wallet, ArrowUpRight, RefreshCw,
-  CheckCircle2, Clock, XCircle, Activity, ChevronRight
+  CheckCircle2, Clock, XCircle, Activity, ChevronRight, TrendingUp
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend
+} from "recharts";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 
 interface RecentOrder {
@@ -24,6 +28,38 @@ interface RecentOrder {
   created_at: string;
 }
 
+interface DailySalesPoint {
+  date: string;
+  Customers: number;
+  Agents: number;
+  "Sub-Agents": number;
+}
+
+interface TodaySales {
+  total: number;
+  customers: number;
+  agents: number;
+  subAgents: number;
+}
+
+const DailySalesTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0);
+  return (
+    <div className="bg-[#0d0d18] border border-white/10 rounded-xl p-3 shadow-xl text-xs">
+      <p className="text-white/60 mb-1.5 font-semibold">{label}</p>
+      {payload.map((p: any, i: number) => (
+        <p key={i} style={{ color: p.color }} className="font-bold">
+          {p.name}: GH₵{Number(p.value).toFixed(2)}
+        </p>
+      ))}
+      <p className="text-white/80 font-bold mt-1.5 border-t border-white/10 pt-1.5">
+        Total: GH₵{total.toFixed(2)}
+      </p>
+    </div>
+  );
+};
+
 const statusIcon = (s: string) => {
   if (s === "fulfilled") return <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>;
   if (s === "fulfillment_failed") return <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20"><XCircle className="w-4 h-4 text-red-500" /></div>;
@@ -35,6 +71,8 @@ const AdminOverview = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalUsers: 0, pendingAgents: 0, swiftDataSubAgentShare: 0, totalAgentProfit: 0, totalSubAgentProfit: 0 });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
+  const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
+  const [todaySales, setTodaySales] = useState<TodaySales>({ total: 0, customers: 0, agents: 0, subAgents: 0 });
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState("We are performing scheduled maintenance. Please check back soon.");
   const [savingMaintenance, setSavingMaintenance] = useState(false);
@@ -43,21 +81,66 @@ const AdminOverview = () => {
   const [approvingPending, setApprovingPending] = useState(false);
 
   const fetchData = async () => {
-    const [ordersRes, profilesRes, maintenanceRes, recentRes] = await Promise.all([
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const [ordersRes, profilesRes, maintenanceRes, recentRes, weeklyOrdersRes] = await Promise.all([
       supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit"),
-      supabase.from("profiles").select("id, is_agent, agent_approved, onboarding_complete"),
+      supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete"),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase
         .from("orders")
         .select("id, network, package_size, customer_phone, amount, status, created_at")
         .order("created_at", { ascending: false })
         .limit(8),
+      supabase
+        .from("orders")
+        .select("id, amount, agent_id, created_at")
+        .gte("created_at", sevenDaysAgo.toISOString())
+        .eq("status", "fulfilled"),
     ]);
 
     const orders = ordersRes.data || [];
     const profiles = profilesRes.data || [];
+    const weeklyOrders = weeklyOrdersRes.data || [];
     const maintenanceRow = maintenanceRes.data as { is_enabled?: boolean; message?: string; table_ready?: boolean; error?: string } | null;
     const maintenanceError = maintenanceRes.error || maintenanceRow?.error;
+
+    // Build daily sales breakdown
+    const agentIds = new Set(profiles.filter((p: any) => p.is_agent && p.agent_approved).map((p: any) => p.user_id));
+    const subAgentIds = new Set(profiles.filter((p: any) => p.is_sub_agent && p.sub_agent_approved).map((p: any) => p.user_id));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayKey = today.toISOString().slice(0, 10);
+
+    const dayMap: Record<string, DailySalesPoint> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      dayMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0 };
+    }
+
+    let todayCustomers = 0, todayAgents = 0, todaySubAgents = 0;
+    weeklyOrders.forEach((o: any) => {
+      const key = (o.created_at as string).slice(0, 10);
+      if (!dayMap[key]) return;
+      const amt = Number(o.amount) || 0;
+      if (o.agent_id && subAgentIds.has(o.agent_id)) {
+        dayMap[key]["Sub-Agents"] += amt;
+        if (key === todayKey) todaySubAgents += amt;
+      } else if (o.agent_id && agentIds.has(o.agent_id)) {
+        dayMap[key].Agents += amt;
+        if (key === todayKey) todayAgents += amt;
+      } else {
+        dayMap[key].Customers += amt;
+        if (key === todayKey) todayCustomers += amt;
+      }
+    });
+
+    setDailySales(Object.values(dayMap));
+    setTodaySales({ total: todayCustomers + todayAgents + todaySubAgents, customers: todayCustomers, agents: todayAgents, subAgents: todaySubAgents });
 
     setStats({
       totalOrders: orders.length,
@@ -212,6 +295,52 @@ const AdminOverview = () => {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Daily Sales Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-xl text-white tracking-tight flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-amber-400" />
+              Daily Sales
+            </h2>
+            <p className="text-xs text-white/40 mt-0.5">Fulfilled sales from customers, agents and sub-agents — last 7 days.</p>
+          </div>
+        </div>
+
+        {/* Today's totals */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: "Today Total", value: `GH₵ ${todaySales.total.toFixed(2)}`, color: "text-white", bg: "bg-white/10", border: "border-white/10" },
+            { label: "Customers", value: `GH₵ ${todaySales.customers.toFixed(2)}`, color: "text-sky-400", bg: "bg-sky-500/10", border: "border-sky-500/20" },
+            { label: "Agents", value: `GH₵ ${todaySales.agents.toFixed(2)}`, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20" },
+            { label: "Sub-Agents", value: `GH₵ ${todaySales.subAgents.toFixed(2)}`, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+          ].map((c) => (
+            <div key={c.label} className={`p-4 rounded-2xl bg-white/[0.02] border ${c.border} shadow-xl`}>
+              <p className="text-[10px] text-white/40 mb-2 uppercase tracking-wider font-semibold">{c.label}</p>
+              <p className={`font-display text-xl font-black ${c.color}`}>{c.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* 7-day stacked bar chart */}
+        <div className="rounded-2xl bg-white/[0.02] border border-white/5 p-6">
+          <h3 className="font-bold text-white mb-1">Sales by Seller Type — Last 7 Days</h3>
+          <p className="text-xs text-white/40 mb-5">Revenue from fulfilled orders grouped by seller type per day.</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={dailySales} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<DailySalesTooltip />} />
+              <Legend formatter={(v) => <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{v}</span>} />
+              <Bar dataKey="Customers" stackId="a" fill="#38bdf8" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Agents" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Sub-Agents" stackId="a" fill="#a855f7" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
