@@ -22,14 +22,43 @@ const AdminAuditLogs = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
+      // 1. Fetch the raw audit logs
+      const { data: logData, error: logError } = await supabase
         .from("audit_logs")
-        .select("*, profiles!admin_id(full_name)")
-        .order("created_at", { ascending: false });
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
       
-      if (fetchError) throw fetchError;
-      if (data) {
-        setLogs(data as any[]);
+      if (logError) throw logError;
+
+      if (logData && logData.length > 0) {
+        // 2. Get unique admin IDs to fetch their names
+        const adminIds = [...new Set(logData.map(l => l.admin_id).filter(Boolean))];
+        
+        let profileMap: Record<string, string> = {};
+        if (adminIds.length > 0) {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("user_id, full_name")
+            .in("user_id", adminIds);
+          
+          if (profileData) {
+            profileMap = profileData.reduce((acc, curr) => ({
+              ...acc,
+              [curr.user_id]: curr.full_name
+            }), {});
+          }
+        }
+
+        // 3. Map the names back to the logs
+        const enrichedLogs = logData.map(log => ({
+          ...log,
+          profiles: log.admin_id ? { full_name: profileMap[log.admin_id] || "Unknown Admin" } : null
+        }));
+
+        setLogs(enrichedLogs as any[]);
+      } else {
+        setLogs([]);
       }
     } catch (err: any) {
       console.error("Fetch logs error:", err);
