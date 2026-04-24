@@ -21,6 +21,7 @@ interface UserRow {
   parent_agent_id: string | null;
   created_at: string;
   parent_name?: string;
+  total_sales_volume?: number;
 }
 
 type RoleTab = "all" | "customers" | "agents" | "sub-agents";
@@ -46,13 +47,24 @@ const AdminUsers = () => {
     // Resolve parent agent names for sub-agents
     const parentIds = [...new Set(rows.filter(r => r.parent_agent_id).map(r => r.parent_agent_id as string))];
     if (parentIds.length > 0) {
-      const { data: parents } = await supabase
-        .from("profiles")
-        .select("user_id, full_name")
-        .in("user_id", parentIds);
-      const parentMap = new Map((parents || []).map((p: any) => [p.user_id, p.full_name]));
+      const [parentsRes, salesRes] = await Promise.all([
+        supabase.from("profiles").select("user_id, full_name").in("user_id", parentIds),
+        supabase.from("user_sales_stats").select("user_id, total_sales_volume").in("user_id", rows.map(r => r.user_id)),
+      ]);
+      const parentMap = new Map((parentsRes.data || []).map((p: any) => [p.user_id, p.full_name]));
+      const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s.total_sales_volume]));
       rows.forEach(r => {
         if (r.parent_agent_id) r.parent_name = parentMap.get(r.parent_agent_id) || "Unknown";
+        r.total_sales_volume = salesMap.get(r.user_id) ?? 0;
+      });
+    } else {
+      const { data: sales } = await supabase
+        .from("user_sales_stats")
+        .select("user_id, total_sales_volume")
+        .in("user_id", rows.map(r => r.user_id));
+      const salesMap = new Map((sales || []).map((s: any) => [s.user_id, s.total_sales_volume]));
+      rows.forEach(r => {
+        r.total_sales_volume = salesMap.get(r.user_id) ?? 0;
       });
     }
 
@@ -253,6 +265,7 @@ const AdminUsers = () => {
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">User</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Phone</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Role</th>
+                <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Sales</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider hidden md:table-cell">Parent Agent</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider hidden lg:table-cell">Joined</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Actions</th>
@@ -275,6 +288,9 @@ const AdminUsers = () => {
                     )}
                   </td>
                   <td className="p-4">{getRoleBadge(user)}</td>
+                  <td className="p-4">
+                    <p className="font-bold text-green-400">GH₵{(user.total_sales_volume || 0).toFixed(2)}</p>
+                  </td>
                   <td className="p-4 hidden md:table-cell">
                     {(user as any).is_sub_agent && user.parent_name ? (
                       <span className="text-xs text-white/50">{user.parent_name}</span>

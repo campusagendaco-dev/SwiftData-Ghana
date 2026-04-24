@@ -35,6 +35,7 @@ interface APIUser {
   api_custom_prices: Json | null;
   agent_approved: boolean;
   sub_agent_approved: boolean;
+  stats?: { total_sales_volume: number }[];
 }
 
 interface APIOrder {
@@ -541,9 +542,23 @@ const AdminAPIUsers = () => {
 
                       {/* ── Transactions section ──────────────────────────── */}
                       <div className="p-4">
-                        <p className="text-xs font-bold uppercase tracking-widest text-white/30 mb-3 flex items-center gap-2">
-                          <TrendingUp className="w-3.5 h-3.5" /> Recent Orders (last 20)
-                        </p>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-bold uppercase tracking-widest text-white/30 flex items-center gap-2">
+                            <TrendingUp className="w-3.5 h-3.5" /> Recent Orders (last 20)
+                          </p>
+                          
+                          {/* Sales Stat */}
+                          <div className="bg-white/5 rounded-xl px-3 py-1 border border-white/5 flex items-center gap-3">
+                            <p className="text-[10px] uppercase tracking-wider text-white/40">Total Sales</p>
+                            <div className="flex items-center gap-1.5">
+                              <Wallet className="w-3 h-3 text-green-400" />
+                              <p className="text-xs font-bold text-white">
+                                GH₵{(user.stats?.[0]?.total_sales_volume || 0).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        
                         {orders.length === 0 ? (
                           <p className="text-xs text-white/30 italic py-4 text-center">No orders found for this agent.</p>
                         ) : (

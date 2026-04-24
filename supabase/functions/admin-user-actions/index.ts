@@ -76,7 +76,12 @@ serve(async (req) => {
     if (action === "get_api_users") {
       const { data, error } = await supabaseAdmin
         .from("profiles")
-        .select("user_id, full_name, email, api_key, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
+        .select(`
+          user_id, full_name, email, api_key, api_access_enabled, api_rate_limit, 
+          api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, 
+          api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices,
+          stats:user_sales_stats(total_sales_volume)
+        `)
         .not("api_key", "is", null)
         .order("full_name");
       if (error) {

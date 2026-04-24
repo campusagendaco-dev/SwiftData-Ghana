@@ -27,6 +27,7 @@ interface AgentRow {
   created_at: string;
   wallet_balance?: number;
   sub_agent_count?: number;
+  total_sales_volume?: number;
 }
 
 const AdminAgents = () => {
@@ -57,12 +58,14 @@ const AdminAgents = () => {
     // Fetch wallet balances
     const ids = rows.map(r => r.user_id);
     if (ids.length > 0) {
-      const [walletsRes, subCountRes] = await Promise.all([
+      const [walletsRes, subCountRes, salesRes] = await Promise.all([
         supabase.from("wallets").select("agent_id, balance").in("agent_id", ids),
         supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent" as any, true).in("parent_agent_id" as any, ids),
+        supabase.from("user_sales_stats").select("user_id, total_sales_volume").in("user_id", ids),
       ]);
 
       const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, w.balance]));
+      const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s.total_sales_volume]));
       const subCountMap: Record<string, number> = {};
       (subCountRes.data || []).forEach((sa: any) => {
         subCountMap[sa.parent_agent_id] = (subCountMap[sa.parent_agent_id] || 0) + 1;
@@ -71,6 +74,7 @@ const AdminAgents = () => {
       rows.forEach(r => {
         r.wallet_balance = walletMap.get(r.user_id) ?? 0;
         r.sub_agent_count = subCountMap[r.user_id] ?? 0;
+        r.total_sales_volume = salesMap.get(r.user_id) ?? 0;
       });
     }
 
@@ -283,6 +287,10 @@ const AdminAgents = () => {
 
                 {/* Wallet + sub-agents */}
                 <div className="flex items-center gap-4 shrink-0">
+                  <div className="text-center">
+                    <p className="text-xs text-white/40">Total Sales</p>
+                    <p className="text-sm font-black text-green-400">GH₵{(agent.total_sales_volume || 0).toFixed(2)}</p>
+                  </div>
                   <div className="text-center">
                     <p className="text-xs text-white/40">Wallet</p>
                     <p className="text-sm font-black text-amber-400">GH₵{(agent.wallet_balance || 0).toFixed(2)}</p>
