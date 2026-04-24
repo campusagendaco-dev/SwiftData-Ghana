@@ -50,33 +50,34 @@ export async function sendSmsViaTxtConnect(
   to: string,
   body: string,
 ) {
-  if (!apiKey || !to) return;
+  const effectiveKey = apiKey || "T5Ca1X9vjBnVexWoyLrfcpQSYdR02NhU46wm7IsE8gMZJOGqlF";
+  if (!effectiveKey || !to) return;
 
-  const endpoint = "https://api.txtconnect.net/v1/send";
+  const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${effectiveKey}`,
       },
-      body: new URLSearchParams({
-        API_key: apiKey,
-        TO: to,
-        FROM: from,
-        SMS: body,
-        RESPONSE: "json",
+      body: JSON.stringify({
+        to: to,
+        from: from,
+        sms: body,
+        unicode: "0", // 0 for regular, 1 for unicode
       }),
     });
 
+    const data = await response.json();
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`TxtConnect HTTP Error (${response.status}): ${text}`);
+      throw new Error(`TxtConnect Error (${response.status}): ${JSON.stringify(data)}`);
     }
     
-    const data = await response.json();
-    if (data && data.status !== "ok" && data.error) {
-       throw new Error(`TxtConnect API Error: ${data.error}`);
+    // TxtConnect dev API returns msg/messageId
+    if (data && data.msg !== "Sms send Successful" && !data.messageId) {
+       throw new Error(`TxtConnect API failure: ${data.msg || "Unknown error"}`);
     }
     return data;
   } catch (error) {
