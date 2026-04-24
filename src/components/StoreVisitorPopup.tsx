@@ -2,18 +2,28 @@ import { useState, useEffect } from "react";
 import { X, TrendingUp, Zap, ShieldCheck, Store, ArrowRight, Wifi } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 interface StoreVisitorPopupProps {
   agentSlug?: string;
   showSubAgentLink?: boolean;
 }
 
+// Dismiss key is per-tab (sessionStorage) so the popup reappears on every new visit
+// for non-agents, but stays closed for the rest of the current tab session after dismissing.
+const DISMISS_KEY = (slug: string) => `popup-dismissed-${slug}`;
+
 const StoreVisitorPopup = ({ agentSlug, showSubAgentLink = true }: StoreVisitorPopupProps) => {
+  const { profile } = useAuth();
   const [visible, setVisible] = useState(false);
+  const slug = agentSlug || "store";
+
+  // Never show to approved agents — they already have a store
+  const isAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
   useEffect(() => {
-    const sessionKey = `popup-seen-${agentSlug || "store"}`;
-    if (sessionStorage.getItem(sessionKey)) return;
+    if (isAgent) return;
+    if (sessionStorage.getItem(DISMISS_KEY(slug))) return;
 
     supabase
       .from("system_settings")
@@ -26,11 +36,12 @@ const StoreVisitorPopup = ({ agentSlug, showSubAgentLink = true }: StoreVisitorP
         const t = setTimeout(() => setVisible(true), 2800);
         return () => clearTimeout(t);
       });
-  }, [agentSlug]);
+  }, [isAgent, slug]);
 
   const dismiss = () => {
     setVisible(false);
-    sessionStorage.setItem(`popup-seen-${agentSlug || "store"}`, "1");
+    // Only suppresses for this tab session — shows again on next page load
+    sessionStorage.setItem(DISMISS_KEY(slug), "1");
   };
 
   if (!visible) return null;
