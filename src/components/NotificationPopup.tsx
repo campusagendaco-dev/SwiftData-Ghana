@@ -30,9 +30,17 @@ const NotificationPopup = () => {
     if (notifications.length > 0 && currentIndex === 0) {
       const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
       audio.volume = 0.5;
-      audio.play().catch(err => console.log("Audio playback delayed until user interaction:", err));
+      
+      const playAudio = () => {
+        audio.play().catch(err => {
+          console.log("[NotificationPopup] Audio playback failed, will try again on next interaction:", err);
+        });
+      };
+
+      // Try playing immediately
+      playAudio();
     }
-  }, [notifications]);
+  }, [notifications, currentIndex]);
 
   useEffect(() => {
     if (!user) return;

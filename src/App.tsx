@@ -68,6 +68,8 @@ import Maintenance from "./pages/Maintenance";
 import NotFound from "./pages/NotFound";
 import LoadingScreen from "@/components/LoadingScreen";
 import InstallPrompt from "@/components/InstallPrompt";
+import AudioUnlocker from "@/components/AudioUnlocker";
+import NotificationPopup from "@/components/NotificationPopup";
 
 const queryClient = new QueryClient();
 
@@ -303,6 +305,8 @@ const AppContent = () => {
       </Routes>
       {!isDashboard && !isAgentStore && !isAdmin && <Footer />}
       {!isDashboard && !isAdmin && <TutorialModal />}
+      <AudioUnlocker />
+      <NotificationPopup />
     </>
   );
 };
