@@ -9,21 +9,15 @@ interface StoreVisitorPopupProps {
   showSubAgentLink?: boolean;
 }
 
-// Dismiss key is per-tab (sessionStorage) so the popup reappears on every new visit
-// for non-agents, but stays closed for the rest of the current tab session after dismissing.
-const DISMISS_KEY = (slug: string) => `popup-dismissed-${slug}`;
-
 const StoreVisitorPopup = ({ agentSlug, showSubAgentLink = true }: StoreVisitorPopupProps) => {
   const { profile } = useAuth();
   const [visible, setVisible] = useState(false);
-  const slug = agentSlug || "store";
 
   // Never show to approved agents — they already have a store
   const isAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
   useEffect(() => {
     if (isAgent) return;
-    if (sessionStorage.getItem(DISMISS_KEY(slug))) return;
 
     supabase
       .from("system_settings")
@@ -36,13 +30,10 @@ const StoreVisitorPopup = ({ agentSlug, showSubAgentLink = true }: StoreVisitorP
         const t = setTimeout(() => setVisible(true), 2800);
         return () => clearTimeout(t);
       });
-  }, [isAgent, slug]);
+  }, [isAgent]);
 
-  const dismiss = () => {
-    setVisible(false);
-    // Only suppresses for this tab session — shows again on next page load
-    sessionStorage.setItem(DISMISS_KEY(slug), "1");
-  };
+  // Dismiss only hides for this page view — popup returns on every refresh
+  const dismiss = () => setVisible(false);
 
   if (!visible) return null;
 
