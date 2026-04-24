@@ -310,11 +310,42 @@ serve(async (req) => {
           });
         }
 
+        // Known-good columns — any field not in this list is silently dropped so
+        // a missing column never causes a 500 (e.g. before a migration is applied).
+        const ALLOWED_COLUMNS = new Set([
+          "auto_api_switch", "preferred_provider", "backup_provider",
+          "holiday_mode_enabled", "holiday_message", "disable_ordering",
+          "dark_mode_enabled", "customer_service_number", "support_channel_link",
+          "sub_agent_base_fee", "txtconnect_api_key", "txtconnect_sender_id",
+          "paystack_secret_key", "hubtel_client_id", "hubtel_client_secret",
+          "mtn_markup_percentage", "telecel_markup_percentage", "at_markup_percentage",
+          "auto_pending_sms_enabled", "auto_pending_sms_message",
+          "store_visitor_popup_enabled",
+        ]);
+
+        const safeSettings: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(settings)) {
+          if (ALLOWED_COLUMNS.has(k)) safeSettings[k] = v;
+        }
+
         const { error: updateError } = await supabaseAdmin
           .from("system_settings")
-          .upsert({ id: 1, ...settings, updated_at: new Date().toISOString(), updated_by: actor.id });
+          .upsert({ id: 1, ...safeSettings, updated_at: new Date().toISOString(), updated_by: actor.id });
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          // If a column doesn't exist yet (migration pending), retry without it
+          if (updateError.message?.includes("column") && updateError.message?.includes("does not exist")) {
+            const col = updateError.message.match(/column "?(\w+)"?/)?.[1];
+            if (col) delete safeSettings[col];
+            const { error: retryError } = await supabaseAdmin
+              .from("system_settings")
+              .upsert({ id: 1, ...safeSettings, updated_at: new Date().toISOString(), updated_by: actor.id });
+            if (retryError) throw retryError;
+          } else {
+            throw updateError;
+          }
+        }
+
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
