@@ -51,6 +51,8 @@ interface AgentProfile {
   is_sub_agent: boolean;
   parent_agent_id: string | null;
   sub_agent_activation_markup: number | null;
+  store_logo_url: string | null;
+  store_primary_color: string | null;
 }
 
 interface GlobalPkgSetting {
@@ -101,7 +103,7 @@ const AgentStore = () => {
         const [agentRes, pkgRes, pricingCtx] = await Promise.all([
           supabase
             .from("profiles")
-            .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup")
+            .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color")
             .eq("slug", slug)
             .maybeSingle(),
           supabase.from("global_package_settings").select("network, package_size, agent_price, public_price, is_unavailable"),
@@ -365,10 +367,14 @@ const AgentStore = () => {
 
       {/* ── Background Mesh ── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 transition-all duration-700">
-        <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] rounded-full blur-[140px] transition-all duration-1000 ${
-          selectedNetwork === "MTN" ? "bg-amber-400/8" : 
-          selectedNetwork === "Telecel" ? "bg-red-600/8" : "bg-blue-600/8"
-        }`} />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] rounded-full blur-[140px] transition-all duration-1000" 
+          style={{ 
+            backgroundColor: agent.store_primary_color ? `${agent.store_primary_color}14` : (
+              selectedNetwork === "MTN" ? "#fbbf2414" : 
+              selectedNetwork === "Telecel" ? "#dc262614" : "#2563eb14"
+            )
+          }} 
+        />
         <div className={`absolute top-1/4 -left-24 w-[500px] h-[500px] rounded-full blur-[120px] transition-all duration-1000 ${
           selectedNetwork === "MTN" ? "bg-blue-600/4" : "bg-amber-400/4"
         }`} />
@@ -387,6 +393,7 @@ const AgentStore = () => {
         supportNumber={agent.support_number}
         email={agent.email}
         showSubAgentLink={!agent.is_sub_agent}
+        logoUrl={agent.store_logo_url ?? undefined}
       />
 
       <div className="relative z-10 flex-1">
@@ -400,7 +407,9 @@ const AgentStore = () => {
             
             <h1 className="text-4xl sm:text-5xl font-black tracking-tighter mb-6 leading-[0.95] text-white">
               Buy Data <br /> 
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-amber-500">At Unbeatable Prices</span>
+              <span className="text-transparent bg-clip-text" style={{ backgroundImage: `linear-gradient(to right, ${agent.store_primary_color || '#fbbf24'}, #fff)` }}>
+                At Unbeatable Prices
+              </span>
             </h1>
             
             <p className="text-white/40 text-lg sm:text-xl max-w-xl mx-auto leading-relaxed mb-10">
@@ -410,7 +419,8 @@ const AgentStore = () => {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
               <button 
                 onClick={() => document.getElementById("packages-section")?.scrollIntoView({ behavior: "smooth" })}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-3 bg-amber-400 hover:bg-amber-300 text-black font-black px-10 py-5 rounded-3xl text-base transition-all duration-500 hover:scale-105 active:scale-95 shadow-[0_20px_50px_rgba(245,158,11,0.25)] group"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-3 text-black font-black px-10 py-5 rounded-3xl text-base transition-all duration-500 hover:scale-105 active:scale-95 shadow-xl group"
+                style={{ backgroundColor: agent.store_primary_color || '#fbbf24' }}
               >
                 <ShoppingBag className="w-5 h-5" /> Shop Now
               </button>

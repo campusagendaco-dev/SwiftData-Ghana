@@ -70,6 +70,8 @@ import LoadingScreen from "@/components/LoadingScreen";
 import InstallPrompt from "@/components/InstallPrompt";
 import AudioUnlocker from "@/components/AudioUnlocker";
 import NotificationPopup from "@/components/NotificationPopup";
+import DashboardCustomers from "./pages/DashboardCustomers";
+import DashboardMarketing from "./pages/DashboardMarketing";
 
 const queryClient = new QueryClient();
 
@@ -260,6 +262,7 @@ const AppContent = () => {
           <Route path="report-issue" element={<DashboardReportIssue />} />
           <Route path="account-settings" element={<DashboardAccountSettings />} />
           <Route path="profile" element={<DashboardProfile />} />
+          <Route path="customers" element={<DashboardCustomers />} />
 
           {/* Paid agent-only pages */}
           <Route path="cheaper-prices" element={<AgentFeatureGuard><DashboardPricing /></AgentFeatureGuard>} />
@@ -271,6 +274,7 @@ const AppContent = () => {
           <Route path="/dashboard/api" element={<AgentFeatureGuard><DashboardDeveloperAPI /></AgentFeatureGuard>} />
           <Route path="result-checker" element={<AgentFeatureGuard><DashboardResultCheckers /></AgentFeatureGuard>} />
           <Route path="leaderboard" element={<AgentFeatureGuard><DashboardLeaderboard /></AgentFeatureGuard>} />
+          <Route path="marketing" element={<AgentFeatureGuard><DashboardMarketing /></AgentFeatureGuard>} />
 
           {/* Legacy aliases */}
           <Route path="orders" element={<Navigate to="/dashboard/transactions" replace />} />

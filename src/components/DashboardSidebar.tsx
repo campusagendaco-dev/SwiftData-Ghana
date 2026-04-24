@@ -41,6 +41,7 @@ const userNavItems = [
   { to: "/dashboard/buy-data/airteltigo", label: "Buy Data - AirtelTigo", icon: ShoppingCart },
   { to: "/dashboard/my-store", label: "My Store", icon: Store },
   { to: "/dashboard/report-issue", label: "Report Issue", icon: Flag },
+  { to: "/dashboard/customers", label: "Address Book", icon: Users2 },
   { to: "/dashboard/account-settings", label: "Account Settings", icon: UserCog },
 ];
 
@@ -51,6 +52,7 @@ const agentNavItems = [
   { to: "/dashboard/subagents", label: "Subagents", icon: Users2 },
   { to: "/dashboard/subagent-pricing", label: "Subagent Pricing", icon: SlidersHorizontal },
   { to: "/dashboard/flyer", label: "Flyer Generator", icon: FileText },
+  { to: "/dashboard/marketing", label: "Marketing Tools", icon: Zap },
   { to: "/dashboard/result-checker", label: "Result Checker", icon: GraduationCap },
   { to: "/dashboard/api", label: "Developer API", icon: Key },
   { to: "/dashboard/leaderboard", label: "Agent Leaderboard", icon: Trophy },

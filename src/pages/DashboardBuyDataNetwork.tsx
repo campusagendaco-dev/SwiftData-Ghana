@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2 } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -103,6 +103,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [promoValidating, setPromoValidating] = useState(false);
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
   const [claimingFree, setClaimingFree] = useState(false);
+  const [savedCustomers, setSavedCustomers] = useState<any[]>([]);
+  const [showCustomers, setShowCustomers] = useState(false);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
@@ -124,9 +126,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           .maybeSingle();
         setParentAssignedPrices((parentProfile?.sub_agent_prices || {}) as Record<string, Record<string, string | number>>);
       }
+
+      if (user) {
+        const { data } = await supabase.from("saved_customers").select("*").order("name");
+        setSavedCustomers(data || []);
+      }
     };
     void loadPricing();
-  }, [profile?.is_sub_agent, profile?.parent_agent_id]);
+  }, [profile?.is_sub_agent, profile?.parent_agent_id, user]);
 
   const packages = useMemo(() => {
     return (basePackages[network] || [])
@@ -479,7 +486,40 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           <div className="p-4 space-y-4">
             {/* Phone input */}
             <div>
-              <Label htmlFor="dash-phone" className="text-sm">Recipient Phone Number</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="dash-phone" className="text-sm">Recipient Phone Number</Label>
+                {savedCustomers.length > 0 && (
+                  <button 
+                    onClick={() => setShowCustomers(!showCustomers)}
+                    className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Users2 className="w-3 h-3" />
+                    {showCustomers ? "Hide Contacts" : "Address Book"}
+                  </button>
+                )}
+              </div>
+              
+              {showCustomers && savedCustomers.length > 0 && (
+                <div className="mt-2 mb-3 max-h-40 overflow-y-auto border border-border rounded-xl divide-y divide-border bg-secondary/20">
+                  {savedCustomers.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        setPhone(c.phone);
+                        setShowCustomers(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-primary/10 transition-colors text-left"
+                    >
+                      <div>
+                        <p className="text-xs font-bold text-white">{c.name}</p>
+                        <p className="text-[10px] text-white/40">{c.phone}</p>
+                      </div>
+                      <span className="text-[9px] font-black uppercase text-primary/60 px-1.5 py-0.5 rounded border border-primary/20">{c.network}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <Input
                 id="dash-phone"
                 type="tel"

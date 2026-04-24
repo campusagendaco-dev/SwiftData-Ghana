@@ -23,6 +23,8 @@ const DashboardSettings = () => {
     momo_number: "",
     momo_network: "",
     momo_account_name: "",
+    store_logo_url: "",
+    store_primary_color: "#fbbf24",
   });
 
   useEffect(() => {
@@ -38,6 +40,8 @@ const DashboardSettings = () => {
         momo_number: profile.momo_number || "",
         momo_network: profile.momo_network || "",
         momo_account_name: profile.momo_account_name || "",
+        store_logo_url: profile.store_logo_url || "",
+        store_primary_color: profile.store_primary_color || "#fbbf24",
       });
     }
   }, [profile]);
@@ -70,6 +74,8 @@ const DashboardSettings = () => {
         momo_number: form.momo_number.trim(),
         momo_network: form.momo_network.trim(),
         momo_account_name: form.momo_account_name.trim(),
+        store_logo_url: form.store_logo_url,
+        store_primary_color: form.store_primary_color,
         slug,
       })
       .eq("user_id", user.id);
@@ -187,6 +193,50 @@ const DashboardSettings = () => {
               className="mt-1 bg-secondary"
               maxLength={500}
             />
+          </div>
+
+          <div className="border-t border-border pt-4 mt-4">
+            <h3 className="font-semibold mb-3">Custom Branding</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="settings-logo">Store Logo URL</Label>
+                <div className="flex gap-2 items-center mt-1">
+                  <Input
+                    id="settings-logo"
+                    value={form.store_logo_url}
+                    onChange={(e) => update("store_logo_url", e.target.value)}
+                    placeholder="https://example.com/logo.png"
+                    className="bg-secondary"
+                    maxLength={500}
+                  />
+                  {form.store_logo_url && (
+                    <div className="w-10 h-10 rounded border border-border overflow-hidden bg-white shrink-0">
+                      <img src={form.store_logo_url} alt="Logo preview" className="w-full h-full object-contain" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Provide a link to your store logo (PNG/JPG).</p>
+              </div>
+              <div>
+                <Label htmlFor="settings-color">Primary Brand Color</Label>
+                <div className="flex gap-2 items-center mt-1">
+                  <Input
+                    id="settings-color"
+                    type="color"
+                    value={form.store_primary_color}
+                    onChange={(e) => update("store_primary_color", e.target.value)}
+                    className="w-12 h-10 p-1 bg-secondary border-none cursor-pointer"
+                  />
+                  <Input
+                    value={form.store_primary_color}
+                    onChange={(e) => update("store_primary_color", e.target.value)}
+                    className="bg-secondary font-mono"
+                    maxLength={7}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">This color will be used for buttons and accents on your store.</p>
+              </div>
+            </div>
           </div>
 
           <div className="border-t border-border pt-4 mt-4">

@@ -29,6 +29,7 @@ export interface StoreNavbarProps {
   backLabel?: string;
   backHref?: string;
   stepLabel?: string;
+  logoUrl?: string;
 }
 
 const StoreNavbar = ({
@@ -44,6 +45,7 @@ const StoreNavbar = ({
   backLabel,
   backHref,
   stepLabel,
+  logoUrl,
 }: StoreNavbarProps) => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -107,8 +109,12 @@ const StoreNavbar = ({
 
           <Link to={agentSlug ? `/store/${agentSlug}` : "/"} className="flex items-center gap-2.5 min-w-0">
             <div className="relative shrink-0">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${networkAccent}20`, border: `1.5px solid ${networkAccent}40` }}>
-                <Store className="w-4 h-4" style={{ color: networkAccent }} />
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden" style={{ background: logoUrl ? 'white' : `${networkAccent}20`, border: `1.5px solid ${networkAccent}40` }}>
+                {logoUrl ? (
+                  <img src={logoUrl} alt={storeName} className="w-full h-full object-contain" />
+                ) : (
+                  <Store className="w-4 h-4" style={{ color: networkAccent }} />
+                )}
               </div>
               <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#060612] bg-green-400 animate-pulse" />
             </div>
@@ -195,8 +201,12 @@ const StoreNavbar = ({
               {/* Glow */}
               <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl pointer-events-none" style={{ background: `${networkAccent}25` }} />
               <div className="relative flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg" style={{ background: `${networkAccent}25`, border: `1.5px solid ${networkAccent}50` }}>
-                  <Store className="w-6 h-6" style={{ color: networkAccent }} />
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg overflow-hidden" style={{ background: logoUrl ? 'white' : `${networkAccent}25`, border: `1.5px solid ${networkAccent}50` }}>
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={storeName} className="w-full h-full object-contain" />
+                  ) : (
+                    <Store className="w-6 h-6" style={{ color: networkAccent }} />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
