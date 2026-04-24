@@ -11,6 +11,7 @@ const supabaseAdmin = createClient(
 const DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL") || "";
 const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY") || "";
 const DATA_PROVIDER_WEBHOOK_URL = Deno.env.get("DATA_PROVIDER_WEBHOOK_URL") || "";
+const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
 
 async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string, data: any, webhookUrl?: string) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/${endpoint}`;
@@ -42,8 +43,25 @@ async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string
   }
 }
 
+async function verifyPaystack(reference: string) {
+  if (!PAYSTACK_SECRET_KEY) return { ok: false, reason: "Missing Paystack Key" };
+  try {
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, Accept: "application/json" },
+    });
+    const data = await response.json();
+    return { 
+      ok: data.status && data.data.status === "success", 
+      amount: data.data?.amount / 100,
+      reason: data.message || "Unpaid"
+    };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Network error" };
+  }
+}
+
 function mapNetworkKey(network: string): string {
-  const normalized = network.trim().toUpperCase();
+  const normalized = (network || "").trim().toUpperCase();
   if (normalized === "MTN") return "YELLO";
   if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
   if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO" || normalized === "AT") return "AT_PREMIUM";
@@ -51,58 +69,66 @@ function mapNetworkKey(network: string): string {
 }
 
 function parseCapacity(packageSize: string): number {
-  const match = packageSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+  const match = (packageSize || "").replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
   return match ? parseFloat(match[1]) : 0;
 }
 
 function normalizeRecipient(phone: string): string {
-  const digits = phone.replace(/\D+/g, "");
+  const digits = (phone || "").replace(/\D+/g, "");
   if (digits.length === 9) return `0${digits}`;
   if (digits.length === 10 && digits.startsWith("0")) return digits;
   if (digits.startsWith("233") && digits.length === 12) return `0${digits.slice(3)}`;
-  return phone.trim();
+  return (phone || "").trim();
 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    console.log("[retry-orders] Starting retry cycle...");
+    console.log("[retry-orders] Starting maintenance cycle...");
+    const results = [];
 
-    // Find orders to retry:
-    // 1. Status is fulfillment_failed OR (processing and created_at < 5 mins ago)
-    // 2. retry_count < 4
-    // 3. last_retry_at is null OR older than 2 minutes
+    // ── PHASE 1: VERIFY PENDING PAYMENTS ──────────────────────────────────────
+    // Check orders stuck in 'pending' from the last 24 hours
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: pendingOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("status", "pending")
+      .gte("created_at", yesterday)
+      .limit(10);
+
+    for (const order of pendingOrders || []) {
+      console.log(`[retry-orders] Verifying pending order: ${order.id}`);
+      const verification = await verifyPaystack(order.id);
+      
+      if (verification.ok) {
+        console.log(`[retry-orders] Payment confirmed for ${order.id}. Marking as PAID.`);
+        await supabaseAdmin.from("orders").update({ status: "paid" }).eq("id", order.id);
+        // We'll let Phase 2 pick it up in this same run or next
+        order.status = "paid"; 
+      }
+    }
+
+    // ── PHASE 2: FULFILL PAID/FAILED ORDERS ───────────────────────────────────
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    
     const { data: ordersToRetry, error: fetchError } = await supabaseAdmin
       .from("orders")
       .select("*")
       .in("status", ["fulfillment_failed", "processing", "paid"])
       .lt("retry_count", 4)
       .or(`last_retry_at.is.null,last_retry_at.lt.${twoMinutesAgo}`)
-      .limit(10);
+      .limit(15);
 
     if (fetchError) throw fetchError;
-    if (!ordersToRetry || ordersToRetry.length === 0) {
-      console.log("[retry-orders] No orders found for retry.");
-      return new Response(JSON.stringify({ message: "No orders to retry" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    console.log(`[retry-orders] Found ${ordersToRetry.length} orders to retry.`);
-
-    const results = [];
-
-    for (const order of ordersToRetry) {
-      // For processing orders, only retry if they are older than 2 minutes
+    
+    for (const order of ordersToRetry || []) {
       const createdAt = new Date(order.created_at).getTime();
-      if (order.status === "processing" && (Date.now() - createdAt) < 120000) {
-        continue;
-      }
+      // Wait at least 2 mins for processing orders
+      if (order.status === "processing" && (Date.now() - createdAt) < 120000) continue;
 
-      console.log(`[retry-orders] Retrying order ${order.id} (Attempt ${order.retry_count + 1})`);
+      console.log(`[retry-orders] Processing order ${order.id} (Type: ${order.order_type}, Attempt: ${order.retry_count + 1})`);
 
-      // Increment retry count immediately to prevent concurrent loops
       await supabaseAdmin
         .from("orders")
         .update({ 
@@ -115,7 +141,17 @@ serve(async (req) => {
       let success = false;
       let failureReason = "";
 
-      if (order.order_type === "afa") {
+      if (order.order_type === "agent_activation") {
+        // Special case: just activate them
+        await supabaseAdmin.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", order.agent_id);
+        success = true;
+      } else if (order.order_type === "sub_agent_activation") {
+        await supabaseAdmin.from("profiles").update({ is_sub_agent: true, agent_approved: true }).eq("user_id", order.agent_id);
+        success = true;
+      } else if (order.order_type === "wallet_topup") {
+        await supabaseAdmin.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
+        success = true;
+      } else if (order.order_type === "afa") {
         const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "afa-registration", {
           afa_full_name: order.afa_full_name,
           afa_ghana_card: order.afa_ghana_card,
@@ -126,12 +162,13 @@ serve(async (req) => {
         });
         success = result.ok;
         failureReason = result.reason;
-      } else if (order.order_type === "data") {
+      } else {
+        // Data Purchase
         const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
           networkRaw: order.network,
-          networkKey: mapNetworkKey(order.network || ""),
-          recipient: normalizeRecipient(order.customer_phone || ""),
-          capacity: parseCapacity(order.package_size || ""),
+          networkKey: mapNetworkKey(order.network),
+          recipient: normalizeRecipient(order.customer_phone),
+          capacity: parseCapacity(order.package_size),
         }, DATA_PROVIDER_WEBHOOK_URL);
         success = result.ok;
         failureReason = result.reason;
@@ -139,21 +176,11 @@ serve(async (req) => {
 
       if (success) {
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", order.id);
-        
-        // Atomic Profit Credit (since it might have failed before)
         await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
-        
-        // Send success SMS
-        if (order.customer_phone) {
-          await sendPaymentSms(supabaseAdmin, order.customer_phone, "payment_success");
-        }
-
+        if (order.customer_phone) await sendPaymentSms(supabaseAdmin, order.customer_phone, "payment_success");
         results.push({ id: order.id, status: "fulfilled" });
       } else {
-        await supabaseAdmin.from("orders").update({ 
-          status: "fulfillment_failed", 
-          failure_reason: failureReason 
-        }).eq("id", order.id);
+        await supabaseAdmin.from("orders").update({ status: "fulfillment_failed", failure_reason: failureReason }).eq("id", order.id);
         results.push({ id: order.id, status: "failed", reason: failureReason });
       }
     }
@@ -162,7 +189,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("[retry-orders] Error:", error);
+    console.error("[retry-orders] Global Error:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
