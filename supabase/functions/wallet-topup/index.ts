@@ -44,8 +44,8 @@ serve(async (req) => {
     const chargeAmount = Number(amount);
     const creditAmount = Number(wallet_credit || amount);
 
-    if (!chargeAmount || chargeAmount < 1) {
-      return new Response(JSON.stringify({ error: "Minimum top-up amount is GHS 1.00" }), {
+    if (!chargeAmount || chargeAmount < 15) {
+      return new Response(JSON.stringify({ error: "Minimum top-up amount is GHS 15.00" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

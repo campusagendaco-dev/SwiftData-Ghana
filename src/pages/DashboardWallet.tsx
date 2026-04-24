@@ -211,8 +211,8 @@ const DashboardWallet = () => {
 
   const handlePaystackTopup = async () => {
     const requestedCredit = Number(topupAmount);
-    if (!Number.isFinite(requestedCredit) || requestedCredit < 1) {
-      toast({ title: "Enter a valid top-up amount (minimum GHS 1)", variant: "destructive" });
+    if (!Number.isFinite(requestedCredit) || requestedCredit < 15) {
+      toast({ title: "Enter a valid top-up amount (minimum GHS 15)", variant: "destructive" });
       return;
     }
 
@@ -367,7 +367,7 @@ const DashboardWallet = () => {
             <Input
               id="topup-amount"
               type="number"
-              min="1"
+              min="15"
               step="0.01"
               placeholder="e.g. 50"
               value={topupAmount}

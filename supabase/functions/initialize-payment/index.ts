@@ -399,8 +399,8 @@ serve(async (req: Request) => {
 
     if (orderType === "wallet_topup") {
       const walletCredit = Number(metadata.wallet_credit);
-      if (!Number.isFinite(walletCredit) || walletCredit <= 0) {
-        return new Response(JSON.stringify({ error: "Missing valid wallet credit amount" }), {
+      if (!Number.isFinite(walletCredit) || walletCredit < 15) {
+        return new Response(JSON.stringify({ error: "Minimum wallet top-up is GHS 15.00" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
