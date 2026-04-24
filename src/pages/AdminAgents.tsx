@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
 import {
   CheckCircle, XCircle, Clock, Search, Wallet, Users2, Phone,
-  ChevronDown, ChevronUp, Loader2, RefreshCw, Store, MessageCircle
+  ChevronDown, ChevronUp, Loader2, RefreshCw, Store, MessageCircle, ShoppingCart
 } from "lucide-react";
 
 interface AgentRow {
@@ -318,7 +318,6 @@ const AdminAgents = () => {
                     >
                       <MessageCircle className="w-4 h-4" />
                     </a>
-                  )}
                   {agent.agent_approved ? (
                     <Button
                       size="sm" variant="outline"

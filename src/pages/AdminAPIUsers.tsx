@@ -32,7 +32,7 @@ interface APIUser {
   api_requests_today: number | null;
   api_requests_total: number | null;
   api_last_used_at: string | null;
-  api_custom_prices: Json | null;
+  api_custom_prices: any | null;
   agent_approved: boolean;
   sub_agent_approved: boolean;
   stats?: { total_sales_volume: number }[];
