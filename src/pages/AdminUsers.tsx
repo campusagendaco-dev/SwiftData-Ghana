@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
-import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2 } from "lucide-react";
+import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart } from "lucide-react";
 
 interface UserRow {
   user_id: string;
@@ -333,6 +334,13 @@ const AdminUsers = () => {
                       >
                         {actionLoading[user.user_id] === "reset" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reset PWD"}
                       </Button>
+                      <Link
+                        to={`/admin/orders?agent=${encodeURIComponent(user.full_name || user.email)}`}
+                        className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors"
+                        title="View Sales History"
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                      </Link>
                       <Button
                         size="sm" variant="destructive"
                         onClick={() => handleDeleteUser(user)}

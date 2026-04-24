@@ -74,23 +74,42 @@ serve(async (req) => {
 
     // ── get_api_users: returns all profiles that have an API key ──────────────
     if (action === "get_api_users") {
-      const { data, error } = await supabaseAdmin
+      const { data: users, error: userError } = await supabaseAdmin
         .from("profiles")
-        .select(`
-          user_id, full_name, email, api_key, api_access_enabled, api_rate_limit, 
-          api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, 
-          api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices,
-          stats:user_sales_stats(total_sales_volume)
-        `)
+        .select("user_id, full_name, email, api_key, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
         .not("api_key", "is", null)
         .order("full_name");
-      if (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+
+      if (userError) {
+        return new Response(JSON.stringify({ error: userError.message }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ users: data ?? [] }), {
+
+      // Fetch stats separately to avoid join issues with views
+      const userIds = (users || []).map(u => u.user_id);
+      let statsMap: Record<string, any> = {};
+      
+      if (userIds.length > 0) {
+        const { data: stats } = await supabaseAdmin
+          .from("user_sales_stats")
+          .select("user_id, total_sales_volume")
+          .in("user_id", userIds);
+        
+        if (stats) {
+          statsMap = Object.fromEntries(stats.map(s => [s.user_id, s.total_sales_volume]));
+        }
+      }
+
+      const enrichedUsers = (users || []).map(u => ({
+        ...u,
+        total_sales_volume: statsMap[u.user_id] || 0,
+        // Match the expected stats[0] structure if needed, or just use total_sales_volume
+        stats: [{ total_sales_volume: statsMap[u.user_id] || 0 }]
+      }));
+
+      return new Response(JSON.stringify({ users: enrichedUsers }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

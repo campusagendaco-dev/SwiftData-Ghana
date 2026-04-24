@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -303,7 +304,13 @@ const AdminAgents = () => {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {agent.momo_number && (
+                    <Link
+                      to={`/admin/orders?agent=${encodeURIComponent(agent.full_name || agent.email)}`}
+                      className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors"
+                      title="View Sales History"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                    </Link>
                     <a
                       href={`https://wa.me/233${agent.phone?.replace(/^0/, "")}`}
                       target="_blank" rel="noopener noreferrer"
