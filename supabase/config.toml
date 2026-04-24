@@ -26,3 +26,27 @@ verify_jwt = false
 [functions.developer-api]
 verify_jwt = false
 
+[functions.admin-user-actions]
+verify_jwt = false
+
+[functions.admin-send-sms]
+verify_jwt = false
+
+[functions.admin-system-health]
+verify_jwt = false
+
+[functions.agent-sub-settings]
+verify_jwt = false
+
+[functions.agent-withdraw]
+verify_jwt = false
+
+[functions.claim-free-data]
+verify_jwt = false
+
+[functions.generate-flyer]
+verify_jwt = false
+
+[functions.validate-promo]
+verify_jwt = false
+

@@ -1,11 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
-const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers": "authorization, content-type, x-api-key",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 function getEnv(...keys: string[]): string {
   for (const k of keys) { const v = Deno.env.get(k)?.trim(); if (v) return v; }
