@@ -357,6 +357,38 @@ function amountMatches(expected: number, actual: number, tolerance = 0.01): bool
   return Math.abs(expected - actual) <= tolerance;
 }
 
+function mapNetworkKey(network: string): string {
+  const normalized = network.trim().toUpperCase();
+  if (normalized === "MTN") return "YELLO";
+  if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
+  if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO" || normalized === "AT") return "AT_PREMIUM";
+  return normalized;
+}
+
+function parseCapacity(packageSize: string): number {
+  const match = packageSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+function normalizeRecipient(phone: string): string {
+  const digits = phone.replace(/\D+/g, "");
+  if (digits.length === 9) return `0${digits}`;
+  if (digits.length === 10 && digits.startsWith("0")) return digits;
+  if (digits.startsWith("233") && digits.length === 12) return `0${digits.slice(3)}`;
+  return phone.trim();
+}
+
+function buildAfaPayload(data: any) {
+  return {
+    afa_full_name: data.afa_full_name,
+    afa_ghana_card: data.afa_ghana_card,
+    afa_occupation: data.afa_occupation,
+    afa_email: data.afa_email,
+    afa_residence: data.afa_residence,
+    afa_date_of_birth: data.afa_date_of_birth,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -681,7 +713,6 @@ serve(async (req) => {
         orderId,
         status: result.status,
         reason: result.reason,
-        url: result.url,
       });
 
       if (result.ok) {
@@ -729,13 +760,14 @@ serve(async (req) => {
     const result = await callProviderApi(
       DATA_PROVIDER_BASE_URL,
       DATA_PROVIDER_API_KEY,
-      "data-purchase",
+      "purchase",
       {
-        network,
-        package_size: packageSize,
-        phone: customerPhone,
-        webhook_url: DATA_PROVIDER_WEBHOOK_URL,
+        networkRaw: network,
+        networkKey: mapNetworkKey(network),
+        recipient: normalizeRecipient(customerPhone),
+        capacity: parseCapacity(packageSize),
       },
+      DATA_PROVIDER_WEBHOOK_URL,
     );
 
     console.log("Webhook fulfillment response:", {
