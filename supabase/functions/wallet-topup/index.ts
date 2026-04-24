@@ -41,10 +41,25 @@ serve(async (req) => {
     }
 
     const { amount, wallet_credit, callback_url } = payload || {};
-    const chargeAmount = amount;
-    const creditAmount = wallet_credit || amount;
+    const chargeAmount = Number(amount);
+    const creditAmount = Number(wallet_credit || amount);
+
     if (!chargeAmount || chargeAmount < 1) {
-      return new Response(JSON.stringify({ error: "Invalid amount" }), {
+      return new Response(JSON.stringify({ error: "Minimum top-up amount is GHS 1.00" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Server-side validation of amount vs credit
+    const feeRate = 0.03;
+    const feeCap = 100;
+    const calculatedFee = Math.min(creditAmount * feeRate, feeCap);
+    const expectedTotal = Number((creditAmount + calculatedFee).toFixed(2));
+
+    if (chargeAmount < expectedTotal - 0.01) {
+      return new Response(JSON.stringify({ 
+        error: `Invalid amount. To credit GHS ${creditAmount.toFixed(2)}, you must pay GHS ${expectedTotal.toFixed(2)} (including Paystack fees).` 
+      }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

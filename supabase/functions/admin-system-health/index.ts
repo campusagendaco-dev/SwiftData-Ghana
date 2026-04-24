@@ -40,6 +40,9 @@ serve(async (req) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
+    // Fetch system settings to check for DB-configured secrets
+    const { data: dbSettings } = await supabaseAdmin.from("system_settings").select("*").eq("id", 1).maybeSingle();
+
     const requiredSecrets: SecretCheck[] = [
       {
         key: "SUPABASE_URL",
@@ -58,7 +61,7 @@ serve(async (req) => {
       },
       {
         key: "PAYSTACK_SECRET_KEY",
-        present: !!Deno.env.get("PAYSTACK_SECRET_KEY"),
+        present: !!(Deno.env.get("PAYSTACK_SECRET_KEY") || dbSettings?.paystack_secret_key),
         required_for: ["initialize-payment", "wallet-topup", "verify-payment", "paystack-webhook"],
       },
       {
@@ -66,9 +69,7 @@ serve(async (req) => {
         present: !!(
           Deno.env.get("DATA_PROVIDER_API_KEY") ||
           Deno.env.get("PRIMARY_DATA_PROVIDER_API_KEY") ||
-          Deno.env.get("SECONDARY_DATA_PROVIDER_API_KEY") ||
-          Deno.env.get("DATA_PROVIDER_PRIMARY_API_KEY") ||
-          Deno.env.get("DATA_PROVIDER_SECONDARY_API_KEY")
+          Deno.env.get("DATA_PROVIDER_PRIMARY_API_KEY")
         ),
         required_for: ["data/AFA fulfillment in verify-payment and webhook"],
       },
@@ -77,31 +78,19 @@ serve(async (req) => {
         present: !!(
           Deno.env.get("DATA_PROVIDER_BASE_URL") ||
           Deno.env.get("PRIMARY_DATA_PROVIDER_BASE_URL") ||
-          Deno.env.get("SECONDARY_DATA_PROVIDER_BASE_URL") ||
-          Deno.env.get("DATA_PROVIDER_PRIMARY_BASE_URL") ||
-          Deno.env.get("DATA_PROVIDER_SECONDARY_BASE_URL")
+          Deno.env.get("DATA_PROVIDER_PRIMARY_BASE_URL")
         ),
         required_for: ["data/AFA fulfillment endpoint host in verify-payment, webhook, and wallet-buy-data"],
       },
       {
         key: "TXTCONNECT_API_KEY",
-        present: !!Deno.env.get("TXTCONNECT_API_KEY"),
-        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
-      },
-      {
-        key: "TXTCONNECT_SMS_URL",
-        present: !!Deno.env.get("TXTCONNECT_SMS_URL"),
-        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
+        present: !!(Deno.env.get("TXTCONNECT_API_KEY") || dbSettings?.txtconnect_api_key),
+        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook", "admin-send-sms"],
       },
       {
         key: "TXTCONNECT_SENDER_ID",
-        present: !!Deno.env.get("TXTCONNECT_SENDER_ID"),
-        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
-      },
-      {
-        key: "TXTCONNECT_SMS_TYPE",
-        present: !!Deno.env.get("TXTCONNECT_SMS_TYPE"),
-        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook"],
+        present: !!(Deno.env.get("TXTCONNECT_SENDER_ID") || dbSettings?.txtconnect_sender_id),
+        required_for: ["wallet-buy-data", "verify-payment", "paystack-webhook", "admin-send-sms"],
       },
       {
         key: "SITE_URL",
@@ -156,11 +145,13 @@ serve(async (req) => {
     for (const fn of functionNames) {
       try {
         const res = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, { method: "OPTIONS" });
+        // Any status code that isn't a 404 or a network error means the function is likely deployed
+        const reachable = res.status !== 404;
         functionChecks.push({
           name: fn,
-          reachable: res.status !== 404,
+          reachable,
           status: res.status,
-          error: res.status === 404 ? "Function not found (likely not deployed)" : null,
+          error: !reachable ? "Function not found (likely not deployed)" : null,
         });
       } catch (error) {
         functionChecks.push({

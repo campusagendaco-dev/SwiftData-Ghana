@@ -1,6 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
+
+async function sendWithdrawalSms(supabaseAdmin: any, userId: string, amount: number) {
+  try {
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
+    if (!profile?.phone) return;
+
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const recipient = normalizePhone(profile.phone);
+    
+    if (!apiKey || !recipient) return;
+
+    const message = formatTemplate(templates.withdrawal_request, {
+      amount: amount.toFixed(2)
+    });
+
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+  } catch (error) {
+    console.error("sendWithdrawalSms error:", error);
+  }
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -80,6 +101,8 @@ serve(async (req: Request) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    await sendWithdrawalSms(supabaseAdmin, agentId, amount);
 
     return new Response(JSON.stringify({ success: true, withdrawal_id: result.withdrawal_id }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },

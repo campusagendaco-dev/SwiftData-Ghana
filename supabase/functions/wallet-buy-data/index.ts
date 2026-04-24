@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 import { corsHeaders } from "../_shared/cors.ts";
+import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 
 function getFirstEnvValue(keys: string[]): string {
   for (const key of keys) {
@@ -279,39 +279,19 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-async function sendPaymentSms(customerPhone: string) {
-  const smsApiKey = getFirstEnvValue(["TXTCONNECT_API_KEY"]);
-  const senderId = getFirstEnvValue(["TXTCONNECT_SENDER_ID"]) || "SwiftDataGh";
-  
-  const digits = customerPhone.replace(/\D+/g, "");
-  const recipient = digits.startsWith("0") && digits.length === 10
-    ? `233${digits.slice(1)}`
-    : (digits.startsWith("233") ? digits : digits);
-
-  if (!smsApiKey || !recipient) return;
-
+async function sendPaymentSms(supabaseAdmin: any, customerPhone: string, type: "payment_success" | "order_failed" = "payment_success", vars: Record<string, string | number> = {}) {
   try {
-    const endpoint = "https://api.txtconnect.net/v1/send";
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        API_key: smsApiKey,
-        TO: recipient,
-        FROM: senderId,
-        SMS: "Your data bundle is being processed. Thanks for choosing SwiftData GH",
-        RESPONSE: "json",
-      }),
-    });
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const recipient = normalizePhone(customerPhone);
+    
+    if (!apiKey || !recipient) return;
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("SMS send failed:", res.status, text.slice(0, 300));
-    }
+    const template = templates[type] || templates.payment_success;
+    const message = formatTemplate(template, vars);
+
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
   } catch (error) {
-    console.error("SMS send error:", error);
+    console.error("sendPaymentSms error:", error);
   }
 }
 
@@ -663,7 +643,7 @@ serve(async (req) => {
       failure_reason: null,
     });
 
-    await sendPaymentSms(customer_phone);
+    await sendPaymentSms(supabaseAdmin, customer_phone, "payment_success");
 
     console.log("Wallet buy data:", { orderId, network, package_size, customer_phone });
 
@@ -709,6 +689,13 @@ serve(async (req) => {
     });
     if (!refundError) {
       console.log(`Refunded GHS ${expectedAmount} to ${user.id} due to fulfillment failure.`);
+      if (customer_phone) {
+        await sendPaymentSms(supabaseAdmin, customer_phone, "order_failed", {
+          package: package_size,
+          phone: customer_phone,
+          amount: expectedAmount.toFixed(2)
+        });
+      }
     }
     // ─────────────────────────────────────────────────────────────────────────
 

@@ -2,40 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
-
-function normalizePhone(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const clean = raw.trim().replace(/[^\d+]/g, "");
-  if (!clean) return null;
-
-  const digits = clean.replace(/\D/g, "");
-  if (!digits) return null;
-
-  if (digits.startsWith("233") && digits.length >= 12) return digits;
-  if (digits.startsWith("0") && digits.length >= 10) return `233${digits.slice(1)}`;
-  if (digits.startsWith("00") && digits.length > 2) return digits.slice(2);
-  return digits.length >= 10 ? digits : null;
-}
-
-async function sendSmsViaTxtConnect(apiKey: string, from: string, to: string, body: string) {
-  const endpoint = "https://api.txtconnect.net/v1/send";
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      API_key: apiKey,
-      TO: to,
-      FROM: from,
-      SMS: body,
-      RESPONSE: "json",
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`TxtConnect send failed (${response.status}): ${text}`);
-  }
-}
+import { normalizePhone, sendSmsViaTxtConnect } from "../_shared/sms.ts";
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {

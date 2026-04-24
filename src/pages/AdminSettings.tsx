@@ -34,6 +34,12 @@ interface SystemSettings {
   at_markup_percentage: string;
   auto_pending_sms_enabled: boolean;
   auto_pending_sms_message: string;
+  payment_success_sms_message: string;
+  wallet_topup_sms_message: string;
+  withdrawal_request_sms_message: string;
+  withdrawal_completed_sms_message: string;
+  order_failed_sms_message: string;
+  manual_credit_sms_message: string;
 }
 
 const AdminSettings = () => {
@@ -63,6 +69,12 @@ const AdminSettings = () => {
     at_markup_percentage: "0",
     auto_pending_sms_enabled: false,
     auto_pending_sms_message: "Your SwiftData transaction is pending. Please try again or contact support.",
+    payment_success_sms_message: "Your data bundle is being processed. Thanks for choosing SwiftData GH",
+    wallet_topup_sms_message: "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
+    withdrawal_request_sms_message: "Withdrawal request of GHS {amount} received. It will be processed shortly.",
+    withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
+    order_failed_sms_message: "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
+    manual_credit_sms_message: "Your account has been manually credited with GHS {amount} by admin.",
   });
 
   useEffect(() => {
@@ -98,6 +110,12 @@ const AdminSettings = () => {
           at_markup_percentage: String(data.at_markup_percentage || "0"),
           auto_pending_sms_enabled: data.auto_pending_sms_enabled || false,
           auto_pending_sms_message: data.auto_pending_sms_message || "Your SwiftData transaction is pending. Please try again or contact support.",
+          payment_success_sms_message: data.payment_success_sms_message || "Your data bundle is being processed. Thanks for choosing SwiftData GH",
+          wallet_topup_sms_message: data.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
+          withdrawal_request_sms_message: data.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
+          withdrawal_completed_sms_message: data.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
+          order_failed_sms_message: data.order_failed_sms_message || "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
+          manual_credit_sms_message: data.manual_credit_sms_message || "Your account has been manually credited with GHS {amount} by admin.",
         });
       }
       setLoading(false);
@@ -130,6 +148,12 @@ const AdminSettings = () => {
       at_markup_percentage: parseFloat(settings.at_markup_percentage) || 0,
       auto_pending_sms_enabled: settings.auto_pending_sms_enabled,
       auto_pending_sms_message: settings.auto_pending_sms_message,
+      payment_success_sms_message: settings.payment_success_sms_message,
+      wallet_topup_sms_message: settings.wallet_topup_sms_message,
+      withdrawal_request_sms_message: settings.withdrawal_request_sms_message,
+      withdrawal_completed_sms_message: settings.withdrawal_completed_sms_message,
+      order_failed_sms_message: settings.order_failed_sms_message,
+      manual_credit_sms_message: settings.manual_credit_sms_message,
       store_visitor_popup_enabled: settings.store_visitor_popup_enabled,
     };
 
@@ -398,7 +422,7 @@ const AdminSettings = () => {
                     </div>
                     {settings.auto_pending_sms_enabled && (
                       <div className="space-y-2">
-                        <Label>Auto-SMS Message</Label>
+                        <Label>Auto-SMS Message (Pending)</Label>
                         <Input
                           value={settings.auto_pending_sms_message}
                           onChange={(e) => setSettings({ ...settings, auto_pending_sms_message: e.target.value })}
@@ -406,6 +430,60 @@ const AdminSettings = () => {
                         />
                       </div>
                     )}
+                    <div className="space-y-2">
+                      <Label>Payment Success SMS Message</Label>
+                      <Input
+                        value={settings.payment_success_sms_message}
+                        onChange={(e) => setSettings({ ...settings, payment_success_sms_message: e.target.value })}
+                        placeholder="Your bundle is being processed..."
+                      />
+                      <p className="text-[10px] text-muted-foreground">Sent immediately after a successful payment is verified.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Wallet Top-up SMS Message</Label>
+                      <Input
+                        value={settings.wallet_topup_sms_message}
+                        onChange={(e) => setSettings({ ...settings, wallet_topup_sms_message: e.target.value })}
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}, {balance}"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Withdrawal Request SMS Message</Label>
+                      <Input
+                        value={settings.withdrawal_request_sms_message}
+                        onChange={(e) => setSettings({ ...settings, withdrawal_request_sms_message: e.target.value })}
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Withdrawal Completed SMS Message</Label>
+                      <Input
+                        value={settings.withdrawal_completed_sms_message}
+                        onChange={(e) => setSettings({ ...settings, withdrawal_completed_sms_message: e.target.value })}
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Order Failed SMS Message</Label>
+                      <Input
+                        value={settings.order_failed_sms_message}
+                        onChange={(e) => setSettings({ ...settings, order_failed_sms_message: e.target.value })}
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}, {amount}"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Manual Credit SMS Message</Label>
+                      <Input
+                        value={settings.manual_credit_sms_message}
+                        onChange={(e) => setSettings({ ...settings, manual_credit_sms_message: e.target.value })}
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
+                    </div>
                   </div>
                 </>
               )}

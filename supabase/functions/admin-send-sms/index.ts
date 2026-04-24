@@ -1,63 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
 
 type TargetType = "all" | "agents" | "users" | "pending_orders";
-function normalizePhone(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const clean = raw.trim().replace(/[^\d+]/g, "");
-  if (!clean) return null;
-
-  const digits = clean.replace(/\D/g, "");
-  if (!digits) return null;
-
-  if (digits.startsWith("233") && digits.length >= 12) {
-    return digits;
-  }
-
-  if (digits.startsWith("0") && digits.length >= 10) {
-    return `233${digits.slice(1)}`;
-  }
-
-  if (digits.startsWith("00") && digits.length > 2) {
-    return digits.slice(2);
-  }
-
-  return digits.length >= 10 ? digits : null;
-}
-
-async function sendSmsViaTxtConnect(
-  apiKey: string,
-  from: string,
-  to: string,
-  body: string,
-) {
-  const endpoint = "https://api.txtconnect.net/v1/send";
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      API_key: apiKey,
-      TO: to,
-      FROM: from,
-      SMS: body,
-      RESPONSE: "json",
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`TxtConnect send failed (${response.status}): ${text}`);
-  }
-  
-  const data = await response.json();
-  if (data && data.status !== "ok" && data.error) {
-     throw new Error(`TxtConnect API Error: ${data.error}`);
-  }
-}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -88,25 +34,7 @@ serve(async (req: Request) => {
     global: { headers: { Authorization: authHeader } },
   });
 
-  // TxtConnect config: prefer env vars, fall back to admin-configured system_settings, then hardcoded fallbacks
-  let txtApiKey = Deno.env.get("TXTCONNECT_API_KEY") || "";
-  let txtSenderId = Deno.env.get("TXTCONNECT_SENDER_ID") || "";
-
-  if (!txtApiKey || !txtSenderId) {
-    try {
-      const { data: smsRow } = await supabaseAdmin
-        .from("system_settings")
-        .select("txtconnect_api_key, txtconnect_sender_id")
-        .eq("id", 1)
-        .maybeSingle();
-      if (smsRow) {
-        txtApiKey = txtApiKey || String(smsRow.txtconnect_api_key || "");
-        txtSenderId = txtSenderId || String(smsRow.txtconnect_sender_id || "");
-      }
-    } catch { /* columns may not exist yet — ignore */ }
-  }
-
-  if (!txtSenderId) txtSenderId = "SwiftDataGh";
+  const { apiKey: txtApiKey, senderId: txtSenderId } = await getSmsConfig(supabaseAdmin);
 
   if (!txtApiKey || !txtSenderId) {
     return new Response(JSON.stringify({

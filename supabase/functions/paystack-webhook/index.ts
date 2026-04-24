@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac, timingSafeEqual } from "node:crypto";
-
 import { corsHeaders } from "../_shared/cors.ts";
+import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 
 function getFirstEnvValue(keys: string[]): string {
   for (const key of keys) {
@@ -157,39 +157,42 @@ function stripHtml(value: string): string {
   return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-async function sendPaymentSms(customerPhone: string) {
-  const smsApiKey = getFirstEnvValue(["TXTCONNECT_API_KEY"]);
-  const senderId = getFirstEnvValue(["TXTCONNECT_SENDER_ID"]) || "SwiftDataGh";
-  
-  const digits = customerPhone.replace(/\D+/g, "");
-  const recipient = digits.startsWith("0") && digits.length === 10
-    ? `233${digits.slice(1)}`
-    : (digits.startsWith("233") ? digits : digits);
-
-  if (!smsApiKey || !recipient) return;
-
+async function sendPaymentSms(supabaseAdmin: any, customerPhone: string, type: "payment_success" | "order_failed" = "payment_success", vars: Record<string, string | number> = {}) {
   try {
-    const endpoint = "https://api.txtconnect.net/v1/send";
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        API_key: smsApiKey,
-        TO: recipient,
-        FROM: senderId,
-        SMS: "Your data bundle is being processed. Thanks for choosing SwiftData GH",
-        RESPONSE: "json",
-      }),
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const recipient = normalizePhone(customerPhone);
+    
+    if (!apiKey || !recipient) return;
+
+    const template = templates[type] || templates.payment_success;
+    const message = formatTemplate(template, vars);
+
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+  } catch (error) {
+    console.error("sendPaymentSms error:", error);
+  }
+}
+
+async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: number) {
+  try {
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
+    const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", userId).maybeSingle();
+    
+    if (!profile?.phone) return;
+
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const recipient = normalizePhone(profile.phone);
+    
+    if (!apiKey || !recipient) return;
+
+    const message = formatTemplate(templates.wallet_topup, {
+      amount: amount.toFixed(2),
+      balance: (wallet?.balance || 0).toFixed(2)
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("SMS send failed:", res.status, text.slice(0, 300));
-    }
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
   } catch (error) {
-    console.error("SMS send error:", error);
+    console.error("sendWalletTopupSms error:", error);
   }
 }
 
@@ -521,7 +524,11 @@ serve(async (req) => {
     }
 
     if (shouldSendDataPaymentSms && smsPhone) {
-      await sendPaymentSms(smsPhone);
+      await sendPaymentSms(supabase, smsPhone, "payment_success");
+    }
+
+    if (orderType === "wallet_topup" && existingOrder?.agent_id) {
+      await sendWalletTopupSms(supabase, existingOrder.agent_id, verifiedAmount);
     }
 
     const orderType = (existingOrder?.order_type || orderTypeFromMetadata || "data") as string;
@@ -601,9 +608,9 @@ serve(async (req) => {
       const subAgentId = metadata?.sub_agent_id;
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || existingOrder?.amount || verifiedAmount || 0);
-      const agentProfit = Number.isFinite(Number(metadata?.agent_profit))
-        ? Number(metadata?.agent_profit)
-        : parseFloat((activationAmount * 0.5).toFixed(2));
+      // Security: Never trust client-supplied profit metadata. 
+      // Activation fee base is GHS 80. Anything above that is agent profit.
+      const agentProfit = Math.max(0, parseFloat((activationAmount - 80).toFixed(2)));
       if (subAgentId) {
         // Fetch parent's sub_agent_prices to copy as the sub agent's agent_prices
         const { data: parentProfile } = await supabase
@@ -724,26 +731,6 @@ serve(async (req) => {
       });
     }
 
-    const result = await callProviderApi(
-      DATA_PROVIDER_BASE_URL,
-      DATA_PROVIDER_API_KEY,
-      "purchase",
-      {
-        networkRaw: network,
-        networkKey: mapNetworkKey(network),
-        recipient: normalizeRecipient(customerPhone),
-        capacity: parseCapacity(packageSize),
-      },
-      DATA_PROVIDER_WEBHOOK_URL,
-    );
-
-    console.log("Webhook data fulfillment response:", {
-      orderId,
-      status: result.status,
-      reason: result.reason,
-      url: result.url,
-    });
-
     if (result.ok) {
       await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
       
@@ -764,6 +751,14 @@ serve(async (req) => {
     }
 
     await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", orderId);
+    
+    if (customerPhone) {
+      await sendPaymentSms(supabase, customerPhone, "order_failed", {
+        package: packageSize || "Data",
+        phone: customerPhone,
+        amount: (existingOrder?.amount || 0).toFixed(2)
+      });
+    }
     return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: result.reason }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -1,7 +1,47 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 import { corsHeaders } from "../_shared/cors.ts";
+import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
+
+async function sendManualCreditSms(supabaseAdmin: any, userId: string, amount: number) {
+  try {
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
+    if (!profile?.phone) return;
+
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const recipient = normalizePhone(profile.phone);
+    
+    if (!apiKey || !recipient) return;
+
+    const message = formatTemplate(templates.manual_credit, {
+      amount: amount.toFixed(2)
+    });
+
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+  } catch (error) {
+    console.error("sendManualCreditSms error:", error);
+  }
+}
+
+async function sendWithdrawalCompletedSms(supabaseAdmin: any, userId: string, amount: number) {
+  try {
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
+    if (!profile?.phone) return;
+
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const recipient = normalizePhone(profile.phone);
+    
+    if (!apiKey || !recipient) return;
+
+    const message = formatTemplate(templates.withdrawal_completed, {
+      amount: amount.toFixed(2)
+    });
+
+    await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+  } catch (error) {
+    console.error("sendWithdrawalCompletedSms error:", error);
+  }
+}
 
 type AdminUserAction = 
   | "get_api_users" 
@@ -218,7 +258,7 @@ serve(async (req) => {
           .from("profiles")
           .select("parent_agent_id")
           .eq("user_id", user_id)
-          .single();
+          .maybeSingle();
 
         if (!profile?.parent_agent_id) {
           return new Response(JSON.stringify({ error: "User is not a sub-agent or missing parent" }), {
@@ -261,27 +301,13 @@ serve(async (req) => {
           });
         }
 
-        const { data: wallet } = await supabaseAdmin
-          .from("wallets")
-          .select("balance")
-          .eq("agent_id", user_id)
-          .maybeSingle();
+        const { data: result, error: rpcError } = await supabaseAdmin.rpc("credit_wallet", {
+          p_agent_id: user_id,
+          p_amount: amount,
+        });
 
-        const currentBalance = wallet?.balance || 0;
-        const newBalance = parseFloat((currentBalance + amount).toFixed(2));
-
-        if (!wallet) {
-          const { error: insertError } = await supabaseAdmin
-            .from("wallets")
-            .insert({ agent_id: user_id, balance: amount });
-          if (insertError) throw insertError;
-        } else {
-          const { error: updateError } = await supabaseAdmin
-            .from("wallets")
-            .update({ balance: newBalance })
-            .eq("agent_id", user_id);
-          if (updateError) throw updateError;
-        }
+        if (rpcError) throw rpcError;
+        const newBalance = result?.new_balance || 0;
 
         const { error: orderError } = await supabaseAdmin
           .from("orders")
@@ -294,6 +320,8 @@ serve(async (req) => {
           });
 
         if (orderError) throw orderError;
+
+        await sendManualCreditSms(supabaseAdmin, user_id, amount);
 
         return new Response(JSON.stringify({ success: true, new_balance: newBalance }), {
           status: 200,
@@ -343,6 +371,18 @@ serve(async (req) => {
           .eq("id", withdrawal_id);
 
         if (updateError) throw updateError;
+
+        // Fetch withdrawal details to send SMS
+        const { data: withdrawal } = await supabaseAdmin
+          .from("withdrawals")
+          .select("agent_id, amount")
+          .eq("id", withdrawal_id)
+          .maybeSingle();
+        
+        if (withdrawal) {
+          await sendWithdrawalCompletedSms(supabaseAdmin, withdrawal.agent_id, withdrawal.amount);
+        }
+
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
