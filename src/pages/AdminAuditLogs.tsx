@@ -182,38 +182,63 @@ const AdminAuditLogs = () => {
               </button>
             </div>
           ) : (
-            <div className="rounded-md border border-white/5 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-white/5 hover:bg-white/5 border-white/5">
-                    <TableHead className="w-[180px] text-white/50 uppercase text-[10px] font-black tracking-widest">Timestamp</TableHead>
-                    <TableHead className="text-white/50 uppercase text-[10px] font-black tracking-widest">Admin</TableHead>
-                    <TableHead className="text-white/50 uppercase text-[10px] font-black tracking-widest">Action</TableHead>
-                    <TableHead className="text-white/50 uppercase text-[10px] font-black tracking-widest">Details</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {logs.map((log) => (
-                    <TableRow key={log.id} className="border-white/5 hover:bg-white/[0.02] transition-colors">
-                      <TableCell className="text-[11px] text-muted-foreground font-mono">
-                        {new Date(log.created_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="font-semibold text-sm text-white/90">
-                        {log.profiles?.full_name || "System"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono text-[10px] bg-amber-400/5 text-amber-400 border-amber-400/20">
-                          {formatAction(log.action)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-[11px] text-muted-foreground max-w-[300px] truncate group hover:text-white transition-colors cursor-help">
-                        {JSON.stringify(log.details)}
-                      </TableCell>
+            <>
+              {/* Desktop View */}
+              <div className="hidden md:block rounded-md border border-white/5 overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-white/5 hover:bg-white/5 border-white/5">
+                      <TableHead className="w-[180px] text-white/50 uppercase text-[10px] font-black tracking-widest">Timestamp</TableHead>
+                      <TableHead className="text-white/50 uppercase text-[10px] font-black tracking-widest">Admin</TableHead>
+                      <TableHead className="text-white/50 uppercase text-[10px] font-black tracking-widest">Action</TableHead>
+                      <TableHead className="text-white/50 uppercase text-[10px] font-black tracking-widest">Details</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((log) => (
+                      <TableRow key={log.id} className="border-white/5 hover:bg-white/[0.02] transition-colors">
+                        <TableCell className="text-[11px] text-muted-foreground font-mono">
+                          {new Date(log.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-semibold text-sm text-white/90">
+                          {log.profiles?.full_name || "System"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono text-[10px] bg-amber-400/5 text-amber-400 border-amber-400/20">
+                            {formatAction(log.action)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-[11px] text-muted-foreground max-w-[300px] truncate group hover:text-white transition-colors cursor-help">
+                          {JSON.stringify(log.details)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile View */}
+              <div className="md:hidden space-y-3">
+                {logs.map((log) => (
+                  <div key={log.id} className="p-4 rounded-xl border border-white/5 bg-white/[0.01] space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-white/30 font-mono mb-1">{new Date(log.created_at).toLocaleString()}</p>
+                        <p className="font-bold text-sm text-white/90">{log.profiles?.full_name || "System"}</p>
+                      </div>
+                      <Badge variant="outline" className="font-mono text-[9px] bg-amber-400/5 text-amber-400 border-amber-400/20 shrink-0">
+                        {formatAction(log.action)}
+                      </Badge>
+                    </div>
+                    <div className="bg-black/20 p-3 rounded-lg border border-white/5">
+                      <p className="text-[10px] text-white/40 font-mono break-all line-clamp-3 group-hover:line-clamp-none transition-all">
+                        {JSON.stringify(log.details)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

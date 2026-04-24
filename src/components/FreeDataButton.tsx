@@ -17,7 +17,9 @@ function loadSavedPos(): { x: number; y: number } | null {
   try {
     const raw = localStorage.getItem(POS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch (e) {
+    // Ignore parse errors
+  }
   return null;
 }
 

@@ -550,44 +550,65 @@ const AdminAPIUsers = () => {
                           {/* Sales Stat */}
                           <div className="bg-white/5 rounded-xl px-3 py-1 border border-white/5 flex items-center gap-3">
                             <p className="text-[10px] uppercase tracking-wider text-white/40">Total Sales</p>
-                            <div className="flex items-center gap-1.5">
-                              <Wallet className="w-3 h-3 text-green-400" />
-                              <p className="text-xs font-bold text-white">
-                                GH₵{(user.stats?.[0]?.total_sales_volume || 0).toFixed(2)}
-                              </p>
-                            </div>
+                            <p className="text-xs font-bold text-white">
+                              GH₵{(user.stats?.[0]?.total_sales_volume || 0).toFixed(2)}
+                            </p>
                           </div>
                         </div>
-                        
+
                         {orders.length === 0 ? (
                           <p className="text-xs text-white/30 italic py-4 text-center">No orders found for this agent.</p>
                         ) : (
-                          <div className="overflow-x-auto rounded-xl border border-white/8">
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="border-b border-white/5 bg-white/3">
-                                  <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Date</th>
-                                  <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Network</th>
-                                  <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Package</th>
-                                  <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Phone</th>
-                                  <th className="text-right px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Amount</th>
-                                  <th className="text-center px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-white/5">
-                                {orders.map((order) => (
-                                  <tr key={order.id} className="hover:bg-white/3 transition-colors">
-                                    <td className="px-3 py-2 text-white/50">{new Date(order.created_at).toLocaleString("en-GH", { dateStyle: "short", timeStyle: "short" })}</td>
-                                    <td className="px-3 py-2 font-medium text-white/70">{order.network}</td>
-                                    <td className="px-3 py-2 text-white/50">{order.package_size}</td>
-                                    <td className="px-3 py-2 font-mono text-white/50">{order.customer_phone}</td>
-                                    <td className="px-3 py-2 text-right font-bold text-amber-400">GH₵{Number(order.amount).toFixed(2)}</td>
-                                    <td className="px-3 py-2 text-center"><StatusBadge status={order.status} /></td>
+                          <>
+                            {/* Desktop View */}
+                            <div className="hidden md:block overflow-x-auto rounded-xl border border-white/8">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-white/5 bg-white/3">
+                                    <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Date</th>
+                                    <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Network</th>
+                                    <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Package</th>
+                                    <th className="text-left px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Phone</th>
+                                    <th className="text-right px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Amount</th>
+                                    <th className="text-center px-3 py-2 text-white/30 font-bold uppercase tracking-widest">Status</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                  {orders.map((order) => (
+                                    <tr key={order.id} className="hover:bg-white/3 transition-colors">
+                                      <td className="px-3 py-2 text-white/50">{new Date(order.created_at).toLocaleString("en-GH", { dateStyle: "short", timeStyle: "short" })}</td>
+                                      <td className="px-3 py-2 font-medium text-white/70">{order.network}</td>
+                                      <td className="px-3 py-2 text-white/50">{order.package_size}</td>
+                                      <td className="px-3 py-2 font-mono text-white/50">{order.customer_phone}</td>
+                                      <td className="px-3 py-2 text-right font-bold text-amber-400">GH₵{Number(order.amount).toFixed(2)}</td>
+                                      <td className="px-3 py-2 text-center"><StatusBadge status={order.status} /></td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Mobile View */}
+                            <div className="md:hidden space-y-3">
+                              {orders.map((order) => (
+                                <div key={order.id} className="p-3 rounded-xl border border-white/5 bg-white/5 space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-[10px] text-white/30">{new Date(order.created_at).toLocaleDateString()}</p>
+                                      <p className="text-xs font-bold text-white/80">{order.network} {order.package_size}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-xs font-black text-amber-400">GH₵{Number(order.amount).toFixed(2)}</p>
+                                      <StatusBadge status={order.status} />
+                                    </div>
+                                  </div>
+                                  <div className="text-[10px] font-mono text-white/20 pt-1 border-t border-white/5">
+                                    Recipient: {order.customer_phone || "—"}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>

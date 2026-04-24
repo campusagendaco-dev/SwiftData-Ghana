@@ -251,62 +251,50 @@ const AdminAgents = () => {
           {filtered.map((agent) => (
             <div key={agent.user_id} className="rounded-2xl bg-white/[0.02] border border-white/5 overflow-hidden">
               {/* Agent row */}
-              <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <p className="font-bold text-white">{agent.full_name || "—"}</p>
-                    {agent.agent_approved ? (
-                      <Badge className="gap-1 bg-green-500/20 text-green-400 border-green-500/30 text-[10px]">
-                        <CheckCircle className="w-3 h-3" /> Approved
-                      </Badge>
-                    ) : agent.onboarding_complete ? (
-                      <Badge className="gap-1 bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[10px]">
-                        <Clock className="w-3 h-3" /> Pending Approval
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="gap-1 text-[10px] text-white/40 border-white/10">
-                        <Clock className="w-3 h-3" /> Onboarding
-                      </Badge>
-                    )}
+              {/* Agent row */}
+              <div className="p-4 flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <p className="font-bold text-white text-base">{agent.full_name || "—"}</p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {agent.agent_approved ? (
+                          <Badge className="gap-1 bg-green-500/20 text-green-400 border-green-500/30 text-[9px] font-bold">
+                            <CheckCircle className="w-2.5 h-2.5" /> Approved
+                          </Badge>
+                        ) : agent.onboarding_complete ? (
+                          <Badge className="gap-1 bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] font-bold">
+                            <Clock className="w-2.5 h-2.5" /> Pending
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1 text-[9px] text-white/40 border-white/10 font-bold">
+                            <Clock className="w-2.5 h-2.5" /> Onboarding
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-white/40">
+                      {agent.store_name && (
+                        <span className="flex items-center gap-1.5">
+                          <Store className="w-3.5 h-3.5 text-white/20" /> {agent.store_name}
+                        </span>
+                      )}
+                      {agent.phone && (
+                        <span className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-white/20" /> {agent.phone}
+                        </span>
+                      )}
+                      <span className="truncate">{agent.email}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-white/20">Joined {new Date(agent.created_at).toLocaleDateString()}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/40">
-                    {agent.store_name && (
-                      <span className="flex items-center gap-1">
-                        <Store className="w-3 h-3" /> {agent.store_name}
-                      </span>
-                    )}
-                    {agent.phone && (
-                      <span className="flex items-center gap-1">
-                        <Phone className="w-3 h-3" /> {agent.phone}
-                      </span>
-                    )}
-                    {agent.email && <span>{agent.email}</span>}
-                    <span>Joined {new Date(agent.created_at).toLocaleDateString()}</span>
-                  </div>
-                </div>
 
-                {/* Wallet + sub-agents */}
-                <div className="flex items-center gap-4 shrink-0">
-                  <div className="text-center">
-                    <p className="text-xs text-white/40">Total Sales</p>
-                    <p className="text-sm font-black text-green-400">GH₵{(agent.total_sales_volume || 0).toFixed(2)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-white/40">Wallet</p>
-                    <p className="text-sm font-black text-amber-400">GH₵{(agent.wallet_balance || 0).toFixed(2)}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-white/40">Sub-Agents</p>
-                    <p className="text-sm font-black text-blue-400">{agent.sub_agent_count ?? 0}</p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 shrink-0">
+                  {/* Actions (Desktop) */}
+                  <div className="hidden sm:flex items-center gap-2">
                     <Link
                       to={`/admin/orders?agent=${encodeURIComponent(agent.full_name || agent.email)}`}
-                      className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors"
+                      className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors"
                       title="View Sales History"
                     >
                       <ShoppingCart className="w-4 h-4" />
@@ -314,35 +302,98 @@ const AdminAgents = () => {
                     <a
                       href={`https://wa.me/233${agent.phone?.replace(/^0/, "")}`}
                       target="_blank" rel="noopener noreferrer"
-                      className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 hover:bg-green-500/20 transition-colors"
+                      className="w-9 h-9 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 hover:bg-green-500/20 transition-colors"
                     >
                       <MessageCircle className="w-4 h-4" />
                     </a>
-                  {agent.agent_approved ? (
-                    <Button
-                      size="sm" variant="outline"
-                      onClick={() => handleRevoke(agent.user_id)}
-                      disabled={approvingId === agent.user_id}
-                      className="text-xs border-white/10 text-white/60 hover:text-red-400 hover:border-red-500/30"
+                    {agent.agent_approved ? (
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => handleRevoke(agent.user_id)}
+                        disabled={approvingId === agent.user_id}
+                        className="text-xs border-white/10 text-white/60 hover:text-red-400 hover:border-red-500/30 h-9 rounded-xl"
+                      >
+                        {approvingId === agent.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Revoke"}
+                      </Button>
+                    ) : agent.onboarding_complete ? (
+                      <Button
+                        size="sm"
+                        onClick={() => handleApprove(agent.user_id)}
+                        disabled={approvingId === agent.user_id}
+                        className="text-xs bg-amber-400 text-black font-bold hover:bg-amber-300 h-9 rounded-xl shadow-lg shadow-amber-400/10"
+                      >
+                        {approvingId === agent.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Approve"}
+                      </Button>
+                    ) : null}
+                    <button
+                      onClick={() => toggleExpand(agent.user_id)}
+                      className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
                     >
-                      {approvingId === agent.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Revoke"}
-                    </Button>
-                  ) : agent.onboarding_complete ? (
-                    <Button
-                      size="sm"
-                      onClick={() => handleApprove(agent.user_id)}
-                      disabled={approvingId === agent.user_id}
-                      className="text-xs bg-amber-400 text-black font-bold hover:bg-amber-300"
+                      {expandedId === agent.user_id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stats & Actions (Mobile) */}
+                <div className="flex flex-col gap-4 border-t border-white/5 pt-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+                      <p className="text-[9px] text-white/30 uppercase tracking-widest mb-1">Sales</p>
+                      <p className="text-xs font-black text-green-400 truncate">₵{(agent.total_sales_volume || 0).toFixed(0)}</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+                      <p className="text-[9px] text-white/30 uppercase tracking-widest mb-1">Wallet</p>
+                      <p className="text-xs font-black text-amber-400 truncate">₵{(agent.wallet_balance || 0).toFixed(0)}</p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+                      <p className="text-[9px] text-white/30 uppercase tracking-widest mb-1">Subs</p>
+                      <p className="text-xs font-black text-blue-400">{agent.sub_agent_count ?? 0}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex sm:hidden items-center gap-2">
+                    <Link
+                      to={`/admin/orders?agent=${encodeURIComponent(agent.full_name || agent.email)}`}
+                      className="flex-1 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-xs gap-2"
                     >
-                      {approvingId === agent.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Approve"}
-                    </Button>
-                  ) : null}
-                  <button
-                    onClick={() => toggleExpand(agent.user_id)}
-                    className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
-                  >
-                    {expandedId === agent.user_id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </button>
+                      <ShoppingCart className="w-3.5 h-3.5" /> Sales
+                    </Link>
+                    <a
+                      href={`https://wa.me/233${agent.phone?.replace(/^0/, "")}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="flex-1 h-10 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center text-green-400 font-bold text-xs gap-2"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                    </a>
+                    <button
+                      onClick={() => toggleExpand(agent.user_id)}
+                      className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/50"
+                    >
+                      {expandedId === agent.user_id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  {/* Approve/Revoke (Mobile) */}
+                  <div className="sm:hidden">
+                    {agent.agent_approved ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleRevoke(agent.user_id)}
+                        disabled={approvingId === agent.user_id}
+                        className="w-full h-10 border-red-500/20 text-red-400 hover:bg-red-500/10 rounded-xl text-xs font-bold"
+                      >
+                        {approvingId === agent.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Revoke Access"}
+                      </Button>
+                    ) : agent.onboarding_complete ? (
+                      <Button
+                        onClick={() => handleApprove(agent.user_id)}
+                        disabled={approvingId === agent.user_id}
+                        className="w-full h-10 bg-amber-400 text-black font-bold hover:bg-amber-300 rounded-xl text-xs shadow-lg shadow-amber-400/10"
+                      >
+                        {approvingId === agent.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Approve Agent"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 

@@ -253,8 +253,8 @@ const AdminOrders = () => {
         <span className="text-xs text-white/30 ml-auto">{filtered.length} results</span>
       </div>
 
-      {/* Orders table */}
-      <div className="rounded-xl border border-white/8 overflow-hidden">
+      {/* Desktop Table View */}
+      <div className="hidden md:block rounded-xl border border-white/8 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -341,14 +341,80 @@ const AdminOrders = () => {
             </tbody>
           </table>
         </div>
-
-        {filtered.length === 0 && (
-          <div className="py-16 text-center">
-            <ShoppingCart className="w-10 h-10 text-white/10 mx-auto mb-3" />
-            <p className="text-white/40 text-sm">No orders match your filters.</p>
-          </div>
-        )}
       </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-4">
+        {filtered.map((order) => (
+          <div key={order.id} className="rounded-2xl bg-white/[0.03] border border-white/5 p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold text-white/40">{new Date(order.created_at).toLocaleDateString()}</span>
+                  <Badge className={`text-[9px] border ${STATUS_COLORS[order.status] || "bg-white/10 text-white/40 border-white/10"}`}>
+                    {order.status.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+                <p className="font-bold text-white text-sm">{order.agent_name}</p>
+                <p className="text-[10px] text-white/30 truncate">{order.agent_email}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-black text-white">GH₵{Number(order.amount).toFixed(2)}</p>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${order.is_sub_agent ? "border-purple-500/30 text-purple-400 bg-purple-500/10" : "border-amber-500/30 text-amber-400 bg-amber-500/10"}`}>
+                  {order.is_sub_agent ? "Sub-Agent" : "Agent"}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-y-3 gap-x-4 py-3 border-y border-white/5">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Type</p>
+                <p className="text-xs text-white/80 font-bold">
+                  {order.order_type === "wallet_topup" ? "Top-up" : order.order_type === "api" ? "API" : "Data"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Network</p>
+                <p className="text-xs text-white/80 font-bold">{order.network || "—"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Package</p>
+                <p className="text-xs text-white/80 font-bold">{order.package_size || "—"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Recipient</p>
+                <p className="text-xs text-white/80 font-mono">{order.customer_phone || "—"}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
+                <Button
+                  size="sm" variant="outline"
+                  className="flex-1 text-xs gap-2 h-9 border-white/10 hover:border-amber-400/30 rounded-xl"
+                  disabled={retrying === order.id}
+                  onClick={() => handleRetry(order.id)}
+                >
+                  {retrying === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Retry Fulfillment
+                </Button>
+              )}
+              {order.failure_reason && (
+                <div className="flex-1 text-[9px] text-red-400/80 italic leading-tight">
+                  Error: {order.failure_reason}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="py-16 text-center">
+          <ShoppingCart className="w-10 h-10 text-white/10 mx-auto mb-3" />
+          <p className="text-white/40 text-sm">No orders match your filters.</p>
+        </div>
+      )}
     </div>
   );
 };

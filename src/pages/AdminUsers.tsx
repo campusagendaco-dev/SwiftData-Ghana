@@ -257,8 +257,8 @@ const AdminUsers = () => {
         />
       </div>
 
-      {/* Table */}
-      <div className="rounded-2xl bg-white/[0.02] border border-white/5 overflow-hidden">
+      {/* Desktop Table View */}
+      <div className="hidden md:block rounded-2xl bg-white/[0.02] border border-white/5 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -356,10 +356,88 @@ const AdminUsers = () => {
             </tbody>
           </table>
         </div>
-        {filtered.length === 0 && (
-          <div className="p-12 text-center text-white/30 text-sm">No users found.</div>
-        )}
       </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-4">
+        {filtered.map((user) => (
+          <div key={user.user_id} className="rounded-2xl bg-white/[0.03] border border-white/5 p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-bold text-white truncate">{user.full_name || "—"}</p>
+                <p className="text-xs text-white/40 truncate">{user.email}</p>
+              </div>
+              <div className="shrink-0">{getRoleBadge(user)}</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 py-3 border-y border-white/5">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-1">Phone</p>
+                <p className="text-xs text-white/70 font-mono">{user.phone || "—"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/30 mb-1">Total Sales</p>
+                <p className="text-xs font-black text-green-400">GH₵{(user.total_sales_volume || 0).toFixed(2)}</p>
+              </div>
+              {(user as any).is_sub_agent && (
+                <div className="col-span-2">
+                  <p className="text-[10px] uppercase tracking-wider text-white/30 mb-1">Parent Agent</p>
+                  <p className="text-xs text-white/60">{user.parent_name || "—"}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {user.is_agent && !(user as any).is_sub_agent && user.onboarding_complete && !user.agent_approved && (
+                <Button
+                  size="sm"
+                  onClick={() => handleApproveAgent(user)}
+                  disabled={!!actionLoading[user.user_id]}
+                  className="flex-1 bg-amber-400/20 text-amber-400 hover:bg-amber-400/30 border border-amber-400/30 font-bold text-[11px] h-9 rounded-xl"
+                >
+                  {actionLoading[user.user_id] === "approve-agent" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Approve Agent"}
+                </Button>
+              )}
+              {(user as any).is_sub_agent && !user.sub_agent_approved && (
+                <Button
+                  size="sm"
+                  onClick={() => handleApproveSubAgent(user)}
+                  disabled={!!actionLoading[user.user_id]}
+                  className="flex-1 bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30 font-bold text-[11px] h-9 rounded-xl"
+                >
+                  {actionLoading[user.user_id] === "approve-sub" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Approve Sub"}
+                </Button>
+              )}
+              <Button
+                size="sm" variant="outline"
+                onClick={() => handleResetPassword(user)}
+                disabled={!!actionLoading[user.user_id]}
+                className="flex-1 text-[11px] h-9 border-white/10 text-white/60 rounded-xl"
+              >
+                {actionLoading[user.user_id] === "reset" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Reset PWD"}
+              </Button>
+              <Link
+                to={`/admin/orders?agent=${encodeURIComponent(user.full_name || user.email)}`}
+                className="flex-1 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors text-[11px] font-bold"
+              >
+                Sales
+              </Link>
+              <Button
+                size="sm" variant="destructive"
+                onClick={() => handleDeleteUser(user)}
+                disabled={!!actionLoading[user.user_id] || currentUser?.id === user.user_id}
+                className="flex-1 text-[11px] h-9 rounded-xl"
+              >
+                {actionLoading[user.user_id] === "delete" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Delete"}
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="p-12 text-center text-white/30 text-sm">No users found.</div>
+      )}
 
       <p className="text-xs text-white/30 text-center">Showing {filtered.length} of {users.length} total users</p>
     </div>

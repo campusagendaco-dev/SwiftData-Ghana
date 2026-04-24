@@ -259,8 +259,8 @@ const AdminPackages = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {/* Header */}
-                  <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-2">
+                  {/* Desktop Header */}
+                  <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-2">
                     <div className="col-span-2">Package</div>
                     <div className="col-span-1">Base</div>
                     <div className="col-span-3">Agent Price</div>
@@ -272,48 +272,74 @@ const AdminPackages = () => {
                   {basePackages[n.name]?.map((pkg) => {
                     const s = getSetting(n.name, pkg.size);
                     return (
-                      <div key={pkg.size} className={`grid grid-cols-12 gap-2 items-center p-2 rounded-lg border ${s.is_unavailable ? "bg-destructive/5 border-destructive/20" : "border-border"}`}>
-                        <div className="col-span-2">
-                          <span className="font-medium text-sm">{pkg.size}</span>
+                      <div key={pkg.size} className={`flex flex-col md:grid md:grid-cols-12 gap-3 items-start md:items-center p-3 md:p-2 rounded-xl border ${s.is_unavailable ? "bg-red-500/[0.02] border-red-500/10 opacity-60" : "bg-white/[0.01] border-white/5"}`}>
+                        {/* Package & Base Info */}
+                        <div className="flex items-center justify-between w-full md:col-span-3">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-sm text-white">{pkg.size}</span>
+                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Base: ₵{pkg.price.toFixed(0)}</span>
+                          </div>
+                          <div className="md:hidden flex items-center gap-2">
+                            <span className="text-[10px] text-white/30">Active</span>
+                            <Switch
+                              checked={!s.is_unavailable}
+                              onCheckedChange={(checked) => updateSetting(n.name, pkg.size, "is_unavailable", !checked)}
+                              className="scale-75 data-[state=checked]:bg-amber-400"
+                            />
+                          </div>
                         </div>
-                        <div className="col-span-1">
-                          <span className="text-xs text-muted-foreground">₵{pkg.price.toFixed(0)}</span>
+
+                        {/* Agent Price */}
+                        <div className="w-full md:col-span-3 space-y-1">
+                          <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">Agent Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder={pkg.price.toFixed(2)}
+                              value={s.agent_price ?? ""}
+                              onChange={(e) => updateSetting(n.name, pkg.size, "agent_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm bg-white/5 border-white/10 rounded-lg md:rounded-md focus:border-amber-400/30"
+                            />
+                          </div>
                         </div>
-                        <div className="col-span-3">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder={pkg.price.toFixed(2)}
-                            value={s.agent_price ?? ""}
-                            onChange={(e) => updateSetting(n.name, pkg.size, "agent_price", e.target.value ? parseFloat(e.target.value) : null)}
-                            className="h-8 text-sm bg-secondary border-none"
-                          />
+
+                        {/* User Price */}
+                        <div className="w-full md:col-span-3 space-y-1">
+                          <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">User Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder={(pkg.price * 1.12).toFixed(2)}
+                              value={s.public_price ?? ""}
+                              onChange={(e) => updateSetting(n.name, pkg.size, "public_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm bg-white/5 border-white/10 rounded-lg md:rounded-md focus:border-blue-400/30"
+                            />
+                          </div>
                         </div>
-                        <div className="col-span-3">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder={(pkg.price * 1.12).toFixed(2)}
-                            value={s.public_price ?? ""}
-                            onChange={(e) => updateSetting(n.name, pkg.size, "public_price", e.target.value ? parseFloat(e.target.value) : null)}
-                            className="h-8 text-sm bg-secondary border-none"
-                          />
+
+                        {/* API Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">API Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder={pkg.price.toFixed(2)}
+                              value={s.api_price ?? ""}
+                              onChange={(e) => updateSetting(n.name, pkg.size, "api_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm bg-amber-400/5 border-amber-400/20 text-amber-500 rounded-lg md:rounded-md focus:border-amber-400/40"
+                            />
+                          </div>
                         </div>
-                        <div className="col-span-2">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder={pkg.price.toFixed(2)}
-                            value={s.api_price ?? ""}
-                            onChange={(e) => updateSetting(n.name, pkg.size, "api_price", e.target.value ? parseFloat(e.target.value) : null)}
-                            className="h-8 text-sm bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400"
-                          />
-                        </div>
-                        <div className="col-span-1 flex justify-center items-center">
+
+                        {/* Switch (Desktop) */}
+                        <div className="hidden md:flex col-span-1 justify-center items-center">
                           <Switch
                             checked={!s.is_unavailable}
                             onCheckedChange={(checked) => updateSetting(n.name, pkg.size, "is_unavailable", !checked)}
-                            className="scale-75"
+                            className="scale-75 data-[state=checked]:bg-amber-400"
                           />
                         </div>
                       </div>

@@ -95,7 +95,7 @@ const AdminTickets = () => {
 
     // Fetch user profiles separately (support_tickets.user_id → auth.users, not profiles directly)
     const userIds = [...new Set(rows.map(t => t.user_id).filter(Boolean))] as string[];
-    let userMap: Record<string, UserInfo> = {};
+    const userMap: Record<string, UserInfo> = {};
 
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
