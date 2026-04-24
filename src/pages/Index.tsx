@@ -5,6 +5,7 @@ import {
 import { Link } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
+import StoreVisitorPopup from "@/components/StoreVisitorPopup";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const NETWORK_CARDS = [
@@ -201,6 +202,9 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#030305] text-gray-900 dark:text-white">
+
+      {/* First-visit agent popup — shown once per session, admin-toggleable */}
+      <StoreVisitorPopup agentSlug="home" showSubAgentLink={false} />
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden pt-36 pb-28 px-4">
