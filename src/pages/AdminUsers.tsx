@@ -29,7 +29,7 @@ type RoleTab = "all" | "customers" | "agents" | "sub-agents";
 
 const AdminUsers = () => {
   const { toast } = useToast();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, session } = useAuth();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -83,6 +83,7 @@ const AdminUsers = () => {
     setRowAction(row.user_id, "approve-agent");
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "approve_agent", user_id: row.user_id },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {
@@ -103,6 +104,7 @@ const AdminUsers = () => {
 
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "approve_sub_agent", user_id: row.user_id },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {
@@ -124,6 +126,7 @@ const AdminUsers = () => {
     setRowAction(row.user_id, "reset");
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "reset_password", user_id: row.user_id, new_password: entered?.trim() || undefined },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (error || data?.error) {
       const msg = data?.error || error?.message || "Unknown error";
@@ -142,6 +145,7 @@ const AdminUsers = () => {
     setRowAction(row.user_id, "delete");
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "delete_user", user_id: row.user_id },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (error || data?.error) {
       toast({ title: "Failed to delete user", description: data?.error || error?.message, variant: "destructive" });

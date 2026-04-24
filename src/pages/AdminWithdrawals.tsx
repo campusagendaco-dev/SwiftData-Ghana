@@ -32,7 +32,7 @@ const statusColors: Record<string, string> = {
 
 const AdminWithdrawals = () => {
   const { toast } = useToast();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, session } = useAuth();
   const [withdrawals, setWithdrawals] = useState<WithdrawalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -95,6 +95,7 @@ const AdminWithdrawals = () => {
 
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "confirm_withdrawal", withdrawal_id: withdrawalId },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {

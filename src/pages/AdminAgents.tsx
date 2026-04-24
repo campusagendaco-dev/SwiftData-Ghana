@@ -43,7 +43,7 @@ const AdminAgents = () => {
   const [toppingUp, setToppingUp] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const { toast } = useToast();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, session } = useAuth();
 
   const fetchAgents = useCallback(async () => {
     setLoading(true);
@@ -89,6 +89,7 @@ const AdminAgents = () => {
     setApprovingId(userId);
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "approve_agent", user_id: userId },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {
@@ -105,6 +106,7 @@ const AdminAgents = () => {
     setApprovingId(userId);
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "revoke_agent", user_id: userId },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {
@@ -126,6 +128,7 @@ const AdminAgents = () => {
 
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "manual_topup", user_id: agent.user_id, amount },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {

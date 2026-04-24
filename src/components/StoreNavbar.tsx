@@ -9,16 +9,11 @@ import {
 
 const openTutorial = () => window.dispatchEvent(new CustomEvent("open-tutorial"));
 
-const WAIcon = () => (
-  <svg viewBox="0 0 32 32" width="15" height="15" fill="currentColor">
-    <path d="M16.004 2.667C8.64 2.667 2.667 8.64 2.667 16c0 2.347.614 4.56 1.693 6.48L2.667 29.333l7.04-1.653A13.28 13.28 0 0016.004 29.333C23.36 29.333 29.333 23.36 29.333 16S23.36 2.667 16.004 2.667zm5.84 18.027c-.32-.16-1.893-.933-2.187-1.04-.293-.107-.507-.16-.72.16-.213.32-.827 1.04-.987 1.253-.16.213-.347.24-.667.08-.32-.16-1.36-.507-2.587-1.6-.96-.853-1.6-1.907-1.787-2.227-.187-.32 0-.48.147-.627.133-.133.32-.347.48-.52.16-.173.213-.32.32-.533.107-.213.053-.4-.027-.56-.08-.16-.72-1.733-.987-2.373-.253-.613-.52-.533-.72-.547h-.613c-.213 0-.56.08-.853.4-.293.32-1.12 1.093-1.12 2.667 0 1.573 1.147 3.093 1.307 3.307.16.213 2.267 3.467 5.493 4.853.773.333 1.373.533 1.84.68.773.24 1.48.213 2.027.133.627-.093 1.893-.773 2.16-1.52.267-.747.267-1.387.187-1.52-.08-.133-.293-.213-.613-.373z"/>
-  </svg>
-);
 
 const NETWORK_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  MTN:        { bg: "rgba(251,191,36,0.12)", text: "#FFC107", dot: "#FFC107" },
-  Telecel:    { bg: "rgba(229,57,53,0.12)",  text: "#EF5350", dot: "#EF5350" },
-  AirtelTigo: { bg: "rgba(99,102,241,0.12)", text: "#818CF8", dot: "#818CF8" },
+  MTN:        { bg: "rgba(255,204,0,0.15)", text: "#FFCC00", dot: "#FFCC00" },
+  Telecel:    { bg: "rgba(230,0,0,0.15)",  text: "#E60000", dot: "#E60000" },
+  AirtelTigo: { bg: "rgba(0,82,155,0.15)", text: "#00529B", dot: "#00529B" },
 };
 
 export interface StoreNavbarProps {
@@ -83,7 +78,7 @@ const StoreNavbar = ({
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
-        boxShadow: scrolled ? `0 4px 32px rgba(0,0,0,0.6), 0 0 0 1px ${networkAccent}18` : "none",
+        boxShadow: scrolled ? `0 4px 32px rgba(0,0,0,0.6), 0 0 0 1px ${networkAccent || "#f59e0b"}18` : "none",
       }}
     >
       {/* Thin accent bar */}
@@ -151,7 +146,7 @@ const StoreNavbar = ({
                 <a href={waHref} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all hover:scale-105 active:scale-95"
                   style={{ background: "linear-gradient(135deg,#25D366,#128C7E)" }}>
-                  <WAIcon /> Chat
+                  <MessageCircle className="w-4 h-4" /> Chat
                 </a>
               )}
             </>
@@ -160,7 +155,7 @@ const StoreNavbar = ({
             <a href={waHref} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-white text-xs font-bold px-3 py-1.5 rounded-xl hover:scale-105 transition-all"
               style={{ background: "linear-gradient(135deg,#25D366,#128C7E)" }}>
-              <WAIcon /> WhatsApp
+              <MessageCircle className="w-4 h-4" /> WhatsApp
             </a>
           )}
         </div>
@@ -171,7 +166,7 @@ const StoreNavbar = ({
             <a href={waHref} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg"
               style={{ background: "linear-gradient(135deg,#25D366,#128C7E)" }}>
-              <WAIcon /><span className="hidden xs:inline">Chat</span>
+              <MessageCircle className="w-4 h-4" /><span className="hidden xs:inline">Chat</span>
             </a>
           )}
           {!backMode && (
@@ -180,7 +175,7 @@ const StoreNavbar = ({
               className="w-8 h-8 rounded-xl flex items-center justify-center transition-all"
               style={{ background: open ? `${networkAccent}20` : "rgba(255,255,255,0.06)", color: open ? networkAccent : "rgba(255,255,255,0.6)" }}
             >
-              {open ? <X className="w-4.5 h-4.5" /> : <Menu className="w-4.5 h-4.5" />}
+              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           )}
         </div>
@@ -208,7 +203,7 @@ const StoreNavbar = ({
                     <p className="text-white font-black text-base leading-none truncate">{storeName}</p>
                     <BadgeCheck className="w-4 h-4 shrink-0" style={{ color: networkAccent }} />
                   </div>
-                  <p className="text-xs font-medium" style={{ color: `${networkAccent}cc` }}>Official SwiftData Partner</p>
+                  <p className="text-xs font-black uppercase tracking-widest mt-1" style={{ color: `${networkAccent}` }}>Official Store</p>
                 </div>
               </div>
               {/* Feature pills */}
@@ -360,10 +355,9 @@ const StoreNavbar = ({
               </>
             )}
 
-            {/* Footer */}
             <div className="flex items-center justify-center gap-1.5 pt-3 mt-2 border-t border-white/6">
-              <Zap className="w-2.5 h-2.5 text-amber-400" />
-              <span className="text-white/20 text-[10px]">Powered by SwiftData Ghana</span>
+              <Zap className="w-2.5 h-2.5 text-emerald-400" />
+              <span className="text-white/20 text-[10px] font-black uppercase tracking-widest">Verified Digital Platform</span>
             </div>
           </div>
         </div>

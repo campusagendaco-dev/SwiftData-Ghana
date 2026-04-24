@@ -22,7 +22,7 @@ interface AgentResult {
 
 const AdminWalletTopup = () => {
   const { toast } = useToast();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, session } = useAuth();
   const [searchRef, setSearchRef] = useState("");
   const [searching, setSearching] = useState(false);
   const [agent, setAgent] = useState<AgentResult | null>(null);
@@ -78,6 +78,7 @@ const AdminWalletTopup = () => {
 
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "manual_topup", user_id: agent.user_id, amount },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {

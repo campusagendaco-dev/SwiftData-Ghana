@@ -39,7 +39,7 @@ const targetLabels: Record<string, string> = {
 };
 
 const AdminNotificationsPage = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +93,7 @@ const AdminNotificationsPage = () => {
     if (sendSms) {
       const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
         body: { title: title.trim(), message: message.trim(), target_type: targetType },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
 
       if (smsError) {
@@ -131,6 +132,7 @@ const AdminNotificationsPage = () => {
         target_type: "test",
         test_phone: testPhone.trim(),
       },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {

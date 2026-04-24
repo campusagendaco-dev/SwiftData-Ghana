@@ -10,6 +10,7 @@ import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle } from 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
+import { useAuth } from "@/hooks/useAuth";
 
 interface SystemSettings {
   auto_api_switch: boolean;
@@ -36,6 +37,7 @@ interface SystemSettings {
 
 const AdminSettings = () => {
   const { toast } = useToast();
+  const { session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<SystemSettings>({
@@ -129,6 +131,7 @@ const AdminSettings = () => {
 
     const { data, error } = await supabase.functions.invoke("admin-user-actions", {
       body: { action: "update_system_settings", settings: payload },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
     });
 
     if (error || data?.error) {

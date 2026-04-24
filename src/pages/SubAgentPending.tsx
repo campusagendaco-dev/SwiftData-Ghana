@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction, invokePublicFunctionAsUser } from "@/lib/public-function-client";
-import { Loader2, CreditCard, Clock, Zap } from "lucide-react";
+import { Loader2, CreditCard, Clock, Zap, ArrowLeft } from "lucide-react";
 
 const SubAgentPending = () => {
   const { user, profile, refreshProfile } = useAuth();
@@ -117,77 +117,118 @@ const SubAgentPending = () => {
 
   if (loadingData || verifying) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-        {verifying ? "Verifying payment..." : "Loading..."}
+      <div className="min-h-screen flex items-center justify-center bg-[#030305]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-emerald-400/20 border-t-emerald-400 rounded-full animate-spin" />
+          <p className="text-white/40 text-sm font-bold tracking-widest uppercase">{verifying ? "Confirming Payment..." : "Loading Session..."}</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <img src="/logo.png" alt="SwiftData" className="w-16 h-16 mb-3" />
-          <h1 className="font-display text-2xl font-black">Activate Your Account</h1>
-          <p className="text-muted-foreground text-sm text-center mt-1">
-            Complete your one-time activation payment to access your sub agent dashboard.
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#030305] flex flex-col items-center justify-center px-4 selection:bg-amber-400/30">
+      
+      {/* Mesh Background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-amber-400/5 rounded-full blur-[140px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/3 rounded-full blur-[100px]" />
+      </div>
 
-        {/* Status card */}
-        <div className="rounded-xl border border-border bg-card p-5 mb-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-amber-400/15 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-amber-500" />
-            </div>
-            <div>
-              <p className="font-semibold text-sm">Pending Activation</p>
-              <p className="text-xs text-muted-foreground">Payment required to activate your account</p>
-            </div>
+      <div className="relative z-10 w-full max-w-[420px] space-y-10 animate-in fade-in zoom-in-95 duration-700">
+        
+        {/* Header */}
+        <div className="flex flex-col items-center text-center space-y-4">
+          <div className="relative">
+            <div className="absolute -inset-4 bg-amber-400/10 rounded-full blur-2xl animate-pulse" />
+            <img src="/logo.png" alt="SwiftData" className="relative w-20 h-20 shadow-2xl rounded-3xl" />
           </div>
-
-          <div className="space-y-1.5 text-sm border-t border-border pt-4">
-            <div className="flex justify-between text-muted-foreground">
-              <span>Activation fee</span><span>GH₵ {totalFee.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-muted-foreground">
-              <span>Agent share (50%)</span><span>GH₵ {(totalFee * 0.5).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-muted-foreground">
-              <span>SwiftData share (50%)</span><span>GH₵ {(totalFee * 0.5).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-foreground border-t border-border pt-1.5 mt-1.5">
-              <span>Total to pay</span><span>GH₵ {totalFee.toFixed(2)}</span>
-            </div>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tight text-white">Activate Account</h1>
+            <p className="text-white/40 text-sm max-w-[280px] mx-auto">
+              Pay your one-time activation fee to unlock your reseller dashboard.
+            </p>
           </div>
         </div>
 
+        {/* Status Card / Receipt */}
+        <div className="relative rounded-[2.5rem] border border-white/10 bg-[#08080A]/80 backdrop-blur-3xl overflow-hidden shadow-3xl">
+          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+          
+          <div className="p-8 space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shrink-0">
+                <Clock className="w-7 h-7 text-amber-400 animate-pulse" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-white font-black text-lg">Awaiting Payment</p>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                  <span className="text-amber-400 text-[10px] font-black uppercase tracking-widest">Action Required</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-6 border-t border-white/5">
+              <div className="flex justify-between items-center text-xs font-bold uppercase tracking-widest text-white/30">
+                <span>Description</span>
+                <span>Amount</span>
+              </div>
+              <div className="space-y-2.5">
+                {[
+                  { label: "Activation Base", price: (totalFee * 0.5) },
+                  { label: "Platform Access", price: (totalFee * 0.5) },
+                ].map((item) => (
+                  <div key={item.label} className="flex justify-between text-sm">
+                    <span className="text-white/50">{item.label}</span>
+                    <span className="text-white/80 font-mono font-medium">₵{item.price.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="pt-6 border-t border-white/5 flex justify-between items-end">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em]">Total Due</p>
+                  <p className="text-sm font-bold text-amber-400/60 tracking-tight italic">Incl. all taxes</p>
+                </div>
+                <p className="text-4xl font-black text-white tracking-tighter">₵{totalFee.toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
         <div className="space-y-3">
           <button
             onClick={handlePay}
             disabled={paying}
-            className="w-full bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-bold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+            className="group w-full relative overflow-hidden bg-amber-400 hover:bg-amber-300 disabled:opacity-50 text-black font-black py-4.5 rounded-2xl text-sm transition-all shadow-[0_10px_40px_rgba(245,158,11,0.2)] hover:scale-[1.02] active:scale-[0.98]"
           >
-            {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-            {paying ? "Redirecting to Paystack..." : `Pay GH₵ ${totalFee.toFixed(2)} to Activate`}
+            <div className="absolute inset-0 bg-white/30 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
+            <div className="relative flex items-center justify-center gap-2">
+              {paying ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+              {paying ? "Opening Secure Checkout..." : `Pay ₵${totalFee.toFixed(2)} Now`}
+            </div>
           </button>
 
           <button
             onClick={handleCheckStatus}
             disabled={verifying}
-            className="w-full border border-border text-foreground hover:bg-accent py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            className="w-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white/60 hover:text-white py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
           >
             {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-            Already paid? Check Status
+            Refresh Status
           </button>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground mt-5">
-          Need help?{" "}
-          <a href="/" className="text-amber-600 hover:underline">Go back to home</a>
-        </p>
+        {/* Footer */}
+        <div className="text-center space-y-4">
+          <p className="text-white/20 text-[10px] font-black uppercase tracking-[0.4em]">Secure Encryption Active</p>
+          <Link to="/" className="inline-flex items-center gap-2 text-white/40 hover:text-white transition-colors text-xs font-bold group">
+            <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
+            Cancel & Return Home
+          </Link>
+        </div>
       </div>
     </div>
   );
