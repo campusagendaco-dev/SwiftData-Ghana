@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +69,16 @@ function getDisplayStatus(status: string): DisplayStatus {
         text: "text-blue-600 dark:text-blue-400",
         spinning: true,
       };
+    case "pending":
+      return {
+        label: "Verifying Payment",
+        shortLabel: "Verifying...",
+        icon: Loader2,
+        dot: "bg-amber-400",
+        badge: "bg-amber-400/10 border-amber-400/25 text-amber-600 dark:text-amber-400",
+        text: "text-amber-600 dark:text-amber-400",
+        spinning: true,
+      };
     default:
       return {
         label: "Awaiting Payment",
@@ -94,6 +105,8 @@ const DashboardOrders = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+  const retryCountRef = useRef<Record<string, number>>({});
 
   const fetchOrders = useCallback(async () => {
     if (!user) return;
@@ -109,7 +122,7 @@ const DashboardOrders = () => {
       .from("orders")
       .select("*")
       .in("agent_id", candidateAgentIds)
-      .in("status", ["paid", "processing", "fulfilled", "fulfillment_failed"])
+      .in("status", ["pending", "paid", "processing", "fulfilled", "fulfillment_failed"])
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -142,10 +155,49 @@ const DashboardOrders = () => {
           setOrders((prev) =>
             prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
           );
+          // Clear retry state once resolved
+          if (updated.status !== "pending" && updated.status !== "paid") {
+            setRetryingIds((prev) => { const n = new Set(prev); n.delete(updated.id); return n; });
+            delete retryCountRef.current[updated.id];
+          }
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
+  }, [user]);
+
+  // Manual retry for a single order
+  const retryOrder = useCallback(async (orderId: string) => {
+    setRetryingIds((prev) => new Set(prev).add(orderId));
+    try {
+      await invokePublicFunctionAsUser("verify-payment", { body: { reference: orderId } });
+      // Status update arrives via realtime channel; just refresh as fallback
+      await fetchOrders();
+    } catch {
+      // silent — real-time will handle the update
+    } finally {
+      setRetryingIds((prev) => { const n = new Set(prev); n.delete(orderId); return n; });
+    }
+  }, [fetchOrders]);
+
+  // Auto-retry pending/paid orders every 30 s (max 10 attempts per order)
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      setOrders((current) => {
+        const stuck = current.filter(
+          (o) => o.status === "pending" || o.status === "paid"
+        );
+        for (const o of stuck) {
+          const attempts = retryCountRef.current[o.id] ?? 0;
+          if (attempts >= 10) continue;
+          retryCountRef.current[o.id] = attempts + 1;
+          invokePublicFunctionAsUser("verify-payment", { body: { reference: o.id } }).catch(() => {});
+        }
+        return current;
+      });
+    }, 30_000);
+    return () => clearInterval(interval);
   }, [user]);
 
   const stats = orders.reduce(
@@ -267,8 +319,29 @@ const DashboardOrders = () => {
                 },
               ];
 
+              const isPendingOrPaid = order.status === "pending" || order.status === "paid";
+              const isRetrying = retryingIds.has(order.id);
+              const retryCount = retryCountRef.current[order.id] ?? 0;
+
               return (
                 <div key={order.id} className="rounded-xl border border-border bg-secondary/30 overflow-hidden">
+                  {/* Pending payment notice bar */}
+                  {isPendingOrPaid && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-amber-400/8 border-b border-amber-400/15">
+                      <span className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {order.status === "paid" ? "Payment received — delivering data…" : "Awaiting payment confirmation…"}
+                        {retryCount > 0 && <span className="text-amber-400/60 ml-1">(check #{retryCount})</span>}
+                      </span>
+                      <button
+                        onClick={() => retryOrder(order.id)}
+                        disabled={isRetrying}
+                        className="text-[10px] font-bold text-amber-400 hover:text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/20 px-2 py-1 rounded-lg transition-all disabled:opacity-50"
+                      >
+                        {isRetrying ? <Loader2 className="w-3 h-3 animate-spin" /> : "Check Now"}
+                      </button>
+                    </div>
+                  )}
                   {/* Main row — clickable */}
                   <button
                     className="w-full flex items-center gap-3 p-3 hover:bg-secondary/60 transition-colors text-left"

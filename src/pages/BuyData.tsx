@@ -12,6 +12,24 @@ import { invokePublicFunction } from "@/lib/public-function-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
+const NETWORK_GLASS_ACTIVE: Record<string, Record<string, string>> = {
+  MTN: {
+    background: "linear-gradient(135deg, rgba(251,191,36,0.92) 0%, rgba(245,158,11,0.88) 100%)",
+    boxShadow: "0 4px 18px rgba(251,191,36,0.38), inset 0 1px 0 rgba(255,255,255,0.35)",
+    color: "#000",
+  },
+  Telecel: {
+    background: "linear-gradient(135deg, rgba(220,38,38,0.9) 0%, rgba(185,28,28,0.86) 100%)",
+    boxShadow: "0 4px 18px rgba(220,38,38,0.32), inset 0 1px 0 rgba(255,255,255,0.18)",
+    color: "#fff",
+  },
+  AirtelTigo: {
+    background: "linear-gradient(135deg, rgba(37,99,235,0.9) 0%, rgba(29,78,216,0.86) 100%)",
+    boxShadow: "0 4px 18px rgba(37,99,235,0.32), inset 0 1px 0 rgba(255,255,255,0.18)",
+    color: "#fff",
+  },
+};
+
 interface PromoResult {
   valid: boolean;
   promo_id?: string;
@@ -42,7 +60,7 @@ const networkTabStyles: Record<NetworkName, { active: string; idle: string }> = 
 
 const BuyData = () => {
   const { toast } = useToast();
-  const { theme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>("MTN");
   const [selectedPkg, setSelectedPkg] = useState<{ size: string; price: number } | null>(null);
   const [phone, setPhone] = useState("");
@@ -267,19 +285,53 @@ const BuyData = () => {
           </div>
         )}
 
-        {/* Network tabs */}
-        <div className="flex gap-2 sm:gap-3 mb-5 sm:mb-6">
-          {NETWORKS.map((n) => (
-            <button
-              key={n}
-              onClick={() => setSelectedNetwork(n)}
-              className={`flex-1 py-3 sm:py-3.5 rounded-xl border-2 text-sm font-bold transition-all ${
-                selectedNetwork === n ? networkTabStyles[n].active : networkTabStyles[n].idle
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+        {/* ── Glassmorphic network tab bar ── */}
+        <div
+          className="flex gap-1.5 p-1.5 mb-5 sm:mb-6 rounded-2xl"
+          style={{
+            background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+            backdropFilter: "blur(14px) saturate(1.5)",
+            WebkitBackdropFilter: "blur(14px) saturate(1.5)",
+            border: isDark
+              ? "1px solid rgba(255,255,255,0.08)"
+              : "1px solid rgba(0,0,0,0.07)",
+            boxShadow: isDark
+              ? "0 2px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)"
+              : "0 2px 16px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
+          }}
+        >
+          {NETWORKS.map((n) => {
+            const active = selectedNetwork === n;
+            return (
+              <button
+                key={n}
+                onClick={() => setSelectedNetwork(n)}
+                className="flex-1 py-2.5 sm:py-3 rounded-xl text-sm font-bold transition-all duration-200 relative overflow-hidden"
+                style={
+                  active
+                    ? NETWORK_GLASS_ACTIVE[n]
+                    : {
+                        color: isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.45)",
+                        background: "transparent",
+                      }
+                }
+              >
+                {/* Hover shimmer (idle only) */}
+                {!active && (
+                  <span
+                    className="absolute inset-0 rounded-xl opacity-0 hover:opacity-100 transition-opacity duration-150"
+                    style={{
+                      background: isDark
+                        ? "rgba(255,255,255,0.06)"
+                        : "rgba(0,0,0,0.04)",
+                    }}
+                    aria-hidden
+                  />
+                )}
+                <span className="relative z-10">{n}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Package grid */}

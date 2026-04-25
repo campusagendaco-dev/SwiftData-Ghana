@@ -210,9 +210,15 @@ const Index = () => {
       <section className="relative overflow-hidden pt-36 pb-28 px-4">
         {/* Background glow mesh — visible in dark mode, subtle in light */}
         <div className="absolute inset-0 pointer-events-none select-none">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[700px] bg-amber-400/5 dark:bg-amber-400/7 rounded-full blur-[140px]" />
-          <div className="absolute top-24 left-1/4 w-[500px] h-[400px] bg-blue-600/3 dark:bg-blue-600/5 rounded-full blur-[100px]" />
-          <div className="absolute top-32 right-1/4 w-[400px] h-[350px] bg-red-600/3 dark:bg-red-600/4 rounded-full blur-[90px]" />
+          {/* Navbar-area glows — these sit directly behind the fixed nav and feed the glass blur */}
+          <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-[900px] h-[200px] bg-amber-400/10 dark:bg-amber-400/18 rounded-full blur-[80px]" />
+          <div className="absolute -top-4 left-1/4 w-[400px] h-[160px] bg-violet-600/8 dark:bg-violet-600/14 rounded-full blur-[70px]" />
+          <div className="absolute -top-4 right-1/4 w-[360px] h-[140px] bg-blue-500/6 dark:bg-blue-500/12 rounded-full blur-[65px]" />
+
+          {/* Hero body glows */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[700px] bg-amber-400/6 dark:bg-amber-400/10 rounded-full blur-[140px]" />
+          <div className="absolute top-24 left-1/4 w-[500px] h-[400px] bg-blue-600/4 dark:bg-blue-600/7 rounded-full blur-[100px]" />
+          <div className="absolute top-32 right-1/4 w-[400px] h-[350px] bg-red-600/3 dark:bg-red-600/5 rounded-full blur-[90px]" />
           <div className="absolute inset-0 opacity-[0.015]"
             style={{
               backgroundImage: "linear-gradient(rgba(0,0,0,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.4) 1px, transparent 1px)",

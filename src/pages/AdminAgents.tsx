@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
 import {
-  CheckCircle, XCircle, Clock, Search, Wallet, Users2, Phone,
+  CheckCircle, AlertTriangle, Clock, Search, Wallet, Users2, Phone,
   ChevronDown, ChevronUp, Loader2, RefreshCw, Store, MessageCircle, ShoppingCart
 } from "lucide-react";
 
@@ -31,6 +31,17 @@ interface AgentRow {
   total_sales_volume?: number;
 }
 
+interface StuckActivation {
+  order_id: string;
+  agent_id: string;
+  full_name: string;
+  email: string;
+  store_name: string;
+  phone: string;
+  paid_at: string;
+  amount: number;
+}
+
 const AdminAgents = () => {
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +53,8 @@ const AdminAgents = () => {
   const [topupAmount, setTopupAmount] = useState<Record<string, string>>({});
   const [toppingUp, setToppingUp] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [stuckActivations, setStuckActivations] = useState<StuckActivation[]>([]);
+  const [forcingId, setForcingId] = useState<string | null>(null);
   const { toast } = useToast();
   const { user: currentUser, session } = useAuth();
 
@@ -80,6 +93,48 @@ const AdminAgents = () => {
     }
 
     setAgents(rows);
+
+    // Find agents who paid for activation but store is still not activated
+    const { data: activationOrders } = await supabase
+      .from("orders")
+      .select("id, agent_id, created_at, amount")
+      .eq("order_type", "agent_activation")
+      .in("status", ["fulfilled", "paid"]);
+
+    if (activationOrders && activationOrders.length > 0) {
+      const paidAgentIds = activationOrders.map((o: any) => o.agent_id).filter(Boolean);
+      const { data: unapprovedProfiles } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, email, store_name, phone")
+        .in("user_id", paidAgentIds)
+        .eq("agent_approved", false);
+
+      if (unapprovedProfiles && unapprovedProfiles.length > 0) {
+        const unapprovedIds = new Set(unapprovedProfiles.map((p: any) => p.user_id));
+        const profileMap = new Map(unapprovedProfiles.map((p: any) => [p.user_id, p]));
+        const stuck: StuckActivation[] = activationOrders
+          .filter((o: any) => unapprovedIds.has(o.agent_id))
+          .map((o: any) => {
+            const p: any = profileMap.get(o.agent_id) || {};
+            return {
+              order_id: o.id,
+              agent_id: o.agent_id,
+              full_name: p.full_name || "Unknown",
+              email: p.email || "",
+              store_name: p.store_name || "",
+              phone: p.phone || "",
+              paid_at: o.created_at,
+              amount: Number(o.amount || 0),
+            };
+          });
+        setStuckActivations(stuck);
+      } else {
+        setStuckActivations([]);
+      }
+    } else {
+      setStuckActivations([]);
+    }
+
     setLoading(false);
   }, []);
 
@@ -117,6 +172,23 @@ const AdminAgents = () => {
       if (currentUser) await logAudit(currentUser.id, "revoke_agent", { target_agent_id: userId });
     }
     setApprovingId(null);
+  };
+
+  const handleForceActivate = async (agentId: string, name: string) => {
+    setForcingId(agentId);
+    const { data, error } = await supabase.functions.invoke("admin-user-actions", {
+      body: { action: "approve_agent", user_id: agentId },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    if (error || data?.error) {
+      toast({ title: "Failed to force-activate", description: data?.error || error?.message, variant: "destructive" });
+    } else {
+      toast({ title: `${name}'s store has been activated` });
+      setStuckActivations(prev => prev.filter(s => s.agent_id !== agentId));
+      setAgents(prev => prev.map(a => a.user_id === agentId ? { ...a, agent_approved: true } : a));
+      if (currentUser) await logAudit(currentUser.id, "force_activate_store", { target_agent_id: agentId });
+    }
+    setForcingId(null);
   };
 
   const handleTopUp = async (agent: AgentRow) => {
@@ -240,6 +312,67 @@ const AdminAgents = () => {
           ))}
         </div>
       </div>
+
+      {/* ── Stuck Activations Banner ── */}
+      {stuckActivations.length > 0 && (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/5 overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-red-500/20 bg-red-500/8">
+            <div className="w-9 h-9 rounded-xl bg-red-500/20 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+            </div>
+            <div>
+              <p className="font-bold text-red-400 text-sm">
+                {stuckActivations.length} Store Activation{stuckActivations.length !== 1 ? "s" : ""} Need Manual Approval
+              </p>
+              <p className="text-xs text-red-400/70 mt-0.5">
+                These agents paid their activation fee but their store is still inactive. Force-activate to fix.
+              </p>
+            </div>
+          </div>
+          <div className="divide-y divide-red-500/10">
+            {stuckActivations.map((s) => (
+              <div key={s.order_id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <p className="font-bold text-white text-sm">{s.full_name}</p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                      Paid GH₵{s.amount.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/40">
+                    {s.store_name && (
+                      <span className="flex items-center gap-1.5">
+                        <Store className="w-3 h-3 text-white/20" /> {s.store_name}
+                      </span>
+                    )}
+                    {s.phone && (
+                      <span className="flex items-center gap-1.5">
+                        <Phone className="w-3 h-3 text-white/20" /> {s.phone}
+                      </span>
+                    )}
+                    <span>{s.email}</span>
+                    <span className="text-[10px] text-white/25">
+                      Paid {new Date(s.paid_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => handleForceActivate(s.agent_id, s.full_name)}
+                  disabled={forcingId === s.agent_id}
+                  className="bg-red-500 hover:bg-red-400 text-white font-bold rounded-xl h-9 px-4 shadow-lg shadow-red-500/20 shrink-0"
+                >
+                  {forcingId === s.agent_id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    "Force Activate Store"
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Agents list */}
       {filtered.length === 0 ? (

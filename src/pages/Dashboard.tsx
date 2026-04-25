@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Wallet, ShoppingCart, TrendingUp, ArrowDownToLine, ArrowUpRight,
-  Users2, Zap, Store, ClipboardList, ChevronRight,
+  Users2, Zap, Store, ClipboardList, ChevronRight, RefreshCw, CloudOff
 } from "lucide-react";
+
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +27,7 @@ const Dashboard = () => {
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     walletBalance: 0,
     totalOrders: 0,
@@ -35,10 +37,12 @@ const Dashboard = () => {
     totalProfit: 0,
   });
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!user) return;
-
-    const fetchData = async () => {
+    setLoading(true);
+    setError(false);
+    
+    try {
       const [walletRes, ordersRes] = await Promise.all([
         supabase.from("wallets").select("balance").eq("agent_id", user.id).single(),
         supabase
@@ -47,6 +51,8 @@ const Dashboard = () => {
           .eq("agent_id", user.id)
           .in("status", ["paid", "processing", "fulfilled", "fulfillment_failed"]),
       ]);
+
+      if (walletRes.error || ordersRes.error) throw new Error("Fetch failed");
 
       const balance = walletRes.data ? Number(walletRes.data.balance) : 0;
       const allOrders = ordersRes.data ?? [];
@@ -60,9 +66,15 @@ const Dashboard = () => {
       const totalProfit = allOrders.reduce((s: number, o: any) => s + Number(o.profit || 0), 0);
 
       setStats({ walletBalance: balance, totalOrders: allOrders.length, totalDeposited, totalSalesAmount, subAgentEarnings, totalProfit });
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+      setError(true);
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
+  useEffect(() => {
     fetchData();
 
     const walletChannel = supabase
@@ -143,6 +155,27 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* ── Error State ── */}
+      {error && (
+        <div className="rounded-2xl p-8 border border-red-500/20 bg-red-500/5 flex flex-col items-center text-center gap-4 animate-in fade-in zoom-in duration-500">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+            <CloudOff className="w-8 h-8 text-red-500" />
+          </div>
+          <div>
+            <h3 className="text-lg font-black text-white">Connection Issues</h3>
+            <p className="text-sm text-white/50 max-w-xs mx-auto">We couldn't fetch your latest dashboard data. Please check your internet connection.</p>
+          </div>
+          <button
+            onClick={() => fetchData()}
+            className="inline-flex items-center gap-2 rounded-xl px-6 py-2.5 bg-white text-black text-sm font-black hover:bg-white/90 transition-all active:scale-95"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Try Again
+          </button>
+        </div>
+      )}
+
 
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

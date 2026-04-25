@@ -105,7 +105,7 @@ const SubAgentSignup = () => {
     // Initialize payment immediately
     const totalFee = Math.max(0, Number(agent!.sub_agent_activation_markup || 0));
     const orderId = crypto.randomUUID();
-    const agentProfitShare = parseFloat((totalFee * 0.5).toFixed(2));
+    const agentProfitShare = Math.max(0, parseFloat((totalFee - 80).toFixed(2)));
     const swiftDataShare = parseFloat((totalFee - agentProfitShare).toFixed(2));
 
     if (totalFee > 0) {

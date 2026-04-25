@@ -9,6 +9,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ECGLogo, NEDCOLogo, GhanaWaterLogo, DSTVLogo, GOTVLogo, StarTimesLogo } from "@/components/BrandLogos";
+import { useConnectivity } from "@/hooks/useConnectivity";
+import { WifiOff } from "lucide-react";
+
 
 type UtilityType = "electricity" | "water" | "tv";
 type PayMethod = "wallet" | "paystack";
@@ -92,6 +95,8 @@ const DashboardUtilities = () => {
   const [accountName, setAccountName] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { isOnline } = useConnectivity();
+
 
   const activeStyle = TABS.find((t) => t.id === activeTab)!;
 
@@ -265,11 +270,12 @@ const DashboardUtilities = () => {
               />
               <button
                 onClick={handleVerify}
-                disabled={verifying || !canVerify}
+                disabled={verifying || !canVerify || !isOnline}
                 className="h-12 px-5 rounded-2xl bg-secondary border border-border text-sm font-black text-foreground hover:bg-secondary/80 disabled:opacity-40 transition-all flex items-center gap-2 shrink-0"
               >
-                {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+                {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : !isOnline ? <WifiOff className="w-4 h-4" /> : "Verify"}
               </button>
+
             </div>
 
             {/* Verification result */}
@@ -357,14 +363,15 @@ const DashboardUtilities = () => {
           {/* Pay button */}
           <button
             onClick={handlePay}
-            disabled={loading || !canPay}
+            disabled={loading || !canPay || !isOnline}
             className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 disabled:opacity-40 text-primary-foreground font-black text-base transition-all hover:scale-[1.01] active:scale-[0.99] shadow-xl shadow-primary/25 flex items-center justify-center gap-2"
           >
             {loading
               ? <Loader2 className="w-5 h-5 animate-spin" />
-              : <Zap className="w-5 h-5" />}
-            {loading ? "Processing..." : `Pay ${numAmount > 0 ? `₵${numAmount.toFixed(2)}` : "Bill"} Now`}
+              : !isOnline ? <WifiOff className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
+            {loading ? "Processing..." : !isOnline ? "Waiting for Internet..." : `Pay ${numAmount > 0 ? `₵${numAmount.toFixed(2)}` : "Bill"} Now`}
           </button>
+
         </div>
 
         {/* ── Right panel ── */}

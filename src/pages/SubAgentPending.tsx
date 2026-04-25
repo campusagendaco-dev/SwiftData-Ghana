@@ -72,7 +72,7 @@ const SubAgentPending = () => {
     setPaying(true);
 
     const orderId = crypto.randomUUID();
-    const agentProfitShare = parseFloat((totalFee * 0.5).toFixed(2));
+    const agentProfitShare = Math.max(0, parseFloat((totalFee - 80).toFixed(2)));
     const swiftDataShare = parseFloat((totalFee - agentProfitShare).toFixed(2));
 
     const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
@@ -176,8 +176,8 @@ const SubAgentPending = () => {
               </div>
               <div className="space-y-2.5">
                 {[
-                  { label: "Activation Base", price: (totalFee * 0.5) },
-                  { label: "Platform Access", price: (totalFee * 0.5) },
+                  { label: "Platform Base Fee", price: Math.min(totalFee, 80) },
+                  { label: "Agent Commission", price: Math.max(0, totalFee - 80) },
                 ].map((item) => (
                   <div key={item.label} className="flex justify-between text-sm">
                     <span className="text-white/50">{item.label}</span>

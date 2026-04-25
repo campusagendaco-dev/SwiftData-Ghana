@@ -76,6 +76,9 @@ import DashboardUtilities from "./pages/DashboardUtilities";
 import DashboardAirtimeCash from "./pages/DashboardAirtimeCash";
 import DashboardReferral from "./pages/DashboardReferral";
 import AdminSupport from "./pages/AdminSupport";
+import { OfflineAlert } from "@/components/OfflineAlert";
+import { useRegisterSW } from "virtual:pwa-register/react";
+
 
 const queryClient = new QueryClient();
 
@@ -323,24 +326,36 @@ const AppContent = () => {
   );
 };
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-            <AppContent />
-            <ThemeSelector />
-            <WhatsAppButton />
-            <FreeDataButton />
-            <InstallPrompt />
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  useRegisterSW({
+    onRegistered(r) {
+      console.log("SW Registered");
+    },
+    onRegisterError(error) {
+      console.error("SW registration error", error);
+    },
+  });
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <TooltipProvider>
+          <OfflineAlert />
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+              <AppContent />
+              <ThemeSelector />
+              <WhatsAppButton />
+              <FreeDataButton />
+              <InstallPrompt />
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

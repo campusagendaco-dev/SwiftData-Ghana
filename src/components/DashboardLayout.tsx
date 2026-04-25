@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 
 const LOW_BALANCE_THRESHOLD = 10; // GHS
 
+import { useConnectivity } from "@/hooks/useConnectivity";
+import { Wifi, WifiOff, CloudOff } from "lucide-react";
+
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [alertDismissed, setAlertDismissed] = useState(false);
@@ -20,6 +23,7 @@ const DashboardLayout = () => {
   const navigate = useNavigate();
   const { theme } = useAppTheme();
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  const { isOnline, quality } = useConnectivity();
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
   const showLowBalanceAlert = isPaidAgent && !alertDismissed && walletBalance < LOW_BALANCE_THRESHOLD && walletBalance >= 0;
@@ -80,6 +84,19 @@ const DashboardLayout = () => {
 
           {/* Action Chips */}
           <div className="flex items-center gap-2 sm:gap-4">
+            {/* Connectivity Badge */}
+            <div className={cn(
+              "hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all",
+              !isOnline 
+                ? "bg-red-500/10 border-red-500/30 text-red-400" 
+                : quality === "poor" || quality === "fair"
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+            )}>
+              {!isOnline ? <CloudOff className="w-3 h-3" /> : quality === "poor" ? <WifiOff className="w-3 h-3" /> : <Wifi className="w-3 h-3" />}
+              <span className="hidden lg:inline">{!isOnline ? "Offline" : quality === "poor" ? "Weak" : "Secure"}</span>
+            </div>
+
             {/* Balance Card */}
             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl pl-3 pr-1 py-1 group hover:border-primary/30 transition-all">
               <div className="w-7 h-7 rounded-full bg-amber-400/10 flex items-center justify-center">

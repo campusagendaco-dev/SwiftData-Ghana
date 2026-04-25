@@ -794,9 +794,10 @@ serve(async (req) => {
       const subAgentId = metadata?.sub_agent_id || resolvedAgentId;
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || order?.amount || paidAmount || 0);
-      const agentProfit = Number.isFinite(Number(metadata?.agent_profit))
-        ? Number(metadata?.agent_profit)
-        : parseFloat((activationAmount * 0.5).toFixed(2));
+      
+      // Security: Never trust client-supplied profit metadata. 
+      // Activation fee base is GHS 80. Anything above that is agent profit.
+      const agentProfit = Math.max(0, parseFloat((activationAmount - 80).toFixed(2)));
       if (subAgentId) {
         const { data: parentProfile } = await supabase
           .from("profiles").select("sub_agent_prices").eq("user_id", parentAgentId).maybeSingle();

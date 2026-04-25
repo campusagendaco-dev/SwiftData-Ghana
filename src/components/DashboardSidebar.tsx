@@ -32,6 +32,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { useConnectivity } from "@/hooks/useConnectivity";
+
 
 const userNavItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -74,7 +76,9 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const navigate = useNavigate();
   const { profile, signOut, user: authUser } = useAuth();
   const { theme } = useAppTheme();
+  const { isOnline, quality } = useConnectivity();
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
+
 
   const topupRef = (profile as any)?.topup_reference;
   const accountId = topupRef ? `DH-${topupRef}` : "DH-USER";
@@ -147,9 +151,12 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
               )}>
                 {isPaidAgent ? "Pro Agent" : "Regular"}
               </Badge>
-              <div className="flex items-center gap-1 text-green-500 text-[10px] font-bold">
-                <Activity className="w-3 h-3" />
-                Online
+              <div className={cn(
+                "flex items-center gap-1 text-[10px] font-bold transition-colors",
+                !isOnline ? "text-red-500" : quality === "poor" ? "text-amber-500" : "text-green-500"
+              )}>
+                {!isOnline ? <WifiOff className="w-3 h-3" /> : <Activity className="w-3 h-3" />}
+                {!isOnline ? "Offline" : quality === "poor" ? "Weak Connection" : "Online"}
               </div>
             </div>
           </div>

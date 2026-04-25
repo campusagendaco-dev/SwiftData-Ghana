@@ -52,19 +52,35 @@ const AdminAnalytics = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    const [ordersRes, agentsRes] = await Promise.all([
-      supabase
+    
+    let allOrders: OrderRecord[] = [];
+    let from = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
         .from("orders")
         .select("id, profit, network, agent_id, amount, status, created_at")
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("profiles")
-        .select("user_id, full_name, store_name")
-        .eq("is_agent", true)
-        .eq("agent_approved", true),
-    ]);
-    setOrders((ordersRes.data as OrderRecord[]) || []);
-    setAgents((agentsRes.data as AgentRecord[]) || []);
+        .order("created_at", { ascending: true })
+        .range(from, from + 999);
+      
+      if (error || !data || data.length === 0) {
+        hasMore = false;
+      } else {
+        allOrders = [...allOrders, ...data as OrderRecord[]];
+        from += 1000;
+        if (data.length < 1000) hasMore = false;
+      }
+    }
+
+    const { data: agentsData } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, store_name")
+      .eq("is_agent", true)
+      .eq("agent_approved", true);
+
+    setOrders(allOrders);
+    setAgents((agentsData as AgentRecord[]) || []);
     setLoading(false);
   };
 

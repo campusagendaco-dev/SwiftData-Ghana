@@ -226,12 +226,27 @@ serve(async (req) => {
 
       case "approve_agent": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
+        
+        // Update profile
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
-          .update({ agent_approved: true })
+          .update({ 
+            is_agent: true, 
+            agent_approved: true,
+            onboarding_complete: true 
+          })
           .eq("user_id", user_id);
 
         if (updateError) throw updateError;
+
+        // Mark activation orders as fulfilled
+        await supabaseAdmin
+          .from("orders")
+          .update({ status: "fulfilled", failure_reason: null })
+          .eq("agent_id", user_id)
+          .eq("order_type", "agent_activation")
+          .in("status", ["paid", "pending"]);
+
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

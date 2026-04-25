@@ -84,6 +84,8 @@ const AdminOverview = () => {
   const [maintenanceTableReady, setMaintenanceTableReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [approvingPending, setApprovingPending] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [updatedKeys, setUpdatedKeys] = useState<Set<string>>(new Set());
 
   const fetchData = async () => {
     const sevenDaysAgo = new Date();
@@ -155,21 +157,47 @@ const AdminOverview = () => {
       setMaintenanceEnabled(!!maintenanceRow.is_enabled);
       setMaintenanceMessage(maintenanceRow.message?.trim() || "We are performing scheduled maintenance. Please check back soon.");
     }
+    setLastUpdated(new Date());
     setLoading(false);
   };
 
   useEffect(() => {
     fetchData();
-    const channel = supabase
+
+    const ordersChannel = supabase
       .channel("admin-live-orders")
       .on("postgres_changes", { event: "*", table: "orders", schema: "public" }, (payload) => {
         fetchData();
         if (payload.eventType === "INSERT") {
-          toast({ title: "New Order Received!", description: `Amount: GHS ${payload.new.amount}. Customer: ${payload.new.customer_phone || "Unknown"}` });
+          toast({
+            title: "New Order Received!",
+            description: `Amount: GHS ${payload.new.amount}. Customer: ${payload.new.customer_phone || "Unknown"}`,
+          });
         }
+        // Flash the revenue/profit cards
+        setUpdatedKeys(new Set(["totalRevenue", "Agent Profits", "Platform Share"]));
+        setTimeout(() => setUpdatedKeys(new Set()), 1500);
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    const profilesChannel = supabase
+      .channel("admin-live-profiles")
+      .on("postgres_changes", { event: "*", table: "profiles", schema: "public" }, () => {
+        fetchData();
+        setUpdatedKeys(new Set(["Pending Agents", "Active Users"]));
+        setTimeout(() => setUpdatedKeys(new Set()), 1500);
+      })
+      .subscribe();
+
+    // Fallback refresh every 60 seconds
+    const interval = setInterval(fetchData, 60_000);
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+      supabase.removeChannel(profilesChannel);
+      clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveMaintenance = async () => {
@@ -260,7 +288,18 @@ const AdminOverview = () => {
       <div className={`flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b pb-6 ${divider}`}>
         <div>
           <h1 className={`text-3xl font-black tracking-tight ${head}`}>Overview</h1>
-          <p className={`text-sm mt-1 ${sub}`}>Monitor platform metrics and recent activities.</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className={`text-sm ${sub}`}>Monitor platform metrics and recent activities.</p>
+            <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-widest">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+          </div>
+          {lastUpdated && (
+            <p className={`text-[10px] mt-1 ${muted}`}>
+              Last updated {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </p>
+          )}
         </div>
         <Button
           onClick={fetchData}
@@ -274,18 +313,28 @@ const AdminOverview = () => {
 
       {/* Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {statCards.map((c) => (
-          <div key={c.title} className={`relative group p-5 rounded-2xl border overflow-hidden transition-all hover:scale-[1.01] ${card}`}>
-            <div className={`absolute top-0 right-0 w-24 h-24 ${c.bg} blur-2xl -mr-10 -mt-10 rounded-full transition-transform group-hover:scale-150`} />
-            <div className="relative z-10 flex items-center justify-between mb-3">
-              <p className={`text-xs font-semibold uppercase tracking-wider ${muted}`}>{c.title}</p>
-              <div className={`w-8 h-8 rounded-xl ${c.bg} ${c.border} border flex items-center justify-center`}>
-                <c.icon className={`w-4 h-4 ${c.color}`} />
+        {statCards.map((c) => {
+          const isFlashing = updatedKeys.has(c.title) || updatedKeys.has("totalRevenue" ) && c.title === "Total Revenue";
+          return (
+            <div
+              key={c.title}
+              className={`relative group p-5 rounded-2xl border overflow-hidden transition-all hover:scale-[1.01] ${card}`}
+              style={isFlashing ? { outline: `1.5px solid ${isDark ? "rgba(251,191,36,0.4)" : "rgba(251,191,36,0.5)"}`, outlineOffset: "2px" } : undefined}
+            >
+              <div className={`absolute top-0 right-0 w-24 h-24 ${c.bg} blur-2xl -mr-10 -mt-10 rounded-full transition-transform group-hover:scale-150`} />
+              <div className="relative z-10 flex items-center justify-between mb-3">
+                <p className={`text-xs font-semibold uppercase tracking-wider ${muted}`}>{c.title}</p>
+                <div className={`w-8 h-8 rounded-xl ${c.bg} ${c.border} border flex items-center justify-center`}>
+                  <c.icon className={`w-4 h-4 ${c.color}`} />
+                </div>
               </div>
+              <p className={`relative z-10 text-2xl font-black tracking-tight ${head}`}>{c.value}</p>
+              {isFlashing && (
+                <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              )}
             </div>
-            <p className={`relative z-10 text-2xl font-black tracking-tight ${head}`}>{c.value}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Daily Sales */}
