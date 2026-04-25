@@ -28,6 +28,8 @@ export interface Profile {
   parent_agent_id: string | null;
   sub_agent_activation_markup: number;
   sub_agent_prices: Record<string, Record<string, string>>;
+  referral_code: string | null;
+  referred_by: string | null;
 }
 
 interface AuthContextType {

@@ -14,29 +14,76 @@ export type Database = {
   }
   public: {
     Tables: {
-      audit_logs: {
+      airtime_to_cash_requests: {
         Row: {
-          admin_id: string | null
-          action: string
-          details: Json | null
-          id: string
+          admin_note: string | null
+          amount: number
+          cash_value: number
           created_at: string
+          id: string
+          network: string
+          reference_code: string | null
+          sender_phone: string
+          status: string | null
+          user_id: string
         }
         Insert: {
-          admin_id?: string | null
-          action: string
-          details?: Json | null
-          id?: string
+          admin_note?: string | null
+          amount: number
+          cash_value: number
           created_at?: string
+          id?: string
+          network: string
+          reference_code?: string | null
+          sender_phone: string
+          status?: string | null
+          user_id: string
         }
         Update: {
-          admin_id?: string | null
-          action?: string
-          details?: Json | null
-          id?: string
+          admin_note?: string | null
+          amount?: number
+          cash_value?: number
           created_at?: string
+          id?: string
+          network?: string
+          reference_code?: string | null
+          sender_phone?: string
+          status?: string | null
+          user_id?: string
         }
         Relationships: []
+      }
+      audit_logs: {
+        Row: {
+          action: string
+          admin_id: string | null
+          created_at: string | null
+          details: Json | null
+          id: string
+        }
+        Insert: {
+          action: string
+          admin_id?: string | null
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+        }
+        Update: {
+          action?: string
+          admin_id?: string | null
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_admin_id_fkey"
+            columns: ["admin_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       global_package_settings: {
         Row: {
@@ -163,17 +210,27 @@ export type Database = {
           amount: number
           created_at: string
           customer_phone: string | null
+          discount_amount: number | null
           failure_reason: string | null
           id: string
+          last_retry_at: string | null
           network: string | null
           order_type: string
           package_size: string | null
           parent_agent_id: string | null
           parent_profit: number
+          parent_profit_credited: boolean | null
           profit: number
+          profit_credited: boolean | null
+          promo_code_id: string | null
+          retry_count: number | null
+          sms_reminder_sent: boolean | null
           status: string
-          sms_reminder_sent: boolean
           updated_at: string
+          utility_account_name: string | null
+          utility_account_number: string | null
+          utility_provider: string | null
+          utility_type: string | null
         }
         Insert: {
           afa_date_of_birth?: string | null
@@ -186,17 +243,27 @@ export type Database = {
           amount?: number
           created_at?: string
           customer_phone?: string | null
+          discount_amount?: number | null
           failure_reason?: string | null
           id?: string
+          last_retry_at?: string | null
           network?: string | null
           order_type?: string
           package_size?: string | null
           parent_agent_id?: string | null
           parent_profit?: number
+          parent_profit_credited?: boolean | null
           profit?: number
+          profit_credited?: boolean | null
+          promo_code_id?: string | null
+          retry_count?: number | null
+          sms_reminder_sent?: boolean | null
           status?: string
-          sms_reminder_sent?: boolean
           updated_at?: string
+          utility_account_name?: string | null
+          utility_account_number?: string | null
+          utility_provider?: string | null
+          utility_type?: string | null
         }
         Update: {
           afa_date_of_birth?: string | null
@@ -209,17 +276,27 @@ export type Database = {
           amount?: number
           created_at?: string
           customer_phone?: string | null
+          discount_amount?: number | null
           failure_reason?: string | null
           id?: string
+          last_retry_at?: string | null
           network?: string | null
           order_type?: string
           package_size?: string | null
           parent_agent_id?: string | null
           parent_profit?: number
+          parent_profit_credited?: boolean | null
           profit?: number
+          profit_credited?: boolean | null
+          promo_code_id?: string | null
+          retry_count?: number | null
+          sms_reminder_sent?: boolean | null
           status?: string
-          sms_reminder_sent?: boolean
           updated_at?: string
+          utility_account_name?: string | null
+          utility_account_number?: string | null
+          utility_provider?: string | null
+          utility_type?: string | null
         }
         Relationships: []
       }
@@ -227,6 +304,17 @@ export type Database = {
         Row: {
           agent_approved: boolean
           agent_prices: Json
+          api_access_enabled: boolean | null
+          api_allowed_actions: string[] | null
+          api_custom_prices: Json | null
+          api_ip_whitelist: string[] | null
+          api_key: string | null
+          api_last_used_at: string | null
+          api_rate_limit: number | null
+          api_requests_reset_at: string | null
+          api_requests_today: number | null
+          api_requests_total: number | null
+          api_webhook_url: string | null
           created_at: string
           disabled_packages: Json
           email: string
@@ -234,30 +322,44 @@ export type Database = {
           id: string
           is_agent: boolean
           is_sub_agent: boolean
-          sub_agent_approved: boolean
-          parent_agent_id: string | null
-          sub_agent_activation_markup: number
-          sub_agent_prices: Json
-          api_key: string | null
           markups: Json
           momo_account_name: string
           momo_network: string
           momo_number: string
           onboarding_complete: boolean
+          parent_agent_id: string | null
           phone: string
+          referral_code: string | null
+          referred_by: string | null
           slug: string | null
+          store_banner_url: string | null
+          store_logo_url: string | null
           store_name: string
+          store_primary_color: string | null
+          sub_agent_activation_markup: number
+          sub_agent_approved: boolean
+          sub_agent_prices: Json
           support_number: string
           topup_reference: string | null
           updated_at: string
           user_id: string
-          api_custom_prices: Json
           whatsapp_group_link: string | null
           whatsapp_number: string
         }
         Insert: {
           agent_approved?: boolean
           agent_prices?: Json
+          api_access_enabled?: boolean | null
+          api_allowed_actions?: string[] | null
+          api_custom_prices?: Json | null
+          api_ip_whitelist?: string[] | null
+          api_key?: string | null
+          api_last_used_at?: string | null
+          api_rate_limit?: number | null
+          api_requests_reset_at?: string | null
+          api_requests_today?: number | null
+          api_requests_total?: number | null
+          api_webhook_url?: string | null
           created_at?: string
           disabled_packages?: Json
           email?: string
@@ -265,30 +367,44 @@ export type Database = {
           id?: string
           is_agent?: boolean
           is_sub_agent?: boolean
-          sub_agent_approved?: boolean
-          parent_agent_id?: string | null
-          sub_agent_activation_markup?: number
-          sub_agent_prices?: Json
-          api_key?: string | null
           markups?: Json
           momo_account_name?: string
           momo_network?: string
           momo_number?: string
           onboarding_complete?: boolean
+          parent_agent_id?: string | null
           phone?: string
+          referral_code?: string | null
+          referred_by?: string | null
           slug?: string | null
+          store_banner_url?: string | null
+          store_logo_url?: string | null
           store_name?: string
+          store_primary_color?: string | null
+          sub_agent_activation_markup?: number
+          sub_agent_approved?: boolean
+          sub_agent_prices?: Json
           support_number?: string
           topup_reference?: string | null
           updated_at?: string
           user_id: string
-          api_custom_prices?: Json
           whatsapp_group_link?: string | null
           whatsapp_number?: string
         }
         Update: {
           agent_approved?: boolean
           agent_prices?: Json
+          api_access_enabled?: boolean | null
+          api_allowed_actions?: string[] | null
+          api_custom_prices?: Json | null
+          api_ip_whitelist?: string[] | null
+          api_key?: string | null
+          api_last_used_at?: string | null
+          api_rate_limit?: number | null
+          api_requests_reset_at?: string | null
+          api_requests_today?: number | null
+          api_requests_total?: number | null
+          api_webhook_url?: string | null
           created_at?: string
           disabled_packages?: Json
           email?: string
@@ -296,173 +412,398 @@ export type Database = {
           id?: string
           is_agent?: boolean
           is_sub_agent?: boolean
-          sub_agent_approved?: boolean
-          parent_agent_id?: string | null
-          sub_agent_activation_markup?: number
-          sub_agent_prices?: Json
-          api_key?: string | null
           markups?: Json
           momo_account_name?: string
           momo_network?: string
           momo_number?: string
           onboarding_complete?: boolean
+          parent_agent_id?: string | null
           phone?: string
+          referral_code?: string | null
+          referred_by?: string | null
           slug?: string | null
+          store_banner_url?: string | null
+          store_logo_url?: string | null
           store_name?: string
+          store_primary_color?: string | null
+          sub_agent_activation_markup?: number
+          sub_agent_approved?: boolean
+          sub_agent_prices?: Json
           support_number?: string
           topup_reference?: string | null
           updated_at?: string
           user_id?: string
-          api_custom_prices?: Json
           whatsapp_group_link?: string | null
           whatsapp_number?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_referred_by_fkey"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      promo_claims: {
+        Row: {
+          claimed_by_phone: string
+          created_at: string | null
+          id: string
+          order_id: string | null
+          promo_code_id: string
+        }
+        Insert: {
+          claimed_by_phone: string
+          created_at?: string | null
+          id?: string
+          order_id?: string | null
+          promo_code_id: string
+        }
+        Update: {
+          claimed_by_phone?: string
+          created_at?: string | null
+          id?: string
+          order_id?: string | null
+          promo_code_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_claims_promo_code_id_fkey"
+            columns: ["promo_code_id"]
+            isOneToOne: false
+            referencedRelation: "promo_codes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       promo_codes: {
         Row: {
-          id: string
           code: string
-          discount_percentage: number
-          max_uses: number
+          created_at: string | null
           current_uses: number
-          is_active: boolean
+          discount_percentage: number
           expires_at: string | null
-          created_at: string
+          id: string
+          is_active: boolean
+          max_uses: number
         }
         Insert: {
-          id?: string
           code: string
-          discount_percentage: number
-          max_uses?: number
+          created_at?: string | null
           current_uses?: number
-          is_active?: boolean
+          discount_percentage: number
           expires_at?: string | null
-          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_uses?: number
         }
         Update: {
-          id?: string
           code?: string
-          discount_percentage?: number
-          max_uses?: number
+          created_at?: string | null
           current_uses?: number
-          is_active?: boolean
+          discount_percentage?: number
           expires_at?: string | null
-          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_uses?: number
         }
         Relationships: []
       }
-      support_tickets: {
+      referrals: {
         Row: {
-          id: string
-          user_id: string | null
-          subject: string
-          description: string
-          status: string
-          admin_response: string | null
           created_at: string
-          updated_at: string
+          credit_amount: number
+          credited: boolean
+          credited_at: string | null
+          id: string
+          referee_id: string
+          referrer_id: string
         }
         Insert: {
-          id?: string
-          user_id?: string | null
-          subject: string
-          description: string
-          status?: string
-          admin_response?: string | null
           created_at?: string
-          updated_at?: string
+          credit_amount?: number
+          credited?: boolean
+          credited_at?: string | null
+          id?: string
+          referee_id: string
+          referrer_id: string
         }
         Update: {
-          id?: string
-          user_id?: string | null
-          subject?: string
-          description?: string
-          status?: string
-          admin_response?: string | null
           created_at?: string
-          updated_at?: string
+          credit_amount?: number
+          credited?: boolean
+          credited_at?: string | null
+          id?: string
+          referee_id?: string
+          referrer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referrals_referee_id_fkey"
+            columns: ["referee_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "referrals_referrer_id_fkey"
+            columns: ["referrer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      saved_customers: {
+        Row: {
+          agent_id: string
+          created_at: string
+          id: string
+          name: string
+          network: string
+          phone: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          id?: string
+          name: string
+          network: string
+          phone: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          network?: string
+          phone?: string
+        }
+        Relationships: []
+      }
+      support_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          last_message: string | null
+          last_message_at: string
+          unread_count_admin: number | null
+          unread_count_user: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          last_message?: string | null
+          last_message_at?: string
+          unread_count_admin?: number | null
+          unread_count_user?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          last_message?: string | null
+          last_message_at?: string
+          unread_count_admin?: number | null
+          unread_count_user?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      support_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          is_read: boolean | null
+          sender_id: string
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          is_read?: boolean | null
+          sender_id: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          is_read?: boolean | null
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "support_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          admin_response: string | null
+          created_at: string | null
+          description: string
+          id: string
+          status: string
+          subject: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          admin_response?: string | null
+          created_at?: string | null
+          description: string
+          id?: string
+          status?: string
+          subject: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          admin_response?: string | null
+          created_at?: string | null
+          description?: string
+          id?: string
+          status?: string
+          subject?: string
+          updated_at?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
       system_settings: {
         Row: {
-          active_api_source: string
+          at_markup_percentage: number | null
           auto_api_switch: boolean
+          auto_pending_sms_enabled: boolean | null
+          auto_pending_sms_message: string | null
           backup_provider: string
           customer_service_number: string
           dark_mode_enabled: boolean
           disable_ordering: boolean
+          free_data_claims_count: number | null
+          free_data_enabled: boolean | null
+          free_data_max_claims: number | null
+          free_data_network: string | null
+          free_data_package_size: string | null
           holiday_message: string
           holiday_mode_enabled: boolean
-          id: number
-          preferred_provider: string
-          secondary_price_markup_pct: number
-          support_channel_link: string
-          txtconnect_api_key: string | null
-          txtconnect_sender_id: string | null
-          paystack_secret_key: string | null
           hubtel_client_id: string | null
           hubtel_client_secret: string | null
+          id: number
+          manual_credit_sms_message: string | null
           mtn_markup_percentage: number | null
+          order_failed_sms_message: string | null
+          payment_success_sms_message: string | null
+          paystack_secret_key: string | null
+          preferred_provider: string
+          store_visitor_popup_enabled: boolean
+          sub_agent_base_fee: number
+          support_channel_link: string
           telecel_markup_percentage: number | null
-          at_markup_percentage: number | null
-          auto_pending_sms_enabled: boolean
-          auto_pending_sms_message: string | null
-          sub_agent_base_fee: number | null
+          twilio_account_sid: string
+          twilio_auth_token: string
+          twilio_from_number: string
+          txtconnect_api_key: string | null
+          txtconnect_sender_id: string | null
           updated_at: string
+          updated_by: string | null
+          wallet_topup_sms_message: string | null
+          withdrawal_completed_sms_message: string | null
+          withdrawal_request_sms_message: string | null
         }
         Insert: {
-          active_api_source?: string
+          at_markup_percentage?: number | null
           auto_api_switch?: boolean
+          auto_pending_sms_enabled?: boolean | null
+          auto_pending_sms_message?: string | null
           backup_provider?: string
           customer_service_number?: string
           dark_mode_enabled?: boolean
           disable_ordering?: boolean
+          free_data_claims_count?: number | null
+          free_data_enabled?: boolean | null
+          free_data_max_claims?: number | null
+          free_data_network?: string | null
+          free_data_package_size?: string | null
           holiday_message?: string
           holiday_mode_enabled?: boolean
-          id?: number
-          preferred_provider?: string
-          secondary_price_markup_pct?: number
-          support_channel_link?: string
-          txtconnect_api_key?: string | null
-          txtconnect_sender_id?: string | null
-          paystack_secret_key?: string | null
           hubtel_client_id?: string | null
           hubtel_client_secret?: string | null
+          id?: number
+          manual_credit_sms_message?: string | null
           mtn_markup_percentage?: number | null
+          order_failed_sms_message?: string | null
+          payment_success_sms_message?: string | null
+          paystack_secret_key?: string | null
+          preferred_provider?: string
+          store_visitor_popup_enabled?: boolean
+          sub_agent_base_fee?: number
+          support_channel_link?: string
           telecel_markup_percentage?: number | null
-          at_markup_percentage?: number | null
-          auto_pending_sms_enabled?: boolean
-          auto_pending_sms_message?: string | null
-          sub_agent_base_fee?: number | null
+          twilio_account_sid?: string
+          twilio_auth_token?: string
+          twilio_from_number?: string
+          txtconnect_api_key?: string | null
+          txtconnect_sender_id?: string | null
           updated_at?: string
+          updated_by?: string | null
+          wallet_topup_sms_message?: string | null
+          withdrawal_completed_sms_message?: string | null
+          withdrawal_request_sms_message?: string | null
         }
         Update: {
-          active_api_source?: string
+          at_markup_percentage?: number | null
           auto_api_switch?: boolean
+          auto_pending_sms_enabled?: boolean | null
+          auto_pending_sms_message?: string | null
           backup_provider?: string
           customer_service_number?: string
           dark_mode_enabled?: boolean
           disable_ordering?: boolean
+          free_data_claims_count?: number | null
+          free_data_enabled?: boolean | null
+          free_data_max_claims?: number | null
+          free_data_network?: string | null
+          free_data_package_size?: string | null
           holiday_message?: string
           holiday_mode_enabled?: boolean
-          id?: number
-          preferred_provider?: string
-          secondary_price_markup_pct?: number
-          support_channel_link?: string
-          txtconnect_api_key?: string | null
-          txtconnect_sender_id?: string | null
-          paystack_secret_key?: string | null
           hubtel_client_id?: string | null
           hubtel_client_secret?: string | null
+          id?: number
+          manual_credit_sms_message?: string | null
           mtn_markup_percentage?: number | null
+          order_failed_sms_message?: string | null
+          payment_success_sms_message?: string | null
+          paystack_secret_key?: string | null
+          preferred_provider?: string
+          store_visitor_popup_enabled?: boolean
+          sub_agent_base_fee?: number
+          support_channel_link?: string
           telecel_markup_percentage?: number | null
-          at_markup_percentage?: number | null
-          auto_pending_sms_enabled?: boolean
-          auto_pending_sms_message?: string | null
-          sub_agent_base_fee?: number | null
+          twilio_account_sid?: string
+          twilio_auth_token?: string
+          twilio_from_number?: string
+          txtconnect_api_key?: string | null
+          txtconnect_sender_id?: string | null
           updated_at?: string
+          updated_by?: string | null
+          wallet_topup_sms_message?: string | null
+          withdrawal_completed_sms_message?: string | null
+          withdrawal_request_sms_message?: string | null
         }
         Relationships: []
       }
@@ -543,17 +884,43 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      user_sales_stats: {
+        Row: {
+          total_commissions_paid: number | null
+          total_fulfilled_orders: number | null
+          total_own_profit: number | null
+          total_sales_volume: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      get_agent_leaderboard: {
-        Args: Record<PropertyKey, never>
+      claim_promo_code: {
+        Args: { p_code: string; p_order_id?: string; p_phone: string }
         Returns: {
-          rank_position: number
+          discount_percentage: number
+          is_free: boolean
+          promo_id: string
+        }[]
+      }
+      credit_order_profits: { Args: { p_order_id: string }; Returns: Json }
+      credit_wallet: {
+        Args: { p_agent_id: string; p_amount: number }
+        Returns: Json
+      }
+      debit_wallet: {
+        Args: { p_agent_id: string; p_amount: number }
+        Returns: Json
+      }
+      get_agent_leaderboard: {
+        Args: never
+        Returns: {
           agent_name: string
           day_orders: number
-          week_orders: number
           is_current_user: boolean
+          rank_position: number
+          week_orders: number
         }[]
       }
       has_role: {
@@ -562,6 +929,11 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_api_usage: { Args: { p_user_id: string }; Returns: undefined }
+      request_withdrawal: {
+        Args: { p_agent_id: string; p_amount: number }
+        Returns: Json
       }
     }
     Enums: {

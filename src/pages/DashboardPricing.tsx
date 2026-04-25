@@ -82,14 +82,21 @@ const DashboardPricing = () => {
         nextBasePrices[row.network][row.package_size] = applyPriceMultiplier(numericAgentPrice, pricingContext.multiplier);
       });
 
-      // For sub-agents, base prices come from prices assigned by their parent agent.
+      // For sub-agents, base prices come from the parent agent's assigned wholesale
+      // prices (sub_agent_prices). If the parent hasn't configured those yet, fall
+      // back to the parent's own published selling prices (agent_prices) so the
+      // sub-agent is never shown the same floor as a standalone agent.
       if (profile?.is_sub_agent && profile.parent_agent_id) {
         const { data: parentProfile } = await supabase
           .from("profiles")
-          .select("sub_agent_prices")
+          .select("sub_agent_prices, agent_prices")
           .eq("user_id", profile.parent_agent_id)
           .maybeSingle();
-        const assigned = (parentProfile?.sub_agent_prices || {}) as Record<string, any>;
+
+        const subPrices = parentProfile?.sub_agent_prices as Record<string, any> | undefined;
+        const hasSubPrices = subPrices && Object.keys(subPrices).length > 0;
+        const assigned = (hasSubPrices ? subPrices : (parentProfile?.agent_prices || {})) as Record<string, any>;
+
         for (const [network, pkgs] of Object.entries(basePackages)) {
           for (const pkg of pkgs) {
             const assignedPrice = getProfileAssignedPrice(assigned, network, pkg.size);

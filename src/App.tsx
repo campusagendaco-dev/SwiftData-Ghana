@@ -74,6 +74,7 @@ import DashboardCustomers from "./pages/DashboardCustomers";
 import DashboardMarketing from "./pages/DashboardMarketing";
 import DashboardUtilities from "./pages/DashboardUtilities";
 import DashboardAirtimeCash from "./pages/DashboardAirtimeCash";
+import DashboardReferral from "./pages/DashboardReferral";
 import AdminSupport from "./pages/AdminSupport";
 
 const queryClient = new QueryClient();
@@ -268,6 +269,7 @@ const AppContent = () => {
           <Route path="account-settings" element={<DashboardAccountSettings />} />
           <Route path="profile" element={<DashboardProfile />} />
           <Route path="customers" element={<DashboardCustomers />} />
+          <Route path="referral" element={<DashboardReferral />} />
 
           {/* Paid agent-only pages */}
           <Route path="cheaper-prices" element={<AgentFeatureGuard><DashboardPricing /></AgentFeatureGuard>} />

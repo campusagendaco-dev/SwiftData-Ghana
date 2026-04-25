@@ -269,23 +269,34 @@ serve(async (req: Request) => {
           if (resolvedParentAgentId) {
             const { data: parentProfile } = await supabaseAdmin
               .from("profiles")
-              .select("sub_agent_prices")
+              .select("sub_agent_prices, agent_prices")
               .eq("user_id", resolvedParentAgentId)
               .maybeSingle();
 
             if (parentProfile) {
-              const parentPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+              // Prefer parent's explicit wholesale prices for sub-agents; fall back
+              // to parent's own published selling prices so sub-agents always pay
+              // at least what the parent charges their own customers.
+              const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+              const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+              const hasSubPrices = Object.keys(subPrices).length > 0;
+
               parentAssignedBase = resolvePriceFromMap(
-                parentPrices,
+                hasSubPrices ? subPrices : agentPrices,
                 normalizedNetwork,
                 network,
                 normalizedPackage,
                 packageSize,
               );
+
+              // If sub_agent_prices had an entry but agent_prices is a better fallback, try agent_prices too
+              if (!(Number.isFinite(parentAssignedBase) && parentAssignedBase > 0) && hasSubPrices) {
+                parentAssignedBase = resolvePriceFromMap(agentPrices, normalizedNetwork, network, normalizedPackage, packageSize);
+              }
             }
           }
 
-          // Fallback: parent hasn't assigned a price or set it too low → use adminBase as sub-agent cost
+          // Final fallback: if parent has no prices at all, use adminBase as sub-agent cost
           if (!(Number.isFinite(parentAssignedBase) && parentAssignedBase >= adminBase)) {
             parentAssignedBase = adminBase;
           }

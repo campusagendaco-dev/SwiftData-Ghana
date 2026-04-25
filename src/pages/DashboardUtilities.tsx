@@ -1,311 +1,470 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { 
-  Zap, Droplets, Tv, Search, Loader2, 
-  CreditCard, Wallet, ShieldCheck, Info 
+import { supabase } from "@/integrations/supabase/client";
+import {
+  Zap, Droplets, Tv, Loader2, ShieldCheck,
+  CreditCard, Wallet, ChevronRight, RotateCcw,
+  CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ECGLogo, NEDCOLogo, GhanaWaterLogo, DSTVLogo, GOTVLogo, StarTimesLogo } from "@/components/BrandLogos";
 
 type UtilityType = "electricity" | "water" | "tv";
+type PayMethod = "wallet" | "paystack";
+
+const TABS = [
+  {
+    id: "electricity" as UtilityType,
+    label: "Electricity",
+    icon: Zap,
+    accent: "text-amber-400",
+    activeBg: "bg-amber-400/15",
+    activeBorder: "border-amber-400/30",
+    activeText: "text-amber-400",
+    glow: "shadow-amber-400/15",
+  },
+  {
+    id: "water" as UtilityType,
+    label: "Water",
+    icon: Droplets,
+    accent: "text-sky-400",
+    activeBg: "bg-sky-400/15",
+    activeBorder: "border-sky-400/30",
+    activeText: "text-sky-400",
+    glow: "shadow-sky-400/15",
+  },
+  {
+    id: "tv" as UtilityType,
+    label: "TV",
+    icon: Tv,
+    accent: "text-purple-400",
+    activeBg: "bg-purple-400/15",
+    activeBorder: "border-purple-400/30",
+    activeText: "text-purple-400",
+    glow: "shadow-purple-400/15",
+  },
+];
+
+type ProviderEntry = { name: string; Logo: React.FC<{ size?: number }> };
+
+const PROVIDERS: Record<UtilityType, ProviderEntry[]> = {
+  electricity: [
+    { name: "ECG Prepaid",  Logo: ECGLogo },
+    { name: "ECG Postpaid", Logo: ECGLogo },
+    { name: "NEDCO",        Logo: NEDCOLogo },
+  ],
+  water: [
+    { name: "Ghana Water Company", Logo: GhanaWaterLogo },
+  ],
+  tv: [
+    { name: "DSTV",      Logo: DSTVLogo },
+    { name: "GOtv",      Logo: GOTVLogo },
+    { name: "StarTimes", Logo: StarTimesLogo },
+  ],
+};
+
+const QUICK_AMOUNTS = [20, 50, 100, 200, 500];
+
+const FIELD_LABELS: Record<UtilityType, string> = {
+  electricity: "Meter Number",
+  water: "Customer Number",
+  tv: "Smartcard / IUC Number",
+};
+
+const FIELD_PLACEHOLDERS: Record<UtilityType, string> = {
+  electricity: "e.g. 04123456789",
+  water: "e.g. WC-0012345",
+  tv: "e.g. 1234567890",
+};
 
 const DashboardUtilities = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState<UtilityType>("electricity");
-  const [loading, setLoading] = useState(false);
+  const [provider, setProvider] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [amount, setAmount] = useState("");
+  const [payMethod, setPayMethod] = useState<PayMethod>("paystack");
+
   const [verifying, setVerifying] = useState(false);
   const [accountName, setAccountName] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const [form, setForm] = useState({
-    provider: "",
-    accountNumber: "",
-    amount: "",
-  });
+  const activeStyle = TABS.find((t) => t.id === activeTab)!;
+
+  const reset = () => {
+    setProvider("");
+    setAccountNumber("");
+    setAmount("");
+    setAccountName(null);
+    setVerifyError(null);
+  };
+
+  const handleTabChange = (id: UtilityType) => {
+    setActiveTab(id);
+    reset();
+  };
 
   const handleVerify = async () => {
-    if (!form.accountNumber || !form.provider) {
-      toast({ title: "Enter account number and provider", variant: "destructive" });
+    if (!accountNumber.trim() || !provider) {
+      toast({ title: "Select a provider and enter your account number", variant: "destructive" });
       return;
     }
     setVerifying(true);
-    // Mocking account verification
+    setAccountName(null);
+    setVerifyError(null);
+    // Mocked verification — replace with real lookup when API is ready
     setTimeout(() => {
-      setAccountName("JOHN DOE ENT.");
+      if (accountNumber.length < 5) {
+        setVerifyError("Account not found. Please check the number.");
+      } else {
+        setAccountName("JOHN DOE ENT.");
+      }
       setVerifying(false);
-      toast({ title: "Account Verified!" });
-    }, 1500);
+    }, 1400);
   };
 
-  const [payMethod, setPayMethod] = useState<"wallet" | "paystack">("paystack");
-
   const handlePay = async () => {
-    if (!accountName || !form.amount) {
+    if (!accountName || !amount || !provider) {
       toast({ title: "Please verify account and enter amount", variant: "destructive" });
       return;
     }
     setLoading(true);
-
-    const reference = crypto.randomUUID();
-    const amount = Number(form.amount);
+    const numAmount = Number(amount);
 
     if (payMethod === "wallet") {
       const { data, error } = await supabase.functions.invoke("wallet-pay-utility", {
         body: {
           utility_type: activeTab,
-          utility_provider: form.provider,
-          utility_account_number: form.accountNumber,
+          utility_provider: provider,
+          utility_account_number: accountNumber,
           utility_account_name: accountName,
-          amount: amount,
-        }
+          amount: numAmount,
+        },
       });
-
       if (error || data?.error) {
-        toast({ title: "Payment failed", description: data?.error || "Insufficient balance or server error", variant: "destructive" });
+        toast({ title: "Payment failed", description: data?.error || "Insufficient balance or server error.", variant: "destructive" });
         setLoading(false);
         return;
       }
-
       toast({ title: "Payment Successful!", description: "Your bill has been paid from your wallet." });
       setLoading(false);
-      setForm({ provider: "", accountNumber: "", amount: "" });
-      setAccountName(null);
+      reset();
       return;
     }
 
+    const reference = crypto.randomUUID();
     const { data, error } = await supabase.functions.invoke("initialize-payment", {
       body: {
         email: user?.email || "customer@swiftdata.gh",
-        amount: amount,
-        reference: reference,
+        amount: numAmount,
+        reference,
         callback_url: `${window.location.origin}/dashboard/utilities?ref=${reference}`,
         metadata: {
           order_type: "utility",
           utility_type: activeTab,
-          utility_provider: form.provider,
-          utility_account_number: form.accountNumber,
+          utility_provider: provider,
+          utility_account_number: accountNumber,
           utility_account_name: accountName,
           agent_id: user?.id,
-        }
-      }
+        },
+      },
     });
-
     if (error || !data?.authorization_url) {
       toast({ title: "Payment initialization failed", description: error?.message || "Please try again.", variant: "destructive" });
       setLoading(false);
       return;
     }
-
     window.location.href = data.authorization_url;
   };
 
-  const tabs = [
-    { id: "electricity" as UtilityType, label: "Electricity", icon: Zap, color: "text-amber-400" },
-    { id: "water" as UtilityType, label: "Water", icon: Droplets, color: "text-blue-400" },
-    { id: "tv" as UtilityType, label: "TV Subscription", icon: Tv, color: "text-purple-400" },
-  ];
-
-  const providers = {
-    electricity: ["ECG Prepaid", "ECG Postpaid", "NEDCO"],
-    water: ["Ghana Water Company"],
-    tv: ["DSTV", "GOTV", "StarTimes"],
-  };
+  const numAmount = Number(amount);
+  const canVerify = !!provider && !!accountNumber.trim();
+  const canPay = !!accountName && numAmount > 0;
 
   return (
-    <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-3">
-            <Zap className="w-8 h-8 text-primary" />
-            Utility Bills
-          </h1>
-          <p className="text-white/40 text-sm mt-1">Pay for your electricity, water, and TV instantly.</p>
-        </div>
+    <div className="p-4 md:p-8 max-w-5xl space-y-8 animate-in fade-in duration-500">
+
+      {/* ── Page header ── */}
+      <div>
+        <h1 className="font-black text-3xl tracking-tight text-foreground mb-1">Pay Bills</h1>
+        <p className="text-muted-foreground text-sm">Pay electricity, water, and TV subscriptions instantly.</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 p-1 bg-white/5 border border-white/10 rounded-2xl w-fit">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id);
-              setForm({ provider: "", accountNumber: "", amount: "" });
-              setAccountName(null);
-            }}
-            className={cn(
-              "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all",
-              activeTab === tab.id 
-                ? "bg-white/10 text-white shadow-lg" 
-                : "text-white/40 hover:text-white/60"
-            )}
-          >
-            <tab.icon className={cn("w-4 h-4", activeTab === tab.id ? tab.color : "text-current")} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 backdrop-blur-xl space-y-6">
-          <div className="space-y-4">
-            <div>
-              <Label className="text-xs font-black uppercase tracking-widest text-white/40 mb-2 block">Select Provider</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {providers[activeTab].map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setForm({ ...form, provider: p })}
-                    className={cn(
-                      "px-4 py-3 rounded-xl border text-left text-sm font-bold transition-all",
-                      form.provider === p 
-                        ? "bg-primary/20 border-primary text-white" 
-                        : "bg-white/5 border-white/10 text-white/40 hover:border-white/20"
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="account-no" className="text-xs font-black uppercase tracking-widest text-white/40">
-                {activeTab === "electricity" ? "Meter Number" : activeTab === "tv" ? "Smartcard / IUC Number" : "Customer Number"}
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="account-no"
-                  value={form.accountNumber}
-                  onChange={(e) => setForm({ ...form, accountNumber: e.target.value })}
-                  placeholder="e.g. 04123456789"
-                  className="bg-white/5 border-white/10 h-12 rounded-xl flex-1"
-                />
-                <Button 
-                  onClick={handleVerify} 
-                  disabled={verifying || !form.accountNumber || !form.provider}
-                  variant="secondary"
-                  className="h-12 px-6 rounded-xl font-bold"
-                >
-                  {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
-                </Button>
-              </div>
-            </div>
-
-            {accountName && (
-              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between animate-in zoom-in-95">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60">Customer Name</p>
-                  <p className="text-white font-black">{accountName}</p>
-                </div>
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <ShieldCheck className="w-5 h-5 text-emerald-500" />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="amount" className="text-xs font-black uppercase tracking-widest text-white/40">Amount (GHS)</Label>
-              <Input
-                id="amount"
-                type="number"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                placeholder="0.00"
-                className="bg-white/5 border-white/10 h-12 rounded-xl text-lg font-black"
-              />
-            </div>
-
-            <div className="pt-4 space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/20">Select Payment Method</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setPayMethod("wallet")}
-                  className={cn(
-                    "h-16 rounded-2xl border-white/10 flex flex-col gap-1 items-center justify-center transition-all",
-                    payMethod === "wallet" ? "bg-primary/20 border-primary text-white" : "hover:bg-white/5"
-                  )}
-                >
-                  <Wallet className="w-4 h-4 text-primary" />
-                  <span className="text-xs font-black">Wallet</span>
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setPayMethod("paystack")}
-                  className={cn(
-                    "h-16 rounded-2xl border-white/10 flex flex-col gap-1 items-center justify-center transition-all",
-                    payMethod === "paystack" ? "bg-primary/20 border-primary text-white" : "hover:bg-white/5"
-                  )}
-                >
-                  <CreditCard className="w-4 h-4 text-primary" />
-                  <span className="text-xs font-black">Card / MoMo</span>
-                </Button>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handlePay} 
-              disabled={loading || !accountName || !form.amount}
-              className="w-full h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20"
+      {/* ── Category tabs ── */}
+      <div className="flex gap-2">
+        {TABS.map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id)}
+              className={cn(
+                "flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold border transition-all",
+                active
+                  ? cn(tab.activeBg, tab.activeBorder, tab.activeText, "shadow-lg", tab.glow)
+                  : "bg-card/50 border-border text-muted-foreground hover:text-foreground hover:border-border/80",
+              )}
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Zap className="w-5 h-5 mr-2" />}
-              Pay Bill Now
-            </Button>
-          </div>
-        </div>
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-primary/10 to-blue-500/10 border border-white/10 rounded-[2.5rem] p-8 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-8 opacity-10">
-              <Zap className="w-24 h-24" />
-            </div>
-            <div className="relative z-10">
-              <h3 className="text-xl font-bold text-white mb-3">Why pay with SwiftData?</h3>
-              <ul className="space-y-4">
-                {[
-                  { icon: Zap, text: "Instant Meter Tokens delivered via SMS" },
-                  { icon: ShieldCheck, text: "Official receipt generated for every payment" },
-                  { icon: Info, text: "Lowest service fees in Ghana" },
-                ].map((f, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm text-white/60">
-                    <f.icon className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                    {f.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
 
-          <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8">
-            <h3 className="text-lg font-bold text-white mb-4">Recent Payments</h3>
-            <div className="space-y-3">
-              {[1, 2].map((i) => (
-                <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
-                      <Zap className="w-5 h-5 text-white/20" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-white">ECG Prepaid</p>
-                      <p className="text-[10px] text-white/40">Meter: 04128...88</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-white">₵50.00</p>
-                    <p className="text-[10px] text-emerald-400 font-bold">Successful</p>
-                  </div>
-                </div>
+        {/* ── Main form card ── */}
+        <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-6 md:p-8 space-y-7">
+
+          {/* Step 1 — Provider */}
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground/60 mb-3">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">1</span>
+              Select Provider
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {PROVIDERS[activeTab].map((p) => (
+                <button
+                  key={p.name}
+                  onClick={() => { setProvider(p.name); setAccountName(null); setVerifyError(null); }}
+                  className={cn(
+                    "relative flex items-center gap-3 px-4 py-3.5 rounded-2xl border text-left text-sm font-bold transition-all",
+                    provider === p.name
+                      ? cn("border-primary/50 bg-primary/10 text-foreground shadow-md shadow-primary/10")
+                      : "border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border/80 hover:bg-card",
+                  )}
+                >
+                  <p.Logo size={32} />
+                  <span className="leading-tight">{p.name}</span>
+                  {provider === p.name && (
+                    <CheckCircle2 className="w-4 h-4 text-primary absolute top-2.5 right-2.5" />
+                  )}
+                </button>
               ))}
             </div>
           </div>
+
+          {/* Step 2 — Account number + verify */}
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground/60 mb-3">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">2</span>
+              {FIELD_LABELS[activeTab]}
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={accountNumber}
+                onChange={(e) => { setAccountNumber(e.target.value); setAccountName(null); setVerifyError(null); }}
+                placeholder={FIELD_PLACEHOLDERS[activeTab]}
+                className="flex-1 h-12 px-4 bg-secondary/60 border border-border rounded-2xl text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <button
+                onClick={handleVerify}
+                disabled={verifying || !canVerify}
+                className="h-12 px-5 rounded-2xl bg-secondary border border-border text-sm font-black text-foreground hover:bg-secondary/80 disabled:opacity-40 transition-all flex items-center gap-2 shrink-0"
+              >
+                {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+              </button>
+            </div>
+
+            {/* Verification result */}
+            {accountName && (
+              <div className="mt-3 flex items-center justify-between p-4 rounded-2xl bg-emerald-500/8 border border-emerald-500/20 animate-in zoom-in-95 duration-200">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60 mb-0.5">Verified Account</p>
+                  <p className="text-foreground font-black text-sm">{accountName}</p>
+                </div>
+                <ShieldCheck className="w-6 h-6 text-emerald-500 shrink-0" />
+              </div>
+            )}
+
+            {verifyError && (
+              <div className="mt-3 flex items-center gap-3 p-4 rounded-2xl bg-destructive/8 border border-destructive/20 animate-in zoom-in-95 duration-200">
+                <AlertCircle className="w-5 h-5 text-destructive shrink-0" />
+                <p className="text-sm text-destructive font-medium">{verifyError}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Step 3 — Amount */}
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground/60 mb-3">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">3</span>
+              Amount (GHS)
+            </p>
+            {/* Quick amounts */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {QUICK_AMOUNTS.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setAmount(String(q))}
+                  className={cn(
+                    "px-4 py-1.5 rounded-xl text-xs font-black border transition-all",
+                    amount === String(q)
+                      ? "bg-primary/15 border-primary/40 text-primary"
+                      : "bg-card/50 border-border text-muted-foreground hover:text-foreground hover:border-border/80",
+                  )}
+                >
+                  ₵{q}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-black text-sm">₵</span>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                min={1}
+                className="w-full h-14 pl-8 pr-4 bg-secondary/60 border border-border rounded-2xl text-xl font-black placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Step 4 — Payment method */}
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground/60 mb-3">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">4</span>
+              Payment Method
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {(["wallet", "paystack"] as PayMethod[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setPayMethod(m)}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-2 h-20 rounded-2xl border font-bold text-sm transition-all",
+                    payMethod === m
+                      ? "bg-primary/12 border-primary/40 text-foreground shadow-md shadow-primary/10"
+                      : "bg-card/50 border-border text-muted-foreground hover:text-foreground hover:bg-card",
+                  )}
+                >
+                  {m === "wallet"
+                    ? <Wallet className="w-5 h-5 text-primary" />
+                    : <CreditCard className="w-5 h-5 text-primary" />}
+                  <span>{m === "wallet" ? "Wallet" : "Card / MoMo"}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Pay button */}
+          <button
+            onClick={handlePay}
+            disabled={loading || !canPay}
+            className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 disabled:opacity-40 text-primary-foreground font-black text-base transition-all hover:scale-[1.01] active:scale-[0.99] shadow-xl shadow-primary/25 flex items-center justify-center gap-2"
+          >
+            {loading
+              ? <Loader2 className="w-5 h-5 animate-spin" />
+              : <Zap className="w-5 h-5" />}
+            {loading ? "Processing..." : `Pay ${numAmount > 0 ? `₵${numAmount.toFixed(2)}` : "Bill"} Now`}
+          </button>
+        </div>
+
+        {/* ── Right panel ── */}
+        <div className="space-y-5">
+
+          {/* Summary */}
+          <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-6 space-y-4">
+            <h3 className="font-black text-foreground text-base">Order Summary</h3>
+
+            {/* Provider logo hero */}
+            {provider && (() => {
+              const entry = PROVIDERS[activeTab].find((p) => p.name === provider);
+              return entry ? (
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-secondary/40 border border-border">
+                  <entry.Logo size={36} />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Selected Provider</p>
+                    <p className="font-black text-foreground text-sm">{provider}</p>
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            <div className="space-y-3 text-sm">
+              <SummaryRow label="Utility" value={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />
+              <SummaryRow label="Provider" value={provider || "—"} />
+              <SummaryRow
+                label="Account"
+                value={accountName || (accountNumber ? `${accountNumber.slice(0, 6)}****` : "—")}
+                valueClass={accountName ? "text-emerald-400 font-black" : undefined}
+              />
+              <SummaryRow label="Payment" value={payMethod === "wallet" ? "Wallet" : "Card / MoMo"} />
+
+              <div className="pt-3 border-t border-border flex items-center justify-between">
+                <span className="text-muted-foreground font-medium">Total</span>
+                <span className="font-black text-foreground text-xl">
+                  {numAmount > 0 ? `₵${numAmount.toFixed(2)}` : "—"}
+                </span>
+              </div>
+            </div>
+
+            {canVerify && !accountName && (
+              <button
+                onClick={handleVerify}
+                disabled={verifying}
+                className="w-full h-10 rounded-xl bg-secondary border border-border text-sm font-black text-foreground hover:bg-secondary/80 flex items-center justify-center gap-2 transition-all"
+              >
+                {verifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                Verify Account
+              </button>
+            )}
+          </div>
+
+          {/* Why SwiftData */}
+          <div
+            className="relative overflow-hidden rounded-3xl p-6 space-y-4"
+            style={{ background: "linear-gradient(135deg, rgba(251,191,36,0.1) 0%, rgba(245,158,11,0.05) 100%)", border: "1px solid rgba(251,191,36,0.18)" }}
+          >
+            <div className="absolute -top-8 -right-8 w-32 h-32 bg-amber-400/8 rounded-full blur-2xl pointer-events-none" />
+            <h4 className="font-black text-foreground text-sm relative z-10">Why pay with SwiftData?</h4>
+            <ul className="space-y-3 relative z-10">
+              {[
+                { icon: Zap, text: "Instant tokens delivered via SMS" },
+                { icon: ShieldCheck, text: "Official receipt every time" },
+              ].map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                  <Icon className="w-4 h-4 text-amber-400 shrink-0" />
+                  {text}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Reset */}
+          <button
+            onClick={reset}
+            className="w-full flex items-center justify-center gap-2 text-muted-foreground text-xs font-bold hover:text-foreground transition-colors py-2"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Clear Form
+          </button>
         </div>
       </div>
     </div>
   );
 };
+
+const SummaryRow = ({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) => (
+  <div className="flex items-center justify-between gap-2">
+    <span className="text-muted-foreground">{label}</span>
+    <span className={cn("font-bold text-foreground text-right truncate max-w-[150px]", valueClass)}>{value}</span>
+  </div>
+);
 
 export default DashboardUtilities;

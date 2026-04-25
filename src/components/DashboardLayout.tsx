@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import NotificationPopup from "@/components/NotificationPopup";
-import { Menu, User, Wallet, Bell, Search, PlusCircle } from "lucide-react";
+import { Menu, User, Wallet, Bell, Search, PlusCircle, AlertTriangle, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -11,12 +11,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+const LOW_BALANCE_THRESHOLD = 10; // GHS
+
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [alertDismissed, setAlertDismissed] = useState(false);
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { theme } = useAppTheme();
   const [walletBalance, setWalletBalance] = useState<number>(0);
+
+  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
+  const showLowBalanceAlert = isPaidAgent && !alertDismissed && walletBalance < LOW_BALANCE_THRESHOLD && walletBalance >= 0;
 
   const firstName = profile?.full_name?.split(" ")[0] || "User";
 
@@ -115,6 +121,30 @@ const DashboardLayout = () => {
             </button>
           </div>
         </header>
+
+        {/* ── Low balance alert banner ── */}
+        {showLowBalanceAlert && (
+          <div className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-2.5 bg-amber-400/10 border-b border-amber-400/20">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <p className="text-xs font-bold text-amber-300">
+                Low wallet balance — ₵{walletBalance.toFixed(2)} remaining.{" "}
+                <button
+                  onClick={() => navigate("/dashboard/wallet")}
+                  className="underline underline-offset-2 hover:text-amber-200 transition-colors"
+                >
+                  Top up now
+                </button>
+              </p>
+            </div>
+            <button
+              onClick={() => setAlertDismissed(true)}
+              className="text-amber-400/60 hover:text-amber-300 transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-[#030703] to-[#0d140d]">
           <div className="max-w-7xl mx-auto w-full">

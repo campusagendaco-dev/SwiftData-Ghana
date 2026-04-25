@@ -269,9 +269,16 @@ serve(async (req) => {
 
         const { data: parent } = await supabaseAdmin
           .from("profiles")
-          .select("sub_agent_prices")
+          .select("sub_agent_prices, agent_prices")
           .eq("user_id", profile.parent_agent_id)
           .single();
+
+        // Seed sub-agent with parent's explicit wholesale prices if set;
+        // otherwise use parent's own published selling prices so the sub-agent
+        // starts at (or above) the parent's customer-facing prices.
+        const subPrices = parent?.sub_agent_prices as Record<string, unknown> | undefined;
+        const hasSubPrices = subPrices && Object.keys(subPrices).length > 0;
+        const pricesToAssign = hasSubPrices ? subPrices : (parent?.agent_prices || {});
 
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
@@ -280,7 +287,7 @@ serve(async (req) => {
             agent_approved: true,
             onboarding_complete: true,
             sub_agent_approved: true,
-            agent_prices: parent?.sub_agent_prices || {},
+            agent_prices: pricesToAssign,
           })
           .eq("user_id", user_id);
 

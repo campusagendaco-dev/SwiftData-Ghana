@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet } from "lucide-react";
+import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Order {
   id: string;
@@ -92,6 +93,7 @@ const DashboardOrders = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     if (!user) return;
@@ -249,58 +251,145 @@ const DashboardOrders = () => {
               const nc = networkColors[order.network || ""] || { bg: "bg-secondary", text: "text-foreground" };
               const { date, time } = fmt(order.created_at);
               const isWalletTopup = order.order_type === "wallet_topup";
+              const isExpanded = expandedId === order.id;
+
+              // Build timeline steps
+              const timelineSteps = [
+                { label: "Order Created", done: true, time: fmt(order.created_at).time },
+                { label: "Payment Confirmed", done: ["paid","processing","fulfilled","fulfillment_failed"].includes(order.status) },
+                { label: "Delivering Data", done: ["processing","fulfilled","fulfillment_failed"].includes(order.status), spinning: order.status === "processing" || order.status === "paid" },
+                {
+                  label: order.status === "fulfillment_failed" ? "Delivery Failed" : "Delivered",
+                  done: order.status === "fulfilled" || order.status === "fulfillment_failed",
+                  failed: order.status === "fulfillment_failed",
+                  time: (order.status === "fulfilled" || order.status === "fulfillment_failed") && order.updated_at
+                    ? fmt(order.updated_at).time : undefined,
+                },
+              ];
 
               return (
-                <div
-                  key={order.id}
-                  className="flex items-center gap-3 rounded-xl border border-border bg-secondary/30 p-3 hover:bg-secondary/60 transition-colors"
-                >
-                  {/* Network badge / Wallet icon */}
-                  {isWalletTopup ? (
-                    <div className="bg-primary/15 rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]">
-                      <Wallet className="w-5 h-5 text-primary mx-auto" />
-                      <p className="text-[10px] text-primary font-bold mt-0.5 leading-none">Topup</p>
-                    </div>
-                  ) : (
-                    <div className={`${nc.bg} ${nc.text} rounded-lg px-2.5 py-1.5 text-center shrink-0`}>
-                      <p className="font-black text-[10px] leading-none">{order.network || "—"}</p>
-                      <p className="font-black text-base leading-tight mt-0.5">{order.package_size || "—"}</p>
-                    </div>
-                  )}
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-sm">
-                        {isWalletTopup ? "Wallet Topup" : `${order.network} ${order.package_size}`}
-                      </span>
-                      {!isWalletTopup && (
-                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${ds.badge}`}>
-                          <ds.icon className={`w-3 h-3 shrink-0 ${ds.spinning ? "animate-spin" : ""}`} />
-                          {ds.shortLabel}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {order.customer_phone || "—"} &nbsp;·&nbsp; {date} &nbsp;·&nbsp; {time}
-                    </p>
-                  </div>
-
-                  {/* Amount + profit */}
-                  <div className="text-right shrink-0">
-                    <p className="font-bold text-sm">GH₵ {Number(order.amount).toFixed(2)}</p>
-                    {(Number(order.profit) > 0 || Number(order.parent_profit) > 0) && (
-                      <div className="flex items-center justify-end gap-1 mt-0.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${ds.dot} ${ds.spinning ? "animate-pulse" : ""}`} />
-                        <span className="text-[11px] text-primary font-semibold">
-                          +GH₵ {(Number(order.profit) + Number(order.parent_profit || 0)).toFixed(2)}
-                        </span>
+                <div key={order.id} className="rounded-xl border border-border bg-secondary/30 overflow-hidden">
+                  {/* Main row — clickable */}
+                  <button
+                    className="w-full flex items-center gap-3 p-3 hover:bg-secondary/60 transition-colors text-left"
+                    onClick={() => setExpandedId(isExpanded ? null : order.id)}
+                  >
+                    {/* Network badge / Wallet icon */}
+                    {isWalletTopup ? (
+                      <div className="bg-primary/15 rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]">
+                        <Wallet className="w-5 h-5 text-primary mx-auto" />
+                        <p className="text-[10px] text-primary font-bold mt-0.5 leading-none">Topup</p>
+                      </div>
+                    ) : (
+                      <div className={`${nc.bg} ${nc.text} rounded-lg px-2.5 py-1.5 text-center shrink-0`}>
+                        <p className="font-black text-[10px] leading-none">{order.network || "—"}</p>
+                        <p className="font-black text-base leading-tight mt-0.5">{order.package_size || "—"}</p>
                       </div>
                     )}
-                    {Number(order.parent_profit) > 0 && (
-                      <p className="text-[10px] text-emerald-500/70 mt-0.5">incl. sub-agent profit</p>
-                    )}
-                  </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-sm">
+                          {isWalletTopup ? "Wallet Topup" : `${order.network} ${order.package_size}`}
+                        </span>
+                        {!isWalletTopup && (
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${ds.badge}`}>
+                            <ds.icon className={`w-3 h-3 shrink-0 ${ds.spinning ? "animate-spin" : ""}`} />
+                            {ds.shortLabel}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {order.customer_phone || "—"} &nbsp;·&nbsp; {date} &nbsp;·&nbsp; {time}
+                      </p>
+                    </div>
+
+                    {/* Amount + profit + chevron */}
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <div>
+                        <p className="font-bold text-sm">GH₵ {Number(order.amount).toFixed(2)}</p>
+                        {(Number(order.profit) > 0 || Number(order.parent_profit) > 0) && (
+                          <div className="flex items-center justify-end gap-1 mt-0.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${ds.dot} ${ds.spinning ? "animate-pulse" : ""}`} />
+                            <span className="text-[11px] text-primary font-semibold">
+                              +GH₵ {(Number(order.profit) + Number(order.parent_profit || 0)).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform shrink-0", isExpanded && "rotate-180")} />
+                    </div>
+                  </button>
+
+                  {/* Expanded timeline */}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 pt-1 border-t border-border/50 bg-secondary/20 animate-in slide-in-from-top-1 duration-150">
+                      {/* Order details row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 mt-3">
+                        {[
+                          { icon: Receipt, label: "Order ID", value: order.id.slice(0, 8).toUpperCase() },
+                          { icon: Phone, label: "Recipient", value: order.customer_phone || "—" },
+                          { icon: Package, label: "Package", value: isWalletTopup ? "Wallet Topup" : `${order.network} ${order.package_size}` },
+                          { icon: Calendar, label: "Date", value: date },
+                        ].map(({ icon: Icon, label, value }) => (
+                          <div key={label} className="rounded-xl bg-secondary/40 border border-border/50 px-3 py-2.5">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Icon className="w-3 h-3 text-muted-foreground/60" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/60">{label}</span>
+                            </div>
+                            <p className="text-xs font-bold text-foreground truncate">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Timeline */}
+                      {!isWalletTopup && (
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/50 mb-3">Order Timeline</p>
+                          <div className="flex items-start gap-0">
+                            {timelineSteps.map((step, i) => (
+                              <div key={step.label} className="flex-1 flex flex-col items-center">
+                                {/* Connector line */}
+                                <div className="flex items-center w-full">
+                                  <div className={cn("flex-1 h-0.5", i === 0 ? "invisible" : step.done ? "bg-primary/50" : "bg-border")} />
+                                  <div className={cn(
+                                    "w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                                    step.failed
+                                      ? "border-red-500 bg-red-500/10"
+                                      : step.done
+                                      ? "border-primary bg-primary/15"
+                                      : "border-border bg-secondary/40",
+                                  )}>
+                                    {step.failed ? (
+                                      <XCircle className="w-3.5 h-3.5 text-red-500" />
+                                    ) : step.spinning ? (
+                                      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                                    ) : step.done ? (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                                    ) : (
+                                      <div className="w-2 h-2 rounded-full bg-border" />
+                                    )}
+                                  </div>
+                                  <div className={cn("flex-1 h-0.5", i === timelineSteps.length - 1 ? "invisible" : step.done && !step.failed && i < timelineSteps.length - 1 && timelineSteps[i + 1]?.done ? "bg-primary/50" : "bg-border")} />
+                                </div>
+                                {/* Label */}
+                                <p className={cn(
+                                  "text-[10px] font-bold text-center mt-1.5 px-1 leading-tight",
+                                  step.failed ? "text-red-500" : step.done ? "text-foreground" : "text-muted-foreground/40",
+                                )}>
+                                  {step.label}
+                                </p>
+                                {step.time && (
+                                  <p className="text-[9px] text-muted-foreground/50 mt-0.5">{step.time}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

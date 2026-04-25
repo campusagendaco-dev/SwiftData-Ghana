@@ -26,7 +26,8 @@ import {
   Zap,
   Activity,
   Star,
-  MessageCircle
+  MessageCircle,
+  Gift
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -45,6 +46,7 @@ const userNavItems = [
   { to: "/dashboard/my-store", label: "My Store", icon: Store },
   { to: "/dashboard/report-issue", label: "Report Issue", icon: Flag },
   { to: "/dashboard/customers", label: "Address Book", icon: Users2 },
+  { to: "/dashboard/referral", label: "Referral Program", icon: Gift },
   { to: "/dashboard/account-settings", label: "Account Settings", icon: UserCog },
 ];
 
