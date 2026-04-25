@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import NotificationPopup from "@/components/NotificationPopup";
+import SupportChat from "@/components/SupportChat";
 import { Menu, User, Wallet, Bell, Search, PlusCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -124,6 +125,7 @@ const DashboardLayout = () => {
       </div>
 
       <NotificationPopup />
+      <SupportChat />
     </div>
   );
 };

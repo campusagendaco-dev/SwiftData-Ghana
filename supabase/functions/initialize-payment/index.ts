@@ -124,7 +124,7 @@ serve(async (req: Request) => {
         const earlyBody = await req.clone().json();
         earlyOrderType = earlyBody?.metadata?.order_type || "data";
       } catch { /* ignore */ }
-      const bypassTypes = ["agent_activation", "sub_agent_activation", "wallet_topup"];
+      const bypassTypes = ["agent_activation", "sub_agent_activation", "wallet_topup", "utility"];
       if (!bypassTypes.includes(earlyOrderType)) {
         return new Response(JSON.stringify({
           error: settings.holiday_message || "Ordering is currently disabled. Please try again later.",
@@ -413,6 +413,16 @@ serve(async (req: Request) => {
       resolvedAmount = amount;
     }
 
+    if (orderType === "utility") {
+      if (!metadata.utility_type || !metadata.utility_provider || !metadata.utility_account_number) {
+        return new Response(JSON.stringify({ error: "Missing utility payment details" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      resolvedAmount = amount;
+    }
+
     // ── Phone rate limiting for direct anonymous purchases ───────────────────
     // Block the same phone from spamming orders (max 2 pending within 2 min).
     if (orderType === "data" && !isAgentLinkedOrder) {
@@ -470,6 +480,12 @@ serve(async (req: Request) => {
       if (metadata.afa_residence) orderRow.afa_residence = metadata.afa_residence;
       if (metadata.afa_date_of_birth) orderRow.afa_date_of_birth = metadata.afa_date_of_birth;
 
+      // Utility fields
+      if (metadata.utility_type) orderRow.utility_type = metadata.utility_type;
+      if (metadata.utility_provider) orderRow.utility_provider = metadata.utility_provider;
+      if (metadata.utility_account_number) orderRow.utility_account_number = metadata.utility_account_number;
+      if (metadata.utility_account_name) orderRow.utility_account_name = metadata.utility_account_name;
+
       const { error: insertError } = await supabaseAdmin.from("orders").insert(orderRow);
       if (insertError) {
         console.error("Failed to create order:", insertError);
@@ -492,6 +508,11 @@ serve(async (req: Request) => {
       if (metadata.afa_email) patch.afa_email = metadata.afa_email;
       if (metadata.afa_residence) patch.afa_residence = metadata.afa_residence;
       if (metadata.afa_date_of_birth) patch.afa_date_of_birth = metadata.afa_date_of_birth;
+
+      if (metadata.utility_type) patch.utility_type = metadata.utility_type;
+      if (metadata.utility_provider) patch.utility_provider = metadata.utility_provider;
+      if (metadata.utility_account_number) patch.utility_account_number = metadata.utility_account_number;
+      if (metadata.utility_account_name) patch.utility_account_name = metadata.utility_account_name;
 
       if (orderType === "data") {
         patch.amount = resolvedAmount;

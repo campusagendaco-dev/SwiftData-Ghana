@@ -72,6 +72,9 @@ import AudioUnlocker from "@/components/AudioUnlocker";
 import NotificationPopup from "@/components/NotificationPopup";
 import DashboardCustomers from "./pages/DashboardCustomers";
 import DashboardMarketing from "./pages/DashboardMarketing";
+import DashboardUtilities from "./pages/DashboardUtilities";
+import DashboardAirtimeCash from "./pages/DashboardAirtimeCash";
+import AdminSupport from "./pages/AdminSupport";
 
 const queryClient = new QueryClient();
 
@@ -258,6 +261,8 @@ const AppContent = () => {
           <Route path="buy-data/mtn" element={<DashboardBuyDataNetwork network="MTN" />} />
           <Route path="buy-data/telecel" element={<DashboardBuyDataNetwork network="Telecel" />} />
           <Route path="buy-data/airteltigo" element={<DashboardBuyDataNetwork network="AirtelTigo" />} />
+          <Route path="utilities" element={<DashboardUtilities />} />
+          <Route path="airtime-to-cash" element={<DashboardAirtimeCash />} />
           <Route path="my-store" element={<DashboardMyStore />} />
           <Route path="report-issue" element={<DashboardReportIssue />} />
           <Route path="account-settings" element={<DashboardAccountSettings />} />
@@ -275,6 +280,7 @@ const AppContent = () => {
           <Route path="result-checker" element={<AgentFeatureGuard><DashboardResultCheckers /></AgentFeatureGuard>} />
           <Route path="leaderboard" element={<AgentFeatureGuard><DashboardLeaderboard /></AgentFeatureGuard>} />
           <Route path="marketing" element={<AgentFeatureGuard><DashboardMarketing /></AgentFeatureGuard>} />
+          <Route path="admin-support" element={<AgentFeatureGuard><AdminSupport /></AgentFeatureGuard>} />
 
           {/* Legacy aliases */}
           <Route path="orders" element={<Navigate to="/dashboard/transactions" replace />} />

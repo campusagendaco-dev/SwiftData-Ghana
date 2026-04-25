@@ -522,6 +522,10 @@ serve(async (req) => {
         afa_email: typeof metadata?.afa_email === "string" ? metadata.afa_email : null,
         afa_residence: typeof metadata?.afa_residence === "string" ? metadata.afa_residence : null,
         afa_date_of_birth: typeof metadata?.afa_date_of_birth === "string" ? metadata.afa_date_of_birth : null,
+        utility_type: typeof metadata?.utility_type === "string" ? metadata.utility_type : null,
+        utility_provider: typeof metadata?.utility_provider === "string" ? metadata.utility_provider : null,
+        utility_account_number: typeof metadata?.utility_account_number === "string" ? metadata.utility_account_number : null,
+        utility_account_name: typeof metadata?.utility_account_name === "string" ? metadata.utility_account_name : null,
       };
 
       const { error: recreateError } = await supabase.from("orders").insert(recreatedOrder);
@@ -622,6 +626,21 @@ serve(async (req) => {
     }
 
     existingOrder = claimedOrder;
+
+    if (orderType === "utility") {
+      // For now, utility payments are marked as 'paid' and require manual fulfillment or an API connection
+      await supabase.from("orders").update({ 
+        status: "paid", 
+        failure_reason: "Awaiting manual fulfillment / Token generation" 
+      }).eq("id", orderId);
+      
+      console.log("Utility payment successful, awaiting fulfillment:", orderId);
+      
+      return new Response(JSON.stringify({ received: true, fulfilled: false, status: "paid" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (orderType === "agent_activation") {
       const agentId = metadata?.agent_id;
