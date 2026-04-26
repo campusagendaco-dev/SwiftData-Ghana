@@ -158,5 +158,3 @@ const NotificationPopup = () => {
 };
 
 export default NotificationPopup;
-
-export default NotificationPopup;
