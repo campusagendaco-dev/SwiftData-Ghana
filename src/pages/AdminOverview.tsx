@@ -79,7 +79,19 @@ const AdminOverview = () => {
   const navigate = useNavigate();
   const { isDark } = useAppTheme();
 
-  const [stats, setStats] = useState({ totalOrders: 0, totalRevenue: 0, totalUsers: 0, pendingAgents: 0, swiftDataSubAgentShare: 0, totalAgentProfit: 0, totalSubAgentProfit: 0, todaySignups: 0, pendingWithdrawals: 0, unreadTickets: 0 });
+  const [stats, setStats] = useState({ 
+    totalOrders: 0, 
+    totalRevenue: 0, 
+    totalUsers: 0, 
+    pendingAgents: 0, 
+    swiftDataSubAgentShare: 0, 
+    totalAgentProfit: 0, 
+    totalSubAgentProfit: 0, 
+    todaySignups: 0, 
+    pendingWithdrawals: 0, 
+    unreadTickets: 0,
+    totalSystemBalance: 0
+  });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
   const [todaySales, setTodaySales] = useState<TodaySales>({ total: 0, customers: 0, agents: 0, subAgents: 0, successCount: 0, failedCount: 0, pendingCount: 0, newUsers: 0 });
@@ -118,21 +130,22 @@ const AdminOverview = () => {
       supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
     ]);
 
-    const orders = ordersRes.data || [];
-    const profiles = profilesRes.data || [];
-    const rangeOrders = rangeOrdersRes.data || [];
-    const wallets = walletsRes.data || [];
-    const salesStats = salesStatsRes.data || [];
+    const orders = ordersRes?.data || [];
+    const profiles = profilesRes?.data || [];
+    const rangeOrders = rangeOrdersRes?.data || [];
+    const wallets = walletsRes?.data || [];
+    const salesStats = salesStatsRes?.data || [];
 
-    const totalSystemBalance = wallets.reduce((s, w) => s + (w.balance || 0), 0);
-    const totalVolumeAllTime = salesStats.reduce((s, st) => s + (st.total_sales_volume || 0), 0);
-    const totalAgentProfitsAllTime = salesStats.reduce((s, st) => s + (st.total_own_profit || 0) + (st.total_commissions_paid || 0), 0);
-    const maintenanceRow = maintenanceRes.data as { is_enabled?: boolean; message?: string; table_ready?: boolean; error?: string } | null;
-    const maintenanceError = maintenanceRes.error || maintenanceRow?.error;
+    const totalSystemBalance = Array.isArray(wallets) ? wallets.reduce((s, w) => s + (Number(w?.balance) || 0), 0) : 0;
+    const totalVolumeAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_sales_volume) || 0), 0) : 0;
+    const totalAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_own_profit) || 0) + (Number(st?.total_commissions_paid) || 0), 0) : 0;
+    
+    const maintenanceRow = (maintenanceRes?.data as any) || null;
+    const maintenanceError = maintenanceRes?.error || maintenanceRow?.error;
     const isMonthly = timeRange === "1y" || timeRange === "all";
 
-    const agentIds = new Set(profiles.filter((p: any) => p.is_agent && p.agent_approved).map((p: any) => p.user_id));
-    const subAgentIds = new Set(profiles.filter((p: any) => p.is_sub_agent && p.sub_agent_approved).map((p: any) => p.user_id));
+    const agentIds = new Set(profiles.filter((p: any) => p?.is_agent && p?.agent_approved).map((p: any) => p?.user_id));
+    const subAgentIds = new Set(profiles.filter((p: any) => p?.is_sub_agent && p?.sub_agent_approved).map((p: any) => p?.user_id));
 
     const chartMap: Record<string, DailySalesPoint> = {};
     if (isMonthly) {
@@ -317,10 +330,10 @@ const AdminOverview = () => {
   };
 
   const statCards = [
-    { title: "Total Revenue",   value: `GH₵ ${stats.totalRevenue.toFixed(2)}`,                                icon: DollarSign, color: "text-green-500",  bg: "bg-green-500/10",  border: "border-green-500/20"  },
-    { title: "Agent Profits",   value: `GH₵ ${stats.totalAgentProfit.toFixed(2)}`, icon: DollarSign, color: "text-amber-500",  bg: "bg-amber-400/10",  border: "border-amber-400/20"  },
-    { title: "User Balances",   value: `GH₵ ${stats.totalSystemBalance.toFixed(2)}`,                        icon: Wallet,     color: "text-red-400",    bg: "bg-red-400/10",    border: "border-red-400/20"    },
-    { title: "Platform Share",  value: `GH₵ ${stats.swiftDataSubAgentShare.toFixed(2)}`,                      icon: Activity,   color: "text-blue-500",   bg: "bg-blue-400/10",   border: "border-blue-400/20"   },
+    { title: "Total Revenue",   value: `GH₵ ${(stats.totalRevenue || 0).toFixed(2)}`,                                icon: DollarSign, color: "text-green-500",  bg: "bg-green-500/10",  border: "border-green-500/20"  },
+    { title: "Agent Profits",   value: `GH₵ ${(stats.totalAgentProfit || 0).toFixed(2)}`, icon: DollarSign, color: "text-amber-500",  bg: "bg-amber-400/10",  border: "border-amber-400/20"  },
+    { title: "User Balances",   value: `GH₵ ${(stats.totalSystemBalance || 0).toFixed(2)}`,                        icon: Wallet,     color: "text-red-400",    bg: "bg-red-400/10",    border: "border-red-400/20"    },
+    { title: "Platform Share",  value: `GH₵ ${(stats.swiftDataSubAgentShare || 0).toFixed(2)}`,                      icon: Activity,   color: "text-blue-500",   bg: "bg-blue-400/10",   border: "border-blue-400/20"   },
     { title: "Active Users",    value: stats.totalUsers.toLocaleString(),                                      icon: Users,      color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
     {
       title: "Pending Agents",
@@ -441,17 +454,17 @@ const AdminOverview = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5" : "bg-white border-gray-100"}`}>
                 <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Gross Received</p>
-                <p className={`text-lg font-black text-emerald-500`}>GH₵ {stats.totalRevenue.toFixed(2)}</p>
+                <p className={`text-lg font-black text-emerald-500`}>GH₵ {(stats.totalRevenue || 0).toFixed(2)}</p>
                 <p className="text-[9px] text-white/20 mt-1">Total money users sent via Paystack.</p>
               </div>
               <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5" : "bg-white border-gray-100"}`}>
                 <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Held in Wallets</p>
-                <p className={`text-lg font-black text-red-400`}>GH₵ {stats.totalSystemBalance.toFixed(2)}</p>
+                <p className={`text-lg font-black text-red-400`}>GH₵ {(stats.totalSystemBalance || 0).toFixed(2)}</p>
                 <p className="text-[9px] text-white/20 mt-1">Liability: Funds users haven't spent yet.</p>
               </div>
               <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5" : "bg-white border-gray-100"}`}>
                 <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Platform Activity</p>
-                <p className={`text-lg font-black text-blue-400`}>GH₵ {(stats.totalRevenue - stats.totalSystemBalance).toFixed(2)}</p>
+                <p className={`text-lg font-black text-blue-400`}>GH₵ {((stats.totalRevenue || 0) - (stats.totalSystemBalance || 0)).toFixed(2)}</p>
                 <p className="text-[9px] text-white/20 mt-1">Actual value converted into orders.</p>
               </div>
             </div>
