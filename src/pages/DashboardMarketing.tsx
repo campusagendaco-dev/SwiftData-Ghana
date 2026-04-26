@@ -4,13 +4,16 @@ import { useToast } from "@/hooks/use-toast";
 import { 
   MessageCircle, Copy, Check, Share2, 
   Smartphone, Zap, Gift, ShoppingCart,
-  ExternalLink, QrCode
+  ExternalLink, QrCode, ArrowRight
 } from "lucide-react";
 import { basePackages } from "@/lib/data";
 import { getAppBaseUrl } from "@/lib/app-base-url";
+import { cn } from "@/lib/utils";
+import { useAppTheme } from "@/contexts/ThemeContext";
 
 const DashboardMarketing = () => {
   const { profile } = useAuth();
+  const { isDark } = useAppTheme();
   const { toast } = useToast();
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -37,13 +40,13 @@ const DashboardMarketing = () => {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-700">
       <div>
-        <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+        <h1 className={cn("text-3xl font-black tracking-tight flex items-center gap-3", isDark ? "text-white" : "text-gray-900")}>
           <div className="w-10 h-10 rounded-2xl bg-emerald-500 flex items-center justify-center shrink-0">
             <Share2 className="w-5 h-5 text-white" />
           </div>
           Marketing Tools
         </h1>
-        <p className="text-white/35 text-sm mt-1.5 ml-[52px]">
+        <p className={cn("text-sm mt-1.5 ml-[52px]", isDark ? "text-white/35" : "text-gray-500")}>
           Generate smart links to sell faster on WhatsApp and Social Media.
         </p>
       </div>
@@ -98,18 +101,21 @@ const DashboardMarketing = () => {
                 <Gift className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-white">Loyalty Announcement</h3>
+                <h3 className={cn("text-lg font-black", isDark ? "text-white" : "text-gray-900")}>Loyalty Announcement</h3>
                 <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Copy & Share with Customers</p>
               </div>
             </div>
             
             <div className="relative group">
-              <div className="p-5 rounded-2xl bg-black/40 border border-white/5 font-medium text-sm text-white/70 leading-relaxed italic">
+              <div className={cn(
+                "p-5 rounded-2xl border font-medium text-sm leading-relaxed italic transition-all",
+                isDark ? "bg-black/40 border-white/5 text-white/70" : "bg-white border-emerald-100 text-gray-700"
+              )}>
                 "🚀 BIG NEWS! We just launched **SwiftPoints**! 💎 Earn points every time you buy data or airtime on our platform. 💰 Get 1 Point for every GHS 10 spent. 🎁 Redeem points for FREE Wallet Cash! Start earning today: {storeUrl}"
               </div>
               <button 
                 onClick={() => handleCopy(`🚀 BIG NEWS! We just launched SwiftPoints! 💎 Earn points every time you buy data or airtime on our platform. 💰 Get 1 Point for every GHS 10 spent. 🎁 Redeem points for FREE Wallet Cash! Start earning today: ${storeUrl}`, "announcement")}
-                className="absolute top-4 right-4 h-10 px-4 rounded-xl bg-white text-black text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-400 transition-all shadow-xl"
+                className="absolute top-4 right-4 h-10 px-4 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-xl"
               >
                 {copied === "announcement" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copied === "announcement" ? "Copied" : "Copy Ad Text"}
@@ -123,16 +129,18 @@ const DashboardMarketing = () => {
                 <div className="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center">
                   <Zap className="w-5 h-5 text-sky-400" />
                 </div>
-                <h3 className="text-lg font-black text-white">Smart Bundle Links</h3>
+                <h3 className={cn("text-lg font-black", isDark ? "text-white" : "text-gray-900")}>Smart Bundle Links</h3>
               </div>
               
-              <div className="flex gap-2 p-1 bg-black/40 rounded-xl border border-white/5">
+              <div className={cn("flex gap-2 p-1 rounded-xl border", isDark ? "bg-black/40 border-white/5" : "bg-gray-100 border-gray-200")}>
                 {(["MTN", "Telecel", "AirtelTigo"] as const).map(net => (
                   <button
                     key={net}
                     onClick={() => setSelectedNetwork(net)}
                     className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all ${
-                      selectedNetwork === net ? "bg-white/10 text-white" : "text-white/30 hover:text-white/50"
+                      selectedNetwork === net 
+                        ? (isDark ? "bg-white/10 text-white" : "bg-white text-gray-900 shadow-sm") 
+                        : (isDark ? "text-white/30 hover:text-white/50" : "text-gray-400 hover:text-gray-600")
                     }`}
                   >
                     {net}
@@ -141,18 +149,21 @@ const DashboardMarketing = () => {
               </div>
             </div>
 
-            <p className="text-sm text-white/40">Generate links for specific bundles. When clicked, these pre-fill the order for your customer.</p>
+            <p className={cn("text-sm", isDark ? "text-white/40" : "text-gray-500")}>Generate links for specific bundles. When clicked, these pre-fill the order for your customer.</p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {packages.map(p => {
                 const pkgLink = `${storeUrl}?pkg=${p.size}`;
                 const waLink = generateWhatsAppLink(p.size);
                 return (
-                  <div key={p.size} className="group p-5 rounded-2xl bg-black/20 border border-white/5 hover:border-white/10 transition-all space-y-4">
+                  <div key={p.size} className={cn(
+                    "group p-5 rounded-2xl border transition-all space-y-4",
+                    isDark ? "bg-black/20 border-white/5 hover:border-white/10" : "bg-gray-50 border-gray-200 hover:border-gray-300"
+                  )}>
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">{selectedNetwork}</p>
-                        <p className="text-xl font-black text-white">{p.size}</p>
+                        <p className={cn("text-[10px] font-black uppercase tracking-widest", isDark ? "text-white/20" : "text-gray-400")}>{selectedNetwork}</p>
+                        <p className={cn("text-xl font-black", isDark ? "text-white" : "text-gray-900")}>{p.size}</p>
                       </div>
                       <span className="text-lg font-black text-sky-400">₵{p.price.toFixed(2)}</span>
                     </div>
@@ -160,7 +171,10 @@ const DashboardMarketing = () => {
                     <div className="flex gap-2">
                       <button 
                         onClick={() => handleCopy(pkgLink, p.size)}
-                        className="flex-1 h-10 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                        className={cn(
+                          "flex-1 h-10 rounded-xl border text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2",
+                          isDark ? "bg-white/5 border-white/10 text-white hover:bg-white/10" : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 shadow-sm"
+                        )}
                       >
                         {copied === p.size ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         Copy Link
@@ -204,15 +218,21 @@ const DashboardMarketing = () => {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/5 border border-white/10 p-6 flex items-center gap-4 group cursor-pointer hover:bg-white/10 transition-all">
-            <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center shrink-0 border border-white/10 group-hover:border-white/20 transition-all">
-              <QrCode className="w-6 h-6 text-white/40 group-hover:text-white transition-colors" />
+          <div className={cn(
+            "rounded-3xl border p-6 flex items-center gap-4 group cursor-pointer transition-all",
+            isDark ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+          )}>
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border transition-all",
+              isDark ? "bg-white/5 border-white/10 group-hover:border-white/20" : "bg-white border-gray-200 shadow-sm"
+            )}>
+              <QrCode className={cn("w-6 h-6 transition-colors", isDark ? "text-white/40 group-hover:text-white" : "text-gray-400 group-hover:text-gray-900")} />
             </div>
             <div>
-              <p className="text-sm font-black text-white">Generate QR Code</p>
-              <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-0.5">For offline posters</p>
+              <p className={cn("text-sm font-black", isDark ? "text-white" : "text-gray-900")}>Generate QR Code</p>
+              <p className={cn("text-[10px] font-bold uppercase tracking-widest mt-0.5", isDark ? "text-white/30" : "text-gray-400")}>For offline posters</p>
             </div>
-            <ArrowRight className="w-4 h-4 ml-auto text-white/20" />
+            <ArrowRight className={cn("w-4 h-4 ml-auto", isDark ? "text-white/20" : "text-gray-300")} />
           </div>
         </div>
 

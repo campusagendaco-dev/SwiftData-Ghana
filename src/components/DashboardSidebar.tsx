@@ -123,7 +123,13 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
               <p className={cn("text-[10px] font-bold uppercase tracking-widest", isDark ? "text-white/40" : "text-gray-400")}>Agent Console</p>
             </div>
           </Link>
-          <button onClick={onClose} className="md:hidden p-2 rounded-full hover:bg-white/5 text-white/50 hover:text-white transition-colors">
+          <button 
+            onClick={onClose} 
+            className={cn(
+              "md:hidden p-2 rounded-full transition-colors",
+              isDark ? "hover:bg-white/5 text-white/50 hover:text-white" : "hover:bg-gray-100 text-gray-400 hover:text-gray-900"
+            )}
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -194,7 +200,9 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                     <div className="flex items-center gap-3">
                       <item.icon className={cn(
                         "w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                        isActive ? "text-primary" : "text-white/30 group-hover:text-white/60"
+                        isActive 
+                          ? "text-primary" 
+                          : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
                       )} />
                       {item.label}
                     </div>
@@ -234,7 +242,9 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                         <div className="flex items-center gap-3">
                           <item.icon className={cn(
                             "w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                            isActive ? "text-amber-400" : "text-white/30 group-hover:text-white/60"
+                            isActive 
+                              ? "text-amber-400" 
+                              : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
                           )} />
                           {item.label}
                         </div>

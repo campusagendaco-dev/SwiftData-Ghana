@@ -70,7 +70,10 @@ const DashboardLayout = () => {
         )}>
           <button 
             onClick={() => setSidebarOpen(true)} 
-            className="md:hidden p-2 rounded-xl bg-white/5 text-white/70 hover:text-white transition-all"
+            className={cn(
+              "md:hidden p-2 rounded-xl transition-all",
+              isDark ? "bg-white/5 text-white/70 hover:text-white" : "bg-gray-100 text-gray-900 hover:bg-gray-200"
+            )}
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -174,11 +177,11 @@ const DashboardLayout = () => {
           )}>
             <div className="flex items-center gap-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-              <p className="text-xs font-bold text-amber-300">
+              <p className={cn("text-xs font-bold transition-colors", isDark ? "text-amber-300" : "text-amber-800")}>
                 Low wallet balance — ₵{walletBalance.toFixed(2)} remaining.{" "}
                 <button
                   onClick={() => navigate("/dashboard/wallet")}
-                  className="underline underline-offset-2 hover:text-amber-200 transition-colors"
+                  className={cn("underline underline-offset-2 transition-colors", isDark ? "hover:text-amber-200" : "hover:text-amber-900")}
                 >
                   Top up now
                 </button>

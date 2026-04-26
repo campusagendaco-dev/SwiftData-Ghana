@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check, Smartphone, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAppTheme } from "@/contexts/ThemeContext";
 
 interface Order {
   id: string;
@@ -101,6 +102,7 @@ function fmt(dateStr: string) {
 
 const DashboardOrders = () => {
   const { user, profile } = useAuth();
+  const { isDark } = useAppTheme();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -282,10 +284,10 @@ const DashboardOrders = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold flex items-center gap-2">
+          <h1 className={cn("font-display text-2xl sm:text-3xl font-bold flex items-center gap-2", isDark ? "text-white" : "text-gray-900")}>
             <ClipboardList className="w-6 h-6 sm:w-7 sm:h-7 text-primary" /> Transactions
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
+          <p className={cn("text-sm mt-0.5", isDark ? "text-muted-foreground" : "text-gray-500")}>
             Live delivery status for all your orders &mdash; updates instantly.
           </p>
         </div>
@@ -324,24 +326,24 @@ const DashboardOrders = () => {
           )}
           <p className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wide">Processing</p>
         </div>
-        <div className="rounded-xl bg-card border border-border px-3 py-2.5 sm:px-4 sm:py-3 text-center">
+        <div className={cn("rounded-xl border px-3 py-2.5 sm:px-4 sm:py-3 text-center", isDark ? "bg-card border-border" : "bg-white border-gray-200 shadow-sm")}>
           {loading ? <Skeleton className="h-6 w-16 mx-auto mb-1" /> : (
             <p className="font-black text-lg sm:text-xl text-primary truncate">₵{stats.totalSales.toFixed(2)}</p>
           )}
-          <p className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wide">Total Sales</p>
+          <p className={cn("text-[10px] sm:text-[11px] uppercase tracking-wide", isDark ? "text-muted-foreground" : "text-gray-500")}>Total Sales</p>
         </div>
-        <div className="rounded-xl bg-card border border-border px-3 py-2.5 sm:px-4 sm:py-3 text-center">
+        <div className={cn("rounded-xl border px-3 py-2.5 sm:px-4 sm:py-3 text-center", isDark ? "bg-card border-border" : "bg-white border-gray-200 shadow-sm")}>
           {loading ? <Skeleton className="h-6 w-16 mx-auto mb-1" /> : (
             <p className="font-black text-lg sm:text-xl text-primary truncate">₵{stats.totalProfit.toFixed(2)}</p>
           )}
-          <p className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wide">Total Profit</p>
+          <p className={cn("text-[10px] sm:text-[11px] uppercase tracking-wide", isDark ? "text-muted-foreground" : "text-gray-500")}>Total Profit</p>
         </div>
       </div>
 
       {/* Order cards */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-          <p className="font-semibold text-sm">
+      <div className={cn("rounded-2xl border overflow-hidden", isDark ? "border-border bg-card" : "border-gray-200 bg-white")}>
+        <div className={cn("px-5 py-4 border-b flex items-center justify-between", isDark ? "border-border" : "border-gray-100")}>
+          <p className={cn("font-semibold text-sm", isDark ? "text-white" : "text-gray-900")}>
             {loading ? "Loading…" : `${orders.length} order${orders.length !== 1 ? "s" : ""}`}
           </p>
           <span className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium">
@@ -395,7 +397,10 @@ const DashboardOrders = () => {
               const retryCount = retryCountRef.current[order.id] ?? 0;
 
               return (
-                <div key={order.id} className="rounded-xl border border-border bg-secondary/30 overflow-hidden">
+                <div key={order.id} className={cn(
+                  "rounded-xl border overflow-hidden transition-all",
+                  isDark ? "border-border bg-secondary/30" : "bg-gray-50/50 border-gray-100 hover:border-gray-200"
+                )}>
                   {/* Pending payment notice bar */}
                   {isStuck && (
                     <div className={cn(
@@ -431,7 +436,10 @@ const DashboardOrders = () => {
                   )}
                   {/* Main row — clickable */}
                   <button
-                    className="w-full flex items-center gap-3 p-3 hover:bg-secondary/60 transition-colors text-left"
+                    className={cn(
+                      "w-full flex items-center gap-3 p-3 transition-colors text-left",
+                      isDark ? "hover:bg-secondary/60" : "hover:bg-white/80"
+                    )}
                     onClick={() => setExpandedId(isExpanded ? null : order.id)}
                   >
                     {/* Network badge / Wallet icon */}
@@ -460,7 +468,7 @@ const DashboardOrders = () => {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-sm">
+                        <span className={cn("font-bold text-sm", isDark ? "text-white" : "text-gray-900")}>
                           {isWalletTopup ? "Wallet Topup" : isAirtime ? `${order.network} Airtime` : isUtility ? `${order.package_size}` : `${order.network} ${order.package_size}`}
                         </span>
                         {!isWalletTopup && (
@@ -470,7 +478,7 @@ const DashboardOrders = () => {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className={cn("text-xs mt-0.5", isDark ? "text-muted-foreground" : "text-gray-500")}>
                         {order.customer_phone || "—"} &nbsp;·&nbsp; {date} &nbsp;·&nbsp; {time}
                       </p>
                     </div>
@@ -478,7 +486,7 @@ const DashboardOrders = () => {
                     {/* Amount + profit + chevron */}
                     <div className="text-right shrink-0 flex items-center gap-2">
                       <div>
-                        <p className="font-bold text-sm">GH₵ {Number(order.amount).toFixed(2)}</p>
+                        <p className={cn("font-bold text-sm", isDark ? "text-white" : "text-gray-900")}>GH₵ {Number(order.amount).toFixed(2)}</p>
                         {(Number(order.profit) > 0 || Number(order.parent_profit) > 0) && (
                           <div className="flex items-center justify-end gap-1 mt-0.5">
                             <span className={`w-1.5 h-1.5 rounded-full ${ds.dot} ${ds.spinning ? "animate-pulse" : ""}`} />
@@ -488,13 +496,16 @@ const DashboardOrders = () => {
                           </div>
                         )}
                       </div>
-                      <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform shrink-0", isExpanded && "rotate-180")} />
+                      <ChevronDown className={cn("w-4 h-4 transition-transform shrink-0", isDark ? "text-muted-foreground" : "text-gray-400", isExpanded && "rotate-180")} />
                     </div>
                   </button>
 
                   {/* Expanded timeline */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 pt-1 border-t border-border/50 bg-secondary/20 animate-in slide-in-from-top-1 duration-150">
+                    <div className={cn(
+                      "px-4 pb-4 pt-1 border-t animate-in slide-in-from-top-1 duration-150",
+                      isDark ? "border-border/50 bg-secondary/20" : "border-gray-100 bg-gray-50/30"
+                    )}>
                       {/* Order details row */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 mt-3">
                         {[
@@ -503,12 +514,15 @@ const DashboardOrders = () => {
                           { icon: Package, label: "Service", value: isWalletTopup ? "Wallet Topup" : isAirtime ? `${order.network} Airtime` : isUtility ? order.package_size : `${order.network} ${order.package_size}` },
                           { icon: Calendar, label: "Date", value: date },
                         ].map(({ icon: Icon, label, value }) => (
-                          <div key={label} className="rounded-xl bg-secondary/40 border border-border/50 px-3 py-2.5">
+                          <div key={label} className={cn(
+                            "rounded-xl border px-3 py-2.5",
+                            isDark ? "bg-secondary/40 border-border/50" : "bg-white border-gray-100 shadow-sm"
+                          )}>
                             <div className="flex items-center gap-1.5 mb-1">
                               <Icon className="w-3 h-3 text-muted-foreground/60" />
                               <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/60">{label}</span>
                             </div>
-                            <p className="text-xs font-bold text-foreground truncate">{value}</p>
+                            <p className={cn("text-xs font-bold truncate", isDark ? "text-foreground" : "text-gray-900")}>{value}</p>
                           </div>
                         ))}
                       </div>
@@ -520,7 +534,11 @@ const DashboardOrders = () => {
                         style={
                           copiedId === order.id
                             ? { background: "rgba(34,197,94,0.12)", borderColor: "rgba(34,197,94,0.30)", color: "rgb(74,222,128)" }
-                            : { background: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.55)" }
+                            : { 
+                                background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", 
+                                borderColor: isDark ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.08)", 
+                                color: isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.6)" 
+                              }
                         }
                       >
                         {copiedId === order.id

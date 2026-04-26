@@ -11,6 +11,7 @@ import { cn, detectNetwork } from "@/lib/utils";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
+import { useAppTheme } from "@/contexts/ThemeContext";
 
 type PayMethod = "wallet" | "paystack";
 
@@ -48,6 +49,7 @@ const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100];
 
 const DashboardBuyAirtime = () => {
   const { user } = useAuth();
+  const { isDark } = useAppTheme();
   const { toast } = useToast();
 
   const [network, setNetwork] = useState("MTN");
@@ -204,7 +206,7 @@ const DashboardBuyAirtime = () => {
             </span>
           </div>
 
-          <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight flex items-center gap-3">
+          <h1 className={cn("text-3xl md:text-4xl font-black tracking-tight flex items-center gap-3", isDark ? "text-white" : "text-gray-900")}>
             <div
               className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-700"
               style={{ background: activeNet.buttonGradient }}
@@ -213,7 +215,7 @@ const DashboardBuyAirtime = () => {
             </div>
             Airtime Top-up
           </h1>
-          <p className="text-white/35 text-sm mt-1.5 ml-[52px]">
+          <p className={cn("text-sm mt-1.5 ml-[52px]", isDark ? "text-white/35" : "text-gray-500")}>
             Send airtime to any Ghana number instantly
           </p>
         </div>
@@ -224,7 +226,10 @@ const DashboardBuyAirtime = () => {
             className="absolute -inset-px rounded-2xl opacity-60 transition-all duration-700"
             style={{ background: `linear-gradient(135deg, ${activeNet.color}28, transparent 60%)` }}
           />
-          <div className="relative flex items-center gap-3 bg-black/40 backdrop-blur-xl border border-white/[0.08] rounded-2xl px-5 py-3.5">
+          <div className={cn(
+            "relative flex items-center gap-3 backdrop-blur-xl border rounded-2xl px-5 py-3.5",
+            isDark ? "bg-black/40 border-white/[0.08]" : "bg-white border-gray-200 shadow-sm"
+          )}>
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center"
               style={{
@@ -235,8 +240,8 @@ const DashboardBuyAirtime = () => {
               <Wallet className="w-4 h-4" style={{ color: activeNet.color }} />
             </div>
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-white/30">Balance</p>
-              <p className="text-lg font-black text-white leading-tight">
+              <p className={cn("text-[9px] font-bold uppercase tracking-widest", isDark ? "text-white/30" : "text-gray-400")}>Balance</p>
+              <p className={cn("text-lg font-black leading-tight", isDark ? "text-white" : "text-gray-900")}>
                 {walletBalance !== null ? `₵${walletBalance.toFixed(2)}` : "₵—"}
               </p>
             </div>
@@ -274,18 +279,18 @@ const DashboardBuyAirtime = () => {
               style={
                 isActive
                   ? {
-                      background: `linear-gradient(160deg, ${n.color}13 0%, ${n.color}05 100%)`,
+                      background: isDark ? `linear-gradient(160deg, ${n.color}13 0%, ${n.color}05 100%)` : `linear-gradient(160deg, ${n.color}10 0%, #fff 100%)`,
                       borderWidth: "2px",
                       borderStyle: "solid",
-                      borderColor: `${n.color}55`,
-                      boxShadow: `0 8px 36px ${n.glow}, inset 0 1px 0 ${n.color}18`,
+                      borderColor: isDark ? `${n.color}55` : `${n.color}40`,
+                      boxShadow: isDark ? `0 8px 36px ${n.glow}` : `0 8px 24px ${n.color}15`,
                       transform: "scale(1.035)",
                     }
                   : {
-                      background: "rgba(255,255,255,0.018)",
+                      background: isDark ? "rgba(255,255,255,0.018)" : "#fff",
                       borderWidth: "2px",
                       borderStyle: "solid",
-                      borderColor: "rgba(255,255,255,0.055)",
+                      borderColor: isDark ? "rgba(255,255,255,0.055)" : "rgba(0,0,0,0.05)",
                     }
               }
             >
@@ -322,7 +327,7 @@ const DashboardBuyAirtime = () => {
 
               <span
                 className="text-sm font-black transition-colors duration-300"
-                style={{ color: isActive ? "#fff" : "rgba(255,255,255,0.28)" }}
+                style={{ color: isActive ? (isDark ? "#fff" : n.color) : (isDark ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.3)") }}
               >
                 {n.name}
               </span>
@@ -346,10 +351,10 @@ const DashboardBuyAirtime = () => {
             }}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black bg-white/[0.05] border border-white/[0.08] text-white/50">
+              <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border", isDark ? "bg-white/[0.05] border-white/[0.08] text-white/50" : "bg-gray-100 border-gray-200 text-gray-400")}>
                 1
               </div>
-              <h2 className="text-xs font-bold uppercase tracking-[0.15em] text-white/45">
+              <h2 className={cn("text-xs font-bold uppercase tracking-[0.15em]", isDark ? "text-white/45" : "text-gray-500")}>
                 Recipient Phone
               </h2>
             </div>
@@ -363,7 +368,7 @@ const DashboardBuyAirtime = () => {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="024 000 0000"
-                className="w-full h-16 pl-14 pr-14 rounded-2xl text-xl font-bold text-white placeholder:text-white/10 focus:outline-none transition-all duration-300"
+                className={cn("w-full h-16 pl-14 pr-14 rounded-2xl text-xl font-bold placeholder:text-opacity-20 focus:outline-none transition-all duration-300", isDark ? "text-white placeholder:text-white" : "text-gray-900 placeholder:text-gray-400")}
                 style={
                   phone.length >= 10
                     ? {
@@ -399,10 +404,10 @@ const DashboardBuyAirtime = () => {
             }}
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black bg-white/[0.05] border border-white/[0.08] text-white/50">
+              <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border", isDark ? "bg-white/[0.05] border-white/[0.08] text-white/50" : "bg-gray-100 border-gray-200 text-gray-400")}>
                 2
               </div>
-              <h2 className="text-xs font-bold uppercase tracking-[0.15em] text-white/45">
+              <h2 className={cn("text-xs font-bold uppercase tracking-[0.15em]", isDark ? "text-white/45" : "text-gray-500")}>
                 Airtime Amount
               </h2>
             </div>
@@ -423,9 +428,9 @@ const DashboardBuyAirtime = () => {
                           boxShadow: `0 4px 16px ${activeNet.glow}`,
                         }
                       : {
-                          background: "rgba(255,255,255,0.03)",
-                          border: "1.5px solid rgba(255,255,255,0.07)",
-                          color: "rgba(255,255,255,0.35)",
+                          background: isDark ? "rgba(255,255,255,0.03)" : "#fff",
+                          border: isDark ? "1.5px solid rgba(255,255,255,0.07)" : "1.5px solid rgba(0,0,0,0.08)",
+                          color: isDark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.4)",
                         }
                   }
                 >
@@ -447,7 +452,7 @@ const DashboardBuyAirtime = () => {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-full h-24 pl-16 pr-6 rounded-3xl text-5xl font-black text-white placeholder:text-white/10 focus:outline-none transition-all duration-300"
+                className={cn("w-full h-24 pl-16 pr-6 rounded-3xl text-5xl font-black placeholder:text-opacity-20 focus:outline-none transition-all duration-300", isDark ? "text-white placeholder:text-white" : "text-gray-900 placeholder:text-gray-400")}
                 style={
                   numAmount > 0
                     ? {
@@ -471,11 +476,11 @@ const DashboardBuyAirtime = () => {
           <div
             className="rounded-3xl overflow-hidden transition-all duration-700"
             style={{
-              border: `1.5px solid ${canPay ? activeNet.color + "35" : "rgba(255,255,255,0.07)"}`,
+              border: isDark ? `1.5px solid ${canPay ? activeNet.color + "35" : "rgba(255,255,255,0.07)"}` : `1.5px solid ${canPay ? activeNet.color + "30" : "rgba(0,0,0,0.08)"}`,
               background: canPay
-                ? `linear-gradient(160deg, ${activeNet.color}0D 0%, rgba(10,10,14,0.97) 100%)`
-                : "rgba(255,255,255,0.018)",
-              boxShadow: canPay ? `0 24px 80px ${activeNet.glow}` : "none",
+                ? (isDark ? `linear-gradient(160deg, ${activeNet.color}0D 0%, rgba(10,10,14,0.97) 100%)` : `linear-gradient(160deg, ${activeNet.color}08 0%, #fff 100%)`)
+                : (isDark ? "rgba(255,255,255,0.018)" : "#fff"),
+              boxShadow: canPay ? (isDark ? `0 24px 80px ${activeNet.glow}` : `0 24px 60px ${activeNet.color}15`) : "none",
             }}
           >
             {/* Preview header */}
@@ -508,8 +513,7 @@ const DashboardBuyAirtime = () => {
                 <div>
                   <p className="text-xs text-white/35 font-medium">{network} Airtime</p>
                   <p
-                    className="text-2xl font-black transition-all duration-300"
-                    style={{ color: numAmount > 0 ? "#fff" : "rgba(255,255,255,0.18)" }}
+                    className={cn("text-2xl font-black transition-all duration-300", numAmount > 0 ? (isDark ? "text-white" : "text-gray-900") : (isDark ? "text-white/18" : "text-gray-200"))}
                   >
                     ₵{numAmount > 0 ? numAmount.toFixed(2) : "0.00"}
                   </p>
@@ -536,7 +540,7 @@ const DashboardBuyAirtime = () => {
                 style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
               >
                 <span className="text-xs text-white/30">Total</span>
-                <span className="text-xl font-black text-white">
+                <span className={cn("text-xl font-black", isDark ? "text-white" : "text-gray-900")}>
                   ₵{numAmount > 0 ? numAmount.toFixed(2) : "0.00"}
                 </span>
               </div>
@@ -548,8 +552,8 @@ const DashboardBuyAirtime = () => {
               <div
                 className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl"
                 style={{
-                  background: "rgba(0,0,0,0.25)",
-                  border: "1px solid rgba(255,255,255,0.05)",
+                  background: isDark ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.03)",
+                  border: isDark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(0,0,0,0.05)",
                 }}
               >
                 {(["wallet", "paystack"] as PayMethod[]).map((method) => (
@@ -591,9 +595,9 @@ const DashboardBuyAirtime = () => {
                         color: activeNet.buttonTextColor,
                       }
                     : {
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.07)",
-                        color: "rgba(255,255,255,0.18)",
+                        background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                        border: isDark ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(0,0,0,0.07)",
+                        color: isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.2)",
                         cursor: "not-allowed",
                       }
                 }
