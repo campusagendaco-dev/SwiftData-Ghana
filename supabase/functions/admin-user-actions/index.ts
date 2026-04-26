@@ -57,7 +57,8 @@ type AdminUserAction =
   | "manual_topup"
   | "update_system_settings"
   | "confirm_withdrawal"
-  | "get_provider_balance";
+  | "get_provider_balance"
+  | "update_credit_limit";
 
 
 
@@ -431,6 +432,28 @@ serve(async (req) => {
           await sendWithdrawalCompletedSms(supabaseAdmin, withdrawal.agent_id, withdrawal.amount);
         }
 
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      case "update_credit_limit": {
+        if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
+        const { credit_limit } = body;
+        if (typeof credit_limit !== "number" || credit_limit < 0) {
+          return new Response(JSON.stringify({ error: "Invalid credit limit amount" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { error: updateError } = await supabaseAdmin
+          .from("wallets")
+          .update({ credit_limit })
+          .eq("agent_id", user_id);
+
+        if (updateError) throw updateError;
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

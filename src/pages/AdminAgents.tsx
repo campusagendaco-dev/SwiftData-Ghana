@@ -27,6 +27,7 @@ interface AgentRow {
   agent_approved: boolean;
   created_at: string;
   wallet_balance?: number;
+  credit_limit?: number;
   sub_agent_count?: number;
   total_sales_volume?: number;
 }
@@ -52,6 +53,8 @@ const AdminAgents = () => {
   const [loadingSubAgents, setLoadingSubAgents] = useState<string | null>(null);
   const [topupAmount, setTopupAmount] = useState<Record<string, string>>({});
   const [toppingUp, setToppingUp] = useState<string | null>(null);
+  const [creditLimits, setCreditLimits] = useState<Record<string, string>>({});
+  const [updatingLimit, setUpdatingLimit] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [stuckActivations, setStuckActivations] = useState<StuckActivation[]>([]);
   const [forcingId, setForcingId] = useState<string | null>(null);
@@ -93,12 +96,12 @@ const AdminAgents = () => {
     const ids = rows.map(r => r.user_id);
     if (ids.length > 0) {
       const [walletsRes, subCountRes, salesRes] = await Promise.all([
-        supabase.from("wallets").select("agent_id, balance").in("agent_id", ids),
+        supabase.from("wallets").select("agent_id, balance, credit_limit").in("agent_id", ids),
         supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent" as any, true).in("parent_agent_id" as any, ids),
         supabase.from("user_sales_stats").select("user_id, total_sales_volume").in("user_id", ids),
       ]);
 
-      const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, w.balance]));
+      const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, { balance: w.balance, limit: w.credit_limit }]));
       const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s.total_sales_volume]));
       const subCountMap: Record<string, number> = {};
       (subCountRes.data || []).forEach((sa: any) => {
@@ -107,7 +110,9 @@ const AdminAgents = () => {
       });
 
       rows.forEach(r => {
-        r.wallet_balance = walletMap.get(r.user_id) ?? 0;
+        const wallet = walletMap.get(r.user_id) as any;
+        r.wallet_balance = wallet?.balance ?? 0;
+        r.credit_limit = wallet?.limit ?? 0;
         r.sub_agent_count = subCountMap[r.user_id] ?? 0;
         r.total_sales_volume = salesMap.get(r.user_id) ?? 0;
       });
@@ -249,6 +254,27 @@ const AdminAgents = () => {
       setAgents(prev => prev.map(a => a.user_id === agent.user_id ? { ...a, wallet_balance: data.new_balance } : a));
     }
     setToppingUp(null);
+  };
+
+  const handleUpdateCreditLimit = async (agentId: string) => {
+    const limit = parseFloat(creditLimits[agentId] || "");
+    if (isNaN(limit) || limit < 0) {
+      toast({ title: "Enter a valid limit amount", variant: "destructive" }); return;
+    }
+    setUpdatingLimit(agentId);
+
+    const { data, error } = await supabase.functions.invoke("admin-user-actions", {
+      body: { action: "update_credit_limit", user_id: agentId, credit_limit: limit },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+
+    if (error || data?.error) {
+      toast({ title: "Failed to update credit limit", description: data?.error || error?.message, variant: "destructive" });
+    } else {
+      toast({ title: `Credit limit updated to GH₵${limit.toFixed(2)}` });
+      setAgents(prev => prev.map(a => a.user_id === agentId ? { ...a, credit_limit: limit } : a));
+    }
+    setUpdatingLimit(null);
   };
 
   const toggleExpand = async (agentId: string) => {
@@ -576,6 +602,34 @@ const AdminAgents = () => {
                         {toppingUp === agent.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Wallet className="w-3 h-3 mr-1" /> Credit</>}
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Credit Limit (Overdraft) */}
+                  <div className="pt-4 border-t border-white/5">
+                    <p className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2">Credit Limit (Overdraft)</p>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-xs">GH₵</span>
+                        <Input
+                          type="number"
+                          placeholder="0.00"
+                          value={creditLimits[agent.user_id] ?? agent.credit_limit ?? ""}
+                          onChange={(e) => setCreditLimits(prev => ({ ...prev, [agent.user_id]: e.target.value }))}
+                          className="pl-9 w-32 bg-white/5 border-white/10 text-white text-sm rounded-xl focus:border-amber-400/40"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleUpdateCreditLimit(agent.user_id)}
+                        disabled={updatingLimit === agent.user_id}
+                        className="bg-emerald-400/20 text-emerald-400 hover:bg-emerald-400/30 border border-emerald-400/30 font-bold rounded-xl"
+                      >
+                        {updatingLimit === agent.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <><CheckCircle className="w-3 h-3 mr-1" /> Update Limit</>}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-white/30 mt-2">
+                      Allows agent to spend up to this amount after their balance hits zero.
+                    </p>
                   </div>
 
                   {/* MoMo info */}

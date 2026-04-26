@@ -11,22 +11,29 @@ function getFirstEnvValue(keys: string[]): string {
   return "";
 }
 
-function getProviderCredentials(): { apiKey: string; baseUrl: string } {
+function getProviderCredentials(settings: any): { 
+  apiKey: string; 
+  baseUrl: string;
+  secondaryApiKey: string;
+  secondaryBaseUrl: string;
+  autoFailover: boolean;
+} {
   const primaryApiKey = getFirstEnvValue([
     "PRIMARY_DATA_PROVIDER_API_KEY",
     "DATA_PROVIDER_API_KEY",
-    "DATA_PROVIDER_PRIMARY_API_KEY",
-  ]);
+  ]) || settings?.data_provider_api_key || "";
 
-  const primaryBaseUrl = getFirstEnvValue([
+  const primaryBaseUrl = (getFirstEnvValue([
     "PRIMARY_DATA_PROVIDER_BASE_URL",
     "DATA_PROVIDER_BASE_URL",
-    "DATA_PROVIDER_PRIMARY_BASE_URL",
-  ]).replace(/\/+$/, "");
+  ]) || settings?.data_provider_base_url || "").replace(/\/+$/, "");
 
   return {
     apiKey: primaryApiKey,
     baseUrl: primaryBaseUrl,
+    secondaryApiKey: settings?.secondary_data_provider_api_key || Deno.env.get("SECONDARY_DATA_PROVIDER_API_KEY") || "",
+    secondaryBaseUrl: (settings?.secondary_data_provider_base_url || Deno.env.get("SECONDARY_DATA_PROVIDER_BASE_URL") || "").replace(/\/+$/, ""),
+    autoFailover: settings?.auto_failover_enabled || false,
   };
 }
 
@@ -564,13 +571,10 @@ serve(async (req) => {
       });
     }
 
-    const pricingContext = await getPricingContext(supabaseAdmin);
-    const providerConfig = getProviderCredentials();
-    const DATA_PROVIDER_API_KEY = providerConfig.apiKey;
-    const DATA_PROVIDER_BASE_URL = providerConfig.baseUrl;
-
-    if (!DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
-      return new Response(JSON.stringify({ error: "Data provider not configured" }), {
+    const providerConfig = getProviderCredentials(settings);
+    
+    if (!providerConfig.apiKey || !providerConfig.baseUrl) {
+      return new Response(JSON.stringify({ error: "Primary data provider not configured" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -674,15 +678,39 @@ serve(async (req) => {
 
     console.log("Wallet buy data:", { orderId, network, package_size, customer_phone });
 
-    const fulfillmentResult = await placeDataOrder(
-      DATA_PROVIDER_BASE_URL,
-      DATA_PROVIDER_API_KEY,
+    let fulfillmentResult = await placeDataOrder(
+      providerConfig.baseUrl,
+      providerConfig.apiKey,
       network,
       package_size,
       customer_phone,
       DATA_PROVIDER_WEBHOOK_URL,
       expectedAmount,
     );
+
+    // ── SMART FAILOVER ───────────────────────────────────────────────────────
+    // If primary fails and failover is enabled and we have a secondary provider
+    if (!fulfillmentResult.ok && providerConfig.autoFailover && providerConfig.secondaryApiKey) {
+      console.warn(`Primary provider failed (${fulfillmentResult.reason}). Attempting failover to secondary...`);
+      
+      fulfillmentResult = await placeDataOrder(
+        providerConfig.secondaryBaseUrl,
+        providerConfig.secondaryApiKey,
+        network,
+        package_size,
+        customer_phone,
+        DATA_PROVIDER_WEBHOOK_URL,
+        expectedAmount,
+      );
+
+      if (fulfillmentResult.ok) {
+        console.log("Failover success! Order fulfilled via secondary provider.");
+      } else {
+        console.error(`Failover also failed: ${fulfillmentResult.reason}`);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     console.log("Fulfillment response:", {
       orderId,
       status: fulfillmentResult.status,

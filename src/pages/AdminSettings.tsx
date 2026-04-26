@@ -44,6 +44,9 @@ interface SystemSettings {
   data_provider_api_key: string;
   data_provider_base_url: string;
   airtime_provider_api_key: string;
+  secondary_data_provider_api_key: string;
+  secondary_data_provider_base_url: string;
+  auto_failover_enabled: boolean;
   show_announcement: boolean;
   announcement_title: string;
   announcement_message: string;
@@ -76,15 +79,18 @@ const AdminSettings = () => {
     at_markup_percentage: "0",
     auto_pending_sms_enabled: false,
     auto_pending_sms_message: "Your SwiftData transaction is pending. Please try again or contact support.",
-    payment_success_sms_message: "Your data bundle is being processed. Thanks for choosing SwiftData GH",
-    wallet_topup_sms_message: "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
+    payment_success_sms_message: "Your data bundle is being processed. Join for more giveaways & updates: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+    wallet_topup_sms_message: "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
     withdrawal_request_sms_message: "Withdrawal request of GHS {amount} received. It will be processed shortly.",
-    withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
+    withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
     order_failed_sms_message: "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
-    manual_credit_sms_message: "Your account has been manually credited with GHS {amount} by admin.",
+    manual_credit_sms_message: "Your account has been manually credited with GHS {amount}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
     data_provider_api_key: "",
     data_provider_base_url: "",
     airtime_provider_api_key: "",
+    secondary_data_provider_api_key: "",
+    secondary_data_provider_base_url: "",
+    auto_failover_enabled: false,
     show_announcement: false,
     announcement_title: "Welcome to SwiftPoints!",
     announcement_message: "You now earn rewards for every purchase. 100 points = GHS 1.00 cash back!",
@@ -132,6 +138,9 @@ const AdminSettings = () => {
           data_provider_api_key: String(data.data_provider_api_key || ""),
           data_provider_base_url: String(data.data_provider_base_url || ""),
           airtime_provider_api_key: String(data.airtime_provider_api_key || ""),
+          secondary_data_provider_api_key: String(data.secondary_data_provider_api_key || ""),
+          secondary_data_provider_base_url: String(data.secondary_data_provider_base_url || ""),
+          auto_failover_enabled: data.auto_failover_enabled || false,
           show_announcement: data.show_announcement || false,
           announcement_title: data.announcement_title || "Welcome to SwiftPoints!",
           announcement_message: data.announcement_message || "You now earn rewards for every purchase. 100 points = GHS 1.00 cash back!",
@@ -617,18 +626,53 @@ const AdminSettings = () => {
                     Top Up Wallet
                   </a>
                 </div>
-                <div className="space-y-2">
-                  <Label>API Base URL</Label>
-                  <Input value={settings.data_provider_base_url} onChange={(e) => setSettings({ ...settings, data_provider_base_url: e.target.value })} placeholder="https://your-provider-base-url.com" />
+                
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>API Base URL</Label>
+                    <Input value={settings.data_provider_base_url} onChange={(e) => setSettings({ ...settings, data_provider_base_url: e.target.value })} placeholder="https://your-provider-base-url.com" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Main API Key (Data)</Label>
+                    <Input type="password" value={settings.data_provider_api_key} onChange={(e) => setSettings({ ...settings, data_provider_api_key: e.target.value })} placeholder="api_..." />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Airtime API Key (Optional)</Label>
+                    <Input type="password" value={settings.airtime_provider_api_key} onChange={(e) => setSettings({ ...settings, airtime_provider_api_key: e.target.value })} placeholder="Defaults to Main Key if empty" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Main API Key (Data)</Label>
-                  <Input type="password" value={settings.data_provider_api_key} onChange={(e) => setSettings({ ...settings, data_provider_api_key: e.target.value })} placeholder="api_..." />
+              </div>
+
+              <div className="pt-6 border-t border-white/5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20">Smart Failover</Badge>
+                    <h3 className="text-sm font-bold">Secondary Provider (Backup)</h3>
+                  </div>
+                  <Switch
+                    checked={settings.auto_failover_enabled}
+                    onCheckedChange={(c) => setSettings({ ...settings, auto_failover_enabled: c })}
+                  />
                 </div>
-                <div className="space-y-2">
-                  <Label>Airtime API Key (Optional)</Label>
-                  <Input type="password" value={settings.airtime_provider_api_key} onChange={(e) => setSettings({ ...settings, airtime_provider_api_key: e.target.value })} placeholder="Defaults to Main Key if empty" />
-                </div>
+                
+                {settings.auto_failover_enabled && (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                    <div className="space-y-2">
+                      <Label>Backup API Base URL</Label>
+                      <Input value={settings.secondary_data_provider_base_url} onChange={(e) => setSettings({ ...settings, secondary_data_provider_base_url: e.target.value })} placeholder="https://backup-provider.com" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Backup API Key</Label>
+                      <Input type="password" value={settings.secondary_data_provider_api_key} onChange={(e) => setSettings({ ...settings, secondary_data_provider_api_key: e.target.value })} placeholder="api_..." />
+                    </div>
+                    <Alert className="bg-amber-500/5 border-amber-500/20">
+                      <AlertCircle className="h-4 w-4 text-amber-500" />
+                      <AlertDescription className="text-[10px] text-amber-500/80">
+                        When enabled, the system will automatically switch to this backup if the primary provider fails.
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

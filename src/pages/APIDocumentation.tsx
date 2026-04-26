@@ -126,15 +126,25 @@ function MethodBadge({ method }: { method: "GET" | "POST" }) {
 
 function ParamRow({ name, type, required, desc }: { name: string; type: string; required: boolean; desc: string }) {
   return (
-    <div className="grid grid-cols-12 gap-3 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
-      <div className="col-span-3 font-mono text-amber-300 font-semibold">{name}</div>
-      <div className="col-span-2 text-sky-400 font-mono">{type}</div>
-      <div className="col-span-2">
+    <div className="flex flex-col md:grid md:grid-cols-12 md:gap-3 px-4 py-4 md:py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors gap-2">
+      <div className="md:col-span-3 flex items-center justify-between md:block">
+        <span className="font-mono text-amber-300 font-bold md:font-semibold">{name}</span>
+        <div className="md:hidden">
+          {required
+            ? <span className="text-red-400 font-black text-[9px] uppercase tracking-widest bg-red-400/10 px-2 py-0.5 rounded border border-red-400/20">Required</span>
+            : <span className="text-white/25 text-[9px] uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded border border-white/10">Optional</span>}
+        </div>
+      </div>
+      <div className="md:col-span-2 text-sky-400 font-mono flex items-center gap-2 md:block">
+        <span className="md:hidden text-white/20 font-sans text-[9px] uppercase">Type:</span>
+        {type}
+      </div>
+      <div className="hidden md:col-span-2 md:block">
         {required
           ? <span className="text-red-400 font-bold text-[10px] uppercase tracking-wide">Required</span>
           : <span className="text-white/25 text-[10px] uppercase tracking-wide">Optional</span>}
       </div>
-      <div className="col-span-5 text-white/45 leading-relaxed">{desc}</div>
+      <div className="md:col-span-5 text-white/50 md:text-white/45 leading-relaxed">{desc}</div>
     </div>
   );
 }
@@ -253,11 +263,32 @@ const APIDocumentation = () => {
       </div>
 
       <div className="flex max-w-[1400px] mx-auto pt-14">
-        <aside className="hidden lg:block w-56 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-4 border-r border-white/5">
+        <aside className="hidden lg:block w-64 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-4 border-r border-white/5">
           <Sidebar />
         </aside>
 
-        <main ref={scrollRef} className="flex-1 min-w-0 px-6 lg:px-12 xl:px-16 py-12 pb-32 space-y-24">
+        {/* Mobile Sidebar Overlay */}
+        {mobileNavOpen && (
+          <div className="fixed inset-0 z-[60] lg:hidden animate-in fade-in duration-300">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} />
+            <div className="absolute top-0 left-0 bottom-0 w-72 bg-[#08080a] border-r border-white/10 p-4 shadow-2xl animate-in slide-in-from-left duration-300">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-sky-400/20 flex items-center justify-center">
+                    <Code2 className="w-4 h-4 text-sky-400" />
+                  </div>
+                  <span className="font-black tracking-tight">API Docs</span>
+                </div>
+                <button onClick={() => setMobileNavOpen(false)} className="p-2 rounded-xl bg-white/5 border border-white/10">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <Sidebar />
+            </div>
+          </div>
+        )}
+
+        <main ref={scrollRef} className="flex-1 min-w-0 px-4 md:px-8 lg:px-12 xl:px-16 py-8 md:py-12 pb-32 space-y-20 md:space-y-24">
 
           {/* ── Overview ─────────────────────────────────────────────── */}
           <section>
@@ -301,11 +332,11 @@ const APIDocumentation = () => {
               </div>
               <h2 className="text-2xl font-black">Authentication</h2>
             </div>
-            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
-              Include your Developer API Key in the <code className="text-sky-400 bg-white/5 px-1.5 py-0.5 rounded-md">X-API-Key</code> header on every request.
+            <p className="text-white/45 text-sm mb-6 md:ml-11 max-w-xl">
+              Include your Developer API Key in the <code className="text-sky-400 bg-white/5 px-1.5 py-0.5 rounded-md font-mono">X-API-Key</code> header on every request.
             </p>
 
-            <div className="grid lg:grid-cols-2 gap-6 ml-11">
+            <div className="grid lg:grid-cols-2 gap-6 md:ml-11">
               <div className="space-y-4">
                 <CodeBlock code={`X-API-Key: ${userApiKey}`} label="Required Header" />
                 <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 flex gap-3">
@@ -426,15 +457,15 @@ const APIDocumentation = () => {
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">networkCode Reference</span>
                 </div>
                 {[
-                  { code: "MTN", name: "MTN Ghana", note: "Also accepts: YELLOW, YELLO" },
-                  { code: "TELECEL", name: "Telecel (Vodafone)", note: "Also accepts: VOD, VODAFONE" },
-                  { code: "AT", name: "AirtelTigo", note: "Supports AT iShare & BigData bundles" },
+                  { code: "MTN", name: "MTN Ghana", note: "YELLOW, YELLO" },
+                  { code: "TELECEL", name: "Telecel", note: "VODAFONE, VOD" },
+                  { code: "AT", name: "AirtelTigo", note: "iShare, BigData" },
                   { code: "GLO", name: "Glo Ghana", note: "" },
                 ].map(({ code, name, note }) => (
-                  <div key={code} className="grid grid-cols-12 gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
-                    <div className="col-span-3 font-mono font-black text-amber-300">{code}</div>
-                    <div className="col-span-5 font-semibold text-white/70">{name}</div>
-                    <div className="col-span-4 text-white/30 italic">{note}</div>
+                  <div key={code} className="flex flex-col md:grid md:grid-cols-12 md:gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02] gap-1">
+                    <div className="md:col-span-3 font-mono font-black text-amber-300">{code}</div>
+                    <div className="md:col-span-5 font-semibold text-white/70">{name}</div>
+                    <div className="md:col-span-4 text-white/30 text-[10px] md:text-xs italic">{note}</div>
                   </div>
                 ))}
               </div>
@@ -516,16 +547,16 @@ const APIDocumentation = () => {
                   <div className="col-span-10 text-[9px] font-bold uppercase tracking-widest text-white/20">Description</div>
                 </div>
                 {[
-                  { code: "400", title: "Bad Request", desc: "Missing or invalid parameters" },
-                  { code: "401", title: "Unauthorized", desc: "Missing or invalid X-API-Key header" },
-                  { code: "402", title: "Insufficient Balance", desc: "Wallet balance too low" },
-                  { code: "403", title: "Forbidden", desc: "API key disabled or suspended" },
-                  { code: "404", title: "Not Found", desc: "Endpoint does not exist" },
+                  { code: "400", title: "Bad Request", desc: "Missing parameters" },
+                  { code: "401", title: "Unauthorized", desc: "Invalid X-API-Key" },
+                  { code: "402", title: "Low Balance", desc: "Wallet balance too low" },
+                  { code: "403", title: "Forbidden", desc: "Key disabled" },
+                  { code: "404", title: "Not Found", desc: "Invalid endpoint" },
                 ].map(({ code, title, desc }) => (
-                  <div key={code} className="grid grid-cols-12 gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
-                    <div className="col-span-2 font-mono font-black text-sky-400">{code}</div>
-                    <div className="col-span-4 font-bold text-white/80">{title}</div>
-                    <div className="col-span-6 text-white/35">{desc}</div>
+                  <div key={code} className="flex items-center gap-4 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
+                    <div className="font-mono font-black text-sky-400 w-8">{code}</div>
+                    <div className="font-bold text-white/80 w-24 shrink-0">{title}</div>
+                    <div className="text-white/35 truncate">{desc}</div>
                   </div>
                 ))}
               </div>

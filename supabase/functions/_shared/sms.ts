@@ -34,13 +34,13 @@ export async function getSmsConfig(supabaseAdmin: any) {
     apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY"),
     senderId: settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh",
     templates: {
-      payment_success: settings?.payment_success_sms_message || "Success! Your {service} for {recipient} has been processed. Order ID: {order_id}. Thanks for choosing SwiftData GH",
-      utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed. Thanks for choosing SwiftData GH",
-      wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
+      payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} has been processed. Join for more giveaways & updates: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+      utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+      wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
       withdrawal_request: settings?.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
-      withdrawal_completed: settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
+      withdrawal_completed: settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
       order_failed: settings?.order_failed_sms_message || "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
-      manual_credit: settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount} by admin.",
+      manual_credit: settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
     }
   };
 }
