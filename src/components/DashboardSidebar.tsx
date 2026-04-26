@@ -78,7 +78,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, signOut, user: authUser } = useAuth();
-  const { theme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
   const { isOnline, quality } = useConnectivity();
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
@@ -103,8 +103,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
 
       <aside
         className={cn(
-          "fixed md:sticky top-0 left-0 z-50 w-72 h-screen flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 border-r border-white/5 shadow-2xl",
-          "bg-[#0d140d]/95 backdrop-blur-xl",
+          "fixed md:sticky top-0 left-0 z-50 w-72 h-screen flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 border-r shadow-2xl",
+          isDark ? "bg-[#0d140d]/95 backdrop-blur-xl border-white/5" : "bg-white border-gray-200",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -119,8 +119,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
               </div>
             </div>
             <div>
-              <p className="text-white font-black text-sm tracking-tight leading-tight group-hover:text-primary transition-colors">SwiftData GH</p>
-              <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Agent Console</p>
+              <p className={cn("font-black text-sm tracking-tight leading-tight group-hover:text-primary transition-colors", isDark ? "text-white" : "text-gray-900")}>SwiftData GH</p>
+              <p className={cn("text-[10px] font-bold uppercase tracking-widest", isDark ? "text-white/40" : "text-gray-400")}>Agent Console</p>
             </div>
           </Link>
           <button onClick={onClose} className="md:hidden p-2 rounded-full hover:bg-white/5 text-white/50 hover:text-white transition-colors">
@@ -130,7 +130,10 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
 
         {/* ── Enhanced User Profile Section ── */}
         <div className="px-5 py-6">
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 relative overflow-hidden group">
+          <div className={cn(
+            "p-4 rounded-2xl border relative overflow-hidden group transition-all",
+            isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"
+          )}>
             <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
               <Zap className="w-12 h-12" />
             </div>
@@ -143,7 +146,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0d140d]"></div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-black truncate">{profile?.full_name || "User"}</p>
+                <p className={cn("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{profile?.full_name || "User"}</p>
                 <p className="text-primary text-[10px] font-mono font-bold">{accountId}</p>
               </div>
             </div>
@@ -169,8 +172,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         <nav className="flex-1 px-4 py-2 space-y-8 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
           {/* User Menu */}
           <div>
-            <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-4 flex items-center gap-2">
-              <span className="w-1 h-1 rounded-full bg-white/20"></span>
+            <p className={cn("px-4 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2", isDark ? "text-white/20" : "text-gray-400")}>
+              <span className={cn("w-1 h-1 rounded-full", isDark ? "bg-white/20" : "bg-gray-300")}></span>
               Core Services
             </p>
             <div className="space-y-1">
@@ -184,8 +187,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                     className={cn(
                       "group flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
                       isActive 
-                        ? "text-white bg-gradient-to-r from-primary/20 to-transparent border-l-2 border-primary shadow-lg shadow-primary/5" 
-                        : "text-white/50 hover:text-white hover:bg-white/5"
+                        ? (isDark ? "text-white bg-gradient-to-r from-primary/20 to-transparent border-l-2 border-primary shadow-lg shadow-primary/5" : "text-gray-900 bg-amber-50 border-l-2 border-primary")
+                        : (isDark ? "text-white/50 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100")
                     )}
                   >
                     <div className="flex items-center gap-3">
@@ -205,8 +208,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
           {/* Agent Menu */}
           {isPaidAgent && (
             <div>
-              <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-4 flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-amber-400/40"></span>
+              <p className={cn("px-4 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2", isDark ? "text-white/20" : "text-gray-400")}>
+                <span className={cn("w-1 h-1 rounded-full", isDark ? "bg-amber-400/40" : "bg-amber-500/30")}></span>
                 Business Suite
               </p>
               <div className="space-y-1">
@@ -224,8 +227,8 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                         className={cn(
                           "group flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
                           isActive 
-                            ? "text-white bg-gradient-to-r from-amber-400/10 to-transparent border-l-2 border-amber-400 shadow-lg shadow-amber-400/5" 
-                            : "text-white/50 hover:text-white hover:bg-white/5"
+                            ? (isDark ? "text-white bg-gradient-to-r from-amber-400/10 to-transparent border-l-2 border-amber-400 shadow-lg shadow-amber-400/5" : "text-gray-900 bg-amber-50 border-l-2 border-amber-400")
+                            : (isDark ? "text-white/50 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100")
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -245,10 +248,15 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         </nav>
 
         {/* ── Premium Footer ── */}
-        <div className="p-4 border-t border-white/5">
+        <div className={cn("p-4 border-t", isDark ? "border-white/5" : "border-gray-100")}>
           <button
             onClick={handleSignOut}
-            className="flex items-center justify-center gap-3 w-full h-12 rounded-xl text-sm font-black text-red-400/80 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all duration-200"
+            className={cn(
+              "flex items-center justify-center gap-3 w-full h-12 rounded-xl text-sm font-black transition-all duration-200",
+              isDark 
+                ? "text-red-400/80 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20" 
+                : "text-red-600 hover:text-white hover:bg-red-500 border border-red-500/10"
+            )}
           >
             <LogOut className="w-4 h-4" />
             Sign Out Securely
