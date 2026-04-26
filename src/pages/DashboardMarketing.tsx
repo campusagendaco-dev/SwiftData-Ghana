@@ -92,6 +92,31 @@ const DashboardMarketing = () => {
 
         {/* Smart Bundle Links */}
         <div className="lg:col-span-8 space-y-6">
+          <div className="rounded-3xl bg-emerald-500/10 border border-emerald-500/20 p-8 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                <Gift className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">Loyalty Announcement</h3>
+                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Copy & Share with Customers</p>
+              </div>
+            </div>
+            
+            <div className="relative group">
+              <div className="p-5 rounded-2xl bg-black/40 border border-white/5 font-medium text-sm text-white/70 leading-relaxed italic">
+                "🚀 BIG NEWS! We just launched **SwiftPoints**! 💎 Earn points every time you buy data or airtime on our platform. 💰 Get 1 Point for every GHS 10 spent. 🎁 Redeem points for FREE Wallet Cash! Start earning today: {storeUrl}"
+              </div>
+              <button 
+                onClick={() => handleCopy(`🚀 BIG NEWS! We just launched SwiftPoints! 💎 Earn points every time you buy data or airtime on our platform. 💰 Get 1 Point for every GHS 10 spent. 🎁 Redeem points for FREE Wallet Cash! Start earning today: ${storeUrl}`, "announcement")}
+                className="absolute top-4 right-4 h-10 px-4 rounded-xl bg-white text-black text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-emerald-400 transition-all shadow-xl"
+              >
+                {copied === "announcement" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied === "announcement" ? "Copied" : "Copy Ad Text"}
+              </button>
+            </div>
+          </div>
+
           <div className="rounded-3xl bg-white/5 border border-white/10 p-8 space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">

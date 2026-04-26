@@ -44,6 +44,9 @@ interface SystemSettings {
   data_provider_api_key: string;
   data_provider_base_url: string;
   airtime_provider_api_key: string;
+  show_announcement: boolean;
+  announcement_title: string;
+  announcement_message: string;
 }
 
 const AdminSettings = () => {
@@ -82,6 +85,9 @@ const AdminSettings = () => {
     data_provider_api_key: "",
     data_provider_base_url: "",
     airtime_provider_api_key: "",
+    show_announcement: false,
+    announcement_title: "Welcome to SwiftPoints!",
+    announcement_message: "You now earn rewards for every purchase. 100 points = GHS 1.00 cash back!",
   });
 
   useEffect(() => {
@@ -126,6 +132,9 @@ const AdminSettings = () => {
           data_provider_api_key: String(data.data_provider_api_key || ""),
           data_provider_base_url: String(data.data_provider_base_url || ""),
           airtime_provider_api_key: String(data.airtime_provider_api_key || ""),
+          show_announcement: data.show_announcement || false,
+          announcement_title: data.announcement_title || "Welcome to SwiftPoints!",
+          announcement_message: data.announcement_message || "You now earn rewards for every purchase. 100 points = GHS 1.00 cash back!",
         });
       }
       setLoading(false);
@@ -401,6 +410,48 @@ const AdminSettings = () => {
                     onChange={(e) => setSettings({ ...settings, holiday_message: e.target.value })}
                     className="min-h-[100px]"
                   />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-500/20 bg-emerald-500/5">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Gift className="w-5 h-5 text-emerald-500" />
+                Welcome Announcement (Popup)
+              </CardTitle>
+              <CardDescription>Inform all users about new features like SwiftPoints.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label>Show Popup to Users</Label>
+                <Switch
+                  checked={settings.show_announcement}
+                  onCheckedChange={(c) => setSettings({ ...settings, show_announcement: c })}
+                  className="data-[state=checked]:bg-emerald-500"
+                />
+              </div>
+
+              {settings.show_announcement && (
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <Label>Announcement Title</Label>
+                    <Input
+                      value={settings.announcement_title}
+                      onChange={(e) => setSettings({ ...settings, announcement_title: e.target.value })}
+                      placeholder="e.g. Big News!"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Message Content</Label>
+                    <Textarea
+                      value={settings.announcement_message}
+                      onChange={(e) => setSettings({ ...settings, announcement_message: e.target.value })}
+                      placeholder="Explain the new feature..."
+                      className="min-h-[100px]"
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>
