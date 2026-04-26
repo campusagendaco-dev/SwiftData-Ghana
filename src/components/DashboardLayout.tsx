@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import NotificationPopup from "@/components/NotificationPopup";
-import { Menu, User, Wallet, Bell, Search, PlusCircle, AlertTriangle, X } from "lucide-react";
+import { Menu, User, Wallet, Bell, Search, PlusCircle, AlertTriangle, X, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -21,7 +21,7 @@ const DashboardLayout = () => {
   const [alertDismissed, setAlertDismissed] = useState(false);
   const { user, profile } = useAuth();
   const navigate = useNavigate();
-  const { theme } = useAppTheme();
+  const { theme, isDark, toggleDark } = useAppTheme();
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const { isOnline, quality } = useConnectivity();
 
@@ -113,6 +113,15 @@ const DashboardLayout = () => {
                 <PlusCircle className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleDark}
+              className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all text-white/70 hover:text-white"
+              title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {isDark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+            </button>
 
             {/* Notification Bell */}
             <button className="relative p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all group">
