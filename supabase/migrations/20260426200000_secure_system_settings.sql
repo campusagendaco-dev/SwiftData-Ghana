@@ -20,7 +20,6 @@ SELECT
   mtn_markup_percentage,
   telecel_markup_percentage,
   at_markup_percentage,
-  created_at,
   updated_at
 FROM public.system_settings;
 

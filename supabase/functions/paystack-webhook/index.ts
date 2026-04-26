@@ -594,6 +594,17 @@ serve(async (req) => {
     }
 
     if (orderType === "agent_activation") {
+      const AGENT_ACTIVATION_MINIMUM = 80; // GHS — enforced server-side
+      if (verifiedAmount < AGENT_ACTIVATION_MINIMUM * 0.97) {
+        await supabase.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment too low for agent activation. Minimum GHS ${AGENT_ACTIVATION_MINIMUM}, received GHS ${verifiedAmount.toFixed(2)}.`,
+        }).eq("id", orderId);
+        return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Activation payment below minimum" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const agentId = metadata?.agent_id;
       if (agentId) {
         await supabase.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", agentId);

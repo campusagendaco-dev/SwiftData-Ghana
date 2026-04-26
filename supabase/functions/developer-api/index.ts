@@ -104,6 +104,42 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+// SHA-256 hex digest — used to verify API keys without storing plaintext
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isValidUUID(v: string): boolean { return UUID_RE.test(v); }
+
+const ALLOWED_BILL_TYPES = new Set(["ECG", "DSTV", "GOTV", "STARTIMES"]);
+
+const MAX_PURCHASE_AMOUNT = 5000; // GHS safety cap per single API call
+
+const API_KEY_RE = /^swft_live_[0-9a-f]{32}$/;
+
+// Block private/loopback/link-local destinations to prevent webhook SSRF
+const PRIVATE_IP_RE = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fc|fd)/i;
+function isSafeWebhookUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    if (PRIVATE_IP_RE.test(parsed.hostname)) return false;
+    if (parsed.hostname === "localhost") return false;
+    return true;
+  } catch { return false; }
+}
+
+// Sanitize error before sending — never leak DB internals or stack traces
+function safeErrorMsg(err: unknown): string {
+  if (!(err instanceof Error)) return "Internal error";
+  const msg = err.message || "";
+  // Strip anything that looks like a DB query, stack frame, or connection string
+  if (/syntax|duplicate|foreign key|relation|column|pgrst|supabase|postgres|ssl|connect/i.test(msg)) return "Internal error";
+  return msg.length > 200 ? msg.slice(0, 200) : msg;
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -129,19 +165,22 @@ serve(async (req: Request) => {
     ""
   ).trim();
   if (!rawApiKey) return json({ success: false, error: "Missing API key. Supply via X-API-Key header." }, 401);
+  if (!API_KEY_RE.test(rawApiKey)) return json({ success: false, error: "Invalid API key format." }, 401);
 
-  // ── 2. Authenticate ────────────────────────────────────────────────────────
-  const prefix = rawApiKey.slice(0, 12); 
+  // ── 2. Authenticate (hash-based — plaintext never stored) ─────────────────
+  const prefix = rawApiKey.slice(0, 12);
+  const incomingHash = await sha256Hex(rawApiKey);
+
   const { data: candidates } = await supabase
     .from("profiles")
-    .select("user_id, full_name, email, api_key, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, agent_approved, sub_agent_approved, api_custom_prices")
-    .like("api_key", `${prefix}%`);
+    .select("user_id, full_name, api_key_hash, api_key_prefix, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, agent_approved, sub_agent_approved, api_custom_prices")
+    .eq("api_key_prefix", prefix);
 
   type ProfileRow = {
     user_id: string;
     full_name: string;
-    email: string;
-    api_key: string | null;
+    api_key_hash: string | null;
+    api_key_prefix: string | null;
     api_access_enabled: boolean;
     api_rate_limit: number | null;
     api_allowed_actions: string[] | null;
@@ -151,8 +190,10 @@ serve(async (req: Request) => {
     sub_agent_approved: boolean;
     api_custom_prices: Record<string, Record<string, number>> | null;
   };
-  
-  let profile = (candidates as ProfileRow[] ?? []).find((p) => p.api_key && safeEqual(p.api_key, rawApiKey));
+
+  let profile = (candidates as ProfileRow[] ?? []).find(
+    (p) => p.api_key_hash && safeEqual(p.api_key_hash, incomingHash)
+  );
   if (!profile) return json({ success: false, error: "Invalid API key" }, 401);
 
   // ── 3. Access checks ──────────────────────────────────────────────────────
@@ -173,16 +214,13 @@ serve(async (req: Request) => {
     }
   }
 
-  // ── 5. Rate limiting ─────────────────────────────────────────────────────
+  // ── 5. Rate limiting (atomic — no TOCTOU race) ───────────────────────────
   const rateLimit = Number(profile.api_rate_limit) || 30;
-  const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
-  const { count: recentCount } = await supabase
-    .from("orders")
-    .select("id", { count: "exact", head: true })
-    .eq("agent_id", profile.user_id)
-    .gte("created_at", oneMinuteAgo);
-
-  if ((recentCount ?? 0) >= rateLimit) {
+  const { data: withinLimit } = await supabase.rpc("check_and_increment_rate_limit", {
+    p_user_id: profile.user_id,
+    p_rate_limit: rateLimit,
+  });
+  if (!withinLimit) {
     return json({ success: false, error: `Rate limit exceeded: max ${rateLimit} requests/minute.` }, 429);
   }
 
@@ -231,11 +269,10 @@ serve(async (req: Request) => {
     if (finalAction === "account") {
       const { data: wallet } = await supabase
         .from("wallets").select("balance").eq("agent_id", profile.user_id).maybeSingle();
-      return json({ 
-        success: true, 
+      return json({
+        success: true,
         name: profile.full_name,
         balance: Number(wallet?.balance ?? 0),
-        apiKey: rawApiKey,
         active: profile.api_access_enabled
       });
     }
@@ -264,13 +301,19 @@ serve(async (req: Request) => {
 
       const phone = payload.customerNumber || payload.phone;
       const network = payload.networkCode || payload.network;
-      const amount = payload.amount;
+      const amount = payload.amount != null ? Number(payload.amount) : undefined;
       // plan_id (original format) accepted as alias for package_size
       const package_size = payload.package_size || payload.plan_id;
       const request_id = payload.request_id;
 
       if (!network || !phone || (!amount && !package_size))
         return json({ success: false, error: "Missing required fields: network, phone, and (amount or package_size)" }, 400);
+
+      if (amount !== undefined && (isNaN(amount) || amount <= 0 || amount > MAX_PURCHASE_AMOUNT))
+        return json({ success: false, error: `amount must be a positive number no greater than ${MAX_PURCHASE_AMOUNT} GHS` }, 400);
+
+      if (request_id !== undefined && (typeof request_id !== "string" || !isValidUUID(request_id)))
+        return json({ success: false, error: "request_id must be a valid UUID v4 string" }, 400);
 
       const n = String(network).toUpperCase();
       let normalizedNetwork = network;
@@ -280,18 +323,21 @@ serve(async (req: Request) => {
       else if (n === "GLO") normalizedNetwork = "GLO";
 
       let finalPackageSize = package_size || `${amount} GHS Airtime`;
-      let expectedPrice = amount;
+      let expectedPrice: number = amount ?? 0;
 
       if (!amount && package_size) {
         const normalizedPkg = package_size.replace(/\s+/g, "").toUpperCase();
         const { data: pkgRow } = await supabase.from("global_package_settings").select("agent_price, public_price, api_price, is_unavailable").eq("network", normalizedNetwork).eq("package_size", normalizedPkg).maybeSingle();
         if (pkgRow?.is_unavailable) return json({ success: false, error: "Package is unavailable" }, 400);
+        if (!pkgRow) return json({ success: false, error: `Package '${package_size}' not found for network '${normalizedNetwork}'` }, 400);
         const customOverride = profile.api_custom_prices?.[normalizedNetwork]?.[package_size];
         if (Number(customOverride) > 0) expectedPrice = Number(customOverride);
-        else if (Number(pkgRow?.api_price) > 0) expectedPrice = Number(pkgRow!.api_price);
-        else if (Number(pkgRow?.agent_price) > 0) expectedPrice = Number(pkgRow!.agent_price);
-        else expectedPrice = Number(pkgRow?.public_price);
+        else if (Number(pkgRow.api_price) > 0) expectedPrice = Number(pkgRow.api_price);
+        else if (Number(pkgRow.agent_price) > 0) expectedPrice = Number(pkgRow.agent_price);
+        else expectedPrice = Number(pkgRow.public_price);
       }
+
+      if (expectedPrice <= 0) return json({ success: false, error: "Could not determine price for this purchase" }, 400);
 
       const { data: debitResult } = await supabase.rpc("debit_wallet", { p_agent_id: profile.user_id, p_amount: expectedPrice });
       if (!debitResult?.success) return json({ success: false, error: "Insufficient balance" }, 402);
@@ -301,7 +347,8 @@ serve(async (req: Request) => {
 
       const DATA_PROVIDER_API_KEY = getEnv("PRIMARY_DATA_PROVIDER_API_KEY", "DATA_PROVIDER_API_KEY");
       const DATA_PROVIDER_BASE_URL = getEnv("PRIMARY_DATA_PROVIDER_BASE_URL", "DATA_PROVIDER_BASE_URL");
-      const WEBHOOK_URL = profile.api_webhook_url || getEnv("DATA_PROVIDER_WEBHOOK_URL");
+      const rawWebhook = profile.api_webhook_url || getEnv("DATA_PROVIDER_WEBHOOK_URL");
+      const WEBHOOK_URL = rawWebhook && isSafeWebhookUrl(rawWebhook) ? rawWebhook : "";
 
       // FORCED MOCK FOR MISSING CONFIG
       if (!DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
@@ -329,6 +376,9 @@ serve(async (req: Request) => {
       const { customerNumber, billType, phoneNumber } = payload;
       if (!customerNumber || !billType) return json({ success: false, error: "Missing required fields: customerNumber, billType" }, 400);
 
+      if (!ALLOWED_BILL_TYPES.has(String(billType).toUpperCase()))
+        return json({ success: false, error: `Invalid billType. Allowed: ${[...ALLOWED_BILL_TYPES].join(", ")}` }, 400);
+
       // Optional phone validation for ECG
       if (billType.toUpperCase() === "ECG" && phoneNumber) {
         const norm = normalizeRecipient(phoneNumber);
@@ -351,6 +401,13 @@ serve(async (req: Request) => {
       const { customerNumber, billType, amount, senderName, phoneNumber } = payload;
       if (!customerNumber || !billType || !amount) return json({ success: false, error: "Missing required fields: customerNumber, billType, amount" }, 400);
 
+      if (!ALLOWED_BILL_TYPES.has(String(billType).toUpperCase()))
+        return json({ success: false, error: `Invalid billType. Allowed: ${[...ALLOWED_BILL_TYPES].join(", ")}` }, 400);
+
+      const payAmount = Number(amount);
+      if (isNaN(payAmount) || payAmount <= 0 || payAmount > MAX_PURCHASE_AMOUNT)
+        return json({ success: false, error: `amount must be a positive number no greater than ${MAX_PURCHASE_AMOUNT} GHS` }, 400);
+
       // Validate phone number for ECG (required for tokens)
       if (billType.toUpperCase() === "ECG") {
         if (!phoneNumber) return json({ success: false, error: "Phone number is required for ECG payments to receive tokens" }, 400);
@@ -360,7 +417,6 @@ serve(async (req: Request) => {
         }
       }
 
-      const payAmount = Number(amount);
       const { data: debitResult } = await supabase.rpc("debit_wallet", { p_agent_id: profile.user_id, p_amount: payAmount });
       if (!debitResult?.success) return json({ success: false, error: "Insufficient balance" }, 402);
 
@@ -404,19 +460,20 @@ serve(async (req: Request) => {
         return json({ success: true, message: "SMS sent successfully" });
       } catch (err) {
         await supabase.rpc("credit_wallet", { p_agent_id: profile.user_id, p_amount: smsCharge });
-        return json({ success: false, error: `Failed to send SMS: ${err.message}` }, 500);
+        return json({ success: false, error: `Failed to send SMS: ${safeErrorMsg(err)}` }, 500);
       }
     }
 
     // ── GET /api/orders ──────────────────────────────────────────────────────
     if (finalAction === "orders") {
-      const limit = Math.min(Number(url.searchParams.get("limit") ?? 20), 100);
+      const limitParam = parseInt(url.searchParams.get("limit") ?? "20", 10);
+      const limit = Math.min(isNaN(limitParam) ? 20 : limitParam, 100);
       const { data: orders } = await supabase.from("orders").select("id, created_at, network, package_size, customer_phone, amount, status, failure_reason").eq("agent_id", profile.user_id).order("created_at", { ascending: false }).limit(limit);
       return json({ success: true, orders: orders ?? [] });
     }
 
     return json({ success: false, error: "Endpoint not found" }, 404);
   } catch (err) {
-    return json({ success: false, error: err instanceof Error ? err.message : "Internal error" }, 500);
+    return json({ success: false, error: safeErrorMsg(err) }, 500);
   }
 });

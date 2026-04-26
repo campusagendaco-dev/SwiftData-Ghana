@@ -44,6 +44,9 @@ EXECUTE FUNCTION public.award_loyalty_points();
 
 -- 5. RPC to convert points to wallet balance
 -- Rate: 100 points = 1 GHS
+-- Drop any overloaded variants before replacing to keep the name unique
+DROP FUNCTION IF EXISTS public.convert_loyalty_points(UUID, DECIMAL) CASCADE;
+DROP FUNCTION IF EXISTS public.convert_loyalty_points(UUID, NUMERIC) CASCADE;
 CREATE OR REPLACE FUNCTION public.convert_loyalty_points(user_id UUID, points_to_convert DECIMAL)
 RETURNS JSONB AS $$
 DECLARE
@@ -81,4 +84,4 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 6. Grant access
-GRANT EXECUTE ON FUNCTION public.convert_loyalty_points TO authenticated;
+GRANT EXECUTE ON FUNCTION public.convert_loyalty_points(UUID, DECIMAL) TO authenticated;

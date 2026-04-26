@@ -31,6 +31,8 @@ export interface Profile {
   referral_code: string | null;
   referred_by: string | null;
   api_key: string | null;
+  api_key_prefix: string | null;
+  api_key_hash: string | null;
 }
 
 interface AuthContextType {

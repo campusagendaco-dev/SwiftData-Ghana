@@ -403,6 +403,55 @@ serve(async (req: Request) => {
       }
     }
 
+    // ── Agent activation: enforce fixed fee + bind agent_id to JWT user ────────
+    if (orderType === "agent_activation") {
+      const AGENT_FEE = 80;
+      const expectedTotal = Number((AGENT_FEE + calculatePaystackFee(AGENT_FEE)).toFixed(2));
+      if (!amountMatches(expectedTotal, amount)) {
+        return new Response(JSON.stringify({
+          error: `Invalid activation amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      resolvedAmount = expectedTotal;
+
+      // Bind agent_id to the authenticated user — prevents activating someone else
+      const authHeader = req.headers.get("Authorization");
+      const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+      if (token) {
+        const { data: { user: jwtUser } } = await supabaseAdmin.auth.getUser(token);
+        if (jwtUser && jwtUser.id !== agentId) {
+          return new Response(JSON.stringify({ error: "agent_id must match your authenticated account." }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
+    // ── Sub-agent activation: enforce parent-configured fee ──────────────────
+    if (orderType === "sub_agent_activation") {
+      const parentAgentId = typeof metadata.parent_agent_id === "string" ? metadata.parent_agent_id : null;
+      if (!parentAgentId) {
+        return new Response(JSON.stringify({ error: "Missing parent_agent_id for sub-agent activation." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: parentProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("sub_agent_activation_markup")
+        .eq("user_id", parentAgentId)
+        .maybeSingle();
+      const configuredFee = Number(parentProfile?.sub_agent_activation_markup ?? 0);
+      if (!Number.isFinite(configuredFee) || configuredFee <= 0) {
+        return new Response(JSON.stringify({ error: "This agent has not configured a sub-agent activation fee." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const expectedTotal = Number((configuredFee + calculatePaystackFee(configuredFee)).toFixed(2));
+      if (!amountMatches(expectedTotal, amount)) {
+        return new Response(JSON.stringify({
+          error: `Invalid sub-agent activation amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      resolvedAmount = expectedTotal;
+    }
+
     if (orderType === "wallet_topup") {
       const walletCredit = Number(metadata.wallet_credit);
       if (!Number.isFinite(walletCredit) || walletCredit < 15) {

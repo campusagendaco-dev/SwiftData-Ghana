@@ -1,8 +1,11 @@
 -- SCHEDULED ORDERS: Allow users to automate their data/airtime purchases.
 
-CREATE TYPE public.schedule_frequency AS ENUM ('daily', 'weekly', 'monthly');
+DO $$ BEGIN
+  CREATE TYPE public.schedule_frequency AS ENUM ('daily', 'weekly', 'monthly');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE public.scheduled_orders (
+CREATE TABLE IF NOT EXISTS public.scheduled_orders (
     id UUID PRIMARY KEY DEFAULT crypto.random_uuid(),
     agent_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     recipient_phone TEXT NOT NULL,
@@ -19,21 +22,23 @@ CREATE TABLE public.scheduled_orders (
 );
 
 -- Index for the processor
-CREATE INDEX idx_scheduled_orders_next_run ON public.scheduled_orders(next_run) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_scheduled_orders_next_run ON public.scheduled_orders(next_run) WHERE is_active = TRUE;
 
 -- RLS
 ALTER TABLE public.scheduled_orders ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage their own schedules" ON public.scheduled_orders;
 CREATE POLICY "Users can manage their own schedules"
     ON public.scheduled_orders
     FOR ALL
     USING (auth.uid() = agent_id);
 
 -- Admin can view all
+DROP POLICY IF EXISTS "Admins can view all schedules" ON public.scheduled_orders;
 CREATE POLICY "Admins can view all schedules"
     ON public.scheduled_orders
     FOR SELECT
-    USING (EXISTS (SELECT 1 FROM public.profiles WHERE user_id = auth.uid() AND is_admin = TRUE));
+    USING (public.has_role(auth.uid(), 'admin'));
 
 -- Function to update next_run after execution
 CREATE OR REPLACE FUNCTION public.calculate_next_run(freq public.schedule_frequency, current_run TIMESTAMP WITH TIME ZONE)
