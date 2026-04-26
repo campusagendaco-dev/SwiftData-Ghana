@@ -43,7 +43,7 @@ const ReferAndEarn = () => {
 
         // Points earned from referrals (this is an estimate from the logic)
         // In a real production app, we'd have a separate 'points_history' table
-        setStats(prev => ({ ...prev, pointsEarned: (count || 0) * 500 }));
+        setStats(prev => ({ ...prev, pointsEarned: (count || 0) * 200 }));
 
       } catch (err) {
         console.error("Error fetching referral info:", err);
@@ -108,7 +108,7 @@ const ReferAndEarn = () => {
         </div>
         <CardTitle className="text-xl font-black">Refer & Earn Points</CardTitle>
         <CardDescription className="text-xs max-w-sm">
-          Get <span className="font-bold text-amber-500">500 SwiftPoints</span> (GHS 5.00) for every friend who joins and buys their first bundle.
+          Get <span className="font-bold text-amber-500">200 SwiftPoints</span> (GHS 2.00) for every friend who joins and buys their first bundle.
         </CardDescription>
       </CardHeader>
       
