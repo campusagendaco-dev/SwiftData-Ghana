@@ -384,6 +384,7 @@ const APIDocumentation = () => {
                 <ul className="text-[11px] text-white/50 space-y-1 leading-relaxed">
                   <li><span className="text-amber-400 font-mono font-bold">Airtime</span> — send <code className="text-sky-400 bg-white/5 px-1 rounded">amount</code> (GHS). Do <em>not</em> include <code className="bg-white/5 px-1 rounded">package_size</code>.</li>
                   <li><span className="text-emerald-400 font-mono font-bold">Data bundle</span> — send <code className="text-sky-400 bg-white/5 px-1 rounded">package_size</code> (e.g. "5GB" from <code className="bg-white/5 px-1 rounded">/plans</code>). Do <em>not</em> include <code className="bg-white/5 px-1 rounded">amount</code>.</li>
+                  <li><span className="text-sky-400 font-mono font-bold">AirtelTigo</span> — We support all **AT iShare** and **BigData** bundles via the standard data endpoint.</li>
                 </ul>
               </div>
             </div>
@@ -425,9 +426,9 @@ const APIDocumentation = () => {
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">networkCode Reference</span>
                 </div>
                 {[
-                  { code: "MTN", name: "MTN Ghana", note: "Most popular network" },
+                  { code: "MTN", name: "MTN Ghana", note: "Also accepts: YELLOW, YELLO" },
                   { code: "TELECEL", name: "Telecel (Vodafone)", note: "Also accepts: VOD, VODAFONE" },
-                  { code: "AT", name: "AirtelTigo", note: "Also accepts: AIRTELTIGO" },
+                  { code: "AT", name: "AirtelTigo", note: "Supports AT iShare & BigData bundles" },
                   { code: "GLO", name: "Glo Ghana", note: "" },
                 ].map(({ code, name, note }) => (
                   <div key={code} className="grid grid-cols-12 gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02]">
