@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { sendPaymentSms } from "../_shared/sms.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -66,6 +67,17 @@ serve(async (req) => {
       status: "paid",
       failure_reason: "Awaiting manual fulfillment / Token generation"
     });
+    
+    // Send notification
+    const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", user.id).maybeSingle();
+    const notificationPhone = profile?.phone || user.phone;
+    
+    if (notificationPhone) {
+      await sendPaymentSms(supabaseAdmin, notificationPhone, "utility_paid", {
+        utility_type,
+        account: utility_account_number,
+      });
+    }
 
     console.log("Wallet utility payment created:", orderId, utility_provider, payAmount);
 

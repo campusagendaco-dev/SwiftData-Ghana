@@ -32,17 +32,13 @@ function getProviderCredentials(): { apiKey: string; baseUrl: string } {
 }
 
 function mapNetworkKey(network: string): string {
-  const normalized = network.trim().toUpperCase();
-  if (
-    normalized === "AIRTELTIGO" ||
-    normalized === "AIRTEL TIGO" ||
-    normalized === "AIRTEL-TIGO" ||
-    normalized === "AT"
-  ) return "AT_PREMIUM";
-  if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
-  if (normalized === "MTN") return "YELLO";
-  return normalized;
+  const n = (network || "").trim().toUpperCase();
+  if (n === "MTN" || n === "YELLO") return "YELLO";
+  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "TELECEL";
+  if (n === "AT" || n === "AIRTELTIGO" || n === "AT_PREMIUM") return "AT_PREMIUM";
+  return n;
 }
+
 
 function parseCapacity(packageSize: string): number {
   const match = packageSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/)
@@ -75,7 +71,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   if (!clean) return [];
 
   const urls = new Set<string>();
-  const endpointAliases = endpoint === "purchase" ? ["purchase", "order"] : [endpoint];
+  const endpointAliases = endpoint === "purchase" ? ["purchase", "order", "airtime", "buy"] : [endpoint];
   let rootUrl = "";
 
   try {
@@ -106,6 +102,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
     for (const alias of endpointAliases) {
       urls.add(`${rootUrl}/api/${alias}`);
       urls.add(`${rootUrl}/${alias}`);
+      urls.add(`${rootUrl}/functions/v1/developer-api/${alias}`);
     }
   }
 
@@ -237,7 +234,7 @@ type ProviderResult = {
 async function callProviderApi(
   baseUrl: string,
   apiKey: string,
-  endpoint: "purchase" | "afa-registration",
+  endpoint: string,
   body: Record<string, unknown>,
   providerWebhookUrl = "",
 ): Promise<ProviderResult> {
@@ -269,6 +266,7 @@ async function callProviderApi(
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`,
             "User-Agent": "DataHiveGH/1.0",
           },
           body: JSON.stringify(baseRequestBody),
@@ -718,6 +716,63 @@ serve(async (req) => {
       ? existingOrder.customer_phone
       : (typeof metadata?.customer_phone === "string" ? metadata.customer_phone : "");
 
+    // Airtime orders have no package_size — they use amount instead.
+    if (orderType === "airtime") {
+      const airtimeAmount: number =
+        typeof existingOrder?.amount === "number"
+          ? existingOrder.amount
+          : typeof metadata?.amount === "number"
+          ? metadata.amount
+          : 0;
+
+      if (!network || !airtimeAmount || !customerPhone) {
+        await supabase.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: "Missing network, amount, or phone for airtime fulfillment.",
+        }).eq("id", orderId);
+        return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing airtime order details." }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+            // Same provider endpoint as data — capacity carries the GHS amount for airtime
+      const airtimeNetworkKey = mapNetworkKey(network);
+      const airtimeRecipient = normalizeRecipient(customerPhone);
+      const airtimeResult = await callProviderApi(
+        DATA_PROVIDER_BASE_URL,
+        DATA_PROVIDER_API_KEY,
+        "purchase",
+        {
+          networkRaw: network,
+          networkKey: airtimeNetworkKey,
+          recipient: airtimeRecipient,
+          capacity: airtimeAmount,
+          amount: airtimeAmount,
+          order_type: "airtime"
+        },
+        DATA_PROVIDER_WEBHOOK_URL
+      );
+
+      if (airtimeResult.ok) {
+        await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
+          await supabase.rpc("credit_order_profits", { p_order_id: orderId });
+        }
+        if (customerPhone) await sendPaymentSms(supabase, customerPhone, "payment_success");
+        return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: airtimeResult.reason }).eq("id", orderId);
+      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: airtimeResult.reason }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!network || !packageSize || !customerPhone) {
       await supabase.from("orders").update({
         status: "fulfillment_failed",
@@ -738,6 +793,9 @@ serve(async (req) => {
         networkKey: mapNetworkKey(network),
         recipient: normalizeRecipient(customerPhone),
         capacity: parseCapacity(packageSize),
+        amount: existingOrder?.amount || verifiedAmount,
+        order_type: "data",
+        description: `Data: ${packageSize} for ${customerPhone}`
       },
       DATA_PROVIDER_WEBHOOK_URL,
     );

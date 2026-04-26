@@ -323,6 +323,8 @@ const AdminOrders = () => {
                         {order.order_type === "wallet_topup" ? "Wallet Top-up" :
                          order.order_type === "afa" ? "AFA Registration" :
                          order.order_type === "api" ? "API Purchase" :
+                         order.order_type === "airtime" ? "Airtime Purchase" :
+                         order.order_type === "utility" ? "Utility Bill" :
                          order.order_type === "free_data_claim" ? "Free Promo Claim" :
                          order.order_type === "sub_agent_activation" ? "Sub-Agent Activation" :
                          order.order_type === "agent_activation" ? "Agent Activation" :

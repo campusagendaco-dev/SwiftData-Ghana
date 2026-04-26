@@ -31,16 +31,11 @@ function getProviderCredentials(): { apiKey: string; baseUrl: string } {
 }
 
 function mapNetworkKey(network: string): string {
-  const normalized = network.trim().toUpperCase();
-  if (
-    normalized === "AIRTELTIGO" ||
-    normalized === "AIRTEL TIGO" ||
-    normalized === "AIRTEL-TIGO" ||
-    normalized === "AT"
-  ) return "AT_PREMIUM";
-  if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
-  if (normalized === "MTN") return "YELLO";
-  return normalized;
+  const n = network.trim().toUpperCase();
+  if (n === "MTN" || n === "YELLO") return "YELLO";
+  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "TELECEL";
+  if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AT_PREMIUM";
+  return n;
 }
 
 function parseCapacity(packageSize: string): number {
@@ -85,7 +80,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   if (!clean) return [];
 
   const urls = new Set<string>();
-  const endpointAliases = endpoint === "purchase" ? ["purchase", "order"] : [endpoint];
+  const endpointAliases = endpoint === "purchase" ? ["purchase", "order", "airtime", "buy"] : [endpoint];
   let rootUrl = "";
 
   try {
@@ -171,12 +166,12 @@ async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: nu
   try {
     const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
     const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("agent_id", userId).maybeSingle();
-    
+
     if (!profile?.phone) return;
 
     const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
     const recipient = normalizePhone(profile.phone);
-    
+
     if (!apiKey || !recipient) return;
 
     const message = formatTemplate(templates.wallet_topup, {
@@ -279,6 +274,7 @@ async function callProviderApi(
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`,
             "User-Agent": "DataHiveGH/1.0",
           },
           body: JSON.stringify(baseRequestBody),
@@ -443,8 +439,8 @@ serve(async (req) => {
         let fulfilled = false;
         let recoveredMetadata: Record<string, unknown> = {};
 
-      // Some legacy rows can be paid but missing fulfillment fields.
-      // Recover metadata from Paystack so retries can still reach the provider API.
+        // Some legacy rows can be paid but missing fulfillment fields.
+        // Recover metadata from Paystack so retries can still reach the provider API.
         const needsMetadataRecovery =
           (order.order_type === "data" && (!order.network || !order.package_size || !order.customer_phone)) ||
           (order.order_type === "afa" && (!order.afa_full_name || !order.afa_ghana_card || !order.afa_email));
@@ -489,6 +485,12 @@ serve(async (req) => {
           } else {
             await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", reference);
           }
+        } else if (order.order_type === "utility") {
+          // Utilities are usually manual. Leave as paid.
+          return new Response(JSON.stringify({ status: "paid", order_type: "utility" }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         } else {
           const network = order.network || (typeof recoveredMetadata.network === "string" ? recoveredMetadata.network : null);
           const packageSize = order.package_size || (typeof recoveredMetadata.package_size === "string" ? recoveredMetadata.package_size : null);
@@ -496,11 +498,17 @@ serve(async (req) => {
           if (!network || !packageSize || !customerPhone) {
             await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Missing order details" }).eq("id", reference);
           } else {
+            const isAirtime = order.order_type === "airtime";
+            const networkKey = mapNetworkKey(network);
+            const capacity = parseCapacity(packageSize);
+
             const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
               networkRaw: network,
-              networkKey: mapNetworkKey(network),
+              networkKey: networkKey,
               recipient: normalizeRecipient(customerPhone),
-              capacity: parseCapacity(packageSize),
+              capacity: isAirtime ? order.amount : capacity,
+              amount: order.amount,
+              order_type: isAirtime ? "airtime" : "data"
             }, DATA_PROVIDER_WEBHOOK_URL);
             if (result.ok) {
               await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
@@ -518,10 +526,11 @@ serve(async (req) => {
           }
         }
 
-        const { data: updatedOrder } = await supabase.from("orders").select("status, failure_reason").eq("id", reference).maybeSingle();
+        const { data: updatedOrder } = await supabase.from("orders").select("status, failure_reason, order_type").eq("id", reference).maybeSingle();
         return new Response(JSON.stringify({
           status: updatedOrder?.status || (fulfilled ? "fulfilled" : "fulfillment_failed"),
           failure_reason: updatedOrder?.failure_reason || null,
+          order_type: updatedOrder?.order_type || order.order_type,
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -544,9 +553,9 @@ serve(async (req) => {
     const verifyData = await verifyRes.json();
     if (!verifyData.status || verifyData.data.status !== "success") {
       const paystackStatus = verifyData.data?.status || "abandoned";
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         status: order?.status || "pending",
-        failure_reason: `Payment not completed. Paystack status: ${paystackStatus}` 
+        failure_reason: `Payment not completed. Paystack status: ${paystackStatus}`
       }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -740,13 +749,14 @@ serve(async (req) => {
     if (!claimedOrder) {
       const { data: latestOrder } = await supabase
         .from("orders")
-        .select("status, failure_reason")
+        .select("status, failure_reason, order_type")
         .eq("id", reference)
         .maybeSingle();
 
       return new Response(JSON.stringify({
         status: latestOrder?.status || order?.status || "unknown",
         failure_reason: latestOrder?.failure_reason || null,
+        order_type: latestOrder?.order_type || order?.order_type || orderType,
       }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -759,7 +769,7 @@ serve(async (req) => {
       console.log("Processing agent activation for:", resolvedAgentId);
       const { data: profile } = await supabase.from("profiles").select("full_name, store_name, slug").eq("user_id", resolvedAgentId).maybeSingle();
       const updates: Record<string, any> = { is_agent: true, agent_approved: true };
-      
+
       if (!profile?.slug) {
         const nameSource = profile?.store_name || profile?.full_name || "Agent";
         updates.slug = generateSlug(nameSource);
@@ -778,7 +788,7 @@ serve(async (req) => {
       const subAgentId = metadata?.sub_agent_id || resolvedAgentId;
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || order?.amount || paidAmount || 0);
-      
+
       // Security: Never trust client-supplied profit metadata. 
       // Activation fee base is GHS 80. Anything above that is agent profit.
       const agentProfit = Math.max(0, parseFloat((activationAmount - 80).toFixed(2)));
@@ -852,14 +862,18 @@ serve(async (req) => {
       if (result.ok) {
         await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
         fulfilled = true;
-        
+
         if (order?.agent_id && (order.profit > 0 || order.parent_profit > 0)) {
           await supabase.rpc("credit_order_profits", { p_order_id: reference });
         }
 
         const afaPhone = order?.customer_phone ?? metadata.customer_phone;
         if (afaPhone) {
-          await sendPaymentSms(supabase, String(afaPhone), "payment_success");
+          await sendPaymentSms(supabase, String(afaPhone), "payment_success", {
+            service: "AFA Registration",
+            recipient: String(afaPhone),
+            order_id: reference.slice(0, 8).toUpperCase()
+          });
         }
       } else {
         await supabase.from("orders").update({
@@ -867,6 +881,22 @@ serve(async (req) => {
           failure_reason: result.reason,
         }).eq("id", reference);
       }
+    } else if (orderType === "utility") {
+      // Manual fulfillment for utilities
+      await supabase.from("orders").update({ status: "paid" }).eq("id", reference);
+
+      const customerPhone = order?.customer_phone ?? metadata.customer_phone;
+      if (customerPhone) {
+        await sendPaymentSms(supabase, customerPhone, "utility_paid", {
+          utility_type: order?.utility_type ?? metadata.bill_type ?? "Bill",
+          account: order?.utility_account_number ?? metadata.customer_number ?? "your account",
+        });
+      }
+
+      return new Response(JSON.stringify({ status: "paid", order_type: "utility" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     } else {
       const network = order?.network ?? metadata.network;
       const packageSize = order?.package_size ?? metadata.package_size;
@@ -880,15 +910,18 @@ serve(async (req) => {
       } else {
         const networkKey = mapNetworkKey(network);
         const capacity = parseCapacity(packageSize);
-        console.log("Fulfilling data order:", { networkKey, capacity, recipient: customerPhone });
+        const isAirtime = orderType === "airtime";
+        console.log("Fulfilling order:", { networkKey, capacity, recipient: customerPhone, type: orderType });
 
         const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
           networkRaw: network,
-          networkKey,
+          networkKey: networkKey,
           recipient: normalizeRecipient(customerPhone),
-          capacity,
+          capacity: isAirtime ? capacity : (order?.capacity || parseCapacity(packageSize || "")),
+          amount: isAirtime ? capacity : (order?.amount || verifiedAmount),
+          order_type: isAirtime ? "airtime" : "data"
         }, DATA_PROVIDER_WEBHOOK_URL);
-        console.log("Data fulfillment response:", {
+        console.log("Fulfillment response:", {
           reference,
           status: result.status,
           reason: result.reason,
@@ -898,14 +931,19 @@ serve(async (req) => {
         if (result.ok) {
           await supabase.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
           fulfilled = true;
-          
+
           // Credit profits
           if (order?.agent_id && (order.profit > 0 || order.parent_profit > 0)) {
             await supabase.rpc("credit_order_profits", { p_order_id: reference });
           }
 
           if (customerPhone) {
-            await sendPaymentSms(supabase, customerPhone, "payment_success");
+            const serviceName = isAirtime ? `${network} Airtime` : `${network} Data`;
+            await sendPaymentSms(supabase, customerPhone, "payment_success", {
+              service: serviceName,
+              recipient: customerPhone,
+              order_id: reference.slice(0, 8).toUpperCase()
+            });
           }
         } else {
           await supabase.from("orders").update({
@@ -916,11 +954,12 @@ serve(async (req) => {
       }
     }
 
-    const { data: updatedOrder } = await supabase.from("orders").select("status, failure_reason").eq("id", reference).maybeSingle();
+    const { data: updatedOrder } = await supabase.from("orders").select("status, failure_reason, order_type").eq("id", reference).maybeSingle();
 
     return new Response(JSON.stringify({
       status: updatedOrder?.status || (fulfilled ? "fulfilled" : "pending"),
       failure_reason: updatedOrder?.failure_reason || null,
+      order_type: updatedOrder?.order_type || orderType,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -28,6 +28,7 @@ interface PromoResult {
 }
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
+type ServiceType = "data" | "airtime" | "utility";
 const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
 const PAYSTACK_FEE_RATE = 0.03;
 const calcFee = (amount: number) => Math.min(amount * PAYSTACK_FEE_RATE, 100);
@@ -72,7 +73,12 @@ const AgentStore = () => {
   const [notFound, setNotFound] = useState(false);
 
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>("MTN");
+  const [selectedService, setSelectedService] = useState<ServiceType>("data");
   const [selectedPkg, setSelectedPkg] = useState<{ size: string; price: number } | null>(null);
+  const [airtimeAmount, setAirtimeAmount] = useState("");
+  const [utilityType, setUtilityType] = useState<"ECG" | "GWCL">("ECG");
+  const [utilityNumber, setUtilityNumber] = useState("");
+  const [utilityAmount, setUtilityAmount] = useState("");
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);
 
@@ -90,6 +96,7 @@ const AgentStore = () => {
   const [promoValidating, setPromoValidating] = useState(false);
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
 
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
@@ -207,11 +214,16 @@ const AgentStore = () => {
   const validPromo = promoResult?.valid ? promoResult : null;
   const discountPct = validPromo?.discount_percentage ?? 0;
   const isFreePromo = validPromo?.is_free === true;
-  const discountedPkgPrice = selectedPkg
-    ? isFreePromo ? 0 : parseFloat((selectedPkg.price * (1 - discountPct / 100)).toFixed(2))
-    : 0;
-  const fee = isFreePromo ? 0 : (selectedPkg ? calcFee(discountedPkgPrice) : 0);
-  const total = selectedPkg ? parseFloat((discountedPkgPrice + fee).toFixed(2)) : 0;
+
+  const basePrice = selectedService === "data" 
+    ? (selectedPkg?.price || 0)
+    : selectedService === "airtime"
+    ? Number(airtimeAmount) || 0
+    : Number(utilityAmount) || 0;
+
+  const discountedPrice = isFreePromo ? 0 : parseFloat((basePrice * (1 - discountPct / 100)).toFixed(2));
+  const fee = isFreePromo ? 0 : (basePrice > 0 ? calcFee(discountedPrice) : 0);
+  const total = basePrice > 0 ? parseFloat((discountedPrice + fee).toFixed(2)) : 0;
 
   const handleCardClick = useCallback((size: string, price: number) => {
     setSelectedPkg((prev) => (prev?.size === size ? null : { size, price }));
@@ -263,8 +275,11 @@ const AgentStore = () => {
       return;
     }
     if (data.success) {
-      toast({ title: "Free data sent!", description: `Your ${selectedPkg.size} ${selectedNetwork} bundle is on its way!` });
-      setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false);
+      setShowSuccessOverlay(true);
+      setTimeout(() => {
+        setShowSuccessOverlay(false);
+        setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false);
+      }, 5000);
     } else {
       toast({ title: "Claim failed", description: data.error || "Delivery failed. Contact support.", variant: "destructive" });
       setPromoResult(null); setPromoCode("");
@@ -272,18 +287,73 @@ const AgentStore = () => {
   };
 
   const handlePay = async () => {
-    if (!selectedPkg || !agent) return;
+    if (!agent) return;
+    
+    // Validate selection based on service
+    if (selectedService === "data" && !selectedPkg) return;
+    if (selectedService === "airtime") {
+      const amt = Number(airtimeAmount);
+      if (!amt || amt < 1) {
+        toast({ title: "Invalid amount", description: "Minimum airtime purchase is GHS 1.00", variant: "destructive" });
+        return;
+      }
+    }
+    if (selectedService === "utility") {
+      const amt = Number(utilityAmount);
+      if (!amt || amt < 1) {
+        toast({ title: "Invalid amount", description: "Enter a valid bill amount.", variant: "destructive" });
+        return;
+      }
+      if (!utilityNumber || utilityNumber.length < 5) {
+        toast({ title: "Invalid Account Number", description: "Please check your meter/account number.", variant: "destructive" });
+        return;
+      }
+      // Specific ECG validation as requested
+      if (utilityType.includes("ECG") && utilityNumber.length < 11) {
+        toast({ title: "Invalid Meter Number", description: "ECG Meter numbers are typically 11 digits or more.", variant: "destructive" });
+        return;
+      }
+    }
+
     if (!isPhoneValid) {
       toast({ title: "Enter a valid phone number first", variant: "destructive" });
       phoneInputRef.current?.focus();
       return;
     }
+
     setBuying(true);
     const orderId = crypto.randomUUID();
+    const orderType = selectedService === "utility" ? "utility" : selectedService === "airtime" ? "airtime" : "data";
+    const packageSize = selectedService === "data" ? selectedPkg?.size : selectedService === "airtime" ? `${airtimeAmount} GHS Airtime` : `${utilityType} Bill`;
+    
     const callbackParams = new URLSearchParams({
-      reference: orderId, network: selectedNetwork, package: selectedPkg.size, phone: phoneDigits,
+      reference: orderId, 
+      network: selectedNetwork, 
+      package: packageSize || "", 
+      phone: phoneDigits,
       ...(slug ? { slug } : {}),
     });
+
+    const metadata: Record<string, any> = {
+      order_id: orderId,
+      order_type: orderType,
+      network: selectedNetwork,
+      package_size: packageSize,
+      customer_phone: phoneDigits,
+      fee,
+      agent_id: agent.user_id,
+      payment_source: "agent_store",
+      ...(validPromo && !validPromo.is_free ? {
+        promo_code: promoCode.trim(),
+        promo_id: validPromo.promo_id,
+        discount_percentage: validPromo.discount_percentage,
+      } : {}),
+    };
+
+    if (selectedService === "utility") {
+      metadata.bill_type = utilityType;
+      metadata.customer_number = utilityNumber;
+    }
 
     const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
       body: {
@@ -291,21 +361,7 @@ const AgentStore = () => {
         amount: total,
         reference: orderId,
         callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
-        metadata: {
-          order_id: orderId,
-          order_type: "data",
-          network: selectedNetwork,
-          package_size: selectedPkg.size,
-          customer_phone: phoneDigits,
-          fee,
-          agent_id: agent.user_id,
-          payment_source: "agent_store",
-          ...(validPromo && !validPromo.is_free ? {
-            promo_code: promoCode.trim(),
-            promo_id: validPromo.promo_id,
-            discount_percentage: validPromo.discount_percentage,
-          } : {}),
-        },
+        metadata,
       },
     });
 
@@ -406,14 +462,14 @@ const AgentStore = () => {
             </div>
             
             <h1 className="text-4xl sm:text-5xl font-black tracking-tighter mb-6 leading-[0.95] text-white">
-              Buy Data <br /> 
+              Data, Airtime & <br /> 
               <span className="text-transparent bg-clip-text" style={{ backgroundImage: `linear-gradient(to right, ${agent.store_primary_color || '#fbbf24'}, #fff)` }}>
-                At Unbeatable Prices
+                Utility Bills
               </span>
             </h1>
             
             <p className="text-white/40 text-lg sm:text-xl max-w-xl mx-auto leading-relaxed mb-10">
-              MTN, Telecel & AirtelTigo bundles delivered to your phone in seconds. <strong className="text-white/70">Safe, fast, and 100% reliable.</strong>
+              Instant delivery for all networks and utility providers. <strong className="text-white/70">Secure, fast, and 100% reliable.</strong>
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
@@ -497,107 +553,211 @@ const AgentStore = () => {
         </section>
 
         {/* ── Main Content ── */}
-        <main id="packages-section" className={`container mx-auto max-w-4xl px-4 py-16 space-y-24 ${selectedPkg ? "pb-64" : "pb-32"}`}>
+        <main id="packages-section" className={`container mx-auto max-w-4xl px-4 py-16 space-y-24 ${selectedPkg || airtimeAmount || (utilityNumber && utilityAmount) ? "pb-64" : "pb-32"}`}>
           
-          {/* Network Selection Grid */}
-          <div className="space-y-8">
-            <div className="text-center space-y-2">
-              <h2 className="text-3xl font-black text-white">Choose Your Network</h2>
-              <p className="text-white/30 text-sm font-bold">Select a network to view available bundles</p>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {NETWORKS.map((n) => {
-                const active = selectedNetwork === n;
-                const accent = networkTabStyles[n].accent;
-                return (
-                  <button
-                    key={n}
-                    onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); setPhone(""); }}
-                    className={`relative p-6 rounded-[2.2rem] flex flex-col items-center gap-4 transition-all duration-500 overflow-hidden border shadow-2xl ${
-                      active 
-                        ? "scale-[1.05] z-10 border-white/40" 
-                        : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/10"
-                    }`}
-                    style={active ? { background: accent } : {}}
-                  >
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center transition-transform duration-500 group-hover:scale-110 shadow-2xl" 
-                      style={{ background: active ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.05)", border: `1.5px solid rgba(255,255,255,${active ? "0.4" : "0.1"})` }}>
-                      <Smartphone className={`w-7 h-7 ${n === "MTN" && active ? "text-black" : "text-white"}`} />
-                    </div>
-                    <div className="text-center relative z-10">
-                      <p className={`text-lg font-black ${n === "MTN" && active ? "text-black" : "text-white"} ${!active && "opacity-40"}`}>{n}</p>
-                      <div className="flex items-center gap-1 mt-1 justify-center">
-                        <div className={`w-1 h-1 rounded-full ${active ? (n === "MTN" ? "bg-black" : "bg-white") : "bg-white/10"}`} />
-                        <span className={`text-[9px] font-black uppercase tracking-widest ${n === "MTN" && active ? "text-black/60" : "text-white/60"} ${!active && "opacity-20"}`}>Active</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+          {/* Service Selection */}
+          <div className="flex items-center justify-center gap-2 p-1.5 bg-white/5 border border-white/10 rounded-3xl w-fit mx-auto backdrop-blur-xl">
+            {[
+              { id: "data", label: "Data Bundles", icon: Package },
+              { id: "airtime", label: "Buy Airtime", icon: Smartphone },
+              { id: "utility", label: "Utility Bills", icon: Zap },
+            ].map((s) => (
+              <button
+                key={s.id}
+                onClick={() => { setSelectedService(s.id as ServiceType); setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); }}
+                className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${
+                  selectedService === s.id ? "bg-amber-400 text-black shadow-lg" : "text-white/40 hover:text-white"
+                }`}
+              >
+                <s.icon className="w-4 h-4" />
+                {s.label}
+              </button>
+            ))}
           </div>
-
-          {/* Grid */}
-          <div className="space-y-8">
-            <div className="flex items-center justify-between px-2">
-              <div className="space-y-1">
-                <h3 className="text-2xl font-black text-white">{selectedNetwork} Bundles</h3>
-                <p className="text-[10px] text-white/30 font-black uppercase tracking-[0.2em]">Select your package</p>
+          {/* ── Network Selection Grid (Data & Airtime) ── */}
+          {(selectedService === "data" || selectedService === "airtime") && (
+            <div className="space-y-8">
+              <div className="text-center space-y-2">
+                <h2 className="text-3xl font-black text-white">Choose Your Network</h2>
+                <p className="text-white/30 text-sm font-bold">MTN, Telecel & AirtelTigo</p>
               </div>
-              <div className="px-4 py-2 rounded-2xl bg-white/[0.03] border border-white/10 text-[10px] font-black text-white/40 uppercase tracking-widest">
-                {packages.length} Available
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-5">
-              {packages.map((pkg) => {
-                const isSelected = selectedPkg?.size === pkg.size;
-                return (
-                  <button
-                    key={pkg.size}
-                    onClick={() => handleCardClick(pkg.size, pkg.price)}
-                    className={`relative group rounded-[2.2rem] p-5 sm:p-7 flex flex-col gap-3 text-left transition-all duration-500 overflow-hidden border shadow-2xl ${
-                      isSelected 
-                        ? "scale-[1.05] z-10 shadow-[0_20px_50px_rgba(0,0,0,0.3)]" 
-                        : "hover:scale-[1.02] active:scale-[0.98]"
-                    }`}
-                    style={{ 
-                      background: networkAccent, 
-                      borderColor: isSelected ? "white" : "rgba(255,255,255,0.1)",
-                      borderWidth: isSelected ? "3px" : "1px"
-                    }}
-                  >
-                    {isSelected && (
-                      <div className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-2xl animate-in zoom-in-50">
-                        <CheckCircle2 className="w-5 h-5 text-black" />
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {NETWORKS.map((n) => {
+                  const active = selectedNetwork === n;
+                  const accent = networkTabStyles[n].accent;
+                  return (
+                    <button
+                      key={n}
+                      onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); }}
+                      className={`relative p-6 rounded-[2.2rem] flex flex-col items-center gap-4 transition-all duration-500 overflow-hidden border shadow-2xl ${
+                        active 
+                          ? "scale-[1.05] z-10 border-white/40" 
+                          : "bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04] hover:border-white/10"
+                      }`}
+                      style={active ? { background: accent } : {}}
+                    >
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xl" 
+                        style={{ background: active ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.05)", border: `1.5px solid rgba(255,255,255,${active ? "0.4" : "0.1"})` }}>
+                        <Smartphone className={`w-7 h-7 ${n === "MTN" && active ? "text-black" : "text-white"}`} />
                       </div>
-                    )}
-
-                    {!isSelected && pkg.popular && (
-                      <span className="absolute top-5 right-5 text-[9px] font-black bg-black/10 text-black/60 px-2.5 py-0.5 rounded-full border border-black/5">POPULAR</span>
-                    )}
-
-                    <div className="space-y-0.5">
-                      <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${selectedNetwork === "MTN" ? "text-black/40" : "text-white/40"}`}>
-                        {selectedNetwork}
-                      </span>
-                      <p className={`text-4xl font-black tracking-tighter transition-colors ${selectedNetwork === "MTN" ? "text-black" : "text-white"}`}>
-                        {pkg.size}
-                      </p>
-                    </div>
-
-                    <div className={`mt-auto pt-5 flex flex-col gap-1 border-t ${selectedNetwork === "MTN" ? "border-black/10" : "border-white/10"}`}>
-                      <p className={`text-2xl font-black transition-colors ${selectedNetwork === "MTN" ? "text-black" : "text-white"}`}>
-                        ₵{pkg.price.toFixed(2)}
-                      </p>
-                      <p className={`text-[10px] font-black uppercase tracking-widest ${selectedNetwork === "MTN" ? "text-black/30" : "text-white/30"}`}>Instant Delivery</p>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="text-center relative z-10">
+                        <p className={`text-lg font-black ${n === "MTN" && active ? "text-black" : "text-white"} ${!active && "opacity-40"}`}>{n}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* ── Data Packages ── */}
+          {selectedService === "data" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex items-center justify-between px-2">
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-black text-white">{selectedNetwork} Bundles</h3>
+                  <p className="text-[10px] text-white/30 font-black uppercase tracking-[0.2em]">Select your package</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-5">
+                {packages.map((pkg) => {
+                  const isSelected = selectedPkg?.size === pkg.size;
+                  return (
+                    <button
+                      key={pkg.size}
+                      onClick={() => handleCardClick(pkg.size, pkg.price)}
+                      className={`relative group rounded-[2.2rem] p-5 sm:p-7 flex flex-col gap-3 text-left transition-all duration-500 overflow-hidden border shadow-2xl ${
+                        isSelected 
+                          ? "scale-[1.05] z-10 shadow-[0_20px_50px_rgba(0,0,0,0.3)]" 
+                          : "hover:scale-[1.02] active:scale-[0.98]"
+                      }`}
+                      style={{ 
+                        background: networkAccent, 
+                        borderColor: isSelected ? "white" : "rgba(255,255,255,0.1)",
+                        borderWidth: isSelected ? "3px" : "1px"
+                      }}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-2xl animate-in zoom-in-50">
+                          <CheckCircle2 className="w-5 h-5 text-black" />
+                        </div>
+                      )}
+                      <div className="space-y-0.5">
+                        <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${selectedNetwork === "MTN" ? "text-black/40" : "text-white/40"}`}>
+                          {selectedNetwork}
+                        </span>
+                        <p className={`text-4xl font-black tracking-tighter transition-colors ${selectedNetwork === "MTN" ? "text-black" : "text-white"}`}>
+                          {pkg.size}
+                        </p>
+                      </div>
+                      <div className={`mt-auto pt-5 flex flex-col gap-1 border-t ${selectedNetwork === "MTN" ? "border-black/10" : "border-white/10"}`}>
+                        <p className={`text-2xl font-black transition-colors ${selectedNetwork === "MTN" ? "text-black" : "text-white"}`}>
+                          ₵{pkg.price.toFixed(2)}
+                        </p>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${selectedNetwork === "MTN" ? "text-black/30" : "text-white/30"}`}>Instant Delivery</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Airtime UI ── */}
+          {selectedService === "airtime" && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="max-w-md mx-auto text-center space-y-6">
+                <div className="space-y-2">
+                  <h3 className="text-3xl font-black text-white">Buy {selectedNetwork} Airtime</h3>
+                  <p className="text-white/30 text-sm font-bold">Enter the amount you wish to top up</p>
+                </div>
+                
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none">
+                    <span className="text-2xl font-black text-white/20 group-focus-within:text-amber-400 transition-colors">₵</span>
+                  </div>
+                  <input
+                    type="number"
+                    value={airtimeAmount}
+                    onChange={(e) => setAirtimeAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-white/[0.02] border border-white/10 h-24 pl-14 pr-8 rounded-[2rem] text-4xl font-black text-white placeholder:text-white/5 focus:outline-none focus:border-amber-400/50 transition-all text-center"
+                  />
+                </div>
+                
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {[5, 10, 20, 50, 100].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={() => setAirtimeAmount(amt.toString())}
+                      className="px-6 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm font-black hover:bg-white/10 hover:border-white/20 transition-all"
+                    >
+                      ₵{amt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Utility UI ── */}
+          {selectedService === "utility" && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="max-w-md mx-auto space-y-8">
+                <div className="text-center space-y-2">
+                  <h3 className="text-3xl font-black text-white">Utility Bills</h3>
+                  <p className="text-white/30 text-sm font-bold">Select service and enter details</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { id: "ECG", label: "Electricity (ECG)", icon: Zap },
+                    { id: "GWCL", label: "Water (GWCL)", icon: Gift },
+                  ].map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => setUtilityType(u.id as any)}
+                      className={`p-6 rounded-[2rem] border transition-all flex flex-col items-center gap-3 ${
+                        utilityType === u.id ? "bg-amber-400 border-amber-400 text-black shadow-xl" : "bg-white/5 border-white/10 text-white/40"
+                      }`}
+                    >
+                      <u.icon className="w-6 h-6" />
+                      <span className="text-xs font-black uppercase tracking-widest">{u.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/20 ml-2">Customer Number</label>
+                    <input
+                      type="text"
+                      value={utilityNumber}
+                      onChange={(e) => setUtilityNumber(e.target.value)}
+                      placeholder="Account / Meter Number"
+                      className="w-full bg-white/5 border border-white/10 h-16 px-6 rounded-2xl text-white font-black placeholder:text-white/10 focus:outline-none focus:border-amber-400/50"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-white/20 ml-2">Amount to Pay</label>
+                    <div className="relative">
+                      <span className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-white/20">₵</span>
+                      <input
+                        type="number"
+                        value={utilityAmount}
+                        onChange={(e) => setUtilityAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full bg-white/5 border border-white/10 h-16 pl-12 pr-6 rounded-2xl text-white font-black placeholder:text-white/10 focus:outline-none focus:border-amber-400/50"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div id="track-section">
             <PhoneOrderTracker
@@ -789,7 +949,9 @@ const AgentStore = () => {
       </footer>
 
       {/* ── Purchase Bar ── */}
-      {selectedPkg && (
+      {((selectedService === "data" && selectedPkg) || 
+        (selectedService === "airtime" && Number(airtimeAmount) > 0) || 
+        (selectedService === "utility" && utilityNumber && Number(utilityAmount) > 0)) && (
         <div className="fixed bottom-0 left-0 right-0 z-[60] animate-in slide-in-from-bottom-full duration-500">
           {/* Glass background with extra dark overlay */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[40px] border-t border-white/10 shadow-[0_-20px_50px_rgba(0,0,0,0.5)]" />
@@ -801,7 +963,13 @@ const AgentStore = () => {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-xl font-black text-white">
-                    {selectedNetwork} <span className="text-white/50">{selectedPkg.size}</span>
+                    {selectedService === "data" ? (
+                      <>{selectedNetwork} <span className="text-white/50">{selectedPkg?.size}</span></>
+                    ) : selectedService === "airtime" ? (
+                      <>{selectedNetwork} <span className="text-white/50">Airtime</span></>
+                    ) : (
+                      <>{utilityType} <span className="text-white/50">Bill</span></>
+                    )}
                   </h3>
                   {isFreePromo && (
                     <span className="bg-emerald-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter">100% Free</span>
@@ -810,18 +978,18 @@ const AgentStore = () => {
                 <div className="flex items-center gap-2 text-xs font-bold">
                   {validPromo && !isFreePromo ? (
                     <span className="text-emerald-400 flex items-center gap-1">
-                      <Tag className="w-3 h-3" /> GH₵{discountedPkgPrice.toFixed(2)}
-                      <span className="text-white/20 font-medium ml-1 leading-none line-through">₵{selectedPkg.price.toFixed(2)}</span>
+                      <Tag className="w-3 h-3" /> GH₵{discountedPrice.toFixed(2)}
+                      <span className="text-white/20 font-medium ml-1 leading-none line-through">₵{basePrice.toFixed(2)}</span>
                     </span>
                   ) : (
-                    <span className="text-white/40">₵{selectedPkg.price.toFixed(2)} Base Price</span>
+                    <span className="text-white/40">₵{basePrice.toFixed(2)} Base Price</span>
                   )}
                   <span className="w-1 h-1 rounded-full bg-white/10" />
                   <span className="text-white/25">₵{fee.toFixed(2)} Processing</span>
                 </div>
               </div>
               <button 
-                onClick={() => { setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
+                onClick={() => { setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
                 className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/30 hover:text-white transition-all hover:bg-red-500/20 hover:border-red-500/40"
               >
                 <X className="w-5 h-5" />
@@ -913,6 +1081,37 @@ const AgentStore = () => {
         </div>
       )}
       {/* ── Floating Support ── */}
+      {/* ── Success Overlay ── */}
+      {showSuccessOverlay && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" />
+          <div className="relative max-w-sm w-full bg-white/[0.03] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 animate-in zoom-in-95 duration-300">
+            <div className="relative mx-auto w-24 h-24">
+              <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-20 animate-pulse" />
+              <div className="relative w-full h-full rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.3)]">
+                <CheckCircle2 className="w-12 h-12 text-white" />
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h2 className="text-4xl font-black tracking-tighter text-white">Success!</h2>
+              <p className="text-white/40 text-sm font-medium leading-relaxed">
+                Your <strong className="text-emerald-400">{selectedPkg?.size} {selectedNetwork}</strong> bundle has been sent successfully. Check your phone in a few seconds!
+              </p>
+            </div>
+
+            <div className="pt-4">
+              <button 
+                onClick={() => { setShowSuccessOverlay(false); setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
+                className="w-full bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black py-4 rounded-2xl transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {agent.whatsapp_number && (
         <a 
           href={`https://wa.me/${agent.whatsapp_number.replace(/\D+/g, "")}`}

@@ -5,7 +5,7 @@ import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check } from "lucide-react";
+import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check, Smartphone, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Order {
@@ -38,12 +38,12 @@ interface DisplayStatus {
   spinning?: boolean;
 }
 
-function getDisplayStatus(status: string): DisplayStatus {
+function getDisplayStatus(status: string, orderType?: string): DisplayStatus {
   switch (status) {
     case "fulfilled":
       return {
-        label: "Delivered Successfully",
-        shortLabel: "Delivered ✓",
+        label: orderType === "utility" ? "Payment Successful" : orderType === "airtime" ? "Airtime Delivered" : "Delivered Successfully",
+        shortLabel: orderType === "utility" ? "Success ✓" : "Delivered ✓",
         icon: CheckCircle2,
         dot: "bg-green-500",
         badge: "bg-green-500/12 border-green-500/25 text-green-600 dark:text-green-400",
@@ -61,7 +61,7 @@ function getDisplayStatus(status: string): DisplayStatus {
     case "paid":
     case "processing":
       return {
-        label: "Delivering Data",
+        label: orderType === "utility" ? "Processing Bill" : orderType === "airtime" ? "Sending Airtime" : "Delivering Data",
         shortLabel: "Processing",
         icon: Loader2,
         dot: "bg-blue-500",
@@ -134,9 +134,11 @@ const DashboardOrders = () => {
         .range(from, from + 999);
 
       if (filter !== "all") {
-        q = filter === "data"
-          ? q.eq("order_type", filter)
-          : q.eq("status", filter);
+        if (filter === "data" || filter === "airtime" || filter === "utility") {
+          q = q.eq("order_type", filter);
+        } else {
+          q = q.eq("status", filter);
+        }
       }
 
       const { data } = await q;
@@ -234,6 +236,10 @@ const DashboardOrders = () => {
       "─────────────────────────────────",
       isWalletTopup
         ? `Type      : Wallet Top-up`
+        : order.order_type === "utility"
+        ? `Type      : Utility Bill`
+        : order.order_type === "airtime"
+        ? `Type      : Airtime`
         : `Network   : ${order.network || "—"}`,
       isWalletTopup
         ? `Amount    : GH₵ ${Number(order.amount).toFixed(2)}`
@@ -257,13 +263,17 @@ const DashboardOrders = () => {
       if (o.status === "fulfilled") acc.delivered += 1;
       else if (o.status === "fulfillment_failed") acc.failed += 1;
       else if (o.status === "paid" || o.status === "processing") acc.processing += 1;
-      const isData = o.order_type === "data";
+      
       acc.totalSales += Number(o.amount);
       acc.totalProfit += Number(o.profit) + Number(o.parent_profit || 0);
-      if (isData) acc.dataOrders += 1;
+      
+      if (o.order_type === "data") acc.dataOrders += 1;
+      else if (o.order_type === "airtime") acc.airtimeOrders += 1;
+      else if (o.order_type === "utility") acc.utilityOrders += 1;
+      
       return acc;
     },
-    { delivered: 0, failed: 0, processing: 0, totalSales: 0, totalProfit: 0, dataOrders: 0 }
+    { delivered: 0, failed: 0, processing: 0, totalSales: 0, totalProfit: 0, dataOrders: 0, airtimeOrders: 0, utilityOrders: 0 }
   );
 
   return (
@@ -285,7 +295,9 @@ const DashboardOrders = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Orders</SelectItem>
-              <SelectItem value="data">Data Only</SelectItem>
+              <SelectItem value="data">Data Bundles</SelectItem>
+              <SelectItem value="airtime">Airtime</SelectItem>
+              <SelectItem value="utility">Utility Bills</SelectItem>
               <SelectItem value="processing">Processing</SelectItem>
               <SelectItem value="fulfilled">Delivered</SelectItem>
               <SelectItem value="fulfillment_failed">Failed</SelectItem>
@@ -350,26 +362,32 @@ const DashboardOrders = () => {
           </div>
         ) : (
           <div className="p-5 space-y-2.5">
-            {orders.map((order) => {
-              const ds = getDisplayStatus(order.status);
-              const nc = networkColors[order.network || ""] || { bg: "bg-secondary", text: "text-foreground" };
-              const { date, time } = fmt(order.created_at);
-              const isWalletTopup = order.order_type === "wallet_topup";
-              const isExpanded = expandedId === order.id;
-
-              // Build timeline steps
-              const timelineSteps = [
-                { label: "Order Created", done: true, time: fmt(order.created_at).time },
-                { label: "Payment Confirmed", done: ["paid","processing","fulfilled","fulfillment_failed"].includes(order.status) },
-                { label: "Delivering Data", done: ["processing","fulfilled","fulfillment_failed"].includes(order.status), spinning: order.status === "processing" || order.status === "paid" },
-                {
-                  label: order.status === "fulfillment_failed" ? "Delivery Failed" : "Delivered",
-                  done: order.status === "fulfilled" || order.status === "fulfillment_failed",
-                  failed: order.status === "fulfillment_failed",
-                  time: (order.status === "fulfilled" || order.status === "fulfillment_failed") && order.updated_at
-                    ? fmt(order.updated_at).time : undefined,
-                },
-              ];
+              {orders.map((order) => {
+                const ds = getDisplayStatus(order.status, order.order_type);
+                const nc = networkColors[order.network || ""] || { bg: "bg-secondary", text: "text-foreground" };
+                const { date, time } = fmt(order.created_at);
+                const isWalletTopup = order.order_type === "wallet_topup";
+                const isAirtime = order.order_type === "airtime";
+                const isUtility = order.order_type === "utility";
+                const isExpanded = expandedId === order.id;
+  
+                // Build timeline steps
+                const timelineSteps = [
+                  { label: "Order Created", done: true, time: fmt(order.created_at).time },
+                  { label: "Payment Confirmed", done: ["paid","processing","fulfilled","fulfillment_failed"].includes(order.status) },
+                  { 
+                    label: isUtility ? "Processing Bill" : isAirtime ? "Sending Airtime" : "Delivering Data", 
+                    done: ["processing","fulfilled","fulfillment_failed"].includes(order.status), 
+                    spinning: order.status === "processing" || order.status === "paid" 
+                  },
+                  {
+                    label: order.status === "fulfillment_failed" ? "Failed" : isUtility ? "Success" : "Delivered",
+                    done: order.status === "fulfilled" || order.status === "fulfillment_failed",
+                    failed: order.status === "fulfillment_failed",
+                    time: (order.status === "fulfilled" || order.status === "fulfillment_failed") && order.updated_at
+                      ? fmt(order.updated_at).time : undefined,
+                  },
+                ];
 
               const isPendingOrPaid = order.status === "pending" || order.status === "paid";
               const isRetrying = retryingIds.has(order.id);
@@ -405,6 +423,16 @@ const DashboardOrders = () => {
                         <Wallet className="w-5 h-5 text-primary mx-auto" />
                         <p className="text-[10px] text-primary font-bold mt-0.5 leading-none">Topup</p>
                       </div>
+                    ) : isAirtime ? (
+                      <div className={`${nc.bg} ${nc.text} rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]`}>
+                        <Smartphone className="w-5 h-5 mx-auto" />
+                        <p className="text-[10px] font-bold mt-0.5 leading-none">Airtime</p>
+                      </div>
+                    ) : isUtility ? (
+                      <div className="bg-purple-500/15 rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]">
+                        <Zap className="w-5 h-5 text-purple-500 mx-auto" />
+                        <p className="text-[10px] text-purple-500 font-bold mt-0.5 leading-none">Utility</p>
+                      </div>
                     ) : (
                       <div className={`${nc.bg} ${nc.text} rounded-lg px-2.5 py-1.5 text-center shrink-0`}>
                         <p className="font-black text-[10px] leading-none">{order.network || "—"}</p>
@@ -416,7 +444,7 @@ const DashboardOrders = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-sm">
-                          {isWalletTopup ? "Wallet Topup" : `${order.network} ${order.package_size}`}
+                          {isWalletTopup ? "Wallet Topup" : isAirtime ? `${order.network} Airtime` : isUtility ? `${order.package_size}` : `${order.network} ${order.package_size}`}
                         </span>
                         {!isWalletTopup && (
                           <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${ds.badge}`}>
@@ -455,7 +483,7 @@ const DashboardOrders = () => {
                         {[
                           { icon: Receipt, label: "Order ID", value: order.id.slice(0, 8).toUpperCase() },
                           { icon: Phone, label: "Recipient", value: order.customer_phone || "—" },
-                          { icon: Package, label: "Package", value: isWalletTopup ? "Wallet Topup" : `${order.network} ${order.package_size}` },
+                          { icon: Package, label: "Service", value: isWalletTopup ? "Wallet Topup" : isAirtime ? `${order.network} Airtime` : isUtility ? order.package_size : `${order.network} ${order.package_size}` },
                           { icon: Calendar, label: "Date", value: date },
                         ].map(({ icon: Icon, label, value }) => (
                           <div key={label} className="rounded-xl bg-secondary/40 border border-border/50 px-3 py-2.5">

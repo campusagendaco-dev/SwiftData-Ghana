@@ -147,8 +147,7 @@ const PhoneOrderTracker = ({
 
     const { data, error: qErr } = await supabase
       .from("orders")
-      .select("id, status, customer_phone, network, package_size, amount, created_at, updated_at")
-      .eq("order_type", "data")
+      .select("id, status, customer_phone, network, package_size, amount, created_at, updated_at, order_type")
       .in("customer_phone", variants)
       .gte("created_at", since.toISOString())
       .order("created_at", { ascending: false })
@@ -308,7 +307,9 @@ const PhoneOrderTracker = ({
                     {/* Order Details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-sm text-white/90">{order.network} Bundle</span>
+                        <span className="font-bold text-sm text-white/90">
+                          {order.order_type === "airtime" ? "Airtime Purchase" : order.order_type === "utility" ? "Utility Bill" : `${order.network} Bundle`}
+                        </span>
                         <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${ds.bg} ${ds.border} ${ds.color} text-[10px] font-bold`}>
                           <ds.icon className={`w-3 h-3 ${isSpinning ? "animate-spin" : ""}`} />
                           {ds.shortLabel}

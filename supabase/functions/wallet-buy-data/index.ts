@@ -174,7 +174,7 @@ function mapNetworkKey(network: string): string {
     normalized === "AT"
   ) return "AT_PREMIUM";
   if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
-  if (normalized === "MTN") return "YELLO";
+  if (normalized === "MTN" || normalized === "YELLO") return "YELLO";
   return normalized;
 }
 
@@ -209,7 +209,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   if (!clean) return [];
 
   const urls = new Set<string>();
-  const endpointAliases = endpoint === "purchase" ? ["purchase", "order"] : [endpoint];
+  const endpointAliases = endpoint === "purchase" ? ["purchase", "order", "airtime", "buy"] : [endpoint];
   let rootUrl = "";
 
   try {
@@ -235,11 +235,25 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
     }
   }
 
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  let projectUrl = "";
+  try {
+    if (supabaseUrl) projectUrl = new URL(supabaseUrl).origin;
+  } catch { /* ignore */ }
+
   // Also try host-root endpoints in case the configured base URL contains an extra path segment.
   if (rootUrl) {
     for (const alias of endpointAliases) {
       urls.add(`${rootUrl}/api/${alias}`);
       urls.add(`${rootUrl}/${alias}`);
+      // Automatic detection for JustBuy Developer API internal path
+      urls.add(`${rootUrl}/functions/v1/developer-api/${alias}`);
+    }
+  }
+  
+  if (projectUrl) {
+    for (const alias of endpointAliases) {
+      urls.add(`${projectUrl}/functions/v1/developer-api/${alias}`);
     }
   }
 
@@ -345,6 +359,7 @@ type ProviderResult = {
   body: string;
   reason: string;
   url: string | null;
+  attemptedUrls: string[];
 };
 
 async function placeDataOrder(
@@ -354,14 +369,19 @@ async function placeDataOrder(
   packageSize: string,
   customerPhone: string,
   providerWebhookUrl: string,
+  amount: number,
 ): Promise<ProviderResult> {
   const urls = buildProviderUrls(baseUrl, "purchase");
   const networkKey = mapNetworkKey(network);
   const capacity = parseCapacity(packageSize);
   const requestBody: Record<string, unknown> = {
-    networkKey,
+    networkRaw: network,
+    networkKey: networkKey,
     recipient: normalizeRecipient(customerPhone),
-    capacity,
+    capacity: capacity,
+    amount: amount,
+    order_type: "data",
+    description: `Data purchase: ${packageSize} for ${customerPhone}`
   };
   if (providerWebhookUrl) {
     requestBody.webhook_url = providerWebhookUrl;
@@ -373,6 +393,7 @@ async function placeDataOrder(
     body: "",
     reason: "Provider request failed",
     url: null,
+    attemptedUrls: urls,
   };
 
   console.log("Provider request body:", requestBody);
@@ -389,6 +410,7 @@ async function placeDataOrder(
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`,
             "User-Agent": "DataHiveGH/1.0",
           },
           body: JSON.stringify(requestBody),
@@ -402,16 +424,16 @@ async function placeDataOrder(
         if (response.ok) {
           const semantic = parseProviderResponse(body, contentType);
           if (semantic.ok) {
-            return { ok: true, status: response.status, body, reason: "", url };
+            return { ok: true, status: response.status, body, reason: "", url, attemptedUrls: urls };
           }
 
           const reason = semantic.reason || "Provider rejected this order.";
-          lastFailure = { ok: false, status: response.status, body, reason, url };
+          lastFailure = { ok: false, status: response.status, body, reason, url, attemptedUrls: urls };
           return lastFailure;
         }
 
         const reason = getProviderFailureReason(response.status, body, contentType);
-        lastFailure = { ok: false, status: response.status, body, reason, url };
+        lastFailure = { ok: false, status: response.status, body, reason, url, attemptedUrls: urls };
 
         const retryable = response.status >= 500 || response.status === 429;
         const tryNextUrl =
@@ -433,6 +455,7 @@ async function placeDataOrder(
           body: "",
           reason: error instanceof Error ? `Provider request failed: ${error.message}` : "Provider request failed",
           url,
+          attemptedUrls: urls,
         };
 
         if (attempt < 2) {
@@ -578,6 +601,33 @@ serve(async (req) => {
       });
     }
 
+    const clientReference = typeof payload?.reference === "string" ? payload.reference.trim() : "";
+
+    // ── IDEMPOTENCY CHECK ────────────────────────────────────────────────────
+    if (clientReference) {
+      const { data: existing } = await supabaseAdmin
+        .from("orders")
+        .select("id, status, failure_reason")
+        .eq("id", clientReference)
+        .eq("agent_id", user.id)
+        .maybeSingle();
+
+      if (existing) {
+        console.log("Duplicate request detected for reference:", clientReference);
+        return new Response(JSON.stringify({ 
+          success: true, 
+          order_id: existing.id, 
+          status: existing.status,
+          failure_reason: existing.failure_reason,
+          reused: true 
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const { cost: expectedAmount, parentAgentId, parentProfit } = orderDetails;
 
     // Ensure wallet row exists before attempting atomic debit
@@ -605,7 +655,7 @@ serve(async (req) => {
       });
     }
 
-    const orderId = crypto.randomUUID();
+    const orderId = clientReference || crypto.randomUUID();
     await supabaseAdmin.from("orders").insert({
       id: orderId,
       agent_id: user.id,
@@ -632,6 +682,7 @@ serve(async (req) => {
       package_size,
       customer_phone,
       DATA_PROVIDER_WEBHOOK_URL,
+      expectedAmount,
     );
     console.log("Fulfillment response:", {
       orderId,

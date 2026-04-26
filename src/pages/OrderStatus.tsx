@@ -49,6 +49,7 @@ const OrderStatus = () => {
   const phone = searchParams.get("phone") || "";
 
   const [orderStatus, setOrderStatus] = useState<OrderStatusType>("pending");
+  const [orderType, setOrderType] = useState<string>("data");
   const [step, setStep] = useState(0);
   const [failed, setFailed] = useState(false);
   const [initialCheckDone, setInitialCheckDone] = useState(!reference);
@@ -122,6 +123,7 @@ const OrderStatus = () => {
       if (cancelled) return;
 
       if (data?.status) {
+        if (data.order_type) setOrderType(data.order_type);
         handleStatusUpdate(data.status as OrderStatusType);
         setInitialCheckDone(true);
         if (data.status === "fulfilled" || data.status === "fulfillment_failed") {
@@ -135,7 +137,7 @@ const OrderStatus = () => {
     };
 
     void poll();
-    const timer = setInterval(poll, 4000);
+    const timer = setInterval(poll, 2500);
 
     return () => {
       cancelled = true;
@@ -237,6 +239,17 @@ const OrderStatus = () => {
                       const active = step === i && initialCheckDone;
                       const upcoming = step < i;
 
+                      let label = s.label;
+                      let sub = s.sub;
+
+                      if (i === 1) { // Delivering
+                        if (orderType === "airtime") { label = "Sending Airtime"; sub = "To your phone number"; }
+                        else if (orderType === "utility") { label = "Paying Bill"; sub = "Processing with utility provider"; }
+                      } else if (i === 2) { // Done
+                        if (orderType === "airtime") { label = "Airtime Sent"; sub = "Transaction completed"; }
+                        else if (orderType === "utility") { label = "Payment Success"; sub = "Token/Receipt generated"; }
+                      }
+
                       return (
                         <div key={s.key} className="relative flex gap-6 pb-8 last:pb-0">
                           {/* Connector line */}
@@ -275,10 +288,10 @@ const OrderStatus = () => {
                                 done ? "text-emerald-400" : active ? "text-white" : "text-white/20"
                               }`}
                             >
-                              {s.label}
+                              {label}
                             </p>
                             <p className={`text-xs mt-1 transition-colors duration-500 ${upcoming ? "text-white/10" : "text-white/40"}`}>
-                              {s.sub}
+                              {sub}
                             </p>
                           </div>
                         </div>

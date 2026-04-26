@@ -13,34 +13,65 @@ const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY") || "";
 const DATA_PROVIDER_WEBHOOK_URL = Deno.env.get("DATA_PROVIDER_WEBHOOK_URL") || "";
 const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
 
-async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string, data: any, webhookUrl?: string) {
-  const url = `${baseUrl.replace(/\/+$/, "")}/api/${endpoint}`;
-  try {
-    const payload = { ...data };
-    if (webhookUrl) payload.webhook_url = webhookUrl;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const body = await response.text();
-    let parsed;
-    try { parsed = JSON.parse(body); } catch { parsed = { body }; }
-
-    return { 
-      ok: response.ok && (parsed.status === "success" || parsed.status === true || parsed.ok === true), 
-      status: response.status, 
-      reason: parsed.message || parsed.reason || body,
-      data: parsed
-    };
-  } catch (error) {
-    return { ok: false, status: 500, reason: error instanceof Error ? error.message : "Network error" };
+function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
+  const clean = baseUrl.trim().replace(/\/+$/, "");
+  if (!clean) return [];
+  const urls = new Set<string>();
+  const aliases = endpoint === "purchase" ? ["purchase", "order", "airtime", "buy"] : [endpoint];
+  let rootUrl = "";
+  try { const parsed = new URL(clean); rootUrl = parsed.origin; } catch { rootUrl = ""; }
+  for (const alias of aliases) {
+    urls.add(`${clean}/api/${alias}`);
+    urls.add(`${clean}/${alias}`);
+    if (rootUrl) {
+      urls.add(`${rootUrl}/api/${alias}`);
+      urls.add(`${rootUrl}/${alias}`);
+    }
   }
+  return Array.from(urls);
+}
+
+async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string, data: any, webhookUrl?: string) {
+  const urls = buildProviderUrls(baseUrl, endpoint);
+  const payload = { ...data };
+  if (webhookUrl) payload.webhook_url = webhookUrl;
+
+  let lastError = "No provider URLs found";
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-API-Key": apiKey,
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const body = await response.text();
+      let parsed;
+      try { parsed = JSON.parse(body); } catch { parsed = { body }; }
+
+      if (response.ok) {
+        const ok = (parsed.status === "success" || parsed.status === "true" || parsed.status === true || parsed.ok === true || !parsed.status);
+        if (ok) {
+          return { ok: true, status: response.status, reason: "", data: parsed };
+        }
+        lastError = parsed.message || parsed.reason || body;
+      } else {
+        lastError = parsed.message || parsed.reason || body;
+        if (response.status === 404) continue;
+        return { ok: false, status: response.status, reason: lastError, data: parsed };
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Network error";
+    }
+  }
+
+  return { ok: false, status: 502, reason: lastError };
 }
 
 async function verifyPaystack(reference: string) {
@@ -50,8 +81,8 @@ async function verifyPaystack(reference: string) {
       headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, Accept: "application/json" },
     });
     const data = await response.json();
-    return { 
-      ok: data.status && data.data.status === "success", 
+    return {
+      ok: data.status && data.data.status === "success",
       amount: data.data?.amount / 100,
       reason: data.message || "Unpaid"
     };
@@ -61,11 +92,24 @@ async function verifyPaystack(reference: string) {
 }
 
 function mapNetworkKey(network: string): string {
-  const normalized = (network || "").trim().toUpperCase();
-  if (normalized === "MTN") return "YELLO";
-  if (normalized === "TELECEL" || normalized === "VODAFONE") return "TELECEL";
-  if (normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO" || normalized === "AT") return "AT_PREMIUM";
-  return normalized;
+  const n = network.trim().toUpperCase();
+  if (n === "MTN" || n === "YELLO") return "YELLO";
+  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "TELECEL";
+  if (n === "AT" || n === "AIRTELTIGO" || n === "AT_PREMIUM") return "AT_PREMIUM";
+  return n;
+}
+
+function normalizeRecipient(phone: string): string {
+  const digits = phone.replace(/\D+/g, "");
+  if (digits.startsWith("233") && digits.length === 12) return `0${digits.slice(3)}`;
+  if (digits.length === 9) return `0${digits}`;
+  if (digits.length === 10 && digits.startsWith("0")) return digits;
+  return phone.trim();
+}
+
+function parseCapacity(packageSize: string): number {
+  const match = packageSize?.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/)
+  return match ? parseFloat(match[1]) : 0;
 }
 
 function parseCapacity(packageSize: string): number {
@@ -101,12 +145,12 @@ serve(async (req) => {
     for (const order of pendingOrders || []) {
       console.log(`[retry-orders] Verifying pending order: ${order.id}`);
       const verification = await verifyPaystack(order.id);
-      
+
       if (verification.ok) {
         console.log(`[retry-orders] Payment confirmed for ${order.id}. Marking as PAID.`);
         await supabaseAdmin.from("orders").update({ status: "paid" }).eq("id", order.id);
         // We'll let Phase 2 pick it up in this same run or next
-        order.status = "paid"; 
+        order.status = "paid";
       }
     }
 
@@ -121,7 +165,7 @@ serve(async (req) => {
       .limit(15);
 
     if (fetchError) throw fetchError;
-    
+
     for (const order of ordersToRetry || []) {
       const createdAt = new Date(order.created_at).getTime();
       // Wait at least 2 mins for processing orders
@@ -131,10 +175,10 @@ serve(async (req) => {
 
       await supabaseAdmin
         .from("orders")
-        .update({ 
-          retry_count: order.retry_count + 1, 
+        .update({
+          retry_count: order.retry_count + 1,
           last_retry_at: new Date().toISOString(),
-          status: "processing" 
+          status: "processing"
         })
         .eq("id", order.id);
 
@@ -162,13 +206,31 @@ serve(async (req) => {
         });
         success = result.ok;
         failureReason = result.reason;
-      } else {
-        // Data Purchase
+      } else if (order.order_type === "airtime") {
+        const networkKey = mapNetworkKey(order.network);
+        const recipient = normalizeRecipient(order.customer_phone);
         const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
           networkRaw: order.network,
-          networkKey: mapNetworkKey(order.network),
-          recipient: normalizeRecipient(order.customer_phone),
-          capacity: parseCapacity(order.package_size),
+          networkKey,
+          recipient,
+          capacity: order.amount,
+          amount: order.amount,
+          order_type: "airtime"
+        }, DATA_PROVIDER_WEBHOOK_URL);
+        success = result.ok;
+        failureReason = result.reason;
+      } else {
+        // Data bundle purchase
+        const networkKey = mapNetworkKey(order.network);
+        const recipient = normalizeRecipient(order.customer_phone);
+        const capacity = parseCapacity(order.package_size);
+        const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
+          networkRaw: order.network,
+          networkKey,
+          recipient,
+          capacity,
+          amount: order.amount,
+          order_type: "data"
         }, DATA_PROVIDER_WEBHOOK_URL);
         success = result.ok;
         failureReason = result.reason;

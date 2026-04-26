@@ -8,8 +8,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- If the user is an admin, let them change anything.
-  IF public.has_role(auth.uid(), 'admin') THEN
+  -- If the user is an admin OR it's the service role, let them change anything.
+  IF public.has_role(auth.uid(), 'admin') OR (current_setting('role') = 'service_role') THEN
     RETURN NEW;
   END IF;
 

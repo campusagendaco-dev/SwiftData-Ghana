@@ -98,7 +98,7 @@ const AdminAgents = () => {
     const { data: activationOrders } = await supabase
       .from("orders")
       .select("id, agent_id, created_at, amount")
-      .eq("order_type", "agent_activation")
+      .in("order_type", ["agent_activation", "sub_agent_activation"])
       .in("status", ["fulfilled", "paid"]);
 
     if (activationOrders && activationOrders.length > 0) {
@@ -181,12 +181,15 @@ const AdminAgents = () => {
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     if (error || data?.error) {
-      toast({ title: "Failed to force-activate", description: data?.error || error?.message, variant: "destructive" });
+      console.error("Force activate error:", error || data?.error);
+      toast({ 
+        title: "Failed to force-activate", 
+        description: data?.error || error?.message || "Check server logs", 
+        variant: "destructive" 
+      });
     } else {
-      toast({ title: `${name}'s store has been activated` });
-      setStuckActivations(prev => prev.filter(s => s.agent_id !== agentId));
-      setAgents(prev => prev.map(a => a.user_id === agentId ? { ...a, agent_approved: true } : a));
-      if (currentUser) await logAudit(currentUser.id, "force_activate_store", { target_agent_id: agentId });
+      toast({ title: "Activation Successful", description: `${name}'s store is now active.` });
+      await fetchAgents();
     }
     setForcingId(null);
   };

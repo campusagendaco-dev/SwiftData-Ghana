@@ -22,19 +22,21 @@ const DashboardDeveloperAPI = () => {
   const [rateLimit, setRateLimit] = useState(30);
   const [confirmRegen, setConfirmRegen] = useState(false);
 
+  const BASE_URL = "https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api";
+
   useEffect(() => {
     const fetchApiKey = async () => {
       if (!user) return;
       setLoading(true);
       const { data } = await supabase
         .from("profiles")
-        .select("api_key")
+        .select("api_key, api_access_enabled, api_rate_limit")
         .eq("user_id", user.id)
         .maybeSingle();
       if (data) {
-        setApiKey((data as any).api_key ?? null);
-        setAccessEnabled((data as any).api_access_enabled ?? true);
-        setRateLimit((data as any).api_rate_limit ?? 30);
+        setApiKey(data.api_key ?? null);
+        setAccessEnabled(data.api_access_enabled ?? true);
+        setRateLimit(data.api_rate_limit ?? 30);
       }
       setLoading(false);
     };
@@ -46,7 +48,8 @@ const DashboardDeveloperAPI = () => {
     if (apiKey && !confirmRegen) { setConfirmRegen(true); return; }
     setGenerating(true);
     setConfirmRegen(false);
-    const newKey = `sdg_live_${crypto.randomUUID().replace(/-/g, "")}`;
+    // Use the JustBuy 'jbg_' prefix
+    const newKey = `jbg_live_${crypto.randomUUID().replace(/-/g, "")}`;
     const { error } = await supabase
       .from("profiles")
       .update({ api_key: newKey })
@@ -74,14 +77,14 @@ const DashboardDeveloperAPI = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Zap className="w-6 h-6 text-amber-400" /> Developer API
+            <Zap className="w-6 h-6 text-sky-400" /> JustBuy Developers
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Integrate SwiftData Ghana directly into your own applications.
+            Integrate JustBuy Ghana directly into your own applications.
           </p>
         </div>
         <Link to="/api-docs">
-          <Button variant="outline" className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
+          <Button variant="outline" className="gap-2 border-sky-500/30 text-sky-400 hover:bg-sky-500/10">
             <ExternalLink className="w-4 h-4" /> View Full Docs
           </Button>
         </Link>
@@ -96,10 +99,10 @@ const DashboardDeveloperAPI = () => {
       )}
 
       {/* API Key Card */}
-      <Card className="border-amber-500/20 bg-amber-500/5">
+      <Card className="border-sky-500/20 bg-sky-500/5">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Key className="w-5 h-5 text-amber-500" /> Your Secret API Key
+            <Key className="w-5 h-5 text-sky-500" /> Your Secret API Key
           </CardTitle>
           <CardDescription>
             Used to authenticate every API request. Never expose this in client-side code.
@@ -125,7 +128,7 @@ const DashboardDeveloperAPI = () => {
                   <Copy className="w-4 h-4" />
                 </Button>
               </div>
-              <div className="flex items-center gap-2 text-xs text-amber-500/70">
+              <div className="flex items-center gap-2 text-xs text-sky-500/70">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 Keep this secret. Anyone with it can spend your wallet balance.
               </div>
@@ -165,15 +168,15 @@ const DashboardDeveloperAPI = () => {
         <Card className="bg-white/3 border-white/8">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" /> Quick Start
+              <Zap className="w-4 h-4 text-sky-400" /> Quick Start
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm space-y-2 text-muted-foreground">
             <p>1. Fund your wallet with sufficient balance.</p>
             <p>2. Copy your API key above.</p>
-            <p>3. Call <code className="text-amber-400 bg-white/5 px-1 rounded text-xs">GET ?action=plans</code> to list packages.</p>
-            <p>4. POST to <code className="text-amber-400 bg-white/5 px-1 rounded text-xs">?action=buy</code> with a unique <code className="text-amber-400 bg-white/5 px-1 rounded text-xs">request_id</code>.</p>
-            <p>5. Monitor orders in your transactions history.</p>
+            <p>3. Call <code className="text-sky-400 bg-white/5 px-1 rounded text-xs">GET /plans</code> to list packages.</p>
+            <p>4. POST to <code className="text-sky-400 bg-white/5 px-1 rounded text-xs">/airtime</code> with recipient details.</p>
+            <p>5. POST to <code className="text-sky-400 bg-white/5 px-1 rounded text-xs">/payment/bills/validate</code> for bill lookups.</p>
           </CardContent>
         </Card>
 
@@ -185,7 +188,7 @@ const DashboardDeveloperAPI = () => {
           </CardHeader>
           <CardContent className="text-sm space-y-2 text-muted-foreground">
             <p>🔑 Store key in environment variables, not source code.</p>
-            <p>🔁 Always pass a unique <code className="text-amber-400 bg-white/5 px-1 rounded text-xs">request_id</code> per order.</p>
+            <p>🔁 All endpoints are RESTful and path-based.</p>
             <p>🚫 Never expose your key in browser/mobile apps.</p>
             <p>🔄 Rotate your key periodically from this page.</p>
           </CardContent>
@@ -200,13 +203,13 @@ const DashboardDeveloperAPI = () => {
         <CardContent>
           <div className="flex items-center gap-2">
             <code className="font-mono text-xs text-emerald-400 bg-black/30 px-3 py-2 rounded-lg flex-1 truncate">
-              https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api
+              {BASE_URL}
             </code>
-            <Button variant="secondary" size="icon" className="shrink-0" onClick={() => copyToClipboard("https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api")}>
+            <Button variant="secondary" size="icon" className="shrink-0" onClick={() => copyToClipboard(BASE_URL)}>
               <Copy className="w-4 h-4" />
             </Button>
           </div>
-          <p className="text-xs text-white/30 mt-2">Append <code className="text-amber-400">?action=balance</code>, <code className="text-amber-400">?action=plans</code>, or <code className="text-amber-400">?action=buy</code> to the URL.</p>
+          <p className="text-xs text-white/30 mt-2">Append <code className="text-sky-400">/balance</code>, <code className="text-sky-400">/plans</code>, or <code className="text-sky-400">/airtime</code> to the URL.</p>
         </CardContent>
       </Card>
     </div>

@@ -22,6 +22,7 @@ import DashboardSettings from "./pages/DashboardSettings";
 import DashboardSubAgents from "./pages/DashboardSubAgents";
 import DashboardResultCheckers from "./pages/DashboardResultCheckers";
 import DashboardBuyDataNetwork from "./pages/DashboardBuyDataNetwork";
+import DashboardBuyAirtime from "./pages/DashboardBuyAirtime";
 import DashboardMyStore from "./pages/DashboardMyStore";
 import DashboardReportIssue from "./pages/DashboardReportIssue";
 import DashboardAccountSettings from "./pages/DashboardAccountSettings";
@@ -265,6 +266,7 @@ const AppContent = () => {
           <Route path="buy-data/mtn" element={<DashboardBuyDataNetwork network="MTN" />} />
           <Route path="buy-data/telecel" element={<DashboardBuyDataNetwork network="Telecel" />} />
           <Route path="buy-data/airteltigo" element={<DashboardBuyDataNetwork network="AirtelTigo" />} />
+          <Route path="buy-airtime" element={<DashboardBuyAirtime />} />
           <Route path="utilities" element={<DashboardUtilities />} />
           <Route path="airtime-to-cash" element={<DashboardAirtimeCash />} />
           <Route path="my-store" element={<DashboardMyStore />} />

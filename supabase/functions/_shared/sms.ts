@@ -34,7 +34,8 @@ export async function getSmsConfig(supabaseAdmin: any) {
     apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY"),
     senderId: settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh",
     templates: {
-      payment_success: settings?.payment_success_sms_message || "Your data bundle is being processed. Thanks for choosing SwiftData GH",
+      payment_success: settings?.payment_success_sms_message || "Success! Your {service} for {recipient} has been processed. Order ID: {order_id}. Thanks for choosing SwiftData GH",
+      utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed. Thanks for choosing SwiftData GH",
       wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
       withdrawal_request: settings?.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
       withdrawal_completed: settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
@@ -97,7 +98,7 @@ export function formatTemplate(template: string, vars: Record<string, string | n
 export async function sendPaymentSms(
   supabaseAdmin: any,
   customerPhone: string,
-  type: "payment_success" | "order_failed" | "wallet_topup" | "withdrawal_request" | "withdrawal_completed" | "manual_credit" = "payment_success",
+  type: "payment_success" | "order_failed" | "wallet_topup" | "withdrawal_request" | "withdrawal_completed" | "manual_credit" | "utility_paid" = "payment_success",
   vars: Record<string, string | number> = {}
 ) {
   try {

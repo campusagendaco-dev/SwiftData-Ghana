@@ -78,6 +78,8 @@ const AdminOverview = () => {
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
   const [todaySales, setTodaySales] = useState<TodaySales>({ total: 0, customers: 0, agents: 0, subAgents: 0 });
+  const [providerBalance, setProviderBalance] = useState<number | null>(null);
+  const [timeRange, setTimeRange] = useState<"7d" | "30d" | "1y" | "all">("7d");
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState("We are performing scheduled maintenance. Please check back soon.");
   const [savingMaintenance, setSavingMaintenance] = useState(false);
@@ -88,56 +90,79 @@ const AdminOverview = () => {
   const [updatedKeys, setUpdatedKeys] = useState<Set<string>>(new Set());
 
   const fetchData = async () => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
+    const now = new Date();
+    let startDate = new Date();
+    if (timeRange === "7d") startDate.setDate(now.getDate() - 6);
+    else if (timeRange === "30d") startDate.setDate(now.getDate() - 29);
+    else if (timeRange === "1y") startDate.setFullYear(now.getFullYear() - 1);
+    else startDate = new Date(2024, 0, 1); // Earliest possible date
+    
+    startDate.setHours(0, 0, 0, 0);
 
-    const [ordersRes, profilesRes, maintenanceRes, recentRes, weeklyOrdersRes] = await Promise.all([
+    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes] = await Promise.all([
       supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit"),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete"),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
-      supabase.from("orders").select("id, amount, agent_id, created_at").gte("created_at", sevenDaysAgo.toISOString()).eq("status", "fulfilled"),
+      supabase.from("orders").select("id, amount, agent_id, created_at").gte("created_at", startDate.toISOString()).eq("status", "fulfilled"),
+      supabase.functions.invoke("admin-user-actions", { body: { action: "get_provider_balance" } }),
     ]);
 
     const orders = ordersRes.data || [];
     const profiles = profilesRes.data || [];
-    const weeklyOrders = weeklyOrdersRes.data || [];
+    const rangeOrders = rangeOrdersRes.data || [];
     const maintenanceRow = maintenanceRes.data as { is_enabled?: boolean; message?: string; table_ready?: boolean; error?: string } | null;
     const maintenanceError = maintenanceRes.error || maintenanceRow?.error;
+    const isMonthly = timeRange === "1y" || timeRange === "all";
 
     const agentIds = new Set(profiles.filter((p: any) => p.is_agent && p.agent_approved).map((p: any) => p.user_id));
     const subAgentIds = new Set(profiles.filter((p: any) => p.is_sub_agent && p.sub_agent_approved).map((p: any) => p.user_id));
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayKey = today.toISOString().slice(0, 10);
 
-    const dayMap: Record<string, DailySalesPoint> = {};
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      dayMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0 };
+    const chartMap: Record<string, DailySalesPoint> = {};
+    if (isMonthly) {
+      // Monthly grouping
+      for (let i = (timeRange === "1y" ? 11 : 24); i >= 0; i--) {
+        const d = new Date(now);
+        d.setMonth(now.getMonth() - i);
+        const key = d.toISOString().slice(0, 7); // YYYY-MM
+        chartMap[key] = { date: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }), Customers: 0, Agents: 0, "Sub-Agents": 0 };
+      }
+    } else {
+      // Daily grouping
+      const daysCount = timeRange === "7d" ? 7 : 30;
+      for (let i = daysCount - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const key = d.toISOString().slice(0, 10);
+        chartMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0 };
+      }
     }
 
     let todayCustomers = 0, todayAgents = 0, todaySubAgents = 0;
-    weeklyOrders.forEach((o: any) => {
-      const key = (o.created_at as string).slice(0, 10);
-      if (!dayMap[key]) return;
+    const todayStr = now.toISOString().slice(0, 10);
+
+    rangeOrders.forEach((o: any) => {
+      const fullKey = (o.created_at as string).slice(0, 10);
+      const chartKey = isMonthly ? fullKey.slice(0, 7) : fullKey;
+      
       const amt = Number(o.amount) || 0;
-      if (o.agent_id && subAgentIds.has(o.agent_id)) {
-        dayMap[key]["Sub-Agents"] += amt;
-        if (key === todayKey) todaySubAgents += amt;
-      } else if (o.agent_id && agentIds.has(o.agent_id)) {
-        dayMap[key].Agents += amt;
-        if (key === todayKey) todayAgents += amt;
-      } else {
-        dayMap[key].Customers += amt;
-        if (key === todayKey) todayCustomers += amt;
+      
+      // Update totals if today
+      if (fullKey === todayStr) {
+        if (o.agent_id && subAgentIds.has(o.agent_id)) todaySubAgents += amt;
+        else if (o.agent_id && agentIds.has(o.agent_id)) todayAgents += amt;
+        else todayCustomers += amt;
+      }
+
+      // Update chart data
+      if (chartMap[chartKey]) {
+        if (o.agent_id && subAgentIds.has(o.agent_id)) chartMap[chartKey]["Sub-Agents"] += amt;
+        else if (o.agent_id && agentIds.has(o.agent_id)) chartMap[chartKey].Agents += amt;
+        else chartMap[chartKey].Customers += amt;
       }
     });
 
-    setDailySales(Object.values(dayMap));
+    setDailySales(Object.values(chartMap));
     setTodaySales({ total: todayCustomers + todayAgents + todaySubAgents, customers: todayCustomers, agents: todayAgents, subAgents: todaySubAgents });
     setStats({
       totalOrders: orders.length,
@@ -149,6 +174,7 @@ const AdminOverview = () => {
       totalSubAgentProfit: orders.filter((o: any) => o.status === "fulfilled").reduce((s: number, o: any) => s + Number(o.parent_profit || 0), 0),
     });
     setRecentOrders((recentRes.data || []) as RecentOrder[]);
+    if (providerRes.data?.success) setProviderBalance(providerRes.data.balance);
 
     if (maintenanceError) {
       setMaintenanceTableReady(false);
@@ -198,7 +224,7 @@ const AdminOverview = () => {
       clearInterval(interval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [timeRange]);
 
   const saveMaintenance = async () => {
     if (!maintenanceTableReady) {
@@ -257,6 +283,14 @@ const AdminOverview = () => {
       bg:    stats.pendingAgents > 0 ? "bg-red-500/10"     : "bg-emerald-500/10",
       border:stats.pendingAgents > 0 ? "border-red-500/20" : "border-emerald-500/20",
     },
+    {
+      title: "Provider Wallet",
+      value: providerBalance !== null ? `GH₵ ${providerBalance.toFixed(2)}` : "...",
+      icon: Wallet,
+      color: "text-sky-500",
+      bg: "bg-sky-500/10",
+      border: "border-sky-500/20"
+    }
   ];
 
   // Chart axis/grid colors
@@ -312,7 +346,7 @@ const AdminOverview = () => {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {statCards.map((c) => {
           const isFlashing = updatedKeys.has(c.title) || updatedKeys.has("totalRevenue" ) && c.title === "Total Revenue";
           return (
@@ -339,11 +373,34 @@ const AdminOverview = () => {
 
       {/* Daily Sales */}
       <div className="space-y-4">
-        <div>
-          <h2 className={`font-bold text-xl flex items-center gap-2 ${head}`}>
-            <TrendingUp className="w-5 h-5 text-amber-500" /> Daily Sales
-          </h2>
-          <p className={`text-xs mt-0.5 ${muted}`}>Fulfilled sales from customers, agents and sub-agents — last 7 days.</p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div>
+            <h2 className={`font-bold text-xl flex items-center gap-2 ${head}`}>
+              <TrendingUp className="w-5 h-5 text-amber-500" /> Sales Analytics
+            </h2>
+            <p className={`text-xs mt-0.5 ${muted}`}>Tracking fulfilled sales across your entire network.</p>
+          </div>
+          
+          <div className={`flex p-1 rounded-xl border ${isDark ? "bg-white/5 border-white/10" : "bg-gray-100 border-gray-200"}`}>
+            {[
+              { id: "7d",  label: "7D" },
+              { id: "30d", label: "30D" },
+              { id: "1y",  label: "1Y" },
+              { id: "all", label: "ALL" },
+            ].map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setTimeRange(r.id as any)}
+                className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${
+                  timeRange === r.id 
+                    ? (isDark ? "bg-amber-400 text-black shadow-lg shadow-amber-400/20" : "bg-white text-gray-900 shadow-sm")
+                    : (isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700")
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Today totals */}
@@ -361,10 +418,14 @@ const AdminOverview = () => {
           ))}
         </div>
 
-        {/* 7-day stacked bar chart */}
+        {/* Chart container */}
         <div className={`rounded-2xl border p-6 ${card}`}>
-          <h3 className={`font-bold mb-1 ${head}`}>Sales by Seller Type — Last 7 Days</h3>
-          <p className={`text-xs mb-5 ${muted}`}>Revenue from fulfilled orders grouped by seller type per day.</p>
+          <h3 className={`font-bold mb-1 ${head}`}>
+            {timeRange === "1y" || timeRange === "all" ? "Monthly Sales Volume" : "Daily Sales Volume"}
+          </h3>
+          <p className={`text-xs mb-5 ${muted}`}>
+            {timeRange === "1y" || timeRange === "all" ? "Cumulative sales revenue grouped by month." : "Daily revenue breakdown from fulfilled orders."}
+          </p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={dailySales} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />

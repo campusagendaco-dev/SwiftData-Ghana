@@ -137,6 +137,13 @@ const DashboardUtilities = () => {
       toast({ title: "Please verify account and enter amount", variant: "destructive" });
       return;
     }
+
+    // Specific ECG validation
+    if (provider.includes("ECG") && accountNumber.length < 11) {
+      toast({ title: "Invalid Meter Number", description: "ECG Meter numbers are typically 11 digits or more.", variant: "destructive" });
+      return;
+    }
+
     setLoading(true);
     const numAmount = Number(amount);
 

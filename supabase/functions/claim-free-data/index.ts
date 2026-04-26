@@ -45,15 +45,22 @@ async function callProvider(
   webhookUrl: string,
 ): Promise<{ ok: boolean; reason: string }> {
   const clean = baseUrl.trim().replace(/\/+$/, "");
-  const candidates = new Set<string>();
+  const aliases = ["purchase", "order", "airtime", "buy"];
+  let rootUrl = "";
   try {
-    const { origin } = new URL(clean);
-    candidates.add(`${clean}/api/purchase`);
-    candidates.add(`${clean}/purchase`);
-    candidates.add(`${origin}/api/purchase`);
-    candidates.add(`${origin}/purchase`);
+    const parsed = new URL(clean);
+    rootUrl = parsed.origin;
   } catch {
-    candidates.add(`${clean}/api/purchase`);
+    rootUrl = "";
+  }
+
+  for (const alias of aliases) {
+    candidates.add(`${clean}/api/${alias}`);
+    candidates.add(`${clean}/${alias}`);
+    if (rootUrl) {
+      candidates.add(`${rootUrl}/api/${alias}`);
+      candidates.add(`${rootUrl}/${alias}`);
+    }
   }
 
   const body: Record<string, unknown> = {

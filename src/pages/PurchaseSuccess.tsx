@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CheckCircle2, Home, ReceiptText, Wallet, ShoppingBag, Copy, Check } from "lucide-react";
+import { CheckCircle2, Home, ReceiptText, Wallet, ShoppingBag, Copy, Check, Package as PackageIcon, Phone as PhoneIcon, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -68,12 +68,12 @@ const PurchaseSuccess = () => {
 
   const confetti = useMemo<ConfettiPiece[]>(
     () =>
-      Array.from({ length: 72 }, (_, index) => ({
+      Array.from({ length: 100 }, (_, index) => ({
         id: index,
         left: Math.random() * 100,
-        size: 8 + Math.random() * 8,
-        delay: Math.random() * 0.9,
-        duration: 2.2 + Math.random() * 1.9,
+        size: 8 + Math.random() * 10,
+        delay: Math.random() * 1.5,
+        duration: 2.5 + Math.random() * 2,
         rotation: Math.random() * 360,
         color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
       })),
@@ -81,8 +81,15 @@ const PurchaseSuccess = () => {
   );
 
   return (
-    <div className="purchase-success-page min-h-screen px-4 py-20 md:py-24">
-      <div className="purchase-success-confetti" aria-hidden="true">
+    <div className="min-h-screen bg-[#030305] text-white overflow-hidden flex flex-col relative">
+      {/* ── Background Mesh ── */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
+      </div>
+
+      <div className="purchase-success-confetti z-10" aria-hidden="true">
         {confetti.map((piece) => (
           <span
             key={piece.id}
@@ -100,107 +107,122 @@ const PurchaseSuccess = () => {
         ))}
       </div>
 
-      <div className="mx-auto max-w-2xl">
-        <Card className="purchase-success-card overflow-hidden border-primary/30 bg-card/95 backdrop-blur shadow-2xl">
-          <CardContent className="p-8 md:p-10">
-            <div className="purchase-success-badge mx-auto mb-6 h-20 w-20 rounded-full bg-primary/20 flex items-center justify-center">
-              <CheckCircle2 className="h-10 w-10 text-primary" />
-            </div>
+      <div className="relative z-20 flex-1 flex items-center justify-center p-6 md:p-8">
+        <div className="w-full max-w-xl animate-in zoom-in-95 fade-in duration-1000">
+          
+          <div className="relative group">
+            {/* Outer Glow */}
+            <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/20 via-primary/20 to-blue-500/20 rounded-[3.5rem] blur-2xl opacity-100 transition duration-1000 group-hover:opacity-100" />
+            
+            <div className="relative bg-[#0A0A0C]/80 backdrop-blur-3xl border border-white/10 rounded-[3rem] overflow-hidden shadow-3xl">
+              
+              {/* Header */}
+              <div className="pt-12 pb-8 px-8 text-center space-y-6">
+                <div className="relative mx-auto w-24 h-24">
+                  <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-20 animate-pulse" />
+                  <div className="relative w-full h-full rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.3)]">
+                    <CheckCircle2 className="w-12 h-12 text-white" />
+                  </div>
+                </div>
 
-            <h1 className="font-display text-3xl md:text-4xl font-black text-center">Payment Successful</h1>
-            <p className="mt-3 text-sm md:text-base text-muted-foreground text-center max-w-xl mx-auto">
-              Your data purchase has been completed successfully. We have processed your order and sent it for instant delivery.
-            </p>
-
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Network</p>
-                <p className="font-semibold mt-1">{network || "Data Purchase"}</p>
-              </div>
-              <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Package</p>
-                <p className="font-semibold mt-1">{packageSize || "Bundle"}</p>
-              </div>
-              <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Phone</p>
-                <p className="font-semibold mt-1">{customerPhone || "Provided at checkout"}</p>
-              </div>
-              <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Reference</p>
-                <p className="font-semibold mt-1 break-all">{reference || "Generated automatically"}</p>
-              </div>
-            </div>
-
-            {/* Buy again banner — only when coming from an agent/sub-agent store */}
-            {storeUrl && (
-              <div className="mt-6 rounded-xl border border-primary/40 bg-primary/10 px-4 py-4 flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-primary text-sm">Want to buy more data?</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Return to the store and top up again in seconds.
+                <div className="space-y-2">
+                  <h1 className="text-4xl md:text-5xl font-black tracking-tighter leading-none">
+                    Purchase <br /> <span className="text-emerald-400">Successful</span>
+                  </h1>
+                  <p className="text-white/40 text-sm font-medium leading-relaxed max-w-xs mx-auto">
+                    Your order has been processed and your bundle is on its way to your device.
                   </p>
                 </div>
-                <Button asChild size="sm" className="shrink-0">
-                  <Link to={storeUrl}>
-                    <ShoppingBag className="h-4 w-4 mr-2" />
-                    Buy Again
-                  </Link>
-                </Button>
               </div>
-            )}
 
-            {!storeUrl && (
-              <div className="mt-6 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-                <p className="font-semibold text-primary">Next step</p>
-                <p className="text-muted-foreground mt-1">
-                  {source === "wallet"
-                    ? "Your wallet has already been charged. You can continue buying bundles right away."
-                    : "You can track this order at any time from the order status page."}
-                </p>
+              {/* Order Info Grid */}
+              <div className="px-8 pb-4">
+                <div className="grid grid-cols-2 gap-px bg-white/5 rounded-3xl overflow-hidden border border-white/5">
+                  {[
+                    { label: "Network", value: network, icon: ShoppingBag },
+                    { label: "Package", value: packageSize, icon: PackageIcon },
+                    { label: "Recipient", value: customerPhone, icon: PhoneIcon },
+                    { label: "Reference", value: reference.slice(0, 12).toUpperCase(), icon: ReceiptText },
+                  ].map((item, i) => (
+                    <div key={i} className="bg-white/[0.02] p-5 space-y-1.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-white/20 flex items-center gap-1.5">
+                        <item.icon className="w-3 h-3" /> {item.label}
+                      </p>
+                      <p className="text-sm font-bold text-white truncate">{item.value || "—"}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            )}
 
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Button
-                onClick={copyReceipt}
-                variant="outline"
-                className={copied ? "border-green-500/40 text-green-500" : ""}
-              >
-                {copied ? <><Check className="h-4 w-4 mr-2" /> Copied!</> : <><Copy className="h-4 w-4 mr-2" /> Copy Receipt</>}
-              </Button>
-              <Button asChild>
-                <Link to="/order-status">
-                  <ReceiptText className="h-4 w-4 mr-2" />
-                  Track Order
-                </Link>
-              </Button>
-              {fromStore ? (
-                <Button asChild variant="ghost">
-                  <Link to="/">
-                    <Home className="h-4 w-4 mr-2" />
-                    Back Home
-                  </Link>
-                </Button>
-              ) : (
-                <>
-                  <Button asChild variant="outline">
-                    <Link to="/dashboard/wallet">
-                      <Wallet className="h-4 w-4 mr-2" />
-                      Go to Wallet
+              {/* Action Section */}
+              <div className="p-8 space-y-4">
+                {storeUrl && (
+                  <Button asChild className="w-full h-14 rounded-2xl bg-amber-400 hover:bg-amber-300 text-black font-black text-base shadow-xl shadow-amber-400/20 group">
+                    <Link to={storeUrl}>
+                      <ShoppingBag className="w-5 h-5 mr-2 group-hover:rotate-12 transition-transform" />
+                      Buy Another Bundle
                     </Link>
                   </Button>
-                  <Button asChild variant="ghost">
-                    <Link to="/">
-                      <Home className="h-4 w-4 mr-2" />
-                      Back Home
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    onClick={copyReceipt}
+                    variant="outline"
+                    className={`h-12 rounded-2xl border-white/10 bg-white/5 hover:bg-white/10 font-bold transition-all ${copied ? "text-emerald-400 border-emerald-500/30" : "text-white/60"}`}
+                  >
+                    {copied ? <><Check className="w-4 h-4 mr-2" /> Copied</> : <><Copy className="w-4 h-4 mr-2" /> Copy Receipt</>}
+                  </Button>
+                  <Button asChild variant="outline" className="h-12 rounded-2xl border-white/10 bg-white/5 hover:bg-white/10 text-white/60 font-bold">
+                    <Link to="/order-status">
+                      <ReceiptText className="w-4 h-4 mr-2" />
+                      Track Live
                     </Link>
                   </Button>
-                </>
-              )}
+                </div>
+
+                <div className="flex items-center justify-center pt-4">
+                  <Link to="/" className="text-xs font-bold text-white/20 hover:text-white/60 transition-colors uppercase tracking-widest flex items-center gap-2">
+                    <Home className="w-3.5 h-3.5" /> Back to Homepage
+                  </Link>
+                </div>
+              </div>
+
+              {/* Footer Banner */}
+              <div className="bg-emerald-500/10 border-t border-white/5 py-4 px-8 text-center">
+                <div className="flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Instant Delivery Active
+                </div>
+              </div>
+
             </div>
-          </CardContent>
-        </Card>
+          </div>
+
+        </div>
       </div>
+
+      <style>{`
+        .purchase-success-confetti {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          overflow: hidden;
+        }
+        .purchase-success-confetti-piece {
+          position: absolute;
+          top: -20px;
+          opacity: 0;
+          animation: confetti-fall linear forwards;
+        }
+        @keyframes confetti-fall {
+          0% { transform: translateY(0) rotate(0); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };

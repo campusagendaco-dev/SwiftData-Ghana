@@ -89,6 +89,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [phone, setPhone] = useState("");
   const [payMethod, setPayMethod] = useState<PayMethod>("wallet");
   const [buying, setBuying] = useState(false);
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
@@ -281,12 +282,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     if (!validate()) return;
     setBuying(true);
 
+    const orderId = crypto.randomUUID();
     const { data, error } = await invokePublicFunctionAsUser("wallet-buy-data", {
       body: {
         network,
         package_size: selectedPackage!.size,
         customer_phone: phone,
         amount: selectedPackage!.price,
+        reference: orderId,
       },
     });
 
@@ -299,17 +302,17 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     if (typeof data?.order_id === "string" && data.order_id) {
       setLastOrder({ id: data.order_id, network, packageSize: selectedPackage!.size, phone, status: data?.status || "paid" });
+      setShowSuccessOverlay(true);
+      setTimeout(() => setShowSuccessOverlay(false), 5000);
     } else {
-      toast({
-        title: "Order placed",
-        description: data?.status === "fulfilled" ? "Data delivered successfully." : "Your order is being processed.",
-      });
+      setShowSuccessOverlay(true);
+      setTimeout(() => setShowSuccessOverlay(false), 5000);
     }
 
+    setBuying(false);
     setPhone("");
     setSelectedSize("");
-    await refreshBalance();
-    setBuying(false);
+    refreshBalance();
   };
 
   const handlePaystackBuy = async () => {
@@ -675,6 +678,36 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 )}
               </Button>
             )}
+          </div>
+        </div>
+      )}
+      {/* ── Success Overlay ── */}
+      {showSuccessOverlay && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" />
+          <div className="relative max-w-sm w-full bg-[#0A0A0C] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 animate-in zoom-in-95 duration-300 shadow-3xl">
+            <div className="relative mx-auto w-24 h-24">
+              <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-20 animate-pulse" />
+              <div className="relative w-full h-full rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.3)]">
+                <CheckCircle2 className="w-12 h-12 text-white" />
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <h2 className="text-4xl font-black tracking-tighter text-white uppercase">Delivered!</h2>
+              <p className="text-white/40 text-sm font-medium leading-relaxed">
+                Your bundle has been processed successfully. Your balance has been updated.
+              </p>
+            </div>
+
+            <div className="pt-4">
+              <button 
+                onClick={() => setShowSuccessOverlay(false)}
+                className="w-full bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black py-4 rounded-2xl transition-all uppercase tracking-widest text-xs"
+              >
+                Continue
+              </button>
+            </div>
           </div>
         </div>
       )}

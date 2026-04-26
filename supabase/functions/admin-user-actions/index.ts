@@ -56,7 +56,8 @@ type AdminUserAction =
   | "approve_sub_agent" 
   | "manual_topup"
   | "update_system_settings"
-  | "confirm_withdrawal";
+  | "confirm_withdrawal"
+  | "get_provider_balance";
 
 
 
@@ -233,6 +234,7 @@ serve(async (req) => {
           .update({ 
             is_agent: true, 
             agent_approved: true,
+            sub_agent_approved: true,
             onboarding_complete: true 
           })
           .eq("user_id", user_id);
@@ -244,7 +246,7 @@ serve(async (req) => {
           .from("orders")
           .update({ status: "fulfilled", failure_reason: null })
           .eq("agent_id", user_id)
-          .eq("order_type", "agent_activation")
+          .in("order_type", ["agent_activation", "sub_agent_activation"])
           .in("status", ["paid", "pending"]);
 
         return new Response(JSON.stringify({ success: true }), {
@@ -482,6 +484,60 @@ serve(async (req) => {
 
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "get_provider_balance": {
+        const apiKey = Deno.env.get("DATA_PROVIDER_API_KEY") || Deno.env.get("PRIMARY_DATA_PROVIDER_API_KEY") || "";
+        const baseUrl = (Deno.env.get("DATA_PROVIDER_BASE_URL") || Deno.env.get("PRIMARY_DATA_PROVIDER_BASE_URL") || "").replace(/\/+$/, "");
+        
+        if (!apiKey || !baseUrl) {
+          return new Response(JSON.stringify({ error: "Provider not configured" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const balanceUrls = [
+          `${baseUrl}/api/balance`,
+          `${baseUrl}/balance`,
+          `${baseUrl}/api/user/balance`,
+          `${baseUrl}/user/balance`,
+        ];
+
+        let lastError = "Could not fetch balance";
+        for (const url of balanceUrls) {
+          try {
+            console.log("Checking provider balance at:", url);
+            const res = await fetch(url, {
+              headers: {
+                "X-API-Key": apiKey,
+                "Authorization": `Bearer ${apiKey}`,
+                "Accept": "application/json",
+              }
+            });
+            const text = await res.text();
+            if (res.ok) {
+              try {
+                const data = JSON.parse(text);
+                const balance = data.balance ?? data.data?.balance ?? data.wallet_balance;
+                if (balance !== undefined) {
+                  return new Response(JSON.stringify({ success: true, balance: Number(balance) }), {
+                    status: 200,
+                    headers: { ...corsHeaders, "Content-Type": "application/json" },
+                  });
+                }
+              } catch { /* ignore parse error */ }
+            }
+            lastError = `Provider returned ${res.status}: ${text.slice(0, 100)}`;
+          } catch (e) {
+            lastError = e instanceof Error ? e.message : "Network error";
+          }
+        }
+
+        return new Response(JSON.stringify({ error: lastError }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

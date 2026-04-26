@@ -14,6 +14,27 @@ const isRelayError = (error: unknown): boolean => {
   );
 };
 
+const stripHtml = (html: string): string => {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    
+    // Remove style and script tags entirely
+    const elementsToRemove = doc.querySelectorAll("style, script");
+    elementsToRemove.forEach(el => el.remove());
+    
+    const text = doc.body.textContent || "";
+    return text.replace(/\s+/g, " ").trim();
+  } catch (e) {
+    console.error("HTML stripping failed:", e);
+    // Simple regex fallback if DOMParser fails
+    return html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+               .replace(/<[^>]+>/g, ' ')
+               .replace(/\s+/g, ' ')
+               .trim();
+  }
+};
+
 export const getFunctionErrorMessage = async (
   error: unknown,
   fallback: string,
@@ -25,25 +46,44 @@ export const getFunctionErrorMessage = async (
     return "Service temporarily unavailable. Please check your connection and try again.";
   }
 
+  // Handle direct string errors (like data?.error when it's a string)
+  if (typeof error === "string" && error.trim()) {
+    const msg = error.trim();
+    if (msg.toLowerCase().includes("<html") || msg.toLowerCase().includes("<!doctype")) {
+      return stripHtml(msg);
+    }
+    return msg;
+  }
+
   if (isFunctionsHttpError(error) && error.context) {
     try {
       const payload = await error.context.json();
       if (payload && typeof payload === "object") {
-        if (typeof (payload as { error?: unknown }).error === "string") {
-          return (payload as { error: string }).error;
-        }
-        if (typeof (payload as { message?: unknown }).message === "string") {
-          return (payload as { message: string }).message;
+        const errorMsg = (payload as { error?: string }).error || (payload as { message?: string }).message;
+        if (typeof errorMsg === "string" && errorMsg.trim()) {
+          const msg = errorMsg.trim();
+          if (msg.toLowerCase().includes("<html") || msg.toLowerCase().includes("<!doctype")) {
+            return stripHtml(msg);
+          }
+          return msg;
         }
       }
     } catch {
-      // Fall back to generic error message below.
+      // Fall back
     }
   }
 
   if (error instanceof Error && error.message) {
-    return error.message;
+    const msg = error.message;
+    if (msg.toLowerCase().includes("<html") || msg.toLowerCase().includes("<!doctype")) {
+      return stripHtml(msg);
+    }
+    return msg;
   }
 
-  return fallback;
+  const finalStr = String(fallback);
+  if (finalStr.toLowerCase().includes("<html") || finalStr.toLowerCase().includes("<!doctype")) {
+    return stripHtml(finalStr);
+  }
+  return finalStr;
 };

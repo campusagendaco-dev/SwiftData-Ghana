@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   CreditCard, Smartphone, ArrowRightLeft, Loader2, 
-  Info, ShieldCheck, AlertCircle, History, Clock
+  Info, ShieldCheck, AlertCircle, History, Clock,
+  ArrowRight, Sparkles, Zap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -78,166 +79,190 @@ const DashboardAirtimeCash = () => {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-3">
-            <CreditCard className="w-8 h-8 text-primary" />
-            Airtime to Cash
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-700">
+      
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-500/20 flex items-center gap-1">
+              <Zap className="w-2.5 h-2.5 fill-amber-400/20" /> Best Rates in GH
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 text-[10px] font-bold uppercase tracking-wider border border-sky-500/20">Verified</span>
+          </div>
+          <h1 className="font-display text-4xl font-black tracking-tight text-white flex items-center gap-3">
+            <ArrowRightLeft className="w-8 h-8 text-sky-400" /> Airtime to Cash
           </h1>
-          <p className="text-white/40 text-sm mt-1">Convert your excess airtime into wallet funds at the best rates.</p>
+          <p className="text-white/40 text-sm max-w-md">
+            Convert your excess airtime into wallet funds at premium rates. Fast verification guaranteed.
+          </p>
+        </div>
+        
+        <div className="bg-white/[0.03] border border-white/10 rounded-2xl px-5 py-3 flex items-center gap-4">
+          <div className="w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-sky-400" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Platform Fee</p>
+            <p className="text-lg font-black text-white">{FEE_PERCENTAGE}%</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Conversion Form */}
-        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 backdrop-blur-xl space-y-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5">
-            <Smartphone className="w-32 h-32" />
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
+        
+        {/* Conversion Form Card */}
+        <div className="bg-white/[0.03] border border-white/[0.08] rounded-[2.5rem] p-6 md:p-10 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-sky-500/5 rounded-full blur-[100px] pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
           
-          <div className="relative z-10 space-y-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <ArrowRightLeft className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-white">New Conversion</h2>
-                <p className="text-white/40 text-xs">Send airtime and get cash in your wallet.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-xs font-black uppercase tracking-widest text-white/40">Select Network</Label>
-                  <div className="grid grid-cols-2 gap-2">
+          <form onSubmit={handleSubmit} className="relative z-10 space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* Left Column */}
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Network</Label>
+                  <div className="grid grid-cols-2 gap-3">
                     {["MTN", "Telecel"].map((n) => (
                       <button
                         key={n}
                         type="button"
                         onClick={() => setForm({ ...form, network: n })}
                         className={cn(
-                          "px-4 py-3 rounded-xl border text-sm font-bold transition-all",
+                          "h-14 rounded-2xl border-2 font-black text-sm transition-all flex items-center justify-center gap-2",
                           form.network === n 
-                            ? "bg-primary/20 border-primary text-white" 
-                            : "bg-white/5 border-white/10 text-white/40 hover:border-white/20"
+                            ? "bg-sky-500/10 border-sky-500 text-white shadow-lg shadow-sky-500/10" 
+                            : "bg-white/[0.02] border-white/10 text-white/30 hover:border-white/20 hover:text-white/60"
                         )}
                       >
                         {n}
+                        {form.network === n && <CheckCircle2 className="w-4 h-4" />}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="atc-phone" className="text-xs font-black uppercase tracking-widest text-white/40">Sender Phone</Label>
-                  <Input
-                    id="atc-phone"
-                    value={form.senderPhone}
-                    onChange={(e) => setForm({ ...form, senderPhone: e.target.value })}
-                    placeholder="024XXXXXXX"
-                    className="bg-white/5 border-white/10 h-12 rounded-xl"
-                    required
-                  />
+                <div className="space-y-3">
+                  <Label htmlFor="atc-phone" className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Sender Phone</Label>
+                  <div className="relative group">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 group-focus-within:text-sky-400 transition-colors" />
+                    <Input
+                      id="atc-phone"
+                      value={form.senderPhone}
+                      onChange={(e) => setForm({ ...form, senderPhone: e.target.value })}
+                      placeholder="024 XXX XXXX"
+                      className="bg-white/[0.03] border-white/10 h-14 pl-12 rounded-2xl text-white font-bold placeholder:text-white/10 focus:border-sky-500/50"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="atc-amount" className="text-xs font-black uppercase tracking-widest text-white/40">Airtime Amount (GHS)</Label>
-                  <Input
-                    id="atc-amount"
-                    type="number"
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    placeholder="0.00"
-                    className="bg-white/5 border-white/10 h-12 rounded-xl text-lg font-black"
-                    required
-                  />
+              {/* Right Column */}
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label htmlFor="atc-amount" className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Airtime Amount (GHS)</Label>
+                  <div className="relative group">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 font-black text-xl text-white/20 group-focus-within:text-sky-400 transition-colors">₵</span>
+                    <Input
+                      id="atc-amount"
+                      type="number"
+                      value={form.amount}
+                      onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                      placeholder="0.00"
+                      className="bg-white/[0.03] border-white/10 h-14 pl-10 rounded-2xl text-2xl font-black text-white placeholder:text-white/10 focus:border-sky-500/50"
+                      required
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-black uppercase tracking-widest text-white/40">You will receive</Label>
-                  <div className="bg-primary/10 border border-primary/20 h-12 rounded-xl flex items-center px-4 font-black text-primary text-lg">
+
+                <div className="space-y-3">
+                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Cash Value to Wallet</Label>
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 h-14 rounded-2xl flex items-center px-6 font-black text-emerald-400 text-2xl tracking-tight">
                     ₵{cashValue.toFixed(2)}
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="atc-ref" className="text-xs font-black uppercase tracking-widest text-white/40">Transaction ID / Reference (Optional)</Label>
-                <Input
-                  id="atc-ref"
-                  value={form.reference}
-                  onChange={(e) => setForm({ ...form, reference: e.target.value })}
-                  placeholder="Paste transaction ID from SMS"
-                  className="bg-white/5 border-white/10 h-12 rounded-xl"
-                />
-              </div>
+            <div className="space-y-3">
+              <Label htmlFor="atc-ref" className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Transaction ID / Reference (Optional)</Label>
+              <Input
+                id="atc-ref"
+                value={form.reference}
+                onChange={(e) => setForm({ ...form, reference: e.target.value })}
+                placeholder="Paste the reference code from the transfer SMS here"
+                className="bg-white/[0.03] border-white/10 h-14 px-5 rounded-2xl text-white font-bold placeholder:text-white/10 focus:border-sky-500/50"
+              />
+            </div>
 
-              <div className="p-4 rounded-2xl bg-amber-400/5 border border-amber-400/20 space-y-3">
-                <div className="flex items-start gap-3">
-                  <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                  <div className="text-xs text-amber-100/60 leading-relaxed">
-                    <p className="font-bold text-amber-400 mb-1">How to convert:</p>
-                    <ol className="list-decimal pl-4 space-y-1">
-                      <li>Transfer the airtime to our number: <span className="text-white font-black">0540309637</span></li>
-                      <li>Fill this form with your details.</li>
-                      <li>Our team will verify the transfer and credit your wallet within 15-30 minutes.</li>
-                    </ol>
+            {/* Steps Info Box */}
+            <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/[0.05] space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-widest text-sky-400 flex items-center gap-2">
+                <Info className="w-4 h-4" /> Instructions
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  { step: "01", text: "Transfer airtime to 0540309637" },
+                  { step: "02", text: "Fill this form with your details" },
+                  { step: "03", text: "Get credited in 15-30 minutes" },
+                ].map((s, i) => (
+                  <div key={i} className="flex flex-col gap-2">
+                    <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Step {s.step}</span>
+                    <p className="text-xs text-white/50 leading-snug">{s.text}</p>
                   </div>
-                </div>
+                ))}
               </div>
+            </div>
 
-              <Button 
-                type="submit" 
-                disabled={loading || !form.amount || !form.senderPhone}
-                className="w-full h-14 rounded-2xl text-base font-black shadow-xl shadow-primary/20 mt-4"
-              >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <ArrowRightLeft className="w-5 h-5 mr-2" />}
-                Submit Conversion Request
-              </Button>
-            </form>
-          </div>
+            <Button 
+              type="submit" 
+              disabled={loading || !form.amount || !form.senderPhone}
+              className="w-full h-16 rounded-2xl text-lg font-black bg-gradient-to-r from-sky-500 to-indigo-600 hover:scale-[1.01] transition-transform shadow-xl shadow-sky-500/20"
+            >
+              {loading ? (
+                <><Loader2 className="w-5 h-5 animate-spin mr-3" /> Processing Request...</>
+              ) : (
+                <><ArrowRightLeft className="w-5 h-5 mr-3" /> Submit Conversion Request</>
+              )}
+            </Button>
+          </form>
         </div>
 
-        {/* History / Info */}
+        {/* Recent History Sidebar */}
         <div className="space-y-6">
-          <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <History className="w-5 h-5 text-primary" />
-                Recent Requests
-              </h3>
-              <Button variant="ghost" size="sm" onClick={fetchRequests} className="text-white/40 hover:text-white">
+          <div className="bg-white/[0.03] border border-white/[0.08] rounded-[2.5rem] p-6 md:p-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-white text-base uppercase tracking-widest opacity-40">Recent History</h3>
+              <Button variant="ghost" size="sm" onClick={fetchRequests} className="h-8 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest text-white/30 hover:text-white hover:bg-white/5">
                 Refresh
               </Button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
               {fetching ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-20 bg-white/5 rounded-2xl animate-pulse" />
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-24 bg-white/5 rounded-3xl animate-pulse" />
                 ))
               ) : requests.length > 0 ? (
                 requests.map((r) => (
                   <div key={r.id} className="p-5 rounded-[2rem] bg-white/[0.02] border border-white/5 flex items-center justify-between group hover:border-white/10 transition-all">
                     <div className="flex items-center gap-4">
                       <div className={cn(
-                        "w-12 h-12 rounded-xl flex items-center justify-center",
-                        r.status === "approved" ? "bg-emerald-500/10" : r.status === "rejected" ? "bg-red-500/10" : "bg-amber-400/10"
+                        "w-12 h-12 rounded-2xl flex items-center justify-center border",
+                        r.status === "approved" ? "bg-emerald-500/10 border-emerald-500/20" : r.status === "rejected" ? "bg-red-500/10 border-red-500/20" : "bg-amber-400/10 border-amber-400/20"
                       )}>
                         {r.status === "approved" ? <ShieldCheck className="w-6 h-6 text-emerald-500" /> : r.status === "rejected" ? <AlertCircle className="w-6 h-6 text-red-500" /> : <Clock className="w-6 h-6 text-amber-400" />}
                       </div>
                       <div>
-                        <p className="text-white font-bold text-sm">₵{r.amount.toFixed(2)} Airtime</p>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-white/20 mt-0.5">{r.network} · {new Date(r.created_at).toLocaleDateString()}</p>
+                        <p className="text-white font-black text-sm">₵{r.amount.toFixed(2)}</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/20 mt-1">{r.network} · {new Date(r.created_at).toLocaleDateString()}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-black text-white">₵{r.cash_value.toFixed(2)} Cash</p>
+                      <p className="text-sm font-black text-emerald-400">+₵{r.cash_value.toFixed(2)}</p>
                       <Badge className={cn(
-                        "mt-1 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 border-none",
+                        "mt-1.5 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 border-none rounded-full",
                         r.status === "approved" ? "bg-emerald-500 text-white" : r.status === "rejected" ? "bg-red-500 text-white" : "bg-amber-400 text-black"
                       )}>
                         {r.status}
@@ -246,24 +271,48 @@ const DashboardAirtimeCash = () => {
                   </div>
                 ))
               ) : (
-                <div className="py-20 text-center bg-white/[0.02] rounded-[3rem] border border-dashed border-white/10">
-                  <CreditCard className="w-12 h-12 text-white/10 mx-auto mb-4" />
-                  <p className="text-white/40 text-sm">No conversion requests yet.</p>
+                <div className="py-20 text-center bg-white/[0.01] rounded-[3rem] border border-dashed border-white/10">
+                  <History className="w-10 h-10 text-white/5 mx-auto mb-4" />
+                  <p className="text-white/20 text-xs font-bold uppercase tracking-widest">No history yet</p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[2.5rem] p-8">
-            <h3 className="text-lg font-bold text-white mb-2">Safe & Reliable</h3>
-            <p className="text-white/40 text-sm leading-relaxed">
-              Join thousands of Ghanaians who trust us with their airtime conversion. Our system is fast, secure, and fully automated for approvals once the transfer is confirmed.
-            </p>
+          <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/10 rounded-3xl p-6 flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20">
+              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white uppercase tracking-wider mb-1">Secure Exchange</h3>
+              <p className="text-[11px] text-white/40 leading-relaxed">
+                All airtime-to-cash conversions are protected by our trade-safe protocol. Verification is performed by human admins to ensure accuracy.
+              </p>
+            </div>
           </div>
         </div>
       </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.1); }
+      `}</style>
     </div>
   );
 };
+
+const CheckCircle2 = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+  </svg>
+);
+
+const Phone = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+  </svg>
+);
 
 export default DashboardAirtimeCash;
