@@ -50,6 +50,10 @@ interface SystemSettings {
   show_announcement: boolean;
   announcement_title: string;
   announcement_message: string;
+  free_data_enabled: boolean;
+  free_data_network: string;
+  free_data_package_size: string;
+  free_data_max_claims: string;
 }
 
 const AdminSettings = () => {
@@ -94,6 +98,10 @@ const AdminSettings = () => {
     show_announcement: false,
     announcement_title: "Welcome to SwiftPoints!",
     announcement_message: "You now earn rewards for every purchase. 100 points = GHS 1.00 cash back!",
+    free_data_enabled: false,
+    free_data_network: "MTN",
+    free_data_package_size: "1GB",
+    free_data_max_claims: "100",
   });
 
   useEffect(() => {
@@ -145,6 +153,10 @@ const AdminSettings = () => {
           show_announcement: d.show_announcement || false,
           announcement_title: d.announcement_title || "Welcome to SwiftPoints!",
           announcement_message: d.announcement_message || "You now earn rewards for every purchase. 100 points = GHS 1.00 cash back!",
+          free_data_enabled: d.free_data_enabled || false,
+          free_data_network: d.free_data_network || "MTN",
+          free_data_package_size: d.free_data_package_size || "1GB",
+          free_data_max_claims: String(d.free_data_max_claims || "100"),
         });
       }
       setLoading(false);
@@ -178,6 +190,10 @@ const AdminSettings = () => {
       show_announcement: settings.show_announcement,
       announcement_title: settings.announcement_title.trim(),
       announcement_message: settings.announcement_message.trim(),
+      free_data_enabled: settings.free_data_enabled,
+      free_data_network: settings.free_data_network,
+      free_data_package_size: settings.free_data_package_size,
+      free_data_max_claims: parseInt(settings.free_data_max_claims) || 100,
     };
 
     try {
@@ -435,6 +451,68 @@ const AdminSettings = () => {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Gift className="w-5 h-5 text-emerald-500" />
+                Free Data Campaign
+              </CardTitle>
+              <CardDescription>Give away free data bundles to your users.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label>Enable Free Data Campaign</Label>
+                <Switch
+                  checked={settings.free_data_enabled}
+                  onCheckedChange={(c) => setSettings({ ...settings, free_data_enabled: c })}
+                  className="data-[state=checked]:bg-emerald-500"
+                />
+              </div>
+
+              {settings.free_data_enabled && (
+                <div className="space-y-4 pt-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Target Network</Label>
+                      <select 
+                        value={settings.free_data_network}
+                        onChange={(e) => setSettings({ ...settings, free_data_network: e.target.value })}
+                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="MTN">MTN</option>
+                        <option value="Telecel">Telecel</option>
+                        <option value="AirtelTigo">AirtelTigo</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Package Size</Label>
+                      <Input
+                        value={settings.free_data_package_size}
+                        onChange={(e) => setSettings({ ...settings, free_data_package_size: e.target.value })}
+                        placeholder="e.g. 1GB"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Claims Allowed</Label>
+                    <Input
+                      type="number"
+                      value={settings.free_data_max_claims}
+                      onChange={(e) => setSettings({ ...settings, free_data_max_claims: e.target.value })}
+                      placeholder="e.g. 100"
+                    />
+                  </div>
+                  <Alert className="bg-emerald-500/10 border-emerald-500/20">
+                    <Gift className="h-4 w-4 text-emerald-500" />
+                    <AlertDescription className="text-xs text-emerald-500/80">
+                      Users will see a floating "Free Data" button. They must enter a valid free-data promo code to claim.
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-indigo-500/20 bg-indigo-500/5">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-500" />
                 Welcome Announcement (Popup)
               </CardTitle>
               <CardDescription>Inform all users about new features like SwiftPoints.</CardDescription>
@@ -445,7 +523,7 @@ const AdminSettings = () => {
                 <Switch
                   checked={settings.show_announcement}
                   onCheckedChange={(c) => setSettings({ ...settings, show_announcement: c })}
-                  className="data-[state=checked]:bg-emerald-500"
+                  className="data-[state=checked]:bg-indigo-500"
                 />
               </div>
 

@@ -33,7 +33,7 @@ const FreeDataClaimBanner = () => {
       const [settingsRes, claimRes] = await Promise.all([
         supabase
           .from("public_system_settings")
-          .select("free_data_enabled, free_data_network, free_data_package_size, free_data_max_claims")
+          .select("free_data_enabled, free_data_network, free_data_package_size, free_data_max_claims, free_data_claims_count")
           .eq("id", 1)
           .maybeSingle(),
         supabase
@@ -43,7 +43,7 @@ const FreeDataClaimBanner = () => {
           .eq("order_type" as any, "free_data_claim"),
       ]);
 
-      const data = settingsRes.data as any;
+      const data = settingsRes.data;
       if (data && data.free_data_enabled) {
         setCampaign({
           enabled: true,

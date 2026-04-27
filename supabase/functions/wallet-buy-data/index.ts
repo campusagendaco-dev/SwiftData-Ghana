@@ -580,6 +580,7 @@ serve(async (req) => {
       });
     }
 
+    const pricingContext = await getPricingContext(supabaseAdmin);
     const orderDetails = await resolveOrderDetails(
       supabaseAdmin,
       user.id,
