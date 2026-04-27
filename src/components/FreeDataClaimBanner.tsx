@@ -44,7 +44,7 @@ const FreeDataClaimBanner = () => {
       ]);
 
       const data = settingsRes.data;
-      if (data && data.free_data_enabled) {
+      if (!settingsRes.error && data && data.free_data_enabled) {
         setCampaign({
           enabled: true,
           network: data.free_data_network || "MTN",

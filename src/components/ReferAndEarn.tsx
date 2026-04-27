@@ -24,8 +24,8 @@ const ReferAndEarn = () => {
         const { data: profileData } = await supabase
           .from("profiles")
           .select("referral_code")
-          .eq("id", user.id)
-          .single();
+          .eq("user_id", user.id)
+          .maybeSingle();
 
         if (profileData?.referral_code) {
           setReferralCode(profileData.referral_code);
