@@ -337,7 +337,7 @@ const PhoneOrderTracker = ({
                           {order.order_type === "airtime" ? "Airtime" : order.order_type === "utility" ? "Utility" : `${order.network} Bundle`}
                         </span>
                         <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${ds.bg} ${ds.border} ${ds.color} text-[9px] sm:text-[10px] font-bold w-fit`}>
-                          <ds.icon className={`w-2.5 h-2.5 sm:w-3 h-3 ${isSpinning ? "animate-spin" : ""}`} />
+                          <ds.icon className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isSpinning ? "animate-spin" : ""}`} />
                           {ds.shortLabel}
                         </div>
                       </div>

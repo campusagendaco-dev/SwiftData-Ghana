@@ -179,7 +179,7 @@ const AdminAuditLogs = () => {
                 No administrative actions have been recorded yet. The system will automatically log actions like price updates, wallet top-ups, and user management.
               </p>
               <button 
-                onClick={fetchLogs}
+                onClick={() => fetchLogs(false)}
                 className="mt-6 text-xs text-amber-400 hover:underline font-medium"
               >
                 Check again

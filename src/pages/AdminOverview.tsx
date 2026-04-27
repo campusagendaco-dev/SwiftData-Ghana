@@ -310,7 +310,7 @@ const AdminOverview = () => {
       supabase.removeChannel(profilesChannel);
       clearInterval(interval);
     };
-  }, [timeRange]);
+  }, [timeRange, fetchData, toast]);
 
   const saveMaintenance = async () => {
     if (!maintenanceTableReady) {

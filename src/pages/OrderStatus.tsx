@@ -153,7 +153,7 @@ const OrderStatus = () => {
       clearInterval(timer);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [reference]);
+  }, [reference, handleStatusUpdate]);
 
   const manualCheck = async () => {
     if (!reference || isRefreshing) return;

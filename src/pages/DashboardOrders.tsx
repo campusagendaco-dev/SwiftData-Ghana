@@ -160,7 +160,7 @@ const DashboardOrders = () => {
 
   useEffect(() => {
     fetchOrders(false);
-  }, [filter, user, profile?.id]);
+  }, [filter, user, profile?.id, fetchOrders]);
 
   // Live realtime updates for all current orders
   useEffect(() => {
@@ -306,7 +306,7 @@ const DashboardOrders = () => {
               <SelectItem value="fulfillment_failed">Failed</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" className="h-9 w-9" onClick={fetchOrders} disabled={loading}>
+          <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => fetchOrders(false)} disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>

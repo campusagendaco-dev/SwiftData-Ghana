@@ -82,7 +82,7 @@ const DeveloperPortal = () => {
                 <div className="bg-amber-400/20 p-1.5 rounded-lg mt-1"><Puzzle className="w-4 h-4 text-amber-400" /></div>
                 <div>
                   <p className="font-bold">No hidden fees</p>
-                  <p className="text-sm text-white/40 text-sm">Only pay for the data packages you purchase.</p>
+                  <p className="text-sm text-white/40">Only pay for the data packages you purchase.</p>
                 </div>
               </div>
             </div>

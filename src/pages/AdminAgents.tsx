@@ -78,7 +78,7 @@ const AdminAgents = () => {
 
     let query = supabase
       .from("profiles")
-      .select("*", { count: "exact" });
+      .select("*", { count: "exact" }) as any;
 
     query = query.eq("is_agent", true);
     query = query.eq("is_sub_agent" as any, false);

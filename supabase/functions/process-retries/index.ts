@@ -4,14 +4,14 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 
 const supabaseAdmin = createClient(
-  Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  (Deno as any).env.get("SUPABASE_URL") ?? "",
+  (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
 );
 
-const DATA_PROVIDER_BASE_URL = Deno.env.get("DATA_PROVIDER_BASE_URL") || "";
-const DATA_PROVIDER_API_KEY = Deno.env.get("DATA_PROVIDER_API_KEY") || "";
-const DATA_PROVIDER_WEBHOOK_URL = Deno.env.get("DATA_PROVIDER_WEBHOOK_URL") || "";
-const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+const DATA_PROVIDER_BASE_URL = (Deno as any).env.get("DATA_PROVIDER_BASE_URL") || "";
+const DATA_PROVIDER_API_KEY = (Deno as any).env.get("DATA_PROVIDER_API_KEY") || "";
+const DATA_PROVIDER_WEBHOOK_URL = (Deno as any).env.get("DATA_PROVIDER_WEBHOOK_URL") || "";
+const PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
 
 function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   const clean = baseUrl.trim().replace(/\/+$/, "");
@@ -113,7 +113,7 @@ function parseCapacity(packageSize: string): number {
   return match ? parseFloat(match[1]) : 0;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {

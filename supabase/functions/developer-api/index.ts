@@ -4,7 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, sendSmsViaTxtConnect, getSmsConfig } from "../_shared/sms.ts";
 
 function getEnv(...keys: string[]): string {
-  for (const k of keys) { const v = Deno.env.get(k)?.trim(); if (v) return v; }
+  for (const k of keys) { const v = (Deno as any).env.get(k)?.trim(); if (v) return v; }
   return "";
 }
 
@@ -150,8 +150,8 @@ function json(data: unknown, status = 200) {
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const SUPABASE_URL = (Deno as any).env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY)
     return json({ success: false, error: "Server misconfigured" }, 500);
 
@@ -286,7 +286,7 @@ serve(async (req: Request) => {
         .order("network").order("package_size");
 
       const customPrices = profile.api_custom_prices || {};
-      const customizedPlans = (plans || []).map(p => {
+      const customizedPlans = (plans || []).map((p: any) => {
         const override = customPrices[p.network]?.[p.package_size];
         if (override && override > 0) return { ...p, api_price: override, is_custom: true };
         return p;

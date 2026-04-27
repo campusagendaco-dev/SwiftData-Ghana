@@ -107,7 +107,7 @@ const AdminOrders = () => {
 
     // Resolve profile info for this batch
     const agentIds = [...new Set((data || []).map((o: any) => o.agent_id))];
-    let profileMap: Record<string, AgentProfile> = { ...profiles };
+    const profileMap: Record<string, AgentProfile> = { ...profiles };
     
     if (agentIds.length > 0) {
       const { data: profData } = await supabase
@@ -130,7 +130,7 @@ const AdminOrders = () => {
 
     setAllOrders(enriched);
     setLoading(false);
-  }, [page, search, statusFilter, networkFilter]);
+  }, [page, search, statusFilter, networkFilter, profiles, toast]);
 
   useEffect(() => { 
     const timer = setTimeout(() => fetchOrders(), 300);

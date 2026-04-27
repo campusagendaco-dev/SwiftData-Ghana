@@ -5,7 +5,7 @@ import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sen
 
 function getFirstEnvValue(keys: string[]): string {
   for (const key of keys) {
-    const value = Deno.env.get(key)?.trim();
+    const value = (Deno as any).env.get(key)?.trim();
     if (value) return value;
   }
   return "";
@@ -349,19 +349,19 @@ function amountMatches(expected: number, actual: number, tolerance = 0.01): bool
   return Math.abs(expected - actual) <= tolerance;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
+  const PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY");
   const DATA_PROVIDER_WEBHOOK_URL = getFirstEnvValue([
     "DATA_PROVIDER_WEBHOOK_URL",
     "PRIMARY_DATA_PROVIDER_WEBHOOK_URL",
     "SECONDARY_DATA_PROVIDER_WEBHOOK_URL",
   ]);
-  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const SUPABASE_URL = (Deno as any).env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
@@ -405,7 +405,7 @@ serve(async (req) => {
     if (order && order.status === "fulfillment_failed") {
       let canRetryFailedOrder = false;
       if (authHeader) {
-        const supabaseUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || "", {
+        const supabaseUser = createClient(SUPABASE_URL, (Deno as any).env.get("SUPABASE_ANON_KEY") || "", {
           global: { headers: { Authorization: authHeader } },
         });
         const { data: { user } } = await supabaseUser.auth.getUser();
