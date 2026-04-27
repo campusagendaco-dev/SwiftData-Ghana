@@ -117,7 +117,42 @@ const BuyAirtime = () => {
   };
 
   return (
-    <div className="min-h-screen pt-20 transition-all duration-300 pb-24">
+    <div className="min-h-screen pt-20 transition-all duration-300 pb-24 relative overflow-hidden">
+      
+      {/* ── Coming Soon Overlay ── */}
+      <div className="absolute inset-0 z-[100] flex items-center justify-center p-6 bg-[#030703]/60 backdrop-blur-md">
+        <div className="max-w-sm w-full bg-[#0A0A0C] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 shadow-3xl animate-in zoom-in-95 duration-500">
+          <div className="relative mx-auto w-24 h-24">
+            <div className="absolute inset-0 bg-amber-400 rounded-full blur-2xl opacity-20 animate-pulse" />
+            <div className="relative w-full h-full rounded-full bg-amber-400 flex items-center justify-center shadow-[0_0_50px_rgba(251,191,36,0.3)]">
+              <Sparkles className="w-12 h-12 text-black" />
+            </div>
+          </div>
+          
+          <div className="space-y-3">
+            <h2 className="text-4xl font-black tracking-tighter text-white uppercase">Coming Soon</h2>
+            <p className="text-white/40 text-sm font-medium leading-relaxed">
+              Airtime purchase for guest users is coming soon. In the meantime, you can buy Data Bundles instantly!
+            </p>
+          </div>
+
+          <div className="pt-4 flex flex-col gap-3">
+            <Link 
+              to="/buy-data"
+              className="w-full bg-amber-400 text-black font-black py-4 rounded-2xl transition-all uppercase tracking-widest text-xs shadow-lg shadow-amber-400/20"
+            >
+              Buy Data Instead
+            </Link>
+            <button 
+              onClick={() => window.history.back()}
+              className="w-full bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black py-4 rounded-2xl transition-all uppercase tracking-widest text-xs"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Hero header */}
       <div className="text-white py-10 px-4 mb-6" style={{ background: theme.heroHex }}>
         <div className="container mx-auto max-w-5xl">

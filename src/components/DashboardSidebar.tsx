@@ -205,6 +205,11 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                       )} />
                       {item.label}
                     </div>
+                    {item.to === "/dashboard/buy-airtime" && (
+                      <Badge variant="outline" className="text-[8px] h-4 bg-amber-400/10 text-amber-400 border-amber-400/20 uppercase font-black px-1">
+                        Soon
+                      </Badge>
+                    )}
                     {isActive && <ChevronRight className="w-3 h-3 text-primary" />}
                   </Link>
                 );

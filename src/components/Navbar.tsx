@@ -208,6 +208,11 @@ const Navbar = () => {
                   >
                     <NavIcon icon={icon} className={isActive(to) ? "text-amber-400" : ""} />
                     {label}
+                    {to === "/buy-airtime" && (
+                      <span className="ml-1 text-[8px] font-black uppercase tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1 rounded">
+                        Soon
+                      </span>
+                    )}
                   </Link>
                 ))}
 
@@ -431,6 +436,11 @@ const Navbar = () => {
                 <NavIcon icon={icon} className={isActive(to) ? "text-amber-400" : isDark ? "text-white/42" : "text-gray-400"} />
               </div>
               {label}
+              {to === "/buy-airtime" && (
+                <span className="ml-2 text-[8px] font-black uppercase tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded">
+                  Soon
+                </span>
+              )}
               {isActive(to) && <ChevronRight className="w-4 h-4 ml-auto text-amber-400/55" />}
             </Link>
           ))}

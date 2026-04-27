@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
@@ -117,7 +117,7 @@ const AdminOverview = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"topups" | "audit">("topups");
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     const now = new Date();
     let startDate = new Date();
     if (timeRange === "7d") startDate.setDate(now.getDate() - 6);
@@ -136,7 +136,7 @@ const AdminOverview = () => {
       supabase.functions.invoke("admin-user-actions", { body: { action: "get_provider_balance" } }).catch(e => ({ data: { success: false, error: e.message }, error: e })),
       supabase.from("withdrawals").select("id", { count: "exact", head: true }).eq("status", "pending"),
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
-      supabase.from("orders").select("id, amount, paystack_verified_amount, created_at, profiles(full_name)").eq("order_type", "wallet_topup").eq("status", "fulfilled").order("created_at", { ascending: false }).limit(6),
+      supabase.from("orders").select("id, amount, network, package_size, customer_phone, order_type, created_at").eq("status", "fulfilled").order("created_at", { ascending: false }).limit(12),
       supabase.from("audit_logs").select("id, action, details, created_at, profiles(full_name)").order("created_at", { ascending: false }).limit(6),
       supabase.from("wallets").select("balance"),
       supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
@@ -183,24 +183,28 @@ const AdminOverview = () => {
     const todayStr = now.toISOString().slice(0, 10);
 
 
+    const DEPOSIT_TYPES = new Set(["wallet_topup", "agent_activation", "sub_agent_activation"]);
+    const SALE_TYPES    = new Set(["data", "airtime", "utility", "afa", "api"]);
+
     rangeOrders.forEach((o: any) => {
-      if (o.status !== "fulfilled") return; // Only count verified and delivered orders
-      
-      const fullKey = (o.created_at as string).slice(0, 10);
+      if (o.status !== "fulfilled") return;
+
+      const fullKey  = (o.created_at as string).slice(0, 10);
       const chartKey = isMonthly ? fullKey.slice(0, 7) : fullKey;
-      
-      const amt = Number(o.amount) || 0;
-      
-      if (chartMap[chartKey]) {
-        if (["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type)) {
-          chartMap[chartKey].Deposits += amt;
-        } else {
-          chartMap[chartKey].Purchases += amt;
-        }
-        
-        if (agentIds.has(o.agent_id)) chartMap[chartKey].Agents += amt;
-        else if (subAgentIds.has(o.agent_id)) chartMap[chartKey]["Sub-Agents"] += amt;
-        else chartMap[chartKey].Customers += amt;
+      const amt      = Number(o.amount) || 0;
+      const bucket   = chartMap[chartKey];
+
+      if (!bucket) return;
+
+      if (DEPOSIT_TYPES.has(o.order_type)) {
+        // Deposits/activations go only into the Deposits column
+        bucket.Deposits += amt;
+      } else if (SALE_TYPES.has(o.order_type)) {
+        // Product sales go into Purchases AND the correct segment column
+        bucket.Purchases += amt;
+        if      (agentIds.has(o.agent_id))    bucket.Agents        += amt;
+        else if (subAgentIds.has(o.agent_id)) bucket["Sub-Agents"] += amt;
+        else                                   bucket.Customers     += amt;
       }
     });
 
@@ -274,7 +278,7 @@ const AdminOverview = () => {
     }
     setLastUpdated(new Date());
     setLoading(false);
-  };
+  }, [timeRange]);
 
   useEffect(() => {
     fetchData();
@@ -866,16 +870,16 @@ const AdminOverview = () => {
                 </div>
               </div>
 
-              <div className="flex p-1 rounded-xl bg-white/5 border border-white/5">
-                <button 
+              <div className={`flex p-1 rounded-xl border ${isDark ? "bg-white/5 border-white/5" : "bg-gray-100 border-gray-200"}`}>
+                <button
                   onClick={() => setActiveTab("topups")}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "topups" ? "bg-amber-400 text-black shadow-lg" : "text-white/40 hover:text-white/60"}`}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "topups" ? "bg-amber-400 text-black shadow-lg" : isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700"}`}
                 >
-                  Verified Topups
+                  Transactions
                 </button>
-                <button 
+                <button
                   onClick={() => setActiveTab("audit")}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "audit" ? "bg-amber-400 text-black shadow-lg" : "text-white/40 hover:text-white/60"}`}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "audit" ? "bg-amber-400 text-black shadow-lg" : isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700"}`}
                 >
                   Audit Logs
                 </button>
@@ -884,36 +888,52 @@ const AdminOverview = () => {
 
             <div className="p-4 flex-1 min-h-[360px]">
               {activeTab === "topups" ? (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {verifiedLogs.length === 0 ? (
                     <div className="py-12 text-center opacity-20">
-                      <Clock className="w-8 h-8 mx-auto mb-2" />
-                      <p className="text-[10px] font-bold uppercase tracking-widest">No verified topups</p>
+                      <Activity className="w-8 h-8 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold uppercase tracking-widest">No transactions yet</p>
                     </div>
                   ) : (
-                    verifiedLogs.map((log: any) => (
-                      <div key={log.id} className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.05] transition-all group">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-tighter flex items-center gap-1">
-                            <ShieldCheck className="w-3 h-3" /> Verified
-                          </span>
-                          <span className="text-[9px] text-white/20 font-mono">{new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-black text-white/90">{log.profiles?.full_name || "Unknown Agent"}</p>
-                            <p className="text-[10px] text-white/30 font-medium">Ref: {log.id.slice(0, 8).toUpperCase()}</p>
+                    verifiedLogs.map((log: any) => {
+                      const typeMap: Record<string, { label: string; color: string; bg: string }> = {
+                        data:                  { label: "Data",      color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/20"         },
+                        airtime:               { label: "Airtime",   color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20"       },
+                        wallet_topup:          { label: "Top-up",    color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+                        agent_activation:      { label: "Agent Act", color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/20"     },
+                        sub_agent_activation:  { label: "Sub-Agent", color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/20"   },
+                        utility:               { label: "Utility",   color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20"   },
+                        api:                   { label: "API",       color: "text-pink-400",    bg: "bg-pink-500/10 border-pink-500/20"       },
+                      };
+                      const t = typeMap[log.order_type] || { label: log.order_type || "Order", color: "text-white/50", bg: "bg-white/5 border-white/10" };
+                      const label = log.network && log.package_size
+                        ? `${log.network} ${log.package_size}`
+                        : log.customer_phone || "—";
+                      return (
+                        <div key={log.id} className={`p-3 rounded-2xl border transition-all hover:brightness-110 ${isDark ? "bg-white/[0.03] border-white/5" : "bg-gray-50 border-gray-100"}`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${t.bg} ${t.color}`}>
+                              {t.label}
+                            </span>
+                            <span className={`text-[9px] font-mono ${muted}`}>
+                              {new Date(log.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                              {" · "}
+                              {new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-black text-emerald-400">GH₵{Number(log.paystack_verified_amount || log.amount).toFixed(2)}</p>
-                            <p className="text-[9px] text-white/20 uppercase font-bold tracking-tighter">Settled</p>
+                          <div className="flex items-center justify-between">
+                            <div className="min-w-0">
+                              <p className={`text-xs font-bold truncate ${isDark ? "text-white/90" : "text-gray-800"}`}>{label}</p>
+                              <p className={`text-[10px] font-mono ${muted}`}>#{log.id.slice(0, 8).toUpperCase()}</p>
+                            </div>
+                            <p className={`text-sm font-black shrink-0 ml-3 ${t.color}`}>GH₵{Number(log.amount).toFixed(2)}</p>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
-                  <Button variant="ghost" onClick={() => navigate("/admin/orders")} className="w-full h-10 text-[9px] font-black uppercase tracking-[0.2em] text-white/20 hover:text-white/60 hover:bg-white/5">
-                    View Financial Logs
+                  <Button variant="ghost" onClick={() => navigate("/admin/orders")} className={`w-full h-10 text-[9px] font-black uppercase tracking-[0.2em] transition-colors ${isDark ? "text-white/20 hover:text-white/60 hover:bg-white/5" : "text-gray-400 hover:text-gray-700"}`}>
+                    View All Orders
                   </Button>
                 </div>
               ) : (
