@@ -670,24 +670,12 @@ serve(async (req) => {
 
     console.log("Wallet buy data:", { orderId, network, package_size, customer_phone });
 
-    let fulfillmentResult = await placeDataOrder(
-      providerConfig.baseUrl,
-      providerConfig.apiKey,
-      network,
-      package_size,
-      customer_phone,
-      DATA_PROVIDER_WEBHOOK_URL,
-      expectedAmount,
-    );
-
-    // ── SMART FAILOVER ───────────────────────────────────────────────────────
-    // If primary fails and failover is enabled and we have a secondary provider
-    if (!fulfillmentResult.ok && providerConfig.autoFailover && providerConfig.secondaryApiKey) {
-      console.warn(`Primary provider failed (${fulfillmentResult.reason}). Attempting failover to secondary...`);
-      
-      fulfillmentResult = await placeDataOrder(
-        providerConfig.secondaryBaseUrl,
-        providerConfig.secondaryApiKey,
+    // Run provider delivery in the background — respond immediately so the
+    // client is unblocked. OrderStatusBanner updates via Realtime when done.
+    const fulfillmentTask = (async () => {
+      let result = await placeDataOrder(
+        providerConfig.baseUrl,
+        providerConfig.apiKey,
         network,
         package_size,
         customer_phone,
@@ -695,66 +683,57 @@ serve(async (req) => {
         expectedAmount,
       );
 
-      if (fulfillmentResult.ok) {
-        console.log("Failover success! Order fulfilled via secondary provider.");
-      } else {
-        console.error(`Failover also failed: ${fulfillmentResult.reason}`);
+      if (!result.ok && providerConfig.autoFailover && providerConfig.secondaryApiKey) {
+        console.warn(`Primary failed (${result.reason}). Trying secondary...`);
+        result = await placeDataOrder(
+          providerConfig.secondaryBaseUrl,
+          providerConfig.secondaryApiKey,
+          network,
+          package_size,
+          customer_phone,
+          DATA_PROVIDER_WEBHOOK_URL,
+          expectedAmount,
+        );
+        if (result.ok) console.log("Failover succeeded.");
+        else console.error(`Failover also failed: ${result.reason}`);
       }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
-    console.log("Fulfillment response:", {
-      orderId,
-      status: fulfillmentResult.status,
-      reason: fulfillmentResult.reason,
-      url: fulfillmentResult.url,
-    });
+      console.log("Fulfillment:", { orderId, status: result.status, reason: result.reason, url: result.url });
 
-    if (fulfillmentResult.ok) {
-      // Fire post-fulfillment DB updates and SMS in parallel, don't block response
-      void Promise.all([
-        supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId),
-        ...((parentProfit ?? 0) > 0 && parentAgentId ? [supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId })] : []),
-        sendPaymentSms(supabaseAdmin, customer_phone, "payment_success"),
-      ]);
+      if (result.ok) {
+        await Promise.all([
+          supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId),
+          ...((parentProfit ?? 0) > 0 && parentAgentId ? [supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId })] : []),
+          sendPaymentSms(supabaseAdmin, customer_phone, "payment_success"),
+        ]);
+      } else {
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: result.reason,
+        }).eq("id", orderId);
 
-      return new Response(JSON.stringify({ success: true, order_id: orderId, status: "fulfilled" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Fire failure updates without blocking the response
-    void (async () => {
-      await supabaseAdmin.from("orders").update({
-        status: "fulfillment_failed",
-        failure_reason: fulfillmentResult.reason,
-      }).eq("id", orderId);
-
-      const { error: refundError } = await supabaseAdmin.rpc("credit_wallet", {
-        p_agent_id: user.id,
-        p_amount: expectedAmount,
-      });
-      if (!refundError) {
-        console.log(`Refunded GHS ${expectedAmount} to ${user.id} due to fulfillment failure.`);
-        if (customer_phone) {
+        const { error: refundError } = await supabaseAdmin.rpc("credit_wallet", {
+          p_agent_id: user.id,
+          p_amount: expectedAmount,
+        });
+        if (!refundError) {
+          console.log(`Refunded GHS ${expectedAmount} to ${user.id}`);
           void sendPaymentSms(supabaseAdmin, customer_phone, "order_failed", {
-            package: package_size,
-            phone: customer_phone,
-            amount: expectedAmount.toFixed(2)
+            package: package_size, phone: customer_phone, amount: expectedAmount.toFixed(2),
           });
         }
       }
     })();
-    // ─────────────────────────────────────────────────────────────────────────
 
-    return new Response(JSON.stringify({
-      success: true,
-      order_id: orderId,
-      status: "fulfillment_failed",
-      failure_reason: fulfillmentResult.reason,
-      retryable: true,
-    }), {
+    // Keep the edge function alive until fulfillment finishes
+    // deno-lint-ignore no-explicit-any
+    if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).EdgeRuntime.waitUntil(fulfillmentTask);
+    }
+
+    // Return immediately — wallet debited, order created, banner will update via Realtime
+    return new Response(JSON.stringify({ success: true, order_id: orderId, status: "processing" }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

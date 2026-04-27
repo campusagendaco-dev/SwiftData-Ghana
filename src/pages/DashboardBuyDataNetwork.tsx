@@ -307,37 +307,49 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     if (!validate()) return;
     setBuying(true);
 
+    const startTime = Date.now();
     const orderId = crypto.randomUUID();
-    const { data, error } = await invokePublicFunctionAsUser("wallet-buy-data", {
-      body: {
-        network,
-        package_size: selectedPackage!.size,
-        customer_phone: phone,
-        amount: selectedPackage!.price,
-        reference: orderId,
-      },
-    });
+    
+    try {
+      const { data, error } = await invokePublicFunctionAsUser("wallet-buy-data", {
+        body: {
+          network,
+          package_size: selectedPackage!.size,
+          customer_phone: phone,
+          amount: selectedPackage!.price,
+          reference: orderId,
+        },
+      });
 
-    if (error || data?.error) {
-      const description = data?.error || await getFunctionErrorMessage(error, "Could not complete purchase.");
-      toast({ title: "Purchase failed", description, variant: "destructive" });
+      // Ensure the "Processing" state lasts at least 5 seconds for the "session" experience
+      const elapsedTime = Date.now() - startTime;
+      const remainingTime = Math.max(0, 5000 - elapsedTime);
+      if (remainingTime > 0) await new Promise(resolve => setTimeout(resolve, remainingTime));
+
+      if (error || data?.error) {
+        const description = data?.error || await getFunctionErrorMessage(error, "Could not complete purchase.");
+        toast({ title: "Purchase failed", description, variant: "destructive" });
+        setBuying(false);
+        return;
+      }
+
+      if (typeof data?.order_id === "string" && data.order_id) {
+        setLastOrder({ id: data.order_id, network, packageSize: selectedPackage!.size, phone, status: data?.status || "paid" });
+        setShowSuccessOverlay(true);
+        setTimeout(() => setShowSuccessOverlay(false), 5000);
+      } else {
+        setShowSuccessOverlay(true);
+        setTimeout(() => setShowSuccessOverlay(false), 5000);
+      }
+
       setBuying(false);
-      return;
+      setPhone("");
+      setSelectedSize("");
+      refreshBalance();
+    } catch (err) {
+      console.error("Wallet buy error:", err);
+      setBuying(false);
     }
-
-    if (typeof data?.order_id === "string" && data.order_id) {
-      setLastOrder({ id: data.order_id, network, packageSize: selectedPackage!.size, phone, status: data?.status || "paid" });
-      setShowSuccessOverlay(true);
-      setTimeout(() => setShowSuccessOverlay(false), 5000);
-    } else {
-      setShowSuccessOverlay(true);
-      setTimeout(() => setShowSuccessOverlay(false), 5000);
-    }
-
-    setBuying(false);
-    setPhone("");
-    setSelectedSize("");
-    refreshBalance();
   };
 
   const handlePaystackBuy = async () => {
@@ -662,7 +674,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                   disabled={buying || !selectedPackage}
                 >
                   {buying ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Verifying...</>
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Placing order...</>
                   ) : payMethod === "wallet" ? (
                     <><Wallet className="w-4 h-4" /> Pay GH₵ {displayPrice.toFixed(2)}</>
                   ) : (
