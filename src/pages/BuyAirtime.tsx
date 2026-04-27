@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, Phone, Wallet, CheckCircle2, ArrowRight } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, Phone, Wallet, CheckCircle2, ArrowRight, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
