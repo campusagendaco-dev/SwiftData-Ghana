@@ -451,61 +451,23 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         ))}
       </div>
 
-      {/* Package grid */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{network} Bundles</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {settingsLoading
-            ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)
-            : packages.map((item) => {
-                const isSelected = selectedSize === item.size;
-                return (
-                  <button
-                    key={item.size}
-                    type="button"
-                    onClick={() => {
-                      setSelectedSize(isSelected ? "" : item.size);
-                      setPayMethod("wallet");
-                    }}
-                    className={`${cardColors.card} rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2 border-2 text-left transition-all duration-200 relative ${
-                      isSelected
-                        ? "border-white/80 shadow-xl scale-[1.03]"
-                        : "border-transparent hover:border-white/25 hover:scale-[1.01]"
-                    }`}
-                  >
-                    {isSelected && (
-                      <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-white flex items-center justify-center shadow">
-                        <span className="w-2.5 h-2.5 rounded-full bg-black" />
-                      </span>
-                    )}
-                    <span className={`${cardColors.label} text-[11px] font-bold uppercase tracking-wide`}>{network}</span>
-                    <span className={`${cardColors.size} text-2xl sm:text-3xl font-black leading-none`}>{item.size}</span>
-                    <div className="flex items-end justify-between mt-auto pt-0.5">
-                      <span className={`${cardColors.size} text-sm font-black`}>₵{item.price.toFixed(2)}</span>
-                      <span className={`${cardColors.label} text-[10px]`}>No Expiry</span>
-                    </div>
-                  </button>
-                );
-              })}
-        </div>
-      </div>
-
-      {/* ── Inline Purchase Panel ── */}
+      {/* ── Inline Purchase Panel (Swift Payment Layout) ── */}
       {selectedPackage && (
-        <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-lg">
+        <div className="rounded-2xl border-2 border-primary/30 bg-card overflow-hidden shadow-2xl animate-in slide-in-from-top-4 duration-300">
           {/* Panel header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-primary/5">
             <div className="flex items-center gap-2.5">
-              <span className="font-bold text-sm">{network} {selectedPackage.size}</span>
+              <div className={`w-2 h-2 rounded-full animate-pulse ${cardColors.size.replace('text-', 'bg-')}`} />
+              <span className="font-bold text-sm">Purchase {network} {selectedPackage.size}</span>
               {isFreePromo ? (
-                <span className="bg-green-500/20 text-green-500 text-[10px] font-bold px-2 py-0.5 rounded-full">FREE</span>
+                <span className="bg-green-500/20 text-green-500 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">FREE CLAIM</span>
               ) : (
                 <span className="text-muted-foreground text-xs">— GH₵ {displayPrice.toFixed(2)}</span>
               )}
             </div>
             <button
               onClick={() => { setSelectedSize(""); setPromoResult(null); setPromoCode(""); setPromoOpen(false); }}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-secondary"
+              className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-lg hover:bg-secondary"
             >
               <X className="w-4 h-4" />
             </button>
@@ -514,21 +476,21 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           <div className="p-4 space-y-4">
             {/* Phone input */}
             <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="dash-phone" className="text-sm">Recipient Phone Number</Label>
+              <div className="flex items-center justify-between mb-1.5">
+                <Label htmlFor="dash-phone" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Recipient Phone Number</Label>
                 {savedCustomers.length > 0 && (
                   <button 
                     onClick={() => setShowCustomers(!showCustomers)}
-                    className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+                    className="text-[10px] font-black uppercase text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
                   >
                     <Users2 className="w-3 h-3" />
-                    {showCustomers ? "Hide Contacts" : "Address Book"}
+                    {showCustomers ? "Close Contacts" : "Address Book"}
                   </button>
                 )}
               </div>
               
               {showCustomers && savedCustomers.length > 0 && (
-                <div className="mt-2 mb-3 max-h-40 overflow-y-auto border border-border rounded-xl divide-y divide-border bg-secondary/20">
+                <div className="mt-2 mb-3 max-h-40 overflow-y-auto border border-border rounded-xl divide-y divide-border bg-secondary/20 scrollbar-none">
                   {savedCustomers.map((c) => (
                     <button
                       key={c.id}
@@ -536,11 +498,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                         setPhone(c.phone);
                         setShowCustomers(false);
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-primary/10 transition-colors text-left"
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-primary/10 transition-colors text-left"
                     >
                       <div>
                         <p className="text-xs font-bold text-white">{c.name}</p>
-                        <p className="text-[10px] text-white/40">{c.phone}</p>
+                        <p className="text-[10px] text-white/40 font-mono">{c.phone}</p>
                       </div>
                       <span className="text-[9px] font-black uppercase text-primary/60 px-1.5 py-0.5 rounded border border-primary/20">{c.network}</span>
                     </button>
@@ -554,28 +516,28 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 inputMode="numeric"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="mt-1.5"
+                className="bg-secondary/30 border-border/50 focus:border-primary/50 transition-all h-11 text-base"
                 placeholder="0241234567"
                 maxLength={12}
               />
               {phone.length > 0 && !isPhoneValid && (
-                <p className="text-xs text-destructive mt-1">Enter a valid 10-digit Ghana number</p>
+                <p className="text-[10px] font-bold text-destructive mt-1.5 uppercase tracking-tight">Invalid Ghana number format</p>
               )}
             </div>
 
             {/* Promo Code Section */}
             {!promoOpen && !validPromo ? (
-              <button onClick={() => setPromoOpen(true)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mt-2">
-                <Tag className="w-3.5 h-3.5" /> Have a promo code?
+              <button onClick={() => setPromoOpen(true)} className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors">
+                <Tag className="w-3 h-3" /> Have a promo code?
               </button>
             ) : (
-              <div className="space-y-2 mt-2">
+              <div className="space-y-2">
                 {validPromo ? (
-                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border ${validPromo.is_free ? "bg-green-500/10 border-green-500/30 text-green-500" : "bg-amber-500/10 border-amber-500/30 text-amber-500"}`}>
+                  <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider border ${validPromo.is_free ? "bg-green-500/10 border-green-500/30 text-green-500" : "bg-amber-500/10 border-amber-500/30 text-amber-500"}`}>
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     {validPromo.is_free
                       ? `Code ${validPromo.code}: 100% FREE`
-                      : `Code ${validPromo.code}: ${validPromo.discount_percentage}% off applied`}
+                      : `Code ${validPromo.code}: ${validPromo.discount_percentage}% off`}
                     <button onClick={() => { setPromoResult(null); setPromoCode(""); setPromoOpen(true); }} className="ml-auto opacity-70 hover:opacity-100 p-1">
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -587,56 +549,56 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       placeholder="Enter code"
                       value={promoCode}
                       onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); }}
-                      className="uppercase font-mono text-sm"
+                      className="uppercase font-mono text-sm h-10 bg-secondary/30"
                     />
-                    <Button onClick={handleApplyPromo} disabled={promoValidating || !promoCode.trim()} variant="secondary" className="font-bold">
+                    <Button onClick={handleApplyPromo} disabled={promoValidating || !promoCode.trim()} variant="secondary" size="sm" className="font-bold h-10 px-4">
                       {promoValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
                     </Button>
-                    <Button onClick={() => { setPromoOpen(false); setPromoCode(""); setPromoResult(null); }} variant="ghost" size="icon" className="shrink-0 text-muted-foreground">
+                    <Button onClick={() => { setPromoOpen(false); setPromoCode(""); setPromoResult(null); }} variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-muted-foreground">
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
                 )}
-                {promoResult && !promoResult.valid && <p className="text-xs text-destructive pl-1">{promoResult.error || "Invalid promo code"}</p>}
+                {promoResult && !promoResult.valid && <p className="text-[10px] font-bold text-destructive pl-1 uppercase">{promoResult.error || "Invalid promo code"}</p>}
               </div>
             )}
 
             {/* Payment method */}
             {!isFreePromo && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 mt-2">Payment Method</p>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="pt-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Select Payment Method</p>
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => setPayMethod("wallet")}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    className={`p-3 rounded-2xl border-2 text-left transition-all ${
                       payMethod === "wallet"
-                        ? "border-primary bg-primary/8"
-                        : "border-border hover:border-primary/40"
+                        ? "border-primary bg-primary/10 shadow-[0_0_15px_rgba(var(--primary-rgb),0.1)]"
+                        : "border-border/50 hover:border-primary/40 bg-secondary/20"
                     }`}
                   >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Wallet className="w-4 h-4 text-primary shrink-0" />
-                      <span className="text-sm font-semibold">Wallet</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Wallet className={`w-4 h-4 shrink-0 ${payMethod === "wallet" ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="text-xs font-bold">Wallet</span>
                     </div>
-                    <p className="text-xs text-muted-foreground pl-6">
-                      Balance: GH₵ {(walletBalance || 0).toFixed(2)}
+                    <p className="text-[10px] font-medium text-muted-foreground">
+                      Bal: GH₵ {(walletBalance || 0).toFixed(2)}
                     </p>
                   </button>
 
                   <button
                     onClick={() => setPayMethod("paystack")}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    className={`p-3 rounded-2xl border-2 text-left transition-all ${
                       payMethod === "paystack"
-                        ? "border-primary bg-primary/8"
-                        : "border-border hover:border-primary/40"
+                        ? "border-primary bg-primary/10 shadow-[0_0_15px_rgba(var(--primary-rgb),0.1)]"
+                        : "border-border/50 hover:border-primary/40 bg-secondary/20"
                     }`}
                   >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <CreditCard className="w-4 h-4 text-primary shrink-0" />
-                      <span className="text-sm font-semibold">Card / MoMo</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <CreditCard className={`w-4 h-4 shrink-0 ${payMethod === "paystack" ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="text-xs font-bold text-nowrap">Card / MoMo</span>
                     </div>
-                    <p className="text-xs text-muted-foreground pl-6">
-                      +3% Paystack fee
+                    <p className="text-[10px] font-medium text-muted-foreground">
+                      +3% fee
                     </p>
                   </button>
                 </div>
@@ -645,67 +607,126 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
             {/* Price breakdown for Paystack */}
             {payMethod === "paystack" && !isFreePromo && (
-              <div className="rounded-xl bg-secondary/60 border border-border divide-y divide-border text-sm overflow-hidden mt-2">
-                <div className="flex justify-between px-4 py-2.5">
-                  <span className="text-muted-foreground">Bundle price</span>
-                  <span className="font-medium">GH₵ {displayPrice.toFixed(2)}</span>
+              <div className="rounded-xl bg-secondary/40 border border-border/50 divide-y divide-border/50 text-[11px] font-medium overflow-hidden">
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-muted-foreground uppercase tracking-tight">Bundle price</span>
+                  <span>GH₵ {displayPrice.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between px-4 py-2.5">
-                  <span className="text-muted-foreground">Paystack fee (3%)</span>
-                  <span className="font-medium">GH₵ {paystackFee.toFixed(2)}</span>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-muted-foreground uppercase tracking-tight">Processing fee</span>
+                  <span>GH₵ {paystackFee.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between px-4 py-2.5 bg-secondary/60 font-bold">
-                  <span>Total to pay</span>
-                  <span>GH₵ {paystackTotal.toFixed(2)}</span>
+                <div className="flex justify-between px-3 py-2.5 bg-primary/5 font-black text-white uppercase tracking-wider">
+                  <span>Total Payable</span>
+                  <span className="text-primary">GH₵ {paystackTotal.toFixed(2)}</span>
                 </div>
               </div>
             )}
 
             {/* Wallet insufficient warning */}
             {payMethod === "wallet" && !isFreePromo && walletBalance !== null && walletBalance < displayPrice && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2 mt-2">
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[10px] font-bold text-amber-500 flex items-center gap-2.5 uppercase tracking-tight">
                 <Wallet className="w-3.5 h-3.5 shrink-0" />
-                Insufficient wallet balance. Top up or pay with card instead.
+                <span className="flex-1">Insufficient wallet balance. Top up or use card.</span>
                 <button
                   onClick={() => navigate("/dashboard/wallet")}
-                  className="ml-auto font-semibold underline underline-offset-2 shrink-0"
+                  className="bg-amber-500 text-black px-2 py-1 rounded text-[9px] font-black hover:bg-amber-400 transition-colors"
                 >
-                  Top Up
+                  TOP UP
                 </button>
               </div>
             )}
 
             {/* Action button */}
-            {isFreePromo ? (
-              <Button
-                className="w-full gap-2 font-bold text-sm py-5 mt-2 bg-green-500 hover:bg-green-600 text-white"
-                onClick={handleClaimFree}
-                disabled={claimingFree || !selectedPackage}
-              >
-                {claimingFree ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Claiming...</>
-                ) : (
-                  <><Gift className="w-4 h-4" /> Claim Free Data</>
-                )}
-              </Button>
-            ) : (
-              <Button
-                className="w-full gap-2 font-bold text-sm py-5 mt-2"
-                onClick={payMethod === "wallet" ? handleWalletBuy : handlePaystackBuy}
-                disabled={buying || !selectedPackage}
-              >
-                {buying ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
-                ) : payMethod === "wallet" ? (
-                  <><Wallet className="w-4 h-4" /> Buy from Wallet — GH₵ {displayPrice.toFixed(2)}</>
-                ) : (
-                  <><CreditCard className="w-4 h-4" /> Pay GH₵ {paystackTotal.toFixed(2)} with Card</>
-                )}
-              </Button>
-            )}
+            <div className="pt-2">
+              {isFreePromo ? (
+                <Button
+                  className="w-full gap-2 font-black text-xs py-6 uppercase tracking-[0.2em] bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20 rounded-2xl"
+                  onClick={handleClaimFree}
+                  disabled={claimingFree || !selectedPackage}
+                >
+                  {claimingFree ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Processing Claim...</>
+                  ) : (
+                    <><Gift className="w-4 h-4" /> Claim Free Data</>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  className={`w-full gap-2 font-black text-xs py-6 uppercase tracking-[0.2em] shadow-xl transition-all rounded-2xl ${
+                    payMethod === "wallet" 
+                      ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20" 
+                      : "bg-white text-black hover:bg-white/90 shadow-white/10"
+                  }`}
+                  onClick={payMethod === "wallet" ? handleWalletBuy : handlePaystackBuy}
+                  disabled={buying || !selectedPackage}
+                >
+                  {buying ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Verifying...</>
+                  ) : payMethod === "wallet" ? (
+                    <><Wallet className="w-4 h-4" /> Pay GH₵ {displayPrice.toFixed(2)}</>
+                  ) : (
+                    <><CreditCard className="w-4 h-4" /> Pay GH₵ {paystackTotal.toFixed(2)}</>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Package grid */}
+      <div className={selectedPackage ? "opacity-40 grayscale-[0.5] pointer-events-none transition-all duration-500" : ""}>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">{network} Available Bundles</p>
+          {selectedPackage && (
+            <button 
+              onClick={() => setSelectedSize("")}
+              className="text-[10px] font-black uppercase text-primary animate-pulse"
+            >
+              ← Back to Quick Select
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {settingsLoading
+            ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)
+            : packages.map((item) => {
+                const isSelected = selectedSize === item.size;
+                return (
+                  <button
+                    key={item.size}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSize(isSelected ? "" : item.size);
+                      setPayMethod("wallet");
+                      // Scroll to top of panel if on mobile
+                      if (!isSelected) window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className={`${cardColors.card} rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2 border-2 text-left transition-all duration-200 relative ${
+                      isSelected
+                        ? "border-white shadow-2xl scale-[1.05] z-10"
+                        : "border-transparent hover:border-white/20 hover:scale-[1.02] opacity-80 hover:opacity-100"
+                    }`}
+                  >
+                    {isSelected && (
+                      <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-xl border border-black/10">
+                        <CheckCircle2 className="w-4 h-4 text-black" />
+                      </span>
+                    )}
+                    <span className={`${cardColors.label} text-[10px] font-black uppercase tracking-widest opacity-60`}>{network}</span>
+                    <span className={`${cardColors.size} text-3xl font-black leading-none tracking-tighter`}>{item.size}</span>
+                    <div className="flex items-end justify-between mt-auto pt-1">
+                      <span className={`${cardColors.size} text-base font-black`}>₵{item.price.toFixed(2)}</span>
+                      <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>No Expiry</span>
+                    </div>
+                  </button>
+                );
+              })}
+        </div>
+      </div>
+
+
       {/* ── Success Overlay ── */}
       {showSuccessOverlay && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">

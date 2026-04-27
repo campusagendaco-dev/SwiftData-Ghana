@@ -463,8 +463,8 @@ serve(async (req: Request) => {
 
     if (orderType === "wallet_topup") {
       const walletCredit = Number(metadata.wallet_credit);
-      if (!Number.isFinite(walletCredit) || walletCredit < 15) {
-        return new Response(JSON.stringify({ error: "Minimum wallet top-up is GHS 15.00" }), {
+      if (!Number.isFinite(walletCredit) || walletCredit < 10) {
+        return new Response(JSON.stringify({ error: "Minimum wallet top-up is GHS 10.00" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
