@@ -122,7 +122,7 @@ function normalizeRecipient(phone: string): string {
   return phone.trim();
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -265,7 +265,7 @@ serve(async (req) => {
                 });
                 return new Response(JSON.stringify({ success: true, order_id: orderId, status: "fulfilled" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
               }
-            } catch (parseErr) {
+            } catch (parseErr: any) {
               if (parseErr.message === lastError) throw parseErr;
               // Non-JSON 200 is treated as success if no error was explicitly parsed
             }
@@ -277,14 +277,14 @@ serve(async (req) => {
             if (res.status === 404) continue; // Try next URL alias
             throw new Error(lastError);
           }
-        } catch (err) {
+        } catch (err: any) {
           if (url === urls[urls.length - 1]) throw err;
           console.warn(`[airtime] Alias failed: ${url}. Error: ${err.message}`);
         }
       }
 
       throw new Error(lastError);
-    } catch (err) {
+    } catch (err: any) {
       const attemptedUrls = urls.join(", ");
       console.error(`[airtime] Fulfillment failed. Attempted URLs: ${attemptedUrls}. Error: ${err.message}`);
       
@@ -329,7 +329,7 @@ serve(async (req) => {
         }
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[airtime] Global Error: ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
