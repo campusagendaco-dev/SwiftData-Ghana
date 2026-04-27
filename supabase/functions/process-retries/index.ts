@@ -84,6 +84,7 @@ async function verifyPaystack(reference: string) {
     return {
       ok: data.status && data.data.status === "success",
       amount: data.data?.amount / 100,
+      metadata: data.data?.metadata || {},
       reason: data.message || "Unpaid"
     };
   } catch (error) {
@@ -100,29 +101,16 @@ function mapNetworkKey(network: string): string {
 }
 
 function normalizeRecipient(phone: string): string {
-  const digits = phone.replace(/\D+/g, "");
-  if (digits.startsWith("233") && digits.length === 12) return `0${digits.slice(3)}`;
-  if (digits.length === 9) return `0${digits}`;
-  if (digits.length === 10 && digits.startsWith("0")) return digits;
-  return phone.trim();
-}
-
-function parseCapacity(packageSize: string): number {
-  const match = packageSize?.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/)
-  return match ? parseFloat(match[1]) : 0;
-}
-
-function parseCapacity(packageSize: string): number {
-  const match = (packageSize || "").replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-function normalizeRecipient(phone: string): string {
   const digits = (phone || "").replace(/\D+/g, "");
   if (digits.length === 9) return `0${digits}`;
   if (digits.length === 10 && digits.startsWith("0")) return digits;
   if (digits.startsWith("233") && digits.length === 12) return `0${digits.slice(3)}`;
   return (phone || "").trim();
+}
+
+function parseCapacity(packageSize: string): number {
+  const match = (packageSize || "").replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+  return match ? parseFloat(match[1]) : 0;
 }
 
 serve(async (req) => {
@@ -190,7 +178,12 @@ serve(async (req) => {
         await supabaseAdmin.from("profiles").update({ is_agent: true, agent_approved: true }).eq("user_id", order.agent_id);
         success = true;
       } else if (order.order_type === "sub_agent_activation") {
-        await supabaseAdmin.from("profiles").update({ is_sub_agent: true, agent_approved: true }).eq("user_id", order.agent_id);
+        await supabaseAdmin.from("profiles").update({ 
+          is_agent: true, 
+          agent_approved: true,
+          sub_agent_approved: true,
+          onboarding_complete: true
+        }).eq("user_id", order.agent_id);
         success = true;
       } else if (order.order_type === "wallet_topup") {
         await supabaseAdmin.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
@@ -207,18 +200,20 @@ serve(async (req) => {
         success = result.ok;
         failureReason = result.reason;
       } else if (order.order_type === "airtime") {
+        const verification = await verifyPaystack(order.id);
+        const basePrice = Number(verification.metadata?.base_price) || order.amount;
         const networkKey = mapNetworkKey(order.network);
         const recipient = normalizeRecipient(order.customer_phone);
-        const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
+        const airtimeResult = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
           networkRaw: order.network,
           networkKey,
           recipient,
-          capacity: order.amount,
-          amount: order.amount,
+          capacity: basePrice,
+          amount: basePrice,
           order_type: "airtime"
         }, DATA_PROVIDER_WEBHOOK_URL);
-        success = result.ok;
-        failureReason = result.reason;
+        success = airtimeResult.ok;
+        failureReason = airtimeResult.reason;
       } else {
         // Data bundle purchase
         const networkKey = mapNetworkKey(order.network);

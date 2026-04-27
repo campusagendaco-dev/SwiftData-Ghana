@@ -9,7 +9,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 const NAV_SECTIONS = [
   {
@@ -218,6 +218,7 @@ const AdminLayout = () => {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="p-0 w-[85vw] max-w-[260px] bg-transparent border-none">
+              <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
               <SidebarContent onNavigate={() => setOpen(false)} />
             </SheetContent>
           </Sheet>

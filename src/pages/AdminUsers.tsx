@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
-import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart } from "lucide-react";
+import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown } from "lucide-react";
 
 interface UserRow {
   user_id: string;

@@ -504,12 +504,13 @@ serve(async (req) => {
             const networkKey = mapNetworkKey(network);
             const capacity = parseCapacity(packageSize);
 
+            const airtimeAmount = isAirtime ? (Number(recoveredMetadata?.base_price) || capacity) : order.amount;
             const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
               networkRaw: network,
               networkKey: networkKey,
               recipient: normalizeRecipient(customerPhone),
-              capacity: isAirtime ? order.amount : capacity,
-              amount: order.amount,
+              capacity: isAirtime ? airtimeAmount : capacity,
+              amount: isAirtime ? airtimeAmount : order.amount,
               order_type: isAirtime ? "airtime" : "data"
             }, DATA_PROVIDER_WEBHOOK_URL);
             if (result.ok) {
@@ -566,6 +567,7 @@ serve(async (req) => {
 
     const metadata = verifyData.data.metadata || {};
     const verifiedAmount = Number(verifyData.data.amount || 0) / 100;
+    const paystackFeeOnVerified = parseFloat(Math.min(verifiedAmount * 0.03 / 1.03, 100).toFixed(2));
     const orderType = order?.order_type || metadata.order_type;
     const paidAmount = Number(order?.amount || verifiedAmount);
 
@@ -614,10 +616,7 @@ serve(async (req) => {
       if (!order.network && metadata.network) patch.network = metadata.network;
       if (!order.package_size && metadata.package_size) patch.package_size = metadata.package_size;
       if (!order.customer_phone && metadata.customer_phone) patch.customer_phone = metadata.customer_phone;
-      if ((!order.profit || Number(order.profit) === 0) && Number.isFinite(Number(metadata.profit))) {
-        const patchProfit = Number(metadata.profit);
-        patch.profit = parseFloat(Math.min(patchProfit, verifiedAmount).toFixed(2));
-      }
+      // Profit is already set by initialize-payment. Metadata patching is a security risk for existing orders.
       if (!order.parent_agent_id && typeof metadata.parent_agent_id === "string" && metadata.parent_agent_id) {
         patch.parent_agent_id = metadata.parent_agent_id;
       }
@@ -738,7 +737,12 @@ serve(async (req) => {
     const claimableStatuses = ["pending", "paid", "fulfillment_failed"];
     const { data: claimedOrder, error: claimError } = await supabase
       .from("orders")
-      .update({ status: "processing", failure_reason: null })
+      .update({
+        status: "processing",
+        failure_reason: null,
+        paystack_verified_amount: verifiedAmount,
+        paystack_fee: paystackFeeOnVerified,
+      })
       .eq("id", reference)
       .in("status", claimableStatuses)
       .select("*")
@@ -915,12 +919,13 @@ serve(async (req) => {
         const isAirtime = orderType === "airtime";
         console.log("Fulfilling order:", { networkKey, capacity, recipient: customerPhone, type: orderType });
 
+        const airtimeAmount = isAirtime ? (Number(metadata?.base_price) || capacity) : order.amount;
         const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
           networkRaw: network,
           networkKey: networkKey,
           recipient: normalizeRecipient(customerPhone),
-          capacity: isAirtime ? capacity : (order?.capacity || parseCapacity(packageSize || "")),
-          amount: isAirtime ? capacity : (order?.amount || verifiedAmount),
+          capacity: isAirtime ? airtimeAmount : (order?.capacity || parseCapacity(packageSize || "")),
+          amount: isAirtime ? airtimeAmount : (order?.amount || verifiedAmount),
           order_type: isAirtime ? "airtime" : "data"
         }, DATA_PROVIDER_WEBHOOK_URL);
         console.log("Fulfillment response:", {

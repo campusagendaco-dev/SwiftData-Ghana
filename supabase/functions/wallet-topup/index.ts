@@ -75,13 +75,15 @@ serve(async (req) => {
       await supabaseAdmin.from("wallets").insert({ agent_id: user.id, balance: 0 });
     }
 
-    // Create an order record for the top-up (amount = credit amount)
+    // Create an order record for the top-up (amount = credit amount, fee tracked separately)
     const orderId = crypto.randomUUID();
+    const paystackFee = parseFloat((chargeAmount - creditAmount).toFixed(2));
     await supabaseAdmin.from("orders").insert({
       id: orderId,
       agent_id: user.id,
       order_type: "wallet_topup",
       amount: creditAmount,
+      paystack_fee: paystackFee,
       profit: 0,
       status: "pending",
     });

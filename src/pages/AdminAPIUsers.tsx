@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Key, Search, Shield, ShieldOff, RefreshCw, Loader2,
-  Eye, EyeOff, Activity, Users, TrendingUp, Ban,
+  Activity, Users, TrendingUp, Ban,
   CheckCircle, XCircle, ChevronDown, ChevronUp, Copy,
   Globe, Webhook, ListChecks, Clock, BarChart2, Save, BadgePercent,
 } from "lucide-react";
@@ -23,7 +23,8 @@ interface APIUser {
   user_id: string;
   full_name: string;
   email: string;
-  api_key: string | null;
+  api_key_prefix: string | null;
+  api_key_hash: string | null;
   api_access_enabled: boolean;
   api_rate_limit: number;
   api_allowed_actions: string[] | null;
@@ -73,7 +74,6 @@ const AdminAPIUsers = () => {
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [userOrders, setUserOrders] = useState<Record<string, APIOrder[]>>({});
   const [loadingOrders, setLoadingOrders] = useState<string | null>(null);
-  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
 
   // Editable field state per user
   const [rateLimitEdits, setRateLimitEdits] = useState<Record<string, number>>({});
@@ -178,7 +178,7 @@ const AdminAPIUsers = () => {
       toast({ title: "Failed", description: fnData?.error ?? error?.message, variant: "destructive" });
     } else {
       toast({ title: "API Key revoked" });
-      setUsers((prev) => prev.map((u) => u.user_id === userId ? { ...u, api_key: null } : u));
+      setUsers((prev) => prev.map((u) => u.user_id === userId ? { ...u, api_key_prefix: null, api_key_hash: null } : u));
     }
   };
 
@@ -238,20 +238,6 @@ const AdminAPIUsers = () => {
           ? current.filter((a) => a !== action)
           : [...current, action],
       };
-    });
-  };
-
-  const copyKey = (key: string) => {
-    navigator.clipboard.writeText(key);
-    toast({ title: "API key copied" });
-  };
-
-  const toggleReveal = (userId: string) => {
-    setRevealedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
     });
   };
 
@@ -368,7 +354,8 @@ const AdminAPIUsers = () => {
         <div className="space-y-3">
           {filtered.map((user) => {
             const isExpanded = expandedUser === user.user_id;
-            const isRevealed = revealedKeys.has(user.user_id);
+            const hasKey = !!(user.api_key_prefix || user.api_key_hash);
+            const maskedKey = user.api_key_prefix ? `${user.api_key_prefix}${"•".repeat(24)}` : "•".repeat(36);
             const orders = userOrders[user.user_id] ?? [];
             const currentActions = actionEdits[user.user_id] ?? user.api_allowed_actions ?? ["balance", "plans"];
             const dirty = isDirty(user);
@@ -397,17 +384,18 @@ const AdminAPIUsers = () => {
                       )}
                     </div>
 
-                    {/* API Key display */}
+                    {/* API Key display — prefix shown, full key is hashed and never stored */}
                     <div className="flex items-center gap-2 min-w-0 flex-1 md:max-w-xs">
-                      {user.api_key ? (
+                      {hasKey ? (
                         <>
                           <code className="text-xs font-mono text-amber-300/80 bg-white/5 px-2 py-1 rounded truncate flex-1">
-                            {isRevealed ? user.api_key : `${user.api_key.substring(0, 12)}${"•".repeat(16)}`}
+                            {maskedKey}
                           </code>
-                          <button onClick={() => toggleReveal(user.user_id)} className="p-1 rounded hover:bg-white/10 transition shrink-0">
-                            {isRevealed ? <EyeOff className="w-3.5 h-3.5 text-white/40" /> : <Eye className="w-3.5 h-3.5 text-white/40" />}
-                          </button>
-                          <button onClick={() => copyKey(user.api_key!)} className="p-1 rounded hover:bg-white/10 transition shrink-0">
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(user.api_key_prefix ?? ""); toast({ title: "Key prefix copied" }); }}
+                            className="p-1 rounded hover:bg-white/10 transition shrink-0"
+                            title="Copy prefix"
+                          >
                             <Copy className="w-3.5 h-3.5 text-white/40" />
                           </button>
                         </>
@@ -438,7 +426,7 @@ const AdminAPIUsers = () => {
                       >
                         {user.api_access_enabled ? <><ShieldOff className="w-3.5 h-3.5" /> Revoke</> : <><Shield className="w-3.5 h-3.5" /> Enable</>}
                       </Button>
-                      {user.api_key && (
+                      {hasKey && (
                         <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs border-orange-500/30 text-orange-400 hover:bg-orange-500/10" onClick={() => revokeKey(user.user_id)}>
                           <Ban className="w-3.5 h-3.5" /> Delete Key
                         </Button>

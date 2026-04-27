@@ -94,7 +94,10 @@ const AdminOverview = () => {
     pendingWithdrawals: 0, 
     unreadTickets: 0,
     totalSystemBalance: 0,
-    totalRangePurchase: 0
+    totalRangePurchase: 0,
+    rangeInflow: 0,
+    rangeVerifiedInflow: 0,
+    rangePurchases: 0
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
@@ -110,6 +113,9 @@ const AdminOverview = () => {
   const [approvingPending, setApprovingPending] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [updatedKeys, setUpdatedKeys] = useState<Set<string>>(new Set());
+  const [verifiedLogs, setVerifiedLogs] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"topups" | "audit">("topups");
 
   const fetchData = async () => {
     const now = new Date();
@@ -121,15 +127,17 @@ const AdminOverview = () => {
     
     startDate.setHours(0, 0, 0, 0);
 
-    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, walletsRes, salesStatsRes] = await Promise.all([
+    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes] = await Promise.all([
       supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit"),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at"),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
-      supabase.from("orders").select("id, amount, agent_id, created_at").gte("created_at", startDate.toISOString()).eq("status", "fulfilled"),
+      supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type").gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).limit(2000),
       supabase.functions.invoke("admin-user-actions", { body: { action: "get_provider_balance" } }).catch(e => ({ data: { success: false, error: e.message }, error: e })),
       supabase.from("withdrawals").select("id", { count: "exact", head: true }).eq("status", "pending"),
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
+      supabase.from("orders").select("id, amount, paystack_verified_amount, created_at, profiles(full_name)").eq("order_type", "wallet_topup").eq("status", "fulfilled").order("created_at", { ascending: false }).limit(6),
+      supabase.from("audit_logs").select("id, action, details, created_at, profiles(full_name)").order("created_at", { ascending: false }).limit(6),
       supabase.from("wallets").select("balance"),
       supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
     ]);
@@ -142,7 +150,8 @@ const AdminOverview = () => {
 
     const totalSystemBalance = Array.isArray(wallets) ? wallets.reduce((s, w) => s + (Number(w?.balance) || 0), 0) : 0;
     const totalVolumeAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_sales_volume) || 0), 0) : 0;
-    const totalAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_own_profit) || 0) + (Number(st?.total_commissions_paid) || 0), 0) : 0;
+    const totalAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_own_profit) || 0), 0) : 0;
+    const totalSubAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_commissions_paid) || 0), 0) : 0;
     
     const maintenanceRow = (maintenanceRes?.data as any) || null;
     const maintenanceError = maintenanceRes?.error || maintenanceRow?.error;
@@ -158,7 +167,7 @@ const AdminOverview = () => {
         const d = new Date(now);
         d.setMonth(now.getMonth() - i);
         const key = d.toISOString().slice(0, 7); // YYYY-MM
-        chartMap[key] = { date: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }), Customers: 0, Agents: 0, "Sub-Agents": 0 };
+        chartMap[key] = { date: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }), Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0 };
       }
     } else {
       // Daily grouping
@@ -167,41 +176,32 @@ const AdminOverview = () => {
         const d = new Date(now);
         d.setDate(now.getDate() - i);
         const key = d.toISOString().slice(0, 10);
-        chartMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0 };
+        chartMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0 };
       }
     }
 
-    let todayCustomers = 0, todayAgents = 0, todaySubAgents = 0;
-    let todaySuccess = 0, todayFailed = 0, todayPending = 0;
     const todayStr = now.toISOString().slice(0, 10);
 
-    const todayUsers = profiles.filter((p: any) => (p.created_at as string)?.slice(0, 10) === todayStr).length;
-
-    orders.forEach((o: any) => {
-      const fullKey = (o.created_at as string)?.slice(0, 10);
-      if (fullKey === todayStr) {
-        if (o.status === "fulfilled") todaySuccess++;
-        else if (o.status === "fulfillment_failed") todayFailed++;
-        else todayPending++;
-      }
-    });
 
     rangeOrders.forEach((o: any) => {
+      if (o.status !== "fulfilled") return; // Only count verified and delivered orders
+      
       const fullKey = (o.created_at as string).slice(0, 10);
       const chartKey = isMonthly ? fullKey.slice(0, 7) : fullKey;
       
       const amt = Number(o.amount) || 0;
       
-      // Update totals if today
-      if (fullKey === todayStr) {
-      if (["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type)) {
-        chartMap[dateKey].Deposits += amt;
-      } else {
-        chartMap[dateKey].Purchases += amt;
+      if (chartMap[chartKey]) {
+        if (["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type)) {
+          chartMap[chartKey].Deposits += amt;
+        } else {
+          chartMap[chartKey].Purchases += amt;
+        }
+        
+        if (agentIds.has(o.agent_id)) chartMap[chartKey].Agents += amt;
+        else if (subAgentIds.has(o.agent_id)) chartMap[chartKey]["Sub-Agents"] += amt;
+        else chartMap[chartKey].Customers += amt;
       }
-      if (agentIds.has(o.agent_id)) chartMap[dateKey].Agents += amt;
-      else if (subAgentIds.has(o.agent_id)) chartMap[dateKey]["Sub-Agents"] += amt;
-      else chartMap[dateKey].Customers += amt;
     });
 
     setDailySales(Object.values(chartMap));
@@ -213,22 +213,29 @@ const AdminOverview = () => {
     const todayUsers = profiles.filter((p: any) => (p.created_at as string)?.slice(0, 10) === todayStr).length;
 
     const inflowOrders = orders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type));
-    const purchaseOrders = orders.filter((o: any) => o.status === "fulfilled" && ["data", "airtime", "utility", "afa"].includes(o.order_type));
+    const purchaseOrders = orders.filter((o: any) => o.status === "fulfilled" && ["data", "airtime", "utility", "afa", "api"].includes(o.order_type));
 
     const totalRevenue = inflowOrders.reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
     const totalPurchases = purchaseOrders.reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
     const displayRevenue = totalRevenue > 0 ? totalRevenue : totalVolumeAllTime;
 
+    const PURCHASE_TYPES = ["data", "airtime", "utility", "afa", "api"];
+    const todayFulfilledPurchases = todayOrders.filter((o: any) => o.status === "fulfilled" && PURCHASE_TYPES.includes(o.order_type));
+    
     setTodaySales({ 
-      total: todayOrders.reduce((s, o) => s + (Number(o.amount) || 0), 0),
-      customers: todayOrders.filter(o => !agentIds.has(o.agent_id) && !subAgentIds.has(o.agent_id)).reduce((s, o) => s + (Number(o.amount) || 0), 0),
-      agents: todayOrders.filter(o => agentIds.has(o.agent_id)).reduce((s, o) => s + (Number(o.amount) || 0), 0),
-      subAgents: todayOrders.filter(o => subAgentIds.has(o.agent_id)).reduce((s, o) => s + (Number(o.amount) || 0), 0),
+      total: todayFulfilledPurchases.reduce((s, o) => s + (Number(o.amount) || 0), 0),
+      customers: todayFulfilledPurchases.filter(o => !agentIds.has(o.agent_id) && !subAgentIds.has(o.agent_id)).reduce((s, o) => s + (Number(o.amount) || 0), 0),
+      agents: todayFulfilledPurchases.filter(o => agentIds.has(o.agent_id)).reduce((s, o) => s + (Number(o.amount) || 0), 0),
+      subAgents: todayFulfilledPurchases.filter(o => subAgentIds.has(o.agent_id)).reduce((s, o) => s + (Number(o.amount) || 0), 0),
       successCount: todaySuccess,
       failedCount: todayFailed,
       pendingCount: todayPending,
       newUsers: todayUsers
     });
+    const rangeInflow = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type)).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
+    const rangeVerifiedInflow = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type)).reduce((s: number, o: any) => s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0), 0);
+    const rangePurchases = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["data", "airtime", "utility", "afa", "api"].includes(o.order_type)).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
+
     setStats({
       totalOrders: orders.length,
       totalRevenue: displayRevenue,
@@ -237,14 +244,20 @@ const AdminOverview = () => {
       pendingAgents: profiles.filter((p: any) => p.is_agent && !p.agent_approved && p.onboarding_complete).length,
       swiftDataSubAgentShare: totalVolumeAllTime - totalAgentProfitsAllTime,
       totalAgentProfit: totalAgentProfitsAllTime,
-      totalSubAgentProfit: 0,
+      totalSubAgentProfit: totalSubAgentProfitsAllTime,
       pendingWithdrawals: withdrawalsRes.count || 0,
       unreadTickets: ticketsRes.count || 0,
       totalSystemBalance,
       todaySignups: todayUsers,
-      totalRangePurchase: rangeOrders.reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0),
+      totalRangePurchase: rangeOrders.filter((o: any) => o.status === "fulfilled" && PURCHASE_TYPES.includes(o.order_type)).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0),
+      rangeInflow,
+      rangeVerifiedInflow,
+      rangePurchases
     });
     setRecentOrders((recentRes.data || []) as RecentOrder[]);
+    setVerifiedLogs(topupsRes.data || []);
+    setAuditLogs(auditRes.data || []);
+    
     if (providerRes.data?.success) {
       setProviderBalance(providerRes.data.balance);
       setProviderDiagnostics(providerRes.data.diagnostics);
@@ -461,20 +474,20 @@ const AdminOverview = () => {
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5" : "bg-white border-gray-100"}`}>
-                <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Gross Received</p>
-                <p className={`text-lg font-black text-emerald-500`}>GH₵ {(stats.totalRevenue || 0).toFixed(2)}</p>
-                <p className="text-[9px] text-white/20 mt-1">Total money users sent via Paystack.</p>
+              <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5 shadow-inner" : "bg-white border-gray-100 shadow-sm"}`}>
+                <p className={`text-[10px] uppercase font-black tracking-widest mb-1 text-emerald-500`}>Verified Inflow ({timeRange})</p>
+                <p className={`text-lg font-black text-white`}>GH₵ {(stats.rangeVerifiedInflow || 0).toFixed(2)}</p>
+                <p className="text-[9px] text-white/20 mt-1">Confirmed Paystack settlements.</p>
               </div>
               <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5" : "bg-white border-gray-100"}`}>
                 <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Held in Wallets</p>
                 <p className={`text-lg font-black text-red-400`}>GH₵ {(stats.totalSystemBalance || 0).toFixed(2)}</p>
-                <p className="text-[9px] text-white/20 mt-1">Liability: Funds users haven't spent yet.</p>
+                <p className="text-[9px] text-white/20 mt-1">Snapshot of unspent funds right now.</p>
               </div>
               <div className={`p-4 rounded-2xl border ${isDark ? "bg-black/40 border-white/5" : "bg-white border-gray-100"}`}>
-                <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Platform Activity</p>
-                <p className={`text-lg font-black text-blue-400`}>GH₵ {((stats.totalRevenue || 0) - (stats.totalSystemBalance || 0)).toFixed(2)}</p>
-                <p className="text-[9px] text-white/20 mt-1">Actual value converted into orders.</p>
+                <p className={`text-[10px] uppercase font-black tracking-widest mb-1 ${muted}`}>Product Sales ({timeRange})</p>
+                <p className={`text-lg font-black text-blue-400`}>GH₵ {(stats.rangePurchases || 0).toFixed(2)}</p>
+                <p className="text-[9px] text-white/20 mt-1">Total consumption in this period.</p>
               </div>
             </div>
 
@@ -554,71 +567,222 @@ const AdminOverview = () => {
         </div>
       )}
 
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <h2 className={`font-bold text-xl flex items-center gap-2 ${head}`}>
-              <TrendingUp className="w-5 h-5 text-amber-500" /> Sales Analytics
-            </h2>
-            <p className={`text-xs mt-0.5 ${muted}`}>Tracking fulfilled sales across your entire network.</p>
-          </div>
-          
-          <div className={`flex p-1 rounded-xl border ${isDark ? "bg-white/5 border-white/10" : "bg-gray-100 border-gray-200"}`}>
-            {[
-              { id: "7d",  label: "7D" },
-              { id: "30d", label: "30D" },
-              { id: "1y",  label: "1Y" },
-              { id: "all", label: "ALL" },
-            ].map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setTimeRange(r.id as any)}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${
-                  timeRange === r.id 
-                    ? (isDark ? "bg-amber-400 text-black shadow-lg shadow-amber-400/20" : "bg-white text-gray-900 shadow-sm")
-                    : (isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700")
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* ── SALES ANALYTICS (rebuilt) ─────────────────────────────── */}
+      {(() => {
+        const periodCustomers  = dailySales.reduce((s, d) => s + (d.Customers  || 0), 0);
+        const periodAgents     = dailySales.reduce((s, d) => s + (d.Agents     || 0), 0);
+        const periodSubAgents  = dailySales.reduce((s, d) => s + (d["Sub-Agents"] || 0), 0);
+        const periodTotal      = periodCustomers + periodAgents + periodSubAgents;
+        const todayTotal       = todaySales.total;
+        const todayAttempted   = todaySales.successCount + todaySales.failedCount;
+        const successRate      = todayAttempted > 0 ? Math.round((todaySales.successCount / todayAttempted) * 100) : 100;
+        const srColor          = successRate >= 90 ? "text-emerald-400" : successRate >= 70 ? "text-amber-400" : "text-red-400";
+        const srBg             = isDark
+          ? successRate >= 90 ? "bg-emerald-500/10 border-emerald-500/20" : successRate >= 70 ? "bg-amber-500/10 border-amber-500/20" : "bg-red-500/10 border-red-500/20"
+          : successRate >= 90 ? "bg-emerald-50 border-emerald-200" : successRate >= 70 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: "Today Total", value: `GH₵ ${todaySales.total.toFixed(2)}`,     color: head,             bg: isDark ? "bg-white/[0.03] border-white/8" : "bg-white border-gray-200 shadow-sm" },
-            { label: "Customers",   value: `GH₵ ${todaySales.customers.toFixed(2)}`, color: "text-sky-500",   bg: isDark ? "bg-sky-500/10 border-sky-500/20" : "bg-sky-50 border-sky-200" },
-            { label: "Agents",      value: `GH₵ ${todaySales.agents.toFixed(2)}`,    color: "text-amber-500", bg: isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200" },
-            { label: "Sub-Agents",  value: `GH₵ ${todaySales.subAgents.toFixed(2)}`, color: "text-purple-500",bg: isDark ? "bg-purple-500/10 border-purple-500/20" : "bg-purple-50 border-purple-200" },
-          ].map((c) => (
-            <div key={c.label} className={`p-4 rounded-2xl border ${c.bg}`}>
-              <p className={`text-[10px] mb-2 uppercase tracking-wider font-semibold ${muted}`}>{c.label}</p>
-              <p className={`text-xl font-black ${c.color}`}>{c.value}</p>
+        return (
+          <div className="space-y-4">
+
+            {/* ── Header + time filter ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0 ${isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200"}`}>
+                  <TrendingUp className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className={`font-black text-xl tracking-tight ${head}`}>Sales Analytics</h2>
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black text-emerald-500 uppercase tracking-widest">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
+                    </span>
+                  </div>
+                  <p className={`text-xs mt-0.5 ${muted}`}>Tracking fulfilled sales across your entire network.</p>
+                </div>
+              </div>
+
+              <div className={`flex p-1 rounded-xl border ${isDark ? "bg-white/5 border-white/10" : "bg-gray-100 border-gray-200"}`}>
+                {(["7d","30d","1y","all"] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setTimeRange(r)}
+                    className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${
+                      timeRange === r
+                        ? isDark ? "bg-amber-400 text-black shadow-lg shadow-amber-400/20" : "bg-white text-gray-900 shadow-sm"
+                        : isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {r.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
 
-        <div className={`rounded-2xl border p-6 ${card}`}>
-          <h3 className={`font-bold mb-1 ${head}`}>
-            {timeRange === "1y" || timeRange === "all" ? "Monthly Sales Volume" : "Daily Sales Volume"}
-          </h3>
-          <p className={`text-xs mb-5 ${muted}`}>
-            {timeRange === "1y" || timeRange === "all" ? "Cumulative sales revenue grouped by month." : "Daily revenue breakdown from fulfilled orders."}
-          </p>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={dailySales} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip content={(props) => <DailySalesTooltip {...props} isDark={isDark} />} />
-              <Legend formatter={(v) => <span style={{ color: legendColor, fontSize: 12 }}>{v}</span>} />
-              <Bar dataKey="Deposits" name="Cash Inflow" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="Purchases" name="Product Sales" stackId="a" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+            {/* ── Period KPI strip ── */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                {
+                  label: `${timeRange.toUpperCase()} Sales`,
+                  value: `GH₵ ${periodTotal.toFixed(2)}`,
+                  icon: DollarSign,
+                  color: "text-emerald-400",
+                  bg: isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-200",
+                  sub: stats.totalRangePurchase > 0 ? `GH₵ ${stats.totalRangePurchase.toFixed(2)} in products` : "No purchases yet",
+                },
+                {
+                  label: "Today's Revenue",
+                  value: `GH₵ ${todayTotal.toFixed(2)}`,
+                  icon: Activity,
+                  color: "text-sky-400",
+                  bg: isDark ? "bg-sky-500/10 border-sky-500/20" : "bg-sky-50 border-sky-200",
+                  sub: `${todaySales.successCount + todaySales.failedCount + todaySales.pendingCount} orders placed`,
+                },
+                {
+                  label: "Success Rate",
+                  value: `${successRate}%`,
+                  icon: CheckCircle2,
+                  color: srColor,
+                  bg: srBg,
+                  sub: `${todaySales.successCount} fulfilled · ${todaySales.failedCount} failed`,
+                },
+                {
+                  label: "New Users Today",
+                  value: todaySales.newUsers.toLocaleString(),
+                  icon: Users,
+                  color: "text-purple-400",
+                  bg: isDark ? "bg-purple-500/10 border-purple-500/20" : "bg-purple-50 border-purple-200",
+                  sub: "Registrations today",
+                },
+              ].map((c) => (
+                <div key={c.label} className={`relative overflow-hidden p-4 rounded-2xl border transition-all hover:scale-[1.01] ${c.bg}`}>
+                  <div className="flex items-start justify-between mb-2">
+                    <p className={`text-[10px] uppercase font-black tracking-widest leading-tight ${muted}`}>{c.label}</p>
+                    <c.icon className={`w-4 h-4 shrink-0 ${c.color}`} />
+                  </div>
+                  <p className={`text-2xl font-black tracking-tight ${c.color}`}>{c.value}</p>
+                  <p className={`text-[10px] mt-1.5 ${muted}`}>{c.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Today's segment breakdown ── */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                {
+                  label: "TODAY TOTAL",
+                  value: `GH₵ ${todayTotal.toFixed(2)}`,
+                  pct: 100,
+                  color: isDark ? "text-white" : "text-gray-900",
+                  barColor: isDark ? "bg-white/30" : "bg-gray-400",
+                  bg: isDark ? "bg-white/[0.04] border-white/10" : "bg-white border-gray-200 shadow-sm",
+                  badge: `${todaySales.successCount + todaySales.failedCount + todaySales.pendingCount} orders`,
+                },
+                {
+                  label: "CUSTOMERS",
+                  value: `GH₵ ${todaySales.customers.toFixed(2)}`,
+                  pct: todayTotal > 0 ? Math.round((todaySales.customers / todayTotal) * 100) : 0,
+                  color: "text-sky-400",
+                  barColor: "bg-sky-500",
+                  bg: isDark ? "bg-sky-500/10 border-sky-500/20" : "bg-sky-50 border-sky-200",
+                  badge: null,
+                },
+                {
+                  label: "AGENTS",
+                  value: `GH₵ ${todaySales.agents.toFixed(2)}`,
+                  pct: todayTotal > 0 ? Math.round((todaySales.agents / todayTotal) * 100) : 0,
+                  color: "text-amber-400",
+                  barColor: "bg-amber-500",
+                  bg: isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200",
+                  badge: null,
+                },
+                {
+                  label: "SUB-AGENTS",
+                  value: `GH₵ ${todaySales.subAgents.toFixed(2)}`,
+                  pct: todayTotal > 0 ? Math.round((todaySales.subAgents / todayTotal) * 100) : 0,
+                  color: "text-purple-400",
+                  barColor: "bg-purple-500",
+                  bg: isDark ? "bg-purple-500/10 border-purple-500/20" : "bg-purple-50 border-purple-200",
+                  badge: null,
+                },
+              ].map((c) => (
+                <div key={c.label} className={`p-4 rounded-2xl border ${c.bg}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className={`text-[9px] uppercase tracking-widest font-black ${muted}`}>{c.label}</p>
+                    {c.badge
+                      ? <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/10 text-white/40" : "bg-gray-100 text-gray-500"}`}>{c.badge}</span>
+                      : <span className={`text-[10px] font-black ${c.color}`}>{c.pct}%</span>
+                    }
+                  </div>
+                  <p className={`text-xl font-black ${c.color}`}>{c.value}</p>
+                  <div className={`h-1.5 rounded-full mt-3 overflow-hidden ${isDark ? "bg-white/5" : "bg-black/5"}`}>
+                    <div className={`h-full rounded-full transition-all duration-700 ${c.barColor}`} style={{ width: `${c.pct}%` }} />
+                  </div>
+                  {!c.badge && (
+                    <p className={`text-[9px] mt-1.5 ${muted}`}>{c.pct}% of today's total</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* ── Chart (segment stacked) ── */}
+            <div className={`rounded-2xl border p-6 ${card}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className={`font-bold ${head}`}>
+                    {timeRange === "1y" || timeRange === "all" ? "Monthly Sales Volume" : "Daily Sales Volume"}
+                  </h3>
+                  <p className={`text-xs mt-0.5 ${muted}`}>
+                    {timeRange === "1y" || timeRange === "all"
+                      ? "Monthly revenue by segment across your network."
+                      : "Daily revenue breakdown from fulfilled orders."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap">
+                  {[
+                    { label: "Customers",  color: "#0ea5e9" },
+                    { label: "Agents",     color: "#f59e0b" },
+                    { label: "Sub-Agents", color: "#a855f7" },
+                  ].map((l) => (
+                    <div key={l.label} className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: l.color }} />
+                      <span className={`text-[10px] font-semibold ${muted}`}>{l.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={dailySales} margin={{ top: 5, right: 10, left: -10, bottom: 0 }} barCategoryGap="35%">
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={(props: any) => <DailySalesTooltip {...props} isDark={isDark} />} />
+                  <Bar dataKey="Customers"  stackId="seg" fill="#0ea5e9" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Agents"     stackId="seg" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Sub-Agents" stackId="seg" fill="#a855f7" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* ── Status strip ── */}
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Fulfilled Today", value: todaySales.successCount, icon: CheckCircle2, color: "text-emerald-400", bg: isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-200" },
+                { label: "Failed Today",    value: todaySales.failedCount,  icon: XCircle,      color: "text-red-400",     bg: isDark ? "bg-red-500/10 border-red-500/20"         : "bg-red-50 border-red-200"         },
+                { label: "Pending Today",   value: todaySales.pendingCount, icon: Clock,        color: "text-amber-400",   bg: isDark ? "bg-amber-500/10 border-amber-500/20"     : "bg-amber-50 border-amber-200"     },
+              ].map((s) => (
+                <div key={s.label} className={`p-4 rounded-2xl border flex items-center gap-3 ${s.bg}`}>
+                  <s.icon className={`w-5 h-5 shrink-0 ${s.color}`} />
+                  <div>
+                    <p className={`text-[10px] uppercase font-black tracking-widest ${muted}`}>{s.label}</p>
+                    <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2 space-y-8">
@@ -688,11 +852,106 @@ const AdminOverview = () => {
 
         <div className="space-y-6">
 
-          {/* Quick tools */}
-          <div className={`rounded-2xl border p-5 ${card}`}>
-            <h3 className={`font-bold text-base tracking-tight mb-0.5 ${head}`}>Quick Tools</h3>
-            <p className={`text-xs mb-5 ${muted}`}>Access frequent admin functions.</p>
-            <div className="grid grid-cols-2 gap-2.5">
+          {/* Live Activity Hub (Logs) */}
+          <div className={`rounded-[2rem] border overflow-hidden flex flex-col ${card}`}>
+            <div className={`p-6 border-b ${divider} bg-white/[0.02]`}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className={`font-black text-lg tracking-tight ${head}`}>Activity Hub</h3>
+                  <p className={`text-[10px] uppercase font-bold tracking-widest ${muted}`}>Live Monitor</p>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Realtime</span>
+                </div>
+              </div>
+
+              <div className="flex p-1 rounded-xl bg-white/5 border border-white/5">
+                <button 
+                  onClick={() => setActiveTab("topups")}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "topups" ? "bg-amber-400 text-black shadow-lg" : "text-white/40 hover:text-white/60"}`}
+                >
+                  Verified Topups
+                </button>
+                <button 
+                  onClick={() => setActiveTab("audit")}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "audit" ? "bg-amber-400 text-black shadow-lg" : "text-white/40 hover:text-white/60"}`}
+                >
+                  Audit Logs
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 flex-1 min-h-[360px]">
+              {activeTab === "topups" ? (
+                <div className="space-y-3">
+                  {verifiedLogs.length === 0 ? (
+                    <div className="py-12 text-center opacity-20">
+                      <Clock className="w-8 h-8 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold uppercase tracking-widest">No verified topups</p>
+                    </div>
+                  ) : (
+                    verifiedLogs.map((log: any) => (
+                      <div key={log.id} className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.05] transition-all group">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-tighter flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3" /> Verified
+                          </span>
+                          <span className="text-[9px] text-white/20 font-mono">{new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-black text-white/90">{log.profiles?.full_name || "Unknown Agent"}</p>
+                            <p className="text-[10px] text-white/30 font-medium">Ref: {log.id.slice(0, 8).toUpperCase()}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-emerald-400">GH₵{Number(log.paystack_verified_amount || log.amount).toFixed(2)}</p>
+                            <p className="text-[9px] text-white/20 uppercase font-bold tracking-tighter">Settled</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <Button variant="ghost" onClick={() => navigate("/admin/orders")} className="w-full h-10 text-[9px] font-black uppercase tracking-[0.2em] text-white/20 hover:text-white/60 hover:bg-white/5">
+                    View Financial Logs
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {auditLogs.length === 0 ? (
+                    <div className="py-12 text-center opacity-20">
+                      <Activity className="w-8 h-8 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold uppercase tracking-widest">No audit events</p>
+                    </div>
+                  ) : (
+                    auditLogs.map((log: any) => (
+                      <div key={log.id} className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.05] transition-all">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest border border-amber-400/20 px-1.5 py-0.5 rounded-md bg-amber-400/5">
+                            {log.action.replace(/_/g, " ")}
+                          </span>
+                          <span className="text-[9px] text-white/20 font-mono">{new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                        <p className="text-xs font-black text-white/90 mb-1">{log.profiles?.full_name || "System"}</p>
+                        <p className="text-[10px] text-white/40 font-mono truncate bg-black/20 p-2 rounded-lg border border-white/5">
+                          {JSON.stringify(log.details)}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                  <Button variant="ghost" onClick={() => navigate("/admin/audit-logs")} className="w-full h-10 text-[9px] font-black uppercase tracking-[0.2em] text-white/20 hover:text-white/60 hover:bg-white/5">
+                    Open Security Center
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Tools */}
+          <div className={`rounded-[2rem] border p-8 ${card}`}>
+            <h3 className={`font-black text-lg tracking-tight mb-0.5 ${head}`}>Quick Tools</h3>
+            <p className={`text-xs mb-6 ${muted}`}>Platform management shortcuts.</p>
+            <div className="grid grid-cols-2 gap-3">
               {[
                 { label: "Agents",      icon: Users,       path: "/admin/agents",      color: "text-blue-500",   bg: "bg-blue-500/10"   },
                 { label: "Orders",      icon: ShoppingCart,path: "/admin/orders",      color: "text-emerald-500",bg: "bg-emerald-500/10"},
@@ -702,14 +961,14 @@ const AdminOverview = () => {
                 <button
                   key={a.label}
                   onClick={() => navigate(a.path)}
-                  className={`group flex flex-col items-center justify-center p-4 rounded-xl border transition-all gap-2.5 ${
-                    isDark ? "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/8" : "border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 shadow-sm"
+                  className={`group flex flex-col items-center justify-center p-5 rounded-2xl border transition-all gap-3 ${
+                    isDark ? "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/8 shadow-inner" : "border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 shadow-sm"
                   }`}
                 >
-                  <div className={`w-9 h-9 rounded-xl ${a.bg} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                    <a.icon className={`w-4.5 h-4.5 ${a.color}`} />
+                  <div className={`w-10 h-10 rounded-2xl ${a.bg} flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm`}>
+                    <a.icon className={`w-5 h-5 ${a.color}`} />
                   </div>
-                  <span className={`text-xs font-semibold transition-colors ${isDark ? "text-white/60 group-hover:text-white" : "text-gray-500 group-hover:text-gray-900"}`}>{a.label}</span>
+                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${isDark ? "text-white/40 group-hover:text-white" : "text-gray-500 group-hover:text-gray-900"}`}>{a.label}</span>
                 </button>
               ))}
             </div>
@@ -718,68 +977,20 @@ const AdminOverview = () => {
               <button
                 onClick={approveAllPending}
                 disabled={approvingPending}
-                className="w-full mt-4 group flex items-center justify-between p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 transition-all"
+                className="w-full mt-6 group flex items-center justify-between p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 transition-all shadow-lg shadow-amber-500/5"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
-                    <ShieldCheck className="w-4 h-4 text-amber-500" />
+                  <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-5 h-5 text-amber-500" />
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-bold text-amber-600 dark:text-amber-400">Action Required</p>
-                    <p className="text-[10px] text-amber-500/80">{stats.pendingAgents} agent{stats.pendingAgents !== 1 ? "s" : ""} awaiting approval</p>
+                    <p className="text-sm font-black text-amber-600 dark:text-amber-400">Action Required</p>
+                    <p className="text-[10px] text-amber-500/80 font-bold uppercase tracking-tighter">{stats.pendingAgents} agent{stats.pendingAgents !== 1 ? "s" : ""} awaiting approval</p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-amber-500/50 group-hover:translate-x-1 transition-transform" />
               </button>
             )}
-          </div>
-
-          {/* Maintenance / System Status */}
-          <div className={`rounded-2xl border overflow-hidden relative ${card}`}>
-            <div className={`absolute top-0 left-0 right-0 h-0.5 ${maintenanceEnabled ? "bg-red-500" : "bg-emerald-500"}`} />
-            <div className="p-5">
-              <h3 className={`font-bold text-base tracking-tight mb-0.5 ${head}`}>System Status</h3>
-              <p className={`text-xs mb-5 ${muted}`}>Manage platform accessibility.</p>
-
-              {!maintenanceTableReady && (
-                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                  <p className="text-xs text-red-500 font-medium">Database migration required for maintenance mode.</p>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className={`flex items-center justify-between p-3.5 rounded-xl border ${card2}`}>
-                  <div>
-                    <Label className={`text-sm font-bold ${head}`}>Maintenance Mode</Label>
-                    <p className={`text-[10px] mt-0.5 ${muted}`}>Restrict access to admins only</p>
-                  </div>
-                  <Switch checked={maintenanceEnabled} onCheckedChange={setMaintenanceEnabled} className="data-[state=checked]:bg-red-500" />
-                </div>
-
-                <div>
-                  <Label className={`text-xs font-semibold mb-1.5 block ${muted}`}>Display Message</Label>
-                  <Textarea
-                    value={maintenanceMessage}
-                    onChange={(e) => setMaintenanceMessage(e.target.value)}
-                    className={`resize-none rounded-xl text-sm ${
-                      isDark ? "bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-amber-400/50" : "bg-gray-50 border-gray-200 text-gray-800 placeholder:text-gray-400 focus:border-amber-400"
-                    }`}
-                    placeholder="Enter message for visitors..."
-                    rows={3}
-                  />
-                </div>
-
-                <Button
-                  onClick={saveMaintenance}
-                  disabled={savingMaintenance}
-                  className={`w-full font-bold rounded-xl h-10 transition-all ${
-                    isDark ? "bg-white text-black hover:bg-white/90" : "bg-gray-900 text-white hover:bg-gray-800"
-                  }`}
-                >
-                  {savingMaintenance ? "Saving…" : "Apply Changes"}
-                </Button>
-              </div>
-            </div>
           </div>
         </div>
       </div>

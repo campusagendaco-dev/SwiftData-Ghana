@@ -424,6 +424,7 @@ serve(async (req) => {
       (typeof verifiedMetadata?.order_id === "string" && verifiedMetadata.order_id) ||
       reference;
     const verifiedAmount = Number(verifyData?.data?.amount || 0) / 100;
+    const paystackFeeOnVerified = parseFloat(Math.min(verifiedAmount * 0.03 / 1.03, 100).toFixed(2));
     const orderTypeFromMetadata = typeof metadata?.order_type === "string" ? metadata.order_type : null;
 
     let { data: existingOrder } = await supabase
@@ -548,7 +549,12 @@ serve(async (req) => {
     const claimableStatuses = ["pending", "paid", "fulfillment_failed"];
     const { data: claimedOrder, error: claimError } = await supabase
       .from("orders")
-      .update({ status: "processing", failure_reason: null })
+      .update({
+        status: "processing",
+        failure_reason: null,
+        paystack_verified_amount: verifiedAmount,
+        paystack_fee: paystackFeeOnVerified,
+      })
       .eq("id", orderId)
       .in("status", claimableStatuses)
       .select("*")
@@ -730,11 +736,12 @@ serve(async (req) => {
     // Airtime orders have no package_size — they use amount instead.
     if (orderType === "airtime") {
       const airtimeAmount: number =
-        typeof existingOrder?.amount === "number"
+        Number(metadata?.base_price) || 
+        (typeof existingOrder?.amount === "number"
           ? existingOrder.amount
           : typeof metadata?.amount === "number"
           ? metadata.amount
-          : 0;
+          : 0);
 
       if (!network || !airtimeAmount || !customerPhone) {
         await supabase.from("orders").update({

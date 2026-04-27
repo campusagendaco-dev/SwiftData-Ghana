@@ -159,6 +159,8 @@ serve(async (req: Request) => {
     let resolvedProfit = 0;
     let resolvedParentProfit = 0;
     let resolvedParentAgentId: string | null = null;
+    let resolvedPaystackFee = 0;
+    let resolvedWalletCredit: number | null = null;
     let enrichedMetadata: Record<string, unknown> = { ...metadata };
 
     if (orderType === "data") {
@@ -326,7 +328,8 @@ serve(async (req: Request) => {
         }
 
         const adjustedBase = Number((chargeBase * priceMultiplier).toFixed(2));
-        resolvedAmount = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
+        resolvedAmount = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
         enrichedMetadata = {
           ...metadata,
           agent_id: agentId,
@@ -363,7 +366,8 @@ serve(async (req: Request) => {
         }
 
         const adjustedBase = Number((publicBase * priceMultiplier).toFixed(2));
-        resolvedAmount = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
+        resolvedAmount = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
         enrichedMetadata = {
           ...metadata,
           network,
@@ -391,7 +395,8 @@ serve(async (req: Request) => {
       );
       if (Number.isFinite(baseAfa) && baseAfa > 0) {
         const adjustedBase = Number((baseAfa * priceMultiplier).toFixed(2));
-        const expectedTotal = Number((adjustedBase + calculatePaystackFee(adjustedBase)).toFixed(2));
+        resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
+        const expectedTotal = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
         if (!amountMatches(expectedTotal, amount)) {
           return new Response(JSON.stringify({
             error: `Invalid AFA amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
@@ -406,7 +411,8 @@ serve(async (req: Request) => {
     // ── Agent activation: enforce fixed fee + bind agent_id to JWT user ────────
     if (orderType === "agent_activation") {
       const AGENT_FEE = 80;
-      const expectedTotal = Number((AGENT_FEE + calculatePaystackFee(AGENT_FEE)).toFixed(2));
+      resolvedPaystackFee = parseFloat(calculatePaystackFee(AGENT_FEE).toFixed(2));
+      const expectedTotal = parseFloat((AGENT_FEE + resolvedPaystackFee).toFixed(2));
       if (!amountMatches(expectedTotal, amount)) {
         return new Response(JSON.stringify({
           error: `Invalid activation amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
@@ -443,7 +449,8 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: "This agent has not configured a sub-agent activation fee." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const expectedTotal = Number((configuredFee + calculatePaystackFee(configuredFee)).toFixed(2));
+      resolvedPaystackFee = parseFloat(calculatePaystackFee(configuredFee).toFixed(2));
+      const expectedTotal = parseFloat((configuredFee + resolvedPaystackFee).toFixed(2));
       if (!amountMatches(expectedTotal, amount)) {
         return new Response(JSON.stringify({
           error: `Invalid sub-agent activation amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
@@ -461,7 +468,8 @@ serve(async (req: Request) => {
         });
       }
 
-      const expectedTotal = Number((walletCredit + calculatePaystackFee(walletCredit)).toFixed(2));
+      resolvedPaystackFee = parseFloat(calculatePaystackFee(walletCredit).toFixed(2));
+      const expectedTotal = parseFloat((walletCredit + resolvedPaystackFee).toFixed(2));
       if (!amountMatches(expectedTotal, amount) || walletCredit > amount) {
         return new Response(JSON.stringify({
           error: `Invalid wallet top-up amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
@@ -470,7 +478,29 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      resolvedAmount = amount;
+      // Store credit amount in order (not total paid) — matches wallet-topup function behaviour.
+      resolvedWalletCredit = walletCredit;
+      resolvedAmount = expectedTotal;
+    }
+
+    if (orderType === "airtime") {
+      const network = typeof metadata.network === "string" ? metadata.network : "";
+      if (!network || !metadata.customer_phone) {
+        return new Response(JSON.stringify({ error: "Missing airtime metadata" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (amount < 1) {
+        return new Response(JSON.stringify({ error: "Minimum airtime purchase is GHS 1.00" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const airtimeBase = Number(amount.toFixed(2));
+      resolvedPaystackFee = parseFloat(calculatePaystackFee(airtimeBase).toFixed(2));
+      resolvedAmount = parseFloat((airtimeBase + resolvedPaystackFee).toFixed(2));
+      enrichedMetadata = { ...metadata, base_price: airtimeBase, profit: 0 };
     }
 
     if (orderType === "utility") {
@@ -480,7 +510,16 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      resolvedAmount = amount;
+      if (amount < 5) {
+        return new Response(JSON.stringify({ error: "Minimum utility payment is GHS 5.00" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const utilityBase = Number(amount.toFixed(2));
+      resolvedPaystackFee = parseFloat(calculatePaystackFee(utilityBase).toFixed(2));
+      resolvedAmount = parseFloat((utilityBase + resolvedPaystackFee).toFixed(2));
+      enrichedMetadata = { ...metadata, base_price: utilityBase, profit: 0 };
     }
 
     // ── Phone rate limiting for direct anonymous purchases ───────────────────
@@ -519,11 +558,15 @@ serve(async (req: Request) => {
         ? parseFloat(resolvedParentProfit.toFixed(2))
         : 0;
 
+      // For wallet_topup: order.amount = credit given, not total charged.
+      const orderAmount = resolvedWalletCredit !== null ? resolvedWalletCredit : resolvedAmount;
+
       const orderRow: Record<string, unknown> = {
         id: reference,
         agent_id: agentId,
         order_type: orderType,
-        amount: resolvedAmount,
+        amount: orderAmount,
+        paystack_fee: resolvedPaystackFee > 0 ? resolvedPaystackFee : undefined,
         profit: normalizedProfit,
         parent_profit: normalizedParentProfit,
         status: "pending",
@@ -576,6 +619,7 @@ serve(async (req: Request) => {
 
       if (orderType === "data") {
         patch.amount = resolvedAmount;
+        patch.paystack_fee = resolvedPaystackFee > 0 ? resolvedPaystackFee : undefined;
         patch.profit = Number.isFinite(resolvedProfit) ? parseFloat(resolvedProfit.toFixed(2)) : 0;
         patch.parent_profit = Number.isFinite(resolvedParentProfit) ? parseFloat(resolvedParentProfit.toFixed(2)) : 0;
         patch.parent_agent_id = resolvedParentAgentId;

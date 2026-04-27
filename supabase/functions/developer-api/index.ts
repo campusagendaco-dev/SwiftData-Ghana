@@ -191,7 +191,7 @@ serve(async (req: Request) => {
     api_custom_prices: Record<string, Record<string, number>> | null;
   };
 
-  let profile = (candidates as ProfileRow[] ?? []).find(
+  const profile = (candidates as ProfileRow[] ?? []).find(
     (p) => p.api_key_hash && safeEqual(p.api_key_hash, incomingHash)
   );
   if (!profile) return json({ success: false, error: "Invalid API key" }, 401);
@@ -322,7 +322,7 @@ serve(async (req: Request) => {
       else if (n === "MTN") normalizedNetwork = "MTN";
       else if (n === "GLO") normalizedNetwork = "GLO";
 
-      let finalPackageSize = package_size || `${amount} GHS Airtime`;
+      const finalPackageSize = package_size || `${amount} GHS Airtime`;
       let expectedPrice: number = amount ?? 0;
 
       if (!amount && package_size) {

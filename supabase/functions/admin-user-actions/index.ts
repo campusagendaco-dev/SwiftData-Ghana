@@ -130,10 +130,11 @@ serve(async (req) => {
 
     switch (action as AdminUserAction) {
       case "get_api_users": {
+        // Include both legacy plaintext keys and new hashed keys (api_key_prefix set)
         const { data: users, error: userError } = await supabaseAdmin
           .from("profiles")
-          .select("user_id, full_name, email, api_key, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
-          .not("api_key", "is", null)
+          .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
+          .or("api_key_prefix.not.is.null,api_key_hash.not.is.null")
           .order("full_name");
 
         if (userError) {
@@ -188,7 +189,7 @@ serve(async (req) => {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
-          .update({ api_key: null })
+          .update({ api_key: null, api_key_hash: null, api_key_prefix: null })
           .eq("user_id", user_id);
 
         if (updateError) throw updateError;

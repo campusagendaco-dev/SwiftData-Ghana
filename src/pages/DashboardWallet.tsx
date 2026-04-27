@@ -12,7 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wallet, Loader2, Send, CreditCard, Gift, ArrowRightLeft } from "lucide-react";
+import { 
+  Wallet, Loader2, Send, CreditCard, Gift, 
+  ArrowRightLeft, History, RefreshCw, PlusCircle, 
+  ChevronRight, ArrowUpRight, Zap, ShieldCheck 
+} from "lucide-react";
 import { basePackages, networks, getPublicPrice } from "@/lib/data";
 
 interface WalletTopupRow {
@@ -89,7 +93,7 @@ const DashboardWallet = () => {
   const [topupAmount, setTopupAmount] = useState("");
   const [toppingUp, setToppingUp] = useState(false);
 
-  // Fetch global package settings (admin-set agent prices)
+  // Fetch global package settings
   useEffect(() => {
     supabase.from("global_package_settings").select("*").then(({ data }) => {
       if (data) setGlobalSettings(data as GlobalPackageSetting[]);
@@ -110,8 +114,6 @@ const DashboardWallet = () => {
 
   const getAgentPrice = (network: string, size: string): number => {
     const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
-
-    // Sub-agents must use parent-assigned base prices.
     const assignedFromParent = getAssignedSubAgentPrice(parentAssignedPrices, network, size);
     const assignedFromProfile = getAssignedSubAgentPrice(
       profile?.agent_prices as Record<string, Record<string, string | number>> | undefined,
@@ -121,7 +123,6 @@ const DashboardWallet = () => {
     const assignedPrice = assignedFromParent || assignedFromProfile;
     if (assignedPrice && assignedPrice > 0) return applyPriceMultiplier(assignedPrice, priceMultiplier);
 
-    // Admin-set package prices drive dashboard pricing by role.
     const setting = globalSettings.find(
       (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(size)
     );
@@ -139,7 +140,6 @@ const DashboardWallet = () => {
       if (basePkg) return applyPriceMultiplier(getPublicPrice(basePkg.price), priceMultiplier);
     }
 
-    // Fallback to base price
     const basePkg = basePackages[network]?.find((p) => p.size === size);
     return basePkg ? applyPriceMultiplier(basePkg.price, priceMultiplier) : 0;
   };
@@ -182,7 +182,6 @@ const DashboardWallet = () => {
   useEffect(() => { fetchBalance(); }, [fetchBalance]);
   useEffect(() => { fetchRecentTopups(); }, [fetchRecentTopups]);
 
-  // Check for returning from Paystack payment
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const reference = params.get("reference") || params.get("trxref");
@@ -241,7 +240,6 @@ const DashboardWallet = () => {
     window.location.href = data.authorization_url;
   };
 
-  // Build packages list using agent prices
   const agentPackages = selectedNetwork
     ? (basePackages[selectedNetwork] || []).map((p) => ({
         ...p,
@@ -250,7 +248,6 @@ const DashboardWallet = () => {
     : [];
 
   const selectedPkg = agentPackages.find((p) => p.size === selectedPackage);
-  const totalFunds = parseFloat((balance + availableProfit).toFixed(2));
   const topupRequestedAmount = Number(topupAmount);
   const topupFee = Number.isFinite(topupRequestedAmount) && topupRequestedAmount > 0
     ? Math.round(calculatePaystackFee(topupRequestedAmount) * 100) / 100
@@ -357,145 +354,279 @@ const DashboardWallet = () => {
     }
   };
 
-  if (loading) return <div className="text-muted-foreground p-8">Loading...</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+      <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+      <p className="text-sm font-medium text-muted-foreground animate-pulse">Loading wallet balance...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-6 p-6 md:p-8 max-w-4xl">
-      <h1 className="font-display text-2xl font-black">Wallet</h1>
-      <p className="text-sm text-muted-foreground -mt-3">
-        Top up with Paystack instantly, then use your wallet balance to buy data directly from your dashboard.
-      </p>
+    <div className="space-y-8 p-4 md:p-8 max-w-5xl mx-auto">
+      {/* ── Header ── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-black tracking-tight text-white flex items-center gap-3">
+            <Wallet className="w-8 h-8 text-amber-400" /> My Wallet
+          </h1>
+          <p className="text-sm text-white/40 mt-1 max-w-md">
+            Manage your funds, top up instantly with Paystack, and track your loyalty points.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="bg-white/5 border-white/10 hover:bg-white/10 text-white/70 h-10 px-4 rounded-xl gap-2"
+            onClick={handleSyncPendingDeposits}
+            disabled={syncingDeposits}
+          >
+            <RefreshCw className={`w-4 h-4 ${syncingDeposits ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">Verify Deposits</span>
+          </Button>
+        </div>
+      </div>
 
-      {/* Balance + Paystack Topup + Loyalty */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-primary/30 bg-primary/5">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-primary">Wallet Balance</CardTitle>
-            <Wallet className="w-5 h-5 text-primary" />
+      {/* ── Main Stats Grid ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Balance Card (Pro Design) */}
+        <Card className="relative overflow-hidden border-none bg-gradient-to-br from-amber-500 to-amber-600 shadow-2xl shadow-amber-500/20 group">
+          <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform duration-500">
+            <Wallet className="w-24 h-24 text-white" />
+          </div>
+          <CardHeader className="pb-2">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Main Balance</p>
           </CardHeader>
-          <CardContent>
-            <p className="font-display text-3xl font-black text-primary">GHS {balance.toFixed(2)}</p>
-            <p className="text-[10px] text-muted-foreground mt-1 uppercase font-bold tracking-widest">Available Balance</p>
-            <Button variant="ghost" size="sm" className="mt-3 h-8 text-[10px] uppercase font-black tracking-widest border border-primary/20 hover:bg-primary/10" onClick={handleSyncPendingDeposits} disabled={syncingDeposits}>
-              {syncingDeposits ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : null}
-              Verify Pending Deposit
-            </Button>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-4xl font-black text-white leading-none">GHS {balance.toFixed(2)}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 border border-white/10">
+                  <ShieldCheck className="w-3 h-3 text-white" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">Secured</span>
+                </div>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-white/10 flex justify-between items-center">
+               <p className="text-[10px] font-bold text-white/60 uppercase">Available Profit</p>
+               <p className="text-sm font-black text-white">GHS {availableProfit.toFixed(2)}</p>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="border-amber-400/30 bg-amber-400/5">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-amber-500">SwiftPoints (Loyalty)</CardTitle>
-            <Gift className="w-5 h-5 text-amber-500" />
+        {/* Loyalty Card (Pro Design) */}
+        <Card className="relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-xl group">
+          <div className="absolute -top-4 -right-4 w-24 h-24 bg-amber-400/10 rounded-full blur-2xl group-hover:bg-amber-400/20 transition-colors" />
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">SwiftPoints</p>
+            <Gift className="w-4 h-4 text-amber-400" />
           </CardHeader>
-          <CardContent>
-            <p className="font-display text-3xl font-black text-amber-500">{loyaltyBalance.toFixed(0)} pts</p>
-            <p className="text-[10px] text-muted-foreground mt-1 uppercase font-bold tracking-widest">Value: GHS {(loyaltyBalance / 100).toFixed(2)}</p>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-3xl font-black text-white">{loyaltyBalance.toLocaleString()} <span className="text-sm text-amber-400">pts</span></p>
+              <p className="text-[10px] text-white/40 mt-1 font-medium uppercase tracking-widest">Est. Value: GHS {(loyaltyBalance / 100).toFixed(2)}</p>
+            </div>
             <Button 
               variant="outline" 
-              size="sm" 
-              className="mt-3 h-8 text-[10px] uppercase font-black tracking-widest bg-amber-400/10 border-amber-400/20 text-amber-500 hover:bg-amber-400/20" 
+              className="w-full h-11 bg-amber-400 text-black border-none font-black text-xs uppercase tracking-widest hover:bg-amber-300 shadow-lg shadow-amber-400/10 disabled:opacity-30 rounded-xl"
               onClick={handleConvertPoints} 
               disabled={convertingPoints || loyaltyBalance < 100}
             >
-              {convertingPoints ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <ArrowRightLeft className="w-3 h-3 mr-2" />}
+              {convertingPoints ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowRightLeft className="w-4 h-4 mr-2" />}
               Convert to Cash
             </Button>
           </CardContent>
         </Card>
 
-        <Card className="border-blue-400/30 bg-blue-400/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-blue-500">Fast Top Up</CardTitle>
+        {/* Quick Topup (Pro Design) */}
+        <Card className="border-white/10 bg-white/5 backdrop-blur-xl">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Quick Recharge</p>
+            <Zap className="w-4 h-4 text-blue-400" />
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex gap-2">
+            <div className="relative group">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-blue-400 transition-colors">
+                <span className="text-xs font-bold">GHS</span>
+              </div>
               <Input
                 type="number"
-                placeholder="Amt"
+                placeholder="0.00"
                 value={topupAmount}
                 onChange={(e) => setTopupAmount(e.target.value)}
-                className="h-9 bg-black/40 text-sm"
+                className="h-12 pl-12 bg-white/5 border-white/10 focus:border-blue-400/50 rounded-xl text-lg font-black text-white"
               />
-              <Button onClick={handlePaystackTopup} disabled={toppingUp} size="sm" className="h-9 gap-2 shrink-0 bg-blue-500 hover:bg-blue-600">
-                {toppingUp ? <Loader2 className="w-3 h-3 animate-spin" /> : <CreditCard className="w-3 h-3" />}
-                Pay
-              </Button>
             </div>
+            <Button 
+              onClick={handlePaystackTopup} 
+              disabled={toppingUp} 
+              className="w-full h-11 bg-blue-500 hover:bg-blue-600 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/10"
+            >
+              {toppingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CreditCard className="w-4 h-4 mr-2" /> Recharge Now</>}
+            </Button>
             {topupChargeTotal > 0 && (
-              <p className="text-[9px] text-muted-foreground font-bold">Total with fee: GHS {topupChargeTotal.toFixed(2)}</p>
+              <div className="flex justify-between items-center px-1">
+                <span className="text-[9px] text-white/20 font-bold uppercase tracking-wider">Fee Included</span>
+                <span className="text-[10px] text-blue-400 font-black">Total: GHS {topupChargeTotal.toFixed(2)}</span>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle className="text-lg">Recent Deposits</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {recentTopups.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No deposit history yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {recentTopups.map((row) => (
-                <div key={row.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <p className="text-sm font-medium">GHS {Number(row.amount || 0).toFixed(2)}</p>
-                    <p className="text-xs text-muted-foreground">Ref: {row.id} • {new Date(row.created_at).toLocaleString()}</p>
-                  </div>
-                  <span className="text-xs px-2 py-1 rounded-full bg-secondary text-foreground capitalize">{row.status}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        
+        {/* ── Buy Data Section (Left) ── */}
+        <div className="lg:col-span-3 space-y-6">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-6 bg-amber-500 rounded-full" />
+            <h2 className="text-lg font-black text-white uppercase tracking-wider">Purchase Service</h2>
+          </div>
+          
+          <Card className="border-white/10 bg-white/3 overflow-hidden rounded-[2rem]">
+            <CardContent className="p-8 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 px-1">Network</Label>
+                  <Select value={selectedNetwork} onValueChange={(v) => { setSelectedNetwork(v); setSelectedPackage(""); }}>
+                    <SelectTrigger className="h-12 bg-white/5 border-white/10 rounded-xl text-white">
+                      <SelectValue placeholder="Select Network" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-white/10 text-white">
+                      {networks.map((n) => (<SelectItem key={n.name} value={n.name}>{n.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 px-1">Package</Label>
+                  <Select value={selectedPackage} onValueChange={setSelectedPackage} disabled={!selectedNetwork}>
+                    <SelectTrigger className="h-12 bg-white/5 border-white/10 rounded-xl text-white">
+                      <SelectValue placeholder="Choose Plan" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-white/10 text-white max-h-[300px]">
+                      {agentPackages.map((p) => (
+                        <SelectItem key={p.size} value={p.size} className="focus:bg-amber-400 focus:text-black">
+                          {p.size} — GHS {p.price.toFixed(2)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-      {/* Buy Data */}
-      <Card>
-        <CardHeader><CardTitle className="text-lg">Buy Data</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label>Network</Label>
-              <Select value={selectedNetwork} onValueChange={(v) => { setSelectedNetwork(v); setSelectedPackage(""); }}>
-                <SelectTrigger className="bg-secondary mt-1"><SelectValue placeholder="Select network" /></SelectTrigger>
-                <SelectContent>
-                  {networks.map((n) => (<SelectItem key={n.name} value={n.name}>{n.name}</SelectItem>))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Package</Label>
-              <Select value={selectedPackage} onValueChange={setSelectedPackage} disabled={!selectedNetwork}>
-                <SelectTrigger className="bg-secondary mt-1"><SelectValue placeholder="Select package" /></SelectTrigger>
-                <SelectContent>
-                  {agentPackages.map((p) => (
-                    <SelectItem key={p.size} value={p.size}>{p.size} - GHS {p.price.toFixed(2)}</SelectItem>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-white/40 px-1">Recipient Number</Label>
+                <div className="relative">
+                  <Input 
+                    placeholder="e.g. 024XXXXXXX" 
+                    value={customerPhone} 
+                    onChange={(e) => setCustomerPhone(e.target.value)} 
+                    className="h-12 bg-white/5 border-white/10 rounded-xl pl-11 text-white font-mono" 
+                  />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20">
+                    <CreditCard className="w-4 h-4" />
+                  </div>
+                </div>
+              </div>
+
+              {selectedPkg && (
+                <div className="bg-white/5 border border-white/5 rounded-2xl p-5 space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-white/40">
+                    <span>Selected Plan</span>
+                    <span className="text-white">{selectedNetwork} {selectedPkg.size}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm font-black">
+                    <span className="text-white/40 uppercase text-[10px] tracking-widest">Amount to Pay</span>
+                    <span className="text-amber-400 text-lg">GHS {selectedPkg.price.toFixed(2)}</span>
+                  </div>
+                  <div className="pt-2 mt-2 border-t border-white/5 flex justify-between items-center text-[10px] font-medium text-white/20 italic">
+                    <span>Balance after purchase</span>
+                    <span>GHS {(balance - selectedPkg.price).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
+              <Button 
+                onClick={handleBuyData} 
+                disabled={buying || !selectedPkg || !customerPhone} 
+                className="w-full h-14 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-base shadow-xl shadow-amber-500/10 group overflow-hidden relative"
+              >
+                {buying ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="w-5 h-5 mr-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                    Buy with Wallet
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── Recent Activity (Right) ── */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-6 bg-blue-500 rounded-full" />
+            <h2 className="text-lg font-black text-white uppercase tracking-wider">Recent Activity</h2>
+          </div>
+
+          <Card className="border-white/10 bg-white/3 overflow-hidden rounded-[2rem]">
+            <CardContent className="p-6">
+              {recentTopups.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <History className="w-10 h-10 text-white/10 mb-4" />
+                  <p className="text-xs font-bold text-white/20 uppercase tracking-widest">No activity yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {recentTopups.map((row) => (
+                    <div 
+                      key={row.id} 
+                      className="group flex items-center justify-between p-4 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-all hover:scale-[1.02]"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${row.status === "fulfilled" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"}`}>
+                          <PlusCircle className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-white">GHS {Number(row.amount || 0).toFixed(2)}</p>
+                          <p className="text-[10px] text-white/20 font-medium uppercase tracking-tight">
+                            {new Date(row.created_at).toLocaleDateString("en-GH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <div className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter ${row.status === "fulfilled" ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/40"}`}>
+                            {row.status === "fulfilled" ? "Verified" : row.status}
+                         </div>
+                         <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-white/40 transition-colors" />
+                      </div>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                  <Button variant="ghost" className="w-full h-10 text-[10px] font-black uppercase tracking-[0.2em] text-white/20 hover:text-white/60 hover:bg-transparent">
+                     View All History
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Quick Help Tip */}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6 flex gap-4">
+            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
+               <ArrowUpRight className="w-5 h-5 text-blue-400" />
+            </div>
+            <div className="space-y-1">
+               <p className="text-xs font-black text-white uppercase tracking-wider">Pro Tip</p>
+               <p className="text-[10px] text-white/40 leading-relaxed font-medium">
+                 Use the wallet to bypass Paystack fees on every single purchase. Top up a large amount once and save on processing costs!
+               </p>
             </div>
           </div>
-
-          <div>
-            <Label>Recipient Phone Number</Label>
-            <Input placeholder="e.g. 0241234567" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="bg-secondary mt-1" />
-          </div>
-
-          {selectedPkg && (
-            <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">Package</span><span className="font-medium">{selectedNetwork} {selectedPkg.size}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Agent Price</span><span className="font-medium">GHS {selectedPkg.price.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Balance After</span><span className="font-medium">GHS {(balance - selectedPkg.price).toFixed(2)}</span></div>
-            </div>
-          )}
-
-          <Button onClick={handleBuyData} disabled={buying || !selectedPkg || !customerPhone} className="w-full gap-2">
-            {buying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {`Buy with Wallet (GHS ${selectedPkg?.price.toFixed(2) || "0.00"})`}
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 };
