@@ -171,6 +171,12 @@ const AdminSettings = () => {
       data_provider_api_key: (settings.data_provider_api_key || "").trim(),
       data_provider_base_url: (settings.data_provider_base_url || "").trim(),
       airtime_provider_api_key: (settings.airtime_provider_api_key || "").trim(),
+      secondary_data_provider_api_key: (settings.secondary_data_provider_api_key || "").trim(),
+      secondary_data_provider_base_url: (settings.secondary_data_provider_base_url || "").trim(),
+      auto_failover_enabled: settings.auto_failover_enabled,
+      show_announcement: settings.show_announcement,
+      announcement_title: settings.announcement_title.trim(),
+      announcement_message: settings.announcement_message.trim(),
     };
 
     try {
