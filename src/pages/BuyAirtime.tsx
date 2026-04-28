@@ -8,6 +8,7 @@ import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction } from "@/lib/public-function-client";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
+import ComingSoonOverlay from "@/components/ComingSoonOverlay";
 
 const NETWORK_GLASS_ACTIVE: Record<string, Record<string, string>> = {
   MTN: {
@@ -118,6 +119,7 @@ const BuyAirtime = () => {
 
   return (
     <div className="min-h-screen pt-20 transition-all duration-300 pb-24 relative overflow-hidden">
+      <ComingSoonOverlay />
       
       {/* Hero header */}
       <div className="text-white py-10 px-4 mb-6" style={{ background: theme.heroHex }}>

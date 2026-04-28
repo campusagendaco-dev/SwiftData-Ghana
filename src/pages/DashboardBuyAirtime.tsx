@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn, detectNetwork } from "@/lib/utils";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
+import ComingSoonOverlay from "@/components/ComingSoonOverlay";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -185,6 +186,7 @@ const DashboardBuyAirtime = () => {
 
   return (
     <div className="relative p-4 md:p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in duration-700 pb-20 overflow-hidden">
+      <ComingSoonOverlay />
       
       {/* Dynamic ambient glow that shifts with network */}
       <div
