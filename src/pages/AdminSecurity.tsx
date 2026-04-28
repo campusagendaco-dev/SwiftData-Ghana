@@ -614,10 +614,9 @@ const AdminSecurity = () => {
               const isExpanded = expandedIp === cluster.ip;
               return (
                 <div key={cluster.ip} className="rounded-2xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
-                  <button
-                    type="button"
+                  <div
                     onClick={() => setExpandedIp(isExpanded ? null : cluster.ip)}
-                    className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-red-500/[0.06] transition-colors text-left"
+                    className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-red-500/[0.06] transition-colors text-left cursor-pointer"
                   >
                     <div className="flex items-center gap-3 flex-wrap">
                       <Globe className="w-4 h-4 text-red-400 shrink-0" />
@@ -627,24 +626,24 @@ const AdminSecurity = () => {
                         {cluster.accounts.length} accounts
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                       <button
                         type="button"
-                        onClick={e => { e.stopPropagation(); handleBulkSuspend(cluster.accounts.map(a => a.user_id), true); }}
+                        onClick={() => handleBulkSuspend(cluster.accounts.map(a => a.user_id), true)}
                         className="text-[10px] font-black uppercase tracking-widest bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-xl transition-all"
                       >
                         Suspend All
                       </button>
                       <button
                         type="button"
-                        onClick={e => { e.stopPropagation(); copyIp(cluster.ip); }}
+                        onClick={() => copyIp(cluster.ip)}
                         className="text-[10px] font-bold text-white/30 hover:text-white/70 px-2 py-1.5 rounded-xl border border-white/10 hover:border-white/20 transition-colors"
                       >
                         Copy IP
                       </button>
                       <Eye className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180 text-red-400" : "text-white/30"}`} />
                     </div>
-                  </button>
+                  </div>
                   {isExpanded && (
                     <div className="border-t border-red-500/20 divide-y divide-white/5">
                       {cluster.accounts.map(account => {

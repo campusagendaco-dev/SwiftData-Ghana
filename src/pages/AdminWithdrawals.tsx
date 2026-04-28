@@ -101,7 +101,12 @@ const AdminWithdrawals = () => {
     });
 
     if (error || data?.error) {
-      toast({ title: "Failed to confirm", description: data?.error || error?.message, variant: "destructive" });
+      const errorMsg = data?.error || error?.message || "Unknown error occurred";
+      toast({ 
+        title: "Failed to confirm", 
+        description: errorMsg, 
+        variant: "destructive" 
+      });
     } else {
       if (currentUser && withdrawal) {
         await logAudit(currentUser.id, "confirm_withdrawal", {
