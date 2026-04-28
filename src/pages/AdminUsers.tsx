@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
-import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown, Globe, Clock, Ban, MessageCircle } from "lucide-react";
+import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown, Globe, Clock, Ban, MessageCircle, Wallet } from "lucide-react";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
 
 interface UserRow {
@@ -28,6 +28,7 @@ interface UserRow {
   login_count?: number;
   parent_name?: string;
   total_sales_volume?: number;
+  wallet_balance?: number;
   is_suspended?: boolean;
 }
 
@@ -82,15 +83,18 @@ const AdminUsers = () => {
     const userIds = rows.map(r => r.user_id);
     if (userIds.length > 0) {
       const parentIds = [...new Set(rows.filter(r => r.parent_agent_id).map(r => r.parent_agent_id as string))];
-      const [parentsRes, salesRes] = await Promise.all([
+      const [parentsRes, salesRes, walletsRes] = await Promise.all([
         parentIds.length > 0 ? supabase.from("profiles").select("user_id, full_name").in("user_id", parentIds) : Promise.resolve({ data: [] }),
         supabase.from("user_sales_stats").select("user_id, total_sales_volume").in("user_id", userIds),
+        supabase.from("wallets").select("agent_id, balance").in("agent_id", userIds),
       ]);
       const parentMap = new Map((parentsRes.data || []).map((p: any) => [p.user_id, p.full_name]));
       const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s.total_sales_volume]));
+      const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, w.balance]));
       rows.forEach(r => {
         if (r.parent_agent_id) r.parent_name = parentMap.get(r.parent_agent_id) || "Unknown";
         r.total_sales_volume = salesMap.get(r.user_id) ?? 0;
+        r.wallet_balance = Number(walletMap.get(r.user_id) ?? 0);
       });
     }
 
@@ -223,8 +227,8 @@ const AdminUsers = () => {
     }
   };
 
-  const toggleSelectUser = (userId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleSelectUser = (userId: string, e: React.MouseEvent | React.ChangeEvent) => {
+    if (e && 'stopPropagation' in e) e.stopPropagation();
     setSelectedUsers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
   };
 
@@ -352,6 +356,7 @@ const AdminUsers = () => {
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">User</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Phone</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Role</th>
+                <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Wallet</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Sales</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider hidden md:table-cell">Parent Agent</th>
                 <th className="text-left p-4 font-semibold text-white/40 text-xs uppercase tracking-wider">Actions</th>
@@ -390,6 +395,11 @@ const AdminUsers = () => {
                     </div>
                   </td>
                   <td className="p-4">
+                    <p className={`font-bold ${Number(user.wallet_balance) < 10 ? "text-red-400" : "text-cyan-400"}`}>
+                      GH₵{(user.wallet_balance || 0).toFixed(2)}
+                    </p>
+                  </td>
+                  <td className="p-4">
                     <p className="font-bold text-green-400">GH₵{(user.total_sales_volume || 0).toFixed(2)}</p>
                   </td>
                   <td className="p-4 hidden md:table-cell">
@@ -409,6 +419,13 @@ const AdminUsers = () => {
                       >
                         {actionLoading[user.user_id] === "reset" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reset"}
                       </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => setSelectedUser(user)}
+                        className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 hover:bg-cyan-500/20 transition-colors"
+                      >
+                        <Wallet className="w-3.5 h-3.5" />
+                      </Button>
                       <Link
                         to={`/admin/orders?agent=${encodeURIComponent(user.full_name || user.email)}`}
                         className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 hover:bg-blue-500/20 transition-colors"
@@ -422,6 +439,85 @@ const AdminUsers = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden space-y-4">
+        {filtered.map((user) => (
+          <div 
+            key={user.user_id} 
+            onClick={() => setSelectedUser(user)}
+            className="rounded-2xl bg-white/[0.02] border border-white/5 p-4 space-y-4 active:bg-white/[0.05] transition-colors relative"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div 
+                  onClick={e => e.stopPropagation()}
+                  className="relative z-10"
+                >
+                  <input 
+                    type="checkbox" 
+                    checked={selectedUsers.includes(user.user_id)} 
+                    onChange={(e) => toggleSelectUser(user.user_id, e)}
+                    className="rounded border-white/10 bg-white/5 text-amber-500 focus:ring-amber-500/30 w-5 h-5"
+                  />
+                </div>
+                <div>
+                  <p className="font-bold text-white leading-none">{user.full_name || "—"}</p>
+                  <p className="text-[10px] text-white/40 mt-1">{user.email}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className={`font-black ${Number(user.wallet_balance || 0) < 10 ? "text-red-400" : "text-cyan-400"}`}>
+                  ₵{(user.wallet_balance || 0).toFixed(2)}
+                </p>
+                <p className="text-[9px] text-white/30 uppercase tracking-widest font-bold">Wallet</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {getRoleBadge(user)}
+              {user.is_suspended && (
+                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[9px]">Suspended</Badge>
+              )}
+              {user.phone && (
+                <span className="flex items-center gap-1 text-[10px] text-white/50 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                  <Phone className="w-2.5 h-2.5" /> {user.phone}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-white/5">
+               <div className="flex items-center gap-4">
+                  <div>
+                    <p className="text-[9px] text-white/30 uppercase tracking-widest font-bold">Total Sales</p>
+                    <p className="text-xs font-bold text-green-400">GH₵{(user.total_sales_volume || 0).toFixed(2)}</p>
+                  </div>
+                  {user.is_sub_agent && user.parent_name && (
+                    <div>
+                      <p className="text-[9px] text-white/30 uppercase tracking-widest font-bold">Parent</p>
+                      <p className="text-[10px] text-white/60 truncate max-w-[80px]">{user.parent_name}</p>
+                    </div>
+                  )}
+               </div>
+               <div className="flex gap-2 relative z-10" onClick={e => e.stopPropagation()}>
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => setSelectedUser(user)}
+                    className="h-8 w-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center p-0"
+                  >
+                    <Wallet className="w-3.5 h-3.5" />
+                  </Button>
+                  <Link
+                    to={`/admin/orders?agent=${encodeURIComponent(user.full_name || user.email)}`}
+                    className="h-8 w-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 p-0"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                  </Link>
+               </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Bulk Actions Bar */}

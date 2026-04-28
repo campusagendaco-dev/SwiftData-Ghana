@@ -7,6 +7,7 @@ import {
   Globe, Clock, Phone, ShieldCheck, Users2, User,
   Wallet, ShoppingCart, AlertTriangle, Gift, Hash,
   Loader2, CheckCircle2, XCircle, AlertCircle, Ban,
+  Plus, Minus, TrendingUp, Save
 } from "lucide-react";
 
 interface UserRow {
@@ -89,6 +90,8 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   const [suspending, setSuspending] = useState(false);
   const [adminNotes, setAdminNotes] = useState(user?.admin_notes || "");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [topupAmount, setTopupAmount] = useState("");
+  const [topupLoading, setTopupLoading] = useState(false);
 
   useEffect(() => {
     setIsSuspended(user?.is_suspended ?? false);
@@ -119,6 +122,34 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       toast({ title: "Action failed", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSuspending(false);
+    }
+  };
+
+  const handleManualTopup = async (isDeduction = false) => {
+    if (!user || !topupAmount || isNaN(Number(topupAmount))) return;
+    const amount = Number(topupAmount) * (isDeduction ? -1 : 1);
+    
+    if (isDeduction && Math.abs(amount) > (data?.walletBalance ?? 0)) {
+       if (!window.confirm("This will result in a negative balance. Continue?")) return;
+    }
+
+    setTopupLoading(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "manual_topup", user_id: user.user_id, amount: amount },
+      });
+      if (error || res?.error) throw new Error(res?.error || error?.message);
+      
+      setData(prev => prev ? { ...prev, walletBalance: res.new_balance } : prev);
+      setTopupAmount("");
+      toast({ 
+        title: isDeduction ? "Wallet Debited" : "Wallet Credited", 
+        description: `${isDeduction ? "Removed" : "Added"} GH₵ ${Math.abs(amount).toFixed(2)} to ${user.full_name}'s wallet.` 
+      });
+    } catch (err: any) {
+      toast({ title: "Action failed", description: err.message, variant: "destructive" });
+    } finally {
+      setTopupLoading(false);
     }
   };
 
@@ -301,6 +332,51 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* ── Wallet Management ── */}
+        <div className="px-6 pt-5">
+           <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400 mb-3 flex items-center gap-1.5">
+             <Wallet className="w-3 h-3" /> Manage Wallet
+           </p>
+           <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-4">
+              <div className="flex items-center gap-3">
+                 <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-xs font-bold">GH₵</span>
+                    <input 
+                      type="number"
+                      value={topupAmount}
+                      onChange={(e) => setTopupAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
+                    />
+                 </div>
+                 <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleManualTopup(false)}
+                      disabled={topupLoading || !topupAmount}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl px-4 h-10 gap-2 shadow-lg shadow-emerald-500/10"
+                    >
+                      {topupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      <span className="hidden sm:inline">Add</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleManualTopup(true)}
+                      disabled={topupLoading || !topupAmount}
+                      className="border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-xl px-4 h-10 gap-2"
+                    >
+                      {topupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Minus className="w-4 h-4" />}
+                      <span className="hidden sm:inline">Deduct</span>
+                    </Button>
+                 </div>
+              </div>
+              <p className="text-[10px] text-white/30 italic px-1">
+                * Users will receive an SMS notification for manual top-ups.
+              </p>
+           </div>
         </div>
 
         {/* ── Profile Details ── */}
