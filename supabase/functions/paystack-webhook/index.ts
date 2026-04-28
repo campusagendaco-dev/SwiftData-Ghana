@@ -675,15 +675,22 @@ serve(async (req) => {
           agent_prices: subAgentPrices,
         }).eq("user_id", subAgentId);
 
-        // Credit parent agent wallet with the activation markup profit
+        // Set parent_profit on the order BEFORE calling credit_order_profits,
+        // so the RPC credits the correct amount to the parent's wallet.
+        await supabase
+          .from("orders")
+          .update({
+            status: "fulfilled",
+            failure_reason: null,
+            profit: 0,
+            parent_profit: agentProfit,
+            parent_agent_id: parentAgentId || null,
+          })
+          .eq("id", orderId);
+
         if (parentAgentId && agentProfit > 0) {
           await supabase.rpc("credit_order_profits", { p_order_id: orderId });
         }
-
-        await supabase
-          .from("orders")
-          .update({ status: "fulfilled", failure_reason: null, profit: agentProfit })
-          .eq("id", orderId);
         console.log("Sub agent activated via webhook:", subAgentId, "parent:", parentAgentId);
       }
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {

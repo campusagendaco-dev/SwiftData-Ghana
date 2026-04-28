@@ -241,10 +241,10 @@ serve(async (req: Request) => {
         // Update profile
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
-          .update({ 
-            is_agent: true, 
+          .update({
+            is_agent: true,
             agent_approved: true,
-            sub_agent_approved: true,
+            sub_agent_approved: false,
             onboarding_complete: true,
             is_sub_agent: false,
             parent_agent_id: null
@@ -291,10 +291,10 @@ serve(async (req: Request) => {
 
           const { error: updError } = await supabaseAdmin
             .from("profiles")
-            .update({ 
-              is_agent: true, 
+            .update({
+              is_agent: true,
               agent_approved: true,
-              sub_agent_approved: true,
+              sub_agent_approved: false,
               onboarding_complete: true,
               is_sub_agent: false,
               parent_agent_id: null
@@ -328,7 +328,11 @@ serve(async (req: Request) => {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
-          .update({ agent_approved: false })
+          .update({
+            is_agent: false,
+            agent_approved: false,
+            sub_agent_approved: false,
+          })
           .eq("user_id", user_id);
 
         if (updateError) throw updateError;

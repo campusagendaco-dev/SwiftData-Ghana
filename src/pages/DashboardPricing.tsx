@@ -100,15 +100,22 @@ const DashboardPricing = () => {
           .eq("user_id", profile.parent_agent_id)
           .maybeSingle();
 
-        const subPrices = parentProfile?.sub_agent_prices as Record<string, any> | undefined;
-        const hasSubPrices = subPrices && Object.keys(subPrices).length > 0;
-        const assigned = (hasSubPrices ? subPrices : (parentProfile?.agent_prices || {})) as Record<string, any>;
+        if (parentProfile) {
+          const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, any>;
+          const parentSellingPrices = (parentProfile.agent_prices || {}) as Record<string, any>;
 
-        for (const [network, pkgs] of Object.entries(basePackages)) {
-          for (const pkg of pkgs) {
-            const assignedPrice = getProfileAssignedPrice(assigned, network, pkg.size);
-            if (assignedPrice && assignedPrice > 0) {
-              nextBasePrices[network][pkg.size] = applyPriceMultiplier(assignedPrice, pricingContext.multiplier);
+          for (const [network, pkgs] of Object.entries(basePackages)) {
+            for (const pkg of pkgs) {
+              // Priority 1: Specific sub-agent price set by parent
+              // Priority 2: Parent's own selling price
+              const assignedSubPrice = getProfileAssignedPrice(subPrices, network, pkg.size);
+              const parentSellingPrice = getProfileAssignedPrice(parentSellingPrices, network, pkg.size);
+              
+              const assignedPrice = assignedSubPrice || parentSellingPrice;
+
+              if (assignedPrice && assignedPrice > 0) {
+                nextBasePrices[network][pkg.size] = applyPriceMultiplier(assignedPrice, pricingContext.multiplier);
+              }
             }
           }
         }

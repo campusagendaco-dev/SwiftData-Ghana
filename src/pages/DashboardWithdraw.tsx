@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Wallet, ArrowDownToLine, Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Wallet, ArrowDownToLine, Loader2, CheckCircle, XCircle, Clock, TrendingUp } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +24,12 @@ interface Withdrawal {
   status: string;
   failure_reason: string | null;
   created_at: string;
+  fee: number;
+  net_amount: number;
 }
 
 const MIN_WITHDRAWAL = 25;
+const WITHDRAWAL_FEE_RATE = 0.015; // 1.5%
 
 const statusConfig: Record<string, { icon: typeof CheckCircle; color: string; label: string }> = {
   completed: { icon: CheckCircle, color: "bg-green-500/20 text-green-400 border-green-500/30", label: "Completed" },
@@ -39,21 +42,22 @@ const DashboardWithdraw = () => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const [totalProfit, setTotalProfit] = useState(0);
-  const [totalWithdrawn, setTotalWithdrawn] = useState(0);
+  const [completedWithdrawals, setCompletedWithdrawals] = useState(0);
+  const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(true);
   const [withdrawing, setWithdrawing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const availableBalance = parseFloat((totalProfit - totalWithdrawn).toFixed(2));
+  const availableBalance = parseFloat((totalProfit - (completedWithdrawals + pendingWithdrawals)).toFixed(2));
 
   const fetchData = useCallback(async () => {
     if (!user) return;
 
     const [ordersRes, parentRes, withdrawalsRes] = await Promise.all([
-      supabase.from("orders").select("profit").eq("agent_id", user.id).in("status", ["paid", "fulfilled", "fulfillment_failed"]),
-      supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).in("status", ["paid", "fulfilled", "fulfillment_failed"]),
+      supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
+      supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("withdrawals").select("*").eq("agent_id", user.id).order("created_at", { ascending: false }),
     ]);
 
@@ -64,10 +68,16 @@ const DashboardWithdraw = () => {
     const wds = (withdrawalsRes.data || []) as Withdrawal[];
     setWithdrawals(wds);
 
-    const withdrawn = wds
-      .filter((w) => ["completed", "pending", "processing"].includes(w.status))
+    const completed = wds
+      .filter((w) => w.status === "completed")
       .reduce((sum, w) => sum + w.amount, 0);
-    setTotalWithdrawn(withdrawn);
+    
+    const pending = wds
+      .filter((w) => ["pending", "processing"].includes(w.status))
+      .reduce((sum, w) => sum + w.amount, 0);
+
+    setCompletedWithdrawals(completed);
+    setPendingWithdrawals(pending);
     setLoading(false);
   }, [user]);
 
@@ -85,6 +95,9 @@ const DashboardWithdraw = () => {
       setWithdrawing(false);
       return;
     }
+
+    const fee = parseFloat((numAmount * WITHDRAWAL_FEE_RATE).toFixed(2));
+    const net = numAmount - fee;
 
     const { data, error } = await supabase.functions.invoke("agent-withdraw", {
       body: { amount: numAmount },
@@ -107,32 +120,44 @@ const DashboardWithdraw = () => {
     <div className="space-y-6 p-6 md:p-8 max-w-4xl">
       <h1 className="font-display text-2xl font-bold">Withdrawals</h1>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Earnings</CardTitle>
-            <Wallet className="w-4 h-4 text-muted-foreground" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 px-4 pt-4">
+            <CardTitle className="text-[10px] uppercase tracking-widest font-black text-muted-foreground">Lifetime Profit</CardTitle>
+            <TrendingUp className="w-3.5 h-3.5 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold">GHS {totalProfit.toFixed(2)}</p>
+          <CardContent className="px-4 pb-4">
+            <p className="font-display text-xl sm:text-2xl font-black">₵{totalProfit.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Withdrawn</CardTitle>
-            <ArrowDownToLine className="w-4 h-4 text-muted-foreground" />
+
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 px-4 pt-4">
+            <CardTitle className="text-[10px] uppercase tracking-widest font-black text-muted-foreground">Paid Out</CardTitle>
+            <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
           </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold">GHS {totalWithdrawn.toFixed(2)}</p>
+          <CardContent className="px-4 pb-4">
+            <p className="font-display text-xl sm:text-2xl font-black text-emerald-500">₵{completedWithdrawals.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card className="border-primary/30 bg-primary/5">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-primary">Available Balance</CardTitle>
-            <Wallet className="w-4 h-4 text-primary" />
+
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 px-4 pt-4">
+            <CardTitle className="text-[10px] uppercase tracking-widest font-black text-muted-foreground">Pending</CardTitle>
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
           </CardHeader>
-          <CardContent>
-            <p className="font-display text-2xl font-bold text-primary">GHS {availableBalance.toFixed(2)}</p>
+          <CardContent className="px-4 pb-4">
+            <p className="font-display text-xl sm:text-2xl font-black text-amber-500">₵{pendingWithdrawals.toFixed(2)}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-primary/40 bg-primary/5 shadow-lg shadow-primary/5">
+          <CardHeader className="flex flex-row items-center justify-between pb-1 px-4 pt-4">
+            <CardTitle className="text-[10px] uppercase tracking-widest font-black text-primary">Available</CardTitle>
+            <Wallet className="w-3.5 h-3.5 text-primary" />
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <p className="font-display text-xl sm:text-2xl font-black text-primary">₵{availableBalance.toFixed(2)}</p>
           </CardContent>
         </Card>
       </div>
@@ -188,7 +213,7 @@ const DashboardWithdraw = () => {
               Request Withdrawal
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">Withdrawal requests are processed within 24 hours to your registered MoMo number.</p>
+          <p className="text-xs text-muted-foreground mt-2">A 1.5% processing fee applies to all withdrawals. Funds are sent within 24 hours.</p>
         </CardContent>
       </Card>
 
@@ -212,6 +237,7 @@ const DashboardWithdraw = () => {
                         <p className="font-medium text-sm">GHS {w.amount.toFixed(2)}</p>
                         <p className="text-xs text-muted-foreground">
                           {new Date(w.created_at).toLocaleDateString()} - {new Date(w.created_at).toLocaleTimeString()}
+                          {Number(w.fee || 0) > 0 && <span className="ml-2 text-amber-500/70">· Fee: ₵{Number(w.fee).toFixed(2)}</span>}
                         </p>
                         {w.failure_reason && <p className="text-xs text-destructive mt-0.5">{w.failure_reason}</p>}
                       </div>
@@ -229,8 +255,24 @@ const DashboardWithdraw = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Withdrawal Request</AlertDialogTitle>
-            <AlertDialogDescription>
-              You are requesting <span className="font-bold text-foreground">GHS {parseFloat(amount || "0").toFixed(2)}</span> to be sent to your MoMo ({profile?.momo_number}).
+            <AlertDialogDescription className="space-y-3">
+              <div className="p-4 rounded-xl bg-muted/50 border border-border space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Request Amount:</span>
+                  <span className="font-bold">GHS {parseFloat(amount || "0").toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Processing Fee (1.5%):</span>
+                  <span className="font-bold text-red-400">- GHS {(parseFloat(amount || "0") * WITHDRAWAL_FEE_RATE).toFixed(2)}</span>
+                </div>
+                <div className="pt-2 border-t border-border flex justify-between text-base">
+                  <span className="font-semibold text-foreground">You will receive:</span>
+                  <span className="font-black text-emerald-400">GHS {(parseFloat(amount || "0") * (1 - WITHDRAWAL_FEE_RATE)).toFixed(2)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Funds will be sent to your MoMo: <span className="text-foreground font-medium">{profile?.momo_number}</span> ({profile?.momo_network}).
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

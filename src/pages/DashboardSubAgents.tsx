@@ -481,9 +481,9 @@ const DashboardSubAgents = () => {
           {subAgentOrders.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: "Total Orders", value: subAgentOrders.length },
-                { label: "Total Volume", value: `GH₵ ${subAgentOrders.reduce((s, o) => s + Number(o.amount), 0).toFixed(2)}` },
-                { label: "Your Total Profit", value: `GH₵ ${subAgentOrders.reduce((s, o) => s + Number(o.parent_profit || 0), 0).toFixed(2)}`, highlight: true },
+                { label: "Fulfilled Orders", value: subAgentOrders.filter(o => o.status === "fulfilled").length },
+                { label: "Fulfilled Volume", value: `₵${subAgentOrders.filter(o => o.status === "fulfilled").reduce((s, o) => s + Number(o.amount), 0).toFixed(2)}` },
+                { label: "Total Profit Earned", value: `₵${subAgentOrders.filter(o => o.status === "fulfilled").reduce((s, o) => s + Number(o.parent_profit || 0), 0).toFixed(2)}`, highlight: true },
               ].map((s) => (
                 <div key={s.label} className={`rounded-xl p-3 text-center border ${s.highlight ? "bg-amber-400/10 border-amber-400/30" : "bg-card border-border"}`}>
                   <p className={`font-black text-lg ${s.highlight ? "text-amber-400" : "text-foreground"}`}>{s.value}</p>

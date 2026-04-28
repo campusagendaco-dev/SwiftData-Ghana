@@ -21,6 +21,8 @@ interface WithdrawalRow {
   momo_network?: string;
   momo_account_name?: string;
   total_profit?: number;
+  fee: number;
+  net_amount: number;
 }
 
 const statusColors: Record<string, string> = {
@@ -165,14 +167,20 @@ const AdminWithdrawals = () => {
                     <p className="font-medium text-sm">{w.agent_name || "Unknown"}</p>
                     <p className="text-xs text-muted-foreground">{w.agent_email || ""}</p>
                   </td>
-                  <td className="p-4 font-medium whitespace-nowrap">GH₵{w.amount.toFixed(2)}</td>
+                  <td className="p-4">
+                    <p className="font-medium whitespace-nowrap">GH₵{w.amount.toFixed(2)}</p>
+                    <p className="text-[10px] text-red-400 font-bold">Fee: GH₵{(w.fee || 0).toFixed(2)}</p>
+                  </td>
                   <td className="p-4 text-muted-foreground hidden md:table-cell">GH₵{(w.total_profit || 0).toFixed(2)}</td>
                   <td className="p-4 hidden lg:table-cell">
                     <p className="text-sm">{w.momo_account_name || "—"}</p>
                     <p className="text-xs text-muted-foreground">{w.momo_number || "—"} · {w.momo_network || "—"}</p>
                   </td>
                   <td className="p-4">
-                    <Badge className={statusColors[w.status] || ""}>{w.status}</Badge>
+                    <div className="flex flex-col gap-1">
+                      <p className="font-black text-emerald-400 text-sm">SEND: GH₵{(w.net_amount || w.amount).toFixed(2)}</p>
+                      <Badge className={`${statusColors[w.status] || ""} w-fit`}>{w.status}</Badge>
+                    </div>
                   </td>
                   <td className="p-4">
                     {w.status === "pending" && (

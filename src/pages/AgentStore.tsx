@@ -111,7 +111,7 @@ const AgentStore = () => {
         const [agentRes, pkgRes, pricingCtx] = await Promise.all([
           supabase
             .from("profiles")
-            .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color")
+            .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color")
             .eq("slug", slug)
             .maybeSingle(),
           supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
@@ -147,11 +147,24 @@ const AgentStore = () => {
 
         if (profile.is_sub_agent && profile.parent_agent_id) {
           const { data: parentProfile } = await supabase
-            .from("profiles").select("sub_agent_prices").eq("user_id", profile.parent_agent_id).maybeSingle();
+            .from("profiles").select("sub_agent_prices, agent_prices").eq("user_id", profile.parent_agent_id).maybeSingle();
           
-          const pp = parentProfile as unknown as { sub_agent_prices?: Record<string, Record<string, string | number>> } | null;
-          if (pp?.sub_agent_prices) {
-            setParentAssignedPrices(pp.sub_agent_prices);
+          if (parentProfile) {
+            const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, any>;
+            const parentSellingPrices = (parentProfile.agent_prices || {}) as Record<string, any>;
+            
+            // Merge them: Priority to sub_agent_prices
+            const merged: Record<string, Record<string, string | number>> = {};
+            
+            for (const [network, pkgs] of Object.entries(basePackages)) {
+              merged[network] = {};
+              for (const pkg of pkgs) {
+                const subPrice = Number(subPrices[network]?.[pkg.size]);
+                const sellingPrice = Number(parentSellingPrices[network]?.[pkg.size]);
+                merged[network][pkg.size] = (Number.isFinite(subPrice) && subPrice > 0) ? subPrice : sellingPrice;
+              }
+            }
+            setParentAssignedPrices(merged);
           }
         }
 
