@@ -112,7 +112,7 @@ const DashboardBuyAirtime = () => {
         if (data?.diagnostics) {
           console.error("Provider Diagnostics:", data.diagnostics);
           const diag = data.diagnostics;
-          const diagMsg = `API Key: ${diag.api_key_used}\nURL: ${diag.attempted_urls?.[0] || 'N/A'}\nError: ${diag.provider_error}`;
+          const diagMsg = `API Key: ${diag.api_key_used}\nURL: ${diag.attempted_urls?.[0] || 'N/A'}\nError: ${diag.provider_error}\nResponse: ${diag.provider_response || 'No response body'}`;
           
           toast({ 
             title: "Purchase Failed (Admin Info)", 
