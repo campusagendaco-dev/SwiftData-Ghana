@@ -16,6 +16,7 @@ import { useAuth } from "@/hooks/useAuth";
 interface PackageSetting {
   network: string;
   package_size: string;
+  cost_price: number | null;
   agent_price: number | null;
   public_price: number | null;
   api_price: number | null;
@@ -37,7 +38,7 @@ const AdminPackages = () => {
 
       const { data } = await supabase
         .from("global_package_settings")
-        .select("network, package_size, agent_price, public_price, api_price, is_unavailable");
+        .select("network, package_size, cost_price, agent_price, public_price, api_price, is_unavailable");
 
       const map: Record<string, PackageSetting> = {};
       (data || []).forEach((r: any) => {
@@ -52,7 +53,7 @@ const AdminPackages = () => {
 
   const getSetting = (network: string, size: string): PackageSetting => {
     const key = `${network}-${size}`;
-    return settings[key] || { network, package_size: size, agent_price: null, public_price: null, api_price: null, is_unavailable: false };
+    return settings[key] || { network, package_size: size, cost_price: null, agent_price: null, public_price: null, api_price: null, is_unavailable: false };
   };
 
   const updateSetting = (network: string, size: string, field: keyof PackageSetting, value: any) => {
@@ -69,6 +70,7 @@ const AdminPackages = () => {
         upserts.push({
           network: n.name,
           package_size: pkg.size,
+          cost_price: pkg.price,
           agent_price: pkg.price,
           public_price: parseFloat((pkg.price * 1.12).toFixed(2)),
           api_price: pkg.price,
@@ -136,6 +138,7 @@ const AdminPackages = () => {
     const upserts = Object.values(settings).map((s) => ({
       network: s.network,
       package_size: s.package_size,
+      cost_price: s.cost_price,
       agent_price: s.agent_price,
       public_price: s.public_price,
       api_price: s.api_price,
@@ -262,22 +265,22 @@ const AdminPackages = () => {
                   {/* Desktop Header */}
                   <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-2">
                     <div className="col-span-2">Package</div>
-                    <div className="col-span-1">Base</div>
-                    <div className="col-span-3">Agent Price</div>
-                    <div className="col-span-3">User Price</div>
-                    <div className="col-span-2">API Price</div>
-                    <div className="col-span-1 text-center">On</div>
+                    <div className="col-span-2">Cost (₵)</div>
+                    <div className="col-span-2">Agent (₵)</div>
+                    <div className="col-span-2">Public (₵)</div>
+                    <div className="col-span-2">API (₵)</div>
+                    <div className="col-span-1 text-center">Active</div>
                   </div>
 
                   {basePackages[n.name]?.map((pkg) => {
                     const s = getSetting(n.name, pkg.size);
                     return (
                       <div key={pkg.size} className={`flex flex-col md:grid md:grid-cols-12 gap-3 items-start md:items-center p-3 md:p-2 rounded-xl border ${s.is_unavailable ? "bg-red-500/[0.02] border-red-500/10 opacity-60" : "bg-white/[0.01] border-white/5"}`}>
-                        {/* Package & Base Info */}
-                        <div className="flex items-center justify-between w-full md:col-span-3">
+                        {/* Package Info */}
+                        <div className="flex items-center justify-between w-full md:col-span-2">
                           <div className="flex flex-col">
                             <span className="font-bold text-sm text-white">{pkg.size}</span>
-                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Base: ₵{pkg.price.toFixed(0)}</span>
+                            <span className="text-[10px] text-white/30 uppercase tracking-wider">Default: ₵{pkg.price.toFixed(0)}</span>
                           </div>
                           <div className="md:hidden flex items-center gap-2">
                             <span className="text-[10px] text-white/30">Active</span>
@@ -289,14 +292,29 @@ const AdminPackages = () => {
                           </div>
                         </div>
 
-                        {/* Agent Price */}
-                        <div className="w-full md:col-span-3 space-y-1">
-                          <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">Agent Price (₵)</label>
+                        {/* Cost Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">Cost Price (₵)</label>
                           <div className="relative">
                             <Input
                               type="number"
                               step="0.01"
                               placeholder={pkg.price.toFixed(2)}
+                              value={s.cost_price ?? ""}
+                              onChange={(e) => updateSetting(n.name, pkg.size, "cost_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm bg-white/5 border-white/10 rounded-lg md:rounded-md focus:border-red-400/30"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Agent Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">Agent Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder={(s.cost_price || pkg.price).toFixed(2)}
                               value={s.agent_price ?? ""}
                               onChange={(e) => updateSetting(n.name, pkg.size, "agent_price", e.target.value ? parseFloat(e.target.value) : null)}
                               className="h-9 md:h-8 text-sm bg-white/5 border-white/10 rounded-lg md:rounded-md focus:border-amber-400/30"
@@ -305,13 +323,13 @@ const AdminPackages = () => {
                         </div>
 
                         {/* User Price */}
-                        <div className="w-full md:col-span-3 space-y-1">
+                        <div className="w-full md:col-span-2 space-y-1">
                           <label className="md:hidden text-[10px] text-white/30 uppercase font-bold tracking-widest">User Price (₵)</label>
                           <div className="relative">
                             <Input
                               type="number"
                               step="0.01"
-                              placeholder={(pkg.price * 1.12).toFixed(2)}
+                              placeholder={((s.cost_price || pkg.price) * 1.12).toFixed(2)}
                               value={s.public_price ?? ""}
                               onChange={(e) => updateSetting(n.name, pkg.size, "public_price", e.target.value ? parseFloat(e.target.value) : null)}
                               className="h-9 md:h-8 text-sm bg-white/5 border-white/10 rounded-lg md:rounded-md focus:border-blue-400/30"
@@ -326,7 +344,7 @@ const AdminPackages = () => {
                             <Input
                               type="number"
                               step="0.01"
-                              placeholder={pkg.price.toFixed(2)}
+                              placeholder={(s.cost_price || pkg.price).toFixed(2)}
                               value={s.api_price ?? ""}
                               onChange={(e) => updateSetting(n.name, pkg.size, "api_price", e.target.value ? parseFloat(e.target.value) : null)}
                               className="h-9 md:h-8 text-sm bg-amber-400/5 border-amber-400/20 text-amber-500 rounded-lg md:rounded-md focus:border-amber-400/40"
@@ -335,7 +353,7 @@ const AdminPackages = () => {
                         </div>
 
                         {/* Switch (Desktop) */}
-                        <div className="hidden md:flex col-span-1 justify-center items-center">
+                        <div className="hidden md:flex col-span-2 justify-center items-center">
                           <Switch
                             checked={!s.is_unavailable}
                             onCheckedChange={(checked) => updateSetting(n.name, pkg.size, "is_unavailable", !checked)}
