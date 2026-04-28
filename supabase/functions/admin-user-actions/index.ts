@@ -479,26 +479,36 @@ serve(async (req: Request) => {
 
       case "confirm_withdrawal": {
         const { withdrawal_id } = body;
-        if (!withdrawal_id) {
-          return new Response(JSON.stringify({ error: "Missing withdrawal_id" }), {
+        if (!withdrawal_id || !isValidUuid(withdrawal_id)) {
+          return new Response(JSON.stringify({ error: "Invalid or missing withdrawal_id" }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        // Use the new atomic RPC to finalize withdrawal and deduct balance
+        console.log("CONFIRMING_WITHDRAWAL", withdrawal_id);
+
         const { data: result, error: rpcError } = await supabaseAdmin.rpc("finalize_withdrawal", {
           p_withdrawal_id: withdrawal_id
         });
 
-        if (rpcError || !result?.success) {
-          return new Response(JSON.stringify({ error: rpcError?.message || result?.error || "Failed to finalize withdrawal" }), {
+        if (rpcError) {
+          console.error("RPC_ERROR_FINALIZE", rpcError);
+          return new Response(JSON.stringify({ error: rpcError.message }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        // Fetch withdrawal details to send SMS (the RPC already confirmed it)
+        if (!result?.success) {
+          console.warn("FINALIZE_FAILURE", result?.error);
+          return new Response(JSON.stringify({ error: result?.error || "Failed to finalize withdrawal" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Fetch details for SMS
         const { data: withdrawal } = await supabaseAdmin
           .from("withdrawals")
           .select("agent_id, amount")
@@ -506,7 +516,12 @@ serve(async (req: Request) => {
           .maybeSingle();
         
         if (withdrawal) {
-          await sendWithdrawalCompletedSms(supabaseAdmin, withdrawal.agent_id, withdrawal.amount);
+          try {
+            await sendWithdrawalCompletedSms(supabaseAdmin, withdrawal.agent_id, withdrawal.amount);
+          } catch (smsErr) {
+            console.error("SMS_ERROR", smsErr);
+            // Don't fail the whole request just because SMS failed
+          }
         }
 
         return new Response(JSON.stringify({ success: true, new_balance: result.new_balance }), {

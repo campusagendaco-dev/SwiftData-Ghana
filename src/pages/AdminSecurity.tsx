@@ -126,16 +126,18 @@ const Section = ({ icon: Icon, title, badge, iconColor, children, onExport, defa
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <button
-          type="button"
-          onClick={() => setOpen(o => !o)}
-          className="flex items-center gap-2"
-        >
-          <Icon className={`w-4 h-4 ${iconColor}`} />
-          <h2 className="font-black text-lg text-white">{title}</h2>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setOpen(o => !o)}
+            className="flex items-center gap-2 cursor-pointer group bg-transparent border-none p-0 text-left outline-none"
+          >
+            <Icon className={`w-4 h-4 ${iconColor} group-hover:scale-110 transition-transform`} />
+            <h2 className="font-black text-lg text-white group-hover:text-white/80 transition-colors">{title}</h2>
+            <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${open ? "rotate-180" : ""} group-hover:text-white/60`} />
+          </button>
           {badge}
-          <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
+        </div>
         {onExport && (
           <button
             type="button"
@@ -615,18 +617,23 @@ const AdminSecurity = () => {
               return (
                 <div key={cluster.ip} className="rounded-2xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
                   <div
-                    onClick={() => setExpandedIp(isExpanded ? null : cluster.ip)}
-                    className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-red-500/[0.06] transition-colors text-left cursor-pointer"
+                    className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-red-500/[0.06] transition-colors text-left border-none"
                   >
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <Globe className="w-4 h-4 text-red-400 shrink-0" />
+                    <button
+                      type="button"
+                      onClick={() => setExpandedIp(isExpanded ? null : cluster.ip)}
+                      className="flex-1 flex items-center gap-3 flex-wrap cursor-pointer group bg-transparent border-none p-0 text-left outline-none"
+                    >
+                      <Globe className="w-4 h-4 text-red-400 shrink-0 group-hover:scale-110 transition-transform" />
                       <span className="font-mono text-sm font-bold text-red-300">{cluster.ip}</span>
                       {cluster.location && <span className="text-xs text-emerald-400/70">{cluster.location}</span>}
                       <span className="text-[10px] font-black uppercase tracking-widest bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full">
                         {cluster.accounts.length} accounts
                       </span>
-                    </div>
-                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <Eye className={`w-3.5 h-3.5 ml-1 transition-transform ${isExpanded ? "rotate-180 text-red-400" : "text-white/20"}`} />
+                    </button>
+
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleBulkSuspend(cluster.accounts.map(a => a.user_id), true)}
@@ -641,7 +648,6 @@ const AdminSecurity = () => {
                       >
                         Copy IP
                       </button>
-                      <Eye className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180 text-red-400" : "text-white/30"}`} />
                     </div>
                   </div>
                   {isExpanded && (
