@@ -48,11 +48,12 @@ async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: stri
   return { apiKey, baseUrl: (baseUrl || "").replace(/\/+$/, "") };
 }
 
-function mapNetworkKey(network: string): string {
-  const n = (network || "").trim().toUpperCase();
+function mapNetworkKey(network: string, variant: number = 0): string {
+  const n = network.trim().toUpperCase();
   if (n === "MTN" || n === "YELLO") return "MTN";
-  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "TELECEL";
-  if (n === "AT" || n === "AIRTELTIGO" || n === "AT_PREMIUM") return "AIRTELTIGO";
+  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "VOD";
+  if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AT";
+  if (n === "GLO") return "GLO";
   return n;
 }
 
