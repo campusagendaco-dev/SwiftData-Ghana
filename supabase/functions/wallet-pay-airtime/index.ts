@@ -229,6 +229,7 @@ serve(async (req: Request) => {
 
       let lastError = "All provider endpoints failed (404 or connection error). Check AIRTIME_PROVIDER_URL.";
 
+      let lastBody = "";
       for (const url of urls) {
         try {
           const res = await fetch(url, {
@@ -244,6 +245,7 @@ serve(async (req: Request) => {
 
           const contentType = res.headers.get("content-type");
           const resText = await res.text();
+          lastBody = resText;
 
           if (res.ok && !isHtmlResponse(contentType, resText)) {
             // Parse response body — provider may return 200 with {"status": false}
@@ -329,6 +331,7 @@ serve(async (req: Request) => {
         error: finalError,
         diagnostics: {
           provider_error: err.message,
+          provider_response: lastBody.length > 200 ? lastBody.slice(0, 197) + "..." : lastBody,
           attempted_urls: urls,
           api_key_used: apiKey ? `${apiKey.slice(0, 8)}...` : "missing",
           network_mapped: mapNetworkKey(network)
