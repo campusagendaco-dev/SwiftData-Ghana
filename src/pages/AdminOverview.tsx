@@ -97,7 +97,8 @@ const AdminOverview = () => {
     totalRangePurchase: 0,
     rangeInflow: 0,
     rangeVerifiedInflow: 0,
-    rangePurchases: 0
+    rangePurchases: 0,
+    totalNetAdminProfit: 0
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
@@ -128,7 +129,7 @@ const AdminOverview = () => {
     startDate.setHours(0, 0, 0, 0);
 
     const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes] = await Promise.all([
-      supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit"),
+      supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee"),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at"),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
@@ -152,6 +153,22 @@ const AdminOverview = () => {
     const totalVolumeAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_sales_volume) || 0), 0) : 0;
     const totalAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_own_profit) || 0), 0) : 0;
     const totalSubAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_commissions_paid) || 0), 0) : 0;
+    
+    // Calculate Net Admin Profit for fulfilled orders
+    const fulfilledOrders = orders.filter((o: any) => o.status === "fulfilled");
+    const totalNetAdminProfit = fulfilledOrders.reduce((s, o: any) => {
+      const amt = Number(o.paystack_verified_amount || o.amount) || 0;
+      const fee = Number(o.paystack_fee) || 0;
+      const agentProf = Number(o.profit) || 0;
+      const parentProf = Number(o.parent_profit) || 0;
+      const cost = Number(o.cost_price) || 0;
+      
+      // Only include if cost_price is available, otherwise it's 0 (or we don't know the profit yet)
+      if (cost > 0) {
+        return s + (amt - fee - agentProf - parentProf - cost);
+      }
+      return s;
+    }, 0);
     
     const maintenanceRow = (maintenanceRes?.data as any) || null;
     const maintenanceError = maintenanceRes?.error || maintenanceRow?.error;
@@ -256,7 +273,8 @@ const AdminOverview = () => {
       totalRangePurchase: rangeOrders.filter((o: any) => o.status === "fulfilled" && PURCHASE_TYPES.includes(o.order_type)).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0),
       rangeInflow,
       rangeVerifiedInflow,
-      rangePurchases
+      rangePurchases,
+      totalNetAdminProfit
     });
     setRecentOrders((recentRes.data || []) as RecentOrder[]);
     setVerifiedLogs(topupsRes.data || []);
@@ -388,6 +406,7 @@ const AdminOverview = () => {
     { title: "Today's New Users", value: todaySales.newUsers,     icon: Users,        color: "text-indigo-500",  bg: "bg-indigo-500/10",  border: "border-indigo-500/20"  },
     { title: "Pending Withdrawals", value: stats.pendingWithdrawals, icon: Wallet,   color: stats.pendingWithdrawals > 0 ? "text-red-500" : "text-emerald-500", bg: stats.pendingWithdrawals > 0 ? "bg-red-500/10" : "bg-emerald-500/10", border: stats.pendingWithdrawals > 0 ? "border-red-500/20" : "border-emerald-500/20" },
     { title: "Open Tickets",      value: stats.unreadTickets,      icon: MessageCircle, color: stats.unreadTickets > 0 ? "text-amber-500" : "text-emerald-500", bg: stats.unreadTickets > 0 ? "bg-amber-500/10" : "bg-emerald-500/10", border: stats.unreadTickets > 0 ? "border-amber-500/20" : "border-emerald-500/20" },
+    { title: "Net Admin Profit", value: `GH₵ ${(stats.totalNetAdminProfit || 0).toFixed(2)}`, icon: TrendingUp, color: "text-sky-400", bg: "bg-sky-400/10", border: "border-sky-400/20" },
     { title: "Total Purchase", value: `GH₵ ${(stats.totalRangePurchase || 0).toFixed(2)}`, icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
   ];
 

@@ -30,6 +30,7 @@ interface OrderRow {
   parent_agent_id: string | null;
   paystack_verified_amount: number | null;
   paystack_fee: number | null;
+  cost_price: number | null;
   status: string;
   failure_reason: string | null;
   created_at: string;
@@ -175,7 +176,11 @@ const AdminOrders = () => {
   const totalRevenue = allOrders.reduce((s, o) => s + Number(o.paystack_verified_amount ?? o.amount ?? 0), 0);
   const totalPaystackFees = allOrders.reduce((s, o) => s + Number(o.paystack_fee || 0), 0);
   const totalNetRevenue = totalRevenue - totalPaystackFees;
-  const totalParentProfit = allOrders.reduce((s, o) => s + Number(o.parent_profit || 0), 0);
+  const totalAgentProfits = allOrders.reduce((s, o) => s + Number(o.profit || 0), 0);
+  const totalParentProfits = allOrders.reduce((s, o) => s + Number(o.parent_profit || 0), 0);
+  const totalCosts = allOrders.reduce((s, o) => s + Number(o.cost_price || 0), 0);
+  const totalAdminNetProfit = totalNetRevenue - totalAgentProfits - totalParentProfits - totalCosts;
+  
   const failed = allOrders.filter((o) => o.status === "fulfillment_failed").length;
   const pending = allOrders.filter((o) => o.status === "pending" || o.status === "paid").length;
   const subAgentOrders = allOrders.filter((o) => o.is_sub_agent).length;
@@ -218,8 +223,9 @@ const AdminOrders = () => {
           { label: "Total Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400" },
           { label: "Gross Revenue", value: `GH₵${totalRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400" },
           { label: "Paystack Fees", value: `GH₵${totalPaystackFees.toFixed(2)}`, icon: TrendingUp, color: "text-red-400" },
-          { label: "Net Revenue", value: `GH₵${totalNetRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-sky-400" },
-          { label: "Agent Profits", value: `GH₵${totalParentProfit.toFixed(2)}`, icon: TrendingUp, color: "text-amber-400" },
+          { label: "Agent Profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}`, icon: TrendingUp, color: "text-purple-400" },
+          { label: "Platform Costs", value: `GH₵${totalCosts.toFixed(2)}`, icon: TrendingUp, color: "text-orange-400" },
+          { label: "Net Admin Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: TrendingUp, color: "text-sky-400 font-black" },
           { label: "Paystack Verified", value: verifiedCount.toLocaleString(), icon: CheckCircle2, color: "text-green-400" },
           { label: "Pending / Failed", value: `${pending} / ${failed}`, icon: failed > 0 ? AlertTriangle : Clock, color: failed > 0 ? "text-red-400" : "text-yellow-400" },
         ].map(({ label, value, icon: Icon, color }) => (
@@ -298,8 +304,9 @@ const AdminOrders = () => {
                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30 hidden md:table-cell">Network</th>
                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30 hidden md:table-cell">Package</th>
                 <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30">Amount</th>
-                <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30 hidden xl:table-cell">Verified / Fee</th>
+                <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30 hidden xl:table-cell">Cost</th>
                 <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30 hidden lg:table-cell">Agent Profit</th>
+                <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30 hidden lg:table-cell">Admin Profit</th>
                 <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30">Status</th>
                 <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-white/30">Action</th>
               </tr>
@@ -342,23 +349,30 @@ const AdminOrders = () => {
                     <span className="text-sm font-bold text-white">GH₵{Number(order.amount).toFixed(2)}</span>
                   </td>
                   <td className="px-4 py-3 text-right hidden xl:table-cell">
-                    {order.paystack_verified_amount != null ? (
-                      <div>
-                        <div className="flex items-center justify-end gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-green-400 shrink-0" />
-                          <span className="text-xs font-bold text-green-400">GH₵{Number(order.paystack_verified_amount).toFixed(2)}</span>
-                        </div>
-                        {order.paystack_fee != null && Number(order.paystack_fee) > 0 && (
-                          <span className="text-[10px] text-red-400/70">−GH₵{Number(order.paystack_fee).toFixed(2)} fee</span>
-                        )}
-                      </div>
+                    {order.cost_price != null ? (
+                      <span className="text-xs text-white/60">GH₵{Number(order.cost_price).toFixed(2)}</span>
                     ) : (
                       <span className="text-xs text-white/20">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right hidden lg:table-cell">
-                    {Number(order.parent_profit) > 0 ? (
-                      <span className="text-xs font-bold text-emerald-400">+GH₵{Number(order.parent_profit).toFixed(2)}</span>
+                    {Number(order.profit) + Number(order.parent_profit) > 0 ? (
+                      <span className="text-xs font-bold text-emerald-400">+GH₵{(Number(order.profit) + Number(order.parent_profit)).toFixed(2)}</span>
+                    ) : (
+                      <span className="text-xs text-white/20">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right hidden lg:table-cell">
+                    {order.status === "fulfilled" && order.cost_price != null ? (
+                      <span className="text-xs font-black text-sky-400">
+                        GH₵{(
+                          Number(order.paystack_verified_amount ?? order.amount) - 
+                          Number(order.paystack_fee || 0) - 
+                          Number(order.profit || 0) - 
+                          Number(order.parent_profit || 0) - 
+                          Number(order.cost_price)
+                        ).toFixed(2)}
+                      </span>
                     ) : (
                       <span className="text-xs text-white/20">—</span>
                     )}

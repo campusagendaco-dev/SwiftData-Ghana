@@ -104,19 +104,20 @@ async function resolveOrderDetails(
   network: string,
   packageSize: string,
   multiplier: number,
-): Promise<{ cost: number; parentAgentId?: string; parentProfit?: number; profit?: number } | null> {
+): Promise<{ cost: number; costPrice: number; parentAgentId?: string; parentProfit?: number; profit?: number } | null> {
   const normalizedNetwork = normalizeNetworkForPricing(network);
   const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
 
   // Run profile + global pricing lookups in parallel
   const [{ data: profile }, { data: globalRow }] = await Promise.all([
     supabaseAdmin.from("profiles").select("is_sub_agent, parent_agent_id, agent_prices").eq("user_id", userId).maybeSingle(),
-    supabaseAdmin.from("global_package_settings").select("agent_price").eq("network", normalizedNetwork).eq("package_size", normalizedPackage).maybeSingle(),
+    supabaseAdmin.from("global_package_settings").select("cost_price, agent_price").eq("network", normalizedNetwork).eq("package_size", normalizedPackage).maybeSingle(),
   ]);
 
   const adminBase = Number(globalRow?.agent_price || 0);
   if (!(adminBase > 0)) return null;
   const adminCost = Number((adminBase * multiplier).toFixed(2));
+  const platformCost = Number((Number(globalRow?.cost_price || adminBase) * multiplier).toFixed(2));
 
   if (profile?.is_sub_agent) {
     let parentAssignedBase = 0;
@@ -146,6 +147,7 @@ async function resolveOrderDetails(
     // For wallet orders, the agent pays their cost (parentCost)
     return { 
       cost: parentCost, 
+      costPrice: platformCost,
       parentAgentId: profile.parent_agent_id, 
       parentProfit: parentProfit,
       profit: 0 // In wallet orders, agent markup is cash in hand, not wallet credit
@@ -155,6 +157,7 @@ async function resolveOrderDetails(
   // Regular agent: they pay the admin cost
   return { 
     cost: adminCost, 
+    costPrice: platformCost,
     profit: 0 // Regular agent markup is cash in hand
   };
 }
@@ -625,7 +628,7 @@ serve(async (req) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    const { cost: expectedAmount, parentAgentId, parentProfit } = orderDetails;
+    const { cost: expectedAmount, costPrice: resolvedCostPrice, parentAgentId, parentProfit } = orderDetails;
 
     // Ensure wallet row exists before attempting atomic debit
     const { data: existingWallet } = await supabaseAdmin.from("wallets").select("id").eq("agent_id", user.id).maybeSingle();
@@ -661,6 +664,7 @@ serve(async (req) => {
       package_size,
       customer_phone,
       amount: expectedAmount,
+      cost_price: resolvedCostPrice,
       profit: 0,
       parent_agent_id: parentAgentId || null,
       parent_profit: parentProfit || 0,

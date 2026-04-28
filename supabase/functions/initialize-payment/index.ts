@@ -162,6 +162,7 @@ serve(async (req: Request) => {
     let resolvedParentProfit = 0;
     let resolvedParentAgentId: string | null = null;
     let resolvedPaystackFee = 0;
+    let resolvedCostPrice = 0;
     let resolvedWalletCredit: number | null = null;
     let enrichedMetadata: Record<string, unknown> = { ...metadata };
 
@@ -179,6 +180,7 @@ serve(async (req: Request) => {
       const normalizedPackage = packageSize.replace(/\s+/g, "").toUpperCase();
 
       type GlobalRow = {
+        cost_price: number | null;
         agent_price: number | null;
         public_price: number | null;
         is_unavailable: boolean;
@@ -190,22 +192,23 @@ serve(async (req: Request) => {
       // just because the admin hasn't seeded global_package_settings yet.
       async function lookupGlobalRow(net: string, pkg: string): Promise<GlobalRow | null> {
         const candidates = [pkg, packageSize, packageSize.replace(/\s+/g, "")];
-        let dbRow: { agent_price: number | null; public_price: number | null; is_unavailable: boolean } | null = null;
+        let dbRow: { cost_price: number | null; agent_price: number | null; public_price: number | null; is_unavailable: boolean } | null = null;
         for (const candidate of [...new Set(candidates)]) {
           const { data } = await supabaseAdmin
             .from("global_package_settings")
-            .select("agent_price, public_price, is_unavailable")
+            .select("cost_price, agent_price, public_price, is_unavailable")
             .eq("network", net)
             .eq("package_size", candidate)
             .maybeSingle();
           if (data) { dbRow = data; break; }
         }
 
+        const hasValidCost = Number.isFinite(Number(dbRow?.cost_price)) && Number(dbRow?.cost_price) > 0;
         const hasValidAgent = Number.isFinite(Number(dbRow?.agent_price)) && Number(dbRow?.agent_price) > 0;
         const hasValidPublic = Number.isFinite(Number(dbRow?.public_price)) && Number(dbRow?.public_price) > 0;
 
         // If DB row has at least one valid price, return it with db source
-        if (dbRow && (hasValidAgent || hasValidPublic)) {
+        if (dbRow && (hasValidCost || hasValidAgent || hasValidPublic)) {
           return { ...dbRow, pricing_source: "db" };
         }
 
@@ -217,6 +220,7 @@ serve(async (req: Request) => {
             `Run "Seed Default Prices" in Admin > Package Management to remove this warning.`
           );
           return {
+            cost_price: hasValidCost ? dbRow!.cost_price : fallbackBase,
             agent_price: hasValidAgent ? dbRow!.agent_price : fallbackBase,
             public_price: hasValidPublic ? dbRow!.public_price : Number((fallbackBase * 1.12).toFixed(2)),
             is_unavailable: dbRow?.is_unavailable ?? false,
@@ -329,6 +333,7 @@ serve(async (req: Request) => {
           resolvedProfit = Math.max(0, Number((chargeBase - adminBase).toFixed(2)));
         }
 
+        resolvedCostPrice = Number(globalRow?.cost_price) > 0 ? Number(globalRow!.cost_price) : adminBase;
         const adjustedBase = Number((chargeBase * priceMultiplier).toFixed(2));
         resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
         resolvedAmount = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
@@ -338,6 +343,7 @@ serve(async (req: Request) => {
           network,
           package_size: packageSize,
           base_price: adjustedBase,
+          cost_price: resolvedCostPrice,
           profit: resolvedProfit,
           parent_profit: resolvedParentProfit,
           parent_agent_id: resolvedParentAgentId,
@@ -367,6 +373,7 @@ serve(async (req: Request) => {
           });
         }
 
+        resolvedCostPrice = Number(globalRow?.cost_price) > 0 ? Number(globalRow!.cost_price) : publicBase;
         const adjustedBase = Number((publicBase * priceMultiplier).toFixed(2));
         resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
         resolvedAmount = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
@@ -375,6 +382,7 @@ serve(async (req: Request) => {
           network,
           package_size: packageSize,
           base_price: adjustedBase,
+          cost_price: resolvedCostPrice,
           profit: 0,
           parent_profit: 0,
           pricing_source: globalRow?.pricing_source ?? "unknown",
@@ -569,6 +577,7 @@ serve(async (req: Request) => {
         order_type: orderType,
         amount: orderAmount,
         paystack_fee: resolvedPaystackFee > 0 ? resolvedPaystackFee : undefined,
+        cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
         profit: normalizedProfit,
         parent_profit: normalizedParentProfit,
         status: "pending",
