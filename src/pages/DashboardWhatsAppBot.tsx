@@ -11,7 +11,7 @@ import {
   Star, Globe, Lock
 } from "lucide-react";
 
-const PLATFORM_WA_NUMBER = "233597203330";
+const PLATFORM_WA_NUMBER = "146427142025";
 
 const steps = [
   {
