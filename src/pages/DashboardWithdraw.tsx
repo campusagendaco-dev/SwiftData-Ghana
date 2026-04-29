@@ -50,7 +50,8 @@ const DashboardWithdraw = () => {
   const [withdrawing, setWithdrawing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const availableBalance = parseFloat((totalProfit - (completedWithdrawals + pendingWithdrawals)).toFixed(2));
+  const theoreticalBalance = parseFloat((totalProfit - (completedWithdrawals + pendingWithdrawals)).toFixed(2));
+  const availableBalance = Math.min(theoreticalBalance, profile?.wallet_balance || 0);
 
   const fetchData = useCallback(async () => {
     if (!user) return;

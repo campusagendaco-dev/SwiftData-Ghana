@@ -39,6 +39,7 @@ const AdminWithdrawals = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [payingPaystack, setPayingPaystack] = useState<string | null>(null);
 
   const fetchWithdrawals = async () => {
     const { data } = await supabase
@@ -121,6 +122,41 @@ const AdminWithdrawals = () => {
     }
     setConfirming(null);
   };
+  
+  const handlePaystackPayout = async (withdrawalId: string) => {
+    if (!window.confirm("Are you sure you want to initiate a REAL transfer via Paystack?")) return;
+    
+    setPayingPaystack(withdrawalId);
+    const withdrawal = withdrawals.find(w => w.id === withdrawalId);
+
+    const { data, error } = await supabase.functions.invoke("admin-user-actions", {
+      body: { action: "paystack_payout", withdrawal_id: withdrawalId },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+
+    if (error || data?.error) {
+      toast({ 
+        title: "Payout Failed", 
+        description: data?.error || error?.message || "Transfer could not be initiated.", 
+        variant: "destructive" 
+      });
+    } else {
+      toast({ 
+        title: "Payout Successful!", 
+        description: `Transfer initiated. Ref: ${data?.transfer_reference || 'N/A'}` 
+      });
+      if (currentUser && withdrawal) {
+        await logAudit(currentUser.id, "paystack_payout", {
+          withdrawal_id: withdrawalId,
+          agent_id: withdrawal.agent_id,
+          amount: withdrawal.amount,
+          reference: data?.transfer_reference
+        });
+      }
+      await fetchWithdrawals();
+    }
+    setPayingPaystack(null);
+  };
 
   const filtered = withdrawals.filter((w) =>
     [w.id, w.agent_name, w.agent_email, w.status, w.momo_number]
@@ -189,14 +225,24 @@ const AdminWithdrawals = () => {
                   </td>
                   <td className="p-4">
                     {w.status === "pending" && (
-                      <Button
-                        size="sm" variant="outline" className="text-xs gap-1.5"
-                        disabled={confirming === w.id}
-                        onClick={() => handleConfirm(w.id)}
-                      >
-                        {confirming === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                        Confirm Sent
-                      </Button>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          size="sm" variant="outline" className="text-xs gap-1.5 h-8"
+                          disabled={confirming === w.id || payingPaystack === w.id}
+                          onClick={() => handleConfirm(w.id)}
+                        >
+                          {confirming === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                          Mark as Sent
+                        </Button>
+                        <Button
+                          size="sm" className="text-xs gap-1.5 h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                          disabled={payingPaystack === w.id || confirming === w.id}
+                          onClick={() => handlePaystackPayout(w.id)}
+                        >
+                          {payingPaystack === w.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                          Pay via Paystack
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>

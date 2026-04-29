@@ -66,7 +66,8 @@ type AdminUserAction =
   | "get_system_errors"
   | "purge_test_accounts"
   | "bulk_suspend_users"
-  | "manage_blacklist";
+  | "manage_blacklist"
+  | "paystack_payout";
 
 
 
@@ -116,6 +117,8 @@ serve(async (req: Request) => {
       .eq("role", "admin")
       .limit(1);
 
+    console.log("ACTOR_ROLES_CHECK", { actor_id: actor.id, roles });
+
     if (!roles || roles.length === 0) {
       return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
         status: 403,
@@ -124,6 +127,7 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json();
+    console.log("ADMIN_ACTION_REQUEST", { body });
     const { action, user_id, email, redirect_path, new_password } = body;
 
     if (!action) {
@@ -134,7 +138,7 @@ serve(async (req: Request) => {
     }
 
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const isValidUuid = (id: string) => id && UUID_RE.test(id);
+    const isValidUuid = (id: string) => id && typeof id === "string" && UUID_RE.test(id.trim());
 
     switch (action as AdminUserAction) {
       case "get_api_users": {
@@ -477,7 +481,7 @@ serve(async (req: Request) => {
         });
       }
 
-      case "confirm_withdrawal": {
+      case "paystack_payout": {
         const { withdrawal_id } = body;
         if (!withdrawal_id || !isValidUuid(withdrawal_id)) {
           return new Response(JSON.stringify({ error: "Invalid or missing withdrawal_id" }), {
@@ -486,7 +490,159 @@ serve(async (req: Request) => {
           });
         }
 
-        console.log("CONFIRMING_WITHDRAWAL", withdrawal_id);
+        const PAYSTACK_SECRET = (Deno as any).env.get("PAYSTACK_SECRET_KEY");
+        if (!PAYSTACK_SECRET) {
+          return new Response(JSON.stringify({ error: "Paystack Secret Key not configured in Edge Functions" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // 1. Fetch withdrawal and agent details
+        const { data: withdrawal, error: fetchErr } = await supabaseAdmin
+          .from("withdrawals")
+          .select(`
+            *,
+            profiles:agent_id (
+              full_name,
+              momo_number,
+              momo_network,
+              momo_account_name
+            )
+          `)
+          .eq("id", withdrawal_id)
+          .maybeSingle();
+
+        if (fetchErr || !withdrawal) {
+          return new Response(JSON.stringify({ error: "Withdrawal request not found" }), {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (withdrawal.status !== "pending") {
+          return new Response(JSON.stringify({ error: `Withdrawal is already ${withdrawal.status}` }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const profile = withdrawal.profiles;
+        const netAmount = Number(withdrawal.net_amount || withdrawal.amount);
+
+        // 2. Map Network to Paystack Bank Code
+        const network = (profile.momo_network || "").toUpperCase();
+        let bankCode = "";
+        if (network.includes("MTN")) bankCode = "MTN";
+        else if (network.includes("VODA") || network.includes("TELECEL") || network.includes("VDF")) bankCode = "VDF";
+        else if (network.includes("AIRTEL") || network.includes("TIGO") || network.includes("AT") || network.includes("ATL")) bankCode = "ATL";
+
+        if (!bankCode || !profile.momo_number) {
+          return new Response(JSON.stringify({ error: "Invalid or missing MoMo details for this agent" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        try {
+          // 3. Create Transfer Recipient
+          const recipientRes = await fetch("https://api.paystack.co/transferrecipient", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${PAYSTACK_SECRET}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              type: "mobile_money",
+              name: profile.momo_account_name || profile.full_name,
+              account_number: normalizePhone(profile.momo_number),
+              bank_code: bankCode,
+              currency: "GHS"
+            })
+          });
+
+          const recipientData = await recipientRes.json();
+          if (!recipientRes.ok || !recipientData.status) {
+            throw new Error(recipientData.message || "Failed to create transfer recipient");
+          }
+
+          const recipientCode = recipientData.data.recipient_code;
+
+          // 4. Initiate Transfer
+          const transferRes = await fetch("https://api.paystack.co/transfer", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${PAYSTACK_SECRET}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              source: "balance",
+              amount: Math.round(netAmount * 100), // Convert to pesewas
+              recipient: recipientCode,
+              reason: `SwiftData Withdrawal: ${withdrawal_id.slice(0, 8)}`,
+              currency: "GHS"
+            })
+          });
+
+          const transferData = await transferRes.json();
+          if (!transferRes.ok || !transferData.status) {
+            throw new Error(transferData.message || "Transfer initiation failed");
+          }
+
+          // 5. Finalize in Database
+          const { data: finalizeResult, error: finalizeErr } = await supabaseAdmin.rpc("finalize_withdrawal", {
+            p_withdrawal_id: withdrawal_id
+          });
+
+          if (finalizeErr || !finalizeResult?.success) {
+            // This is a critical state: transfer initiated but DB update failed
+            console.error("CRITICAL: Paystack transfer success but DB finalize failed", finalizeErr || finalizeResult?.error);
+            return new Response(JSON.stringify({ 
+              success: true, 
+              warning: "Transfer initiated successfully but local status update failed. Please update manually.",
+              transfer_reference: transferData.data.reference 
+            }), {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          // Send SMS
+          try {
+            await sendWithdrawalCompletedSms(supabaseAdmin, withdrawal.agent_id, withdrawal.amount);
+          } catch (smsErr) {
+            console.error("SMS_ERROR", smsErr);
+          }
+
+          return new Response(JSON.stringify({ 
+            success: true, 
+            message: "Payout completed successfully via Paystack",
+            transfer_reference: transferData.data.reference
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+
+        } catch (paystackErr: any) {
+          console.error("PAYSTACK_PAYOUT_ERROR", paystackErr);
+          return new Response(JSON.stringify({ error: paystackErr.message }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      case "confirm_withdrawal": {
+        const { withdrawal_id } = body;
+        console.log("CONFIRMING_WITHDRAWAL_START", { withdrawal_id });
+        
+        if (!withdrawal_id || !isValidUuid(withdrawal_id)) {
+          console.warn("CONFIRM_WITHDRAWAL_INVALID_ID", { withdrawal_id });
+          return new Response(JSON.stringify({ error: "Invalid or missing withdrawal_id" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
 
         const { data: result, error: rpcError } = await supabaseAdmin.rpc("finalize_withdrawal", {
           p_withdrawal_id: withdrawal_id

@@ -46,6 +46,13 @@ interface RecentLogin {
   is_agent: boolean;
 }
 
+interface SystemSettings {
+  maintenance_mode: boolean;
+  registration_enabled: boolean;
+  dark_mode_enabled: boolean;
+  store_visitor_popup_enabled: boolean;
+}
+
 interface VelocityAccount {
   user_id: string;
   full_name: string;
@@ -177,7 +184,7 @@ const AdminSecurity = () => {
   const [search, setSearch] = useState("");
   const [expandedIp, setExpandedIp] = useState<string | null>(null);
   const [blacklist, setBlacklist] = useState<{id: string, type: string, value: string, reason: string}[]>([]);
-  const [sysSettings, setSysSettings] = useState<any>(null);
+  const [sysSettings, setSysSettings] = useState<SystemSettings | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -341,7 +348,8 @@ const AdminSecurity = () => {
     setPurging(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-user-actions", {
-        body: { action: "purge_test_accounts" }
+        body: { action: "purge_test_accounts" },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (error) throw error;
       toast({ title: "Purge Complete", description: `Deleted ${data.deleted_count} test accounts.` });
@@ -356,7 +364,8 @@ const AdminSecurity = () => {
   const handleBulkSuspend = async (userIds: string[], suspend: boolean) => {
     try {
       const { error } = await supabase.functions.invoke("admin-user-actions", {
-        body: { action: "bulk_suspend_users", user_ids: userIds, suspend }
+        body: { action: "bulk_suspend_users", user_ids: userIds, suspend },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (error) throw error;
       toast({ title: suspend ? "Accounts Suspended" : "Accounts Restored", description: `${userIds.length} accounts updated.` });
@@ -369,7 +378,8 @@ const AdminSecurity = () => {
   const handleBlacklist = async (op: "add" | "remove", type?: string, value?: string, reason?: string) => {
     try {
       const { error } = await supabase.functions.invoke("admin-user-actions", {
-        body: { action: "manage_blacklist", op, type, value, reason }
+        body: { action: "manage_blacklist", op, type, value, reason },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (error) throw error;
       toast({ title: op === "add" ? "Added to Blacklist" : "Removed from Blacklist" });
@@ -382,7 +392,8 @@ const AdminSecurity = () => {
   const toggleSystemSetting = async (key: string, value: boolean) => {
     try {
       const { error } = await supabase.functions.invoke("admin-user-actions", {
-        body: { action: "update_system_settings", settings: { [key]: value } }
+        body: { action: "update_system_settings", settings: { [key]: value } },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (error) throw error;
       toast({ title: "Setting Updated" });

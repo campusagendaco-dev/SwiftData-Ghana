@@ -687,7 +687,15 @@ const AdminSettings = () => {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Paystack Secret Key</Label>
-                <Input type="password" value={settings.paystack_secret_key} onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} placeholder="sk_live_..." />
+                <Input 
+                  type="password" 
+                  value={settings.paystack_secret_key || ""} 
+                  onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} 
+                  placeholder="Configured in Secrets (sk_live_...)" 
+                />
+                <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">
+                  Securely managed via Supabase Secrets
+                </p>
               </div>
               <div className="pt-4 border-t border-white/5 space-y-4">
                 <div className="space-y-2">

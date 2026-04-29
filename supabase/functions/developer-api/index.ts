@@ -234,15 +234,23 @@ serve(async (req: Request) => {
   const path = url.pathname.replace(/\/+$/, "");
   const action = url.searchParams.get("action") || "";
   
+  console.log("DEVELOPER_API_REQUEST", { path, action, method: req.method });
+
   let finalAction = action;
-  if (path.endsWith("/balance")) finalAction = "balance";
-  else if (path.endsWith("/account")) finalAction = "account";
-  else if (path.endsWith("/plans")) finalAction = "plans";
-  else if (path.endsWith("/airtime") || path.endsWith("/buy")) finalAction = "buy";
-  else if (path.endsWith("/sms")) finalAction = "sms";
-  else if (path.endsWith("/orders")) finalAction = "orders";
-  else if (path.endsWith("/bills/validate")) finalAction = "bill_validate";
-  else if (path.endsWith("/ecg") || path.endsWith("/dstv") || path.endsWith("/gotv") || path.endsWith("/startimes")) finalAction = "bill_pay";
+  
+  // Robust path matching
+  const p = path.toLowerCase();
+  if (p.endsWith("/balance")) finalAction = "balance";
+  else if (p.endsWith("/account")) finalAction = "account";
+  else if (p.endsWith("/plans")) finalAction = "plans";
+  else if (p.endsWith("/airtime") || p.endsWith("/buy")) finalAction = "buy";
+  else if (p.endsWith("/sms")) finalAction = "sms";
+  else if (p.endsWith("/orders")) finalAction = "orders";
+  else if (p.endsWith("/bills/validate") || p.endsWith("/validate")) finalAction = "bill_validate";
+  else if (p.endsWith("/ecg") || p.endsWith("/dstv") || p.endsWith("/gotv") || p.endsWith("/startimes")) finalAction = "bill_pay";
+  else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
+
+  console.log("DETERMINED_ACTION", { finalAction });
 
   const allowedActions: string[] = Array.isArray(profile.api_allowed_actions)
     ? profile.api_allowed_actions
@@ -474,7 +482,17 @@ serve(async (req: Request) => {
       return json({ success: true, orders: orders ?? [] });
     }
 
-    return json({ success: false, error: "Endpoint not found" }, 404);
+    // ── Default / Index ─────────────────────────────────────────────────────
+    if (finalAction === "index") {
+      return json({ 
+        success: true, 
+        message: "SwiftData Developer API is online", 
+        version: "2.0",
+        docs: "https://swiftdatagh.com/api-docs" 
+      });
+    }
+
+    return json({ success: false, error: `Endpoint '${finalAction}' not found. Check documentation.` }, 404);
   } catch (err) {
     return json({ success: false, error: safeErrorMsg(err) }, 500);
   }
