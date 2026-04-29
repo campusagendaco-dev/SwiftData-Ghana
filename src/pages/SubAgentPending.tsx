@@ -25,7 +25,7 @@ const SubAgentPending = () => {
       setParentId(profile.parent_agent_id);
 
       const { data: parentRes } = await supabase
-        .from("profiles")
+        .from("agent_stores")
         .select("sub_agent_activation_markup")
         .eq("user_id", profile.parent_agent_id)
         .maybeSingle();

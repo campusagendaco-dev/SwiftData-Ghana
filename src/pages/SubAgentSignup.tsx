@@ -47,7 +47,7 @@ const SubAgentSignup = () => {
     const load = async () => {
       try {
         const { data, error } = await supabase
-          .from("profiles")
+          .from("agent_stores")
           .select("user_id, store_name, full_name, sub_agent_activation_markup, whatsapp_number")
           .eq("slug", slug)
           .eq("agent_approved", true)
