@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import {
@@ -84,6 +85,7 @@ interface Props {
 
 const UserDetailDrawer = ({ user, onClose }: Props) => {
   const { toast } = useToast();
+  const { session } = useAuth();
   const [data, setData] = useState<DrawerData | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSuspended, setIsSuspended] = useState(user?.is_suspended ?? false);
@@ -122,6 +124,26 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       toast({ title: "Action failed", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSuspending(false);
+    }
+  };
+
+  const [promoting, setPromoting] = useState(false);
+  const handlePromoteAgent = async () => {
+    if (!user) return;
+    setPromoting(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "approve_agent", user_id: user.user_id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || res?.error) throw new Error(res?.error || error?.message);
+      
+      toast({ title: "User promoted to Agent", description: user.email });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Promotion failed", description: err.message, variant: "destructive" });
+    } finally {
+      setPromoting(false);
     }
   };
 
@@ -267,6 +289,17 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
                 {suspending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
                 {isSuspended ? "Unsuspend" : "Suspend"}
               </Button>
+              
+              {!user.agent_approved && (
+                <Button
+                  onClick={handlePromoteAgent}
+                  disabled={promoting}
+                  className="shrink-0 h-8 text-xs gap-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
+                >
+                  {promoting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                  {user.is_agent ? "Approve Agent" : "Make Agent"}
+                </Button>
+              )}
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
--- CYBER SECURITY REINFORCEMENT V3 (FIXED V2)
+-- CYBER SECURITY REINFORCEMENT V3 (FIXED V3)
 -- Comprehensive audit and hardening using Triggers and RLS.
+-- Added service_role bypass for Edge Functions.
 
 -- ════════════════════════════════════════════════════════════
 -- 1. HARDEN: Profiles Table (Trigger-based Protection)
@@ -9,12 +10,12 @@
 CREATE OR REPLACE FUNCTION public.protect_profile_privileged_fields()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- If the user is an admin, let them change anything
-    IF public.has_role(auth.uid(), 'admin') THEN
+    -- If the user is an admin OR we are running as service_role (Edge Functions), allow the change
+    IF public.has_role(auth.uid(), 'admin') OR (current_setting('role') = 'service_role') THEN
         RETURN NEW;
     END IF;
 
-    -- If NOT an admin, check for tampering
+    -- If NOT an admin/system, check for tampering with sensitive fields
     IF (
         NEW.is_agent IS DISTINCT FROM OLD.is_agent OR
         NEW.agent_approved IS DISTINCT FROM OLD.agent_approved OR
@@ -56,13 +57,11 @@ ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admins manage settings" ON public.system_settings;
 DROP POLICY IF EXISTS "Anyone reads settings" ON public.system_settings;
 
--- Only admins can read the raw settings table
 CREATE POLICY "Admins manage settings" ON public.system_settings
   FOR ALL TO authenticated
   USING (public.has_role(auth.uid(), 'admin'))
   WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
--- Revoke direct SELECT to prevent leakage via direct API calls
 REVOKE SELECT ON public.system_settings FROM authenticated;
 GRANT SELECT ON public.public_system_settings TO authenticated, anon;
 
@@ -82,7 +81,6 @@ CREATE POLICY "Admins manage withdrawals" ON public.withdrawals
   FOR ALL TO authenticated
   USING (public.has_role(auth.uid(), 'admin'));
 
--- Strictly block direct INSERT except for service_role/admin
 DROP POLICY IF EXISTS "No direct withdrawal insert" ON public.withdrawals;
 DROP POLICY IF EXISTS "Admins direct insert" ON public.withdrawals;
 CREATE POLICY "Admins direct insert" ON public.withdrawals
@@ -102,7 +100,6 @@ CREATE POLICY "Users view own wallet" ON public.wallets
 -- ════════════════════════════════════════════════════════════
 -- 5. HARDEN: Audit Logs (Consistency)
 -- ════════════════════════════════════════════════════════════
--- Ensure admin_id matches the authenticated user
 DROP POLICY IF EXISTS "Authenticated users create audit logs" ON audit_logs;
 DROP POLICY IF EXISTS "Users create own audit logs" ON audit_logs;
 CREATE POLICY "Admins create audit logs" ON audit_logs

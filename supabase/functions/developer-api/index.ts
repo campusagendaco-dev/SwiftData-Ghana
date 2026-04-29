@@ -375,8 +375,20 @@ serve(async (req: Request) => {
         const { data: w } = await supabase.from("wallets").select("balance").eq("agent_id", profile.user_id).maybeSingle();
         return json({ success: true, order_id: orderId, status: "fulfilled", balance: Number(w?.balance ?? 0) });
       }
+
+      // If initial attempt fails, mark as fulfillment_failed so the background job picks it up
+      // and return a "processing" status to the API user instead of a hard error.
       await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: result.reason }).eq("id", orderId);
-      return json({ success: false, order_id: orderId, status: "fulfillment_failed", error: result.reason });
+      const { data: w2 } = await supabase.from("wallets").select("balance").eq("agent_id", profile.user_id).maybeSingle();
+      
+      return json({ 
+        success: true, 
+        order_id: orderId, 
+        status: "processing", 
+        message: "Order received and is being processed/retried.",
+        error_info: result.reason,
+        balance: Number(w2?.balance ?? 0) 
+      });
     }
 
     // ── POST /api/payment/bills/validate ────────────────────────────────────

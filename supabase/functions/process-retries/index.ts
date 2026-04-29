@@ -216,6 +216,20 @@ serve(async (req: Request) => {
         }, DATA_PROVIDER_WEBHOOK_URL);
         success = airtimeResult.ok;
         failureReason = airtimeResult.reason;
+      } else if (order.order_type === "utility") {
+        // Utility fulfillment (ECG, DSTV, etc)
+        const recipient = normalizeRecipient(order.utility_account_number || order.customer_phone || "");
+        const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
+          networkRaw: order.utility_provider,
+          networkKey: order.utility_provider,
+          recipient,
+          amount: order.amount,
+          order_type: "utility",
+          utility_type: order.utility_type,
+          account_name: order.utility_account_name
+        }, DATA_PROVIDER_WEBHOOK_URL);
+        success = result.ok;
+        failureReason = result.reason;
       } else {
         // Data bundle purchase
         const networkKey = mapNetworkKey(order.network);

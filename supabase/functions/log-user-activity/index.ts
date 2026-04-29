@@ -8,13 +8,22 @@ async function resolveLocation(ip: string): Promise<string | null> {
     return "Local Network";
   }
   try {
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,city,regionName`, {
+    // Adding 'district' for more specific town/neighborhood names
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,city,district,regionName`, {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.status !== "success") return null;
-    const parts = [data.city, data.regionName, data.country].filter(Boolean);
+    
+    // Format: District (if different from city), City, Region, Country
+    const parts = [
+      data.district && data.district !== data.city ? data.district : null,
+      data.city,
+      data.regionName,
+      data.country
+    ].filter(Boolean);
+    
     return parts.length > 0 ? parts.join(", ") : null;
   } catch {
     return null;
