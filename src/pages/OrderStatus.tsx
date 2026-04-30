@@ -35,15 +35,15 @@ function statusToStep(status: OrderStatusType): number {
   return 0;
 }
 
-function getStatusMeta(status: OrderStatusType, failed: boolean) {
+function getStatusMeta(status: OrderStatusType, failed: boolean, message?: string) {
   if (failed || status === "fulfillment_failed") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.12)", label: "Delivery Failed", sub: "Something went wrong with your order", badge: "Failed" };
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.12)", label: "Delivery Failed", sub: message || "Something went wrong with your order", badge: "Failed" };
   }
   if (status === "fulfilled") {
     return { color: "#10B981", glow: "rgba(16,185,129,0.10)", label: "Order Delivered!", sub: "Your order has been fulfilled successfully", badge: "Complete" };
   }
   if (status === "processing") {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.10)", label: "Fulfilling Order", sub: "Delivering your request right now", badge: "Live" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.10)", label: "Live Tracking", sub: message || "Order accepted by network provider", badge: "Live" };
   }
   if (status === "paid") {
     return { color: "#F59E0B", glow: "rgba(245,158,11,0.10)", label: "Processing Payment", sub: "Preparing to fulfill your order", badge: "Live" };
@@ -60,11 +60,8 @@ const OrderStatus = () => {
   const phone = searchParams.get("phone") || "";
 
   const [orderStatus, setOrderStatus] = useState<OrderStatusType>("pending");
-  const [orderType, setOrderType] = useState<string>("data");
-  const [step, setStep] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const [initialCheckDone, setInitialCheckDone] = useState(!reference);
-  const [copied, setCopied] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>("");
+  const [providerId, setProviderId] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { user } = useAuth();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -94,9 +91,11 @@ const OrderStatus = () => {
     });
   };
 
-  const handleStatusUpdate = (status: OrderStatusType) => {
+  const handleStatusUpdate = (status: OrderStatusType, message?: string, pId?: string) => {
     setOrderStatus(status);
     setStep(statusToStep(status));
+    if (message) setStatusMessage(message);
+    if (pId) setProviderId(pId);
 
     if (status === "fulfillment_failed") {
       setFailed(true);
@@ -135,7 +134,7 @@ const OrderStatus = () => {
 
       if (data?.status) {
         if (data.order_type) setOrderType(data.order_type);
-        handleStatusUpdate(data.status as OrderStatusType);
+        handleStatusUpdate(data.status as OrderStatusType, data.message, data.provider_order_id);
         setInitialCheckDone(true);
         if (data.status === "fulfilled" || data.status === "fulfillment_failed") clearInterval(timer);
       } else {
@@ -162,14 +161,14 @@ const OrderStatus = () => {
       const { data } = await invokePublicFunctionAsUser("verify-payment", { body: { reference } });
       if (data?.status) {
         if (data.order_type) setOrderType(data.order_type);
-        handleStatusUpdate(data.status as OrderStatusType);
+        handleStatusUpdate(data.status as OrderStatusType, data.message, data.provider_order_id);
       }
     } catch { /* ignore */ }
     finally { setIsRefreshing(false); }
   };
 
   const hasOrder = Boolean(reference);
-  const meta = getStatusMeta(orderStatus, failed);
+  const meta = getStatusMeta(orderStatus, failed, statusMessage);
   const isLive = !failed && step < 3;
   const isComplete = !failed && step >= 3;
 
@@ -288,6 +287,14 @@ const OrderStatus = () => {
                     {packageSize && <span className="text-xs font-semibold text-white/40">{packageSize}</span>}
                     {(network || packageSize) && phone && <span className="text-white/15 text-xs">·</span>}
                     {phone && <span className="text-xs font-mono text-white/35">{phone}</span>}
+                  </div>
+                )}
+
+                {providerId && (
+                  <div className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                    <Activity className="w-3 h-3 text-purple-400 opacity-60" />
+                    <span className="text-[10px] font-bold text-white/20 uppercase tracking-wider">Network ID:</span>
+                    <span className="text-[10px] font-mono text-purple-300/40">{providerId}</span>
                   </div>
                 )}
               </div>

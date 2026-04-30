@@ -91,7 +91,12 @@ const AdminOrders = () => {
       .range(from, to);
 
     if (search) {
-      q = q.or(`customer_phone.ilike.%${search}%,network.ilike.%${search}%,status.ilike.%${search}%`);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.trim());
+      if (isUuid) {
+        q = q.or(`id.eq.${search.trim()},agent_id.eq.${search.trim()}`);
+      } else {
+        q = q.or(`customer_phone.ilike.%${search}%,network.ilike.%${search}%,status.ilike.%${search}%`);
+      }
     }
 
     if (statusFilter !== "all") q = q.eq("status", statusFilter);

@@ -136,27 +136,31 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   return Array.from(urls);
 }
 
-function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string } {
+function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string; id?: string; status?: string } {
   try {
     const parsed = JSON.parse(body);
     const rawStatus = parsed?.status;
     const status = String(rawStatus || "").toLowerCase();
     const statusCode = Number(parsed?.statusCode);
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
+    const orderId = parsed?.transaction_id || parsed?.order_id || parsed?.reference || parsed?.id;
+    const deliveryStatus = String(parsed?.delivery_status || parsed?.status_message || "").toLowerCase();
 
-    if (rawStatus === true || status === "true") return { ok: true };
-    if (rawStatus === false || status === "false") {
-      return { ok: false, reason: message || "Provider rejected this order." };
+    if (rawStatus === true || status === "true" || status === "success") {
+      return { ok: true, id: orderId, status: deliveryStatus };
     }
-
-    if (status === "success") return { ok: true };
-    if (status === "error" || status === "failed" || status === "failure") {
+    
+    if (rawStatus === false || status === "false" || status === "error" || status === "failed" || status === "failure") {
       return { ok: false, reason: message || "Provider rejected this order." };
     }
 
     if (Number.isFinite(statusCode) && statusCode >= 400) {
       return { ok: false, reason: message || "Provider rejected this order." };
     }
+
+    // If it has an ID, it's likely a successful initiation
+    if (orderId) return { ok: true, id: orderId, status: deliveryStatus };
+
   } catch {
     // Non-JSON responses are handled below.
   }
@@ -271,6 +275,8 @@ type ProviderResult = {
   body: string;
   reason: string;
   url: string | null;
+  id?: string;
+  deliveryStatus?: string;
 };
 
 async function callProviderApi(
@@ -322,11 +328,11 @@ async function callProviderApi(
         if (response.ok) {
           const semantic = parseProviderResponse(text, contentType);
           if (semantic.ok) {
-            return { ok: true, status: response.status, body: text, reason: "", url };
+            return { ok: true, status: response.status, body: text, reason: "", url, id: semantic.id, deliveryStatus: semantic.status };
           }
 
           const reason = semantic.reason || "Provider rejected this order.";
-          lastFailure = { ok: false, status: response.status, body: text, reason, url };
+          lastFailure = { ok: false, status: response.status, body: text, reason, url, id: semantic.id, deliveryStatus: semantic.status };
           return lastFailure;
         }
 
@@ -488,14 +494,16 @@ serve(async (req) => {
     let smsPhone = "";
 
     if (!existingOrder) {
-      // Profit is always 0 for recreated orders — never trust client-supplied metadata values
-      const normalizedProfit = 0;
-      const normalizedParentProfit = 0;
+      let normalizedProfit = 0;
+      let normalizedParentProfit = 0;
+      let resolvedCostPrice = 0;
+      
+      const orderType = orderTypeFromMetadata || "data";
       const requestedWalletCredit = Number(metadata?.wallet_credit);
       const walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
         ? Math.min(requestedWalletCredit, verifiedAmount)
         : verifiedAmount;
-      const normalizedAmount = (orderTypeFromMetadata || "data") === "wallet_topup"
+      const normalizedAmount = orderType === "wallet_topup"
         ? walletCredit
         : (Number.isFinite(verifiedAmount) && verifiedAmount > 0 ? verifiedAmount : 0);
 
@@ -525,14 +533,58 @@ serve(async (req) => {
         if (parentProfile?.user_id) verifiedParentAgentId = parentProfile.user_id;
       }
 
+      // Server-side profit resolution for missing orders
+      if (orderType === "data" && verifiedAgentId !== "00000000-0000-0000-0000-000000000000") {
+        const netPaid = verifiedAmount - paystackFeeOnVerified;
+        const network = typeof metadata?.network === "string" ? metadata.network : "";
+        const packageSize = typeof metadata?.package_size === "string" ? metadata.package_size : "";
+        
+        if (network && packageSize) {
+           const { data: globalRow } = await supabaseAdmin
+             .from("global_package_settings")
+             .select("agent_price, cost_price")
+             .eq("network", network)
+             .eq("package_size", packageSize)
+             .maybeSingle();
+             
+           if (globalRow) {
+             const adminWholesale = Number(globalRow.agent_price || 0);
+             resolvedCostPrice = Number(globalRow.cost_price || adminWholesale);
+             if (adminWholesale > 0) {
+               // Total margin available above admin wholesale
+               const totalMargin = Math.max(0, netPaid - adminWholesale);
+               
+               if (verifiedParentAgentId) {
+                 const metaParentProfit = Number(metadata?.parent_profit || 0);
+                 const metaProfit = Number(metadata?.profit || 0);
+                 const totalMeta = metaParentProfit + metaProfit;
+                 
+                 if (totalMeta > 0 && totalMargin > 0) {
+                   const ratio = totalMargin / totalMeta;
+                   normalizedParentProfit = parseFloat((metaParentProfit * ratio).toFixed(2));
+                   normalizedProfit = parseFloat((metaProfit * ratio).toFixed(2));
+                 } else {
+                   normalizedProfit = parseFloat(totalMargin.toFixed(2));
+                 }
+               } else {
+                 normalizedProfit = parseFloat(totalMargin.toFixed(2));
+               }
+             }
+           }
+        }
+      } else if (orderType === "data") {
+         resolvedCostPrice = Number(metadata?.cost_price || 0);
+      }
+
       const recreatedOrder = {
         id: orderId,
         agent_id: verifiedAgentId,
         parent_agent_id: verifiedParentAgentId,
-        order_type: orderTypeFromMetadata || "data",
+        order_type: orderType,
         amount: normalizedAmount,
         profit: normalizedProfit,
         parent_profit: normalizedParentProfit,
+        cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
         status: "paid",
         failure_reason: null,
         network: typeof metadata?.network === "string" ? metadata.network : null,
@@ -814,7 +866,10 @@ serve(async (req) => {
       });
 
       if (result.ok) {
-        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        const patch: Record<string, any> = { status: "fulfilled", failure_reason: null };
+        if (result.id) patch.provider_order_id = result.id;
+        
+        await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
         
         // Credit profits
         if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
@@ -884,17 +939,11 @@ serve(async (req) => {
       );
 
       if (airtimeResult.ok) {
-        let providerOrderId = null;
-        try {
-          const parsed = JSON.parse(airtimeResult.body);
-          providerOrderId = parsed.transaction_id || parsed.order_id || parsed.reference;
-        } catch { /* ignore */ }
+        const providerOrderId = airtimeResult.id;
+        const patch: Record<string, any> = { status: "fulfilled", failure_reason: null };
+        if (providerOrderId) patch.provider_order_id = providerOrderId;
 
-        await supabaseAdmin.from("orders").update({ 
-          status: "fulfilled", 
-          failure_reason: null,
-          provider_order_id: providerOrderId 
-        }).eq("id", orderId);
+        await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
         
         if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
           await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
@@ -951,32 +1000,38 @@ serve(async (req) => {
     });
 
     if (result.ok) {
-      let providerOrderId = null;
-      try {
-        const parsed = JSON.parse(result.body);
-        providerOrderId = parsed.transaction_id || parsed.order_id || parsed.reference;
-      } catch { /* ignore */ }
-
-      await supabaseAdmin.from("orders").update({ 
-        status: "fulfilled", 
-        failure_reason: null,
-        provider_order_id: providerOrderId
-      }).eq("id", orderId);
+      const providerOrderId = result.id;
+      const deliveryStatus = result.deliveryStatus;
       
-      // Credit profits
-      if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
-        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
+      const isActuallyDelivered = !deliveryStatus || deliveryStatus === "delivered" || deliveryStatus === "success" || deliveryStatus === "fulfilled";
+      
+      const patch: Record<string, any> = { failure_reason: null };
+      if (providerOrderId) patch.provider_order_id = providerOrderId;
+      
+      if (isActuallyDelivered) {
+        patch.status = "fulfilled";
+      } else {
+        patch.status = "processing";
       }
 
-      if (customerPhone) {
-        await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success");
+      await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+      
+      if (isActuallyDelivered) {
+        // Credit profits
+        if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
+        }
+
+        if (customerPhone) {
+          await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success");
+        }
+
+        if (metadata.channel === "whatsapp" && metadata.wa_from) {
+          await sendWhatsAppFulfillmentNotification(String(metadata.wa_from), orderType, network, packageSize, customerPhone);
+        }
       }
 
-      if (metadata.channel === "whatsapp" && metadata.wa_from) {
-        await sendWhatsAppFulfillmentNotification(String(metadata.wa_from), orderType, network, packageSize, customerPhone);
-      }
-
-      return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+      return new Response(JSON.stringify({ received: true, fulfilled: isActuallyDelivered, status: patch.status }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

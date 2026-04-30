@@ -16,6 +16,8 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
     return;
   }
 
+  console.log(`[WhatsApp] Sending message using key: ${resolvedKey.slice(0, 4)}...${resolvedKey.slice(-4)}`);
+
   // Ensure E.164 format (Ghana-focused)
   let formattedTo = to.replace(/\s+/g, "").replace(/-/g, "");
   if (formattedTo.startsWith("0") && formattedTo.length === 10) {

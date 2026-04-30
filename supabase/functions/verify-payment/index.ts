@@ -62,12 +62,12 @@ async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: str
   };
 }
 
-function buildProviderUrls(baseUrl: string): string[] {
+function buildProviderUrls(baseUrl: string, endpoint: string = "purchase"): string[] {
   const clean = baseUrl.trim().replace(/\/+$/, "");
   if (!clean) return [];
 
   const urls = new Set<string>();
-  const aliases = ["purchase", "order", "airtime", "buy"];
+  const aliases = endpoint === "purchase" ? ["purchase", "order", "airtime", "buy"] : ["status", "query", "check"];
 
   let rootUrl = "";
   try {
@@ -112,14 +112,19 @@ function isHtmlResponse(contentType: string | null, body: string): boolean {
   );
 }
 
-function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string } {
+function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string; id?: string; status?: string } {
   try {
     const parsed = JSON.parse(body);
     const rawStatus = parsed?.status;
     const status = String(rawStatus || "").toLowerCase();
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
+    const orderId = parsed?.transaction_id || parsed?.order_id || parsed?.reference || parsed?.id;
+    const deliveryStatus = String(parsed?.delivery_status || parsed?.status_message || "").toLowerCase();
 
-    if (rawStatus === true || status === "true" || status === "success") return { ok: true };
+    if (rawStatus === true || status === "true" || status === "success") {
+      return { ok: true, id: orderId, status: deliveryStatus };
+    }
+    
     if (rawStatus === false || status === "false" || status === "error" || status === "failed" || status === "failure") {
       return { ok: false, reason: message || "Provider rejected this order." };
     }
@@ -128,6 +133,10 @@ function parseProviderResponse(body: string, contentType: string | null): { ok: 
     if (Number.isFinite(statusCode) && statusCode >= 400) {
       return { ok: false, reason: message || "Provider rejected this order." };
     }
+    
+    // If it has an ID, it's likely a successful initiation even if status isn't "success" explicitly
+    if (orderId) return { ok: true, id: orderId, status: deliveryStatus };
+
   } catch { /* non-JSON */ }
 
   if (isHtmlResponse(contentType, body)) {
@@ -141,8 +150,9 @@ async function callProviderApi(
   baseUrl: string,
   apiKey: string,
   data: Record<string, unknown>,
-): Promise<{ ok: boolean; reason: string }> {
-  const urls = buildProviderUrls(baseUrl);
+  endpoint: string = "purchase"
+): Promise<{ ok: boolean; reason: string; id?: string; status?: string }> {
+  const urls = buildProviderUrls(baseUrl, endpoint);
 
   let lastReason = "Provider error";
 
@@ -167,7 +177,7 @@ async function callProviderApi(
 
         if (res.ok) {
           const semantic = parseProviderResponse(text, contentType);
-          if (semantic.ok) return { ok: true, reason: "" };
+          if (semantic.ok) return { ok: true, reason: "", id: semantic.id, status: semantic.status };
           return { ok: false, reason: semantic.reason || "Provider rejected this order." };
         }
 
@@ -229,9 +239,48 @@ serve(async (req: Request) => {
       .from("orders").select("*").eq("id", reference).maybeSingle();
 
     if (existingOrder?.status === "fulfilled" || existingOrder?.status === "completed") {
-      return new Response(JSON.stringify({ status: "fulfilled", message: "Already processed" }), {
+      return new Response(JSON.stringify({ 
+        status: "fulfilled", 
+        message: "Already processed",
+        provider_order_id: existingOrder?.provider_order_id 
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const { apiKey, baseUrl } = await getProviderCredentials(supabaseAdmin);
+
+    // 2. If already processing and has provider ID, check status instead of re-fulfilling
+    if (existingOrder?.status === "processing" && existingOrder?.provider_order_id && baseUrl && apiKey) {
+      console.log(`[verify-payment] Checking status for existing processing order: ${reference}`);
+      const checkResult = await callProviderApi(baseUrl, apiKey, {
+        transaction_id: existingOrder.provider_order_id,
+        reference: reference
+      }, "status");
+
+      if (checkResult.ok) {
+        const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "fulfilled";
+        if (isDelivered) {
+          await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: reference });
+          return new Response(JSON.stringify({ 
+            status: "fulfilled", 
+            message: "Confirmed delivered",
+            provider_order_id: existingOrder.provider_order_id 
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        // Still processing
+        return new Response(JSON.stringify({ 
+          status: "processing", 
+          message: "Still processing at provider",
+          provider_order_id: existingOrder.provider_order_id 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Status check failed or endpoint not found — fall through to verification
     }
 
     // 2. Verify payment with Paystack
@@ -257,10 +306,24 @@ serve(async (req: Request) => {
     const metadata = verifyData.data.metadata || {};
     const orderType = metadata?.order_type || existingOrder?.order_type || "data";
 
-    // 3. Mark as processing
-    await supabaseAdmin.from("orders")
+    // 3. Mark as processing (Atomic Update)
+    const { data: claimedOrder, error: claimError } = await supabaseAdmin.from("orders")
       .update({ status: "processing", paystack_verified_amount: verifiedAmount })
-      .eq("id", reference);
+      .eq("id", reference)
+      .in("status", ["pending", "paid", "fulfillment_failed"])
+      .select("*")
+      .maybeSingle();
+
+    if (claimError) {
+      console.error("[verify-payment] Claim error:", claimError);
+    }
+
+    if (!claimedOrder && existingOrder?.status === "processing") {
+      // Already being processed by another request
+      return new Response(JSON.stringify({ status: "processing", message: "Fulfillment already in progress" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // 4. Fulfillment by order type
 
@@ -352,9 +415,26 @@ serve(async (req: Request) => {
       const result = await callProviderApi(baseUrl, apiKey, requestBody);
 
       if (result.ok) {
-        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", reference);
-        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: reference });
-        return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
+        const patch: Record<string, any> = { failure_reason: null };
+        if (result.id) patch.provider_order_id = result.id;
+        
+        // If the provider specifically says it's already delivered or doesn't return a status (meaning it's immediate)
+        const isActuallyDelivered = !result.status || result.status === "delivered" || result.status === "success" || result.status === "fulfilled";
+        
+        if (isActuallyDelivered) {
+          patch.status = "fulfilled";
+        }
+
+        await supabaseAdmin.from("orders").update(patch).eq("id", reference);
+        
+        if (isActuallyDelivered) {
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: reference });
+        }
+        
+        return new Response(JSON.stringify({ 
+          status: patch.status || "processing",
+          provider_order_id: patch.provider_order_id || result.id
+        }), { headers: corsHeaders });
       } else {
         await supabaseAdmin.from("orders").update({
           status: "fulfillment_failed", failure_reason: result.reason,

@@ -65,7 +65,12 @@ const AdminUsers = () => {
       .range(from, to);
 
     if (search) {
-      q = q.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.trim());
+      if (isUuid) {
+        q = q.eq("user_id", search.trim());
+      } else {
+        q = q.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+      }
     }
 
     if (tab === "customers") {

@@ -110,30 +110,58 @@ async function getPackagesForNetwork(supabase: any, network: string, agentPrices
   const pkgs: Pkg[] = [];
 
   // 1. Use agent's custom selling prices if configured (case-insensitive)
-  const custom = (agentPrices?.[network] || agentPrices?.[network.toUpperCase()] || agentPrices?.[network.toLowerCase()] || {}) as Record<string, number>;
+  const networkLower = network.toLowerCase();
+  const custom = (agentPrices?.[network] || agentPrices?.[network.toUpperCase()] || agentPrices?.[networkLower] || {}) as Record<string, number>;
+  
   for (const [size, price] of Object.entries(custom)) {
     const base = Number(price);
     if (base > 0) pkgs.push({ size, basePrice: base, total: addPaystackFee(base) });
   }
-  if (pkgs.length > 0) return pkgs.sort((a, b) => a.total - b.total);
+  
+  if (pkgs.length > 0) {
+    console.log(`[WA Bot] Found ${pkgs.length} custom prices for ${network}`);
+    return pkgs.sort((a, b) => a.total - b.total);
+  }
 
   // 2. Fall back to global public prices
-  const { data: rows, error } = await supabase
-    .from("global_package_settings")
-    .select("package_size, public_price, agent_price")
-    .or(`network.eq.${network.toUpperCase()},network.eq.${network.toLowerCase()},network.eq.${network}`)
-    .eq("is_unavailable", false)
-    .order("public_price", { ascending: true });
+  console.log(`[WA Bot] Querying global bundles for ${network}...`);
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-  if (error) {
-    console.error("[WA Bot] DB Error fetching bundles:", error);
-    throw error;
-  }
+    console.log(`[WA Bot] Executing global query for ${network}...`);
+    const { data: rows, error } = await supabase
+      .from("global_package_settings")
+      .select("package_size, public_price, agent_price")
+      .ilike("network", network)
+      .eq("is_unavailable", false)
+      .order("public_price", { ascending: true })
+      .limit(30)
+      .abortSignal(controller.signal);
 
-  for (const row of rows || []) {
-    const base = Number(row.public_price || row.agent_price || 0);
-    if (base > 0) pkgs.push({ size: row.package_size, basePrice: base, total: addPaystackFee(base) });
+    clearTimeout(timeoutId);
+
+    if (error) {
+      console.error("[WA Bot] DB Error fetching bundles:", error);
+      throw error;
+    }
+
+    console.log(`[WA Bot] Query success! Found ${rows?.length || 0} bundles`);
+
+    if (!rows || rows.length === 0) {
+      console.warn(`[WA Bot] No bundles found in DB for network: ${network}`);
+    }
+
+    for (const row of rows || []) {
+      const base = Number(row.public_price || row.agent_price || 0);
+      if (base > 0) pkgs.push({ size: row.package_size, basePrice: base, total: addPaystackFee(base) });
+    }
+  } catch (err) {
+    console.error("[WA Bot] getPackagesForNetwork caught error:", err);
+    throw err;
   }
+  
   return pkgs;
 }
 
@@ -355,12 +383,24 @@ async function initAirtimePayment(
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
   const supabase = supabaseAdmin;
 
   try {
     const payload = await req.json();
     const { from, text, fromMe } = parseMessage(payload);
+
+    // Security: verify webhook secret if configured
+    const WEBHOOK_SECRET = Deno.env.get("WHATSAPP_WEBHOOK_SECRET");
+    if (WEBHOOK_SECRET) {
+      const providedSecret = req.headers.get("X-Webhook-Secret") || new URL(req.url).searchParams.get("secret");
+      if (providedSecret !== WEBHOOK_SECRET) {
+        console.warn("[WA Webhook] Unauthorized request blocked.");
+        return new Response("Unauthorized", { status: 401 });
+      }
+    }
 
     if (!payload?.event?.includes("message") || !from || !text || fromMe) {
       return new Response("ok");
@@ -530,18 +570,22 @@ serve(async (req: Request) => {
         data.net = net;
         data.isAirtime = false;
 
-        await sendWhatsAppMessage(from, `⏳ _Fetching ${net} bundles..._`);
+        // Send status message without awaiting to avoid delay, but catch errors
+        sendWhatsAppMessage(from, `⏳ _Fetching ${net} bundles..._`).catch(e => console.error("[WA Bot] Status msg error:", e));
+        
         let pkgs: Pkg[] = [];
         try {
-          console.log(`[WA Bot] Fetching ${net} bundles for agent:`, agentId || "SwiftData");
+          console.log(`[WA Bot] Calling getPackagesForNetwork for ${net}...`);
           pkgs = await getPackagesForNetwork(supabase, net, agent?.prices || {});
+          console.log(`[WA Bot] Done! Got ${pkgs.length} packages`);
         } catch (err) {
-          console.error("[WA Bot] Error fetching bundles:", err);
-          await sendWhatsAppMessage(from, `⚠️ *Technical Error:* Could not connect to the database. Our team has been notified. Please try again in a few minutes.`);
+          console.error("[WA Bot] Critical error in bundle fetch:", err);
+          await sendWhatsAppMessage(from, `⚠️ *Technical Error:* Database query timed out. Please try again.`);
           return new Response("ok");
         }
 
         if (pkgs.length === 0) {
+          console.warn(`[WA Bot] Zero bundles for ${net}. Agent: ${agentId}`);
           reply = `⚠️ *${net} bundles are currently unavailable.* Our team is working on it.\n\n_Reply 0 to return to the menu._`;
           nextStep = "MENU";
           break;
@@ -622,6 +666,33 @@ serve(async (req: Request) => {
         }
         data.recipient = phone;
 
+        // Smart Duplicate Check (last 60 mins)
+        let duplicateWarning = "";
+        try {
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          const { data: recent } = await supabase
+            .from("orders")
+            .select("id, status, created_at")
+            .eq("customer_phone", phone)
+            .in("status", ["fulfilled", "pending", "paid", "processing"])
+            .gte("created_at", oneHourAgo)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          if (recent && recent.length > 0) {
+            const last = recent[0];
+            const timeDiff = Math.round((Date.now() - new Date(last.created_at).getTime()) / 60000);
+            
+            if (last.status === "fulfilled") {
+              duplicateWarning = `\n\n⚠️ *Duplicate Warning:* A successful order for *${phone}* was placed ${timeDiff} mins ago. To avoid network issues, we recommend waiting 60 mins between orders for the same number.`;
+            } else {
+              duplicateWarning = `\n\n⚠️ *Order in Progress:* You have a *${last.status}* order for this number from ${timeDiff} mins ago. Please check your status before placing another to avoid double charging.`;
+            }
+          }
+        } catch (err) {
+          console.error("[WA Bot] Duplicate check error:", err);
+        }
+
         const summary: string[] = [
           `📋 *Order Summary*`,
           ``,
@@ -635,6 +706,11 @@ serve(async (req: Request) => {
         summary.push(`Recipient: *${phone}*`);
         summary.push(`You Pay:   *GH₵ ${(data.totalPrice || 0).toFixed(2)}*`);
         summary.push(`_(includes 3% payment processing fee)_`);
+        
+        if (duplicateWarning) {
+          summary.push(duplicateWarning);
+        }
+
         summary.push(``);
         summary.push(`Reply *1* to confirm ✅`);
         summary.push(`Reply *0* to cancel ❌`);
