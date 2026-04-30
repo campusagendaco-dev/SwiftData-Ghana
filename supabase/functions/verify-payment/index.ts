@@ -1,8 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
-import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -24,7 +22,8 @@ function parseCapacity(packageSize: string): number {
   return match ? parseFloat(match[1]) : 0;
 }
 
-function normalizeRecipient(phone: string): string {
+function normalizeRecipient(phone: string | null | undefined): string {
+  if (!phone) return "";
   const digits = phone.replace(/\D+/g, "");
   if (digits.startsWith("233") && digits.length === 12) return `0${digits.slice(3)}`;
   if (digits.length === 9) return `0${digits}`;
@@ -83,8 +82,8 @@ serve(async (req: Request) => {
     });
     
     const verifyData = await verifyRes.json();
-    if (!verifyData.status || verifyData.data.status !== "success") {
-       return new Response(JSON.stringify({ status: "not_paid", error: "Payment not verified" }), { headers: corsHeaders });
+    if (!verifyData.status || !verifyData.data || verifyData.data.status !== "success") {
+      return new Response(JSON.stringify({ status: "not_paid", error: "Payment not verified" }), { headers: corsHeaders });
     }
 
     const verifiedAmount = verifyData.data.amount / 100;
@@ -168,8 +167,18 @@ serve(async (req: Request) => {
       
       const networkKey = mapNetworkKey(existingOrder?.network || metadata?.network);
       const recipient = normalizeRecipient(existingOrder?.customer_phone || metadata?.customer_phone);
-      
-      const result = await callProviderApi(DATA_PROVIDER_BASE_URL!, DATA_PROVIDER_API_KEY!, "purchase", {
+
+      if (!recipient) {
+        await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Missing recipient phone" }).eq("id", reference);
+        return new Response(JSON.stringify({ status: "failed", reason: "Missing recipient phone" }), { headers: corsHeaders });
+      }
+
+      if (!DATA_PROVIDER_BASE_URL || !DATA_PROVIDER_API_KEY) {
+        await supabase.from("orders").update({ status: "fulfillment_failed", failure_reason: "Provider not configured" }).eq("id", reference);
+        return new Response(JSON.stringify({ status: "failed", reason: "Provider not configured" }), { headers: corsHeaders });
+      }
+
+      const result = await callProviderApi(DATA_PROVIDER_BASE_URL, DATA_PROVIDER_API_KEY, "purchase", {
         networkKey, recipient, amount: existingOrder?.amount || verifiedAmount, 
         capacity: parseCapacity(existingOrder?.package_size || metadata?.package_size || "")
       });
