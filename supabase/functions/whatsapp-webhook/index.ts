@@ -5,392 +5,661 @@ import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 
 declare const Deno: any;
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")!;
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") || "https://swiftdatagh.com";
 
-const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-// ── WaSender payload parser ──────────────────────────────────────────────────
-function parseWaSenderWebhook(payload: any): { from: string; text: string; event: string } {
-  const event = payload?.event || "";
-  const messages = payload?.data?.messages;
-  if (!messages) return { from: "", text: "", event };
+const PAYSTACK_FEE_RATE = 0.03;
+const PAYSTACK_FEE_CAP = 100; // GHS
 
-  const from =
-    messages.key?.cleanedSenderPn ||
-    messages.key?.remoteJid?.split("@")[0] ||
-    "";
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const text =
-    messages.messageBody ||
-    messages.message?.conversation ||
-    messages.message?.extendedTextMessage?.text ||
-    "";
-
-  return { from: from.trim(), text: text.trim(), event };
+function normalizePhone(raw: string): string {
+  let d = raw.replace(/\D/g, "");
+  if (d.startsWith("233") && d.length === 12) d = "0" + d.slice(3);
+  if (d.length === 9) d = "0" + d;
+  return d;
 }
 
-// ── Agent context ────────────────────────────────────────────────────────────
-interface AgentContext {
-  agentId: string;
-  storeName: string;
-  agentPrices: Record<string, Record<string, string | number>>;
-  slug: string;
-  whatsappNumber?: string;
-  fullName?: string;
+function normalizeNetworkKey(network: string): "MTN" | "Telecel" | "AirtelTigo" {
+  const n = network.trim().toUpperCase();
+  if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AirtelTigo";
+  if (n === "VODAFONE" || n === "TELECEL") return "Telecel";
+  return "MTN";
 }
 
-/**
- * Try to detect an agent store code from the message text.
- * Customers arrive via links like: wa.me/233XXXX?text=Hi STORE_CODE
- */
-async function detectAgentFromMessage(text: string): Promise<AgentContext | null> {
-  const words = text.replace(/[^a-zA-Z0-9\s-_]/g, "").split(/\s+/).filter(Boolean);
-
-  for (const word of words) {
-    const slug = word.toLowerCase();
-    if (slug.length < 3) continue;
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("user_id, store_name, full_name, agent_prices, slug, wa_bot_enabled, agent_approved, sub_agent_approved, whatsapp_number")
-      .eq("slug", slug)
-      .maybeSingle();
-
-    if (profile && (profile.agent_approved || profile.sub_agent_approved)) {
-      return {
-        agentId: profile.user_id,
-        storeName: profile.store_name || profile.full_name || "SwiftData Agent",
-        agentPrices: (profile.agent_prices || {}) as Record<string, Record<string, string | number>>,
-        slug: profile.slug || "",
-        whatsappNumber: profile.whatsapp_number,
-        fullName: profile.full_name,
-      };
-    }
-  }
-
-  return null;
+function addPaystackFee(base: number): number {
+  return parseFloat((base + Math.min(base * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP)).toFixed(2));
 }
 
-/** Load agent context by ID */
-async function loadAgentById(agentId: string): Promise<AgentContext | null> {
-  if (!agentId) return null;
+function feeAmount(base: number): number {
+  return parseFloat(Math.min(base * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP).toFixed(2));
+}
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("user_id, store_name, full_name, agent_prices, slug, agent_approved, sub_agent_approved, whatsapp_number")
-    .eq("user_id", agentId)
-    .maybeSingle();
+// ── WaSender payload parser ───────────────────────────────────────────────────
 
-  if (!profile) return null;
+function parseMessage(payload: any): { from: string; text: string; fromMe: boolean } {
+  const m = payload?.data?.messages;
+  if (!m) return { from: "", text: "", fromMe: false };
+  const from = m.key?.cleanedSenderPn || m.key?.remoteJid?.split("@")[0] || "";
+  const text = m.messageBody || m.message?.conversation || m.message?.extendedTextMessage?.text || "";
+  return { from: from.trim(), text: text.trim(), fromMe: Boolean(m.key?.fromMe) };
+}
 
+// ── Data access ───────────────────────────────────────────────────────────────
+
+type Agent = {
+  id: string;
+  name: string;
+  prices: Record<string, Record<string, number>>;
+  wa: string | null;
+  isSubAgent: boolean;
+  parentAgentId: string | null;
+};
+
+async function getAgent(val: string, byId = false): Promise<Agent | null> {
+  const q = supabase.from("profiles").select(
+    "user_id, store_name, full_name, agent_prices, slug, agent_approved, sub_agent_approved, whatsapp_number, is_sub_agent, parent_agent_id"
+  );
+  const { data: p } = await (byId ? q.eq("user_id", val) : q.eq("slug", val.toLowerCase())).maybeSingle();
+  if (!p) return null;
+  if (!byId && !p.agent_approved && !p.sub_agent_approved) return null;
   return {
-    agentId: profile.user_id,
-    storeName: profile.store_name || profile.full_name || "SwiftData Agent",
-    agentPrices: (profile.agent_prices || {}) as Record<string, Record<string, string | number>>,
-    slug: profile.slug || "",
-    whatsappNumber: profile.whatsapp_number,
-    fullName: profile.full_name,
+    id: p.user_id,
+    name: p.store_name || p.full_name || "SwiftData",
+    prices: (p.agent_prices || {}) as Record<string, Record<string, number>>,
+    wa: p.whatsapp_number || null,
+    isSubAgent: Boolean(p.is_sub_agent),
+    parentAgentId: p.parent_agent_id || null,
   };
 }
 
-// ── Build data package menu ──────────────────────────────────────────────────
-async function buildPackageMenu(network: string, agent: AgentContext | null) {
-  interface PackageItem { package_size: string; price: number }
-  const packages: PackageItem[] = [];
+type Pkg = { size: string; basePrice: number; total: number };
 
-  if (agent && agent.agentPrices) {
-    const networkPrices = agent.agentPrices[network] || {};
-    for (const [size, price] of Object.entries(networkPrices)) {
-      const numPrice = Number(price);
-      if (numPrice > 0) packages.push({ package_size: size, price: numPrice });
-    }
-    packages.sort((a, b) => a.price - b.price);
+async function getPackagesForNetwork(network: string, agentPrices: Record<string, Record<string, number>>): Promise<Pkg[]> {
+  const pkgs: Pkg[] = [];
+
+  // 1. Use agent's custom selling prices if configured
+  const custom = agentPrices?.[network] || {};
+  for (const [size, price] of Object.entries(custom)) {
+    const base = Number(price);
+    if (base > 0) pkgs.push({ size, basePrice: base, total: addPaystackFee(base) });
   }
+  if (pkgs.length > 0) return pkgs.sort((a, b) => a.total - b.total);
 
-  if (packages.length === 0) {
-    const { data: globalPkgs } = await supabase
-      .from("global_package_settings")
-      .select("package_size, public_price, is_unavailable")
-      .eq("network", network)
-      .eq("is_unavailable", false)
-      .order("public_price", { ascending: true });
+  // 2. Fall back to global public prices
+  const { data: rows } = await supabase
+    .from("global_package_settings")
+    .select("package_size, public_price, agent_price")
+    .eq("network", network)
+    .eq("is_unavailable", false)
+    .order("public_price", { ascending: true });
 
-    if (globalPkgs) {
-      for (const pkg of globalPkgs) {
-        packages.push({ package_size: pkg.package_size, price: Number(pkg.public_price) });
-      }
-    }
+  for (const row of rows || []) {
+    const base = Number(row.public_price || row.agent_price || 0);
+    if (base > 0) pkgs.push({ size: row.package_size, basePrice: base, total: addPaystackFee(base) });
   }
-
-  return packages;
+  return pkgs;
 }
 
-serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+// ── Profit resolution (mirrors initialize-payment logic) ─────────────────────
+
+type ProfitInfo = { profit: number; parentProfit: number; parentAgentId: string | null; costPrice: number };
+
+async function resolveProfit(
+  network: string,
+  packageSize: string,
+  agent: Agent,
+  agentSellingBase: number
+): Promise<ProfitInfo> {
+  const norm = normalizeNetworkKey(network);
+  const normPkg = packageSize.replace(/\s+/g, "").toUpperCase();
+
+  const { data: globalRow } = await supabase
+    .from("global_package_settings")
+    .select("agent_price, cost_price")
+    .eq("network", norm)
+    .eq("package_size", normPkg)
+    .maybeSingle();
+
+  const adminAgentPrice = Number(globalRow?.agent_price || 0);
+  const costPrice = Number(globalRow?.cost_price || adminAgentPrice);
+
+  if (adminAgentPrice <= 0) return { profit: 0, parentProfit: 0, parentAgentId: null, costPrice };
+
+  if (agent.isSubAgent && agent.parentAgentId) {
+    const { data: parentProfile } = await supabase
+      .from("profiles")
+      .select("sub_agent_prices, agent_prices")
+      .eq("user_id", agent.parentAgentId)
+      .maybeSingle();
+
+    const subPrices = (parentProfile?.sub_agent_prices || {}) as Record<string, Record<string, number>>;
+    const agentPrices = (parentProfile?.agent_prices || {}) as Record<string, Record<string, number>>;
+    const hasSubPrices = Object.keys(subPrices).length > 0;
+    const priceSource = hasSubPrices ? subPrices : agentPrices;
+
+    const parentChargesSubAgent = Number(priceSource?.[norm]?.[normPkg] || priceSource?.[network]?.[packageSize] || adminAgentPrice);
+    const safeParentCharge = Math.max(parentChargesSubAgent, adminAgentPrice);
+
+    return {
+      profit: Math.max(0, parseFloat((agentSellingBase - safeParentCharge).toFixed(2))),
+      parentProfit: Math.max(0, parseFloat((safeParentCharge - adminAgentPrice).toFixed(2))),
+      parentAgentId: agent.parentAgentId,
+      costPrice,
+    };
   }
+
+  return {
+    profit: Math.max(0, parseFloat((agentSellingBase - adminAgentPrice).toFixed(2))),
+    parentProfit: 0,
+    parentAgentId: null,
+    costPrice,
+  };
+}
+
+// ── Paystack initialization ───────────────────────────────────────────────────
+
+type PayResult = { url: string; orderId: string };
+
+async function initDataPayment(
+  from: string,
+  agent: Agent,
+  pkg: Pkg,
+  network: string,
+  recipient: string
+): Promise<PayResult | null> {
+  const orderId = crypto.randomUUID();
+  const fee = feeAmount(pkg.basePrice);
+  const { profit, parentProfit, parentAgentId, costPrice } = await resolveProfit(network, pkg.size, agent, pkg.basePrice);
+
+  const metadata = {
+    order_id: orderId,
+    order_type: "data",
+    agent_id: agent.id,
+    network,
+    package_size: pkg.size,
+    customer_phone: recipient,
+    channel: "whatsapp",
+    wa_from: from,
+    base_price: pkg.basePrice,
+    cost_price: costPrice,
+    profit,
+    parent_profit: parentProfit,
+    parent_agent_id: parentAgentId,
+  };
+
+  const res = await fetch("https://api.paystack.co/transaction/initialize", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: `wa-${from}@swiftdatagh.com`,
+      amount: Math.round(pkg.total * 100),
+      reference: orderId,
+      callback_url: `${APP_BASE_URL}/purchase-success?reference=${orderId}`,
+      metadata,
+      currency: "GHS",
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.status || !json.data?.authorization_url) {
+    console.error("[WA Bot] Paystack data init failed:", json);
+    return null;
+  }
+
+  const { error } = await supabase.from("orders").insert({
+    id: orderId,
+    agent_id: agent.id,
+    parent_agent_id: parentAgentId || null,
+    order_type: "data",
+    network,
+    package_size: pkg.size,
+    customer_phone: recipient,
+    amount: pkg.basePrice,
+    paystack_fee: fee,
+    cost_price: costPrice,
+    profit,
+    parent_profit: parentProfit,
+    status: "pending",
+    failure_reason: null,
+  });
+  if (error) { console.error("[WA Bot] Order insert error:", error); return null; }
+
+  return { url: json.data.authorization_url, orderId };
+}
+
+async function initAirtimePayment(
+  from: string,
+  agent: Agent,
+  network: string,
+  airtimeBase: number,
+  recipient: string
+): Promise<PayResult | null> {
+  const orderId = crypto.randomUUID();
+  const fee = feeAmount(airtimeBase);
+  const total = parseFloat((airtimeBase + fee).toFixed(2));
+
+  const metadata = {
+    order_id: orderId,
+    order_type: "airtime",
+    agent_id: agent.id,
+    network,
+    customer_phone: recipient,
+    base_price: airtimeBase,
+    channel: "whatsapp",
+    wa_from: from,
+    profit: 0,
+    parent_profit: 0,
+  };
+
+  const res = await fetch("https://api.paystack.co/transaction/initialize", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: `wa-${from}@swiftdatagh.com`,
+      amount: Math.round(total * 100),
+      reference: orderId,
+      callback_url: `${APP_BASE_URL}/purchase-success?reference=${orderId}`,
+      metadata,
+      currency: "GHS",
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.status || !json.data?.authorization_url) {
+    console.error("[WA Bot] Paystack airtime init failed:", json);
+    return null;
+  }
+
+  const { error } = await supabase.from("orders").insert({
+    id: orderId,
+    agent_id: agent.id,
+    order_type: "airtime",
+    network,
+    package_size: null,
+    customer_phone: recipient,
+    amount: airtimeBase,
+    paystack_fee: fee,
+    cost_price: null,
+    profit: 0,
+    parent_profit: 0,
+    status: "pending",
+    failure_reason: null,
+  });
+  if (error) { console.error("[WA Bot] Airtime order insert error:", error); return null; }
+
+  return { url: json.data.authorization_url, orderId };
+}
+
+// ── Main handler ─────────────────────────────────────────────────────────────
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     const payload = await req.json();
-    const { from, text, event } = parseWaSenderWebhook(payload);
+    const { from, text, fromMe } = parseMessage(payload);
 
-    if (!event.includes("personal") && !event.includes("message")) {
-      return new Response(JSON.stringify({ status: "ignored" }), { headers: corsHeaders });
-    }
-    if (!from || !text) {
-      return new Response(JSON.stringify({ status: "ignored" }), { headers: corsHeaders });
-    }
-    if (payload?.data?.messages?.key?.fromMe === true) {
-      return new Response(JSON.stringify({ status: "ignored" }), { headers: corsHeaders });
-    }
-    if (from.includes("-") || from.includes("g.us")) {
-      return new Response(JSON.stringify({ status: "ignored" }), { headers: corsHeaders });
+    if (!payload?.event?.includes("message") || !from || !text || fromMe) {
+      return new Response("ok");
     }
 
-    const { data: session } = await supabase
+    // Load session
+    const { data: sess } = await supabase
       .from("whatsapp_sessions")
       .select("*")
       .eq("phone_number", from)
       .maybeSingle();
 
-    let currentStep = session?.current_step || "MENU";
-    let orderData = session?.order_data || {};
-    let storedAgentId = session?.agent_id || "";
-    let nextStep = currentStep;
-    let responseText = "";
+    let step: string = sess?.current_step || "MENU";
+    let data: Record<string, any> = sess?.order_data || {};
+    let agentId: string = sess?.agent_id || "";
+    const input = text.toLowerCase().trim();
 
-    const userChoice = text.toLowerCase().trim();
-    let agent: AgentContext | null = null;
-
-    if (["menu", "0", "hi", "hello", "hey", "start"].includes(userChoice)) {
-      nextStep = "MENU";
-      orderData = {};
+    // ── GLOBAL: "done" — verify payment ──────────────────────────────────────
+    if (input === "done" && data.lastOrderId) {
+      await sendWhatsAppMessage(from, `⏳ _Checking payment status..._`);
+      try {
+        const vRes = await fetch(`https://api.paystack.co/transaction/verify/${data.lastOrderId}`, {
+          headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+        });
+        const vJson = await vRes.json();
+        if (vJson.status && vJson.data?.status === "success") {
+          // Clear session — fulfillment is handled by the Paystack webhook automatically
+          await supabase.from("whatsapp_sessions").delete().eq("phone_number", from);
+          await sendWhatsAppMessage(from, [
+            `✅ *Payment Confirmed!*`,
+            ``,
+            `Your *${data.net || ""} ${data.pkg || "airtime"}* order is being processed and will arrive shortly. 🚀`,
+            ``,
+            `_Reply *Hi* anytime to place a new order._`,
+          ].join("\n"));
+        } else {
+          await sendWhatsAppMessage(from, [
+            `⚠️ *Payment not confirmed yet.*`,
+            ``,
+            `Please make sure you approved the MoMo prompt and entered your PIN, then reply *Done* again.`,
+            ``,
+            `_Reply *0* to cancel and start over._`,
+          ].join("\n"));
+        }
+      } catch (e) {
+        console.error("[WA Bot] Payment verify error:", e);
+        await sendWhatsAppMessage(from, `⚠️ Could not check payment right now. Please try again in a moment.`);
+      }
+      return new Response("ok");
     }
 
-    if (!storedAgentId || currentStep === "MENU" || nextStep === "MENU") {
-      const detected = await detectAgentFromMessage(text);
-      if (detected) {
-        storedAgentId = detected.agentId;
-        agent = detected;
-        nextStep = "MENU";
-        orderData = {};
+    // ── GLOBAL: reset commands ────────────────────────────────────────────────
+    if (["0", "hi", "hello", "start", "cancel", "menu"].includes(input)) {
+      step = "MENU";
+      data = {};
+    }
+
+    // ── Agent detection on first contact ─────────────────────────────────────
+    if (step === "MENU" && !agentId) {
+      for (const word of text.split(/\s+/)) {
+        const found = await getAgent(word);
+        if (found) { agentId = found.id; break; }
       }
     }
 
-    if (!agent && storedAgentId) {
-      agent = await loadAgentById(storedAgentId);
-    }
+    const agent = agentId ? await getAgent(agentId, true) : null;
+    const storeName = agent?.name || "SwiftData";
 
-    const storeName = agent?.storeName || "SwiftData";
+    let reply = "";
+    let nextStep = step;
 
-    switch (nextStep) {
-      case "MENU":
-        responseText =
-          `*Welcome to ${storeName}!* 🐝\n\n` +
-          `What would you like to do?\n\n` +
-          `*1.* Buy Data 📶\n` +
-          `*2.* Buy Airtime 📱\n` +
-          `*3.* Check Order Status 🔍\n` +
-          `*4.* Talk to Agent 👨‍💼\n\n` +
-          `_Reply with the number of your choice_`;
-        nextStep = "AWAITING_SERVICE_TYPE";
+    // ── State machine ─────────────────────────────────────────────────────────
+    switch (step) {
+      // ── MENU ─────────────────────────────────────────────────────────────────
+      case "MENU": {
+        reply = [
+          `👋 *Welcome to ${storeName}!*`,
+          ``,
+          `What would you like?`,
+          ``,
+          `*1* — Buy Data 📶`,
+          `*2* — Buy Airtime 📱`,
+          `*3* — Track Order 🔍`,
+          `*4* — Talk to Agent 👨‍💼`,
+          ``,
+          `_Reply with 1, 2, 3 or 4_`,
+        ].join("\n");
+        nextStep = "SELECT_SERVICE";
         break;
+      }
 
-      case "AWAITING_SERVICE_TYPE":
-        if (userChoice === "1") {
-          responseText = `*Select Network:*\n\n*1.* MTN\n*2.* Telecel\n*3.* AT (AirtelTigo)\n\n_Reply 0 to go back_`;
-          nextStep = "AWAITING_DATA_NETWORK";
-        } else if (userChoice === "2") {
-          responseText = `*Select Airtime Network:*\n\n*1.* MTN\n*2.* Telecel\n*3.* AT (AirtelTigo)\n\n_Reply 0 to go back_`;
-          nextStep = "AWAITING_AIRTIME_NETWORK";
-        } else if (userChoice === "3") {
-          responseText = `Please reply with your *Order ID* to check its status.\n\n_Reply 0 to go back_`;
-          nextStep = "AWAITING_ORDER_ID";
-        } else if (userChoice === "4") {
-          const agentWa = agent?.whatsappNumber?.replace(/[^0-9]/g, "") || "";
-          if (agentWa) {
-            responseText = 
-              `*Live Support*\n\n` +
-              `Click the link below to chat directly with our agent:\n` +
-              `👉 https://wa.me/${agentWa}\n\n` +
-              `_I've also sent them a notification that you're waiting!_`;
-            
-            // Forward notification to agent
-            try {
-              const agentNotifyMsg = `🔔 *New Live Chat Request*\n\nA customer (${from}) is asking for a live chat on your WhatsApp bot.`;
-              await sendWhatsAppMessage(agentWa, agentNotifyMsg);
-            } catch (e) { console.error("Notify error", e); }
-          } else {
-            responseText = `Live support is currently unavailable for this store.\n\n_Reply 0 for the main menu._`;
-          }
+      // ── Service selection ─────────────────────────────────────────────────────
+      case "SELECT_SERVICE": {
+        if (input === "1") {
+          reply = `📶 *Select Network:*\n\n*1* — MTN\n*2* — Telecel\n*3* — AirtelTigo\n\n_Reply 0 to go back_`;
+          nextStep = "SELECT_NET_DATA";
+        } else if (input === "2") {
+          reply = `📱 *Select Network for Airtime:*\n\n*1* — MTN\n*2* — Telecel\n*3* — AirtelTigo\n\n_Reply 0 to go back_`;
+          nextStep = "SELECT_NET_AIRTIME";
+        } else if (input === "3") {
+          reply = `🔍 *Enter your Order ID:*\n\n_It was shown in your receipt message._`;
+          nextStep = "TRACK_ORDER";
+        } else if (input === "4") {
+          const waNum = agent?.wa?.replace(/[^0-9]/g, "");
+          reply = waNum
+            ? `👨‍💼 *Agent Support:*\n\nhttps://wa.me/${waNum}\n\n_Tap the link to message your agent directly._`
+            : `👨‍💼 *Agent support is currently unavailable.*\n\n_Reply 0 to return to menu._`;
           nextStep = "MENU";
         } else {
-          responseText = `Invalid choice. Please reply *1*, *2*, *3*, or *4*.`;
-        }
-        break;
-
-      case "AWAITING_DATA_NETWORK":
-      case "AWAITING_AIRTIME_NETWORK": {
-        const networks: Record<string, string> = { "1": "MTN", "2": "Telecel", "3": "AirtelTigo" };
-        const selectedNetwork = networks[userChoice];
-        if (!selectedNetwork) { responseText = `Invalid choice. Please reply *1*, *2*, or *3*.`; break; }
-        orderData.network = selectedNetwork;
-
-        if (nextStep === "AWAITING_DATA_NETWORK") {
-          const packages = await buildPackageMenu(selectedNetwork, agent);
-          if (packages.length === 0) {
-            responseText = `Sorry, no packages available for ${selectedNetwork} at the moment.\n\n_Reply 0 for the main menu._`;
-            nextStep = "MENU";
-            break;
-          }
-          let packageMenu = `*${selectedNetwork} Data Packages:*\n\n`;
-          const packageList: string[] = [];
-          const priceList: number[] = [];
-          packages.forEach((pkg, index) => {
-            packageList.push(pkg.package_size);
-            priceList.push(pkg.price);
-            packageMenu += `*${index + 1}.* ${pkg.package_size} — GH₵ ${pkg.price.toFixed(2)}\n`;
-          });
-          orderData.availablePackages = packageList;
-          orderData.availablePrices = priceList;
-          packageMenu += `\n_Reply with the package number_`;
-          responseText = packageMenu;
-          nextStep = "AWAITING_DATA_PACKAGE";
-        } else {
-          responseText = `Enter the *${selectedNetwork} Airtime* amount in GH₵ (e.g. 5 or 10.50):\n\n_Minimum: GH₵ 1.00_`;
-          nextStep = "AWAITING_AIRTIME_AMOUNT";
+          reply = `⚠️ Please reply with *1*, *2*, *3*, or *4*.`;
         }
         break;
       }
 
-      case "AWAITING_DATA_PACKAGE": {
-        const packageIndex = parseInt(userChoice) - 1;
-        const availablePackages: string[] = orderData.availablePackages || [];
-        if (isNaN(packageIndex) || packageIndex < 0 || packageIndex >= availablePackages.length) {
-          responseText = `Invalid package number. Please pick a number from the list above.`;
-          break;
-        }
-        orderData.package_size = availablePackages[packageIndex];
-        orderData.selected_price = orderData.availablePrices?.[packageIndex] || 0;
-        responseText =
-          `You selected *${orderData.network} ${orderData.package_size}* — GH₵ ${Number(orderData.selected_price).toFixed(2)}\n\n` +
-          `Please reply with the *phone number* to receive the data (e.g. 0241234567):`;
-        nextStep = "AWAITING_PHONE";
-        break;
-      }
+      // ── Network selection (data) ──────────────────────────────────────────────
+      case "SELECT_NET_DATA": {
+        const netMap: Record<string, string> = { "1": "MTN", "2": "Telecel", "3": "AirtelTigo" };
+        const net = netMap[input];
+        if (!net) { reply = `❌ Please pick *1*, *2*, or *3*.`; break; }
+        data.net = net;
+        data.isAirtime = false;
 
-      case "AWAITING_AIRTIME_AMOUNT": {
-        const amount = parseFloat(userChoice);
-        if (isNaN(amount) || amount < 1) {
-          responseText = `Invalid amount. Minimum is GH₵ 1.00. Please try again:`;
-          break;
-        }
-        orderData.amount = amount;
-        responseText =
-          `You entered *GH₵ ${amount.toFixed(2)}* ${orderData.network} Airtime.\n\n` +
-          `Please reply with the *phone number* to receive the airtime:`;
-        nextStep = "AWAITING_PHONE";
-        break;
-      }
+        await sendWhatsAppMessage(from, `⏳ _Fetching ${net} bundles..._`);
+        const pkgs = await getPackagesForNetwork(net, agent?.prices || {});
 
-      case "AWAITING_PHONE": {
-        const phoneRegex = /^[0-9+]{9,15}$/;
-        const cleanPhone = userChoice.replace(/\s+/g, "");
-        if (!phoneRegex.test(cleanPhone)) {
-          responseText = `Invalid phone number. Please enter a valid number (e.g. 0241234567):`;
-          break;
-        }
-        orderData.phone = cleanPhone;
-
-        await sendWhatsAppMessage(from, `⏳ Generating your secure payment link...`);
-
-        const orderId = crypto.randomUUID();
-        const orderType = orderData.package_size ? "data" : "airtime";
-
-        try {
-          const initPayload = {
-            email: `wa-${from}@swiftdatagh.com`,
-            amount: orderType === "airtime" ? orderData.amount : orderData.selected_price || 0,
-            reference: orderId,
-            callback_url: agent ? `${APP_BASE_URL}/store/${agent.slug}/purchase-success?reference=${orderId}` : `${APP_BASE_URL}/purchase-success?reference=${orderId}`,
-            metadata: {
-              order_id: orderId,
-              order_type: orderType,
-              network: orderData.network,
-              package_size: orderType === "data" ? orderData.package_size : undefined,
-              customer_phone: orderData.phone,
-              channel: "whatsapp",
-              ...(storedAgentId ? { agent_id: storedAgentId } : {}),
-            },
-          };
-
-          const funcRes = await fetch(`${SUPABASE_URL}/functions/v1/initialize-payment`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-            body: JSON.stringify(initPayload),
-          });
-          const funcData = await funcRes.json();
-
-          if (funcData.authorization_url) {
-            const item = orderType === "data" ? `${orderData.network} ${orderData.package_size}` : `${orderData.network} Airtime GH₵ ${orderData.amount}`;
-            responseText =
-              `✅ *Order Ready!*\n\n` +
-              `📦 ${item}\n` +
-              `📱 Recipient: ${orderData.phone}\n\n` +
-              `Pay securely via the link below (MoMo or Card):\n\n` +
-              `👉 ${funcData.authorization_url}\n\n` +
-              `_Your order will be fulfilled automatically after payment._\n\n` +
-              `_Reply 0 for a new order._`;
-            nextStep = "MENU";
-            orderData = {};
-          } else {
-            responseText = `❌ Could not generate payment link. Please try again later.`;
-            nextStep = "MENU";
-          }
-        } catch (e) {
-          responseText = `❌ An error occurred. Please reply *0* to try again.`;
+        if (pkgs.length === 0) {
+          reply = `⚠️ *${net} bundles are currently unavailable.*\n\n_Reply 0 to return to the menu._`;
           nextStep = "MENU";
+          break;
         }
+
+        data.pkgList = pkgs;
+        const lines = pkgs.map((p, i) => `*${i + 1}*. ${p.size} — GH₵ ${p.total.toFixed(2)}`);
+        reply = `📦 *${net} Data Bundles:*\n_(prices include payment fee)_\n\n${lines.join("\n")}\n\n_Reply with the bundle number — or 0 to go back_`;
+        nextStep = "SELECT_PACKAGE";
         break;
       }
 
-      case "AWAITING_ORDER_ID": {
-        const ref = userChoice.trim();
-        const { data: order } = await supabase.from("orders").select("status, network, package_size, amount, order_type").eq("id", ref).maybeSingle();
+      // ── Network selection (airtime) ───────────────────────────────────────────
+      case "SELECT_NET_AIRTIME": {
+        const netMap: Record<string, string> = { "1": "MTN", "2": "Telecel", "3": "AirtelTigo" };
+        const net = netMap[input];
+        if (!net) { reply = `❌ Please pick *1*, *2*, or *3*.`; break; }
+        data.net = net;
+        data.isAirtime = true;
+        reply = `💰 *Enter airtime amount in GH₵:*\n_Minimum: GH₵ 1.00 — Example: 5_`;
+        nextStep = "ENTER_AIRTIME_AMT";
+        break;
+      }
+
+      // ── Package selection ─────────────────────────────────────────────────────
+      case "SELECT_PACKAGE": {
+        const pkgs: Pkg[] = data.pkgList || [];
+        const idx = parseInt(input) - 1;
+        if (isNaN(idx) || idx < 0 || idx >= pkgs.length) {
+          reply = `❌ Invalid choice. Pick a number from *1 to ${pkgs.length}*.`;
+          break;
+        }
+        data.pkg = pkgs[idx].size;
+        data.basePrice = pkgs[idx].basePrice;
+        data.totalPrice = pkgs[idx].total;
+
+        reply = [
+          `✅ *${data.net} ${data.pkg}* — GH₵ ${data.totalPrice.toFixed(2)}`,
+          ``,
+          `📱 *Enter the recipient's phone number:*`,
+          `_The number that will receive the data (e.g. 0244123456)_`,
+        ].join("\n");
+        nextStep = "ENTER_RECIPIENT";
+        break;
+      }
+
+      // ── Airtime amount ────────────────────────────────────────────────────────
+      case "ENTER_AIRTIME_AMT": {
+        const amt = parseFloat(input.replace(/[^0-9.]/g, ""));
+        if (isNaN(amt) || amt < 1) {
+          reply = `❌ Minimum airtime is GH₵ 1.00. Enter a valid amount:`;
+          break;
+        }
+        const fee = feeAmount(amt);
+        data.airtimeBase = amt;
+        data.totalPrice = parseFloat((amt + fee).toFixed(2));
+
+        reply = [
+          `✅ *${data.net} Airtime — GH₵ ${amt.toFixed(2)}*`,
+          `_Payment fee: +GH₵ ${fee.toFixed(2)} → Total: GH₵ ${data.totalPrice.toFixed(2)}_`,
+          ``,
+          `📱 *Enter the recipient's phone number:*`,
+          `_The number that will receive the airtime (e.g. 0244123456)_`,
+        ].join("\n");
+        nextStep = "ENTER_RECIPIENT";
+        break;
+      }
+
+      // ── Recipient phone ───────────────────────────────────────────────────────
+      case "ENTER_RECIPIENT": {
+        const phone = normalizePhone(input);
+        if (phone.length !== 10 || !phone.startsWith("0")) {
+          reply = `❌ *Invalid phone number.*\n\nEnter a 10-digit Ghanaian number:\n_Example: 0244123456_`;
+          break;
+        }
+        data.recipient = phone;
+
+        const summary: string[] = [
+          `📋 *Order Summary*`,
+          ``,
+          `Network:   *${data.net}*`,
+        ];
+        if (data.pkg) {
+          summary.push(`Bundle:    *${data.pkg}*`);
+        } else {
+          summary.push(`Airtime:   *GH₵ ${data.airtimeBase?.toFixed(2)}*`);
+        }
+        summary.push(`Recipient: *${phone}*`);
+        summary.push(`You Pay:   *GH₵ ${(data.totalPrice || 0).toFixed(2)}*`);
+        summary.push(`_(includes 3% payment processing fee)_`);
+        summary.push(``);
+        summary.push(`Reply *1* to confirm ✅`);
+        summary.push(`Reply *0* to cancel ❌`);
+
+        reply = summary.join("\n");
+        nextStep = "CONFIRM_ORDER";
+        break;
+      }
+
+      // ── Order confirmation ────────────────────────────────────────────────────
+      case "CONFIRM_ORDER": {
+        if (input === "0") {
+          reply = `❌ *Order cancelled.* Reply *Hi* to start a new order.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
+        if (input !== "1") {
+          reply = `Reply *1* to confirm or *0* to cancel.`;
+          break;
+        }
+
+        if (!agent) {
+          reply = `⚠️ *Store error.* Please restart by sending *Hi*.`;
+          nextStep = "MENU";
+          data = {};
+          break;
+        }
+
+        await sendWhatsAppMessage(from, `⏳ _Generating your secure payment link..._`);
+
+        let result: PayResult | null = null;
+        if (!data.isAirtime && data.pkg) {
+          const pkg: Pkg = { size: data.pkg, basePrice: data.basePrice, total: data.totalPrice };
+          result = await initDataPayment(from, agent, pkg, data.net, data.recipient);
+        } else {
+          result = await initAirtimePayment(from, agent, data.net, data.airtimeBase, data.recipient);
+        }
+
+        if (!result) {
+          reply = `❌ *Payment link failed.* Please try again or reply *0* for the menu.`;
+          nextStep = "MENU";
+          data = {};
+          break;
+        }
+
+        data.lastOrderId = result.orderId;
+        reply = [
+          `🔐 *Payment Link Ready!*`,
+          ``,
+          `*Step 1* — Click to pay securely:`,
+          result.url,
+          ``,
+          `*Step 2* — Complete your MoMo payment`,
+          ``,
+          `*Step 3* — Reply *Done* once payment is complete`,
+          ``,
+          `_Your order is processed instantly after payment._`,
+          `_Reply 0 to cancel._`,
+        ].join("\n");
+        nextStep = "AWAIT_PAYMENT";
+        break;
+      }
+
+      // ── Awaiting payment confirmation ─────────────────────────────────────────
+      case "AWAIT_PAYMENT": {
+        // "done" is handled by the global block above
+        reply = [
+          `⏳ *Waiting for your payment...*`,
+          ``,
+          `Once you've approved the MoMo prompt, reply *Done* to confirm.`,
+          ``,
+          `_Reply 0 to cancel and restart._`,
+        ].join("\n");
+        break;
+      }
+
+      // ── Order tracking ────────────────────────────────────────────────────────
+      case "TRACK_ORDER": {
+        const orderId = text.trim();
+        const { data: order } = await supabase
+          .from("orders")
+          .select("status, network, package_size, amount, order_type, created_at, failure_reason")
+          .eq("id", orderId)
+          .maybeSingle();
+
         if (!order) {
-          responseText = `Order not found. Please check your reference.\n\n_Reply 0 for the main menu._`;
-        } else {
-          const statusLabel = order.status.replace(/_/g, " ").toUpperCase();
-          const item = order.order_type === "airtime" ? `${order.network} Airtime GH₵ ${Number(order.amount).toFixed(2)}` : `${order.network} ${order.package_size}`;
-          responseText = `🔍 *Order Status*\n\nItem: ${item}\nStatus: *${statusLabel}*\n\n_Reply 0 for the main menu._`;
+          reply = `❌ *Order not found.*\n\nCheck the ID and try again, or reply *0* for the menu.`;
+          break;
         }
+
+        const statusEmoji: Record<string, string> = {
+          pending: "⏳ Pending",
+          paid: "💳 Paid",
+          processing: "⚙️ Processing",
+          fulfilled: "✅ Delivered",
+          fulfillment_failed: "❌ Failed",
+        };
+        const statusLabel = statusEmoji[order.status] || order.status.toUpperCase();
+        const date = new Date(order.created_at).toLocaleDateString("en-GH", {
+          day: "numeric", month: "short", year: "numeric",
+        });
+
+        const lines = [
+          `🔍 *Order Status*`,
+          ``,
+          `Network: *${order.network || "N/A"}*`,
+          order.package_size
+            ? `Bundle:  *${order.package_size}*`
+            : `Amount:  *GH₵ ${Number(order.amount).toFixed(2)}*`,
+          `Date:    ${date}`,
+          `Status:  *${statusLabel}*`,
+        ];
+        if (order.status === "fulfillment_failed" && order.failure_reason) {
+          lines.push(``, `_${String(order.failure_reason).slice(0, 120)}_`);
+        }
+        lines.push(``, `_Reply 0 to return to the menu._`);
+        reply = lines.join("\n");
         nextStep = "MENU";
         break;
       }
 
-      default:
-        // If no matching command, suggest talking to agent
-        responseText = 
-          `I didn't quite catch that. 🤔\n\n` +
-          `Reply *0* for the menu, or *4* to talk to our agent directly.`;
+      default: {
+        reply = `Reply *Hi* to start a new order.`;
         nextStep = "MENU";
+        data = {};
         break;
+      }
     }
 
+    // Persist session state
     await supabase.from("whatsapp_sessions").upsert({
       phone_number: from,
-      agent_id: storedAgentId,
+      agent_id: agentId,
       current_step: nextStep,
-      order_data: orderData,
+      order_data: data,
+      updated_at: new Date().toISOString(),
     });
 
-    await sendWhatsAppMessage(from, responseText);
-
-    return new Response(JSON.stringify({ status: "success" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-  } catch (error) {
-    console.error("[WA-Bot] Webhook error:", error);
-    return new Response(JSON.stringify({ error: "Internal Server Error" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 });
+    if (reply) await sendWhatsAppMessage(from, reply);
+    return new Response("ok", { headers: corsHeaders });
+  } catch (e) {
+    console.error("[WA Webhook] Unhandled error:", e);
+    return new Response("error", { headers: corsHeaders });
   }
 });
