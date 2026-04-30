@@ -13,7 +13,7 @@ const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")!;
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") || "https://swiftdatagh.com";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100; // GHS
@@ -44,6 +44,8 @@ function feeAmount(base: number): number {
 
 async function callGemini(prompt: string) {
   if (!GEMINI_API_KEY) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: "POST",
@@ -52,10 +54,13 @@ async function callGemini(prompt: string) {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.2 },
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     const json = await res.json();
     return json.candidates?.[0]?.content?.parts?.[0]?.text || null;
   } catch (err) {
+    clearTimeout(timeoutId);
     console.error("Gemini error:", err);
     return null;
   }
@@ -82,7 +87,7 @@ type Agent = {
   parentAgentId: string | null;
 };
 
-async function getAgent(val: string, byId = false): Promise<Agent | null> {
+async function getAgent(supabase: any, val: string, byId = false): Promise<Agent | null> {
   const q = supabase.from("profiles").select(
     "user_id, store_name, full_name, agent_prices, slug, agent_approved, sub_agent_approved, whatsapp_number, is_sub_agent, parent_agent_id"
   );
@@ -101,7 +106,7 @@ async function getAgent(val: string, byId = false): Promise<Agent | null> {
 
 type Pkg = { size: string; basePrice: number; total: number };
 
-async function getPackagesForNetwork(network: string, agentPrices: Record<string, Record<string, number>>): Promise<Pkg[]> {
+async function getPackagesForNetwork(supabase: any, network: string, agentPrices: Record<string, Record<string, number>>): Promise<Pkg[]> {
   const pkgs: Pkg[] = [];
 
   // 1. Use agent's custom selling prices if configured (case-insensitive)
@@ -137,6 +142,7 @@ async function getPackagesForNetwork(network: string, agentPrices: Record<string
 type ProfitInfo = { profit: number; parentProfit: number; parentAgentId: string | null; costPrice: number };
 
 async function resolveProfit(
+  supabase: any,
   network: string,
   packageSize: string,
   agent: Agent,
@@ -193,6 +199,7 @@ async function resolveProfit(
 type PayResult = { orderId: string };
 
 async function initDataPayment(
+  supabase: any,
   from: string,
   agent: Agent,
   pkg: Pkg,
@@ -201,7 +208,7 @@ async function initDataPayment(
 ): Promise<PayResult | null> {
   const orderId = crypto.randomUUID();
   const fee = feeAmount(pkg.basePrice);
-  const { profit, parentProfit, parentAgentId, costPrice } = await resolveProfit(network, pkg.size, agent, pkg.basePrice);
+  const { profit, parentProfit, parentAgentId, costPrice } = await resolveProfit(supabase, network, pkg.size, agent, pkg.basePrice);
 
   const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "tgo" };
   const provider = providerMap[network];
@@ -270,6 +277,7 @@ async function initDataPayment(
 }
 
 async function initAirtimePayment(
+  supabase: any,
   from: string,
   agent: Agent,
   network: string,
@@ -347,6 +355,9 @@ async function initAirtimePayment(
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = supabaseAdmin;
+
   try {
     const payload = await req.json();
     const { from, text, fromMe } = parseMessage(payload);
@@ -418,7 +429,7 @@ serve(async (req: Request) => {
     // ── Agent detection on first contact ─────────────────────────────────────
     if (step === "MENU" && !agentId) {
       for (const word of text.split(/\s+/)) {
-        const found = await getAgent(word);
+        const found = await getAgent(supabase, word);
         if (found) { agentId = found.id; break; }
       }
     }
@@ -439,7 +450,7 @@ serve(async (req: Request) => {
         console.error("Failed to fetch custom bot prompt:", err);
       }
 
-      const agent = agentId ? await getAgent(agentId, true) : null;
+      const agent = agentId ? await getAgent(supabase, agentId, true) : null;
       const storeName = agent?.name || "SwiftData";
       const aiResponse = await callGemini(`${customPrompt.replace("{{storeName}}", storeName)}\n\nUser Message: "${text}"\n\nAnalyze the intent and respond with a friendly message or identify the service needed.`);
       if (aiResponse) {
@@ -459,7 +470,7 @@ serve(async (req: Request) => {
       }
     }
 
-    const agent = agentId ? await getAgent(agentId, true) : null;
+    const agent = agentId ? await getAgent(supabase, agentId, true) : null;
     const storeName = agent?.name || "SwiftData";
 
     let reply = "";
@@ -522,10 +533,11 @@ serve(async (req: Request) => {
         await sendWhatsAppMessage(from, `⏳ _Fetching ${net} bundles..._`);
         let pkgs: Pkg[] = [];
         try {
-          pkgs = await getPackagesForNetwork(net, agent?.prices || {});
+          console.log(`[WA Bot] Fetching ${net} bundles for agent:`, agentId || "SwiftData");
+          pkgs = await getPackagesForNetwork(supabase, net, agent?.prices || {});
         } catch (err) {
           console.error("[WA Bot] Error fetching bundles:", err);
-          await sendWhatsAppMessage(from, `⚠️ *Technical Error:* Could not connect to the database. Please try again.`);
+          await sendWhatsAppMessage(from, `⚠️ *Technical Error:* Could not connect to the database. Our team has been notified. Please try again in a few minutes.`);
           return new Response("ok");
         }
 
@@ -657,9 +669,9 @@ serve(async (req: Request) => {
         let result: PayResult | null = null;
         if (!data.isAirtime && data.pkg) {
           const pkg: Pkg = { size: data.pkg, basePrice: data.basePrice, total: data.totalPrice };
-          result = await initDataPayment(from, agent, pkg, data.net, data.recipient);
+          result = await initDataPayment(supabase, from, agent, pkg, data.net, data.recipient);
         } else {
-          result = await initAirtimePayment(from, agent, data.net, data.airtimeBase, data.recipient);
+          result = await initAirtimePayment(supabase, from, agent, data.net, data.airtimeBase, data.recipient);
         }
 
         if (!result) {

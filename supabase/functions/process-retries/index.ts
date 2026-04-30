@@ -2,13 +2,11 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
+import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 
 declare const Deno: any;
 
-const supabaseAdmin = createClient(
-  (Deno as any).env.get("SUPABASE_URL") ?? "",
-  (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-);
+// const supabaseAdmin = createClient(...)
 
 const DATA_PROVIDER_BASE_URL = (Deno as any).env.get("DATA_PROVIDER_BASE_URL") || "";
 const DATA_PROVIDER_API_KEY = (Deno as any).env.get("DATA_PROVIDER_API_KEY") || "";
@@ -115,8 +113,27 @@ function parseCapacity(packageSize: string): number {
   return match ? parseFloat(match[1]) : 0;
 }
 
+async function sendWhatsAppFulfillmentNotification(to: string, type: string, net: string, pkg: string, phone: string) {
+  try {
+    const msg = [
+      `✅ *Order Fulfilled!*`,
+      ``,
+      `Your *${net} ${pkg || type}* order for *${phone}* has been delivered successfully. 🚀`,
+      ``,
+      `Thank you for choosing SwiftData!`,
+    ].join("\n");
+    await sendWhatsAppMessage(to, msg);
+  } catch (err) {
+    console.error("[WhatsApp Retries] Notification error:", err);
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const SUPABASE_URL = (Deno as any).env.get("SUPABASE_URL") ?? "";
+  const SUPABASE_SERVICE_ROLE_KEY = (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
     console.log("[retry-orders] Starting maintenance cycle...");
@@ -251,6 +268,19 @@ serve(async (req: Request) => {
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", order.id);
         await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
         if (order.customer_phone) await sendPaymentSms(supabaseAdmin, order.customer_phone, "payment_success");
+        
+        // Notify via WhatsApp if it was a WhatsApp order
+        const verification = await verifyPaystack(order.id);
+        if (verification.ok && verification.metadata?.channel === "whatsapp" && verification.metadata?.wa_from) {
+          await sendWhatsAppFulfillmentNotification(
+            String(verification.metadata.wa_from),
+            order.order_type,
+            order.network || "",
+            order.package_size || (order.order_type === "airtime" ? `GH₵${order.amount}` : ""),
+            order.customer_phone || ""
+          );
+        }
+        
         results.push({ id: order.id, status: "fulfilled" });
       } else {
         await supabaseAdmin.from("orders").update({ status: "fulfillment_failed", failure_reason: failureReason }).eq("id", order.id);
