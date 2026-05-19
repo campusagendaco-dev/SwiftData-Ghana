@@ -702,14 +702,7 @@ const AgentStore = () => {
         {isCustomerLoggedIn && payMethod === "wallet" && !isFreePromo && customerBalance < total && (
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-[10px] font-bold text-amber-500 flex items-center gap-2.5 uppercase tracking-tight">
             <CreditCard className="w-3.5 h-3.5 shrink-0" />
-            <span className="flex-1">Insufficient wallet balance. Top up or use Card.</span>
-            <button
-              type="button"
-              onClick={() => setDepositOpen(true)}
-              className="bg-amber-500 text-black px-2.5 py-1 rounded-lg text-[9px] font-black hover:bg-amber-400 transition-colors shrink-0"
-            >
-              DEPOSIT
-            </button>
+            <span className="flex-1">Insufficient wallet balance. Please use Card / MoMo to check out.</span>
           </div>
         )}
 
@@ -928,21 +921,11 @@ const AgentStore = () => {
               <span className="text-[9px] font-black px-2 py-0.5 rounded-full text-black uppercase tracking-wider leading-none" style={{ backgroundColor: accentColor }}>Logged In</span>
             </div>
             
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/6">
-              <div className="bg-white/4 rounded-2xl p-3">
+            <div className="pt-3 border-t border-white/6">
+              <div className="bg-white/4 rounded-2xl p-4">
                 <p className="text-[9px] text-white/40 font-bold uppercase leading-none">Your Balance</p>
-                <p className="text-lg font-black text-white mt-1.5 leading-none font-mono">GHS {Number(customerBalance).toFixed(2)}</p>
+                <p className="text-xl font-black text-white mt-2 leading-none font-mono">GHS {Number(customerBalance).toFixed(2)}</p>
               </div>
-              
-              <button
-                type="button"
-                onClick={() => setDepositOpen(true)}
-                className="rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-[0.98] transition-all hover:brightness-110 border-0"
-                style={{ backgroundColor: accentColor, color: "#000000" }}
-              >
-                <CreditCard className="w-5 h-5 shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-wider leading-none">Deposit Funds</span>
-              </button>
             </div>
           </div>
         )}
@@ -1195,98 +1178,6 @@ const AgentStore = () => {
         primaryColor={accentColor}
       />
 
-      {/* ── Manual MoMo Deposit Modal ── */}
-      {depositOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md" onClick={() => setDepositOpen(false)} />
-          <div className="relative max-w-sm w-full bg-[#111116] border border-white/10 rounded-3xl p-6 text-left space-y-5 animate-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setDepositOpen(false)}
-              className="absolute top-4 right-4 text-white/40 hover:text-white/80 p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div>
-              <h3 className="text-lg font-black text-white">Fund Your Wallet</h3>
-              <p className="text-[10px] text-white/40 font-bold uppercase mt-0.5 tracking-wider">Send MoMo · Submit Reference · Agent Approves</p>
-            </div>
-
-            {/* Step hint */}
-            <div className="bg-amber-400/8 border border-amber-400/20 rounded-2xl p-3 space-y-1">
-              <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider">How it works</p>
-              <ol className="text-[11px] text-white/50 space-y-0.5 list-decimal list-inside">
-                <li>Send MoMo to agent: <span className="text-white font-bold">{agent.momo_number || "—"}</span></li>
-                <li>Fill in the form below with your details</li>
-                <li>Agent confirms and credits your balance</li>
-              </ol>
-            </div>
-
-            {/* Deposit Form */}
-            <form onSubmit={handleManualDeposit} className="space-y-4">
-              {/* Amount */}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-white/40 mb-1.5 tracking-wider">Amount Sent (GHS)</label>
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-sm font-black">₵</div>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    step="0.01"
-                    placeholder="e.g. 50.00"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    className="w-full h-12 rounded-2xl bg-white/5 border border-white/8 pl-9 pr-4 text-sm font-bold text-white focus:outline-none focus:border-amber-400 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Sender number */}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-white/40 mb-1.5 tracking-wider">Your MoMo Number</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="e.g. 0244000000"
-                  value={depositPhone}
-                  onChange={(e) => setDepositPhone(e.target.value)}
-                  className="w-full h-12 rounded-2xl bg-white/5 border border-white/8 px-4 text-sm font-bold text-white focus:outline-none focus:border-amber-400 transition-colors"
-                />
-              </div>
-
-              {/* Transaction reference */}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-white/40 mb-1.5 tracking-wider">Transaction Reference / ID</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="From your MoMo SMS"
-                  value={depositTxRef}
-                  onChange={(e) => setDepositTxRef(e.target.value)}
-                  className="w-full h-12 rounded-2xl bg-white/5 border border-white/8 px-4 text-sm font-bold text-white focus:outline-none focus:border-amber-400 transition-colors"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submittingDeposit || !depositAmount || !depositPhone || !depositTxRef}
-                className="w-full h-12 rounded-2xl font-black text-xs uppercase tracking-widest text-black flex items-center justify-center gap-2 transition-all hover:brightness-110 active:scale-95 disabled:opacity-50 border-0"
-                style={{ backgroundColor: accentColor }}
-              >
-                {submittingDeposit ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    Submit Deposit Request
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ── Floating WhatsApp ── */}
       {agent.whatsapp_number && (
