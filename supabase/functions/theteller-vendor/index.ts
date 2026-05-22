@@ -44,30 +44,41 @@ const getErrorDescription = (res: any) => {
 };
 
 const bankMapping: Record<string, string> = {
-  "GCB": "040100",
-  "ADB": "040200",
-  "BAR": "040300",
-  "ABG": "040300", // ABSA
-  "STA": "040400",
-  "STB": "040400", // Stanbic
-  "SCB": "040500",
-  "SCH": "040500", // Standard Chartered
-  "ECO": "040600",
-  "FDL": "040700",
-  "GTB": "040800",
-  "ZEN": "040900",
-  "UBA": "041000",
-  "CAL": "041100",
-  "UMB": "041200",
-  "NIB": "041300",
-  "PRU": "041400",
-  "PRD": "041400", // Prudential
-  "BOG": "041500",
+  // Mobile Money
   "MTN": "MTN",
   "VOD": "VOD",
   "VDF": "VOD",
   "ATL": "ATL",
-  "TGO": "ATL"
+  "TGO": "ATL",
+  // Banks (Paystack Codes)
+  "SCH": "020100", // Standard Chartered
+  "SCB": "020100",
+  "ABG": "030100", // Absa
+  "BAR": "030100",
+  "GCB": "040100", // GCB Bank
+  "NIB": "050100", // National Investment Bank
+  "UBA": "060100", // United Bank for Africa
+  "ADB": "080100", // Agricultural Development Bank
+  "SGG": "090100", // Societe Generale
+  "UMB": "100100", // Universal Merchant Bank
+  "RBL": "110100", // Republic Bank
+  "ZEN": "120100", // Zenith Bank
+  "ECO": "130100", // Ecobank
+  "CAL": "140100", // CalBank
+  "FAB": "170100", // First Atlantic
+  "PRD": "180100", // Prudential Bank
+  "PRU": "180100",
+  "STB": "190100", // Stanbic Bank
+  "STA": "190100",
+  "FBN": "200100", // FBNBank
+  "BOA": "210100", // Bank of Africa
+  "GTB": "230100", // Guaranty Trust Bank
+  "FDL": "240100", // Fidelity Bank
+  "ACB": "280100", // Access Bank
+  "FNB": "330100", // First National Bank
+  "CBG": "340100", // Consolidated Bank Ghana
+  "BSIC": "360100", // OmniBSIC
+  "SIS": "300361"  // Services Integrity Savings and Loans
 };
 
 const formatAmount = (amount: number): string => {
