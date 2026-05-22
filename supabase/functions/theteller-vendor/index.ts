@@ -143,32 +143,26 @@ serve(async (req) => {
     let companyProfit = 0;
 
     if (type === "momo-in") {
-      // Cash-In (Disbursement): GHS 1 flat cost to Paystack.
-      // Customer Fee: 
-      //   - 1 to 50 GHS: GHS 1.50 fee (Net profit = 0.50 GHS) -> Agent gets 60% (0.30 GHS), Company 40% (0.20 GHS)
-      //   - 51 to 1000 GHS: 1.0% fee (Net profit = 1% - GHS 1.00) -> Agent gets 60%, Company 40%
-      //   - 1001+ GHS: GHS 10.00 flat fee (Net profit = GHS 9.00) -> Agent gets 60% (GHS 5.40), Company 40% (GHS 3.60)
-      let customerFee = 0;
-      if (amount <= 50) {
-        customerFee = 1.50;
-      } else if (amount <= 1000) {
-        customerFee = amount * 0.01;
-      } else {
-        customerFee = 10.00;
-      }
+      // MoMo Cash-In (Disbursement / Send to MoMo) Strategic Pricing:
+      // Base Gateway Cost: GHS 1.00 flat
+      // Customer Fee: 1.0% of the transfer amount, capped at a maximum of GHS 20.00
+      // Split: 60% to Agent (highly competitive), 40% to Company
+      const customerFee = Math.min(amount * 0.01, 20.00);
       const netProfit = Math.max(0, customerFee - 1.00);
+      
       agentProfit = netProfit * 0.60;
       companyProfit = netProfit * 0.40;
     } else if (type === "momo-out") {
-      // Cash-Out (Collection): 1.0% customer fee capped at GHS 20.00.
-      // Gateway cost: 0.7% of amount.
-      // Net Profit = (1.0% of amount up to cap GHS 20) - (0.7% of amount)
-      // Split: 70% Agent, 30% Company
+      // MoMo Cash-Out (Collection / Receive from MoMo) Strategic Pricing:
+      // Base Gateway Cost: 0.7% of amount
+      // Customer Fee: 1.0% of the transfer amount, capped at a maximum of GHS 20.00
+      // Split: 60% to Agent (highly competitive), 40% to Company
       const customerFee = Math.min(amount * 0.01, 20.00);
       const gatewayCost = amount * 0.007;
       const netProfit = Math.max(0, customerFee - gatewayCost);
-      agentProfit = netProfit * 0.70;
-      companyProfit = netProfit * 0.30;
+      
+      agentProfit = netProfit * 0.60;
+      companyProfit = netProfit * 0.40;
     } else if (type === "bank") {
       // Bank Transfer Strategic Pricing:
       // Base Gateway Cost: GHS 8.00 (Paystack flat fee)
