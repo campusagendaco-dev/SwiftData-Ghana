@@ -107,7 +107,7 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
         try {
           const errBody = await error.context.json();
           msg = errBody.error || errBody.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
       if (data && data.success) {
@@ -149,7 +149,7 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
         try {
           const errBody = await error.context.json();
           msg = errBody.error || errBody.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
       if (data && data.success) {
@@ -190,7 +190,7 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
         try {
           const errBody = await error.context.json();
           msg = errBody.error || errBody.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
       if (data && data.authorization_url) {

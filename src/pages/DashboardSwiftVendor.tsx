@@ -169,8 +169,8 @@ const DashboardSwiftVendor = () => {
       return;
     }
 
-    let countdownInterval: any;
-    let pollInterval: any;
+    const countdownInterval: any;
+    const pollInterval: any;
     
     // Set default countdown
     setOverlay(prev => ({ ...prev, countdown: 60 }));
@@ -505,7 +505,7 @@ const DashboardSwiftVendor = () => {
         try {
           const body = await error.context.json();
           msg = body.error || body.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
 
@@ -574,7 +574,7 @@ const DashboardSwiftVendor = () => {
         try {
           const body = await error.context.json();
           msg = body.error || body.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
 
@@ -658,7 +658,7 @@ const DashboardSwiftVendor = () => {
         try {
           const body = await error.context.json();
           msg = body.error || body.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
 
@@ -701,7 +701,7 @@ const DashboardSwiftVendor = () => {
         try {
           const body = await error.context.json();
           msg = body.error || body.message || error.message;
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         throw new Error(msg);
       }
 
@@ -761,7 +761,7 @@ const DashboardSwiftVendor = () => {
           try {
             const body = await initError.context.json();
             msg = body.error || body.message || initError.message;
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
           throw new Error(msg);
         }
 
@@ -786,7 +786,7 @@ const DashboardSwiftVendor = () => {
           try {
             const body = await completeError.context.json();
             msg = body.error || body.message || completeError.message;
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
           throw new Error(msg);
         }
 
@@ -869,7 +869,7 @@ const DashboardSwiftVendor = () => {
           try {
             const body = await error.context.json();
             msg = body.error || body.message || error.message;
-          } catch (_) {}
+          } catch (_) { /* ignore */ }
           throw new Error(msg);
         }
 

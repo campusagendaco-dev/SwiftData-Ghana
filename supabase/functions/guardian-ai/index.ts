@@ -196,7 +196,7 @@ serve(async (req: Request) => {
     for (const action of actions) {
       console.log(`Guardian AI Execution: ${action.type} on ${action.target}`);
       
-      let effectiveness = 1;
+      const effectiveness = 1;
       const metadata = action.params || {};
 
       try {
