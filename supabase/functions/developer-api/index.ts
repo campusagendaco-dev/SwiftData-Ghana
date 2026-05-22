@@ -380,8 +380,8 @@ serve(async (req: Request) => {
     else if (p.endsWith("/wallet/transfer")) finalAction = "wallet_transfer";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "orders", "status", "wallets", "wallet_transfer"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "orders", "status", "wallets", "wallet_transfer"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 

@@ -134,7 +134,7 @@ const Navbar = () => {
 
   const linkIdle = isDark
     ? "text-white/50 hover:text-white hover:bg-white/[0.08] border border-transparent hover:border-white/[0.08]"
-    : "text-gray-500 hover:text-gray-900 hover:bg-black/[0.05] border border-transparent hover:border-black/[0.07]";
+    : "text-gray-700 hover:text-gray-900 hover:bg-black/[0.05] border border-transparent hover:border-black/[0.07]";
 
   const linkActiveStyle = isDark
     ? {
@@ -153,7 +153,7 @@ const Navbar = () => {
   const dividerBg = isDark ? "bg-white/10" : "bg-black/[0.08]";
 
   /* ── Drawer tokens ── */
-  const drawerBg     = isDark ? "rgba(8, 5, 26, 0.52)"  : "rgba(240, 248, 255, 0.60)";
+  const drawerBg     = isDark ? "rgba(8, 5, 26, 0.52)"  : "rgba(252, 253, 255, 0.85)";
   const drawerBorder = isDark ? "rgba(139,92,246,0.38)"  : "rgba(99,102,241,0.24)";
   const drawerDivider= isDark ? "rgba(139,92,246,0.16)"  : "rgba(99,102,241,0.13)";
 
@@ -179,7 +179,7 @@ const Navbar = () => {
 
   const itemIdle   = isDark
     ? "text-white/50 hover:text-white hover:bg-white/[0.07] border border-transparent transition-all duration-150"
-    : "text-gray-500 hover:text-gray-900 hover:bg-black/[0.04] border border-transparent transition-all duration-150";
+    : "text-gray-700 hover:text-gray-900 hover:bg-black/[0.04] border border-transparent transition-all duration-150";
   const itemActive = isDark ? "text-white border" : "text-gray-900 border";
 
   return (
@@ -445,7 +445,7 @@ const Navbar = () => {
                   className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
                     isDark
                       ? "text-white/65 hover:text-white hover:bg-white/[0.08]"
-                      : "text-gray-500 hover:text-gray-900 hover:bg-black/[0.05]"
+                      : "text-gray-700 hover:text-gray-900 hover:bg-black/[0.05]"
                   }`}
                   aria-label="Open menu"
                 >
@@ -532,7 +532,7 @@ const Navbar = () => {
                   className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                     isDark
                       ? "text-white/40 hover:text-white hover:bg-white/[0.09] border border-transparent hover:border-white/[0.09]"
-                      : "text-gray-400 hover:text-gray-900 hover:bg-black/[0.05] border border-transparent hover:border-black/[0.05]"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-black/[0.05] border border-transparent hover:border-black/[0.05]"
                   }`}
                   aria-label="Close menu"
                 >
@@ -549,10 +549,11 @@ const Navbar = () => {
                     initial={{ y: 10, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="flex items-center gap-3 px-3 py-3 mb-3 rounded-2xl"
+                    className="flex items-center gap-3 px-3 py-3 mb-3 rounded-2xl shadow-sm"
                     style={{
                       background: isDark ? "rgba(139,92,246,0.11)" : "rgba(99,102,241,0.07)",
                       border: `1px solid ${isDark ? "rgba(139,92,246,0.24)" : "rgba(99,102,241,0.18)"}`,
+                      boxShadow: isDark ? "none" : "0 4px 12px rgba(0,0,0,0.04)",
                       backdropFilter: "blur(8px)",
                     }}
                   >
@@ -564,14 +565,14 @@ const Navbar = () => {
                     </div>
                     <div className="min-w-0">
                       <p className={`${logoText} text-sm font-bold truncate`}>{profile?.full_name || "My Account"}</p>
-                      <p className={`text-xs truncate ${isDark ? "text-white/38" : "text-gray-400"}`}>
+                      <p className={`text-xs truncate ${isDark ? "text-white/38" : "text-gray-500"}`}>
                         {profile?.store_name || (isAdmin ? "Administrator" : "Customer")}
                       </p>
                     </div>
                   </motion.div>
                 )}
 
-                <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/20" : "text-gray-400"}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/20" : "text-gray-600"}`}>
                   Explore
                 </p>
 
@@ -590,7 +591,7 @@ const Navbar = () => {
                         border: isActive(to) ? "1px solid rgba(251,191,36,0.28)" : "1px solid transparent",
                       }}
                     >
-                      <NavIcon icon={icon} className={isActive(to) ? "text-amber-400" : isDark ? "text-white/42" : "text-gray-400"} />
+                      <NavIcon icon={icon} className={isActive(to) ? "text-amber-500" : isDark ? "text-white/42" : "text-gray-600"} />
                     </div>
                     {label}
                     {to === "/buy-airtime" && (
@@ -619,7 +620,7 @@ const Navbar = () => {
                 {user && (
                   <>
                     <div className="h-px my-2" style={{ background: drawerDivider }} />
-                    <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/20" : "text-gray-400"}`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/20" : "text-gray-600"}`}>
                       Account
                     </p>
                     {[
@@ -635,7 +636,7 @@ const Navbar = () => {
                       >
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                           style={{ background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)" }}>
-                          <Icon className={`w-4 h-4 ${isDark ? "text-white/42" : "text-gray-400"}`} />
+                          <Icon className={`w-4 h-4 ${isDark ? "text-white/42" : "text-gray-600"}`} />
                         </div>
                         {label}
                       </Link>
@@ -646,7 +647,7 @@ const Navbar = () => {
                 <div className="h-px my-2" style={{ background: drawerDivider }} />
 
                 {/* Appearance section */}
-                <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/20" : "text-gray-400"}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 ${isDark ? "text-white/20" : "text-gray-600"}`}>
                   Appearance
                 </p>
                 <div className="px-1 py-1">
