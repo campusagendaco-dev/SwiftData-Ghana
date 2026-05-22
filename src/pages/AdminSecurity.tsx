@@ -8,7 +8,7 @@ import {
   Shield, Globe, AlertTriangle, Clock, RefreshCw, Loader2, CheckCircle2,
   Eye, Search, Zap, Gift, TrendingUp, FileDown, Activity, BookOpen, Hash,
   BarChart2, Ban, ChevronDown, ChevronUp, Copy, Lock, ShieldAlert,
-  UserX, MapPin, LogIn, AlertCircle, Flame, Filter, ShieldCheck,
+  UserX, MapPin, LogIn, AlertCircle, Flame, Filter, ShieldCheck, Bot
 } from "lucide-react";
 
 /* ─── interfaces ──────────────────────────────────────────────────── */
@@ -56,6 +56,9 @@ interface LiveAlert   { id: string; message: string; time: Date }
 interface SystemSettings {
   maintenance_mode: boolean; registration_enabled: boolean;
   dark_mode_enabled: boolean; store_visitor_popup_enabled: boolean;
+}
+interface GuardianLog {
+  id: string; action_type: string; status: string; reasoning: string; created_at: string; metadata: any;
 }
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
@@ -141,10 +144,11 @@ const TH = ({ children }: { children: ReactNode }) => (
 
 /* ─── main component ──────────────────────────────────────────────── */
 
-type TabId = "overview" | "threats" | "activity" | "access" | "admins" | "audit";
+type TabId = "overview" | "guardian" | "threats" | "activity" | "access" | "admins" | "audit";
 
 const TABS: { id: TabId; label: string; icon: typeof Shield }[] = [
   { id: "overview",  label: "Overview",       icon: Shield      },
+  { id: "guardian",  label: "Guardian AI",    icon: Bot         },
   { id: "threats",   label: "Threats",        icon: ShieldAlert },
   { id: "activity",  label: "Activity",       icon: Activity    },
   { id: "access",    label: "Access Control", icon: Lock        },
@@ -174,6 +178,7 @@ const AdminSecurity = () => {
   const [blacklist,      setBlacklist]      = useState<{ id: string; type: string; value: string; reason: string }[]>([]);
   const [sysSettings,    setSysSettings]    = useState<SystemSettings | null>(null);
   const [liveAlerts,     setLiveAlerts]     = useState<LiveAlert[]>([]);
+  const [guardianLogs,   setGuardianLogs]   = useState<GuardianLog[]>([]);
   const [suspendedCount, setSuspendedCount] = useState(0);
 
   /* blacklist form state */
@@ -209,6 +214,7 @@ const AdminSecurity = () => {
           .order("created_at", { ascending: false }).limit(50),
         supabase.from("security_blacklist").select("*"),
         supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
+        supabase.from("sentinel_actions").select("*").order("created_at", { ascending: false }).limit(30),
       ]);
 
     const profiles = (profilesRes.data || []) as unknown as ProfileRow[];
@@ -263,6 +269,9 @@ const AdminSecurity = () => {
     setActionLog((actionRes.data || []) as unknown as AdminAction[]);
     setBlacklist(blacklistRes.data || []);
     setSysSettings(settingsRes.data);
+    setGuardianLogs((settingsRes as any)[3]?.data || actionRes[3]?.data || []); // We'll fix this assignment
+    const guardianData = await supabase.from("sentinel_actions").select("*").order("created_at", { ascending: false }).limit(30);
+    setGuardianLogs(guardianData.data || []);
     setSuspendedCount(profiles.filter(p => p.is_suspended).length);
     setLoading(false); setRefreshing(false);
   }, []);
@@ -1012,6 +1021,68 @@ const AdminSecurity = () => {
     </div>
   );
 
+  const renderGuardian = () => (
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/5 to-card/50 p-6 shadow-sm">
+        <div className="flex items-start justify-between">
+          <div className="flex gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-cyan-500/20 animate-pulse" />
+              <Bot className="w-7 h-7 text-cyan-600 dark:text-cyan-400 relative z-10" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-cyan-700 dark:text-cyan-400 uppercase tracking-wide">Guardian AI</h2>
+              <p className="text-xs text-muted-foreground font-medium mt-1">Autonomous 24/7 Security Patrol</p>
+              <div className="flex items-center gap-2 mt-3">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Active
+                </span>
+                <span className="text-[10px] text-muted-foreground font-bold">Scanning every 5 minutes</span>
+              </div>
+            </div>
+          </div>
+          <button type="button" onClick={() => void fetchData(true)} className="flex items-center justify-center w-9 h-9 rounded-xl bg-background border border-border text-muted-foreground hover:text-foreground transition-all">
+             <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+           <Shield className="w-4 h-4 text-cyan-600 dark:text-cyan-500" />
+           <span className="font-black text-foreground text-sm">Action & Patrol Log</span>
+        </div>
+        {guardianLogs.length === 0 ? (
+          <EmptyState icon={Bot} message="Guardian AI is patrolling but has not executed any recent actions." />
+        ) : (
+          <div className="divide-y divide-border">
+            {guardianLogs.map(log => (
+              <div key={log.id} className="p-4 bg-background hover:bg-muted/30 transition-colors">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border shadow-sm ${
+                      log.action_type === 'lock_terminal' ? "bg-red-500/10 text-red-600 border-red-500/20" :
+                      log.action_type === 'broadcast_outage' ? "bg-orange-500/10 text-orange-600 border-orange-500/20" :
+                      "bg-cyan-500/10 text-cyan-600 border-cyan-500/20"
+                    }`}>
+                      {log.action_type.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-xs font-bold text-foreground">
+                      {log.metadata?.target ? `Target: ${log.metadata.target.slice(0, 8)}` : "System Action"}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-bold">{fmt(log.created_at)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground/80 font-medium">{log.reasoning}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   /* ── render ─────────────────────────────────────────────────────── */
   return (
     <div className="space-y-6 pb-10">
@@ -1073,6 +1144,7 @@ const AdminSecurity = () => {
 
       {/* ── Tab body ── */}
       {tab === "overview"  && renderOverview()}
+      {tab === "guardian"  && renderGuardian()}
       {tab === "threats"   && renderThreats()}
       {tab === "activity"  && renderActivity()}
       {tab === "access"    && renderAccess()}

@@ -134,7 +134,7 @@ serve(async (req: Request) => {
         const earlyBody = await req.clone().json();
         earlyOrderType = earlyBody?.metadata?.order_type || "data";
       } catch { /* ignore */ }
-      const bypassTypes = ["agent_activation", "sub_agent_activation", "wallet_topup", "store_wallet_topup", "utility"];
+      const bypassTypes = ["agent_activation", "sub_agent_activation", "vendor_activation", "wallet_topup", "store_wallet_topup", "utility"];
       if (!bypassTypes.includes(earlyOrderType)) {
         return new Response(JSON.stringify({
           error: settings.holiday_message || "Ordering is currently disabled. Please try again later.",
@@ -448,6 +448,23 @@ serve(async (req: Request) => {
       resolvedAmount = expectedTotal;
 
       // Bind agent_id to the authenticated user — prevents activating someone else
+      const authHeader = req.headers.get("Authorization");
+      const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+      if (token) {
+        const { data: { user: jwtUser } } = await supabaseAdmin.auth.getUser(token);
+        if (jwtUser && jwtUser.id !== agentId) {
+          return new Response(JSON.stringify({ error: "agent_id must match your authenticated account." }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
+    // ── Vendor activation: enforce fixed fee + bind agent_id to JWT user ────────
+    if (orderType === "vendor_activation") {
+      const VENDOR_FEE = 700.00;
+      resolvedPaystackFee = parseFloat(calculatePaystackFee(VENDOR_FEE).toFixed(2));
+      resolvedAmount = parseFloat((VENDOR_FEE + resolvedPaystackFee).toFixed(2));
+
       const authHeader = req.headers.get("Authorization");
       const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
       if (token) {

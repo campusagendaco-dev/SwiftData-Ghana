@@ -739,6 +739,9 @@ const AdminOrders = () => {
                          order.order_type === "free_data_claim" ? "Free Promo Claim" :
                          order.order_type === "sub_agent_activation" ? "Sub-Agent Activation" :
                          order.order_type === "agent_activation" ? "Agent Activation" :
+                         order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
+                         order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
+                         order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
                          "Data Purchase"}
                       </span>
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${order.is_sub_agent ? "border-purple-500/30 text-purple-600 dark:text-purple-400 bg-purple-500/10" : "border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10"}`}>
@@ -877,7 +880,12 @@ const AdminOrders = () => {
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Type</p>
                 <p className="text-xs text-foreground/80 font-bold">
-                  {order.order_type === "wallet_topup" ? "Top-up" : order.order_type === "api" ? "API" : "Data"}
+                  {order.order_type === "wallet_topup" ? "Top-up" :
+                   order.order_type === "api" ? "API" :
+                   order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
+                   order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
+                   order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
+                   "Data"}
                 </p>
               </div>
               <div>

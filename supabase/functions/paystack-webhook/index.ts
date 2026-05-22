@@ -1030,6 +1030,33 @@ serve(async (req) => {
       });
     }
 
+    if (orderType === "vendor_activation") {
+      const VENDOR_ACTIVATION_MINIMUM = 700.00;
+
+      if (verifiedAmount < VENDOR_ACTIVATION_MINIMUM * 0.97) {
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Payment too low for vendor activation. Minimum GHS ${VENDOR_ACTIVATION_MINIMUM}, received GHS ${verifiedAmount.toFixed(2)}.`,
+        }).eq("id", orderId);
+        return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Activation payment below minimum" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const agentId = metadata?.agent_id;
+      if (agentId) {
+        await supabaseAdmin.from("profiles").update({ 
+          vendor_status: "pending_approval"
+        }).eq("user_id", agentId);
+        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        console.log("Vendor activated via webhook:", agentId);
+      }
+      return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (orderType === "sub_agent_activation") {
       const { data: settings } = await supabaseAdmin
         .from("system_settings")

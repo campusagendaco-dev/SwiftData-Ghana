@@ -82,6 +82,7 @@ interface SystemSettings {
   notification_tone: string;
   notification_vibration_enabled: boolean;
   notification_vibration_pattern: string;
+  vendor_min_transaction: string;
 }
 
 const AdminSettings = () => {
@@ -159,6 +160,7 @@ const AdminSettings = () => {
     notification_tone: "/sounds/notification_system.mp3",
     notification_vibration_enabled: true,
     notification_vibration_pattern: "200,100,200",
+    vendor_min_transaction: "1.00",
   });
 
   const [currentIp, setCurrentIp] = useState("");
@@ -262,6 +264,7 @@ const AdminSettings = () => {
           notification_tone: d.notification_tone || "/sounds/notification_system.mp3",
           notification_vibration_enabled: d.notification_vibration_enabled !== false,
           notification_vibration_pattern: d.notification_vibration_pattern || "200,100,200",
+          vendor_min_transaction: String(d.vendor_min_transaction || "1.00"),
         });
       }
       setLoading(false);
@@ -325,6 +328,7 @@ const AdminSettings = () => {
       notification_tone: settings.notification_tone,
       notification_vibration_enabled: settings.notification_vibration_enabled,
       notification_vibration_pattern: settings.notification_vibration_pattern,
+      vendor_min_transaction: parseFloat(settings.vendor_min_transaction) || 1.00,
     };
 
     try {
@@ -1165,6 +1169,78 @@ const AdminSettings = () => {
                     checked={settings.withdrawal_auto_approve_require_no_chargebacks}
                     onCheckedChange={(c) => setSettings({ ...settings, withdrawal_auto_approve_require_no_chargebacks: c })}
                   />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-500/20 bg-emerald-500/5">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-emerald-500" />
+                Swift Vendor Terminal Settings
+              </CardTitle>
+              <CardDescription>
+                Configure the terminal minimum limits and understand transaction fee splits.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Minimum Transaction Amount (GHS)</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={settings.vendor_min_transaction}
+                  onChange={(e) => setSettings({ ...settings, vendor_min_transaction: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Minimum transaction amount enforced for Cash-In, Cash-Out, and Bank Transfers. Recommended: ≥ 1.00 GHS.
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400">Strategic Fee & Profit Splits</h4>
+                
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
+                    <p className="font-bold text-white flex justify-between">
+                      <span>💰 MoMo Cash-In (Disbursement)</span>
+                      <span className="text-emerald-500">60% Agent / 40% Swift</span>
+                    </p>
+                    <p className="leading-relaxed">
+                      Gateway cost: GHS 1.00 flat. Customer fees are tiered: <b>GHS 1.50</b> for ≤ 50 GHS, <b>1.0%</b> for 51-1000 GHS, and <b>GHS 10.00 flat</b> for &gt; 1000 GHS.
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
+                    <p className="font-bold text-white flex justify-between">
+                      <span>💸 MoMo Cash-Out (Collection)</span>
+                      <span className="text-emerald-500">70% Agent / 30% Swift</span>
+                    </p>
+                    <p className="leading-relaxed">
+                      Gateway cost: 0.7%. Customer fee: <b>1.0%</b> capped at GHS 20.00.
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
+                    <p className="font-bold text-white flex justify-between">
+                      <span>🏦 Ghana Bank Transfer</span>
+                      <span className="text-emerald-500">50% Agent / 50% Swift</span>
+                    </p>
+                    <p className="leading-relaxed">
+                      Gateway cost: GHS 8.00 flat. Customer fees: <b>GHS 12.00</b> for ≤ 500 GHS, <b>GHS 15.00</b> for 501-2000 GHS, and <b>GHS 20.00 flat</b> for &gt; 2000 GHS.
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
+                    <p className="font-bold text-white flex justify-between">
+                      <span>🌍 Pan-African Transfer</span>
+                      <span className="text-emerald-500">0.75% Agent / 0.75% Swift</span>
+                    </p>
+                    <p className="leading-relaxed">
+                      Gateway cost: 2.0%. Customer fee: <b>3.5% flat</b>.
+                    </p>
+                  </div>
                 </div>
               </div>
             </CardContent>

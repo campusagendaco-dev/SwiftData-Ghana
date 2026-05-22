@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import html2canvas from "html2canvas";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,31 +11,49 @@ import {
   Zap, ArrowRightLeft, Wallet, Phone, Landmark, 
   Search, Loader2, CheckCircle2, AlertCircle, Info,
   ArrowDownCircle, ArrowUpCircle, RefreshCw, Globe,
-  Eye, EyeOff, Share2, UserPlus, Users, TrendingUp, AlertTriangle, Lock
+  Eye, EyeOff, Share2, UserPlus, Users, TrendingUp, AlertTriangle, Lock,
+  Download, History
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { SecurityGateway } from "@/components/SecurityGateway";
+import { VendorOnboardingWizard } from "@/components/VendorOnboardingWizard";
 
 const GHANA_BANKS = [
-  { code: "GCB", name: "GCB Bank" },
-  { code: "ADB", name: "Agricultural Development Bank" },
-  { code: "BAR", name: "Absa Bank (Barclays)" },
-  { code: "STA", name: "Stanbic Bank" },
-  { code: "SCB", name: "Standard Chartered" },
-  { code: "ECO", name: "Ecobank" },
-  { code: "FDL", name: "Fidelity Bank" },
-  { code: "GTB", name: "GTBank" },
-  { code: "ZEN", name: "Zenith Bank" },
-  { code: "UBA", name: "United Bank for Africa" },
-  { code: "CAL", name: "CalBank" },
-  { code: "UMB", name: "Universal Merchant Bank" },
+  { code: "SCH", name: "Standard Chartered Bank" },
+  { code: "ABG", name: "Absa Bank Ghana Limited" },
+  { code: "GCB", name: "GCB Bank Limited" },
   { code: "NIB", name: "National Investment Bank" },
-  { code: "PRU", name: "Prudential Bank" },
+  { code: "ADB", name: "Agricultural Development Bank" },
+  { code: "UMB", name: "Universal Merchant Bank" },
+  { code: "RBL", name: "Republic Bank Limited" },
+  { code: "ZEN", name: "Zenith Bank Ghana Ltd" },
+  { code: "ECO", name: "Ecobank Ghana Ltd" },
+  { code: "CAL", name: "Cal Bank Limited" },
+  { code: "PRD", name: "Prudential Bank Ltd" },
+  { code: "STB", name: "Stanbic Bank" },
+  { code: "GTB", name: "Guaranty Trust Bank" },
+  { code: "UBA", name: "United Bank of Africa" },
+  { code: "ACB", name: "Access Bank Ltd" },
+  { code: "CBG", name: "Consolidated Bank Ghana" },
+  { code: "SGG", name: "Societe Generale Ghana" },
+  { code: "FNB", name: "First National Bank" },
+  { code: "UNL", name: "Unity Link" },
+  { code: "FDL", name: "Fidelity Bank Limited" },
+  { code: "SIS", name: "Services Integrity Savings & Loans" },
+  { code: "BOA", name: "Bank of Africa" },
+  { code: "DFL", name: "Dalex Finance and Leasing Company" },
+  { code: "FBO", name: "First Bank of Nigeria" },
+  { code: "GHL", name: "GHL Bank" },
   { code: "BOG", name: "Bank of Ghana" },
+  { code: "FAB", name: "First Atlantic Bank" },
+  { code: "SSB", name: "OmniBSIC Bank" },
+  { code: "GMY", name: "G-Money" },
+  { code: "APX", name: "ARB Apex Bank Limited" }
 ];
+
 
 const AFRICA_COUNTRIES = [
   { code: "GH", name: "Ghana (GHS)", currency: "GHS" },
@@ -43,9 +62,38 @@ const AFRICA_COUNTRIES = [
   { code: "ZA", name: "South Africa (ZAR)", currency: "ZAR" },
 ];
 
+const THETELLER_ERRORS: Record<string, string> = {
+  "101": "Insufficient funds in wallet.",
+  "102": "Number not registered for mobile money.",
+  "103": "Wrong PIN or transaction timed out.",
+  "104": "Transaction declined or terminated.",
+  "105": "Invalid amount or general failure (try changing the transaction ID).",
+  "106": "Transaction cancelled.",
+  "107": "Merchant limit exceeded.",
+  "111": "System error. Payment provider gateway is currently down.",
+  "200": "Transaction timeout. No response received from customer's provider.",
+  "400": "Invalid request parameters sent to gateway.",
+  "401": "Gateway authentication failed (unauthorized).",
+  "404": "Service endpoint not found.",
+  "429": "Too many requests. Please slow down."
+};
+
+const getErrorMessageFromData = (data: any) => {
+  if (!data) return "Unknown error";
+  const code = String(data.code || "");
+  if (THETELLER_ERRORS[code]) {
+    return THETELLER_ERRORS[code];
+  }
+  return data.reason || data.message || data.error || data.desc || data.status || "Unknown error";
+};
+
 const DashboardSwiftVendor = () => {
   const { user } = useAuth();
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [isLockedByAdmin, setIsLockedByAdmin] = useState<boolean>(false);
+  const [vendorStatus, setVendorStatus] = useState<string>("active");
+  const [kycRejectionReason, setKycRejectionReason] = useState<string | null>(null);
+  const [kycExpiryData, setKycExpiryData] = useState<{ natId?: string, bizCert?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [todayStats, setTodayStats] = useState({ 
@@ -83,6 +131,119 @@ const DashboardSwiftVendor = () => {
   const [isPrivateMode, setIsPrivateMode] = useState(false);
   const [balanceThreshold] = useState(500); // threshold
   const [savedRecipients, setSavedRecipients] = useState<{name: string, phone: string, network: string, type: string}[]>([]);
+  const [activeTab, setActiveTab] = useState("momo");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "fulfilled" | "pending" | "failed">("all");
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+
+  const [minTxAmount, setMinTxAmount] = useState<number>(1.00);
+
+  // Transaction processing overlay state
+  const [overlay, setOverlay] = useState<{
+    isOpen: boolean;
+    type: "cash-in" | "cash-out" | "bank" | "africa";
+    step: "submitting" | "verify-pin" | "success" | "failed";
+    amount: number;
+    phoneOrAccount: string;
+    networkOrBank: string;
+    orderId?: string;
+    errorMsg?: string;
+    countdown?: number;
+    successDetails?: {
+      transactionId?: string;
+      accountName?: string;
+      reference?: string;
+    };
+  }>({
+    isOpen: false,
+    type: "cash-in",
+    step: "submitting",
+    amount: 0,
+    phoneOrAccount: "",
+    networkOrBank: "",
+  });
+
+  // Polling logic for pending transactions
+  useEffect(() => {
+    if (!overlay.isOpen || overlay.step !== "verify-pin" || !overlay.orderId) {
+      return;
+    }
+
+    let countdownInterval: any;
+    let pollInterval: any;
+    
+    // Set default countdown
+    setOverlay(prev => ({ ...prev, countdown: 60 }));
+    
+    countdownInterval = setInterval(() => {
+      setOverlay(prev => {
+        if (prev.countdown === undefined || prev.countdown <= 1) {
+          clearInterval(countdownInterval);
+          clearInterval(pollInterval);
+          return {
+            ...prev,
+            step: "failed",
+            errorMsg: "Transaction timed out. Please check your phone prompt again or view recent activity."
+          };
+        }
+        return { ...prev, countdown: prev.countdown - 1 };
+      });
+    }, 1000);
+
+    // Poll status every 3.5 seconds
+    pollInterval = setInterval(async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+          body: {
+            action: "check-status",
+            transaction_id: overlay.orderId
+          }
+        });
+        
+        if (!error && data) {
+          const isSuccess = data.code === "000" || data.status === "approved" || data.status === "successful";
+          const isFailed = data.code === "104" || data.code === "103" || data.code === "106" || data.status === "failed";
+          
+          if (isSuccess) {
+            clearInterval(countdownInterval);
+            clearInterval(pollInterval);
+            setOverlay(prev => ({
+              ...prev,
+              step: "success",
+              successDetails: {
+                transactionId: data.transaction_id || prev.orderId,
+                accountName: data.account_name || prev.successDetails?.accountName
+              }
+            }));
+            fetchBalance();
+          } else if (isFailed) {
+            clearInterval(countdownInterval);
+            clearInterval(pollInterval);
+            setOverlay(prev => ({
+              ...prev,
+              step: "failed",
+              errorMsg: getErrorMessageFromData(data)
+            }));
+            fetchBalance();
+          }
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 3500);
+
+    return () => {
+      clearInterval(countdownInterval);
+      clearInterval(pollInterval);
+    };
+  }, [overlay.isOpen, overlay.step, overlay.orderId]);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (value === "bank" || value === "momo") {
+      setSelectedCountry("GH");
+    }
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem("swift_recipients");
@@ -108,8 +269,92 @@ const DashboardSwiftVendor = () => {
     window.open(`https://wa.me/${order.customer_phone}?text=${text}`, "_blank");
   };
 
+  const filteredOrders = recentOrders.filter(order => {
+    const matchesSearch = 
+      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (order.customer_phone && order.customer_phone.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (order.metadata?.bank_name && order.metadata.bank_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (order.metadata?.account_name && order.metadata.account_name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesStatus = 
+      statusFilter === "all" || 
+      order.status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleExportCSV = () => {
+    if (filteredOrders.length === 0) {
+      toast.error("No transactions available to export");
+      return;
+    }
+
+    // CSV headers
+    const headers = ["Transaction ID", "Date", "Type", "Amount (GHS)", "Fee (GHS)", "Commission (GHS)", "Status", "Recipient"];
+    const rows = filteredOrders.map(o => {
+      const isDisbursement = o.order_type === "vendor_cash_in" || o.order_type === "vendor_bank_transfer";
+      const typeLabel = isDisbursement ? "Disbursement" : "Collection";
+      const dateFormatted = new Date(o.created_at).toLocaleString();
+      return [
+        o.id,
+        dateFormatted,
+        typeLabel,
+        o.amount,
+        o.fee || 0,
+        o.profit || 0,
+        o.status,
+        o.customer_phone || ""
+      ];
+    });
+
+    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Swift_Vendor_Reconciliation_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("CSV file exported successfully");
+  };
+
+  const downloadReceiptImage = async (elementId: string, transactionId: string) => {
+    const element = document.getElementById(elementId);
+    if (!element) {
+      toast.error("Receipt element not found");
+      return;
+    }
+    toast.loading("Generating receipt image...", { id: "receipt-download" });
+    try {
+      const canvas = await html2canvas(element, {
+        useCORS: true,
+        scale: 2,
+        backgroundColor: "#0d0d0e",
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.download = `Receipt_${transactionId}.png`;
+      link.href = dataUrl;
+      link.click();
+      toast.success("Receipt downloaded successfully", { id: "receipt-download" });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate receipt image", { id: "receipt-download" });
+    }
+  };
+
   useEffect(() => {
     fetchBalance();
+
+    // Check for theTeller redirect query parameters
+    const params = new URLSearchParams(window.location.search);
+    const trxId = params.get("transaction_id");
+    if (trxId) {
+      handleVerifyOrderStatus(trxId);
+      // Clean up URL parameters to avoid checking again on refresh
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   // Auto Network Detection
@@ -170,6 +415,35 @@ const DashboardSwiftVendor = () => {
 
   const fetchBalance = async () => {
     if (!user) return;
+    
+    // Check terminal lock state and vendor KYC status
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("terminal_locked, vendor_status, vendor_rejection_reason, vendor_kyc_api_response")
+      .eq("user_id", user.id)
+      .single();
+    if (profile) {
+      setIsLockedByAdmin(profile.terminal_locked);
+      setVendorStatus(profile.vendor_status || "inactive");
+      setKycRejectionReason(profile.vendor_rejection_reason);
+      if (profile.vendor_kyc_api_response && typeof profile.vendor_kyc_api_response === 'object') {
+        const kycData = profile.vendor_kyc_api_response as any;
+        setKycExpiryData({
+          natId: kycData.national_id_expiry,
+          bizCert: kycData.business_cert_expiry
+        });
+      }
+    }
+
+    const { data: sysSettings } = await supabase
+      .from("public_system_settings")
+      .select("vendor_min_transaction")
+      .eq("id", 1)
+      .maybeSingle();
+    if (sysSettings?.vendor_min_transaction) {
+      setMinTxAmount(Number(sysSettings.vendor_min_transaction));
+    }
+
     const { data } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).single();
     if (data) setWalletBalance(Number(data.balance));
 
@@ -179,7 +453,7 @@ const DashboardSwiftVendor = () => {
     
     const { data: stats } = await supabase
       .from("orders")
-      .select("amount, profit, parent_profit")
+      .select("amount, profit, parent_profit, order_type")
       .eq("agent_id", user.id)
       .gte("created_at", today.toISOString())
       .eq("status", "fulfilled");
@@ -209,52 +483,564 @@ const DashboardSwiftVendor = () => {
       .eq("agent_id", user.id)
       .ilike("order_type", "vendor_%")
       .order("created_at", { ascending: false })
-      .limit(5);
+      .limit(50);
     
     if (recent) setRecentOrders(recent);
   };
 
+  const handleVerifyOrderStatus = async (orderId: string, silent = false) => {
+    if (!silent) {
+      toast.loading("Verifying transaction status...", { id: "verify-order" });
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+        body: {
+          action: "check-status",
+          transaction_id: orderId
+        }
+      });
+
+      if (error) {
+        let msg = error.message;
+        try {
+          const body = await error.context.json();
+          msg = body.error || body.message || error.message;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+
+      const isSuccess = data && (data.code === "000" || data.status === "approved" || data.status === "successful");
+      const isPending = data && (data.code === "100" || data.status === "pending");
+
+      if (isSuccess) {
+        if (!silent) {
+          toast.success("Transaction successful! Wallet updated.", { id: "verify-order" });
+        }
+        fetchBalance();
+      } else if (isPending) {
+        if (!silent) {
+          toast.info("Transaction is still pending approval.", { id: "verify-order" });
+        }
+      } else {
+        if (!silent) {
+          toast.error("Transaction failed: " + getErrorMessageFromData(data), { id: "verify-order" });
+        }
+        fetchBalance();
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (!silent) {
+        toast.error(err.message || "Failed to verify transaction status", { id: "verify-order" });
+      }
+    }
+  };
+
   const handleMomoAction = async () => {
-    toast.info("Coming Soon", { 
-      description: "Mobile Money Agency features are currently undergoing final calibration. Stay tuned!",
-      icon: <Zap className="w-4 h-4 text-amber-400" />
+    if (loading) return;
+    if (!momoPhone || !momoAmount) {
+      toast.error("Please enter both phone number and amount");
+      return;
+    }
+    const amountVal = parseFloat(momoAmount);
+    if (isNaN(amountVal) || amountVal < minTxAmount) {
+      toast.error(`Minimum transaction amount is GHS ${minTxAmount.toFixed(2)}`);
+      return;
+    }
+
+    setLoading(true);
+    setOverlay({
+      isOpen: true,
+      type: momoAction === "cash-out" ? "cash-out" : "cash-in",
+      step: "submitting",
+      amount: amountVal,
+      phoneOrAccount: momoPhone,
+      networkOrBank: momoNetwork,
     });
+
+    try {
+      const actionType = momoAction === "cash-out" ? "momo-collection" : "momo-disbursement";
+      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+        body: {
+          action: actionType,
+          amount: amountVal,
+          phone: momoPhone,
+          network: momoNetwork,
+          description: momoAction === "cash-out" ? "Swift Vendor Collection" : "Swift Vendor Disbursement"
+        }
+      });
+
+      if (error) {
+        let msg = error.message;
+        try {
+          const body = await error.context.json();
+          msg = body.error || body.message || error.message;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+
+      if (data && (data.code === "000" || data.status === "approved" || data.status === "successful" || data.status === true)) {
+        setOverlay(prev => ({
+          ...prev,
+          step: "success",
+          orderId: data.order_id,
+          successDetails: {
+            transactionId: data.transaction_id || data.order_id,
+            accountName: momoAccountName || undefined
+          }
+        }));
+        if (momoAction === "cash-in" && momoAccountName) {
+          saveRecipient(momoAccountName, momoPhone, momoNetwork, "momo");
+        }
+        // Reset state
+        setMomoPhone("");
+        setMomoAmount("");
+        setMomoAccountName(null);
+        fetchBalance();
+      } else if (data && (data.code === "100" || data.status === "pending" || data.status === "queued")) {
+        if (momoAction === "cash-out") {
+          setOverlay(prev => ({
+            ...prev,
+            step: "verify-pin",
+            orderId: data.order_id
+          }));
+        } else {
+          // Cash in (Disbursement) pending/queued -> can display success screen or verify details
+          setOverlay(prev => ({
+            ...prev,
+            step: "success",
+            orderId: data.order_id,
+            successDetails: {
+              transactionId: data.transaction_id || data.order_id,
+              accountName: momoAccountName || undefined,
+              reference: data.reference_id
+            }
+          }));
+        }
+        if (momoAction === "cash-in" && momoAccountName) {
+          saveRecipient(momoAccountName, momoPhone, momoNetwork, "momo");
+        }
+        // Reset state
+        setMomoPhone("");
+        setMomoAmount("");
+        setMomoAccountName(null);
+        fetchBalance();
+      } else {
+        throw new Error(getErrorMessageFromData(data));
+      }
+    } catch (err: any) {
+      console.error(err);
+      setOverlay(prev => ({
+        ...prev,
+        step: "failed",
+        errorMsg: err.message || "Failed to process MoMo transaction"
+      }));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleMomoEnquiry = async () => {
-    toast.info("Verification Feature Coming Soon", {
-      description: "Identity resolution for MoMo agents will be active in the next update."
-    });
+    if (!momoPhone || momoPhone.length < 10) {
+      toast.error("Please enter a valid phone number");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+        body: {
+          action: "momo-enquiry",
+          phone: momoPhone,
+          network: momoNetwork
+        }
+      });
+      if (error) {
+        let msg = error.message;
+        try {
+          const body = await error.context.json();
+          msg = body.error || body.message || error.message;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+
+      if (data && data.status === "successful" && data.account_name) {
+        setMomoAccountName(data.account_name);
+        toast.success("Account name verified successfully");
+      } else {
+        toast.error("Verification failed", {
+          description: getErrorMessageFromData(data)
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to verify MoMo account");
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleBankEnquiry = async () => {
-    toast.info("Coming Soon", {
-      description: "Bank account verification is temporarily disabled for maintenance."
-    });
+    if (!bankCode) {
+      toast.error("Please select a destination bank");
+      return;
+    }
+    if (!accountNumber || accountNumber.length < 8) {
+      toast.error("Please enter a valid account number");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+        body: {
+          action: "momo-enquiry",
+          phone: accountNumber,
+          network: bankCode
+        }
+      });
+      if (error) {
+        let msg = error.message;
+        try {
+          const body = await error.context.json();
+          msg = body.error || body.message || error.message;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+
+      if (data && data.status === "successful" && data.account_name) {
+        setAccountName(data.account_name);
+        toast.success("Account name verified successfully");
+      } else {
+        toast.error("Verification failed", {
+          description: getErrorMessageFromData(data)
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to verify bank account");
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleBankTransferComplete = async () => {
-    toast.info("Coming Soon", {
-      description: "Bank transfer capabilities will be re-enabled shortly."
-    });
+    if (loading) return;
+    if (selectedCountry === "GH") {
+      // Ghana Bank Payout Flow via theTeller
+      if (!bankCode || !accountNumber || !bankAmount) {
+        toast.error("Please enter bank, account number, and amount");
+        return;
+      }
+      const amountVal = parseFloat(bankAmount);
+      if (isNaN(amountVal) || amountVal < minTxAmount) {
+        toast.error(`Minimum transaction amount is GHS ${minTxAmount.toFixed(2)}`);
+        return;
+      }
+
+      setLoading(true);
+      setOverlay({
+        isOpen: true,
+        type: "bank",
+        step: "submitting",
+        amount: amountVal,
+        phoneOrAccount: accountNumber,
+        networkOrBank: bankCode,
+      });
+
+      try {
+        const { data: initData, error: initError } = await supabase.functions.invoke("theteller-vendor", {
+          body: {
+            action: "bank-transfer-init",
+            amount: amountVal,
+            bank_code: bankCode,
+            account_number: accountNumber,
+            description: "Swift Vendor Bank Transfer"
+          }
+        });
+
+        if (initError) {
+          let msg = initError.message;
+          try {
+            const body = await initError.context.json();
+            msg = body.error || body.message || initError.message;
+          } catch (_) {}
+          throw new Error(msg);
+        }
+
+        if (!initData || initData.status === "failed") {
+          throw new Error(initData?.message || "Failed to initialize bank transfer");
+        }
+
+        const refId = initData.reference_id || initData.transaction_id || initData.data?.reference;
+        if (!refId) {
+          throw new Error("No reference ID returned from payment gateway");
+        }
+
+        const { data: completeData, error: completeError } = await supabase.functions.invoke("theteller-vendor", {
+          body: {
+            action: "bank-transfer-complete",
+            reference_id: refId
+          }
+        });
+
+        if (completeError) {
+          let msg = completeError.message;
+          try {
+            const body = await completeError.context.json();
+            msg = body.error || body.message || completeError.message;
+          } catch (_) {}
+          throw new Error(msg);
+        }
+
+        if (completeData && (completeData.code === "000" || completeData.status === "approved" || completeData.status === "successful" || completeData.status === true)) {
+          setOverlay(prev => ({
+            ...prev,
+            step: "success",
+            orderId: completeData.order_id,
+            successDetails: {
+              transactionId: completeData.transaction_id || completeData.order_id,
+              accountName: accountName || undefined
+            }
+          }));
+          if (accountName) {
+            saveRecipient(accountName, accountNumber, bankCode, "bank");
+          }
+          // Reset state
+          setBankCode("");
+          setAccountNumber("");
+          setBankAmount("");
+          setAccountName(null);
+          fetchBalance();
+        } else {
+          throw new Error(getErrorMessageFromData(completeData));
+        }
+      } catch (err: any) {
+        console.error(err);
+        setOverlay(prev => ({
+          ...prev,
+          step: "failed",
+          errorMsg: err.message || "Failed to complete bank transfer"
+        }));
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Pan-African Payout Flow via Paystack
+      if (!bankCode || !accountNumber || !bankAmount) {
+        toast.error("Please enter provider, account/phone, and amount");
+        return;
+      }
+      const amountVal = parseFloat(bankAmount);
+      if (isNaN(amountVal) || amountVal < minTxAmount) {
+        toast.error(`Minimum transaction amount is GHS ${minTxAmount.toFixed(2)}`);
+        return;
+      }
+
+      const countryInfo = AFRICA_COUNTRIES.find(c => c.code === selectedCountry);
+      if (!countryInfo) {
+        toast.error("Invalid country selected");
+        return;
+      }
+
+      setLoading(true);
+      setOverlay({
+        isOpen: true,
+        type: "africa",
+        step: "submitting",
+        amount: amountVal,
+        phoneOrAccount: accountNumber,
+        networkOrBank: bankCode,
+      });
+
+      try {
+        const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+          body: {
+            action: "africa-transfer",
+            amount: amountVal,
+            country: selectedCountry,
+            account_name: accountName,
+            account_number: accountNumber,
+            bank_code: bankCode,
+            currency: countryInfo.currency,
+            description: `Swift Vendor ${countryInfo.name} Payout`
+          }
+        });
+
+        if (error) {
+          let msg = error.message;
+          try {
+            const body = await error.context.json();
+            msg = body.error || body.message || error.message;
+          } catch (_) {}
+          throw new Error(msg);
+        }
+
+        if (data && data.status === true) {
+          setOverlay(prev => ({
+            ...prev,
+            step: "success",
+            orderId: data.order_id,
+            successDetails: {
+              transactionId: data.transaction_id || data.order_id,
+              accountName: accountName || undefined,
+              reference: data.reference_id
+            }
+          }));
+          if (accountName) {
+            saveRecipient(accountName, accountNumber, bankCode, "africa");
+          }
+          // Reset state
+          setBankCode("");
+          setAccountNumber("");
+          setBankAmount("");
+          setAccountName(null);
+          fetchBalance();
+        } else {
+          throw new Error(getErrorMessageFromData(data));
+        }
+      } catch (err: any) {
+        console.error(err);
+        setOverlay(prev => ({
+          ...prev,
+          step: "failed",
+          errorMsg: err.message || "Failed to complete Pan-African transfer"
+        }));
+      } finally {
+        setLoading(false);
+      }
+    }
   };
+
+  if (isLockedByAdmin) {
+    return (
+      <div className="relative h-[80vh] w-full flex items-center justify-center overflow-hidden rounded-3xl p-6">
+        {/* Neon warning background */}
+        <div className="absolute inset-0 bg-[#0c0c0d]">
+          <div className="absolute top-[-20%] left-[-20%] w-[50%] h-[50%] rounded-full bg-red-500/10 blur-[120px]" />
+          <div className="absolute bottom-[-20%] right-[-20%] w-[50%] h-[50%] rounded-full bg-red-900/5 blur-[120px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.03),transparent)]" />
+        </div>
+
+        <Card className="w-full max-w-md border border-red-500/20 bg-black/60 backdrop-blur-2xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] relative overflow-hidden text-center p-8 space-y-6">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-red-500 to-transparent animate-pulse" />
+          
+          <div className="relative mx-auto w-24 h-24 rounded-full flex items-center justify-center bg-red-500/10 border border-red-500/20">
+            <div className="absolute inset-0 rounded-full bg-red-500/20 blur-md animate-pulse" />
+            <Lock className="w-12 h-12 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-500">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span className="text-[9px] font-black uppercase tracking-[0.2em]">Terminal Suspended</span>
+            </div>
+            <h2 className="text-2xl font-black tracking-tight text-white uppercase italic">Access Revoked</h2>
+            <p className="text-sm text-muted-foreground font-semibold leading-relaxed max-w-sm mx-auto">
+              Your Swift Vendor agency POS terminal has been locked remotely. Cash collection, float bridge adjustments, and disbursements are currently offline.
+            </p>
+          </div>
+
+          <div className="pt-4 border-t border-white/5 flex flex-col gap-3">
+            <Button 
+              className="w-full h-12 rounded-xl font-black bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/20 gap-2"
+              onClick={fetchBalance}
+              disabled={loading}
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Re-Verify Terminal Status
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="w-full h-12 rounded-xl font-bold text-muted-foreground hover:text-white"
+              onClick={() => window.open("https://wa.me/233244000000", "_blank")}
+            >
+              Contact Support
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <SecurityGateway>
       <div className="relative h-full w-full overflow-hidden min-h-[80vh] rounded-3xl">
         <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-700">
-      {walletBalance < balanceThreshold && !isPrivateMode && (
-        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4 duration-500">
+          
+      {vendorStatus !== "active" && vendorStatus !== "pending_approval" ? (
+        <VendorOnboardingWizard 
+          initialStatus={vendorStatus} 
+          rejectionReason={kycRejectionReason} 
+          onComplete={fetchBalance}
+          walletBalance={walletBalance}
+        />
+      ) : (
+        <>
+          {/* Expiry Warning Banners */}
+          {kycExpiryData && (
+        <>
+          {(() => {
+            const warnings = [];
+            const today = new Date();
+            const daysToNatId = kycExpiryData.natId ? (new Date(kycExpiryData.natId).getTime() - today.getTime()) / (1000 * 3600 * 24) : null;
+            const daysToBizCert = kycExpiryData.bizCert ? (new Date(kycExpiryData.bizCert).getTime() - today.getTime()) / (1000 * 3600 * 24) : null;
+            
+            if (daysToNatId !== null && daysToNatId < 30) {
+              warnings.push(`National ID expires in ${Math.ceil(daysToNatId)} days.`);
+            }
+            if (daysToBizCert !== null && daysToBizCert < 30) {
+              warnings.push(`Business Certificate expires in ${Math.ceil(daysToBizCert)} days.`);
+            }
+
+            return warnings.length > 0 ? (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-red-500">Document Expiry Alert</p>
+                    <p className="text-xs font-bold text-muted-foreground leading-relaxed">
+                      {warnings.join(" ")} Please renew and update your KYC.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null;
+          })()}
+        </>
+      )}
+
+      {/* Trial Mode Banner */}
+      {vendorStatus === "pending_approval" && (
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between mb-4 shadow-[0_0_20px_rgba(59,130,246,0.15)]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+              <ShieldAlert className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-blue-400">Restricted Trial Mode</p>
+              <p className="text-xs font-bold text-blue-400/80 leading-relaxed">
+                Your application is under 24-hour review. Transactions are currently capped at <strong className="text-white font-black">GHS 200.00</strong>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {walletBalance < balanceThreshold && !isPrivateMode && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4 duration-500 shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)] relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none" />
+          <div className="flex items-center gap-3 relative z-10">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/30">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
             </div>
             <div>
               <p className="text-sm font-black text-amber-500">Low Balance Warning</p>
-              <p className="text-xs font-bold text-muted-foreground leading-relaxed">Your float is below GHS {balanceThreshold}. Top up soon to avoid missing transactions.</p>
+              <p className="text-xs font-bold text-amber-500/80 leading-relaxed">Your float is below GHS {balanceThreshold}. Top up soon to avoid missing transactions.</p>
             </div>
           </div>
-          <Button size="sm" className="bg-amber-500 hover:bg-amber-600 font-black rounded-lg h-9">Top Up Now</Button>
+          <Button size="sm" className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105 relative z-10">
+            Top Up Now
+          </Button>
         </div>
       )}
 
@@ -314,7 +1100,7 @@ const DashboardSwiftVendor = () => {
       </div>
     </div>
 
-      <Tabs defaultValue="momo" className="space-y-6">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <div className="overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
           <TabsList className="bg-muted/50 p-1 rounded-2xl h-14 w-max sm:w-auto inline-flex whitespace-nowrap">
             <TabsTrigger value="momo" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
@@ -369,6 +1155,45 @@ const DashboardSwiftVendor = () => {
                     Cash-In
                   </button>
                 </div>
+
+                {savedRecipients.filter(r => r.type === "momo").length > 0 && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Frequent Recipient Quick-Click</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {savedRecipients
+                        .filter(r => r.type === "momo")
+                        .reduce((acc: any[], current) => {
+                          const x = acc.find(item => item.phone === current.phone);
+                          if (!x) acc.push(current);
+                          return acc;
+                        }, [])
+                        .slice(0, 4)
+                        .map((recipient, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold text-white active:scale-95 text-left shrink-0"
+                            onClick={() => {
+                              setMomoPhone(recipient.phone);
+                              setMomoNetwork(recipient.network);
+                              if (recipient.name) {
+                                setMomoAccountName(recipient.name);
+                              }
+                              toast.info(`Selected ${recipient.name || recipient.phone}`);
+                            }}
+                          >
+                            <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black uppercase text-primary shrink-0">
+                              {recipient.name ? recipient.name.charAt(0) : "M"}
+                            </div>
+                            <div className="leading-tight truncate max-w-[100px]">
+                              <p className="text-[9px] font-black text-white truncate leading-none mb-0.5">{recipient.name || "Customer"}</p>
+                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.phone}</p>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -466,23 +1291,66 @@ const DashboardSwiftVendor = () => {
               </Card>
 
               <Card className="border-none bg-card/50 shadow-xl shadow-black/5 overflow-hidden">
-                 <CardHeader className="py-4 border-b border-white/5 flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm font-black uppercase tracking-widest">Recent Activity</CardTitle>
-                    <Button variant="ghost" size="sm" className="h-8 rounded-lg text-primary hover:bg-primary/5">
-                      View All
-                    </Button>
+                 <CardHeader className="py-4 border-b border-white/5 space-y-4">
+                    <div className="flex items-center justify-between">
+                       <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                          <History className="w-4 h-4 text-primary" />
+                          Recent Activity
+                       </CardTitle>
+                       <Button 
+                         variant="outline" 
+                         size="sm" 
+                         className="h-8 rounded-lg text-xs font-bold border-white/10 hover:bg-white/5 gap-1.5"
+                         onClick={handleExportCSV}
+                       >
+                         <Download className="w-3.5 h-3.5" />
+                         Export CSV
+                       </Button>
+                    </div>
+                    
+                    <div className="flex flex-col sm:flex-row gap-2">
+                       <div className="relative flex-1">
+                          <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+                          <Input 
+                             placeholder="Search phone, ID..." 
+                             className="h-9 pl-9 rounded-xl bg-muted/40 border-none font-bold text-xs"
+                             value={searchQuery}
+                             onChange={(e) => setSearchQuery(e.target.value)}
+                          />
+                       </div>
+                       <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                          {(["all", "fulfilled", "pending", "failed"] as const).map((status) => (
+                             <button
+                                key={status}
+                                onClick={() => setStatusFilter(status)}
+                                className={cn(
+                                   "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border shrink-0",
+                                   statusFilter === status 
+                                      ? "bg-primary text-black border-primary" 
+                                      : "bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10"
+                                )}
+                             >
+                                {status === "fulfilled" ? "Success" : status}
+                             </button>
+                          ))}
+                       </div>
+                    </div>
                  </CardHeader>
                  <CardContent className="p-0">
-                    <div className="divide-y divide-white/5">
-                      {recentOrders.length === 0 ? (
+                    <div className="divide-y divide-white/5 max-h-[480px] overflow-y-auto scrollbar-thin">
+                      {filteredOrders.length === 0 ? (
                         <div className="p-8 text-center text-muted-foreground text-xs font-bold">
-                          No recent transactions
+                          No matching transactions found
                         </div>
                       ) : (
-                        recentOrders.map((order) => {
+                        filteredOrders.map((order) => {
                           const isCashIn = order.order_type === "vendor_cash_in" || order.order_type === "vendor_bank_transfer";
                           return (
-                            <div key={order.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer">
+                            <div 
+                              key={order.id} 
+                              className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer"
+                              onClick={() => setSelectedReceipt(order)}
+                            >
                               <div className="flex items-center gap-3">
                                 <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isCashIn ? "bg-red-400/10" : "bg-emerald-400/10")}>
                                     {isCashIn ? <ArrowUpCircle className="w-5 h-5 text-red-400" /> : <ArrowDownCircle className="w-5 h-5 text-emerald-400" />}
@@ -510,12 +1378,26 @@ const DashboardSwiftVendor = () => {
                                    <p className={cn("text-sm font-black", isCashIn ? "text-red-400" : "text-emerald-400")}>
                                       {isCashIn ? "-" : "+"}GHS {Number(order.amount).toFixed(2)}
                                    </p>
-                                   <Badge className={cn(
-                                     "border-none h-4 text-[8px] px-1 font-black",
-                                     order.status === "fulfilled" ? "bg-emerald-400/10 text-emerald-400" : "bg-amber-400/10 text-amber-400"
-                                   )}>
-                                     {order.status.toUpperCase()}
-                                   </Badge>
+                                   {order.status === "pending" ? (
+                                     <button 
+                                       onClick={(e) => {
+                                         e.stopPropagation();
+                                         handleVerifyOrderStatus(order.id);
+                                       }}
+                                       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 hover:bg-amber-400/20 transition-all text-[8px] font-black uppercase cursor-pointer border-none"
+                                       title="Verify Transaction Status"
+                                     >
+                                       Pending <RefreshCw className="w-2 h-2 animate-[spin_3s_linear_infinite]" />
+                                     </button>
+                                   ) : (
+                                     <Badge className={cn(
+                                       "border-none h-4 text-[8px] px-1 font-black",
+                                       order.status === "fulfilled" ? "bg-emerald-400/10 text-emerald-400" : 
+                                       (order.status === "failed" ? "bg-red-400/10 text-red-400" : "bg-amber-400/10 text-amber-400")
+                                     )}>
+                                       {order.status.toUpperCase()}
+                                     </Badge>
+                                   )}
                                 </div>
                               </div>
                             </div>
@@ -540,6 +1422,45 @@ const DashboardSwiftVendor = () => {
                 <CardDescription>Send funds to any local bank account in Ghana</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
+                {savedRecipients.filter(r => r.type === "bank").length > 0 && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Frequent Recipient Quick-Click</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {savedRecipients
+                        .filter(r => r.type === "bank")
+                        .reduce((acc: any[], current) => {
+                          const x = acc.find(item => item.phone === current.phone);
+                          if (!x) acc.push(current);
+                          return acc;
+                        }, [])
+                        .slice(0, 4)
+                        .map((recipient, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold text-white active:scale-95 text-left shrink-0"
+                            onClick={() => {
+                              setAccountNumber(recipient.phone);
+                              setBankCode(recipient.network);
+                              if (recipient.name) {
+                                setAccountName(recipient.name);
+                              }
+                              toast.info(`Selected ${recipient.name || recipient.phone}`);
+                            }}
+                          >
+                            <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black uppercase text-primary shrink-0">
+                              {recipient.name ? recipient.name.charAt(0) : "B"}
+                            </div>
+                            <div className="leading-tight truncate max-w-[100px]">
+                              <p className="text-[9px] font-black text-white truncate leading-none mb-0.5">{recipient.name || "Customer"}</p>
+                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.phone}</p>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Destination Bank</Label>
@@ -661,24 +1582,41 @@ const DashboardSwiftVendor = () => {
                 <CardDescription>Send money to any bank or MoMo across Africa via Paystack</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
-                {savedRecipients.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Quick-Pay Directory</Label>
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                      {savedRecipients.filter(r => r.type === "momo").map((r, i) => (
-                        <Button 
-                          key={i} 
-                          variant="outline" 
-                          size="sm" 
-                          className="rounded-full h-8 px-4 font-bold bg-primary/5 hover:bg-primary/10 border-primary/20 shrink-0"
-                          onClick={() => {
-                            setMomoPhone(r.phone);
-                            setMomoNetwork(r.network);
-                          }}
-                        >
-                          {r.name}
-                        </Button>
-                      ))}
+                {savedRecipients.filter(r => r.type === "africa").length > 0 && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Frequent Recipient Quick-Click</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {savedRecipients
+                        .filter(r => r.type === "africa")
+                        .reduce((acc: any[], current) => {
+                          const x = acc.find(item => item.phone === current.phone);
+                          if (!x) acc.push(current);
+                          return acc;
+                        }, [])
+                        .slice(0, 4)
+                        .map((recipient, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold text-white active:scale-95 text-left shrink-0"
+                            onClick={() => {
+                              setAccountNumber(recipient.phone);
+                              setBankCode(recipient.network);
+                              if (recipient.name) {
+                                setAccountName(recipient.name);
+                              }
+                              toast.info(`Selected ${recipient.name || recipient.phone}`);
+                            }}
+                          >
+                            <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-black uppercase text-indigo-400 shrink-0">
+                              {recipient.name ? recipient.name.charAt(0) : "A"}
+                            </div>
+                            <div className="leading-tight truncate max-w-[100px]">
+                              <p className="text-[9px] font-black text-white truncate leading-none mb-0.5">{recipient.name || "Customer"}</p>
+                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.phone}</p>
+                            </div>
+                          </button>
+                        ))}
                     </div>
                   </div>
                 )}
@@ -906,8 +1844,232 @@ const DashboardSwiftVendor = () => {
           </div>
         </TabsContent>
       </Tabs>
+      </>
+      )}
       </div>
       </div>
+
+      {overlay.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="relative w-full max-w-md bg-[#0e0e10]/95 border border-white/10 rounded-[32px] p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col items-center text-center space-y-6 animate-in zoom-in-95 slide-in-from-bottom-10 duration-500">
+            
+            {/* Decorative background glow */}
+            <div className={cn(
+              "absolute -top-24 w-48 h-48 rounded-full blur-[80px] opacity-20 pointer-events-none",
+              overlay.step === "success" ? "bg-emerald-500" :
+              overlay.step === "failed" ? "bg-red-500" :
+              overlay.step === "verify-pin" ? "bg-amber-500" : "bg-primary"
+            )} />
+
+            {/* STEP: SUBMITTING / PROCESSING */}
+            {overlay.step === "submitting" && (
+              <div className="py-6 space-y-6 flex flex-col items-center">
+                <div className="relative flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                  <RefreshCw className="w-8 h-8 text-primary absolute animate-pulse" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black text-white">Processing Transaction</h3>
+                  <p className="text-sm text-muted-foreground font-medium max-w-[280px]">
+                    Initiating your {overlay.type === "cash-out" ? "cash collection" : "disbursement"} of <span className="font-bold text-white">GHS {overlay.amount}</span>. Please wait...
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* STEP: VERIFY PIN */}
+            {overlay.step === "verify-pin" && (
+              <div className="py-4 space-y-6 flex flex-col items-center w-full">
+                <div className="relative flex items-center justify-center">
+                  {/* Pulsing ring */}
+                  <div className="absolute w-24 h-24 rounded-full bg-amber-500/10 animate-ping duration-1000" />
+                  <div className="w-20 h-20 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                    <Phone className="w-10 h-10 text-amber-500 animate-bounce" />
+                  </div>
+                  {/* Clock/Countdown badge */}
+                  <div className="absolute -bottom-2 -right-2 bg-amber-500 text-black text-xs font-black w-8 h-8 rounded-full flex items-center justify-center border-4 border-[#0e0e10]">
+                    {overlay.countdown ?? 60}s
+                  </div>
+                </div>
+                
+                <div className="space-y-2 px-2">
+                  <h3 className="text-xl font-black text-amber-500 uppercase tracking-wider">Confirm PIN</h3>
+                  <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                    A prompt has been sent to <span className="font-bold text-white">{overlay.phoneOrAccount}</span>. Please enter your mobile money PIN to authorize the transaction of <span className="font-black text-white">GHS {overlay.amount}</span>.
+                  </p>
+                </div>
+
+                <div className="w-full p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 flex items-center gap-3 text-left">
+                  <Loader2 className="w-5 h-5 text-amber-500 animate-spin shrink-0" />
+                  <p className="text-[11px] text-amber-500/80 font-semibold uppercase tracking-wider">
+                    Waiting for PIN confirmation...
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* STEP: SUCCESS */}
+            {overlay.step === "success" && (
+              <div className="py-4 space-y-6 flex flex-col items-center w-full">
+                <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center animate-in zoom-in-50 duration-500">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-400 animate-in zoom-in-75 duration-300 delay-200" />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-emerald-400">Transaction Successful!</h3>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Your transaction has been processed successfully.
+                  </p>
+                </div>
+
+                {/* Receipt Info */}
+                <div id="active-receipt" className="w-full bg-[#0d0d0e] border border-white/10 rounded-2xl p-5 text-left space-y-3 font-medium text-sm relative">
+                  <div className="absolute top-3 right-3 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">Swift Vendor</div>
+                  <div className="flex justify-between items-center py-1 border-b border-white/5 pt-4">
+                    <span className="text-muted-foreground text-xs">Amount</span>
+                    <span className="font-black text-emerald-400 text-base">GHS {overlay.amount}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-white/5">
+                    <span className="text-muted-foreground text-xs">Type</span>
+                    <span className="font-bold text-white capitalize">{overlay.type === "cash-out" ? "Cash-Out (Collection)" : "Cash-In (Disbursement)"}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-white/5">
+                    <span className="text-muted-foreground text-xs">{overlay.type === "bank" ? "Bank Account" : "Phone/Account"}</span>
+                    <span className="font-bold text-white">{overlay.phoneOrAccount}</span>
+                  </div>
+                  {overlay.successDetails?.transactionId && (
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-muted-foreground text-xs">Transaction ID</span>
+                      <span className="font-mono text-xs text-white/70 truncate max-w-[150px]">{overlay.successDetails.transactionId}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-full flex gap-3">
+                  <Button 
+                    variant="outline"
+                    className="flex-1 h-12 rounded-xl border border-white/10 hover:bg-white/5 font-bold text-sm gap-1.5"
+                    onClick={() => downloadReceiptImage("active-receipt", overlay.successDetails?.transactionId || "tx")}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download PNG
+                  </Button>
+                  <Button 
+                    className="flex-1 h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-black text-sm transition-all active:scale-[0.98]"
+                    onClick={() => setOverlay(prev => ({ ...prev, isOpen: false }))}
+                  >
+                    Done
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP: FAILED */}
+            {overlay.step === "failed" && (
+              <div className="py-4 space-y-6 flex flex-col items-center w-full">
+                <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center animate-in zoom-in-50 duration-500">
+                  <AlertCircle className="w-12 h-12 text-red-500 animate-in zoom-in-75 duration-300 delay-200" />
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-2xl font-black text-red-500">Transaction Failed</h3>
+                  <p className="text-sm text-muted-foreground font-medium max-w-[280px]">
+                    {overlay.errorMsg || "An unexpected error occurred while processing the transaction."}
+                  </p>
+                </div>
+
+                <div className="w-full flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 h-12 rounded-xl border border-white/10 hover:bg-white/5 font-bold"
+                    onClick={() => setOverlay(prev => ({ ...prev, isOpen: false }))}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+      {selectedReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="relative w-full max-w-md bg-[#0e0e10]/95 border border-white/10 rounded-[32px] p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col items-center text-center space-y-6 animate-in zoom-in-95 slide-in-from-bottom-10 duration-500">
+            <div className="absolute -top-24 w-48 h-48 rounded-full blur-[80px] opacity-10 pointer-events-none bg-primary" />
+            
+            <div className="w-full flex items-center justify-between border-b border-white/5 pb-4">
+              <span className="text-sm font-black uppercase tracking-wider text-muted-foreground">Transaction Receipt</span>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 rounded-full text-muted-foreground hover:text-white"
+                onClick={() => setSelectedReceipt(null)}
+              >
+                <AlertCircle className="w-5 h-5 rotate-45" />
+              </Button>
+            </div>
+
+            <div id="historical-receipt-card" className="w-full bg-[#0d0d0e] border border-white/10 rounded-2xl p-6 text-left space-y-4 relative">
+              <div className="absolute top-4 right-4 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">Swift Vendor</div>
+              
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Amount</p>
+                <p className="text-3xl font-black text-emerald-400">GHS {Number(selectedReceipt.amount).toFixed(2)}</p>
+              </div>
+
+              <div className="divide-y divide-white/5 font-medium text-xs pt-2">
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge className={cn(
+                    "border-none h-5 text-[9px] font-black px-2",
+                    selectedReceipt.status === "fulfilled" ? "bg-emerald-400/10 text-emerald-400" :
+                    selectedReceipt.status === "failed" ? "bg-red-400/10 text-red-400" : "bg-amber-400/10 text-amber-400"
+                  )}>
+                    {selectedReceipt.status.toUpperCase()}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-muted-foreground">Type</span>
+                  <span className="font-bold text-white capitalize">
+                    {selectedReceipt.order_type === "vendor_cash_in" ? "Cash-In (Disbursement)" : 
+                     selectedReceipt.order_type === "vendor_cash_out" ? "Cash-Out (Collection)" : "Bank Transfer"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-muted-foreground">Recipient</span>
+                  <span className="font-bold text-white">{selectedReceipt.customer_phone || "Bank Account"}</span>
+                </div>
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-muted-foreground">Date & Time</span>
+                  <span className="font-bold text-white">{new Date(selectedReceipt.created_at).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-muted-foreground">Transaction ID</span>
+                  <span className="font-mono text-[10px] text-white/70 truncate max-w-[180px]">{selectedReceipt.id}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full flex gap-3">
+              <Button 
+                variant="outline"
+                className="flex-1 h-12 rounded-xl border border-white/10 hover:bg-white/5 font-bold text-sm gap-1.5"
+                onClick={() => downloadReceiptImage("historical-receipt-card", selectedReceipt.id)}
+              >
+                <Download className="w-4 h-4" />
+                Download PNG
+              </Button>
+              <Button 
+                className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/95 text-black font-black text-sm transition-all active:scale-[0.98]"
+                onClick={() => handleShareReceipt(selectedReceipt)}
+              >
+                Share Receipt
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </SecurityGateway>
   );
 };

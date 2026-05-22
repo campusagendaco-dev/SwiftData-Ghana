@@ -79,6 +79,33 @@ serve(async (req) => {
       });
     }
 
+    // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
+    const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
+    const normalizedPhone = normalizeRecipient(customer_phone);
+
+    const { data: duplicateOrder } = await supabaseAdmin
+      .from("orders")
+      .select("id, created_at")
+      .eq("agent_id", user.id)
+      .eq("customer_phone", normalizedPhone)
+      .eq("network", network)
+      .eq("amount", requestedAmount)
+      .in("status", ["paid", "processing", "fulfilled", "completed"])
+      .gte("created_at", oneMinuteAgo)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateOrder) {
+      console.warn(`[DUPLICATE-AIRTIME] Rejected duplicate order for ${normalizedPhone} within 1 minute`);
+      return new Response(JSON.stringify({ 
+        error: "Duplicate order detected. Please wait 60 seconds before placing the same order again." 
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // 1. ATOMIC DEBIT (FOREGROUND)
     console.log(`[DEBIT-AIRTIME] Starting debit for ${requestedAmount}...`);
     const { data: debitResult, error: debitError } = await supabaseAdmin.rpc("debit_wallet", {

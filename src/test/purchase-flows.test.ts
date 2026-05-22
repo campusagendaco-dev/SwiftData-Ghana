@@ -106,4 +106,27 @@ describe("purchase flow guardrails", () => {
     expect(dashboardWallet).toContain("invokePublicFunctionAsUser(\"wallet-buy-data\"");
     expect(dashboardWallet).not.toContain("invokePublicFunction(\"initialize-payment\"");
   });
+
+  it("enforces terminal locks on theteller-vendor edge function and swift vendor frontend", () => {
+    const thetellerVendor = read("supabase/functions/theteller-vendor/index.ts");
+    const dashboardSwiftVendor = read("src/pages/DashboardSwiftVendor.tsx");
+
+    expect(thetellerVendor).toContain("terminal_locked");
+    expect(thetellerVendor).toContain("status: 403");
+    
+    expect(dashboardSwiftVendor).toContain("isLockedByAdmin");
+    expect(dashboardSwiftVendor).toContain("Terminal Suspended");
+  });
+
+  it("supports status checks and query parameters for redirection in theteller-vendor and swift vendor dashboard", () => {
+    const thetellerVendor = read("supabase/functions/theteller-vendor/index.ts");
+    const dashboardSwiftVendor = read("src/pages/DashboardSwiftVendor.tsx");
+
+    expect(thetellerVendor).toContain("const tellerRef = transaction_id?.includes(\"-\")");
+    expect(thetellerVendor).toContain(".filter(\"metadata->>theteller_ref\", \"eq\", transaction_id)");
+    expect(thetellerVendor).toContain("status: \"failed\"");
+
+    expect(dashboardSwiftVendor).toContain("URLSearchParams(window.location.search)");
+    expect(dashboardSwiftVendor).toContain("handleVerifyOrderStatus");
+  });
 });

@@ -576,6 +576,21 @@ const DashboardOrders = () => {
                         <Zap className="w-5 h-5 text-purple-500 mx-auto" />
                         <p className="text-[10px] text-purple-500 font-bold mt-0.5 leading-none">Utility</p>
                       </div>
+                    ) : order.order_type === "vendor_cash_in" ? (
+                      <div className="bg-red-500/15 rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]">
+                        <Wallet className="w-5 h-5 text-red-500 mx-auto" />
+                        <p className="text-[10px] text-red-500 font-bold mt-0.5 leading-none">Cash-In</p>
+                      </div>
+                    ) : order.order_type === "vendor_cash_out" ? (
+                      <div className="bg-emerald-500/15 rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]">
+                        <Wallet className="w-5 h-5 text-emerald-500 mx-auto" />
+                        <p className="text-[10px] text-emerald-500 font-bold mt-0.5 leading-none">Cash-Out</p>
+                      </div>
+                    ) : order.order_type === "vendor_bank_transfer" ? (
+                      <div className="bg-blue-500/15 rounded-lg px-2.5 py-1.5 text-center shrink-0 w-[52px]">
+                        <Wallet className="w-5 h-5 text-blue-500 mx-auto" />
+                        <p className="text-[10px] text-blue-500 font-bold mt-0.5 leading-none">Transfer</p>
+                      </div>
                     ) : (
                       <div className={`${nc.bg} ${nc.text} rounded-lg px-2 sm:px-2.5 py-1.5 text-center shrink-0 w-[48px] sm:w-[52px]`}>
                         <p className="font-black text-[9px] sm:text-[10px] leading-none">{order.network || "—"}</p>
@@ -587,7 +602,13 @@ const DashboardOrders = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={cn("font-bold text-sm", isDark ? "text-white" : "text-gray-900")}>
-                          {isWalletTopup ? "Wallet Topup" : isAirtime ? `${order.network} Airtime` : isUtility ? `${order.package_size}` : `${order.network} ${order.package_size}`}
+                          {isWalletTopup ? "Wallet Topup" : 
+                           isAirtime ? `${order.network} Airtime` : 
+                           isUtility ? `${order.package_size}` : 
+                           order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
+                           order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
+                           order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
+                           `${order.network} ${order.package_size}`}
                         </span>
                         {!isWalletTopup && (
                           <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${ds.badge}`}>
@@ -629,7 +650,13 @@ const DashboardOrders = () => {
                         {[
                           { icon: Receipt, label: "Order ID", value: order.id.slice(0, 8).toUpperCase() },
                           { icon: Phone, label: "Recipient", value: order.customer_phone || "—" },
-                          { icon: Package, label: "Service", value: isWalletTopup ? "Wallet Topup" : isAirtime ? `${order.network} Airtime` : isUtility ? order.package_size : `${order.network} ${order.package_size}` },
+                          { icon: Package, label: "Service", value: isWalletTopup ? "Wallet Topup" :
+                                                                  isAirtime ? `${order.network} Airtime` :
+                                                                  isUtility ? order.package_size :
+                                                                  order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
+                                                                  order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
+                                                                  order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
+                                                                  `${order.network} ${order.package_size}` },
                           { icon: Calendar, label: "Date", value: date },
                         ].map(({ icon: Icon, label, value }) => (
                           <div key={label} className={cn(

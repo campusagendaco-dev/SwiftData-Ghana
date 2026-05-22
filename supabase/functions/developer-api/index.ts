@@ -259,11 +259,29 @@ serve(async (req: Request) => {
   const endpoint = new URL(req.url).pathname;
 
   try {
+    const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() 
+                   || req.headers.get("x-real-ip") 
+                   || "0.0.0.0";
+
+    const logAuthFailure = async (reason: string, attempt: string = "") => {
+      try {
+        await supabase.from("security_logs").insert({
+          action: "api_auth_failure",
+          ip_address: ipAddress,
+          metadata: { reason, attempted_key_prefix: attempt.substring(0, 12), endpoint },
+          user_id: null // Unknown user due to failed auth
+        });
+      } catch (e) {
+        console.error("[developer-api] Failed to log security event", e);
+      }
+    };
+
     // ── 1. Extract and Validate API key ─────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     const rawApiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
     
     if (!rawApiKey) {
+      await logAuthFailure("Missing or malformed Authorization header");
       return json({ success: false, error: "Missing or malformed Authorization header. Use 'Authorization: Bearer <your_key>'." }, 401);
     }
 
@@ -281,7 +299,10 @@ serve(async (req: Request) => {
       profile = sudoProfile;
       currentUserId = sudoProfile.user_id;
     } else {
-      if (!API_KEY_RE.test(rawApiKey)) return json({ success: false, error: "Invalid API key format." }, 401);
+      if (!API_KEY_RE.test(rawApiKey)) {
+        await logAuthFailure("Invalid API key format", rawApiKey);
+        return json({ success: false, error: "Invalid API key format." }, 401);
+      }
       
       const prefix = rawApiKey.slice(0, 12);
       const incomingHash = await sha256Hex(rawApiKey);
@@ -294,6 +315,7 @@ serve(async (req: Request) => {
       
       if (authError || !profileData || profileData.length === 0) {
         if (authError) console.error(`[AUTH ERROR]`, authError);
+        await logAuthFailure("Invalid API key or Profile suspended", rawApiKey);
         return json({ success: false, error: "Authentication failed: Profile not found or API key invalid." }, 401);
       }
       
@@ -434,29 +456,58 @@ serve(async (req: Request) => {
       if (!network || !phone || (!amount && !package_size))
         return json({ success: false, error: "Missing required fields." }, 400);
 
-      // Anti-Duplicate Protection (1 Minute to prevent double-clicks, optional override via payload or header)
+      // Anti-Duplicate Protection (Smart Idempotency & 2-Minute Window)
       const allowDuplicate = payload?.allow_duplicate === true || payload?.bypass_duplicate_check === true || req.headers.get("X-Bypass-Duplicate-Check") === "true";
-      const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
       const normalizedPhone = normalizeRecipient(phone);
+      const clientRef = request_id || payload?.client_reference || req.headers.get("X-Idempotency-Key");
 
       if (!allowDuplicate) {
-        const { data: duplicateOrder } = await supabase
-          .from("orders")
-          .select("id, created_at")
-          .eq("customer_phone", normalizedPhone)
-          .eq("network", network)
-          .eq("package_size", package_size || "AIRTIME")
-          .in("status", ["paid", "processing", "fulfilled", "completed"])
-          .gte("created_at", oneMinuteAgo)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let duplicateOrder = null;
+
+        // 1. Strict Idempotency Check (if client provided a reference)
+        if (clientRef) {
+           // We use textSearch or raw eq if we can't do json path easily, but PostgREST supports metadata->>client_reference 
+           // However, let's just check the last 1 hour of orders for this agent to be safe and fast
+           const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+           const { data } = await supabase
+             .from("orders")
+             .select("id, status, metadata")
+             .eq("agent_id", currentUserId)
+             .gte("created_at", oneHourAgo)
+             .limit(100);
+             
+           duplicateOrder = data?.find(o => o.metadata?.client_reference === clientRef);
+        }
+
+        // 2. Fallback Time-Window Check (60 Seconds for exact same parameters)
+        if (!duplicateOrder) {
+          const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
+          let query = supabase
+            .from("orders")
+            .select("id, created_at")
+            .eq("agent_id", currentUserId) // MUST scope to the specific API user
+            .eq("customer_phone", normalizedPhone)
+            .eq("network", network)
+            .in("status", ["paid", "processing", "pending", "fulfilled", "completed"])
+            .gte("created_at", oneMinuteAgo)
+            .order("created_at", { ascending: false })
+            .limit(1);
+            
+          if (package_size) {
+            query = query.eq("package_size", package_size);
+          } else {
+            query = query.eq("amount", amount);
+          }
+
+          const { data } = await query.maybeSingle();
+          duplicateOrder = data;
+        }
 
         if (duplicateOrder) {
-          console.warn(`[DUPLICATE] Rejected developer duplicate order for ${normalizedPhone} within 1 minute`);
+          console.warn(`[DUPLICATE] Rejected developer duplicate order for ${normalizedPhone} by ${currentUserId}`);
           return json({ 
             success: false, 
-            error: "Duplicate order detected. Please wait 60 seconds before placing the same order again. Pass 'allow_duplicate': true to bypass." 
+            error: "Duplicate request detected. An identical order or reference was processed recently. Please wait 60 seconds or provide a unique 'request_id'." 
           }, 409);
         }
       }

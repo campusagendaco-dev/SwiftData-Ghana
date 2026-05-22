@@ -162,12 +162,13 @@ serve(async (req: Request) => {
       });
     }
 
-    // Anti-Duplicate Protection (1 Minute to prevent double-clicks)
+    // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
 
     const { data: duplicateOrder } = await supabaseAdmin
       .from("orders")
       .select("id, created_at")
+      .eq("agent_id", user.id)
       .eq("customer_phone", normalizedPhone)
       .eq("network", normalizedNet)
       .eq("package_size", package_size)
