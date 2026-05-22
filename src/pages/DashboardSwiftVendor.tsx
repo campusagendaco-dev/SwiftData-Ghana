@@ -1670,24 +1670,27 @@ const DashboardSwiftVendor = () => {
                     />
                   </div>
 
-                  {accountName ? (
-                    <div className="p-4 rounded-2xl bg-emerald-400/5 border border-emerald-400/20 flex items-center justify-between animate-in zoom-in-95 duration-300">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/70">Verified Recipient</p>
-                        <p className="text-lg font-black text-emerald-400">{accountName}</p>
-                      </div>
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between ml-1">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Account Name</Label>
+                      {(selectedCountry === 'GH' || selectedCountry === 'NG') && (
+                        <button 
+                          type="button" 
+                          onClick={handleBankEnquiry}
+                          disabled={verifying || !bankCode || !accountNumber}
+                          className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-400 disabled:opacity-50 transition-colors"
+                        >
+                          {verifying ? "VERIFYING..." : "AUTO-VERIFY"}
+                        </button>
+                      )}
                     </div>
-                  ) : (
-                    <Button 
-                      variant="outline"
-                      className="w-full h-14 rounded-2xl text-lg font-black border-2 border-indigo-500/20 hover:bg-indigo-500/5 active:scale-[0.98] transition-all"
-                      disabled={verifying || !bankCode || !accountNumber}
-                      onClick={handleBankEnquiry}
-                    >
-                      {verifying ? <Loader2 className="w-6 h-6 animate-spin" /> : "Verify Account Name"}
-                    </Button>
-                  )}
+                    <Input 
+                      placeholder="Enter recipient name" 
+                      className="h-12 rounded-xl bg-muted/30 border-none font-bold text-lg"
+                      value={accountName || ""}
+                      onChange={(e) => setAccountName(e.target.value)}
+                    />
+                  </div>
 
                   <Button 
                     className="w-full h-14 rounded-2xl text-lg font-black bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 active:scale-[0.98] transition-all"
