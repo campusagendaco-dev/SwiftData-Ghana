@@ -169,8 +169,10 @@ const DashboardSwiftVendor = () => {
       return;
     }
 
-    const countdownInterval: any;
-    const pollInterval: any;
+    // eslint-disable-next-line prefer-const
+    let countdownInterval: any;
+    // eslint-disable-next-line prefer-const
+    let pollInterval: any;
     
     // Set default countdown
     setOverlay(prev => ({ ...prev, countdown: 60 }));
