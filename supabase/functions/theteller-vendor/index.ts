@@ -181,9 +181,15 @@ serve(async (req) => {
       agentProfit = markup * 0.60;
       companyProfit = markup * 0.40;
     } else if (type === "africa") {
-      // 3.5% fee: 2% cost, 0.75% agent, 0.75% company
-      agentProfit = amount * 0.0075;
-      companyProfit = amount * 0.0075;
+      // Pan-African Transfer Strategic Pricing:
+      // Base FX/Gateway Cost Allowance: 2.0% of amount (handled by platform balance)
+      // Customer Fee Markup (Pure Profit): 1.5% of the transfer amount, capped at GHS 300.00
+      // Split: 60% to Agent (highly competitive), 40% to Company
+      const maxMarkup = 300.00;
+      const markup = Math.min(amount * 0.015, maxMarkup);
+      
+      agentProfit = markup * 0.60;
+      companyProfit = markup * 0.40;
     }
 
     return { agentProfit, companyProfit };
