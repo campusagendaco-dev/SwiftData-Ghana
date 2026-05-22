@@ -170,22 +170,16 @@ serve(async (req) => {
       agentProfit = netProfit * 0.70;
       companyProfit = netProfit * 0.30;
     } else if (type === "bank") {
-      // Bank Transfer: Paystack cost is GHS 8.00 flat.
-      // Customer Fee:
-      //   - 1 to 500 GHS: GHS 12.00 fee (Net profit = GHS 4.00) -> Agent 50% (GHS 2.00), Company 50% (GHS 2.00)
-      //   - 501 to 2000 GHS: GHS 15.00 fee (Net profit = GHS 7.00) -> Agent 50% (GHS 3.50), Company 50% (GHS 3.50)
-      //   - 2001+ GHS: GHS 20.00 fee (Net profit = GHS 12.00) -> Agent 50% (GHS 6.00), Company 50% (GHS 6.00)
-      let customerFee = 0;
-      if (amount <= 500) {
-        customerFee = 12.00;
-      } else if (amount <= 2000) {
-        customerFee = 15.00;
-      } else {
-        customerFee = 20.00;
-      }
-      const netProfit = Math.max(0, customerFee - 8.00);
-      agentProfit = netProfit * 0.50;
-      companyProfit = netProfit * 0.50;
+      // Bank Transfer Strategic Pricing:
+      // Base Gateway Cost: GHS 8.00 (Paystack flat fee)
+      // Customer Fee Markup: 1.0% of the transfer amount, capped at a maximum of GHS 200.00
+      // We distribute the markup as pure profit between the agent and the company.
+      // Split: 60% to Agent (highly competitive to attract vendors), 40% to Company
+      const maxMarkup = 200.00;
+      const markup = Math.min(amount * 0.01, maxMarkup);
+      
+      agentProfit = markup * 0.60;
+      companyProfit = markup * 0.40;
     } else if (type === "africa") {
       // 3.5% fee: 2% cost, 0.75% agent, 0.75% company
       agentProfit = amount * 0.0075;
