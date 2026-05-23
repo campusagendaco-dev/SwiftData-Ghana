@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+        swift_beneficiaries: {
+          Row: {
+            id: string
+            user_id: string
+            name: string
+            account_number: string
+            network_or_bank: string
+            type: string
+            created_at: string
+            last_used_at: string | null
+            usage_count: number | null
+          }
+          Insert: {
+            id?: string
+            user_id: string
+            name: string
+            account_number: string
+            network_or_bank: string
+            type: string
+            created_at?: string
+            last_used_at?: string | null
+            usage_count?: number | null
+          }
+          Update: {
+            id?: string
+            user_id?: string
+            name?: string
+            account_number?: string
+            network_or_bank?: string
+            type?: string
+            created_at?: string
+            last_used_at?: string | null
+            usage_count?: number | null
+          }
+          Relationships: [
+            {
+              foreignKeyName: "swift_beneficiaries_user_id_fkey"
+              columns: ["user_id"]
+              isOneToOne: false
+              referencedRelation: "profiles"
+              referencedColumns: ["user_id"]
+            }
+          ]
+        }
+
       admin_action_log: {
         Row: {
           action: string
@@ -582,6 +627,7 @@ export type Database = {
           wa_bot_greeting: string | null
           whatsapp_group_link: string | null
           whatsapp_number: string
+          vendor_preferences: Json | null
         }
         Insert: {
           admin_notes?: string | null
@@ -651,6 +697,7 @@ export type Database = {
           wa_bot_greeting?: string | null
           whatsapp_group_link?: string | null
           whatsapp_number?: string
+          vendor_preferences?: Json | null
         }
         Update: {
           admin_notes?: string | null
@@ -720,6 +767,7 @@ export type Database = {
           wa_bot_greeting?: string | null
           whatsapp_group_link?: string | null
           whatsapp_number?: string
+          vendor_preferences?: Json | null
         }
         Relationships: [
           {
@@ -1838,7 +1886,8 @@ export type Database = {
           support_number: string | null
           user_id: string | null
           whatsapp_group_link: string | null
-          whatsapp_number: string | null
+          whatsapp_number: string
+          vendor_preferences: Json | null | null
         }
         Insert: {
           agent_approved?: boolean | null
@@ -1859,7 +1908,8 @@ export type Database = {
           support_number?: string | null
           user_id?: string | null
           whatsapp_group_link?: string | null
-          whatsapp_number?: string | null
+          whatsapp_number?: string
+          vendor_preferences?: Json | null | null
         }
         Update: {
           agent_approved?: boolean | null
@@ -1880,7 +1930,8 @@ export type Database = {
           support_number?: string | null
           user_id?: string | null
           whatsapp_group_link?: string | null
-          whatsapp_number?: string | null
+          whatsapp_number?: string
+          vendor_preferences?: Json | null | null
         }
         Relationships: []
       }

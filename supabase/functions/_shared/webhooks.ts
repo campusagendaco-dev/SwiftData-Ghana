@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac } from "node:crypto";
+// Replaced node:crypto with Web Crypto API
 
 // SSRF Prevention: Block private/loopback/link-local destinations
 const PRIVATE_IP_RE = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|fc|fd)/i;
@@ -45,9 +45,12 @@ export async function notifyApiClient(supabaseAdmin: any, orderId: string, statu
         }
       });
 
-      const signature = createHmac("sha256", profile.api_secret_key_hash)
-        .update(payload)
-        .digest("hex");
+      const enc = new TextEncoder();
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw", enc.encode(profile.api_secret_key_hash), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(payload));
+      const signature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
 
       await fetch(profile.api_webhook_url, {
         method: "POST",
@@ -90,9 +93,12 @@ export async function notifyWalletCredit(supabaseAdmin: any, userId: string, amo
         }
       });
 
-      const signature = createHmac("sha256", profile.api_secret_key_hash)
-        .update(payload)
-        .digest("hex");
+      const enc = new TextEncoder();
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw", enc.encode(profile.api_secret_key_hash), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(payload));
+      const signature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
 
       await fetch(profile.api_webhook_url, {
         method: "POST",

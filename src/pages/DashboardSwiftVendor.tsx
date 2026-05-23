@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { SecurityGateway } from "@/components/SecurityGateway";
 import { VendorOnboardingWizard } from "@/components/VendorOnboardingWizard";
+import { VendorSecurityApproval } from "@/components/VendorSecurityApproval";
 
 const GHANA_BANKS = [
   { code: "SCH", name: "Standard Chartered Bank" },
@@ -85,7 +86,7 @@ const getErrorMessageFromData = (data: any) => {
   if (THETELLER_ERRORS[code]) {
     return THETELLER_ERRORS[code];
   }
-  return data.reason || data.message || data.error || data.desc || data.status || "Unknown error";
+  return data.description || data.reason || data.message || data.error || data.desc || data.status || "Unknown error";
 };
 
 const DashboardSwiftVendor = () => {
@@ -132,11 +133,12 @@ const DashboardSwiftVendor = () => {
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({ NGN: 0, KES: 0, ZAR: 0 });
   const [isPrivateMode, setIsPrivateMode] = useState(false);
   const [balanceThreshold] = useState(500); // threshold
-  const [savedRecipients, setSavedRecipients] = useState<{name: string, phone: string, network: string, type: string}[]>([]);
+  const [savedRecipients, setSavedRecipients] = useState<{id?: string, name: string, account_number: string, network_or_bank: string, type: string}[]>([]);
   const [activeTab, setActiveTab] = useState("momo");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "fulfilled" | "pending" | "failed">("all");
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+  const [securityApproval, setSecurityApproval] = useState<{isOpen: boolean, amount: number, onApprove: () => void}>({isOpen: false, amount: 0, onApprove: () => {}});
 
   const [minTxAmount, setMinTxAmount] = useState<number>(1.00);
 
@@ -249,16 +251,81 @@ const DashboardSwiftVendor = () => {
     }
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem("swift_recipients");
-    if (saved) setSavedRecipients(JSON.parse(saved));
-  }, []);
+  const requireSecurityApproval = (amount: number, callback: () => void) => {
+    if (amount >= 2000) {
+      setSecurityApproval({
+        isOpen: true,
+        amount,
+        onApprove: () => {
+          setSecurityApproval(prev => ({...prev, isOpen: false}));
+          callback();
+        }
+      });
+    } else {
+      callback();
+    }
+  };
 
-  const saveRecipient = (name: string, phone: string, network: string, type: string) => {
-    const newRecipients = [...savedRecipients, { name, phone, network, type }].slice(-10); // Keep last 10
-    setSavedRecipients(newRecipients);
-    localStorage.setItem("swift_recipients", JSON.stringify(newRecipients));
-    toast.success("Recipient saved to directory");
+  // Fetch beneficiaries from database
+  useEffect(() => {
+    if (!user) return;
+    const fetchBeneficiaries = async () => {
+      const { data, error } = await supabase
+        .from('swift_beneficiaries')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('last_used_at', { ascending: false })
+        .limit(20);
+      
+      if (!error && data) {
+        setSavedRecipients(data as any);
+      } else {
+        // Fallback to local storage if DB fetch fails or schema missing
+        const saved = localStorage.getItem("swift_recipients");
+        if (saved) setSavedRecipients(JSON.parse(saved));
+      }
+    };
+    fetchBeneficiaries();
+  }, [user]);
+
+  const saveRecipient = async (name: string, account_number: string, network_or_bank: string, type: string) => {
+    if (!user) return;
+    
+    // Check if exists
+    const existing = savedRecipients.find(r => r.account_number === account_number && r.type === type);
+    
+    if (existing) {
+      // Update last_used_at
+      const { error } = await supabase
+        .from('swift_beneficiaries')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      return;
+    }
+    
+    const newRecipient = {
+      user_id: user.id,
+      name,
+      account_number,
+      network_or_bank,
+      type,
+      last_used_at: new Date().toISOString()
+    };
+    
+    const { data, error } = await supabase
+      .from('swift_beneficiaries')
+      .insert([newRecipient])
+      .select();
+      
+    if (!error && data && data.length > 0) {
+      setSavedRecipients(prev => [data[0] as any, ...prev].slice(0, 20));
+      toast.success("Recipient saved to Address Book");
+    } else {
+      // Fallback
+      const fallbackList = [{name, account_number, network_or_bank, type}, ...savedRecipients].slice(0, 10);
+      setSavedRecipients(fallbackList);
+      localStorage.setItem("swift_recipients", JSON.stringify(fallbackList));
+    }
   };
 
   const handleShareReceipt = (order: any) => {
@@ -381,6 +448,29 @@ const DashboardSwiftVendor = () => {
       fetchExchangeRates();
     }
   }, [selectedCountry]);
+
+  // Auto-Verify debouncers
+  useEffect(() => {
+    if (momoNetwork && momoPhone && momoPhone.length === 10 && momoAction === "cash-in") {
+      const timer = setTimeout(() => {
+        if (!momoAccountName && !verifying) {
+          handleMomoEnquiry();
+        }
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [momoNetwork, momoPhone, momoAction]);
+
+  useEffect(() => {
+    if (bankCode && accountNumber && accountNumber.length >= 10) {
+      const timer = setTimeout(() => {
+        if (!accountName && !verifying) {
+          handleBankEnquiry();
+        }
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [bankCode, accountNumber, selectedCountry, accountName]);
 
   const fetchExchangeRates = async () => {
     try {
@@ -551,11 +641,12 @@ const DashboardSwiftVendor = () => {
       return;
     }
 
-    setLoading(true);
-    setOverlay({
-      isOpen: true,
-      type: momoAction === "cash-out" ? "cash-out" : "cash-in",
-      step: "submitting",
+    requireSecurityApproval(amountVal, async () => {
+      setLoading(true);
+      setOverlay({
+        isOpen: true,
+        type: momoAction === "cash-out" ? "cash-out" : "cash-in",
+        step: "submitting",
       amount: amountVal,
       phoneOrAccount: momoPhone,
       networkOrBank: momoNetwork,
@@ -641,6 +732,7 @@ const DashboardSwiftVendor = () => {
     } finally {
       setLoading(false);
     }
+    });
   };
 
   const handleMomoEnquiry = async () => {
@@ -675,7 +767,6 @@ const DashboardSwiftVendor = () => {
         });
       }
     } catch (err: any) {
-      console.error(err);
       toast.error(err.message || "Failed to verify MoMo account");
     } finally {
       setVerifying(false);
@@ -718,7 +809,6 @@ const DashboardSwiftVendor = () => {
         });
       }
     } catch (err: any) {
-      console.error(err);
       toast.error(err.message || "Failed to verify bank account");
     } finally {
       setVerifying(false);
@@ -739,11 +829,12 @@ const DashboardSwiftVendor = () => {
         return;
       }
 
-      setLoading(true);
-      setOverlay({
-        isOpen: true,
-        type: "bank",
-        step: "submitting",
+      requireSecurityApproval(amountVal, async () => {
+        setLoading(true);
+        setOverlay({
+          isOpen: true,
+          type: "bank",
+          step: "submitting",
         amount: amountVal,
         phoneOrAccount: accountNumber,
         networkOrBank: bankCode,
@@ -826,6 +917,7 @@ const DashboardSwiftVendor = () => {
       } finally {
         setLoading(false);
       }
+      });
     } else {
       // Pan-African Payout Flow via Paystack
       if (!bankCode || !accountNumber || !bankAmount) {
@@ -844,9 +936,10 @@ const DashboardSwiftVendor = () => {
         return;
       }
 
-      setLoading(true);
-      setOverlay({
-        isOpen: true,
+      requireSecurityApproval(amountVal, async () => {
+        setLoading(true);
+        setOverlay({
+          isOpen: true,
         type: "africa",
         step: "submitting",
         amount: amountVal,
@@ -910,6 +1003,7 @@ const DashboardSwiftVendor = () => {
       } finally {
         setLoading(false);
       }
+      });
     }
   };
 
@@ -1042,13 +1136,25 @@ const DashboardSwiftVendor = () => {
               <p className="text-xs font-bold text-amber-500/80 leading-relaxed">Your float is below GHS {balanceThreshold}. Top up soon to avoid missing transactions.</p>
             </div>
           </div>
-          <Button 
-            size="sm" 
-            onClick={() => navigate('/dashboard/wallet')}
-            className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105 relative z-10"
-          >
-            Top Up Now
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => {
+                toast.success("Auto Top-Up activated. Your float will automatically reload when it drops below GHS 500.", { id: "auto-top-up" });
+              }}
+              className="bg-transparent border-amber-500/30 hover:bg-amber-500/10 text-amber-500 font-bold rounded-lg h-9 transition-all relative z-10"
+            >
+              Enable Auto-Pilot
+            </Button>
+            <Button 
+              size="sm" 
+              onClick={() => navigate('/dashboard/wallet')}
+              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105 relative z-10"
+            >
+              Top Up Now
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1171,7 +1277,7 @@ const DashboardSwiftVendor = () => {
                       {savedRecipients
                         .filter(r => r.type === "momo")
                         .reduce((acc: any[], current) => {
-                          const x = acc.find(item => item.phone === current.phone);
+                          const x = acc.find(item => item.account_number === current.account_number);
                           if (!x) acc.push(current);
                           return acc;
                         }, [])
@@ -1182,12 +1288,12 @@ const DashboardSwiftVendor = () => {
                             type="button"
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold text-white active:scale-95 text-left shrink-0"
                             onClick={() => {
-                              setMomoPhone(recipient.phone);
-                              setMomoNetwork(recipient.network);
+                              setMomoPhone(recipient.account_number);
+                              setMomoNetwork(recipient.network_or_bank);
                               if (recipient.name) {
                                 setMomoAccountName(recipient.name);
                               }
-                              toast.info(`Selected ${recipient.name || recipient.phone}`);
+                              toast.info(`Selected ${recipient.name || recipient.account_number}`);
                             }}
                           >
                             <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black uppercase text-primary shrink-0">
@@ -1195,7 +1301,7 @@ const DashboardSwiftVendor = () => {
                             </div>
                             <div className="leading-tight truncate max-w-[100px]">
                               <p className="text-[9px] font-black text-white truncate leading-none mb-0.5">{recipient.name || "Customer"}</p>
-                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.phone}</p>
+                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.account_number}</p>
                             </div>
                           </button>
                         ))}
@@ -1240,26 +1346,25 @@ const DashboardSwiftVendor = () => {
                   </div>
 
                   {momoAction === "cash-in" && (
-                    <>
-                      {momoAccountName ? (
-                        <div className="p-4 rounded-2xl bg-emerald-400/5 border border-emerald-400/20 flex items-center justify-between animate-in zoom-in-95 duration-300">
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/70">Recipient Name</p>
-                            <p className="text-lg font-black text-emerald-400">{momoAccountName}</p>
-                          </div>
-                          <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-                        </div>
-                      ) : (
-                        <Button 
-                          variant="outline"
-                          className="w-full h-12 rounded-xl text-sm font-bold border-2 border-primary/20 hover:bg-primary/5 transition-all"
-                          disabled={verifying || momoPhone.length < 10}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between ml-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Recipient Name</Label>
+                        <button 
+                          type="button" 
                           onClick={handleMomoEnquiry}
+                          disabled={verifying || momoPhone.length < 10}
+                          className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary/80 disabled:opacity-50 transition-colors"
                         >
-                          {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify Customer Name"}
-                        </Button>
-                      )}
-                    </>
+                          {verifying ? "VERIFYING..." : "AUTO-VERIFY"}
+                        </button>
+                      </div>
+                      <Input 
+                        placeholder="Enter recipient name" 
+                        className="h-12 rounded-xl bg-muted/30 border-none font-bold text-lg"
+                        value={momoAccountName || ""}
+                        onChange={(e) => setMomoAccountName(e.target.value)}
+                      />
+                    </div>
                   )}
 
                   <Button 
@@ -1437,7 +1542,7 @@ const DashboardSwiftVendor = () => {
                       {savedRecipients
                         .filter(r => r.type === "bank")
                         .reduce((acc: any[], current) => {
-                          const x = acc.find(item => item.phone === current.phone);
+                          const x = acc.find(item => item.account_number === current.account_number);
                           if (!x) acc.push(current);
                           return acc;
                         }, [])
@@ -1448,12 +1553,12 @@ const DashboardSwiftVendor = () => {
                             type="button"
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold text-white active:scale-95 text-left shrink-0"
                             onClick={() => {
-                              setAccountNumber(recipient.phone);
-                              setBankCode(recipient.network);
+                              setAccountNumber(recipient.account_number);
+                              setBankCode(recipient.network_or_bank);
                               if (recipient.name) {
                                 setAccountName(recipient.name);
                               }
-                              toast.info(`Selected ${recipient.name || recipient.phone}`);
+                              toast.info(`Selected ${recipient.name || recipient.account_number}`);
                             }}
                           >
                             <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-black uppercase text-primary shrink-0">
@@ -1461,7 +1566,7 @@ const DashboardSwiftVendor = () => {
                             </div>
                             <div className="leading-tight truncate max-w-[100px]">
                               <p className="text-[9px] font-black text-white truncate leading-none mb-0.5">{recipient.name || "Customer"}</p>
-                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.phone}</p>
+                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.account_number}</p>
                             </div>
                           </button>
                         ))}
@@ -1505,24 +1610,25 @@ const DashboardSwiftVendor = () => {
                     />
                   </div>
 
-                  {accountName ? (
-                    <div className="p-4 rounded-2xl bg-emerald-400/5 border border-emerald-400/20 flex items-center justify-between animate-in zoom-in-95 duration-300">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/70">Account Name Verified</p>
-                        <p className="text-lg font-black text-emerald-400">{accountName}</p>
-                      </div>
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between ml-1">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Account Name</Label>
+                      <button 
+                        type="button" 
+                        onClick={handleBankEnquiry}
+                        disabled={verifying || !bankCode || !accountNumber || accountNumber.length < 8}
+                        className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary/80 disabled:opacity-50 transition-colors"
+                      >
+                        {verifying ? "VERIFYING..." : "AUTO-VERIFY"}
+                      </button>
                     </div>
-                  ) : (
-                    <Button 
-                      variant="outline"
-                      className="w-full h-14 rounded-2xl text-lg font-black border-2 border-primary/20 hover:bg-primary/5 active:scale-[0.98] transition-all"
-                      disabled={verifying}
-                      onClick={handleBankEnquiry}
-                    >
-                      {verifying ? <Loader2 className="w-6 h-6 animate-spin" /> : "Verify Account Details"}
-                    </Button>
-                  )}
+                    <Input 
+                      placeholder="Enter account name" 
+                      className="h-12 rounded-xl bg-muted/30 border-none font-bold text-lg"
+                      value={accountName || ""}
+                      onChange={(e) => setAccountName(e.target.value)}
+                    />
+                  </div>
 
                   <Button 
                     className="w-full h-14 rounded-2xl text-lg font-black shadow-lg shadow-primary/20 active:scale-[0.98] transition-all"
@@ -1597,7 +1703,7 @@ const DashboardSwiftVendor = () => {
                       {savedRecipients
                         .filter(r => r.type === "africa")
                         .reduce((acc: any[], current) => {
-                          const x = acc.find(item => item.phone === current.phone);
+                          const x = acc.find(item => item.account_number === current.account_number);
                           if (!x) acc.push(current);
                           return acc;
                         }, [])
@@ -1608,12 +1714,12 @@ const DashboardSwiftVendor = () => {
                             type="button"
                             className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold text-white active:scale-95 text-left shrink-0"
                             onClick={() => {
-                              setAccountNumber(recipient.phone);
-                              setBankCode(recipient.network);
+                              setAccountNumber(recipient.account_number);
+                              setBankCode(recipient.network_or_bank);
                               if (recipient.name) {
                                 setAccountName(recipient.name);
                               }
-                              toast.info(`Selected ${recipient.name || recipient.phone}`);
+                              toast.info(`Selected ${recipient.name || recipient.account_number}`);
                             }}
                           >
                             <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-black uppercase text-indigo-400 shrink-0">
@@ -1621,7 +1727,7 @@ const DashboardSwiftVendor = () => {
                             </div>
                             <div className="leading-tight truncate max-w-[100px]">
                               <p className="text-[9px] font-black text-white truncate leading-none mb-0.5">{recipient.name || "Customer"}</p>
-                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.phone}</p>
+                              <p className="text-[8px] text-muted-foreground leading-none">{recipient.account_number}</p>
                             </div>
                           </button>
                         ))}
@@ -1956,17 +2062,29 @@ const DashboardSwiftVendor = () => {
                   )}
                 </div>
 
-                <div className="w-full flex gap-3">
+                <div className="w-full flex flex-wrap gap-2 sm:gap-3">
                   <Button 
                     variant="outline"
-                    className="flex-1 h-12 rounded-xl border border-white/10 hover:bg-white/5 font-bold text-sm gap-1.5"
+                    className="flex-1 min-w-[100px] h-11 rounded-xl border border-white/10 hover:bg-white/5 font-bold text-xs sm:text-sm gap-1.5"
                     onClick={() => downloadReceiptImage("active-receipt", overlay.successDetails?.transactionId || "tx")}
                   >
                     <Download className="w-4 h-4" />
-                    Download PNG
+                    <span className="hidden sm:inline">Save</span> PNG
                   </Button>
                   <Button 
-                    className="flex-1 h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-black text-sm transition-all active:scale-[0.98]"
+                    variant="outline"
+                    className="flex-1 min-w-[100px] h-11 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 font-bold text-xs sm:text-sm gap-1.5"
+                    onClick={() => {
+                      const text = `*Swift Vendor Receipt*%0A%0A*Amount:* GHS ${overlay.amount.toFixed(2)}%0A*Recipient:* ${overlay.phoneOrAccount}%0A*Network/Bank:* ${overlay.networkOrBank}%0A*Status:* SUCCESSFUL%0A*Transaction ID:* ${overlay.successDetails?.transactionId || 'N/A'}%0A*Date:* ${new Date().toLocaleString()}%0A%0A_Thank you for trading with us!_`;
+                      const phoneParam = (overlay.type === "momo" || overlay.type === "cash-out" || overlay.type === "cash-in") && overlay.phoneOrAccount.length >= 10 ? overlay.phoneOrAccount : "";
+                      window.open(`https://wa.me/${phoneParam}?text=${text}`, "_blank");
+                    }}
+                  >
+                    <Share2 className="w-4 h-4" />
+                    WhatsApp
+                  </Button>
+                  <Button 
+                    className="flex-1 min-w-[100px] h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xs sm:text-sm transition-all active:scale-[0.98]"
                     onClick={() => setOverlay(prev => ({ ...prev, isOpen: false }))}
                   >
                     Done
@@ -2081,6 +2199,13 @@ const DashboardSwiftVendor = () => {
           </div>
         </div>
       )}
+      
+      <VendorSecurityApproval
+        isOpen={securityApproval.isOpen}
+        amount={securityApproval.amount}
+        onApprove={securityApproval.onApprove}
+        onCancel={() => setSecurityApproval(prev => ({ ...prev, isOpen: false }))}
+      />
     </SecurityGateway>
   );
 };

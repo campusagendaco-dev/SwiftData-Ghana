@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 interface RequestBody {
-  action: "momo-collection" | "momo-disbursement" | "bank-transfer-init" | "bank-transfer-complete" | "check-status" | "submit-kyc" | "activate-with-wallet" | "initiate-activation-payment" | "momo-enquiry";
+  action: "momo-collection" | "momo-disbursement" | "bank-transfer-init" | "bank-transfer-complete" | "check-status" | "submit-kyc" | "activate-with-wallet" | "initiate-activation-payment" | "momo-enquiry" | "africa-transfer" | "list-banks";
   amount?: number;
   phone?: string;
   network?: string;
@@ -15,7 +15,19 @@ interface RequestBody {
   registration_number?: string;
   tin?: string;
   national_id_url?: string;
+  national_id_back_url?: string;
   business_cert_url?: string;
+  business_cert_expiry?: string;
+  national_id_expiry?: string;
+  region?: string;
+  vendorPhone?: string;
+  vendorEmail?: string;
+  digitalAddress?: string;
+  latitude?: number;
+  longitude?: number;
+  country?: string;
+  currency?: string;
+  account_name?: string;
 }
 
 const THETELLER_ERRORS: Record<string, string> = {
@@ -131,6 +143,21 @@ serve(async (req) => {
       });
       const data = await resp.json();
       console.log(`[paystack] Resolution result:`, JSON.stringify(data));
+      
+      // Sandbox fallback: If using a test key and resolution fails, return a mock success
+      if (!data.status && paystackKey.startsWith('sk_test')) {
+        console.log(`[paystack] Sandbox mode: Mocking successful account resolution for ${accountNumber}`);
+        return {
+          status: true,
+          message: "Account number resolved",
+          data: {
+            account_number: accountNumber,
+            account_name: "John Doe (Sandbox Mock)",
+            bank_id: 1
+          }
+        };
+      }
+      
       return data;
     } catch (e) {
       console.error("[paystack] Resolution error:", e);
@@ -141,52 +168,36 @@ serve(async (req) => {
   const calculateCommissions = (amount: number, type: "momo-in" | "momo-out" | "bank" | "africa") => {
     let agentProfit = 0;
     let companyProfit = 0;
+    let billingAmount = amount;
 
     if (type === "momo-in") {
-      // MoMo Cash-In (Disbursement / Send to MoMo) Strategic Pricing:
-      // Base Gateway Cost: GHS 1.00 flat
-      // Customer Fee: 1.0% of the transfer amount, capped at a maximum of GHS 20.00
-      // Split: 60% to Agent (highly competitive), 40% to Company
-      const customerFee = Math.min(amount * 0.01, 20.00);
+      const customerFee = Math.min(amount * 0.02, 40.00);
       const netProfit = Math.max(0, customerFee - 1.00);
-      
       agentProfit = netProfit * 0.60;
       companyProfit = netProfit * 0.40;
+      billingAmount = amount + customerFee - agentProfit;
     } else if (type === "momo-out") {
-      // MoMo Cash-Out (Collection / Receive from MoMo) Strategic Pricing:
-      // Base Gateway Cost: 0.7% of amount
-      // Customer Fee: 1.0% of the transfer amount, capped at a maximum of GHS 20.00
-      // Split: 60% to Agent (highly competitive), 40% to Company
-      const customerFee = Math.min(amount * 0.01, 20.00);
+      const customerFee = Math.min(amount * 0.02, 40.00);
       const gatewayCost = amount * 0.007;
       const netProfit = Math.max(0, customerFee - gatewayCost);
-      
       agentProfit = netProfit * 0.60;
       companyProfit = netProfit * 0.40;
+      billingAmount = amount - customerFee + agentProfit;
     } else if (type === "bank") {
-      // Bank Transfer Strategic Pricing:
-      // Base Gateway Cost: GHS 8.00 (Paystack flat fee)
-      // Customer Fee Markup: 1.0% of the transfer amount, capped at a maximum of GHS 200.00
-      // We distribute the markup as pure profit between the agent and the company.
-      // Split: 60% to Agent (highly competitive to attract vendors), 40% to Company
       const maxMarkup = 200.00;
       const markup = Math.min(amount * 0.01, maxMarkup);
-      
       agentProfit = markup * 0.60;
       companyProfit = markup * 0.40;
+      billingAmount = amount + markup - agentProfit;
     } else if (type === "africa") {
-      // Pan-African Transfer Strategic Pricing:
-      // Base FX/Gateway Cost Allowance: 2.0% of amount (handled by platform balance)
-      // Customer Fee Markup (Pure Profit): 1.5% of the transfer amount, capped at GHS 300.00
-      // Split: 60% to Agent (highly competitive), 40% to Company
       const maxMarkup = 300.00;
       const markup = Math.min(amount * 0.015, maxMarkup);
-      
       agentProfit = markup * 0.60;
       companyProfit = markup * 0.40;
+      billingAmount = amount + markup - agentProfit;
     }
 
-    return { agentProfit, companyProfit };
+    return { agentProfit, companyProfit, billingAmount };
   };
 
   if (!apiUser || !apiKey || !merchantId) {
@@ -225,16 +236,17 @@ serve(async (req) => {
       .eq("id", 1)
       .maybeSingle();
 
-    const minTxAmount = sysSettings?.vendor_min_transaction ? parseFloat(sysSettings.vendor_min_transaction) : 1.00;
+    const sysMinTxAmount = sysSettings?.vendor_min_transaction ? parseFloat(sysSettings.vendor_min_transaction) : 1.00;
+    const effectiveMinTxAmount = action === "africa-transfer" ? Math.max(100.00, sysMinTxAmount) : sysMinTxAmount;
 
     const bypassAmountAndStatusCheck = [
       "check-status", "list-banks", "momo-enquiry", 
       "submit-kyc", "activate-with-wallet", "initiate-activation-payment"
     ].includes(action);
 
-    if (amount !== undefined && amount < minTxAmount && !bypassAmountAndStatusCheck) {
+    if (amount !== undefined && amount < effectiveMinTxAmount && !bypassAmountAndStatusCheck) {
       return new Response(
-        JSON.stringify({ error: `Minimum transaction amount is GHS ${minTxAmount.toFixed(2)}` }),
+        JSON.stringify({ error: `Minimum transaction amount for this operation is GHS ${effectiveMinTxAmount.toFixed(2)}` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -572,7 +584,6 @@ serve(async (req) => {
       verifiedAccountName = resolution.data.account_name;
 
       // 1. Create Transfer Recipient
-      const mappedBankCode = bankMapping[network!] || network!;
       const recipientResp = await fetch("https://api.paystack.co/transferrecipient", {
         method: "POST",
         headers: {
@@ -583,7 +594,7 @@ serve(async (req) => {
           type: "mobile_money",
           name: verifiedAccountName,
           account_number: phone,
-          bank_code: mappedBankCode,
+          bank_code: network,
           currency: "GHS",
         })
       });
@@ -935,7 +946,7 @@ serve(async (req) => {
       if ((action === "momo-disbursement" || action === "bank-transfer-init" || action === "africa-transfer") && (isSuccess || isPending)) {
         await supabase.rpc("debit_wallet", {
           p_agent_id: user.id,
-          p_amount: amount
+          p_amount: commissions.billingAmount
         });
       }
 
@@ -943,7 +954,7 @@ serve(async (req) => {
       if (action === "momo-collection" && isSuccess) {
         await supabase.rpc("credit_wallet", {
           p_agent_id: user.id,
-          p_amount: amount
+          p_amount: commissions.billingAmount
         });
         // Mark as credited
         await supabase.from("orders").update({
@@ -980,9 +991,10 @@ serve(async (req) => {
             if (updated && updated.length > 0) {
               // Refund wallet since it was debited on bank-transfer-init
               if (!order.metadata?.wallet_refunded) {
+                const commissions = calculateCommissions(order.amount, "bank");
                 await supabase.rpc("credit_wallet", {
                   p_agent_id: order.agent_id,
-                  p_amount: order.amount
+                  p_amount: commissions.billingAmount
                 });
                 await supabase.from("orders").update({
                   metadata: { ...order.metadata, theteller_raw: result, wallet_refunded: true }
@@ -1019,9 +1031,10 @@ serve(async (req) => {
             if (updated && updated.length > 0) {
               // If it was a collection, credit the wallet now
               if (order.order_type === "vendor_cash_out" && !order.metadata?.wallet_credited) {
+                const commissions = calculateCommissions(order.amount, "momo-out");
                 await supabase.rpc("credit_wallet", {
                   p_agent_id: order.agent_id,
-                  p_amount: order.amount
+                  p_amount: commissions.billingAmount
                 });
                 await supabase.from("orders").update({
                   metadata: { ...order.metadata, wallet_credited: true }
@@ -1046,9 +1059,12 @@ serve(async (req) => {
             if (updated && updated.length > 0) {
               // Refund wallet for disbursements (vendor_cash_in, vendor_bank_transfer, vendor_africa_transfer) if they fail
               if ((order.order_type === "vendor_cash_in" || order.order_type === "vendor_bank_transfer" || order.order_type === "vendor_africa_transfer") && !order.metadata?.wallet_refunded) {
+                const commType = order.order_type === "vendor_africa_transfer" ? "africa" : 
+                        (order.order_type === "vendor_bank_transfer" ? "bank" : "momo-in");
+                const commissions = calculateCommissions(order.amount, commType as any);
                 await supabase.rpc("credit_wallet", {
                   p_agent_id: order.agent_id,
-                  p_amount: order.amount
+                  p_amount: commissions.billingAmount
                 });
                 await supabase.from("orders").update({
                   metadata: { ...order.metadata, theteller_raw: result, wallet_refunded: true }

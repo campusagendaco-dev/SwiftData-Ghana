@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac } from "node:crypto";
+// removed node:crypto
 import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 
@@ -49,9 +49,12 @@ serve(async (req) => {
 
     // Verify Signature if secret is found
     if (secret) {
-      const hmac = createHmac("sha256", secret);
-      hmac.update(rawBody);
-      const expectedSignature = hmac.digest("hex");
+      const enc = new TextEncoder();
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+      );
+      const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(rawBody));
+      const expectedSignature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
 
       if (signature !== expectedSignature) {
         console.error("[DataMart Webhook] Invalid signature");

@@ -104,7 +104,7 @@ async function callProviderApi(
   provider: any,
   data: Record<string, unknown>,
   endpoint: string = "purchase"
-): Promise<{ ok: boolean; reason: string; id?: string; body?: string }> {
+): Promise<{ ok: boolean; reason: string; id?: string; body: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
   let payload = { ...data };
   if (handlerType === "bossu") {
@@ -161,7 +161,7 @@ async function callProviderApi(
       
       const isAlreadyPlaced = /already placed/i.test(parsedMsg) || /currently being processed/i.test(parsedMsg);
       if (isAlreadyPlaced) {
-        return { ok: true, reason: "", status: "processing" };
+        return { ok: true, reason: "", body: lastBody, status: "processing" };
       }
 
       if (res.ok && !isHtmlBody(ct, text)) {
@@ -170,9 +170,9 @@ async function callProviderApi(
           const s = String(p?.status ?? p?.success ?? "").toLowerCase();
           const ok = p?.success === true || s === "success" || s === "true" || p?.status === true || s === "completed" || s === "pending";
           const pStatus = String(p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
-          if (ok) return { ok: true, reason: "", id: String(p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
-          lastReason = parsedMsg || "Provider rejected the order";
-        } catch { return { ok: true, reason: "", status: "" }; }
+            if (ok) return { ok: true, reason: "", body: lastBody, id: String(p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
+            lastReason = parsedMsg || "Provider rejected the order";
+          } catch { return { ok: true, reason: "", body: lastBody, status: "" }; }
       } else {
         lastReason = parsedMsg || `HTTP ${res.status}`;
       }
@@ -530,9 +530,9 @@ serve(async (req: Request) => {
       const orderId = result.order_id;
 
       // Sync custom request ID to order metadata for webhook tracking
-      const clientRef = request_id || payload?.client_reference || idemKey;
+      const finalClientRef = request_id || payload?.client_reference || idemKey;
       await supabase.from("orders").update({
-        metadata: { client_reference: clientRef }
+        metadata: { client_reference: finalClientRef }
       }).eq("id", orderId);
       
       // ── 9. Fulfillment Logic (SKIP IF TEST MODE) ──────────────────────────
@@ -543,7 +543,7 @@ serve(async (req: Request) => {
 
       // REAL FULFILLMENT START
       const providers = await getActiveProviders(supabase, package_size ? "data" : "airtime");
-      let finalResult = { ok: false, reason: "No active providers", body: "" };
+      let finalResult: { ok: boolean; reason: string; id?: string; body?: string; status?: string } = { ok: false, reason: "No active providers", body: "" };
       let successfulProviderId = null;
 
       for (const provider of providers) {

@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => ({
         importScripts: ["push-sw.js"],
         skipWaiting: true,
         clientsClaim: true,
-        maximumFileSizeToCacheInBytes: 5000000,
+        maximumFileSizeToCacheInBytes: 10000000,
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
         // Never serve cached HTML for JS/CSS asset requests — prevents stale chunk errors
         navigateFallback: "index.html",

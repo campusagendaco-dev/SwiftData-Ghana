@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac, timingSafeEqual } from "node:crypto";
+// removed node:crypto
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
@@ -507,11 +507,24 @@ serve(async (req) => {
     });
   }
 
-  const hash = createHmac("sha512", PAYSTACK_SECRET_KEY).update(rawBody).digest("hex");
-  const encoder = new TextEncoder();
-  const hashBuf = encoder.encode(hash);
-  const sigBuf = encoder.encode(signature);
-  const signatureValid = hashBuf.length === sigBuf.length && timingSafeEqual(hashBuf, sigBuf);
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", enc.encode(PAYSTACK_SECRET_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(rawBody));
+  const hash = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+  
+  const hashBuf = enc.encode(hash);
+  const sigBuf = enc.encode(signature);
+  
+  function safeEqual(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+  }
+
+  const signatureValid = safeEqual(hashBuf, sigBuf);
   if (!signatureValid) {
     console.error("Invalid signature. Expected:", hash, "Got:", signature);
     return new Response(JSON.stringify({ error: "Invalid signature" }), {
