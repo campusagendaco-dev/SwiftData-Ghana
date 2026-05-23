@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,7 @@ const getErrorMessageFromData = (data: any) => {
 
 const DashboardSwiftVendor = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [isLockedByAdmin, setIsLockedByAdmin] = useState<boolean>(false);
   const [vendorStatus, setVendorStatus] = useState<string>("active");
@@ -1040,7 +1042,11 @@ const DashboardSwiftVendor = () => {
               <p className="text-xs font-bold text-amber-500/80 leading-relaxed">Your float is below GHS {balanceThreshold}. Top up soon to avoid missing transactions.</p>
             </div>
           </div>
-          <Button size="sm" className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105 relative z-10">
+          <Button 
+            size="sm" 
+            onClick={() => navigate('/dashboard/wallet')}
+            className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105 relative z-10"
+          >
             Top Up Now
           </Button>
         </div>
