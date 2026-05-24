@@ -10,8 +10,8 @@ interface State { hasError: boolean; retried: boolean }
 export class ChunkErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, retried: false };
 
-  static getDerivedStateFromError(): Partial<State> {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    return { hasError: true, error } as any;
   }
 
   componentDidCatch(error: Error) {
@@ -51,15 +51,12 @@ export class ChunkErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-6 bg-[#030407]/95 backdrop-blur-md">
-          <div className="text-center space-y-4 max-w-xs">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto">
-              <svg className="w-7 h-7 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h2 className="text-white font-black text-xl">Application Error</h2>
-            <p className="text-white/40 text-sm">An unexpected issue occurred while loading this section. Please reload to try again.</p>
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-6 bg-[#030407]/95 backdrop-blur-md overflow-y-auto">
+          <div className="text-left space-y-4 max-w-xl w-full bg-red-900/50 p-6 rounded-xl border border-red-500/50">
+            <h2 className="text-white font-black text-xl text-red-400">Application Crashed!</h2>
+            <pre className="text-white/80 text-xs whitespace-pre-wrap font-mono bg-black/50 p-4 rounded-lg overflow-x-auto">
+              {(this.state as any).error?.stack || (this.state as any).error?.message || "Unknown Error"}
+            </pre>
             <button
               type="button"
               onClick={() => window.location.reload()}

@@ -16,10 +16,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Zap, Loader2, Store, MessageCircle,
   ShieldCheck, Phone, X, CreditCard, Gift, Tag, CheckCircle2,
-  Smartphone, Package, Clock, ArrowRight, Wifi, Star,
+  Smartphone, Package, Clock, ArrowRight, Wifi, Star, History
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import StoreAuth from "@/components/StoreAuth";
+import StoreDepositFlow from "@/components/StoreDepositFlow";
+import StoreTransactionHistory from "@/components/StoreTransactionHistory";
+import StoreManagementOverlay from "@/components/StoreManagementOverlay";
 import { playSuccessSound } from "@/lib/sound";
 
 interface PromoResult {
@@ -105,17 +108,32 @@ const AgentStore = () => {
     }
   }, [searchParams]);
   const [depositOpen, setDepositOpen] = useState(false);
-  const [depositAmount, setDepositAmount] = useState("");
-  const [depositPhone, setDepositPhone] = useState("");
-  const [depositTxRef, setDepositTxRef] = useState("");
-  const [submittingDeposit, setSubmittingDeposit] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [payMethod, setPayMethod] = useState<"wallet" | "paystack">("paystack");
+
+  const [customerWalletBalance, setCustomerWalletBalance] = useState<number>(0);
+
+  const fetchWalletBalance = useCallback(async () => {
+    if (profile?.user_id) {
+      const { data } = await supabase.from("wallets").select("balance").eq("agent_id", profile.user_id).maybeSingle();
+      if (data) {
+        setCustomerWalletBalance(Number(data.balance));
+      } else {
+        setCustomerWalletBalance(0);
+      }
+    }
+  }, [profile?.user_id]);
+
+  useEffect(() => {
+    fetchWalletBalance();
+  }, [fetchWalletBalance]);
 
   const isCustomerLoggedIn = Boolean(
     profile && 
     (profile.parent_agent_id === agent?.user_id || profile.user_id === agent?.user_id)
   );
-  const customerBalance = profile?.balance ?? 0;
+  const customerBalance = customerWalletBalance;
   const customerName = profile?.full_name || profile?.email || "Store Customer";
 
   // Automatically link visiting users with no parent agent to the visited store
@@ -192,53 +210,6 @@ const AgentStore = () => {
       setBuying(false);
     }
   };
-
-  const handleManualDeposit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile || !agent) return;
-
-    const requestedAmount = Number(depositAmount);
-    if (!Number.isFinite(requestedAmount) || requestedAmount < 1) {
-      toast({ title: "Enter a valid amount", variant: "destructive" });
-      return;
-    }
-    if (!depositPhone.trim()) {
-      toast({ title: "Enter your MoMo sender number", variant: "destructive" });
-      return;
-    }
-    if (!depositTxRef.trim()) {
-      toast({ title: "Enter the transaction reference", variant: "destructive" });
-      return;
-    }
-
-    setSubmittingDeposit(true);
-    try {
-      const { error } = await supabase.from("store_deposits").insert({
-        agent_id: agent.user_id,
-        customer_id: profile.user_id,
-        amount: requestedAmount,
-        sender_number: depositPhone.trim(),
-        transaction_reference: depositTxRef.trim(),
-        status: "pending",
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "✅ Deposit Request Sent",
-        description: `Your deposit of GHS ${requestedAmount.toFixed(2)} is pending approval from your agent.`,
-      });
-      setDepositOpen(false);
-      setDepositAmount("");
-      setDepositPhone("");
-      setDepositTxRef("");
-    } catch (err: any) {
-      toast({ title: "Deposit failed", description: err.message, variant: "destructive" });
-    } finally {
-      setSubmittingDeposit(false);
-    }
-  };
-
 
   const verifiedRef = useRef(false);
   useEffect(() => {
@@ -925,7 +896,9 @@ const AgentStore = () => {
                 <p className="text-[10px] font-black text-white/30 uppercase tracking-widest leading-none">Store Wallet Portal</p>
                 <p className="text-white text-base font-black truncate mt-1.5 leading-tight">{customerName}</p>
               </div>
-              <span className="text-[9px] font-black px-2 py-0.5 rounded-full text-black uppercase tracking-wider leading-none" style={{ backgroundColor: accentColor }}>Logged In</span>
+              <button onClick={() => setHistoryOpen(true)} className="text-[10px] font-black px-3 py-1.5 rounded-xl text-black uppercase tracking-wider flex items-center gap-1 hover:brightness-110 transition-all active:scale-95" style={{ backgroundColor: accentColor }}>
+                <History className="w-3.5 h-3.5" /> History
+              </button>
             </div>
             
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/6">
@@ -1195,98 +1168,25 @@ const AgentStore = () => {
         primaryColor={accentColor}
       />
 
-      {/* ── Manual MoMo Deposit Modal ── */}
-      {depositOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md" onClick={() => setDepositOpen(false)} />
-          <div className="relative max-w-sm w-full bg-[#111116] border border-white/10 rounded-3xl p-6 text-left space-y-5 animate-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setDepositOpen(false)}
-              className="absolute top-4 right-4 text-white/40 hover:text-white/80 p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
+      <StoreDepositFlow
+        isOpen={depositOpen}
+        onClose={() => setDepositOpen(false)}
+        agentId={agent.user_id}
+        initialPhone={profile?.momo_number || profile?.phone || phone}
+        accentColor={accentColor}
+        onSuccess={() => {
+          refreshProfile();
+          fetchWalletBalance();
+        }}
+      />
 
-            <div>
-              <h3 className="text-lg font-black text-white">Fund Your Wallet</h3>
-              <p className="text-[10px] text-white/40 font-bold uppercase mt-0.5 tracking-wider">Send MoMo · Submit Reference · Agent Approves</p>
-            </div>
-
-            {/* Step hint */}
-            <div className="bg-amber-400/8 border border-amber-400/20 rounded-2xl p-3 space-y-1">
-              <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider">How it works</p>
-              <ol className="text-[11px] text-white/50 space-y-0.5 list-decimal list-inside">
-                <li>Send MoMo to agent: <span className="text-white font-bold">{agent.momo_number || "—"}</span></li>
-                <li>Fill in the form below with your details</li>
-                <li>Agent confirms and credits your balance</li>
-              </ol>
-            </div>
-
-            {/* Deposit Form */}
-            <form onSubmit={handleManualDeposit} className="space-y-4">
-              {/* Amount */}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-white/40 mb-1.5 tracking-wider">Amount Sent (GHS)</label>
-                <div className="relative">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-sm font-black">₵</div>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    step="0.01"
-                    placeholder="e.g. 50.00"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    className="w-full h-12 rounded-2xl bg-white/5 border border-white/8 pl-9 pr-4 text-sm font-bold text-white focus:outline-none focus:border-amber-400 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Sender number */}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-white/40 mb-1.5 tracking-wider">Your MoMo Number</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="e.g. 0244000000"
-                  value={depositPhone}
-                  onChange={(e) => setDepositPhone(e.target.value)}
-                  className="w-full h-12 rounded-2xl bg-white/5 border border-white/8 px-4 text-sm font-bold text-white focus:outline-none focus:border-amber-400 transition-colors"
-                />
-              </div>
-
-              {/* Transaction reference */}
-              <div>
-                <label className="block text-[10px] font-black uppercase text-white/40 mb-1.5 tracking-wider">Transaction Reference / ID</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="From your MoMo SMS"
-                  value={depositTxRef}
-                  onChange={(e) => setDepositTxRef(e.target.value)}
-                  className="w-full h-12 rounded-2xl bg-white/5 border border-white/8 px-4 text-sm font-bold text-white focus:outline-none focus:border-amber-400 transition-colors"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submittingDeposit || !depositAmount || !depositPhone || !depositTxRef}
-                className="w-full h-12 rounded-2xl font-black text-xs uppercase tracking-widest text-black flex items-center justify-center gap-2 transition-all hover:brightness-110 active:scale-95 disabled:opacity-50 border-0"
-                style={{ backgroundColor: accentColor }}
-              >
-                {submittingDeposit ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    Submit Deposit Request
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <StoreTransactionHistory
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        customerId={profile?.user_id || ""}
+        customerPhone={profile?.momo_number || profile?.phone || phone}
+        accentColor={accentColor}
+      />
 
       {/* ── Floating WhatsApp ── */}
       {agent.whatsapp_number && (
@@ -1302,17 +1202,39 @@ const AgentStore = () => {
         </a>
       )}
 
-      {/* ── Store Owner Admin Portal Access Button ── */}
       {profile && (profile.user_id === agent?.user_id || profile.is_agent || profile.is_sub_agent) && (
-        <Link
-          to={profile.user_id === agent?.user_id ? "/dashboard/my-store" : "/dashboard"}
+        <button
+          onClick={() => {
+            if (profile.user_id === agent?.user_id) {
+              setManageOpen(true);
+            } else {
+              window.open("/dashboard", "_blank");
+            }
+          }}
           className="fixed left-4 bottom-6 z-[100] animate-bounce shrink-0 select-none outline-none"
         >
           <div className="flex items-center gap-2 h-12 px-4 rounded-2xl bg-amber-400 text-black shadow-xl shadow-amber-400/25 hover:scale-105 active:scale-95 transition-all font-black text-xs uppercase tracking-widest border border-amber-500/30">
             <Store className="w-5 h-5 shrink-0 animate-pulse" />
             {profile.user_id === agent?.user_id ? "Manage Storefront" : "Reseller Dashboard"}
           </div>
-        </Link>
+        </button>
+      )}
+
+      {/* ── Inline Store Management Overlay ── */}
+      {profile?.user_id === agent?.user_id && (
+        <StoreManagementOverlay
+          isOpen={manageOpen}
+          onClose={() => setManageOpen(false)}
+          agentId={agent.user_id}
+          currentStoreName={agent.store_name}
+          currentWhatsapp={agent.whatsapp_number || ""}
+          currentSupport={agent.support_number || ""}
+          accentColor={accentColor}
+          onSuccess={() => {
+            // Can optionally reload or refresh agent data here
+            window.location.reload();
+          }}
+        />
       )}
     </div>
   );

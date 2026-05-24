@@ -89,6 +89,13 @@ const getErrorMessageFromData = (data: any) => {
   return data.description || data.reason || data.message || data.error || data.desc || data.status || "Unknown error";
 };
 
+const playSuccessSound = () => {
+  try {
+    const audio = new Audio("https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/success-beep.mp3");
+    audio.play().catch(e => console.log('Audio playback prevented:', e));
+  } catch (e) {}
+};
+
 const DashboardSwiftVendor = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -139,6 +146,12 @@ const DashboardSwiftVendor = () => {
   const [statusFilter, setStatusFilter] = useState<"all" | "fulfilled" | "pending" | "failed">("all");
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [securityApproval, setSecurityApproval] = useState<{isOpen: boolean, amount: number, onApprove: () => void}>({isOpen: false, amount: 0, onApprove: () => {}});
+
+  // Master Agent State
+  const [subAgents, setSubAgents] = useState<any[]>([]);
+  const [loadingSubAgents, setLoadingSubAgents] = useState(false);
+  const [bridgeFloatModal, setBridgeFloatModal] = useState<{isOpen: boolean, subAgent: any}>({isOpen: false, subAgent: null});
+  const [bridgeAmount, setBridgeAmount] = useState("");
 
   const [minTxAmount, setMinTxAmount] = useState<number>(1.00);
 
@@ -221,6 +234,7 @@ const DashboardSwiftVendor = () => {
                 accountName: data.account_name || prev.successDetails?.accountName
               }
             }));
+            playSuccessSound();
             fetchBalance();
           } else if (isFailed) {
             clearInterval(countdownInterval);
@@ -244,10 +258,56 @@ const DashboardSwiftVendor = () => {
     };
   }, [overlay.isOpen, overlay.step, overlay.orderId]);
 
+  const fetchSubAgents = async () => {
+    if (!user) return;
+    setLoadingSubAgents(true);
+    try {
+      const { data, error } = await supabase.rpc('get_sub_agents_status', { p_master_id: user.id });
+      if (!error && data) {
+        setSubAgents(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingSubAgents(false);
+    }
+  };
+
   const handleTabChange = (value: string) => {
     setActiveTab(value);
     if (value === "bank" || value === "momo") {
       setSelectedCountry("GH");
+    }
+    if (value === "franchises") {
+      fetchSubAgents();
+    }
+  };
+
+  const handleBridgeFloat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bridgeFloatModal.subAgent || !bridgeAmount || isNaN(Number(bridgeAmount)) || Number(bridgeAmount) <= 0) return;
+    setLoadingSubAgents(true);
+    try {
+      const { data, error } = await supabase.rpc('transfer_float_to_subagent', {
+        p_master_id: user?.id,
+        p_sub_id: bridgeFloatModal.subAgent.user_id,
+        p_amount: Number(bridgeAmount)
+      });
+      if (error) throw new Error(error.message);
+      if (data && data.success) {
+        toast.success(`Successfully bridged GHS ${bridgeAmount} to ${bridgeFloatModal.subAgent.full_name}`);
+        setBridgeFloatModal({isOpen: false, subAgent: null});
+        setBridgeAmount("");
+        fetchSubAgents();
+        fetchBalance();
+        playSuccessSound();
+      } else {
+        toast.error(data?.error || "Failed to bridge float");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to transfer float");
+    } finally {
+      setLoadingSubAgents(false);
     }
   };
 
@@ -609,6 +669,7 @@ const DashboardSwiftVendor = () => {
       if (isSuccess) {
         if (!silent) {
           toast.success("Transaction successful! Wallet updated.", { id: "verify-order" });
+          playSuccessSound();
         }
         fetchBalance();
       } else if (isPending) {
@@ -683,6 +744,7 @@ const DashboardSwiftVendor = () => {
             accountName: momoAccountName || undefined
           }
         }));
+        playSuccessSound();
         if (momoAction === "cash-in" && momoAccountName) {
           saveRecipient(momoAccountName, momoPhone, momoNetwork, "momo");
         }
@@ -1228,6 +1290,10 @@ const DashboardSwiftVendor = () => {
             <TabsTrigger value="africa" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2 text-indigo-500">
               <Zap className="w-4 h-4" />
               Africa Hub
+            </TabsTrigger>
+            <TabsTrigger value="franchises" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
+              <Users className="w-4 h-4" />
+              My Franchises
             </TabsTrigger>
             <TabsTrigger value="insights" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
               <Search className="w-4 h-4" />
@@ -1886,6 +1952,88 @@ const DashboardSwiftVendor = () => {
             </div>
           </div>
         </TabsContent>
+        <TabsContent value="franchises" className="animate-in slide-in-from-bottom-4 duration-500">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <Card className="border-none bg-card/50 shadow-xl shadow-black/5 lg:col-span-2">
+              <CardHeader className="bg-primary/5 border-b border-primary/5">
+                <CardTitle className="text-xl font-black flex items-center gap-2">
+                  <Users className="w-5 h-5 text-primary" />
+                  My Sub-Agents
+                </CardTitle>
+                <CardDescription>Manage your franchise kiosks and bridge float instantly</CardDescription>
+              </CardHeader>
+              <CardContent className="p-6">
+                {loadingSubAgents ? (
+                  <div className="flex items-center justify-center p-8">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                  </div>
+                ) : subAgents.length === 0 ? (
+                  <div className="text-center p-8 space-y-4">
+                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto">
+                      <Users className="w-8 h-8 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground font-bold">You haven't added any sub-agents yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {subAgents.map((agent: any) => (
+                      <div key={agent.user_id} className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-black uppercase text-xl">
+                            {agent.full_name?.charAt(0) || "A"}
+                          </div>
+                          <div>
+                            <p className="font-black text-white">{agent.full_name}</p>
+                            <p className="text-xs font-bold text-muted-foreground">{agent.momo_number}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right hidden sm:block">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Today's Sales</p>
+                            <p className="font-black text-emerald-400">GHS {Number(agent.total_sales_today).toFixed(2)}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Float Balance</p>
+                            <p className={cn("font-black text-lg", Number(agent.wallet_balance) < 100 ? "text-amber-500" : "text-primary")}>
+                              GHS {Number(agent.wallet_balance).toFixed(2)}
+                            </p>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            className="h-10 rounded-xl border-primary/20 hover:bg-primary/10 text-primary font-bold gap-2"
+                            onClick={() => setBridgeFloatModal({isOpen: true, subAgent: agent})}
+                          >
+                            <Zap className="w-4 h-4" />
+                            Bridge Float
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+              <Card className="border-none bg-primary/5 shadow-xl shadow-black/5">
+                <CardContent className="p-6">
+                  <div className="flex gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                      <Zap className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="font-black text-primary uppercase tracking-widest text-[10px]">What is Float Bridging?</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+                        If one of your sub-agents runs out of float during a busy day, you can instantly bridge them some of your own float so they don't have to turn away customers.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
         <TabsContent value="insights" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <Card className="border-none bg-card/50 shadow-xl shadow-black/5 lg:col-span-2">
@@ -2199,7 +2347,58 @@ const DashboardSwiftVendor = () => {
           </div>
         </div>
       )}
-      
+
+      {bridgeFloatModal.isOpen && bridgeFloatModal.subAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="relative w-full max-w-md bg-[#0e0e10]/95 border border-primary/20 rounded-[32px] p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col items-center text-center space-y-6">
+            <div className="absolute -top-24 w-48 h-48 rounded-full blur-[80px] opacity-10 pointer-events-none bg-primary" />
+            
+            <div className="w-20 h-20 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center mb-2">
+              <Zap className="w-10 h-10 text-primary" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-2xl font-black text-white">Bridge Float</h3>
+              <p className="text-sm text-muted-foreground font-medium">
+                Transfer float to <span className="font-bold text-primary">{bridgeFloatModal.subAgent.full_name}</span>
+              </p>
+            </div>
+
+            <div className="w-full space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground text-left block w-full ml-1">Amount (GHS)</Label>
+              <Input 
+                type="number" 
+                placeholder="0.00" 
+                className="h-14 rounded-2xl bg-muted/30 border-none font-black text-2xl text-primary text-center"
+                value={bridgeAmount}
+                onChange={(e) => setBridgeAmount(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="w-full flex gap-3 mt-4">
+              <Button 
+                variant="outline" 
+                className="flex-1 h-14 rounded-2xl border border-white/10 hover:bg-white/5 font-bold"
+                onClick={() => {
+                  setBridgeFloatModal({isOpen: false, subAgent: null});
+                  setBridgeAmount("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1 h-14 rounded-2xl bg-primary hover:bg-primary/90 text-black font-black transition-all active:scale-[0.98]"
+                onClick={handleBridgeFloat}
+                disabled={!bridgeAmount || Number(bridgeAmount) <= 0 || loadingSubAgents}
+              >
+                {loadingSubAgents ? <Loader2 className="w-6 h-6 animate-spin" /> : "Transfer Float"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <VendorSecurityApproval
         isOpen={securityApproval.isOpen}
         amount={securityApproval.amount}

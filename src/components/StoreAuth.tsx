@@ -104,7 +104,7 @@ const StoreAuth = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[250] flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[250] flex items-start sm:items-center justify-center sm:p-4">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -116,15 +116,15 @@ const StoreAuth = ({
 
         {/* Modal panel */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          initial={{ opacity: 0, y: "-100%" }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: "-100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 350 }}
-          className="relative w-full max-w-md overflow-hidden rounded-3xl shadow-2xl border backdrop-blur-md z-10"
+          className="relative w-full sm:max-w-md overflow-y-auto max-h-[100vh] sm:max-h-[95vh] rounded-b-3xl sm:rounded-3xl shadow-2xl border backdrop-blur-md z-10"
           style={{ 
             background: "#08080c", 
             borderColor: `${primaryColor}33`,
-            boxShadow: `0 24px 64px -12px ${primaryColor}22`
+            boxShadow: `0 10px 40px -10px ${primaryColor}15`
           }}
         >
           {/* Header decoration */}

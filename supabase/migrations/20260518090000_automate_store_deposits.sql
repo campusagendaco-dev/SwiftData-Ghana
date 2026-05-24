@@ -30,10 +30,11 @@ BEGIN
     INSERT INTO public.wallets (agent_id, balance) VALUES (p_agent_id, 0);
   END IF;
 
-  -- 4. Credit the customer's local store balance
-  UPDATE public.profiles 
-  SET balance = COALESCE(balance, 0) + p_amount 
-  WHERE user_id = p_customer_id;
+  -- 4. Credit the customer's local store balance (in their wallet)
+  INSERT INTO public.wallets (agent_id, balance)
+  VALUES (p_customer_id, p_amount)
+  ON CONFLICT (agent_id)
+  DO UPDATE SET balance = public.wallets.balance + p_amount;
 
   -- 5. Credit the agent's platform wallet (Model A: so they have funds to fulfill the customer's future purchases)
   UPDATE public.wallets 
