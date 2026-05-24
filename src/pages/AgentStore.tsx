@@ -361,15 +361,26 @@ const AgentStore = () => {
     if (!agent) return fallbackPrice;
     const multiplier = priceMultipliers[network] || 1;
     const parentAssigned = Number(parentAssignedPrices?.[network]?.[size]);
-    const agentOwn = Number(agent.agent_prices?.[network]?.[size]);
+    
+    const agentGuestPrice = Number(agent.agent_prices?.[network]?.[size]);
+    const agentCustomerPrice = Number((agent as any).registered_user_prices?.[network]?.[size]);
+    
+    // Use customer pricing if the user is logged in (and is not the owner)
+    const isCustomer = profile && profile.user_id !== agent.user_id;
+    let activePrice = agentGuestPrice;
+    
+    if (isCustomer && Number.isFinite(agentCustomerPrice) && agentCustomerPrice > 0) {
+      activePrice = agentCustomerPrice;
+    }
+
     if (agent.is_sub_agent) {
       const base = Math.max(
         Number.isFinite(parentAssigned) ? parentAssigned : 0,
-        Number.isFinite(agentOwn) ? agentOwn : 0
+        Number.isFinite(activePrice) ? activePrice : 0
       );
       if (base > 0) return applyPriceMultiplier(base, multiplier);
     } else {
-      if (Number.isFinite(agentOwn) && agentOwn > 0) return applyPriceMultiplier(agentOwn, multiplier);
+      if (Number.isFinite(activePrice) && activePrice > 0) return applyPriceMultiplier(activePrice, multiplier);
     }
     const gs = globalSettings[`${network}-${size}`];
     let gsBase = Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : Number(gs?.public_price);
@@ -379,7 +390,7 @@ const AgentStore = () => {
     }
     if (Number.isFinite(gsBase) && gsBase > 0) return applyPriceMultiplier(gsBase, multiplier);
     return applyPriceMultiplier(fallbackPrice, multiplier);
-  }, [agent, globalSettings, parentAssignedPrices, priceMultipliers]);
+  }, [agent, globalSettings, parentAssignedPrices, priceMultipliers, profile]);
 
   const packages = (basePackages[selectedNetwork] || [])
     .map((pkg) => {
@@ -779,10 +790,7 @@ const AgentStore = () => {
             <Zap className="w-8 h-8 text-white/20" />
           </div>
           <h1 className="text-2xl font-black mb-2">Store Not Found</h1>
-          <p className="text-white/40 text-sm mb-6 leading-relaxed">This store doesn't exist or hasn't been activated by an agent yet.</p>
-          <Link to="/buy-data" className="inline-flex items-center gap-2 bg-amber-400 text-black font-black px-6 py-3 rounded-2xl text-sm">
-            Go to Main Store <ArrowRight className="w-4 h-4" />
-          </Link>
+          <p className="text-white/40 text-sm leading-relaxed">This store doesn't exist or hasn't been activated by an agent yet.</p>
         </div>
       </div>
     );

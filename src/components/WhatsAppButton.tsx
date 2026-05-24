@@ -3,7 +3,7 @@ import { MessageCircle, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_LINK = "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40";
-const POS_KEY = "wa-btn-pos-v2"; // Changed key to reset for new design
+const POS_KEY = "wa-btn-pos-v3"; // Changed key to reset for new design
 
 function clamp(x: number, y: number, width: number, height: number) {
   return {
@@ -60,25 +60,41 @@ const WhatsAppButton = () => {
       moveDrag(e.touches[0].clientX, e.touches[0].clientY);
       e.preventDefault();
     };
+    const onResize = () => {
+      setPos((currentPos) => {
+        if (!currentPos || !buttonRef.current) return currentPos;
+        const rect = buttonRef.current.getBoundingClientRect();
+        const newPos = clamp(currentPos.x, currentPos.y, rect.width, rect.height);
+        posRef.current = newPos;
+        return newPos;
+      });
+    };
+
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", endDrag);
     window.addEventListener("touchmove", onTouchMove, { passive: false });
     window.addEventListener("touchend", endDrag);
+    window.addEventListener("resize", onResize);
+    
+    // Initial clamp just in case loaded pos is out of bounds
+    onResize();
+
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", endDrag);
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", endDrag);
+      window.removeEventListener("resize", onResize);
     };
   }, [moveDrag, endDrag]);
 
   const posStyle: React.CSSProperties = pos
     ? { left: pos.x, top: pos.y }
-    : { bottom: 32, left: 24 };
+    : { bottom: 96, right: 24 }; // Raised from 32 to 96 to avoid mobile bottom navs
 
   return (
     <div 
-      className="fixed z-50 select-none group" 
+      className="fixed z-[60] select-none group" 
       style={posStyle}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}

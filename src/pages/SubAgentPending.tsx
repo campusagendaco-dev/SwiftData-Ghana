@@ -15,6 +15,7 @@ const SubAgentPending = () => {
   const [activationFee, setActivationFee] = useState(0);
   const [parentId, setParentId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [platformBaseFee, setPlatformBaseFee] = useState(50);
   const [parentStore, setParentStore] = useState<{
@@ -255,9 +256,9 @@ const SubAgentPending = () => {
         {/* Footer */}
         <div className="text-center space-y-4">
           <p className="text-white/20 text-[10px] font-black uppercase tracking-[0.4em]">Secure Encryption Active</p>
-          <Link to="/" className="inline-flex items-center gap-2 text-white/40 hover:text-white transition-colors text-xs font-bold group">
+          <Link to={parentStore?.slug ? `/store/${parentStore.slug}` : "/"} className="inline-flex items-center gap-2 text-white/40 hover:text-white transition-colors text-xs font-bold group">
             <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-1" />
-            Cancel & Return Home
+            Cancel & Return to {parentStore?.store_name || "Store"}
           </Link>
         </div>
       </div>

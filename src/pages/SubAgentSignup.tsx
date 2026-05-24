@@ -66,6 +66,10 @@ const SubAgentSignup = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
     if (!fullName.trim() || !email.trim() || !password || !phone.trim()) {
       toast({ title: "All fields are required", variant: "destructive" }); return;
     }
@@ -87,9 +91,10 @@ const SubAgentSignup = () => {
 
     const userId = authData.user.id;
     const autoStoreName = storeName.trim() || `${fullName.trim().split(" ")[0]}'s Store`;
-    const autoSlug = generateSlug(fullName.trim(), slug || "store");
+    const baseSlug = generateSlug(fullName.trim(), slug || "store");
+    const autoSlug = `${baseSlug}-${Math.floor(Math.random() * 10000)}`;
 
-    await supabase.from("profiles").update({
+    const { error: profileError } = await supabase.from("profiles").update({
       full_name: fullName.trim(),
       email: email.trim(),
       phone: phone.trim(),
@@ -100,6 +105,10 @@ const SubAgentSignup = () => {
       parent_agent_id: agent!.user_id,
     } as any).eq("user_id", userId);
 
+    if (profileError) {
+      console.error("Profile setup error:", profileError);
+    }
+
     toast({ title: "Account created!", description: "Initializing activation payment..." });
     
     const baseFee = Math.max(0, Number(agent!.sub_agent_activation_markup || 0));
@@ -109,7 +118,6 @@ const SubAgentSignup = () => {
     const totalWithFee = parseFloat((baseFee + paystackFee).toFixed(2));
     const orderId = crypto.randomUUID();
     
-    // Fetch dynamic platform base fee from system_settings for profit splitting
     let platformBaseFee = 80;
     try {
       const { data: settings } = await supabase.from("system_settings").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
@@ -155,24 +163,24 @@ const SubAgentSignup = () => {
         window.location.href = paymentData.authorization_url;
       }
     } else {
-      // Free activation: auto-approve immediately
       toast({ title: "Activation Free!", description: "Activating your portal instantly..." });
       
-      // Fetch parent's configured sub-agent prices to copy over
       const { data: parentProfile } = await supabase
         .from("profiles")
         .select("sub_agent_prices")
         .eq("user_id", agent!.user_id)
         .maybeSingle();
         
-      await supabase.from("profiles").update({
-        is_agent: true,
-        agent_approved: true,
+      const { error: activateError } = await supabase.from("profiles").update({
+        is_sub_agent: true,
         sub_agent_approved: true,
         onboarding_complete: true,
         agent_prices: parentProfile?.sub_agent_prices || {}
       } as any).eq("user_id", userId);
       
+      if (activateError) {
+        console.error("Activation error:", activateError);
+      }
       navigate(`/store/${autoSlug}`);
     }
     setSubmitting(false);
@@ -198,8 +206,8 @@ const SubAgentSignup = () => {
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Unavailable</h1>
           <p className="text-white/40 text-sm mb-8 leading-relaxed">This store is not accepting new sub-agents at the moment.</p>
-          <Link to="/" className="inline-flex items-center gap-2 text-amber-400 font-bold hover:text-amber-300 transition-colors">
-            <ArrowLeft className="w-4 h-4" /> Return to Home
+          <Link to={`/store/${slug}`} className="inline-flex items-center gap-2 text-amber-400 font-bold hover:text-amber-300 transition-colors">
+            <ArrowLeft className="w-4 h-4" /> Return to Store
           </Link>
         </div>
       </div>
