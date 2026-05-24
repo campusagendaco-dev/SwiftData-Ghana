@@ -30,7 +30,7 @@ const StoreTransactionHistory = ({
       try {
         // Build the OR query. The user is either the direct agent_id (for wallet buys) 
         // or they are the customer_id in metadata (for deposits).
-        let query = supabase
+        const query = supabase
           .from("orders")
           .select("*")
           .or(`agent_id.eq.${customerId},metadata->>customer_id.eq.${customerId}`)
@@ -60,9 +60,16 @@ const StoreTransactionHistory = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[200] flex flex-col bg-[#0a0a0f] text-white overflow-hidden">
+      <motion.div 
+        variants={slideVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+        className="fixed inset-0 z-[200] flex flex-col bg-[#0a0a0f]/80 backdrop-blur-3xl text-white overflow-hidden pt-[env(safe-area-inset-top)]"
+      >
         {/* Header */}
-        <div className="relative h-14 border-b border-white/10 flex items-center justify-between px-4 bg-black/40 shrink-0 z-10">
+        <div className="relative h-14 border-b border-white/5 flex items-center justify-between px-4 bg-[#1c1c1e]/70 backdrop-blur-2xl shrink-0 z-10">
           <button 
             onClick={onClose}
             className="p-2 -ml-2 rounded-full hover:bg-white/10 transition-colors"
@@ -78,19 +85,22 @@ const StoreTransactionHistory = ({
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-40 space-y-3">
-              <Loader2 className="w-8 h-8 animate-spin" style={{ color: accentColor }} />
-              <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Loading Records...</p>
+            <div className="flex flex-col items-center justify-center h-64 space-y-4">
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full blur-xl opacity-50" style={{ backgroundColor: accentColor }} />
+                <Loader2 className="w-10 h-10 animate-spin relative z-10" style={{ color: accentColor }} />
+              </div>
+              <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] animate-pulse">Fetching Records...</p>
             </div>
           ) : orders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
-                <History className="w-8 h-8 text-white/20" />
-              </div>
-              <div>
-                <h3 className="font-black text-lg text-white mb-1">No History Found</h3>
-                <p className="text-xs text-white/40 font-semibold max-w-[200px] mx-auto">
-                  Your recent deposits and purchases will appear here.
+            <div className="flex flex-col items-center justify-center h-64 text-center px-4">
+              <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-w-sm w-full backdrop-blur-md shadow-2xl">
+                <div className="w-16 h-16 rounded-2xl bg-white/5 shadow-inner border border-white/5 flex items-center justify-center mx-auto mb-5 transform -rotate-6">
+                  <History className="w-8 h-8 text-white/30" />
+                </div>
+                <h3 className="font-black text-lg text-white mb-2 tracking-tight">No History Found</h3>
+                <p className="text-sm text-white/50 font-medium">
+                  Your recent deposits and purchases will appear here once you make a transaction.
                 </p>
               </div>
             </div>
@@ -103,18 +113,18 @@ const StoreTransactionHistory = ({
                 const isSuccess = order.status === "fulfilled" || order.status === "completed" || order.status === "paid";
 
                 return (
-                  <div key={order.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-3">
+                  <div key={order.id} className="bg-white/5 hover:bg-white/10 active:bg-white/10 active:scale-[0.98] transition-all cursor-pointer border border-white/10 rounded-[20px] px-4 py-3.5 flex items-center gap-3.5">
                     {/* Icon */}
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDeposit ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-400/10 text-amber-400"}`}>
-                      {isDeposit ? <Zap className="w-5 h-5" /> : <Package className="w-5 h-5" />}
+                    <div className={`w-11 h-11 rounded-[14px] flex items-center justify-center shrink-0 shadow-inner ${isDeposit ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-400/15 text-amber-400"}`}>
+                      {isDeposit ? <Zap className="w-5 h-5 drop-shadow-md" /> : <Package className="w-5 h-5 drop-shadow-md" />}
                     </div>
 
                     {/* Details */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-black text-white truncate">
+                      <p className="text-sm font-black text-white truncate tracking-tight">
                         {isDeposit ? "Wallet Deposit" : `${order.network} ${order.package_size || "Data Bundle"}`}
                       </p>
-                      <p className="text-xs text-white/40 font-semibold mt-0.5 truncate">
+                      <p className="text-[11px] text-white/60 font-bold mt-0.5 truncate">
                         {format(new Date(order.created_at), "MMM d, h:mm a")} · {order.customer_phone || customerPhone}
                       </p>
                     </div>
@@ -136,7 +146,7 @@ const StoreTransactionHistory = ({
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
     </AnimatePresence>
   );
 };

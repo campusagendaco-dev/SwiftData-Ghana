@@ -13,7 +13,7 @@ import {
   Search, Loader2, CheckCircle2, AlertCircle, Info,
   ArrowDownCircle, ArrowUpCircle, RefreshCw, Globe,
   Eye, EyeOff, Share2, UserPlus, Users, TrendingUp, AlertTriangle, Lock,
-  Download, History
+  Download, History, ShieldAlert
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -93,7 +93,9 @@ const playSuccessSound = () => {
   try {
     const audio = new Audio("https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/success-beep.mp3");
     audio.play().catch(e => console.log('Audio playback prevented:', e));
-  } catch (e) {}
+  } catch (e) {
+    console.warn("Audio playback failed:", e);
+  }
 };
 
 const DashboardSwiftVendor = () => {
@@ -186,19 +188,16 @@ const DashboardSwiftVendor = () => {
       return;
     }
 
-    // eslint-disable-next-line prefer-const
-    let countdownInterval: any;
-    // eslint-disable-next-line prefer-const
-    let pollInterval: any;
+    const intervals: { countdown?: any; poll?: any } = {};
     
     // Set default countdown
     setOverlay(prev => ({ ...prev, countdown: 60 }));
     
-    countdownInterval = setInterval(() => {
+    intervals.countdown = setInterval(() => {
       setOverlay(prev => {
         if (prev.countdown === undefined || prev.countdown <= 1) {
-          clearInterval(countdownInterval);
-          clearInterval(pollInterval);
+          clearInterval(intervals.countdown);
+          clearInterval(intervals.poll);
           return {
             ...prev,
             step: "failed",
@@ -210,7 +209,7 @@ const DashboardSwiftVendor = () => {
     }, 1000);
 
     // Poll status every 3.5 seconds
-    pollInterval = setInterval(async () => {
+    intervals.poll = setInterval(async () => {
       try {
         const { data, error } = await supabase.functions.invoke("theteller-vendor", {
           body: {
@@ -224,8 +223,8 @@ const DashboardSwiftVendor = () => {
           const isFailed = data.code === "104" || data.code === "103" || data.code === "106" || data.status === "failed";
           
           if (isSuccess) {
-            clearInterval(countdownInterval);
-            clearInterval(pollInterval);
+            clearInterval(intervals.countdown);
+            clearInterval(intervals.poll);
             setOverlay(prev => ({
               ...prev,
               step: "success",
@@ -237,8 +236,8 @@ const DashboardSwiftVendor = () => {
             playSuccessSound();
             fetchBalance();
           } else if (isFailed) {
-            clearInterval(countdownInterval);
-            clearInterval(pollInterval);
+            clearInterval(intervals.countdown);
+            clearInterval(intervals.poll);
             setOverlay(prev => ({
               ...prev,
               step: "failed",
@@ -253,8 +252,8 @@ const DashboardSwiftVendor = () => {
     }, 3500);
 
     return () => {
-      clearInterval(countdownInterval);
-      clearInterval(pollInterval);
+      clearInterval(intervals.countdown);
+      clearInterval(intervals.poll);
     };
   }, [overlay.isOpen, overlay.step, overlay.orderId]);
 
@@ -262,9 +261,9 @@ const DashboardSwiftVendor = () => {
     if (!user) return;
     setLoadingSubAgents(true);
     try {
-      const { data, error } = await supabase.rpc('get_sub_agents_status', { p_master_id: user.id });
+      const { data, error } = await (supabase as any).rpc('get_sub_agents_status', { p_master_id: user.id });
       if (!error && data) {
-        setSubAgents(data);
+        setSubAgents(data as any);
       }
     } catch (err) {
       console.error(err);
@@ -288,13 +287,14 @@ const DashboardSwiftVendor = () => {
     if (!bridgeFloatModal.subAgent || !bridgeAmount || isNaN(Number(bridgeAmount)) || Number(bridgeAmount) <= 0) return;
     setLoadingSubAgents(true);
     try {
-      const { data, error } = await supabase.rpc('transfer_float_to_subagent', {
+      const { data, error } = await (supabase as any).rpc('transfer_float_to_subagent', {
         p_master_id: user?.id,
         p_sub_id: bridgeFloatModal.subAgent.user_id,
         p_amount: Number(bridgeAmount)
       });
       if (error) throw new Error(error.message);
-      if (data && data.success) {
+      const res = data as any;
+      if (res && res.success) {
         toast.success(`Successfully bridged GHS ${bridgeAmount} to ${bridgeFloatModal.subAgent.full_name}`);
         setBridgeFloatModal({isOpen: false, subAgent: null});
         setBridgeAmount("");
@@ -302,7 +302,7 @@ const DashboardSwiftVendor = () => {
         fetchBalance();
         playSuccessSound();
       } else {
-        toast.error(data?.error || "Failed to bridge float");
+        toast.error(res?.error || "Failed to bridge float");
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to transfer float");
@@ -577,11 +577,12 @@ const DashboardSwiftVendor = () => {
       .eq("user_id", user.id)
       .single();
     if (profile) {
-      setIsLockedByAdmin(profile.terminal_locked);
-      setVendorStatus(profile.vendor_status || "inactive");
-      setKycRejectionReason(profile.vendor_rejection_reason);
-      if (profile.vendor_kyc_api_response && typeof profile.vendor_kyc_api_response === 'object') {
-        const kycData = profile.vendor_kyc_api_response as any;
+      const p = profile as any;
+      setIsLockedByAdmin(p.terminal_locked);
+      setVendorStatus(p.vendor_status || "inactive");
+      setKycRejectionReason(p.vendor_rejection_reason);
+      if (p.vendor_kyc_api_response && typeof p.vendor_kyc_api_response === 'object') {
+        const kycData = p.vendor_kyc_api_response as any;
         setKycExpiryData({
           natId: kycData.national_id_expiry,
           bizCert: kycData.business_cert_expiry
@@ -594,8 +595,11 @@ const DashboardSwiftVendor = () => {
       .select("vendor_min_transaction")
       .eq("id", 1)
       .maybeSingle();
-    if (sysSettings?.vendor_min_transaction) {
-      setMinTxAmount(Number(sysSettings.vendor_min_transaction));
+    if (sysSettings) {
+      const settings = sysSettings as any;
+      if (settings.vendor_min_transaction) {
+        setMinTxAmount(Number(settings.vendor_min_transaction));
+      }
     }
 
     const { data } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).single();
@@ -1187,32 +1191,32 @@ const DashboardSwiftVendor = () => {
       )}
 
       {walletBalance < balanceThreshold && !isPrivateMode && (
-        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4 duration-500 shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)] relative overflow-hidden">
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-500 shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none" />
           <div className="flex items-center gap-3 relative z-10">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/30">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/30">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
             </div>
             <div>
               <p className="text-sm font-black text-amber-500">Low Balance Warning</p>
-              <p className="text-xs font-bold text-amber-500/80 leading-relaxed">Your float is below GHS {balanceThreshold}. Top up soon to avoid missing transactions.</p>
+              <p className="text-xs font-bold text-amber-500/80 leading-relaxed max-w-sm">Your float is below GHS {balanceThreshold}. Top up soon to avoid missing transactions.</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 relative z-10 shrink-0">
             <Button 
               size="sm" 
               variant="outline"
               onClick={() => {
                 toast.success("Auto Top-Up activated. Your float will automatically reload when it drops below GHS 500.", { id: "auto-top-up" });
               }}
-              className="bg-transparent border-amber-500/30 hover:bg-amber-500/10 text-amber-500 font-bold rounded-lg h-9 transition-all relative z-10"
+              className="bg-transparent border-amber-500/30 hover:bg-amber-500/10 text-amber-500 font-bold rounded-lg h-9 transition-all"
             >
               Enable Auto-Pilot
             </Button>
             <Button 
               size="sm" 
               onClick={() => navigate('/dashboard/wallet')}
-              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105 relative z-10"
+              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] font-black rounded-lg h-9 transition-all hover:scale-105"
             >
               Top Up Now
             </Button>
@@ -1220,82 +1224,82 @@ const DashboardSwiftVendor = () => {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
-            <Zap className="w-8 h-8 text-amber-400" />
+            <Zap className="w-8 h-8 text-amber-400 drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]" />
             Swift Vendor
-            <Badge className="bg-emerald-500 text-white border-none uppercase font-black px-1.5 animate-pulse text-[10px]">NEW</Badge>
+            <Badge className="bg-emerald-500 text-white border-none uppercase font-black px-2 py-0.5 animate-pulse text-[10px] shadow-lg shadow-emerald-500/20">NEW</Badge>
           </h1>
-          <p className="text-muted-foreground mt-1 font-medium">Flagship Agency Banking POS by theTeller</p>
+          <p className="text-muted-foreground mt-1.5 font-medium text-sm">Flagship Agency Banking POS by theTeller</p>
         </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-primary/10 border border-primary/20 rounded-2xl p-3 flex flex-col justify-center gap-1">
-          <p className="text-[8px] font-black uppercase tracking-widest text-primary/70">Float</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+          <p className="text-[9px] font-black uppercase tracking-widest text-primary/70">Float</p>
           <div className="flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-primary" />
-            <p className={cn("text-sm font-black text-primary truncate", isPrivateMode && "blur-md")}>
+            <Wallet className="w-5 h-5 text-primary" />
+            <p className={cn("text-base font-black text-primary truncate", isPrivateMode && "blur-md")}>
               GHS {walletBalance.toFixed(1)}
             </p>
           </div>
         </div>
 
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3 flex flex-col justify-center gap-1">
-          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-500/70">Profit</p>
+        <div className="bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+          <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500/70">Profit</p>
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-emerald-500" />
-            <p className={cn("text-sm font-black text-emerald-500 truncate", isPrivateMode && "blur-md")}>
+            <Zap className="w-5 h-5 text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
+            <p className={cn("text-base font-black text-emerald-500 truncate", isPrivateMode && "blur-md")}>
               GHS {todayStats.profit.toFixed(1)}
             </p>
           </div>
         </div>
 
-        <div className="bg-muted/30 border border-white/5 rounded-2xl p-3 flex flex-col justify-center gap-1 relative overflow-hidden">
+        <div className="col-span-2 sm:col-span-1 bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 relative overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
           <div className="flex items-center justify-between">
-            <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Security</p>
+            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Security</p>
              <Button 
               variant="ghost" 
               size="icon" 
-              className="h-4 w-4 rounded-full text-muted-foreground hover:text-primary"
+              className="h-6 w-6 rounded-full bg-white/5 text-muted-foreground hover:text-primary hover:bg-white/10 transition-colors"
               onClick={() => window.location.reload()} // Force reload to trigger lock
             >
-              <Lock className="w-3 h-3" />
+              <Lock className="w-3.5 h-3.5" />
             </Button>
           </div>
           <Button 
             variant="ghost" 
             size="sm" 
-            className={cn("h-7 w-full rounded-lg justify-start p-0 hover:bg-transparent", isPrivateMode ? "text-amber-500" : "text-muted-foreground")}
+            className={cn("h-8 w-full rounded-xl justify-start p-2 transition-all active:scale-95", isPrivateMode ? "bg-amber-500/10 text-amber-500" : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white")}
             onClick={() => setIsPrivateMode(!isPrivateMode)}
           >
             {isPrivateMode ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
-            <span className="text-[10px] font-bold">{isPrivateMode ? "Hidden" : "Public"}</span>
+            <span className="text-[11px] font-bold">{isPrivateMode ? "Hidden" : "Public"}</span>
           </Button>
         </div>
       </div>
     </div>
 
           <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <div className="overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
-          <TabsList className="bg-muted/50 p-1 rounded-2xl h-14 w-max sm:w-auto inline-flex whitespace-nowrap">
-            <TabsTrigger value="momo" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
+        <div className="overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
+          <TabsList className="bg-[#1c1c1e]/60 backdrop-blur-xl border border-white/5 p-1.5 rounded-[28px] h-[58px] w-max sm:w-auto inline-flex whitespace-nowrap shadow-inner">
+            <TabsTrigger value="momo" className="rounded-[22px] h-[46px] px-5 sm:px-8 font-black gap-2.5 data-[state=active]:bg-white data-[state=active]:text-black transition-all data-[state=active]:shadow-sm">
               <Phone className="w-4 h-4" />
               MoMo Agency
             </TabsTrigger>
-            <TabsTrigger value="bank" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
+            <TabsTrigger value="bank" className="rounded-[22px] h-[46px] px-5 sm:px-8 font-black gap-2.5 data-[state=active]:bg-white data-[state=active]:text-black transition-all data-[state=active]:shadow-sm">
               <Landmark className="w-4 h-4" />
               Bank Transfer
             </TabsTrigger>
-            <TabsTrigger value="africa" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2 text-indigo-500">
+            <TabsTrigger value="africa" className="rounded-[22px] h-[46px] px-5 sm:px-8 font-black gap-2.5 data-[state=active]:bg-white data-[state=active]:text-black transition-all data-[state=active]:shadow-sm text-indigo-400 data-[state=active]:text-indigo-600">
               <Zap className="w-4 h-4" />
               Africa Hub
             </TabsTrigger>
-            <TabsTrigger value="franchises" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
+            <TabsTrigger value="franchises" className="rounded-[22px] h-[46px] px-5 sm:px-8 font-black gap-2.5 data-[state=active]:bg-white data-[state=active]:text-black transition-all data-[state=active]:shadow-sm">
               <Users className="w-4 h-4" />
               My Franchises
             </TabsTrigger>
-            <TabsTrigger value="insights" className="rounded-xl h-12 px-4 sm:px-8 font-black gap-2">
+            <TabsTrigger value="insights" className="rounded-[22px] h-[46px] px-5 sm:px-8 font-black gap-2.5 data-[state=active]:bg-white data-[state=active]:text-black transition-all data-[state=active]:shadow-sm">
               <Search className="w-4 h-4" />
               Insights
             </TabsTrigger>
@@ -1304,21 +1308,21 @@ const DashboardSwiftVendor = () => {
 
         <TabsContent value="momo" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card className="border-none bg-card/50 shadow-xl shadow-black/5 overflow-hidden">
-              <CardHeader className="bg-primary/5 border-b border-primary/5">
+            <Card className="border border-white/5 bg-[#1c1c1e]/60 backdrop-blur-2xl shadow-2xl shadow-black/20 overflow-hidden rounded-[24px]">
+              <CardHeader className="bg-white/5 border-b border-white/5 pb-5">
                 <CardTitle className="text-xl font-black flex items-center gap-2">
                   <ArrowRightLeft className="w-5 h-5 text-primary" />
                   Initiate MoMo Transaction
                 </CardTitle>
-                <CardDescription>Perform Cash-In (Deposit) or Cash-Out (Withdrawal)</CardDescription>
+                <CardDescription className="text-xs font-bold mt-1">Perform Cash-In (Deposit) or Cash-Out (Withdrawal)</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
-                <div className="grid grid-cols-2 gap-2 bg-muted/30 p-1 rounded-xl h-12">
+                <div className="grid grid-cols-2 gap-1 bg-black/40 p-1.5 rounded-[14px] h-[52px] shadow-inner border border-white/5">
                   <button 
                     onClick={() => setMomoAction("cash-out")}
                     className={cn(
-                      "rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2",
-                      momoAction === "cash-out" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:bg-white/10"
+                      "rounded-[10px] font-black text-sm transition-all flex items-center justify-center gap-2 active:scale-95 duration-200",
+                      momoAction === "cash-out" ? "bg-[#2c2c2e] shadow-md text-primary" : "text-muted-foreground hover:text-white"
                     )}
                   >
                     <ArrowDownCircle className="w-4 h-4" />
@@ -1327,8 +1331,8 @@ const DashboardSwiftVendor = () => {
                   <button 
                     onClick={() => setMomoAction("cash-in")}
                     className={cn(
-                      "rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2",
-                      momoAction === "cash-in" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:bg-white/10"
+                      "rounded-[10px] font-black text-sm transition-all flex items-center justify-center gap-2 active:scale-95 duration-200",
+                      momoAction === "cash-in" ? "bg-[#2c2c2e] shadow-md text-primary" : "text-muted-foreground hover:text-white"
                     )}
                   >
                     <ArrowUpCircle className="w-4 h-4" />
@@ -1527,16 +1531,16 @@ const DashboardSwiftVendor = () => {
                           return (
                             <div 
                               key={order.id} 
-                              className="p-4 flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer"
+                              className="px-4 py-3.5 flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer active:scale-[0.98] active:bg-white/10"
                               onClick={() => setSelectedReceipt(order)}
                             >
-                              <div className="flex items-center gap-3">
-                                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", isCashIn ? "bg-red-400/10" : "bg-emerald-400/10")}>
-                                    {isCashIn ? <ArrowUpCircle className="w-5 h-5 text-red-400" /> : <ArrowDownCircle className="w-5 h-5 text-emerald-400" />}
+                              <div className="flex items-center gap-3.5">
+                                <div className={cn("w-11 h-11 rounded-[14px] flex items-center justify-center shadow-inner", isCashIn ? "bg-red-500/15" : "bg-emerald-500/15")}>
+                                    {isCashIn ? <ArrowUpCircle className="w-6 h-6 text-red-500 drop-shadow-md" /> : <ArrowDownCircle className="w-6 h-6 text-emerald-500 drop-shadow-md" />}
                                 </div>
                                 <div>
-                                   <p className="text-sm font-black">{order.customer_phone || (order.order_type === "vendor_bank_transfer" ? "Bank Transfer" : "Vendor")}</p>
-                                   <p className="text-[10px] font-bold text-muted-foreground">
+                                   <p className="text-sm font-black tracking-tight">{order.customer_phone || (order.order_type === "vendor_bank_transfer" ? "Bank Transfer" : "Vendor")}</p>
+                                   <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
                                      {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                    </p>
                                 </div>
@@ -1545,7 +1549,7 @@ const DashboardSwiftVendor = () => {
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
-                                  className="h-8 w-8 rounded-lg text-primary hover:bg-primary/10"
+                                  className="h-8 w-8 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-transform active:scale-90"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleShareReceipt(order);
@@ -1553,8 +1557,8 @@ const DashboardSwiftVendor = () => {
                                 >
                                   <Share2 className="w-4 h-4" />
                                 </Button>
-                                <div className="text-right">
-                                   <p className={cn("text-sm font-black", isCashIn ? "text-red-400" : "text-emerald-400")}>
+                                <div className="text-right flex flex-col items-end justify-center">
+                                   <p className={cn("text-sm font-black tracking-tight", isCashIn ? "text-red-400" : "text-emerald-400")}>
                                       {isCashIn ? "-" : "+"}GHS {Number(order.amount).toFixed(2)}
                                    </p>
                                    {order.status === "pending" ? (
@@ -1563,14 +1567,14 @@ const DashboardSwiftVendor = () => {
                                          e.stopPropagation();
                                          handleVerifyOrderStatus(order.id);
                                        }}
-                                       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 hover:bg-amber-400/20 transition-all text-[8px] font-black uppercase cursor-pointer border-none"
+                                       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 hover:bg-amber-400/20 transition-all text-[8px] font-black uppercase cursor-pointer border-none mt-1"
                                        title="Verify Transaction Status"
                                      >
                                        Pending <RefreshCw className="w-2 h-2 animate-[spin_3s_linear_infinite]" />
                                      </button>
                                    ) : (
                                      <Badge className={cn(
-                                       "border-none h-4 text-[8px] px-1 font-black",
+                                       "border-none h-4 text-[8px] px-1 font-black mt-1 shadow-sm",
                                        order.status === "fulfilled" ? "bg-emerald-400/10 text-emerald-400" : 
                                        (order.status === "failed" ? "bg-red-400/10 text-red-400" : "bg-amber-400/10 text-amber-400")
                                      )}>
@@ -1592,13 +1596,13 @@ const DashboardSwiftVendor = () => {
 
         <TabsContent value="bank" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card className="border-none bg-card/50 shadow-xl shadow-black/5 overflow-hidden">
-              <CardHeader className="bg-primary/5 border-b border-primary/5">
+            <Card className="border border-white/5 bg-[#1c1c1e]/60 backdrop-blur-2xl shadow-2xl shadow-black/20 overflow-hidden rounded-[24px]">
+              <CardHeader className="bg-white/5 border-b border-white/5 pb-5">
                 <CardTitle className="text-xl font-black flex items-center gap-2">
                   <Landmark className="w-5 h-5 text-primary" />
                   Bank Disbursement
                 </CardTitle>
-                <CardDescription>Send funds to any local bank account in Ghana</CardDescription>
+                <CardDescription className="text-xs font-bold mt-1">Send funds to any local bank account in Ghana</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
                 {savedRecipients.filter(r => r.type === "bank").length > 0 && (
@@ -1708,15 +1712,15 @@ const DashboardSwiftVendor = () => {
             </Card>
 
             <div className="space-y-6">
-              <Card className="border-none bg-indigo-400/5 shadow-xl shadow-black/5">
-                <CardContent className="p-6">
+              <Card className="border border-indigo-400/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 rounded-[20px]">
+                <CardContent className="p-5">
                   <div className="flex gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-400/10 flex items-center justify-center shrink-0">
-                      <Search className="w-6 h-6 text-indigo-400" />
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-400/15 flex items-center justify-center shrink-0 shadow-inner">
+                      <Search className="w-6 h-6 text-indigo-400 drop-shadow-md" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <h4 className="font-black text-indigo-400 uppercase tracking-widest text-[10px]">Verification First</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">
                         Always use the **Verify Account Details** button before completing a transfer. This ensures your funds are sent to the correct recipient. Bank transfers are processed instantly via the GIP network.
                       </p>
                     </div>
@@ -1724,15 +1728,15 @@ const DashboardSwiftVendor = () => {
                 </CardContent>
               </Card>
 
-              <Card className="border-none bg-red-400/5 shadow-xl shadow-black/5">
-                <CardContent className="p-6">
+              <Card className="border border-red-400/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 rounded-[20px]">
+                <CardContent className="p-5">
                   <div className="flex gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-red-400/10 flex items-center justify-center shrink-0">
-                      <AlertCircle className="w-6 h-6 text-red-400" />
+                    <div className="w-12 h-12 rounded-2xl bg-red-400/15 flex items-center justify-center shrink-0 shadow-inner">
+                      <AlertCircle className="w-6 h-6 text-red-400 drop-shadow-md" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <h4 className="font-black text-red-400 uppercase tracking-widest text-[10px]">Security Notice</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">
                         Bank transfers are final and irreversible. Ensure the account name returned by the system matches the person you intend to pay.
                       </p>
                     </div>
@@ -1753,13 +1757,13 @@ const DashboardSwiftVendor = () => {
         </TabsContent>
         <TabsContent value="africa" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card className="border-none bg-card/50 shadow-xl shadow-black/5 overflow-hidden">
-               <CardHeader className="bg-indigo-500/5 border-b border-indigo-500/5">
+            <Card className="border border-white/5 bg-[#1c1c1e]/60 backdrop-blur-2xl shadow-2xl shadow-black/20 overflow-hidden rounded-[24px]">
+               <CardHeader className="bg-white/5 border-b border-white/5 pb-5">
                 <CardTitle className="text-xl font-black flex items-center gap-2">
                   <Zap className="w-5 h-5 text-indigo-500" />
                   Pan-African Payouts
                 </CardTitle>
-                <CardDescription>Send money to any bank or MoMo across Africa via Paystack</CardDescription>
+                <CardDescription className="text-xs font-bold mt-1">Send money to any bank or MoMo across Africa via Paystack</CardDescription>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
                 {savedRecipients.filter(r => r.type === "africa").length > 0 && (
@@ -1884,8 +1888,8 @@ const DashboardSwiftVendor = () => {
             </Card>
 
             <div className="space-y-6">
-               <Card className="border-none bg-indigo-500/5 shadow-xl shadow-black/5 overflow-hidden">
-                <div className="bg-indigo-500/10 p-4 border-b border-indigo-500/10">
+               <Card className="border border-indigo-500/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 overflow-hidden rounded-[20px]">
+                <div className="bg-indigo-500/10 p-4 border-b border-white/5">
                    <h4 className="font-black text-indigo-500 uppercase tracking-widest text-[10px] flex items-center gap-2">
                      <Globe className="w-3 h-3" />
                      Live Market Rates (1 GHS)
@@ -1918,15 +1922,15 @@ const DashboardSwiftVendor = () => {
                 </CardContent>
               </Card>
 
-               <Card className="border-none bg-indigo-500/5 shadow-xl shadow-black/5">
-                <CardContent className="p-6">
+               <Card className="border border-indigo-500/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 rounded-[20px]">
+                <CardContent className="p-5">
                   <div className="flex gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center shrink-0">
-                      <Zap className="w-6 h-6 text-indigo-500" />
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 flex items-center justify-center shrink-0 shadow-inner">
+                      <Zap className="w-6 h-6 text-indigo-500 drop-shadow-md" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <h4 className="font-black text-indigo-500 uppercase tracking-widest text-[10px]">Currency Exchange</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">
                         Paystack handles the currency conversion automatically. Your GHS balance will be deducted based on the real-time exchange rate plus a small processing fee.
                       </p>
                     </div>
@@ -1934,15 +1938,15 @@ const DashboardSwiftVendor = () => {
                 </CardContent>
               </Card>
 
-               <Card className="border-none bg-amber-400/5 shadow-xl shadow-black/5">
-                <CardContent className="p-6">
+               <Card className="border border-amber-400/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 rounded-[20px]">
+                <CardContent className="p-5">
                   <div className="flex gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-amber-400/10 flex items-center justify-center shrink-0">
-                      <Info className="w-6 h-6 text-amber-400" />
+                    <div className="w-12 h-12 rounded-2xl bg-amber-400/15 flex items-center justify-center shrink-0 shadow-inner">
+                      <Info className="w-6 h-6 text-amber-400 drop-shadow-md" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <h4 className="font-black text-amber-400 uppercase tracking-widest text-[10px]">Processing Times</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">
                         Transfers to Nigeria and Kenya are typically instant. South African bank transfers may take up to 24 hours depending on the receiving bank.
                       </p>
                     </div>
@@ -1954,13 +1958,13 @@ const DashboardSwiftVendor = () => {
         </TabsContent>
         <TabsContent value="franchises" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <Card className="border-none bg-card/50 shadow-xl shadow-black/5 lg:col-span-2">
-              <CardHeader className="bg-primary/5 border-b border-primary/5">
+            <Card className="border border-white/5 bg-[#1c1c1e]/60 backdrop-blur-2xl shadow-2xl shadow-black/20 lg:col-span-2 rounded-[24px]">
+              <CardHeader className="bg-white/5 border-b border-white/5 pb-5 rounded-t-[24px]">
                 <CardTitle className="text-xl font-black flex items-center gap-2">
                   <Users className="w-5 h-5 text-primary" />
                   My Sub-Agents
                 </CardTitle>
-                <CardDescription>Manage your franchise kiosks and bridge float instantly</CardDescription>
+                <CardDescription className="text-xs font-bold mt-1">Manage your franchise kiosks and bridge float instantly</CardDescription>
               </CardHeader>
               <CardContent className="p-6">
                 {loadingSubAgents ? (
@@ -2016,15 +2020,15 @@ const DashboardSwiftVendor = () => {
             </Card>
 
             <div className="space-y-6">
-              <Card className="border-none bg-primary/5 shadow-xl shadow-black/5">
-                <CardContent className="p-6">
+              <Card className="border border-primary/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 rounded-[20px]">
+                <CardContent className="p-5">
                   <div className="flex gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <Zap className="w-6 h-6 text-primary" />
+                    <div className="w-12 h-12 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0 shadow-inner">
+                      <Zap className="w-6 h-6 text-primary drop-shadow-md" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <h4 className="font-black text-primary uppercase tracking-widest text-[10px]">What is Float Bridging?</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+                      <p className="text-xs text-muted-foreground leading-relaxed font-medium">
                         If one of your sub-agents runs out of float during a busy day, you can instantly bridge them some of your own float so they don't have to turn away customers.
                       </p>
                     </div>
@@ -2036,13 +2040,13 @@ const DashboardSwiftVendor = () => {
         </TabsContent>
         <TabsContent value="insights" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <Card className="border-none bg-card/50 shadow-xl shadow-black/5 lg:col-span-2">
-               <CardHeader className="bg-primary/5 border-b border-primary/5">
+            <Card className="border border-white/5 bg-[#1c1c1e]/60 backdrop-blur-2xl shadow-2xl shadow-black/20 lg:col-span-2 rounded-[24px]">
+               <CardHeader className="bg-white/5 border-b border-white/5 pb-5 rounded-t-[24px]">
                 <CardTitle className="text-xl font-black flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-primary" />
                   Daily Reconciliation Report
                 </CardTitle>
-                <CardDescription>Summary of physical cash vs digital float movements</CardDescription>
+                <CardDescription className="text-xs font-bold mt-1">Summary of physical cash vs digital float movements</CardDescription>
               </CardHeader>
               <CardContent className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -2087,16 +2091,16 @@ const DashboardSwiftVendor = () => {
             </Card>
 
             <div className="space-y-6">
-               <Card className="border-none bg-emerald-500/5 shadow-xl shadow-black/5">
-                <CardContent className="p-6">
+               <Card className="border border-emerald-500/10 bg-[#1c1c1e]/60 backdrop-blur-xl shadow-lg shadow-black/20 rounded-[20px]">
+                <CardContent className="p-5">
                   <div className="flex gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                      <Zap className="w-6 h-6 text-emerald-500" />
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 flex items-center justify-center shrink-0 shadow-inner">
+                      <Zap className="w-6 h-6 text-emerald-500 drop-shadow-md" />
                     </div>
                     <div className="space-y-1">
                       <h4 className="font-black text-emerald-500 uppercase tracking-widest text-[10px]">Total Revenue</h4>
                       <p className="text-2xl font-black">GHS {todayStats.profit.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground font-medium">Earned from {todayStats.count} transactions</p>
+                      <p className="text-[11px] text-muted-foreground font-bold">Earned from {todayStats.count} transactions</p>
                     </div>
                   </div>
                 </CardContent>
@@ -2224,7 +2228,7 @@ const DashboardSwiftVendor = () => {
                     className="flex-1 min-w-[100px] h-11 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 font-bold text-xs sm:text-sm gap-1.5"
                     onClick={() => {
                       const text = `*Swift Vendor Receipt*%0A%0A*Amount:* GHS ${overlay.amount.toFixed(2)}%0A*Recipient:* ${overlay.phoneOrAccount}%0A*Network/Bank:* ${overlay.networkOrBank}%0A*Status:* SUCCESSFUL%0A*Transaction ID:* ${overlay.successDetails?.transactionId || 'N/A'}%0A*Date:* ${new Date().toLocaleString()}%0A%0A_Thank you for trading with us!_`;
-                      const phoneParam = (overlay.type === "momo" || overlay.type === "cash-out" || overlay.type === "cash-in") && overlay.phoneOrAccount.length >= 10 ? overlay.phoneOrAccount : "";
+                      const phoneParam = (overlay.type === "cash-out" || overlay.type === "cash-in") && overlay.phoneOrAccount.length >= 10 ? overlay.phoneOrAccount : "";
                       window.open(`https://wa.me/${phoneParam}?text=${text}`, "_blank");
                     }}
                   >

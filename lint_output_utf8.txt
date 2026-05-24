@@ -1,0 +1,98 @@
+﻿
+> vite_react_shadcn_ts@0.0.0 lint
+> eslint .
+
+
+C:\Users\hp\swift data\src\components\AIConcierge.tsx
+  516:3  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+C:\Users\hp\swift data\src\components\NotificationCenter.tsx
+  173:6  warning  React Hook useEffect has missing dependencies: 'fetchNotifications', 'navigate', and 'user'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\components\SecurityGateway.tsx
+  40:6  warning  React Hook useEffect has a missing dependency: 'handleBiometricAuth'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\components\UserDetailDrawer.tsx
+  105:6  warning  React Hook useEffect has a missing dependency: 'user?.is_suspended'. Either include it or remove the dependency array. If 'setIsSuspended' needs the current value of 'user.is_suspended', you can also switch to useReducer instead of useState and read 'user.is_suspended' in the reducer  react-hooks/exhaustive-deps
+  309:6  warning  React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array                                                                                                                                                                                       react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\components\VendorOnboardingWizard.tsx
+  110:21  error  Empty block statement  no-empty
+  152:21  error  Empty block statement  no-empty
+  193:21  error  Empty block statement  no-empty
+
+C:\Users\hp\swift data\src\hooks\useWebAuthn.ts
+  104:44  warning  React Hook useEffect has a missing dependency: 'fetchCredentials'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\AdminAPIUsers.tsx
+  176:3  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  180:6  warning  React Hook useEffect has a missing dependency: 'fetchUsers'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\AdminReconciliation.tsx
+  118:6  warning  React Hook useEffect has a missing dependency: 'fetchReconciliationData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\AdminSentinelAI.tsx
+  88:6  warning  React Hook useEffect has a missing dependency: 'triggerSentinel'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\AdminUsers.tsx
+  125:6  warning  React Hook useEffect has a missing dependency: 'fetchUsers'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\AgentStore.tsx
+  133:6  warning  React Hook useEffect has a missing dependency: 'refreshProfile'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\BuyData.tsx
+  180:6  warning  React Hook useMemo has an unnecessary dependency: 'basePackages'. Either exclude it or remove the dependency array. Outer scope values like 'basePackages' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardBuyDataNetwork.tsx
+  183:6  warning  React Hook useEffect has a missing dependency: 'network'. Either include it or remove the dependency array. If 'setPriceMultiplier' needs the current value of 'network', you can also switch to useReducer instead of useState and read 'network' in the reducer  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardCustomers.tsx
+  35:6  warning  React Hook useEffect has a missing dependency: 'fetchCustomers'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardDeveloperAPI.tsx
+  121:6  warning  React Hook useCallback has an unnecessary dependency: 'toast'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardMyStore.tsx
+  262:6  warning  React Hook useEffect has missing dependencies: 'fetchAgentWallet' and 'fetchStores'. Either include them or remove the dependency array                       react-hooks/exhaustive-deps
+  310:6  warning  React Hook useEffect has missing dependencies: 'fetchAgentWallet', 'fetchCustomers', and 'fetchDeposits'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardNotifications.tsx
+  117:6  warning  React Hook useEffect has a missing dependency: 'fetchNotifications'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardSettings.tsx
+  338:6  warning  React Hook useEffect has missing dependencies: 'fetchCustomers' and 'fetchDeposits'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  388:6  warning  React Hook useEffect has missing dependencies: 'fetchAgentWallet' and 'fetchStores'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\DashboardSwiftVendor.tsx
+  173:9   error    'pollInterval' is never reassigned. Use 'const' instead                                                                                          prefer-const
+  178:5   error    'countdownInterval' is never reassigned. Use 'const' instead                                                                                     prefer-const
+  239:6   warning  React Hook useEffect has a missing dependency: 'fetchBalance'. Either include it or remove the dependency array                                  react-hooks/exhaustive-deps
+  358:6   warning  React Hook useEffect has missing dependencies: 'fetchBalance' and 'handleVerifyOrderStatus'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  379:6   warning  React Hook useEffect has a missing dependency: 'fetchAfricaBanks'. Either include it or remove the dependency array                              react-hooks/exhaustive-deps
+  508:21  error    Empty block statement                                                                                                                            no-empty
+  577:21  error    Empty block statement                                                                                                                            no-empty
+  661:21  error    Empty block statement                                                                                                                            no-empty
+  704:21  error    Empty block statement                                                                                                                            no-empty
+  764:23  error    Empty block statement                                                                                                                            no-empty
+  789:23  error    Empty block statement                                                                                                                            no-empty
+  872:23  error    Empty block statement                                                                                                                            no-empty
+
+C:\Users\hp\swift data\src\pages\MyOrders.tsx
+  100:6  warning  React Hook useEffect has a missing dependency: 'storeInfo'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\OrderStatus.tsx
+  151:6  warning  React Hook useEffect has a missing dependency: 'storeInfo'. Either include it or remove the dependency array   react-hooks/exhaustive-deps
+  260:6  warning  React Hook useEffect has a missing dependency: 'pollStatus'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\SubAgentPending.tsx
+  82:6  warning  React Hook useEffect has missing dependencies: 'profile?.slug' and 'user?.id'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\src\pages\VerifyMfa.tsx
+  165:6  warning  React Hook useEffect has a missing dependency: 'handleVerify'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\hp\swift data\supabase\functions\guardian-ai\index.ts
+  199:11  error  'effectiveness' is never reassigned. Use 'const' instead  prefer-const
+
+Ô£û 42 problems (13 errors, 29 warnings)
+  1 error and 2 warnings potentially fixable with the `--fix` option.
+

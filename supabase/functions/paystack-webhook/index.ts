@@ -112,7 +112,18 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   if (!clean) return [];
 
   const urls = new Set<string>();
-  const endpointAliases = endpoint === "purchase" ? ["purchase", "order", "airtime", "buy", "data-purchase"] : [endpoint];
+  const isDatamart = clean.includes("/api/developer") || clean.includes("datamartgh");
+  const endpointAliases = isDatamart
+    ? (endpoint === "status" ? ["order-status"] : (endpoint === "purchase" ? ["purchase"] : [endpoint]))
+    : (endpoint === "purchase" ? ["purchase", "order", "airtime", "buy", "data-purchase"] : [endpoint]);
+
+  if (isDatamart) {
+    for (const alias of endpointAliases) {
+      urls.add(`${clean}/${alias}`);
+    }
+    return Array.from(urls);
+  }
+
   let rootUrl = "";
 
   try {

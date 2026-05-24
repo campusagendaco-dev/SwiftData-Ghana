@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
+import { playSound } from "@/lib/sound";
 
 interface SystemSettings {
   auto_api_switch: boolean;
@@ -1269,20 +1270,18 @@ const AdminSettings = () => {
                   >
                     <option value="/sounds/notification_system.mp3">🔔 Modern System Chime (Default)</option>
                     <option value="/sounds/success.mp3">💰 Crisp Digital Chime (Cha-Ching)</option>
-                    <option value="/sounds/glass_ting.mp3">🔔 Gentle Glass Ting</option>
-                    <option value="/sounds/marimba_chime.mp3">🎵 Playful Marimba Chime</option>
-                    <option value="/sounds/laser_drop.mp3">⚡ Cyberpunk Laser Drop</option>
+                    <option value="synth:glass_ting">🔔 Gentle Glass Ting (Synth)</option>
+                    <option value="synth:marimba">🎵 Playful Marimba Chime (Synth)</option>
+                    <option value="synth:laser">⚡ Cyberpunk Laser Drop (Synth)</option>
+                    <option value="synth:soft_alert">💧 Soft Alert (Synth)</option>
+                    <option value="synth:cash">💸 Cash Register (Synth)</option>
                   </select>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => {
                       try {
-                        const audio = new Audio(settings.notification_tone);
-                        audio.volume = 0.5;
-                        audio.play().catch(() => {
-                          toast({ title: "Autoplay Blocked", description: "Please tap the screen first to allow audio.", variant: "destructive" });
-                        });
+                        playSound(settings.notification_tone, 0.5);
                       } catch (err: any) {
                         toast({ title: "Failed to play tone", description: err.message, variant: "destructive" });
                       }

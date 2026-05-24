@@ -18,6 +18,7 @@ import { useConnectivity } from "@/hooks/useConnectivity";
 import { Wifi, WifiOff, CloudOff, Eye, EyeOff } from "lucide-react";
 import { useMaskedBalance } from "@/hooks/useMaskedBalance";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import CommandPalette from "@/components/CommandPalette";
 
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -30,6 +31,7 @@ const DashboardLayout = () => {
   const { isMasked, toggleMask, maskValue } = useMaskedBalance();
   const { supported, permissionState, subscribeUser, loading: subLoading } = usePushNotifications();
   const [pushDismissed, setPushDismissed] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
   const showLowBalanceAlert = isPaidAgent && !alertDismissed && walletBalance < LOW_BALANCE_THRESHOLD && walletBalance >= 0;
@@ -108,10 +110,13 @@ const DashboardLayout = () => {
           </button>
 
           {/* Search/Command Bar (Mockup for Pro feel) */}
-          <div className={cn(
-            "hidden lg:flex items-center gap-3 border rounded-xl px-4 py-2 w-72 focus-within:border-primary/50 transition-all cursor-text",
-            isDark ? "bg-white/5 border-white/10 text-white/40" : "bg-gray-100 border-gray-200 text-gray-400"
-          )}>
+          <div 
+            onClick={() => setCommandOpen(true)}
+            className={cn(
+              "hidden lg:flex items-center gap-3 border rounded-xl px-4 py-2 w-72 focus-within:border-primary/50 transition-all cursor-pointer hover:opacity-80",
+              isDark ? "bg-white/5 border-white/10 text-white/40" : "bg-gray-100 border-gray-200 text-gray-400"
+            )}
+          >
             <Search className="w-4 h-4" />
             <span className="text-xs font-medium">Quick Search...</span>
             <div className="flex-1" />
@@ -274,6 +279,7 @@ const DashboardLayout = () => {
         </main>
       </div>
 
+      <CommandPalette open={commandOpen} setOpen={setCommandOpen} />
       <NotificationPopup />
     </div>
   );

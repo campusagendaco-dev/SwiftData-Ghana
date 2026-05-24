@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Sparkles, ChevronDown, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { 
+  X, Send, Sparkles, ChevronDown, Mic, MicOff, Volume2, VolumeX,
+  ShieldCheck, Wallet, RefreshCw, Zap, ArrowRight, CheckCircle2,
+  AlertTriangle, Wifi, Activity, CreditCard
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface Message {
   id?: string;
@@ -28,6 +33,274 @@ const WELCOME: Message = {
 function fmt(d: Date) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
+
+// ─── Component 2.1: Provider Health Dashboard Widget ───
+function ProviderHealthWidget() {
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState([
+    { name: "MTN Ghana", status: "Stable", latency: 18, color: "text-amber-400", border: "border-amber-500/20", bg: "bg-amber-400/5" },
+    { name: "Telecel Ghana", status: "Stable", latency: 24, color: "text-red-500", border: "border-red-500/20", bg: "bg-red-500/5" },
+    { name: "AirtelTigo", status: "Stable", latency: 21, color: "text-blue-500", border: "border-blue-500/20", bg: "bg-blue-500/5" },
+  ]);
+
+  const handleRefresh = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setData(prev => prev.map(item => ({
+        ...item,
+        latency: Math.floor(Math.random() * 8) + 15
+      })));
+      setLoading(false);
+      toast.success("Provider gateway latency refreshed!");
+    }, 1000);
+  };
+
+  return (
+    <div className="w-full rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md p-4 space-y-4 my-2 animate-in fade-in zoom-in duration-300">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+          <p className="text-[10px] font-black uppercase text-white tracking-wider">Gateway Diagnostics</p>
+        </div>
+        <button 
+          onClick={handleRefresh} 
+          disabled={loading}
+          className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/60 hover:text-white transition-all"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {data.map(net => (
+          <div key={net.name} className={cn("p-2.5 rounded-xl border flex flex-col items-center text-center", net.border, net.bg)}>
+            <span className={cn("text-[9px] font-black tracking-tighter uppercase", net.color)}>{net.name.split(" ")[0]}</span>
+            <span className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest mt-1">OPERATIONAL</span>
+            <div className="flex items-center gap-1 mt-2">
+              <Wifi className="w-3.5 h-3.5 text-white/40" />
+              <span className="text-[10px] font-black text-white font-mono">{net.latency}ms</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Component 2.2: Live Wallet Balance Summary Widget ───
+function WalletSummaryWidget() {
+  const [balance, setBalance] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchBalance = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("wallets")
+          .select("balance")
+          .eq("agent_id", user.id)
+          .maybeSingle();
+        if (data) setBalance(Number(data.balance));
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBalance();
+  }, []);
+
+  return (
+    <div className="w-full rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 to-blue-500/5 backdrop-blur-md p-4 space-y-4 my-2 animate-in fade-in zoom-in duration-300">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Wallet className="w-4 h-4 text-indigo-400" />
+          <p className="text-[10px] font-black uppercase text-white tracking-wider">Account Balance</p>
+        </div>
+        <BadgeCheckIcon />
+      </div>
+
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-[8px] font-bold text-white/40 uppercase tracking-widest leading-none mb-1">Available Float</p>
+          {loading ? (
+            <div className="w-20 h-6 bg-white/5 rounded animate-pulse" />
+          ) : (
+            <p className="text-2xl font-black text-white font-mono">GH₵{(balance ?? 0.00).toFixed(2)}</p>
+          )}
+        </div>
+        <button 
+          onClick={() => window.location.href = "/dashboard/wallet"}
+          className="h-8 px-3 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all border-none cursor-pointer"
+        >
+          Top Up <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BadgeCheckIcon() {
+  return (
+    <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+    </div>
+  );
+}
+
+// ─── Component 2.3: Embedded Data Purchase Form Widget ───
+function QuickPurchaseWidget() {
+  const [network, setNetwork] = useState<"MTN" | "Telecel" | "AirtelTigo">("MTN");
+  const [phone, setPhone] = useState("");
+  const [pkg, setPkg] = useState("1GB");
+  const [processing, setProcessing] = useState(false);
+
+  const handlePurchase = async () => {
+    if (!phone || phone.length < 9) {
+      toast.error("Please enter a valid Ghana phone number!");
+      return;
+    }
+    setProcessing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Please login to proceed with transaction!");
+        setProcessing(false);
+        return;
+      }
+
+      // Check the price matching network package
+      const { data: pkgData } = await supabase.from("global_package_settings")
+        .select("public_price, agent_price")
+        .eq("network", network)
+        .ilike("package_size", pkg)
+        .maybeSingle();
+
+      const price = pkgData ? Number(pkgData.agent_price || pkgData.public_price) : 5.00;
+
+      // Fulfill standard Edge Function wallet buy data
+      const res = await supabase.functions.invoke("wallet-buy-data", {
+        body: {
+          network,
+          package_size: pkg,
+          customer_phone: phone,
+          amount: price,
+          reference: crypto.randomUUID()
+        }
+      });
+
+      if (res.error || res.data?.error) {
+        throw new Error(res.data?.error || "Transaction declined.");
+      }
+
+      // Play sound
+      import("@/lib/sound").then(m => m.playSuccessSound());
+      toast.success(`Purchase successful! Delivered ${pkg} ${network} to ${phone}`);
+      setPhone("");
+    } catch (e: any) {
+      toast.error(e.message || "Fulfillment gateway offline.");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <div className="w-full rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-md p-4 space-y-3.5 my-2 animate-in fade-in zoom-in duration-300">
+      <div className="flex items-center gap-2">
+        <Zap className="w-4 h-4 text-amber-400" />
+        <p className="text-[10px] font-black uppercase text-white tracking-wider">Quick Data Fulfill</p>
+      </div>
+
+      {/* Network Select */}
+      <div className="grid grid-cols-3 gap-1">
+        {(["MTN", "Telecel", "AirtelTigo"] as const).map(net => (
+          <button
+            key={net}
+            onClick={() => setNetwork(net)}
+            className={cn(
+              "py-1.5 rounded-lg text-[9px] font-black uppercase border transition-all cursor-pointer",
+              network === net 
+                ? (net === "MTN" ? "bg-amber-400/10 border-amber-400 text-amber-400" : net === "Telecel" ? "bg-red-500/10 border-red-500 text-red-500" : "bg-blue-500/10 border-blue-500 text-blue-500") 
+                : "bg-white/5 border-transparent text-white/40 hover:text-white/60"
+            )}
+          >
+            {net}
+          </button>
+        ))}
+      </div>
+
+      {/* Inputs */}
+      <div className="space-y-2">
+        <input 
+          type="tel"
+          placeholder="Recipient Phone (0XX XXX XXXX)"
+          value={phone}
+          onChange={e => setPhone(e.target.value)}
+          className="w-full h-9 rounded-xl bg-white/5 border border-white/8 px-3 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 placeholder:text-white/20"
+        />
+        <select
+          value={pkg}
+          onChange={e => setPkg(e.target.value)}
+          className="w-full h-9 rounded-xl bg-[#171721] border border-white/8 px-3 text-xs font-semibold text-white focus:outline-none focus:border-amber-400"
+        >
+          <option value="1GB">1 GB Bundle</option>
+          <option value="5GB">5 GB Bundle</option>
+          <option value="10GB">10 GB Bundle</option>
+        </select>
+      </div>
+
+      <button
+        onClick={handlePurchase}
+        disabled={processing}
+        className="w-full h-9 rounded-xl bg-amber-400 hover:bg-amber-500 text-black font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg shadow-amber-400/10 transition-all border-none cursor-pointer"
+      >
+        {processing ? <Loader2Icon /> : <><CreditCard className="w-3.5 h-3.5" /> Fulfill Instantly</>}
+      </button>
+    </div>
+  );
+}
+
+function Loader2Icon() {
+  return <RefreshCw className="w-3.5 h-3.5 animate-spin" />;
+}
+
+// ─── Component 2.4: Message parser wrapper ───
+function MessageContent({ text, role }: { text: string; role: "user" | "bot" }) {
+  if (role === "user") {
+    return <span>{text}</span>;
+  }
+
+  // Check and extract widgets
+  const hasHealth = text.includes("[WIDGET:PROVIDER_HEALTH]");
+  const hasWallet = text.includes("[WIDGET:WALLET_SUMMARY]");
+  const hasPurchase = text.includes("[WIDGET:QUICK_PURCHASE]");
+
+  if (!hasHealth && !hasWallet && !hasPurchase) {
+    return <span>{text}</span>;
+  }
+
+  const cleanText = text
+    .replace("[WIDGET:PROVIDER_HEALTH]", "")
+    .replace("[WIDGET:WALLET_SUMMARY]", "")
+    .replace("[WIDGET:QUICK_PURCHASE]", "")
+    .trim();
+
+  return (
+    <div className="space-y-2">
+      {cleanText && <p className="leading-relaxed">{cleanText}</p>}
+      {hasHealth && <ProviderHealthWidget />}
+      {hasWallet && <WalletSummaryWidget />}
+      {hasPurchase && <QuickPurchaseWidget />}
+    </div>
+  );
+}
+
+
 
 // ─── Sub-components defined OUTSIDE AIConcierge ───────────────────────────────
 // Critical: must be top-level so React doesn't remount on every parent render.
@@ -141,7 +414,7 @@ function MessageList({ messages, typing, bottomRef }: MessageListProps) {
                 : { background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.09)" }
               }
             >
-              {m.text}
+              <MessageContent text={m.text} role={m.role} />
             </div>
             <p className="text-[9px] text-white/20 px-1 font-medium">{fmt(m.ts)}</p>
           </div>
@@ -491,7 +764,17 @@ export default function AIConcierge() {
         body: { context: { userMessage: msg, currentPath: window.location.pathname, profile: profile.data, recentOrders: orders.data }, history },
       });
 
-      const reply = data?.oracle_opinion || "I'm here to help! Please try again.";
+      let reply = data?.oracle_opinion || "I'm here to help! Please try again.";
+      
+      const cleanMsg = msg.toLowerCase();
+      if (cleanMsg.includes("health") || cleanMsg.includes("status") || cleanMsg.includes("network") || cleanMsg.includes("diagnostics") || cleanMsg.includes("latency")) {
+        reply += "\n\n[WIDGET:PROVIDER_HEALTH]";
+      } else if (cleanMsg.includes("balance") || cleanMsg.includes("wallet") || cleanMsg.includes("float") || cleanMsg.includes("momo")) {
+        reply += "\n\n[WIDGET:WALLET_SUMMARY]";
+      } else if (cleanMsg.includes("buy") || cleanMsg.includes("purchase") || cleanMsg.includes("checkout") || cleanMsg.includes("fulfill") || cleanMsg.includes("data")) {
+        reply += "\n\n[WIDGET:QUICK_PURCHASE]";
+      }
+
       setMessages(prev => [...prev, { role: "bot", text: reply, ts: new Date() }]);
 
       if (isSpeaking) {

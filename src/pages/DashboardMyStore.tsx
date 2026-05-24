@@ -55,6 +55,13 @@ const PRESET_COLORS = [
   "#10b981", "#84cc16", "#f97316", "#ffffff",
 ];
 
+const GRADIENT_PRESETS = [
+  { id: "amber", name: "Crimson Amber", value: "linear-gradient(135deg, #fbbf24, #f59e0b, #ef4444)", color: "#f59e0b" },
+  { id: "ocean", name: "Ocean Glass", value: "linear-gradient(135deg, #0284c7, #06b6d4, #10b981)", color: "#06b6d4" },
+  { id: "velvet", name: "Velvet Night", value: "linear-gradient(135deg, #8b5cf6, #6366f1, #3b82f6)", color: "#8b5cf6" },
+  { id: "mint", name: "Emerald Mint", value: "linear-gradient(135deg, #10b981, #84cc16, #06b6d4)", color: "#10b981" },
+];
+
 const MOMO_NETWORKS = [
   { id: "MTN", label: "MTN MoMo", color: "#fbbf24" },
   { id: "Telecel", label: "Telecel Cash", color: "#ef4444" },
@@ -1028,32 +1035,57 @@ export default function DashboardMyStore() {
                       </div>
 
                       {/* Brand Color selection */}
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-white/40 tracking-wider">Brand Theme Accent Color</label>
-                        <div className="flex flex-wrap gap-2.5">
-                          {PRESET_COLORS.map((c) => {
-                            const isSelected = form.store_primary_color.toLowerCase() === c.toLowerCase();
-                            return (
-                              <button
-                                key={c}
-                                type="button"
-                                onClick={() => updateField("store_primary_color", c)}
-                                className={`w-8 h-8 rounded-xl border transition-all cursor-pointer relative shrink-0 ${
-                                  isSelected ? "scale-110" : "hover:scale-105"
-                                }`}
-                                style={{
-                                  backgroundColor: c,
-                                  borderColor: isSelected ? "#fff" : "rgba(255,255,255,0.1)",
-                                }}
-                              >
-                                {isSelected && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/25 rounded-xl">
-                                    <Check className="w-3.5 h-3.5 text-white" />
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-white/40 tracking-wider">Curated Preset Solid Colors</label>
+                          <div className="flex flex-wrap gap-2">
+                            {PRESET_COLORS.map((c) => {
+                              const isSelected = form.store_primary_color.toLowerCase() === c.toLowerCase();
+                              return (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => updateField("store_primary_color", c)}
+                                  className={`w-7.5 h-7.5 rounded-xl border transition-all cursor-pointer relative shrink-0 ${
+                                    isSelected ? "scale-110 border-white" : "border-white/10 hover:scale-105"
+                                  }`}
+                                  style={{ backgroundColor: c }}
+                                >
+                                  {isSelected && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/25 rounded-xl">
+                                      <Check className="w-3.5 h-3.5 text-white" />
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-white/40 tracking-wider">Premium Gradients Presets</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {GRADIENT_PRESETS.map((g) => {
+                              const isSelected = form.store_primary_color === g.value;
+                              return (
+                                <button
+                                  key={g.id}
+                                  type="button"
+                                  onClick={() => updateField("store_primary_color", g.value)}
+                                  className={cn(
+                                    "p-2.5 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden shrink-0",
+                                    isSelected ? "border-amber-400 shadow-lg shadow-amber-400/10 scale-102" : "border-white/10 hover:scale-101"
+                                  )}
+                                  style={{ background: g.value }}
+                                >
+                                  <div className="flex justify-between items-center relative z-10">
+                                    <span className="text-[9px] font-black text-white uppercase tracking-wider">{g.name}</span>
+                                    {isSelected && <Check className="w-3 h-3 text-white" />}
                                   </div>
-                                )}
-                              </button>
-                            );
-                          })}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
@@ -1144,6 +1176,74 @@ export default function DashboardMyStore() {
                             {uploadingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                             Upload Hero Banner (10MB)
                           </button>
+                        </div>
+                      </div>
+
+                      {/* Live Storefront Mockup Preview */}
+                      <div className="space-y-2.5 pt-4 border-t border-white/5">
+                        <label className="text-[10px] font-black uppercase text-white/40 tracking-wider">Live Storefront Preview Mockup</label>
+                        <div className="w-[280px] h-[520px] rounded-[2.5rem] border-8 border-slate-800 bg-[#060608] relative overflow-hidden flex flex-col mx-auto shadow-2xl transition-all duration-300">
+                          {/* Speaker Notch */}
+                          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-800 rounded-full z-30 flex items-center justify-center">
+                            <div className="w-10 h-1 bg-black rounded-full" />
+                          </div>
+                          
+                          {/* Screen Area */}
+                          <div className="flex-1 flex flex-col relative z-20 pt-7">
+                            {/* Header */}
+                            <div className="h-10 flex items-center px-4 gap-2 bg-black/50 border-b border-white/5 shrink-0">
+                              <div className="w-5 h-5 rounded-lg bg-white overflow-hidden flex items-center justify-center shrink-0">
+                                {form.store_logo_url ? (
+                                  <img src={form.store_logo_url} alt="Logo" className="w-full h-full object-contain" />
+                                ) : (
+                                  <Store className="w-3 h-3 text-black" />
+                                )}
+                              </div>
+                              <span className="text-[10px] font-black text-white truncate max-w-[120px]">
+                                {form.store_name || "MY WHITESALE STORE"}
+                              </span>
+                            </div>
+
+                            {/* Scrollable Contents */}
+                            <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-none">
+                              {/* Hero Card */}
+                              <div 
+                                className="rounded-2xl p-4 text-center space-y-2 relative overflow-hidden shrink-0"
+                                style={{ 
+                                  background: form.store_primary_color.includes("gradient") 
+                                    ? form.store_primary_color 
+                                    : `linear-gradient(135deg, ${form.store_primary_color}, #000)` 
+                                }}
+                              >
+                                <div className="absolute inset-0 bg-black/10 z-0" />
+                                <h4 className="text-white font-black text-[10px] relative z-10 leading-tight">
+                                  Cheapest Non-Expiry Data Ghana
+                                </h4>
+                                <p className="text-white/60 text-[8px] relative z-10 leading-tight max-w-[160px] mx-auto truncate">
+                                  {form.store_description || "Pick network, enter number, pay MoMo!"}
+                                </p>
+                              </div>
+
+                              {/* Network Cards Mockup */}
+                              <div className="space-y-2">
+                                <span className="text-[8px] font-black text-white/30 uppercase tracking-widest leading-none block">Networks Covered</span>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {["MTN", "Telecel", "AirtelTigo"].map(net => (
+                                    <div 
+                                      key={net} 
+                                      className="p-2 rounded-xl border border-white/5 bg-white/[0.02] text-center flex flex-col items-center justify-center"
+                                    >
+                                      <span className={cn(
+                                        "text-[9px] font-black tracking-tighter uppercase",
+                                        net === "MTN" ? "text-amber-400" : net === "Telecel" ? "text-red-500" : "text-blue-500"
+                                      )}>{net}</span>
+                                      <span className="text-[7px] font-bold text-emerald-500/80 mt-1 uppercase">100% SLA</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

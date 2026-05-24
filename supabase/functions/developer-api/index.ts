@@ -51,19 +51,28 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
   }
 
   let aliases: string[] = [];
-  if (handlerType === "datamart") {
+  const isDatamart = handlerType === "datamart" || clean.includes("/api/developer") || clean.includes("datamartgh");
+
+  if (isDatamart) {
     if (endpoint === "status") aliases = ["order-status"];
     else if (endpoint === "purchase") aliases = ["purchase"];
     else aliases = [endpoint];
-  } else if (handlerType === "datahub") {
+    
+    for (const alias of aliases) {
+      urls.add(`${clean}/${alias}`);
+    }
+    return Array.from(urls);
+  }
+
+  if (handlerType === "datahub") {
     // DataHub has a fixed URL structure — always just append the alias directly
     const alias = endpoint === "purchase" ? "data-purchase" : (endpoint === "status" ? "order-status" : endpoint);
     return [`${clean}/${alias}`];
-  } else {
-    aliases = endpoint === "purchase"
-      ? ["purchase", "order", "airtime", "buy", "topup", "recharge"]
-      : (endpoint === "status" ? ["status", "query", "check", "query-order"] : [endpoint]);
   }
+
+  aliases = endpoint === "purchase"
+    ? ["purchase", "order", "airtime", "buy", "topup", "recharge"]
+    : (endpoint === "status" ? ["status", "query", "check", "query-order"] : [endpoint]);
 
   let rootUrl = "";
   try {
@@ -136,51 +145,75 @@ async function callProviderApi(
   let lastReason = "Provider error";
 
   for (const url of urls) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 25000);
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
-      headers["X-API-Key"] = provider.api_key;
-      if (handlerType !== "datamart") headers["Authorization"] = `Bearer ${provider.api_key}`;
-      headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
-      headers["User-Agent"] = "SwiftDataGH/2.0";
+    let attempt = 0;
+    const maxAttempts = 3; // 1 initial attempt + 2 retries
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        signal: ctrl.signal,
-      });
-      clearTimeout(tid);
-      const ct = res.headers.get("content-type");
-      const text = await res.text();
-      lastBody = text;
+    while (attempt < maxAttempts) {
+      attempt++;
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 25000);
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
+        headers["X-API-Key"] = provider.api_key;
+        if (handlerType !== "datamart") headers["Authorization"] = `Bearer ${provider.api_key}`;
+        headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
+        headers["User-Agent"] = "SwiftDataGH/2.0";
 
-      let parsedMsg = "";
-      try { parsedMsg = JSON.parse(text)?.message || JSON.parse(text)?.error || ""; } catch { /* ignore */ }
-      
-      const isAlreadyPlaced = /already placed/i.test(parsedMsg) || /currently being processed/i.test(parsedMsg);
-      if (isAlreadyPlaced) {
-        return { ok: true, reason: "", body: lastBody, status: "processing" };
-      }
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          signal: ctrl.signal,
+        });
+        clearTimeout(tid);
+        const ct = res.headers.get("content-type");
+        const text = await res.text();
+        lastBody = text;
 
-      if (res.ok && !isHtmlBody(ct, text)) {
-        try {
-          const p = JSON.parse(text);
-          const s = String(p?.status ?? p?.success ?? "").toLowerCase();
-          const ok = p?.success === true || s === "success" || s === "true" || p?.status === true || s === "completed" || s === "pending";
-          const pStatus = String(p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
+        let parsedMsg = "";
+        try { parsedMsg = JSON.parse(text)?.message || JSON.parse(text)?.error || ""; } catch { /* ignore */ }
+        
+        const isAlreadyPlaced = /already placed/i.test(parsedMsg) || /currently being processed/i.test(parsedMsg);
+        if (isAlreadyPlaced) {
+          return { ok: true, reason: "", body: lastBody, status: "processing" };
+        }
+
+        if (res.ok && !isHtmlBody(ct, text)) {
+          try {
+            const p = JSON.parse(text);
+            const s = String(p?.status ?? p?.success ?? "").toLowerCase();
+            const ok = p?.success === true || s === "success" || s === "true" || p?.status === true || s === "completed" || s === "pending";
+            const pStatus = String(p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
             if (ok) return { ok: true, reason: "", body: lastBody, id: String(p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
             lastReason = parsedMsg || "Provider rejected the order";
           } catch { return { ok: true, reason: "", body: lastBody, status: "" }; }
-      } else {
-        lastReason = parsedMsg || `HTTP ${res.status}`;
+        } else {
+          lastReason = parsedMsg || `HTTP ${res.status}`;
+        }
+
+        // Retry ONLY for server errors (5xx)
+        if (res.status >= 500 && attempt < maxAttempts) {
+          console.warn(`[developer-api] Provider URL ${url} returned 5xx (HTTP ${res.status}). Retrying attempt ${attempt}...`);
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+
+        if (res.status === 404 || isHtmlBody(ct, text)) break;
+        break;
+      } catch (e: any) {
+        clearTimeout(tid);
+        lastReason = e?.message || "Network error";
+
+        // Retry for network errors and abort timeouts
+        const isAbort = e?.name === "AbortError" || e?.message?.includes("aborted");
+        const isNetwork = e?.message?.includes("fetch") || e?.message?.includes("network") || e?.message?.includes("connection");
+        if ((isAbort || isNetwork) && attempt < maxAttempts) {
+          console.warn(`[developer-api] Provider URL ${url} failed with ${lastReason}. Retrying attempt ${attempt}...`);
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        break;
       }
-      if (res.status === 404 || isHtmlBody(ct, text)) continue;
-      break;
-    } catch (e: any) {
-      clearTimeout(tid);
-      lastReason = e?.message || "Network error";
     }
   }
   return { ok: false, reason: lastReason, body: lastBody };

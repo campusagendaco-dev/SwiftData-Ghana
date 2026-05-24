@@ -122,22 +122,31 @@ function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string 
   }
 
   let aliases: string[] = [];
-  if (handlerType === "datamart") {
+  const isDatamart = handlerType === "datamart" || clean.includes("/api/developer") || clean.includes("datamartgh");
+
+  if (isDatamart) {
     if (endpoint === "status") aliases = ["order-status"];
     else if (endpoint === "purchase") aliases = ["purchase"];
     else aliases = [endpoint];
-  } else if (handlerType === "datahub") {
+    
+    for (const alias of aliases) {
+      urls.add(`${clean}/${alias}`);
+    }
+    return Array.from(urls);
+  }
+
+  if (handlerType === "datahub") {
     // DataHub has a fixed URL structure — always just append the alias directly
     const alias = endpoint === "purchase" ? "data-purchase" : (endpoint === "status" ? "order-status" : endpoint);
     return [`${clean}/${alias}`];
   } else if (handlerType === "spendless") {
     const alias = endpoint === "purchase" ? "purchase" : (endpoint === "status" ? "order-status" : endpoint);
     return [`${clean}/${alias}`];
-  } else {
-    aliases = endpoint === "purchase"
-      ? ["purchase", "order", "airtime", "buy", "topup", "recharge"]
-      : (endpoint === "status" ? ["status", "query", "check", "query-order"] : [endpoint]);
   }
+
+  aliases = endpoint === "purchase"
+    ? ["purchase", "order", "airtime", "buy", "topup", "recharge"]
+    : (endpoint === "status" ? ["status", "query", "check", "query-order"] : [endpoint]);
 
   let rootUrl = "";
   try {

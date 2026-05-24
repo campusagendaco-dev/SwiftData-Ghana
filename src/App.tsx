@@ -352,6 +352,18 @@ const AppContent = () => {
         <Route path="/order-status" element={<OrderStatus />} />
         <Route path="/my-orders" element={<MyOrders />} />
         <Route path="/delivery-tracker" element={<Navigate to="/order-status" replace />} />
+        <Route 
+          path="/products" 
+          element={
+            <Navigate 
+              to={{ 
+                pathname: "/buy-data", 
+                search: window.location.search 
+              }} 
+              replace 
+            />
+          } 
+        />
         <Route path="/purchase-success" element={<PurchaseSuccess />} />
         <Route path="/api-docs" element={<APIDocumentation />} />
         <Route path="/docs/agent-api" element={<AgentDevAPIDocs />} />

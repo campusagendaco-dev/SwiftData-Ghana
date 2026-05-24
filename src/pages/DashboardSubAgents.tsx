@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { basePackages, networks } from "@/lib/data";
-import { Users2, Settings2, DollarSign, CheckCircle, Clock, Loader2, Save, RefreshCw, ClipboardList, ChevronRight } from "lucide-react";
+import { Users2, Settings2, DollarSign, CheckCircle, Clock, Loader2, Save, RefreshCw, ClipboardList, ChevronRight, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
@@ -62,6 +62,7 @@ const DashboardSubAgents = () => {
   const [selectedNetwork, setSelectedNetwork] = useState(networks[0].name);
   const [priceMultiplier, setPriceMultiplier] = useState(1);
   const [platformBaseFee, setPlatformBaseFee] = useState(50);
+  const [expandedBridgeConfig, setExpandedBridgeConfig] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!user) return;
@@ -70,7 +71,7 @@ const DashboardSubAgents = () => {
     const [saRes, gsRes] = await Promise.all([
       supabase
         .from("profiles")
-        .select("user_id, full_name, email, phone, store_name, slug, sub_agent_approved, created_at")
+        .select("user_id, full_name, email, phone, store_name, slug, sub_agent_approved, created_at, auto_bridge_enabled, auto_bridge_threshold, auto_bridge_amount")
         .eq("parent_agent_id", user.id)
         .order("created_at", { ascending: false }),
       supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price"),
@@ -184,6 +185,21 @@ const DashboardSubAgents = () => {
       fetchAll(); // revert on error
     } else {
       toast({ title: newStatus ? "Sub-Agent Approved" : "Access Revoked" });
+    }
+  };
+
+  const handleSaveAutoBridge = async (subAgentId: string, enabled: boolean, threshold: number, amount: number) => {
+    const { error } = await supabase.from("profiles").update({
+      auto_bridge_enabled: enabled,
+      auto_bridge_threshold: threshold,
+      auto_bridge_amount: amount
+    }).eq("user_id", subAgentId);
+    
+    if (error) {
+      toast({ title: "Failed to save settings", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Auto-Bridge settings saved" });
+      fetchAll();
     }
   };
 
@@ -346,43 +362,106 @@ const DashboardSubAgents = () => {
                   {window.location.origin}/store/{profile?.slug}/sub-agent
                 </button>
               </p>
-              {subAgents.map((sa) => (
-                <Card key={sa.user_id}>
-                  <CardContent className="p-4 flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="font-semibold text-sm truncate">{sa.full_name || "—"}</p>
-                        {sa.sub_agent_approved ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full border border-green-500/20">
-                            <CheckCircle className="w-2.5 h-2.5" /> Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/20">
-                            <Clock className="w-2.5 h-2.5" /> Pending
-                          </span>
-                        )}
+              {subAgents.map((sa: any) => {
+                const isExpanded = expandedBridgeConfig === sa.user_id;
+                return (
+                <Card key={sa.user_id} className="overflow-hidden">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="font-semibold text-sm truncate">{sa.full_name || "—"}</p>
+                          {sa.sub_agent_approved ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full border border-green-500/20">
+                              <CheckCircle className="w-2.5 h-2.5" /> Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/20">
+                              <Clock className="w-2.5 h-2.5" /> Pending
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{sa.email}</p>
+                        {sa.store_name && <p className="text-xs text-muted-foreground">{sa.store_name}</p>}
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">{sa.email}</p>
-                      {sa.store_name && <p className="text-xs text-muted-foreground">{sa.store_name}</p>}
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setExpandedBridgeConfig(isExpanded ? null : sa.user_id)}
+                            className="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors border bg-blue-500/10 text-blue-500 border-blue-500/20 hover:bg-blue-500/20 flex items-center gap-1"
+                          >
+                            <Zap className="w-3 h-3" />
+                            Auto-Bridge
+                          </button>
+                          <button
+                            onClick={() => handleToggleApproval(sa.user_id, sa.sub_agent_approved)}
+                            className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors border ${
+                              sa.sub_agent_approved 
+                                ? "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20" 
+                                : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20"
+                            }`}
+                          >
+                            {sa.sub_agent_approved ? "Revoke Access" : "Approve Agent"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(sa.created_at).toLocaleDateString()}
-                      </p>
-                      <button
-                        onClick={() => handleToggleApproval(sa.user_id, sa.sub_agent_approved)}
-                        className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors border ${
-                          sa.sub_agent_approved 
-                            ? "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20" 
-                            : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20"
-                        }`}
-                      >
-                        {sa.sub_agent_approved ? "Revoke Access" : "Approve Agent"}
-                      </button>
-                    </div>
+
+                    {isExpanded && (
+                      <div className="mt-4 pt-4 border-t border-border animate-in slide-in-from-top-2">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-xs font-bold flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-amber-500" /> Auto-Bridge Settings</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-muted-foreground">Status</label>
+                            <select 
+                              className="w-full text-xs bg-background border border-border rounded-lg px-2 py-1.5 text-foreground"
+                              defaultValue={sa.auto_bridge_enabled ? "true" : "false"}
+                              id={`status-${sa.user_id}`}
+                            >
+                              <option value="false">Disabled</option>
+                              <option value="true">Enabled</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-muted-foreground">Threshold (GHS)</label>
+                            <input 
+                              type="number" 
+                              className="w-full text-xs bg-background border border-border rounded-lg px-2 py-1.5 text-foreground"
+                              defaultValue={sa.auto_bridge_threshold}
+                              id={`thresh-${sa.user_id}`}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-muted-foreground">Bridge Amount (GHS)</label>
+                            <input 
+                              type="number" 
+                              className="w-full text-xs bg-background border border-border rounded-lg px-2 py-1.5 text-foreground"
+                              defaultValue={sa.auto_bridge_amount}
+                              id={`amt-${sa.user_id}`}
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-3 flex justify-end">
+                          <button 
+                            className="bg-amber-400 hover:bg-amber-300 text-black text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                            onClick={() => {
+                              const enabled = (document.getElementById(`status-${sa.user_id}`) as HTMLSelectElement).value === "true";
+                              const threshold = Number((document.getElementById(`thresh-${sa.user_id}`) as HTMLInputElement).value);
+                              const amount = Number((document.getElementById(`amt-${sa.user_id}`) as HTMLInputElement).value);
+                              handleSaveAutoBridge(sa.user_id, enabled, threshold, amount);
+                            }}
+                          >
+                            Save Settings
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

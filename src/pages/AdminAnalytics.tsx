@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, TrendingUp, Users, Smartphone, Zap, Loader2, RefreshCw, DollarSign, ShoppingCart, Target } from "lucide-react";
@@ -59,6 +59,12 @@ const AdminAnalytics = () => {
   const gridColor = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
   const tickColor = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.5)";
 
+  const isMounted = useRef(true);
+  
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
+
   const fetchData = async () => {
     setLoading(true);
     
@@ -66,11 +72,17 @@ const AdminAnalytics = () => {
     let from = 0;
     let hasMore = true;
 
-    while (hasMore) {
+    // Limit analytics to the last 30 days to avoid huge payloads and 401 timeout/offset errors
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dateLimit = thirtyDaysAgo.toISOString();
+
+    while (hasMore && isMounted.current) {
       const { data, error } = await supabase
         .from("orders")
         .select("id, profit, network, agent_id, amount, status, created_at")
-        .order("created_at", { ascending: true })
+        .gte("created_at", dateLimit)
+        .order("created_at", { ascending: false })
         .range(from, from + 999);
       
       if (error || !data || data.length === 0) {
@@ -81,6 +93,8 @@ const AdminAnalytics = () => {
         if (data.length < 1000) hasMore = false;
       }
     }
+
+    if (!isMounted.current) return;
 
     const { data: agentsData } = await supabase
       .from("profiles")

@@ -54,18 +54,25 @@ const DailySalesTooltip = ({ active, payload, label, isDark }: any) => {
   if (!active || !payload?.length) return null;
   const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0);
   return (
-    <div className={`rounded-xl p-3 shadow-xl text-xs border ${isDark ? "bg-[#0d0d18] border-white/10" : "bg-white border-gray-200"}`}>
-      <p className={`mb-1.5 font-semibold ${isDark ? "text-white/60" : "text-gray-500"}`}>{label}</p>
-      {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color }} className="font-bold">
-          {p.name}: GH₵{Number(p.value).toFixed(2)}
-        </p>
-      ))}
-      <p className={`font-bold mt-1.5 border-t pt-1.5 ${isDark ? "text-white/80 border-white/10" : "text-gray-800 border-gray-200"}`}>
-        Total Volume: GH₵{total.toFixed(2)}
-      </p>
+    <div className={`rounded-[20px] p-4 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] text-sm border backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-[#111116]/90 border-white/10" : "bg-white/90 border-gray-200"}`}>
+      <p className={`mb-3 font-black tracking-tight text-xs uppercase ${isDark ? "text-white/50" : "text-gray-500"}`}>{label}</p>
+      <div className="space-y-2">
+        {payload.map((p: any, i: number) => (
+          <div key={i} className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color, boxShadow: `0 0 10px ${p.color}` }} />
+              <span className={`font-semibold text-[11px] uppercase tracking-widest ${isDark ? "text-white/70" : "text-gray-600"}`}>{p.name}</span>
+            </div>
+            <span style={{ color: p.color }} className="font-black">GH₵{Number(p.value).toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+      <div className={`mt-3 pt-3 border-t flex items-center justify-between gap-4 ${isDark ? "border-white/10" : "border-gray-200"}`}>
+        <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-white/40" : "text-gray-400"}`}>Total Vol</span>
+        <span className={`font-black text-lg ${isDark ? "text-white" : "text-gray-900"}`}>GH₵{total.toFixed(2)}</span>
+      </div>
       {payload[0]?.payload?.Deposits > 0 && (
-        <p className="text-[10px] text-amber-500 mt-1 font-bold">
+        <p className="text-[10px] text-amber-500 mt-1 font-bold text-right">
           + GH₵{payload[0].payload.Deposits.toFixed(2)} Deposits
         </p>
       )}
@@ -574,29 +581,47 @@ const AdminOverview = () => {
 
   return (
     <div className="space-y-8 pb-10">
-      <div className={`flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b pb-6 ${divider}`}>
+      
+      {/* ── LIVE ACTIVITY TICKER ── */}
+      <div className={`relative flex items-center h-10 overflow-hidden rounded-xl border backdrop-blur-xl shadow-inner ${isDark ? "bg-emerald-500/5 border-emerald-500/10 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}>
+        <div className="absolute left-0 z-10 h-full flex items-center px-4 rounded-l-xl backdrop-blur-xl border-r" style={{ background: isDark ? "rgba(16,185,129,0.1)" : "rgba(16,185,129,0.05)", borderColor: isDark ? "rgba(16,185,129,0.2)" : "rgba(16,185,129,0.3)" }}>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] mr-2" />
+          <span className="text-[10px] font-black uppercase tracking-widest">Live Ticker</span>
+        </div>
+        
+        <div className="flex whitespace-nowrap pl-32 animate-[marquee_30s_linear_infinite] items-center text-xs font-bold font-mono tracking-tight gap-8">
+          <style>{`@keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }`}</style>
+          {recentOrders.slice(0, 5).map((o, i) => (
+            <div key={`${o.id}-${i}`} className="flex items-center gap-2">
+              <span className={isDark ? "text-white/40" : "text-gray-400"}>{new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              <span className={isDark ? "text-emerald-400" : "text-emerald-600"}>[GH₵{Number(o.amount).toFixed(2)}]</span>
+              <span className={isDark ? "text-white/80" : "text-gray-800"}>{o.network ? `${o.network} ${o.package_size}` : "Order"}</span>
+              <span className={isDark ? "text-white/40" : "text-gray-400"}>via {o.customer_phone || "API"}</span>
+            </div>
+          ))}
+          {recentOrders.length === 0 && <span>Waiting for new transactions...</span>}
+        </div>
+      </div>
+
+      <div className={`flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4`}>
         <div>
-          <h1 className={`text-3xl font-black tracking-tight ${head}`}>Overview</h1>
-          <div className="flex items-center gap-3 mt-1">
-            <p className={`text-sm ${sub}`}>Monitor platform metrics and recent activities.</p>
-            <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-widest">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live
-            </span>
+          <h1 className={`text-4xl font-black tracking-tighter ${head}`}>Terminal Overview</h1>
+          <div className="flex items-center gap-3 mt-1.5">
+            <p className={`text-sm font-medium ${sub}`}>High-level platform metrics and financial reconciliation.</p>
           </div>
           {lastUpdated && (
-            <p className={`text-[10px] mt-1 ${muted}`}>
-              Last updated {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            <p className={`text-[10px] mt-2 font-mono uppercase tracking-widest ${muted}`}>
+              Last sync: {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </p>
           )}
         </div>
         <Button
           onClick={safeFetchData}
-          className={`gap-2 rounded-xl border font-semibold text-sm transition-all ${
+          className={`gap-2 rounded-xl border font-bold text-[11px] uppercase tracking-widest transition-all h-10 ${
             isDark ? "bg-white/5 hover:bg-white/10 text-white border-white/10" : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200 shadow-sm"
           }`}
         >
-          <RefreshCw className="w-4 h-4" /> Refresh
+          <RefreshCw className="w-3.5 h-3.5" /> Sync Data
         </Button>
       </div>
 
@@ -1024,41 +1049,56 @@ const AdminOverview = () => {
               ))}
             </div>
 
-            {/* ── Chart (segment stacked) ── */}
-            <div className={`rounded-2xl border p-6 ${card}`}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+            {/* ── Chart (Bloomberg Aesthetic) ── */}
+            <div className={`rounded-3xl border p-7 ${card} relative overflow-hidden`} style={{ background: isDark ? "linear-gradient(180deg, rgba(20,20,25,0.8) 0%, rgba(10,10,15,0.95) 100%)" : undefined }}>
+              <div className="absolute inset-0 pointer-events-none rounded-3xl ring-1 ring-inset ring-white/5" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 relative z-10">
                 <div>
-                  <h3 className={`font-bold ${head}`}>
+                  <h3 className={`font-black text-xl tracking-tight ${head}`}>
                     {timeRange === "1y" || timeRange === "all" ? "Monthly Sales Volume" : "Daily Sales Volume"}
                   </h3>
-                  <p className={`text-xs mt-0.5 ${muted}`}>
+                  <p className={`text-[11px] font-bold uppercase tracking-widest mt-1 ${muted}`}>
                     {timeRange === "1y" || timeRange === "all"
-                      ? "Monthly revenue by segment across your network."
-                      : "Daily revenue breakdown from fulfilled orders."}
+                      ? "Monthly revenue by segment"
+                      : "Daily revenue breakdown"}
                   </p>
                 </div>
-                <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-4 flex-wrap bg-black/20 p-2 rounded-2xl backdrop-blur-md border border-white/5">
                   {[
                     { label: "Customers",  color: "#0ea5e9" },
                     { label: "Agents",     color: "#f59e0b" },
                     { label: "Sub-Agents", color: "#a855f7" },
                   ].map((l) => (
-                    <div key={l.label} className="flex items-center gap-1.5">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: l.color }} />
-                      <span className={`text-[10px] font-semibold ${muted}`}>{l.label}</span>
+                    <div key={l.label} className="flex items-center gap-2 px-2">
+                      <span className="w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]" style={{ backgroundColor: l.color, color: l.color }} />
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-white/70" : "text-gray-600"}`}>{l.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={dailySales} margin={{ top: 5, right: 10, left: -10, bottom: 0 }} barCategoryGap="35%">
-                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                  <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: axisColor, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={(props: any) => <DailySalesTooltip {...props} isDark={isDark} />} />
-                  <Bar dataKey="Customers"  stackId="seg" fill="#0ea5e9" radius={[0, 0, 0, 0]} minPointSize={2} background={{ fill: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.04)", radius: 6 }} />
-                  <Bar dataKey="Agents"     stackId="seg" fill="#f59e0b" radius={[0, 0, 0, 0]} minPointSize={2} />
-                  <Bar dataKey="Sub-Agents" stackId="seg" fill="#a855f7" radius={[6, 6, 0, 0]} minPointSize={2} />
+              <ResponsiveContainer width="100%" height={280} className="relative z-10">
+                <BarChart data={dailySales} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} barCategoryGap="30%">
+                  <defs>
+                    <linearGradient id="colorCust" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={1}/>
+                      <stop offset="95%" stopColor="#0284c7" stopOpacity={0.8}/>
+                    </linearGradient>
+                    <linearGradient id="colorAgent" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={1}/>
+                      <stop offset="95%" stopColor="#d97706" stopOpacity={0.8}/>
+                    </linearGradient>
+                    <linearGradient id="colorSub" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#a855f7" stopOpacity={1}/>
+                      <stop offset="95%" stopColor="#7e22ce" stopOpacity={0.8}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} dy={10} />
+                  <YAxis tick={{ fill: axisColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} dx={-10} tickFormatter={(val) => `₵${val}`} />
+                  <Tooltip cursor={{ fill: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" }} content={(props: any) => <DailySalesTooltip {...props} isDark={isDark} />} />
+                  <Bar dataKey="Customers"  stackId="seg" fill="url(#colorCust)" radius={[0, 0, 0, 0]} minPointSize={2} />
+                  <Bar dataKey="Agents"     stackId="seg" fill="url(#colorAgent)" radius={[0, 0, 0, 0]} minPointSize={2} />
+                  <Bar dataKey="Sub-Agents" stackId="seg" fill="url(#colorSub)" radius={[8, 8, 0, 0]} minPointSize={2} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1106,30 +1146,30 @@ const AdminOverview = () => {
                   <p className={`text-sm ${muted}`}>No recent orders found.</p>
                 </div>
               ) : (
-                <div className="space-y-0.5">
+                <div className="space-y-1">
                   {recentOrders.map((o) => (
-                    <div key={o.id} className={`group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl transition-colors border border-transparent ${
-                      isDark ? "hover:bg-white/[0.03] hover:border-white/5" : "hover:bg-gray-50 hover:border-gray-100"
+                    <div key={o.id} className={`group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl transition-all border ${
+                      isDark ? "border-transparent hover:bg-white/[0.04] hover:border-white/10 hover:shadow-lg hover:shadow-black/50 active:scale-[0.99]" : "border-transparent hover:bg-white hover:border-gray-200 hover:shadow-sm active:scale-[0.99]"
                     }`}>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-4">
                         {statusIcon(o.status)}
                         <div>
-                          <p className={`text-sm font-bold ${isDark ? "text-white/90" : "text-gray-800"}`}>
+                          <p className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>
                             {o.network && o.package_size ? `${o.network} ${o.package_size}` : "General Order"}
                           </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-xs font-mono ${muted}`}>{o.customer_phone || "No phone"}</span>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-[11px] font-mono font-bold ${muted}`}>{o.customer_phone || "No phone"}</span>
                             <span className={`w-1 h-1 rounded-full ${isDark ? "bg-white/20" : "bg-gray-300"}`} />
-                            <span className={`text-xs ${muted}`}>{new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>{new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                           </div>
                         </div>
                       </div>
                       <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 w-full sm:w-auto">
                         <p className="text-sm font-black text-amber-500">GH₵{Number(o.amount).toFixed(2)}</p>
-                        <Badge variant="outline" className={`text-[9px] uppercase tracking-wider font-bold border ${
-                          o.status === "fulfilled"         ? "bg-green-500/10 text-green-600 border-green-500/25" :
-                          o.status === "fulfillment_failed"? "bg-red-500/10 text-red-600 border-red-500/25" :
-                                                             "bg-amber-500/10 text-amber-600 border-amber-500/25"
+                        <Badge variant="outline" className={`text-[9px] uppercase tracking-[0.2em] font-black border ${
+                          o.status === "fulfilled"         ? "bg-green-500/10 text-green-500 border-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.1)]" :
+                          o.status === "fulfillment_failed"? "bg-red-500/10 text-red-500 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]" :
+                                                             "bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
                         }`}>
                           {o.status.replace("_", " ")}
                         </Badge>

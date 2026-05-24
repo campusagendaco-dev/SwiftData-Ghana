@@ -38,6 +38,13 @@ const AdminSentinelAI = () => {
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const [activeOutage, setActiveOutage] = useState<string | null>(null);
+  const [routingNode, setRoutingNode] = useState<"mtn" | "telecel" | "airteltigo">("mtn");
+  const [simLogs, setSimLogs] = useState<string[]>([
+    "Sandbox initialized. Priority 1 (MTN) stable.",
+    "Health checks operational."
+  ]);
+
   const fetchSentinelData = async () => {
     try {
       const { data: actionData } = await (supabase as any).from("sentinel_actions")
@@ -322,6 +329,166 @@ const AdminSentinelAI = () => {
             </p>
           </div>
         </motion.div>
+      </div>
+
+      {/* Visual Outage Simulation Playground */}
+      <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/40 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-transparent opacity-100" />
+        
+        <div className="relative flex flex-col lg:flex-row gap-8 items-stretch">
+          {/* Controls Column */}
+          <div className="flex-1 space-y-4">
+            <div>
+              <h3 className="text-lg font-black tracking-tight text-white uppercase italic flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-cyan-400" />
+                Sentinel Simulation Room
+              </h3>
+              <p className="text-[10px] text-cyan-500 font-bold uppercase tracking-widest mt-1">Mock Platform Incidents & Failover Routes</p>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <button 
+                onClick={() => {
+                  setActiveOutage("mtn");
+                  setRoutingNode("telecel");
+                  setSimLogs(prev => [
+                    `[ALERT] MTN Gateway Latency > 4500ms`,
+                    `[SENTINEL] Switch provider trigger executed`,
+                    `[SENTINEL] Re-routed traffic to Telecel (Success)`,
+                    ...prev
+                  ].slice(0, 4));
+                  toast.warning("MTN outage triggered. Sentinel routing failover: active.");
+                }}
+                className={cn(
+                  "py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border shrink-0 cursor-pointer text-center",
+                  activeOutage === "mtn"
+                    ? "bg-red-500/20 border-red-500 text-red-400 shadow-lg shadow-red-500/10 animate-pulse"
+                    : "bg-[#1e293b]/30 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                )}
+              >
+                Mock MTN Failure
+              </button>
+
+              <button 
+                onClick={() => {
+                  setActiveOutage("telecel");
+                  setRoutingNode("airteltigo");
+                  setSimLogs(prev => [
+                    `[ALERT] Telecel Error Rate > 85%`,
+                    `[SENTINEL] Initiated failover to AirtelTigo`,
+                    `[SENTINEL] Active routing complete (Priority 3)`,
+                    ...prev
+                  ].slice(0, 4));
+                  toast.warning("Telecel outage triggered. Sentinel failover active.");
+                }}
+                className={cn(
+                  "py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border shrink-0 cursor-pointer text-center",
+                  activeOutage === "telecel"
+                    ? "bg-red-500/20 border-red-500 text-red-400 shadow-lg shadow-red-500/10 animate-pulse"
+                    : "bg-[#1e293b]/30 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                )}
+              >
+                Mock Telecel Failure
+              </button>
+
+              <button 
+                onClick={() => {
+                  setActiveOutage(null);
+                  setRoutingNode("mtn");
+                  setSimLogs(prev => [
+                    `[RESOLVED] All gateway paths returned to operational`,
+                    `[SENTINEL] Restored Priority 1 routing (MTN)`,
+                    ...prev
+                  ].slice(0, 4));
+                  toast.success("Gateways stable. Priority 1 routing restored.");
+                }}
+                className="py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all bg-emerald-600 hover:bg-emerald-500 border-none text-white shadow-lg shadow-emerald-500/10 shrink-0 cursor-pointer text-center"
+              >
+                Reset Sandbox
+              </button>
+            </div>
+
+            {/* Sim Logs terminal */}
+            <div className="bg-black/40 rounded-2xl p-4 border border-slate-800/80 font-mono space-y-1.5 h-36 overflow-y-auto">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none block mb-1">Sandbox System Logs</span>
+              {simLogs.map((log, idx) => (
+                <div key={idx} className="flex gap-2 text-[10px] items-start">
+                  <span className={cn(
+                    "font-bold shrink-0",
+                    log.includes("ALERT") ? "text-red-500" : log.includes("RESOLVED") ? "text-emerald-500" : "text-cyan-500"
+                  )}>[SYSTEM]</span>
+                  <span className="text-slate-400 leading-none">{log}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* SVG Visualizer Column */}
+          <div className="w-full lg:w-[350px] border border-slate-800/80 bg-black/25 rounded-2xl p-4 flex flex-col items-center justify-center relative overflow-hidden">
+            <span className="absolute top-4 left-4 text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none">Traffic Flow Matrix</span>
+            
+            <svg viewBox="0 0 200 200" className="w-40 h-40 mt-4">
+              {/* Central request Node */}
+              <circle cx="100" cy="100" r="10" className="fill-cyan-500/20 stroke-cyan-400 stroke-2" />
+              <text x="100" y="104" textAnchor="middle" className="fill-cyan-400 text-[8px] font-bold">MoMo</text>
+
+              {/* MTN Node */}
+              <circle cx="100" cy="30" r="12" className={cn(
+                "transition-all duration-300",
+                activeOutage === "mtn" ? "fill-red-500/20 stroke-red-500" : routingNode === "mtn" ? "fill-amber-400/20 stroke-amber-400" : "fill-slate-800/20 stroke-slate-700"
+              )} />
+              <text x="100" y="34" textAnchor="middle" className="fill-white text-[7px] font-black">MTN</text>
+
+              {/* Telecel Node */}
+              <circle cx="35" cy="140" r="12" className={cn(
+                "transition-all duration-300",
+                activeOutage === "telecel" ? "fill-red-500/20 stroke-red-500" : routingNode === "telecel" ? "fill-red-500/20 stroke-red-500" : "fill-slate-800/20 stroke-slate-700"
+              )} />
+              <text x="35" y="144" textAnchor="middle" className="fill-white text-[7px] font-black">TLCL</text>
+
+              {/* AirtelTigo Node */}
+              <circle cx="165" cy="140" r="12" className={cn(
+                "transition-all duration-300",
+                routingNode === "airteltigo" ? "fill-blue-500/20 stroke-blue-500" : "fill-slate-800/20 stroke-slate-700"
+              )} />
+              <text x="165" y="144" textAnchor="middle" className="fill-white text-[7px] font-black">AT</text>
+
+              {/* Connections */}
+              {/* Center -> MTN */}
+              <line x1="100" y1="90" x2="100" y2="42" className={cn(
+                "transition-all duration-500 stroke-2",
+                activeOutage === "mtn" ? "stroke-red-500/30 stroke-dasharray-4" : routingNode === "mtn" ? "stroke-amber-400" : "stroke-slate-800"
+              )} />
+              {routingNode === "mtn" && (
+                <circle cx="100" cy="90" r="2.5" className="fill-amber-400">
+                  <animateMotion dur="1.2s" repeatCount="indefinite" path="M 0,0 L 0,-48" />
+                </circle>
+              )}
+
+              {/* Center -> Telecel */}
+              <line x1="90" y1="105" x2="45" y2="132" className={cn(
+                "transition-all duration-500 stroke-2",
+                activeOutage === "telecel" ? "stroke-red-500/30 stroke-dasharray-4" : routingNode === "telecel" ? "stroke-red-500" : "stroke-slate-800"
+              )} />
+              {routingNode === "telecel" && (
+                <circle cx="90" cy="105" r="2.5" className="fill-red-500">
+                  <animateMotion dur="1.2s" repeatCount="indefinite" path="M 0,0 L -45,27" />
+                </circle>
+              )}
+
+              {/* Center -> AirtelTigo */}
+              <line x1="110" y1="105" x2="155" y2="132" className={cn(
+                "transition-all duration-500 stroke-2",
+                routingNode === "airteltigo" ? "stroke-blue-500" : "stroke-slate-800"
+              )} />
+              {routingNode === "airteltigo" && (
+                <circle cx="110" cy="105" r="2.5" className="fill-blue-500">
+                  <animateMotion dur="1.2s" repeatCount="indefinite" path="M 0,0 L 45,27" />
+                </circle>
+              )}
+            </svg>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

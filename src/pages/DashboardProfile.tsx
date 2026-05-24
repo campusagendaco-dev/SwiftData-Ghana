@@ -450,18 +450,64 @@ const DashboardProfile = () => {
                     <Store className="w-24 h-24 text-white opacity-10" />
                   </div>
                   <CardContent className="p-8 -mt-12">
-                    <div className="flex items-end gap-4 mb-6">
-                      <div className="w-20 h-20 rounded-2xl bg-card border-4 border-card shadow-xl flex items-center justify-center">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4 mb-6">
+                      <div className="w-20 h-20 rounded-2xl bg-card border-4 border-card shadow-xl flex items-center justify-center shrink-0">
                         <Store className="w-10 h-10 text-primary" />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h3 className="text-xl font-black">{profile?.store_name || "Your Store"}</h3>
                         <p className="text-xs text-muted-foreground font-medium truncate">swiftdata.gh/store/{profile?.slug || "setup-pending"}</p>
+                        {(profile as any)?.custom_domain && (
+                          <p className="text-xs text-primary font-bold mt-1 flex items-center gap-1.5">
+                            <Zap className="w-3 h-3" /> Custom Domain: {(profile as any).custom_domain}
+                          </p>
+                        )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Button disabled={!profile?.slug} onClick={() => window.open(`/store/${profile?.slug}`, '_blank')} className="font-bold h-12 rounded-xl">Visit Store</Button>
-                      <Button onClick={() => window.location.href = '/dashboard/my-store'} variant="secondary" className="font-bold h-12 rounded-xl">Settings</Button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                      <Button 
+                        disabled={!profile?.slug} 
+                        onClick={() => window.open((profile as any)?.custom_domain ? `https://${(profile as any).custom_domain}` : `/store/${profile?.slug}`, '_blank')} 
+                        className="font-bold h-12 rounded-xl"
+                      >
+                        Visit Store
+                      </Button>
+                      <Button onClick={() => window.location.href = '/dashboard/my-store'} variant="secondary" className="font-bold h-12 rounded-xl">Store Settings</Button>
+                    </div>
+
+                    <div className="pt-6 border-t border-border">
+                      <h4 className="text-sm font-bold flex items-center gap-2 mb-2">
+                        <Zap className="w-4 h-4 text-amber-500" />
+                        Custom Domain Mapping
+                      </h4>
+                      <p className="text-xs text-muted-foreground mb-4 max-w-lg">
+                        Map your own domain (e.g., bundles.mybrand.com) to your storefront. 
+                        You must point a CNAME record to our servers for this to work.
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <input 
+                          type="text" 
+                          id="custom_domain_input"
+                          defaultValue={(profile as any)?.custom_domain || ""}
+                          placeholder="e.g. data.mycompany.com"
+                          className="flex-1 h-10 border border-input bg-background rounded-lg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-foreground max-w-sm"
+                        />
+                        <Button 
+                          variant="outline" 
+                          className="h-10 px-4 font-bold border-primary/20 hover:bg-primary/10 text-primary"
+                          onClick={async () => {
+                            const val = (document.getElementById("custom_domain_input") as HTMLInputElement).value;
+                            const { error } = await supabase.from("profiles").update({ custom_domain: val || null }).eq("user_id", user?.id);
+                            if (error) {
+                              toast.error(error.message?.includes("unique") ? "Domain already in use" : "Failed to save domain");
+                            } else {
+                              toast.success("Custom domain updated!");
+                            }
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

@@ -546,28 +546,31 @@ const AgentStore = () => {
   const renderPurchasePanel = () => (
     <div
       ref={purchasePanelRef}
-      className="animate-in fade-in slide-in-from-top-1 duration-300 rounded-3xl overflow-hidden border border-white/10"
-      style={{ background: "#111116" }}
+      className="animate-in fade-in slide-in-from-top-2 duration-400 rounded-[28px] overflow-hidden border border-white/20 backdrop-blur-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] relative z-20"
+      style={{ background: "linear-gradient(180deg, rgba(28,28,30,0.85) 0%, rgba(10,10,15,0.95) 100%)" }}
     >
+      {/* Inner Highlight for depth */}
+      <div className="absolute inset-0 rounded-[28px] pointer-events-none ring-1 ring-inset ring-white/10" />
+
       {/* Connector notch */}
-      <div className="flex px-4 pt-3 pb-0">
+      <div className="flex px-5 pt-4 pb-2 relative z-10">
         <div
-          className="w-1 rounded-full mr-3 shrink-0"
+          className="w-1.5 rounded-full mr-4 shrink-0 shadow-[0_0_10px_rgba(255,255,255,0.2)]"
           style={{ backgroundColor: netConf.color, minHeight: "100%", alignSelf: "stretch" }}
         />
         <div className="flex-1 flex items-center justify-between">
           <div>
-            <p className="text-sm font-black text-white leading-tight flex items-center gap-2">
+            <p className="text-base font-black text-white leading-tight flex items-center gap-2 tracking-tight">
               {selectedService === "data"
                 ? `${selectedNetwork} · ${selectedPkg?.size}`
                 : selectedService === "airtime"
                 ? `${selectedNetwork} Airtime`
                 : `${utilityType} Bill`}
               {isFreePromo && (
-                <span className="text-[9px] bg-emerald-500 text-black font-black px-1.5 py-0.5 rounded-full">FREE</span>
+                <span className="text-[10px] bg-emerald-500 text-black font-black px-2 py-0.5 rounded-full shadow-md">FREE</span>
               )}
             </p>
-            <p className="text-xs font-bold mt-0.5 text-white/40">
+            <p className="text-[13px] font-bold mt-1 text-white/50">
               {validPromo && !isFreePromo ? (
                 <><span className="text-emerald-400">₵{discountedPrice.toFixed(2)}</span> <span className="line-through opacity-40">₵{basePrice.toFixed(2)}</span></>
               ) : (
@@ -580,21 +583,21 @@ const AgentStore = () => {
             type="button"
             aria-label="Deselect package"
             onClick={() => { setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-            className="w-7 h-7 rounded-xl bg-white/5 flex items-center justify-center text-white/30 hover:text-white transition-all ml-3 shrink-0"
+            className="w-8 h-8 rounded-[12px] bg-white/10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/20 transition-all ml-3 shrink-0 active:scale-95 shadow-inner border border-white/5"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Divider */}
-      <div className="mx-4 my-3 border-t border-white/6" />
+      <div className="mx-5 my-4 border-t border-white/10 relative z-10" />
 
       {/* Phone + Pay */}
-      <div className="px-4 pb-4 space-y-3">
+      <div className="px-5 pb-5 space-y-4 relative z-10">
         <div className="flex gap-2">
           <div className="flex-1 relative">
-            <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/25 pointer-events-none z-10" />
+            <Phone className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors pointer-events-none z-10 ${isPhoneValid ? "text-emerald-400" : "text-white/30"}`} />
             <input
               ref={phoneInputRef}
               type="tel"
@@ -604,10 +607,11 @@ const AgentStore = () => {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               maxLength={12}
-              className="w-full h-12 rounded-2xl pl-10 pr-3 text-sm font-bold text-white placeholder:text-white/25 focus:outline-none transition-all border"
+              className="w-full h-14 rounded-[18px] pl-11 pr-4 text-sm font-black text-white placeholder:text-white/30 focus:outline-none transition-all border shadow-inner tracking-wide"
               style={{
-                background: "#1c1c24",
-                borderColor: isPhoneValid ? `${netConf.color}60` : "rgba(255,255,255,0.08)",
+                background: "rgba(255,255,255,0.05)",
+                borderColor: isPhoneValid ? `${netConf.color}80` : "rgba(255,255,255,0.12)",
+                boxShadow: isPhoneValid ? `0 0 0 2px ${netConf.color}20 inset` : "0 2px 4px rgba(0,0,0,0.2) inset",
                 WebkitTextFillColor: "white",
               }}
             />
@@ -618,29 +622,30 @@ const AgentStore = () => {
               type="button"
               onClick={handleClaimFree}
               disabled={claiming || !isPhoneValid}
-              className="shrink-0 h-12 px-4 rounded-2xl bg-emerald-500 text-black font-black text-sm disabled:opacity-40 flex items-center gap-2 active:scale-95 transition-all"
+              className="shrink-0 h-14 px-5 rounded-[18px] bg-emerald-500 text-black font-black text-[13px] uppercase tracking-wide disabled:opacity-40 flex items-center gap-2 active:scale-95 transition-all shadow-[0_4px_15px_rgba(16,185,129,0.3)]"
             >
-              {claiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Gift className="w-4 h-4" />Claim</>}
+              {claiming ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Gift className="w-4 h-4" />Claim</>}
             </button>
           ) : (
             <button
               type="button"
               onClick={handlePay}
               disabled={buying || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)}
-              className="shrink-0 h-12 px-4 rounded-2xl font-black text-sm flex items-center gap-2 active:scale-95 transition-all whitespace-nowrap"
+              className="shrink-0 h-14 px-5 rounded-[18px] font-black text-[13px] uppercase tracking-wide flex items-center gap-2 active:scale-[0.96] transition-all whitespace-nowrap"
               style={{
                 backgroundColor: netConf.color,
                 color: netConf.textClass === "text-black" ? "#000" : "#fff",
                 opacity: (!isPhoneValid || buying || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? 0.5 : 1,
-                boxShadow: (isPhoneValid && !(isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? `0 6px 20px ${netConf.color}40` : "none",
+                boxShadow: (isPhoneValid && !(isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? `0 8px 25px ${netConf.color}50` : "none",
+                textShadow: netConf.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none"
               }}
             >
               {buying ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : isCustomerLoggedIn && payMethod === "wallet" ? (
-                <><CreditCard className="w-4 h-4" />Wallet Pay ₵{total.toFixed(2)}</>
-              ) : (
                 <><CreditCard className="w-4 h-4" />Pay ₵{total.toFixed(2)}</>
+              ) : (
+                <><CreditCard className="w-4 h-4 drop-shadow-sm" />Pay ₵{total.toFixed(2)}</>
               )}
             </button>
           )}
@@ -797,19 +802,23 @@ const AgentStore = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white selection:bg-amber-400/30 flex flex-col">
-      {/* Background */}
-      <TraditionalBackground className="fixed inset-0 z-0 opacity-[0.07] dark:opacity-[0.12]" />
+    <div className="min-h-screen bg-[#050508] text-white selection:bg-white/30 flex flex-col relative">
+      {/* Traditional Pattern Background */}
+      <TraditionalBackground className="fixed inset-0 z-0 opacity-20 dark:opacity-20" />
 
-      {/* Ambient glow */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+      {/* Dynamic Mesh Gradients */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-70">
         <div
-          className="absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full blur-[100px] transition-colors duration-1000"
-          style={{ backgroundColor: `${accentColor}18` }}
+          className="absolute -top-[20%] -left-[10%] w-[70vw] h-[70vw] rounded-full mix-blend-screen blur-[120px] opacity-40 transition-colors duration-[1500ms]"
+          style={{ backgroundColor: accentColor }}
         />
         <div
-          className="absolute bottom-0 right-0 w-[300px] h-[300px] rounded-full blur-[80px] transition-colors duration-1000"
-          style={{ backgroundColor: `${netConf.color}10` }}
+          className="absolute top-[30%] -right-[20%] w-[60vw] h-[60vw] rounded-full mix-blend-screen blur-[100px] opacity-30 transition-colors duration-[1500ms]"
+          style={{ backgroundColor: netConf.color }}
+        />
+        <div
+          className="absolute -bottom-[10%] left-[20%] w-[80vw] h-[50vw] rounded-full mix-blend-screen blur-[120px] opacity-20 transition-colors duration-[1500ms]"
+          style={{ backgroundColor: accentColor }}
         />
       </div>
 
@@ -844,41 +853,45 @@ const AgentStore = () => {
 
         {/* ── Unique Storefront Welcome Hero Card ── */}
         <div
-          className="rounded-3xl p-6 mb-5 relative overflow-hidden border border-white/8 backdrop-blur-md shadow-2xl"
-          style={{ background: `linear-gradient(135deg, ${accentColor}18 0%, ${accentColor}03 100%)` }}
+          className="rounded-[32px] p-7 mb-6 relative overflow-hidden border border-white/10 backdrop-blur-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]"
+          style={{ background: `linear-gradient(135deg, ${accentColor}15 0%, rgba(255,255,255,0.02) 100%)` }}
         >
           {/* Ambient Glow Dot */}
-          <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl opacity-20 pointer-events-none" style={{ backgroundColor: accentColor }} />
+          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-30 pointer-events-none" style={{ backgroundColor: accentColor }} />
+          <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none" style={{ backgroundColor: accentColor }} />
           
-          <div className="flex items-center gap-2 mb-3">
-            <span className="px-2.5 py-0.5 text-[9px] font-black tracking-wider text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full uppercase">
+          <div className="flex items-center gap-2 mb-4 relative z-10">
+            <span className="px-3 py-1 text-[10px] font-black tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full uppercase shadow-inner">
               {greeting}
             </span>
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active Server</span>
+            <div className="flex items-center gap-1.5 px-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active System</span>
             </div>
           </div>
 
-          <h2 className="text-2xl font-black text-white tracking-tight leading-tight mb-2">
-            Instant & Cheap Data Bundles
+          <h2 className="text-3xl font-black text-white tracking-tight leading-none mb-3 relative z-10 drop-shadow-md">
+            Premium Data <br/> & Connectivity.
           </h2>
-          <p className="text-white/40 text-xs font-semibold leading-normal mb-5">
-            Purchase super-fast internet bundles for MTN, Telecel, and AirtelTigo with no expiry. Secure, direct payments.
+          <p className="text-white/60 text-[13px] font-semibold leading-relaxed mb-6 max-w-[280px] relative z-10">
+            Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant fulfillment.
           </p>
 
-          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] border border-white/6 backdrop-blur-md">
-            <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center justify-between p-4 rounded-[24px] bg-white/[0.05] border border-white/10 backdrop-blur-xl shadow-inner relative z-10">
+            <div className="flex items-center gap-3 min-w-0">
               {agent.store_logo_url ? (
-                <img src={agent.store_logo_url} alt="logo" className="w-8 h-8 rounded-xl object-cover border border-white/10 shrink-0" />
+                <img src={agent.store_logo_url} alt="logo" className="w-10 h-10 rounded-[14px] object-cover border border-white/20 shrink-0 shadow-lg" />
               ) : (
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center border border-white/10 shrink-0" style={{ backgroundColor: `${accentColor}25` }}>
-                  <Store className="w-4 h-4" style={{ color: accentColor }} />
+                <div className="w-10 h-10 rounded-[14px] flex items-center justify-center border border-white/20 shrink-0 shadow-inner" style={{ backgroundColor: `${accentColor}30` }}>
+                  <Store className="w-5 h-5" style={{ color: accentColor }} />
                 </div>
               )}
               <div className="leading-tight min-w-0">
-                <p className="font-black text-xs text-white truncate max-w-[120px]">{agent.store_name}</p>
-                <p className="text-[8px] font-black uppercase tracking-widest text-white/30">Verified Partner</p>
+                <p className="font-black text-sm text-white truncate max-w-[120px] tracking-tight">{agent.store_name}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <ShieldCheck className="w-3 h-3 text-[#25D366]" />
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Verified Partner</p>
+                </div>
               </div>
             </div>
             
@@ -886,10 +899,10 @@ const AgentStore = () => {
               <a
                 href={`https://wa.me/${agent.whatsapp_number.replace(/\D+/g, "")}`}
                 target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/20 active:scale-95 shrink-0"
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-[14px] bg-[#25D366] hover:bg-[#20bd5a] text-black text-[11px] font-black tracking-wide transition-all shadow-[0_4px_15px_rgba(37,211,102,0.3)] active:scale-95 shrink-0"
               >
-                <MessageCircle className="w-3.5 h-3.5" />
-                Chat Support
+                <MessageCircle className="w-4 h-4 fill-black/20" />
+                Support
               </a>
             )}
           </div>
@@ -929,7 +942,7 @@ const AgentStore = () => {
         )}
 
         {/* ── Service tabs ── */}
-        <div className="flex gap-1.5 p-1 rounded-2xl bg-white/4 border border-white/8 mb-4">
+        <div className="flex gap-1.5 p-1.5 rounded-[20px] bg-white/[0.03] border border-white/10 mb-6 backdrop-blur-xl shadow-inner relative z-10">
           {[
             { id: "data",    label: "Data",    icon: Wifi },
             { id: "airtime", label: "Airtime", icon: Smartphone },
@@ -939,14 +952,14 @@ const AgentStore = () => {
               type="button"
               key={s.id}
               onClick={() => { setSelectedService(s.id as ServiceType); setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-[16px] text-xs font-black uppercase tracking-wide transition-all active:scale-[0.98] ${
                 selectedService === s.id
-                  ? "text-black shadow-md"
-                  : "text-white/40 hover:text-white/60"
+                  ? "text-black shadow-[0_4px_12px_rgba(0,0,0,0.3)] bg-white"
+                  : "text-white/40 hover:text-white/70 hover:bg-white/5"
               }`}
               style={selectedService === s.id ? { backgroundColor: accentColor } : {}}
             >
-              <s.icon className="w-3.5 h-3.5" />
+              <s.icon className={`w-4 h-4 ${selectedService === s.id ? "drop-shadow-sm" : ""}`} />
               {s.label}
             </button>
           ))}
@@ -954,7 +967,7 @@ const AgentStore = () => {
 
         {/* ── Network tabs (Data & Airtime) ── */}
         {(selectedService === "data" || selectedService === "airtime") && (
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2.5 mb-6 relative z-10">
             {NETWORKS.map((n) => {
               const nc = NETWORK_CONFIG[n];
               const active = selectedNetwork === n;
@@ -963,10 +976,10 @@ const AgentStore = () => {
                   type="button"
                   key={n}
                   onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); }}
-                  className={`flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-wide border transition-all ${
-                    active ? `${nc.bg} ${nc.textClass} ${nc.borderClass} shadow-lg` : "bg-white/4 border-white/8 text-white/50 hover:text-white/70"
+                  className={`flex-1 py-3.5 rounded-[18px] text-[11px] font-black uppercase tracking-widest border transition-all active:scale-[0.96] ${
+                    active ? `${nc.bg} ${nc.textClass} border-transparent shadow-xl` : "bg-white/[0.03] border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80 backdrop-blur-md shadow-inner"
                   }`}
-                  style={active ? { boxShadow: `0 8px 24px ${nc.color}30` } : {}}
+                  style={active ? { boxShadow: `0 8px 24px ${nc.color}40`, textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none" } : {}}
                 >
                   {n}
                 </button>
@@ -1002,40 +1015,45 @@ const AgentStore = () => {
                             type="button"
                             key={pkg.size}
                             onClick={() => handleCardClick(pkg.size, pkg.price)}
-                            className={`relative rounded-3xl p-4 text-left transition-all duration-300 border overflow-hidden ${
+                            className={`relative rounded-[24px] p-5 text-left transition-all duration-300 border overflow-hidden group ${
                               isSelected
-                                ? "scale-[1.02] shadow-2xl border-white/30"
-                                : "border-white/6 hover:border-white/15 active:scale-[0.97]"
+                                ? "scale-[1.02] shadow-2xl border-white/40 ring-4"
+                                : "border-white/10 bg-white/[0.03] backdrop-blur-xl hover:bg-white/10 hover:border-white/20 hover:shadow-lg active:scale-[0.97]"
                             }`}
                             style={{
                               background: isSelected
-                                ? `linear-gradient(135deg, ${netConf.color}, ${netConf.color}cc)`
-                                : `linear-gradient(135deg, ${netConf.color}18, ${netConf.color}08)`,
-                              boxShadow: isSelected ? `0 10px 28px ${netConf.color}30` : undefined,
+                                ? `linear-gradient(145deg, ${netConf.color}, ${netConf.color}dd)`
+                                : undefined,
+                              boxShadow: isSelected ? `0 12px 30px ${netConf.color}40` : undefined,
+                              borderColor: isSelected ? "rgba(255,255,255,0.5)" : undefined,
+                              ringColor: isSelected ? `${netConf.color}30` : "transparent"
                             }}
                           >
+                            {/* Inner Highlight for depth */}
+                            <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/10" />
+
                             {isSelected && (
-                              <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-white flex items-center justify-center shadow">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+                              <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-md animate-in zoom-in-50 duration-200">
+                                <CheckCircle2 className="w-4 h-4 text-black drop-shadow-sm" />
                               </div>
                             )}
                             {pkg.popular && !isSelected && (
-                              <div className="absolute top-3 right-3">
-                                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                              <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center backdrop-blur-md">
+                                <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                               </div>
                             )}
-                            <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isSelected ? (selectedNetwork === "MTN" ? "text-black/50" : "text-white/50") : "text-white/30"}`}>
+                            <p className={`text-[10px] font-black uppercase tracking-[0.15em] mb-1.5 ${isSelected ? (selectedNetwork === "MTN" ? "text-black/60" : "text-white/60") : "text-white/40 group-hover:text-white/60"}`}>
                               {selectedNetwork}
                             </p>
-                            <p className={`text-3xl font-black tracking-tighter leading-none mb-3 ${isSelected ? (selectedNetwork === "MTN" ? "text-black" : "text-white") : "text-white"}`}>
+                            <p className={`text-[32px] font-black tracking-tighter leading-none mb-4 ${isSelected ? (selectedNetwork === "MTN" ? "text-black" : "text-white") : "text-white"}`}>
                               {pkg.size}
                             </p>
-                            <div className={`pt-3 border-t ${isSelected ? (selectedNetwork === "MTN" ? "border-black/15" : "border-white/15") : "border-white/8"}`}>
-                              <p className={`text-lg font-black ${isSelected ? (selectedNetwork === "MTN" ? "text-black" : "text-white") : "text-white/80"}`}>
+                            <div className={`pt-4 border-t ${isSelected ? (selectedNetwork === "MTN" ? "border-black/20" : "border-white/20") : "border-white/10"}`}>
+                              <p className={`text-xl font-black tracking-tight ${isSelected ? (selectedNetwork === "MTN" ? "text-black" : "text-white") : "text-white/90"}`}>
                                 ₵{pkg.price.toFixed(2)}
                               </p>
-                              <p className={`text-[9px] font-bold mt-0.5 ${isSelected ? (selectedNetwork === "MTN" ? "text-black/40" : "text-white/40") : "text-white/25"}`}>
-                                Instant delivery
+                              <p className={`text-[10px] font-bold mt-1 ${isSelected ? (selectedNetwork === "MTN" ? "text-black/50" : "text-white/50") : "text-white/30"}`}>
+                                NO EXPIRY
                               </p>
                             </div>
                           </button>

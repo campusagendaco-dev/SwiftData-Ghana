@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -9,10 +9,79 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert
+  ShieldAlert, Search, Command
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { TraditionalBackground } from "@/components/TraditionalBackground";
+
+// ── COMMAND PALETTE COMPONENT ──────────────────────────────────────────────────
+const AdminCommandPalette = ({ open, setOpen, onNavigate }: { open: boolean, setOpen: (v: boolean) => void, onNavigate: (p: string) => void }) => {
+  const [query, setQuery] = useState("");
+  const { isDark } = useAppTheme();
+  
+  const allItems = NAV_SECTIONS.flatMap(s => s.items);
+  const filtered = query ? allItems.filter(i => i.label.toLowerCase().includes(query.toLowerCase())) : [];
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh] px-4 backdrop-blur-sm" style={{ backgroundColor: isDark ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.6)" }} onClick={() => setOpen(false)}>
+      <div 
+        className={`w-full max-w-2xl rounded-3xl overflow-hidden border shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in-95 duration-200 ${
+          isDark ? "bg-[#111116]/95 border-white/10 backdrop-blur-3xl" : "bg-white/95 border-gray-200 backdrop-blur-3xl"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={`flex items-center gap-3 px-5 py-4 border-b ${isDark ? "border-white/10" : "border-gray-100"}`}>
+          <Search className={`w-5 h-5 ${isDark ? "text-white/40" : "text-gray-400"}`} />
+          <input
+            autoFocus
+            type="text"
+            placeholder="Search commands, pages, or settings..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className={`flex-1 bg-transparent border-none outline-none text-lg font-semibold ${isDark ? "text-white placeholder:text-white/30" : "text-gray-900 placeholder:text-gray-400"}`}
+          />
+          <div className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${isDark ? "bg-white/5 border-white/10 text-white/40" : "bg-gray-100 border-gray-200 text-gray-500"}`}>
+            ESC
+          </div>
+        </div>
+        
+        <div className="max-h-[60vh] overflow-y-auto p-3">
+          {query && filtered.length === 0 ? (
+            <div className="p-8 text-center">
+              <Search className={`w-8 h-8 mx-auto mb-3 ${isDark ? "text-white/20" : "text-gray-300"}`} />
+              <p className={`text-sm font-semibold ${isDark ? "text-white/50" : "text-gray-500"}`}>No results found.</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {(query ? filtered : allItems.slice(0, 6)).map((item, i) => (
+                <button
+                  key={item.path}
+                  onClick={() => { onNavigate(item.path); setOpen(false); }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-all hover:scale-[0.99] group ${
+                    isDark ? "hover:bg-amber-400/10 text-white/70 hover:text-white" : "hover:bg-amber-50 text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
+                      isDark ? "bg-white/5 border-white/10 group-hover:bg-amber-400/20 group-hover:border-amber-400/30 group-hover:text-amber-400" : "bg-gray-50 border-gray-200 group-hover:bg-amber-100 group-hover:border-amber-200 group-hover:text-amber-600"
+                    }`}>
+                      <item.icon className="w-4 h-4" />
+                    </div>
+                    <span className="font-semibold">{item.label}</span>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? "text-amber-400" : "text-amber-600"}`} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const NAV_SECTIONS = [
   {
@@ -90,7 +159,7 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <div className={`flex flex-col h-full border-r relative overflow-hidden ${isDark ? "bg-[#0a0a0f] border-white/5" : "bg-white border-gray-200"}`}>
+    <div className={`flex flex-col h-full relative overflow-hidden bg-transparent`}>
       {/* Ambient glow */}
       <div className={`absolute top-0 left-0 w-full h-32 blur-[50px] pointer-events-none ${isDark ? "bg-amber-500/8" : "bg-amber-400/5"}`} />
 
@@ -199,34 +268,58 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
 
 const AdminLayout = () => {
   const [open, setOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
   const { isDark, toggleDark } = useAppTheme();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setCmdOpen((open) => !open);
+      }
+      if (e.key === "Escape") setCmdOpen(false);
+    };
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
 
   const currentPage = NAV_SECTIONS.flatMap((s) => s.items).find(
     (item) => location.pathname === item.path,
   );
 
   return (
-    <div className={`min-h-screen flex selection:bg-amber-400/30 bg-transparent ${isDark ? "text-white" : "text-gray-900"}`}>
+    <div className={`min-h-screen flex selection:bg-amber-400/30 bg-[#050508] relative ${isDark ? "text-white" : "text-gray-900 bg-gray-50"}`}>
+      <TraditionalBackground className="fixed inset-0 z-0 opacity-10 dark:opacity-20 pointer-events-none" />
       <AdminNotifications />
+      <AdminCommandPalette open={cmdOpen} setOpen={setCmdOpen} onNavigate={(path) => navigate(path)} />
 
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-[260px] flex-col shrink-0 sticky top-0 h-screen">
-        <SidebarContent />
+      {/* Desktop Sidebar - FLOATING GLASS */}
+      <aside className="hidden md:flex w-[280px] flex-col shrink-0 sticky top-0 h-screen p-4 pr-2">
+        <div className={`flex-1 rounded-[24px] overflow-hidden border backdrop-blur-3xl shadow-2xl flex flex-col ${
+          isDark ? "bg-[#0a0a0f]/60 border-white/10" : "bg-white/80 border-gray-200"
+        }`}>
+          <SidebarContent />
+        </div>
       </aside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Ambient blobs */}
-        <div className={`fixed top-0 right-0 w-[500px] h-[500px] blur-[120px] rounded-full pointer-events-none ${isDark ? "bg-blue-500/4" : "bg-blue-400/3"}`} />
-        <div className={`fixed bottom-0 left-1/3 w-[400px] h-[400px] blur-[150px] rounded-full pointer-events-none ${isDark ? "bg-amber-500/4" : "bg-amber-400/3"}`} />
+        {/* Deep Ambient Background Mesh */}
+        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-80">
+          <div className={`absolute top-0 right-0 w-[600px] h-[600px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-[2000ms] ${isDark ? "bg-indigo-500/10" : "bg-blue-400/5"}`} />
+          <div className={`absolute bottom-0 left-1/4 w-[500px] h-[500px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-[2000ms] ${isDark ? "bg-amber-500/10" : "bg-amber-400/5"}`} />
+          <div className={`absolute -top-1/4 left-1/3 w-[800px] h-[400px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-[2000ms] ${isDark ? "bg-emerald-500/5" : "bg-emerald-400/5"}`} />
+        </div>
 
-        {/* Top bar */}
-        <header className={`sticky top-0 z-30 flex items-center gap-4 px-4 md:px-6 h-[60px] border-b backdrop-blur-xl ${
-          isDark ? "bg-[#030305]/90 border-white/5" : "bg-gray-50/95 border-gray-200"
-        }`}>
-          {/* Mobile hamburger */}
-          <Sheet open={open} onOpenChange={setOpen}>
+        {/* Top bar - FLOATING ISLAND */}
+        <div className="px-4 md:px-6 pt-4 pb-2 z-30 sticky top-0">
+          <header className={`flex items-center gap-4 px-5 h-[64px] rounded-[24px] border backdrop-blur-3xl shadow-lg transition-all ${
+            isDark ? "bg-[#111116]/80 border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.5)]" : "bg-white/80 border-gray-200 shadow-[0_8px_30px_rgba(0,0,0,0.05)]"
+          }`}>
+            {/* Mobile hamburger */}
+            <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
               <Button
                 variant="ghost"
@@ -257,36 +350,52 @@ const AdminLayout = () => {
             </span>
           </div>
 
-          {/* Page title — desktop */}
-          {currentPage && (
-            <div className="hidden md:flex items-center gap-2">
-              <currentPage.icon className={`w-4 h-4 ${isDark ? "text-white/40" : "text-gray-400"}`} />
-              <span className={`text-sm font-semibold ${isDark ? "text-white/70" : "text-gray-700"}`}>{currentPage.label}</span>
-            </div>
-          )}
+          {/* Page title & Cmd+K prompt */}
+          <div className="hidden md:flex items-center gap-3 flex-1">
+            {currentPage && (
+              <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded-lg border shadow-sm ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}>
+                  <currentPage.icon className={`w-4 h-4 ${isDark ? "text-white/70" : "text-gray-600"}`} />
+                </div>
+                <span className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>{currentPage.label}</span>
+              </div>
+            )}
+            <div className={`h-4 w-px mx-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
+            <button 
+              onClick={() => setCmdOpen(true)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors group ${
+                isDark ? "bg-black/20 border-white/5 hover:border-white/15 text-white/40 hover:text-white/70" : "bg-gray-50 border-gray-200 hover:border-gray-300 text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              <Command className="w-3.5 h-3.5 group-hover:text-amber-500 transition-colors" />
+              Search or jump to...
+              <span className={`ml-2 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-mono text-[9px] font-black border ${isDark ? "bg-white/5 border-white/10 text-white/30" : "bg-white border-gray-200 text-gray-500"}`}>
+                <Command className="w-2.5 h-2.5" /> K
+              </span>
+            </button>
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2.5">
             {/* Dark/light toggle — desktop only in header */}
             <button
               onClick={toggleDark}
-              className={`hidden md:flex w-8 h-8 items-center justify-center rounded-xl transition-all ${
-                isDark ? "text-white/50 hover:text-white hover:bg-white/8" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+              className={`hidden md:flex w-9 h-9 items-center justify-center rounded-xl transition-all border ${
+                isDark ? "text-white/50 hover:text-amber-400 hover:bg-amber-400/10 border-white/5 hover:border-amber-400/20" : "text-gray-500 hover:text-amber-600 hover:bg-amber-50 border-gray-200 hover:border-amber-200"
               }`}
               title={isDark ? "Light Mode" : "Dark Mode"}
             >
-              {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            <div className={`h-5 w-px ${isDark ? "bg-white/8" : "bg-gray-200"}`} />
-
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-              isDark ? "bg-amber-400/8 border-amber-400/15 text-amber-400" : "bg-amber-50 border-amber-200 text-amber-700"
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black shadow-inner uppercase tracking-widest ${
+              isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-600"
             }`}>
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Admin
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+              Live System
             </div>
           </div>
         </header>
+        </div>
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 relative z-10 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
