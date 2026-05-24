@@ -655,6 +655,16 @@ serve(async (req) => {
            return new Response(JSON.stringify({ status: "error", error: "Payment gateway returned invalid response" }), { headers: corsHeaders });
         }
 
+        if (verifyData.data?.status === "failed") {
+          const failMsg = verifyData.data.gateway_response || verifyData.data.message || verifyData.message || "Payment failed";
+          console.warn(`[verify-payment] Payment failed explicitly:`, failMsg);
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            failure_reason: failMsg
+          }).eq("id", targetReference);
+          return new Response(JSON.stringify({ status: "error", error: failMsg }), { headers: corsHeaders });
+        }
+
         if (!verifyData.status || !verifyData.data || verifyData.data.status !== "success") {
           console.warn(`[verify-payment] Payment not confirmed:`, verifyData.message);
           return new Response(JSON.stringify({ status: "not_paid", error: verifyData.message || "Payment not verified" }), { headers: corsHeaders });

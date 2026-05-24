@@ -56,7 +56,7 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, message?: strin
     return { color: "#FBBF24", glow: "rgba(251,191,36,0.10)", label: "Payment Not Found", sub: message || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
   }
   if (status === "error") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.10)", label: "System Error", sub: message || "There was a problem connecting to the gateway.", badge: "Error" };
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.10)", label: "Payment Failed", sub: message || "There was a problem verifying your payment.", badge: "Error" };
   }
   return { color: "#D97706", glow: "rgba(217,119,6,0.10)", label: "Awaiting Payment", sub: message || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
 }
