@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { X, Loader2, ArrowLeft, Store, Save, Smartphone, Settings, Users, Tags, ClipboardList, Wallet, Zap, Menu, Upload, Globe, AlignLeft, Palette } from "lucide-react";
+import { X, Loader2, ArrowLeft, Store, Save, Smartphone, Settings, Users, Tags, ClipboardList, Wallet, Zap, Menu, Upload, Globe, AlignLeft, Palette, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { ChunkErrorBoundary } from "./ChunkErrorBoundary";
 
 // Import Dashboard Components
 import DashboardPricing from "@/pages/DashboardPricing";
+import DashboardCustomerPricing from "@/pages/DashboardCustomerPricing";
 import DashboardSubAgentPricing from "@/pages/DashboardSubAgentPricing";
 import DashboardSubAgents from "@/pages/DashboardSubAgents";
 import DashboardOrders from "@/pages/DashboardOrders";
@@ -27,7 +28,8 @@ interface StoreManagementOverlayProps {
 
 const TABS = [
   { id: "settings", label: "Store Profile", icon: Settings },
-  { id: "pricing", label: "Pricing & Margins", icon: Tags },
+  { id: "pricing", label: "Guest Pricing", icon: Tags },
+  { id: "customer_pricing", label: "Customer Pricing", icon: User },
   { id: "subagents", label: "Sub-Agents", icon: Users },
   { id: "transactions", label: "Transactions", icon: ClipboardList },
   { id: "withdrawals", label: "Withdrawals", icon: Wallet },
@@ -487,6 +489,12 @@ const StoreManagementOverlay = ({
                         <DashboardSubAgentPricing />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {activeTab === "customer_pricing" && (
+                  <div className="animate-in fade-in duration-300">
+                    <DashboardCustomerPricing />
                   </div>
                 )}
 
