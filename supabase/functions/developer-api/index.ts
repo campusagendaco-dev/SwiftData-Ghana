@@ -574,83 +574,18 @@ serve(async (req: Request) => {
         return json(result);
       }
 
-      // REAL FULFILLMENT START
-      const providers = await getActiveProviders(supabase, package_size ? "data" : "airtime");
-      let finalResult: { ok: boolean; reason: string; id?: string; body?: string; status?: string } = { ok: false, reason: "No active providers", body: "" };
-      let successfulProviderId = null;
-
-      for (const provider of providers) {
-        const handlerType = provider.handler_type || "standard";
-        const networkKey = handlerType === "datamart" 
-          ? (network?.toUpperCase() === "MTN" ? "YELLO" : (network?.toUpperCase() === "TELECEL" ? "TELECEL" : "AT_PREMIUM"))
-          : mapNetworkKey(network || "");
-
-        const dataPayload = handlerType === "datamart"
-          ? {
-              phoneNumber: normalizeRecipient(phone),
-              network: networkKey,
-              planId: package_size,
-              plan: package_size,
-              bundle: package_size,
-              capacity: String(parseCapacity(package_size || "")),
-              orderReference: orderId,
-              gateway: "wallet",
-              reference: orderId
-            }
-          : handlerType === "datahub"
-          ? {
-              networkKey,
-              recipient: normalizeRecipient(phone),
-              capacity: String(parseCapacity(package_size || "")),
-              reference: orderId,
-            }
-          : {
-              networkRaw: network,
-              networkKey,
-              recipient: normalizeRecipient(phone),
-              capacity: amount || parseCapacity(package_size || ""),
-              plan: package_size,
-              amount: amount,
-              orderReference: orderId,
-              webhook_url: profile.webhook_url
-            };
-
-        console.log(`[developer-api] Attempting fulfillment with provider: ${provider.name} (${provider.id}) for order ${orderId}`);
-        const res = await callProviderApi(provider, dataPayload, "purchase");
-        if (res.ok) {
-          finalResult = res;
-          successfulProviderId = provider.id;
-          break; // Stop fallbacks on success
-        } else {
-          console.warn(`[developer-api] Provider ${provider.name} failed for order ${orderId}: ${res.reason}`);
-          await logProviderError(supabase, provider.id, orderId, res.reason);
-          finalResult = res; // Keep latest failure result for response details
-        }
-      }
-
-      if (finalResult.ok) {
-        const targetStatus = mapFulfillmentStatus(finalResult.status);
-        await supabase.from("orders").update({ 
-          status: targetStatus, 
-          provider_id: successfulProviderId,
-          provider_order_id: finalResult.id,
-          failure_reason: null
-        }).eq("id", orderId);
-
-        if (targetStatus === "fulfilled") {
-          try {
-            await supabase.rpc("credit_order_profits", { p_order_id: orderId });
-          } catch (e) {
-            console.error("[developer-api] Profit credit failed:", e);
-          }
-        }
-      } else {
-        await supabase.from("orders").update({
-          status: "fulfillment_failed",
-          failure_reason: finalResult.reason || "Provider error"
-        }).eq("id", orderId);
-      }
-      // BACKGROUND FULFILLMENT END
+      // ASYNC BACKGROUND FULFILLMENT START
+      // By calling verify-payment asynchronously, we guarantee the developer API never hits a 504 Gateway Timeout.
+      // The order will be processed in the background, and if it ultimately fails, the background worker will 
+      // trigger the auto-refund trigger, returning the funds to the user's API wallet.
+      fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+        },
+        body: JSON.stringify({ reference: orderId })
+      }).catch(e => console.error("[developer-api] Background verification trigger failed:", e));
 
       return json(result);
     }

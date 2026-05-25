@@ -195,14 +195,34 @@ serve(async (req: Request) => {
         });
 
         const fulfillData = await fulfillRes.json();
-        
         if (fulfillData.status === "fulfilled") {
           results.push({ id: order.id, status: "fulfilled" });
         } else {
-          results.push({ id: order.id, status: fulfillData.status || "failed", reason: fulfillData.reason || fulfillData.error });
+          // If this was the final retry and it didn't succeed, mark as permanently failed to trigger auto-refund!
+          const newRetryCount = (order.retry_count || 0) + 1;
+          if (newRetryCount >= 3) {
+            console.log(`[retry-orders] Max retries reached for ${order.id}. Marking as fulfillment_failed to trigger refund.`);
+            await supabaseAdmin.from("orders").update({
+              status: "fulfillment_failed",
+              failure_reason: fulfillData.reason || fulfillData.error || "Max retries reached"
+            }).eq("id", order.id);
+            results.push({ id: order.id, status: "fulfillment_failed", reason: "Max retries reached" });
+          } else {
+            results.push({ id: order.id, status: fulfillData.status || "failed", reason: fulfillData.reason || fulfillData.error });
+          }
         }
       } catch (e) {
         console.error(`[retry-orders] Error processing ${order.id}:`, e);
+        
+        // Failsafe for crash on final retry
+        const newRetryCount = (order.retry_count || 0) + 1;
+        if (newRetryCount >= 3) {
+           await supabaseAdmin.from("orders").update({
+             status: "fulfillment_failed",
+             failure_reason: "Max retries reached with internal crash"
+           }).eq("id", order.id);
+        }
+        
         results.push({ id: order.id, status: "error", reason: e instanceof Error ? e.message : "Unknown error" });
       }
 
