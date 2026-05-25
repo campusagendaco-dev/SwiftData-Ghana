@@ -502,14 +502,61 @@ serve(async (req: Request) => {
 
     if (finalAction === "plans") {
       const { data: plans } = await supabase.schema("api").from("v_plans").select("*").eq("is_unavailable", false).order("network").order("package_size");
-      return json({ success: true, plans: plans ?? [] });
+      
+      const plansWithId = (plans ?? []).map(p => {
+        let prefix = "pkg_";
+        let displayNet = p.network;
+        const net = String(p.network).toLowerCase();
+        
+        if (net === "mtn") { prefix = "yellow_"; displayNet = "YELLO"; }
+        else if (net === "at" || net === "airteltigo" || net === "at_premium") { prefix = "blue_"; displayNet = "BLUE"; }
+        else if (net === "telecel" || net === "vodafone") { prefix = "red_"; displayNet = "RED"; }
+        
+        return {
+          ...p,
+          package_id: `${prefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`,
+          network: displayNet
+        };
+      });
+
+      return json({ success: true, plans: plansWithId });
     }
 
     if (finalAction === "buy" && req.method === "POST") {
       const payload = await req.json().catch(() => null);
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
-      const { network, phone, amount, package_size, request_id } = payload;
+      let { network, phone, amount, package_size, package_id, request_id } = payload;
+
+      // Map smart network names back to DB names if they are using the legacy network + package_size method
+      if (network) {
+        const netLower = String(network).toLowerCase();
+        if (netLower === "yello") network = "MTN";
+        else if (netLower === "blue") network = "AT";
+        else if (netLower === "red") network = "TELECEL";
+      }
+
+      // Smart Package ID Resolution
+      if (package_id) {
+        const { data: plans } = await supabase.schema("api").from("v_plans").select("*").eq("is_unavailable", false);
+        const match = (plans ?? []).find(p => {
+          let prefix = "pkg_";
+          const net = String(p.network).toLowerCase();
+          if (net === "mtn") prefix = "yellow_";
+          else if (net === "at" || net === "airteltigo" || net === "at_premium") prefix = "blue_";
+          else if (net === "telecel" || net === "vodafone") prefix = "red_";
+          const pId = `${prefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`;
+          return pId === String(package_id).toLowerCase();
+        });
+
+        if (match) {
+          network = match.network;
+          package_size = match.package_size;
+        } else {
+          return json({ success: false, error: "Invalid package_id provided." }, 400);
+        }
+      }
+
       if (!network || !phone || (!amount && !package_size))
         return json({ success: false, error: "Missing required fields." }, 400);
 
@@ -745,7 +792,7 @@ serve(async (req: Request) => {
       const { data: result, error: rpcError } = await supabase.schema("api").rpc("create_order_rpc", {
         p_user_id: currentUserId,
         p_network: billType,
-        p_package_size: "UTILITY",
+        p_package_size: "AIRTIME", // Use AIRTIME internally so it bypasses strict data bundle checks
         p_phone: normalizeRecipient(customerNumber),
         p_amount: amount,
         p_request_id: idemKey,
@@ -822,7 +869,7 @@ serve(async (req: Request) => {
       const { data: result, error: rpcError } = await supabase.schema("api").rpc("create_order_rpc", {
         p_user_id: currentUserId,
         p_network: "ECG",
-        p_package_size: "UTILITY",
+        p_package_size: "AIRTIME", // Use AIRTIME internally so it bypasses strict data bundle checks
         p_phone: normalizeRecipient(phoneNumber),
         p_amount: amount,
         p_request_id: idemKey,

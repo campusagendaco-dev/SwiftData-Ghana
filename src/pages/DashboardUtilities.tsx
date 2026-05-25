@@ -88,6 +88,7 @@ const DashboardUtilities = () => {
   const [activeTab, setActiveTab] = useState<UtilityType>("electricity");
   const [provider, setProvider] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [amount, setAmount] = useState("");
   const [payMethod, setPayMethod] = useState<PayMethod>("paystack");
 
@@ -103,6 +104,7 @@ const DashboardUtilities = () => {
   const reset = () => {
     setProvider("");
     setAccountNumber("");
+    setPhoneNumber("");
     setAmount("");
     setAccountName(null);
     setVerifyError(null);
@@ -114,22 +116,37 @@ const DashboardUtilities = () => {
   };
 
   const handleVerify = async () => {
-    if (!accountNumber.trim() || !provider) {
-      toast({ title: "Select a provider and enter your account number", variant: "destructive" });
+    if ((!accountNumber.trim() && !phoneNumber.trim()) || !provider) {
+      toast({ title: "Select a provider and enter your account or phone number", variant: "destructive" });
       return;
     }
     setVerifying(true);
     setAccountName(null);
     setVerifyError(null);
-    // Mocked verification — replace with real lookup when API is ready
-    setTimeout(() => {
-      if (accountNumber.length < 5) {
-        setVerifyError("Account not found. Please check the number.");
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("utility-lookup", {
+        body: {
+          utility_type: activeTab,
+          provider: provider,
+          account_number: accountNumber.trim(),
+          phone_number: phoneNumber.trim() || undefined,
+        },
+      });
+
+      if (error || !data?.success) {
+        setVerifyError(data?.error || error?.message || "Account verification failed.");
+      } else if (data.customer_name || data.accountName) {
+        setAccountName(data.customer_name || data.accountName);
+        toast({ title: "Account Verified" });
       } else {
-        setAccountName("JOHN DOE ENT.");
+        setVerifyError("Could not verify account name.");
       }
+    } catch (err: any) {
+      setVerifyError("Network error. Please try again.");
+    } finally {
       setVerifying(false);
-    }, 1400);
+    }
   };
 
   const handlePay = async () => {
@@ -194,7 +211,7 @@ const DashboardUtilities = () => {
   };
 
   const numAmount = Number(amount);
-  const canVerify = !!provider && !!accountNumber.trim();
+  const canVerify = !!provider && (!!accountNumber.trim() || !!phoneNumber.trim());
   const canPay = !!accountName && numAmount > 0;
 
   return (
@@ -267,6 +284,17 @@ const DashboardUtilities = () => {
               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">2</span>
               {FIELD_LABELS[activeTab]}
             </p>
+            {provider.includes("ECG") && (
+              <div className="mb-2">
+                <input
+                  type="text"
+                  value={phoneNumber}
+                  onChange={(e) => { setPhoneNumber(e.target.value); setAccountName(null); setVerifyError(null); }}
+                  placeholder="Phone Number (Optional, e.g., 233XXXXXXXXX)"
+                  className="w-full h-12 px-4 bg-secondary/60 border border-border rounded-2xl text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+            )}
             <div className="flex gap-2">
               <input
                 type="text"

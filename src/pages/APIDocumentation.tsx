@@ -57,10 +57,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$payload = json_encode([\n    "network" => "MTN",\n    "phone"   => "0241234567",\n    "amount"  => 5.00,\n    "request_id" => "my_ref_001",\n]);\n$ch = curl_init("${BASE_URL}/payment/airtime");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "X-API-Key: ${K}",\n        "Content-Type: application/json",\n        "X-Idempotency-Key: unique_key_abc123",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     data: {
-      curl: `curl -X POST "${BASE_URL}/payment/data" \\\n  -H "X-API-Key: ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_def456" \\\n  -d '{\n    "network": "MTN",\n    "phone": "0241234567",\n    "package_size": "5GB",\n    "request_id": "my_ref_002"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/payment/data", {\n  method: "POST",\n  headers: {\n    "X-API-Key": "${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_def456",\n  },\n  body: JSON.stringify({\n    network: "MTN",          // MTN | TELECEL | AT | GLO\n    phone: "0241234567",\n    package_size: "5GB",     // Required for data mode\n    request_id: "my_ref_002",\n  }),\n});\nconst data = await res.json();\nconsole.log(data.status); // "fulfilled"`,
-      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/data",\n    headers={\n        "X-API-Key": "${K}",\n        "Content-Type": "application/json",\n        "X-Idempotency-Key": "unique_key_def456",\n    },\n    json={\n        "network": "MTN",\n        "phone": "0241234567",\n        "package_size": "5GB",\n        "request_id": "my_ref_002",\n    },\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode([\n    "network"      => "MTN",\n    "phone"        => "0241234567",\n    "package_size" => "5GB",\n    "request_id"   => "my_ref_002",\n]);\n$ch = curl_init("${BASE_URL}/payment/data");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "X-API-Key: ${K}",\n        "Content-Type: application/json",\n        "X-Idempotency-Key: unique_key_def456",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X POST "${BASE_URL}/payment/data" \\\n  -H "X-API-Key: ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_def456" \\\n  -d '{\n    "package_id": "yellow_5gb",\n    "phone": "0241234567",\n    "request_id": "my_ref_002"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/payment/data", {\n  method: "POST",\n  headers: {\n    "X-API-Key": "${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_def456",\n  },\n  body: JSON.stringify({\n    package_id: "yellow_5gb",  // Unique smart ID from /plans\n    phone: "0241234567",\n    request_id: "my_ref_002",\n  }),\n});\nconst data = await res.json();\nconsole.log(data.status); // "fulfilled"`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/data",\n    headers={\n        "X-API-Key": "${K}",\n        "Content-Type": "application/json",\n        "X-Idempotency-Key": "unique_key_def456",\n    },\n    json={\n        "package_id": "yellow_5gb",\n        "phone": "0241234567",\n        "request_id": "my_ref_002",\n    },\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode([\n    "package_id"   => "yellow_5gb",\n    "phone"        => "0241234567",\n    "request_id"   => "my_ref_002",\n]);\n$ch = curl_init("${BASE_URL}/payment/data");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "X-API-Key: ${K}",\n        "Content-Type: application/json",\n        "X-Idempotency-Key: unique_key_def456",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     validate: {
       curl: `curl -X POST "${BASE_URL}/payment/bills/validate" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_val123" \\\n  -d '{\n    "customerNumber": "8226349986",\n    "billType": "DSTV"\n  }'`,
@@ -143,7 +143,7 @@ const RESPONSES: Record<string, string> = {
   wallets_ok: `{\n  "success": true,\n  "wallets": {\n    "main": { "balance": 250.00, "currency": "GHS" },\n    "api":  { "balance": 100.00, "currency": "GHS" }\n  }\n}`,
   transfer_ok: `{\n  "success": true,\n  "message": "Transfer successful",\n  "from_balance": 150.00,\n  "to_balance":   200.00\n}`,
   account: `{\n  "success": true,\n  "name": "John Doe",\n  "balance": 250.00,\n  "apiKey": "sbp_live_abc123",\n  "active": true\n}`,
-  plans: `{\n  "success": true,\n  "plans": [\n    {\n      "network": "MTN",\n      "package_size": "5GB",\n      "api_price": 22.00,\n      "is_unavailable": false\n    },\n    {\n      "network": "TELECEL",\n      "package_size": "6GB",\n      "api_price": 20.00,\n      "is_unavailable": false\n    }\n  ]\n}`,
+  plans: `{\n  "success": true,\n  "plans": [\n    {\n      "package_id": "yellow_5gb",\n      "network": "YELLO",\n      "package_size": "5GB",\n      "api_price": 22.00,\n      "is_unavailable": false\n    },\n    {\n      "package_id": "red_6gb",\n      "network": "RED",\n      "package_size": "6GB",\n      "api_price": 20.00,\n      "is_unavailable": false\n    }\n  ]\n}`,
   buy_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n  "status": "fulfilled",\n  "balance": 228.00\n}`,
   validate_ok: `{\n  "success": true,\n  "customerName": "JOHN DOE",\n  "validatedAmount": 41.00\n}`,
   bill_ok: `{\n  "success": true,\n  "transaction_id": "JBG_BILL_1234567890",\n  "cost": 41.00,\n  "balance": 209.00\n}`,
@@ -266,7 +266,8 @@ const NAV_ITEMS = [
   { id: "wallets",         label: "All Wallets",         icon: Database },
   { id: "transfer",        label: "Wallet Transfer",     icon: ArrowLeftRight },
   { id: "plans",           label: "List Plans",          icon: List },
-  { id: "buy",             label: "Airtime & Data",      icon: ShoppingCart },
+  { id: "airtime",         label: "Purchase Airtime",    icon: ShoppingCart },
+  { id: "data",            label: "Data Bundles",        icon: ShoppingCart },
   { id: "afa",             label: "AFA Registration",    icon: Activity },
   { id: "results",         label: "Results Checker",     icon: ShoppingCart },
   { id: "bills-validate",  label: "Validate TV Bills",   icon: Search },
@@ -638,26 +639,13 @@ const APIDocumentation = () => {
             </div>
           </section>
 
-          {/* ── Airtime & Data ────────────────────────────────────────── */}
+          {/* ── Airtime ────────────────────────────────────────── */}
           <section>
-            <SectionAnchor id="buy" />
-            <SectionHeader icon={ShoppingCart} title="Purchase Airtime & Data" />
-            <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
+            <SectionAnchor id="airtime" />
+            <SectionHeader icon={ShoppingCart} title="Purchase Airtime" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-6">
               <MethodBadge method="POST" />
-              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/buy</code>
-            </div>
-
-            {/* Key distinction callout */}
-            <div className="ml-11 mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 flex gap-3">
-              <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-bold text-amber-300 mb-1.5">Same endpoint — two modes</p>
-                <ul className="text-[11px] text-white/50 space-y-1 leading-relaxed">
-                  <li><span className="text-amber-400 font-mono font-bold">Airtime</span> — send <code className="text-sky-400 bg-white/5 px-1 rounded">amount</code> (GHS). Omit <code className="bg-white/5 px-1 rounded">package_size</code>.</li>
-                  <li><span className="text-emerald-400 font-mono font-bold">Data bundle</span> — send <code className="text-sky-400 bg-white/5 px-1 rounded">package_size</code> from <code className="bg-white/5 px-1 rounded">/plans</code>. Omit <code className="bg-white/5 px-1 rounded">amount</code>.</li>
-                  <li><span className="text-sky-400 font-mono font-bold">Duplicate protection</span> — the same phone + network + package within 60 seconds returns <code className="bg-white/5 px-1 rounded">409</code>. Pass <code className="bg-white/5 px-1 rounded">"allow_duplicate": true</code> to override this safety lock.</li>
-                </ul>
-              </div>
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/airtime</code>
             </div>
 
             <div className="ml-11 space-y-8">
@@ -668,53 +656,54 @@ const APIDocumentation = () => {
                 </div>
                 <ParamRow name="network"      type="string" required      desc="MTN · TELECEL · AT · GLO" />
                 <ParamRow name="phone"        type="string" required      desc="Recipient phone number (e.g. 0241234567)" />
-                <ParamRow name="amount"       type="number" required={false} desc="GHS amount — required for airtime. Omit for data." />
-                <ParamRow name="package_size" type="string" required={false} desc="Bundle size from /plans (e.g. 5GB) — required for data. Omit for airtime." />
+                <ParamRow name="amount"       type="number" required      desc="GHS amount to top-up" />
                 <ParamRow name="request_id"   type="string" required={false} desc="Your custom tracking reference. Mapped to client_reference in webhook notifications." />
                 <ParamRow name="allow_duplicate" type="boolean" required={false} desc="Set to true to bypass the 60-second duplicate safety block for identical rapid-fire orders." />
               </div>
 
               {/* Airtime example */}
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-amber-400 mb-3">Airtime Purchase</p>
                 <div className="grid lg:grid-cols-2 gap-6">
                   <CodeBlock code={snippets.airtime[activeLang]} label="Request" />
                   <ResponseBlock code={RESPONSES.buy_ok} label="Response · 200 OK" />
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* ── Data Bundle ────────────────────────────────────────── */}
+          <section className="pt-8">
+            <SectionAnchor id="data" />
+            <SectionHeader icon={ShoppingCart} title="Purchase Data Bundle" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-6">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/data</code>
+            </div>
+
+            <div className="ml-11 space-y-8">
+              {/* Parameters table */}
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="package_id"   type="string" required      desc="Smart bundle ID from /plans (e.g. yellow_5gb)" />
+                <ParamRow name="phone"        type="string" required      desc="Recipient phone number (e.g. 0241234567)" />
+                <ParamRow name="request_id"   type="string" required={false} desc="Your custom tracking reference. Mapped to client_reference in webhook notifications." />
+                <ParamRow name="allow_duplicate" type="boolean" required={false} desc="Set to true to bypass the 60-second duplicate safety block for identical rapid-fire orders." />
+              </div>
 
               {/* Data example */}
               <div>
-                <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-3">Data Bundle Purchase</p>
                 <div className="grid lg:grid-cols-2 gap-6">
                   <CodeBlock code={snippets.data[activeLang]} label="Request" />
                   <ResponseBlock code={RESPONSES.buy_ok} label="Response · 200 OK" />
                 </div>
               </div>
 
-              {/* Network codes quick ref */}
-              <div className="rounded-xl border border-white/8 overflow-hidden">
-                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">network Reference</span>
-                </div>
-                {[
-                  { code: "MTN",    name: "MTN Ghana",   note: "Also accepted: YELLO, MTN_XPRESS" },
-                  { code: "TELECEL",name: "Telecel",     note: "Also accepted: VODAFONE, VOD" },
-                  { code: "AT",     name: "AirtelTigo",  note: "iShare & BigData bundles" },
-                  { code: "GLO",    name: "Glo Ghana",   note: "" },
-                ].map(({ code, name, note }) => (
-                  <div key={code} className="flex flex-col md:grid md:grid-cols-12 md:gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02] gap-1">
-                    <div className="md:col-span-3 font-mono font-black text-amber-300">{code}</div>
-                    <div className="md:col-span-5 font-semibold text-white/70">{name}</div>
-                    <div className="md:col-span-4 text-white/30 text-[10px] md:text-xs italic">{note}</div>
-                  </div>
-                ))}
-              </div>
-
               {/* Order status lifecycle */}
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Order Status Lifecycle</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Order Status Lifecycle (Applies to both Airtime and Data)</span>
                 </div>
                 {[
                   { status: "pending",            color: "text-yellow-400",  desc: "Created — awaiting payment confirmation" },
@@ -798,7 +787,7 @@ const APIDocumentation = () => {
                 <ParamRow name="amount"         type="number" required desc="Amount in GHS" />
               </div>
               <div className="grid lg:grid-cols-2 gap-6">
-                <CodeBlock code={snippets.ecg[activeLang]} label="Request" />
+                <CodeBlock code={snippets.ecg_pay[activeLang]} label="Request" />
                 <ResponseBlock code={RESPONSES.ecg_ok} label="Response · 200 OK" />
               </div>
             </div>
