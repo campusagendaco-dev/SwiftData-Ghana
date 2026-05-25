@@ -295,22 +295,22 @@ const AdminWithdrawals = () => {
     setPayingPaystack(withdrawalId);
     const withdrawal = withdrawals.find(w => w.id === withdrawalId);
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/system-payout-v1?t=${Date.now()}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
-        'apikey': SUPABASE_PUBLISHABLE_KEY
-      },
-      body: JSON.stringify({ action: "paystack_payout", withdrawal_id: withdrawalId })
+    const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+      body: { action: "paystack_payout", withdrawal_id: withdrawalId },
     });
 
-    const data = await response.json();
-    const error = !response.ok ? data : null;
+    let errorMessage = data?.error || error?.message || "Transfer could not be initiated.";
+    if (error && (error as any).context && typeof (error as any).context.json === 'function') {
+      try {
+        const errorBody = await (error as any).context.json();
+        if (errorBody?.error) errorMessage = errorBody.error;
+      } catch (e) {
+        // ignore
+      }
+    }
 
     if (error || data?.error) {
-      toast.error("Payout Failed", { description: data?.error || error?.message || "Transfer could not be initiated." });
+      toast.error("Payout Failed", { description: errorMessage });
     } else {
       toast.success("Payout Successful!", { description: `Ref: ${data?.transfer_reference || "N/A"}` });
       if (currentUser && withdrawal) {

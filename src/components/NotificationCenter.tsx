@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { playSound } from "@/lib/sound";
 
 interface UserNotification {
   id: string;
@@ -115,11 +116,9 @@ export const NotificationCenter = ({ isDark }: { isDark: boolean }) => {
       });
 
     const playPing = () => {
-      const audio = new Audio(activeTone);
-      audio.volume = 0.45;
-      audio.play().catch(() => {
-        console.log("[NotificationCenter] Audio blocked by browser policy");
-      });
+      if (activeTone) {
+        playSound(activeTone, 0.45);
+      }
     };
 
     // Generate unique ephemeral channel ID to prevent race conditions in strict mode

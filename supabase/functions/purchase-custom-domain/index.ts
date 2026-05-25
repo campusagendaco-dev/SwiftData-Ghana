@@ -148,9 +148,19 @@ serve(async (req: Request) => {
           } else {
             const errBody = await res.text();
             console.error(`[GODADDY_CHECK_ERR] GoDaddy API returned ${res.status}:`, errBody);
+            let errMsg = "GoDaddy API Error";
+            try { const p = JSON.parse(errBody); if (p.message) errMsg = p.message; } catch(e) {}
+            return new Response(JSON.stringify({ error: `Domain check failed: ${errMsg}` }), {
+              status: 502,
+              headers: { ...corsHeaders, "Content-Type": "application/json" }
+            });
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error("[GODADDY_CHECK_ERR] Network error querying GoDaddy:", err);
+          return new Response(JSON.stringify({ error: `Network error querying GoDaddy: ${err.message}` }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
         }
       }
 
@@ -254,6 +264,14 @@ serve(async (req: Request) => {
       console.log(`[DEBIT_SUCCESS] Wallet debited. New balance: ${debitResult.new_balance}`);
 
       // 5. DOMAIN PURCHASE LOG (Initialize pending)
+      
+      // Clean up any previous failed or abandoned attempts for this domain
+      await supabaseAdmin
+        .from("domain_purchases")
+        .delete()
+        .eq("domain_name", cleanDomain)
+        .neq("status", "active");
+
       const { data: purchaseRecord, error: insertError } = await supabaseAdmin
         .from("domain_purchases")
         .insert({
@@ -332,7 +350,6 @@ serve(async (req: Request) => {
             phone: godaddyPhone
           };
 
-          // Define registration payload according to GoDaddy requirements
           const purchasePayload = {
             consent: {
               agreementKeys: ["DNRA"],
@@ -348,7 +365,6 @@ serve(async (req: Request) => {
             renewAuto: true
           };
 
-          // Call GoDaddy Purchase Endpoint
           const res = await fetch(`${godaddyBase}/v1/domains/purchase`, {
             method: "POST",
             headers: godaddyHeaders,

@@ -147,12 +147,20 @@ const DashboardSettings = () => {
           checkedResults.push(data);
         } else {
           const prices: Record<string, number> = { ".com": 150, ".net": 180, ".org": 195, ".shop": 70, ".xyz": 45 };
+          let errorMessage = "Search unavailable";
+          if (error && (error as any).context && typeof (error as any).context.json === 'function') {
+             try {
+               const errData = await (error as any).context.json();
+               if (errData?.error) errorMessage = errData.error;
+             } catch(e) {}
+          }
+          
           checkedResults.push({
             domain: fullDomain,
             tld: extension,
-            available: true,
+            available: false,
             price_ghs: prices[extension] || 150,
-            message: "Domain is available"
+            message: errorMessage
           });
         }
       }
@@ -195,8 +203,18 @@ const DashboardSettings = () => {
         }
       });
 
+      let errorMessage = error?.message || data?.error || "Registration failed.";
+      if (error && (error as any).context && typeof (error as any).context.json === 'function') {
+        try {
+          const errorBody = await (error as any).context.json();
+          if (errorBody?.error) errorMessage = errorBody.error;
+        } catch (e) {
+          // ignore
+        }
+      }
+
       if (error || !data || !data.success) {
-        throw new Error(error?.message || data?.error || "Registration failed.");
+        throw new Error(errorMessage);
       }
 
       setBuyStep("activating");

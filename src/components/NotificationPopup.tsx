@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Bell, X, Info, Zap, AlertCircle } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { playSound } from "@/lib/sound";
 
 interface Notification {
   id: string;
@@ -132,16 +133,8 @@ const NotificationPopup = () => {
     customVibeEnabled = settingsRef.current.vibeEnabled,
     customVibePattern = settingsRef.current.vibePattern
   ) => {
-    try {
-      if (customTone) {
-        const audio = new Audio(customTone);
-        audio.volume = 0.4;
-        audio.play().catch((err) => {
-          console.log("[NotificationPopup] Audio blocked by browser policy:", err);
-        });
-      }
-    } catch (err) {
-      console.warn("[NotificationPopup] Audio constructor exception:", err);
+    if (customTone) {
+      playSound(customTone, 0.4);
     }
 
     if (customVibeEnabled && customVibePattern) {

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { playSound } from "@/lib/sound";
 
 const AdminNotifications = () => {
   const { toast } = useToast();
@@ -32,16 +33,8 @@ const AdminNotifications = () => {
     fetchConfig();
 
     const playPing = () => {
-      try {
-        if (activeTone) {
-          const audio = new Audio(activeTone);
-          audio.volume = 0.5;
-          audio.play().catch((err) => {
-            console.log("[AdminNotifications] Audio blocked by browser policy:", err);
-          });
-        }
-      } catch (err) {
-        console.warn("[AdminNotifications] Audio constructor exception:", err);
+      if (activeTone) {
+        playSound(activeTone, 0.5);
       }
 
       if (isVibeEnabled && vibePatternStr) {
