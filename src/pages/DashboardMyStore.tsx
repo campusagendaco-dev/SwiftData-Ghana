@@ -1658,64 +1658,84 @@ export default function DashboardMyStore() {
                     </div>
 
                     {/* Premium Domain Marketplace Card */}
-                    <div className="rounded-3xl border p-5 space-y-4 bg-gradient-to-r from-amber-400/5 to-amber-600/5 border-amber-400/20">
-                      <div className="flex items-center gap-2">
-                        <Globe className="w-5 h-5 text-amber-400" />
+                    <div className="relative rounded-3xl border p-6 space-y-6 bg-gradient-to-br from-amber-400/10 to-orange-600/5 border-amber-400/20 backdrop-blur-md shadow-2xl shadow-amber-900/10 overflow-hidden group">
+                      <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none group-hover:scale-110 transition-transform duration-700 group-hover:rotate-12">
+                        <Globe className="w-32 h-32 text-amber-400" />
+                      </div>
+                      <div className="flex items-center gap-3 relative z-10">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-400/10 flex items-center justify-center border border-amber-400/20 backdrop-blur-xl">
+                          <Globe className="w-5 h-5 text-amber-400" />
+                        </div>
                         <div>
-                          <h5 className="text-xs font-black uppercase text-amber-400 tracking-wider">Search & Buy a Custom Domain</h5>
-                          <p className="text-[10px] text-white/40">Register a new domain instantly with your wallet balance</p>
+                          <h5 className="text-sm font-black uppercase text-amber-400 tracking-widest">Premium Domain Marketplace</h5>
+                          <p className="text-[10px] text-amber-400/70 font-bold uppercase tracking-wider mt-0.5">Register a whitelabel domain instantly with your wallet</p>
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={searchDomainText}
-                          onChange={(e) => setSearchDomainText(e.target.value)}
-                          placeholder="e.g. mywholesalebundles"
-                          className="flex-1 h-11 rounded-2xl px-4 text-sm font-medium bg-[#1a1a24] border border-white/8 outline-none focus:border-amber-400 transition-all text-white"
-                        />
+                      <div className="flex gap-2 relative z-10">
+                        <div className="relative flex-1 group/input">
+                          <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-orange-500 rounded-2xl blur opacity-0 group-focus-within/input:opacity-20 transition-opacity duration-300"></div>
+                          <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                            <Search className="w-4 h-4 text-white/30" />
+                          </div>
+                          <input
+                            type="text"
+                            value={searchDomainText}
+                            onChange={(e) => setSearchDomainText(e.target.value)}
+                            placeholder="e.g. mywholesalebundles"
+                            className="w-full h-14 rounded-2xl pl-11 pr-4 text-sm font-bold bg-[#1a1a24]/80 border border-white/10 outline-none focus:border-amber-400 transition-all text-white placeholder:text-white/20 relative backdrop-blur-xl"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={handleSearchDomain}
                           disabled={searchingDomain}
-                          className="h-11 px-5 rounded-2xl font-black text-xs uppercase bg-amber-400 text-black hover:bg-amber-500 transition-all disabled:opacity-50 flex items-center gap-1.5 border-0 cursor-pointer"
+                          className="h-14 px-8 rounded-2xl font-black text-xs uppercase tracking-widest bg-amber-400 text-black hover:bg-amber-500 transition-all disabled:opacity-50 flex items-center gap-2 border-0 cursor-pointer relative z-10 hover:shadow-[0_0_20px_rgba(251,191,36,0.2)] hover:scale-102"
                         >
-                          {searchingDomain ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                          Search
+                          {searchingDomain ? <Loader2 className="w-4 h-4 animate-spin" /> : "Check Availability"}
                         </button>
                       </div>
 
                       {searchResults.length > 0 && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
-                          {searchResults.map((res: any) => (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 relative z-10 animate-in fade-in duration-500">
+                          {searchResults.map((res: any, idx: number) => (
                             <div 
                               key={res.domain} 
-                              className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                              className={`p-5 rounded-3xl border transition-all duration-300 flex flex-col justify-between gap-4 group/card relative overflow-hidden ${
                                 res.available 
-                                  ? "bg-[#16161e] border-white/5 hover:border-amber-400/30" 
-                                  : "bg-white/1 border-white/4 opacity-50"
+                                  ? "bg-[#16161e]/90 border-white/10 hover:border-amber-400/50 hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-900/20 backdrop-blur-md" 
+                                  : "bg-white/5 border-white/5 opacity-60 grayscale"
                               }`}
+                              style={{ animationDelay: `${idx * 100}ms` }}
                             >
+                              {res.available && (
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-amber-400/10 blur-3xl rounded-full opacity-0 group-hover/card:opacity-100 transition-opacity duration-500"></div>
+                              )}
                               <div>
-                                <p className="text-xs font-black text-white truncate">{res.domain}</p>
-                                <p className="text-[9px] font-bold text-white/30 uppercase mt-0.5 tracking-wider">
-                                  {res.available ? "✅ Available" : "❌ Taken"}
-                                </p>
+                                <p className="text-sm font-black text-white truncate group-hover/card:text-amber-400 transition-colors">{res.domain}</p>
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${res.available ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`}></span>
+                                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                                    {res.available ? "Available Now" : "Unavailable"}
+                                  </p>
+                                </div>
                               </div>
 
                               {res.available && (
-                                <div className="flex items-center justify-between gap-2 pt-1">
-                                  <span className="text-sm font-black text-amber-400 font-mono">₵{Number(res.price_ghs).toFixed(2)}</span>
+                                <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/5">
+                                  <div className="flex flex-col">
+                                    <span className="text-[9px] text-white/30 uppercase font-black tracking-widest">1 Year Reg</span>
+                                    <span className="text-base font-black text-amber-400 font-mono">₵{Number(res.price_ghs).toFixed(2)}</span>
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setSelectedDomainToBuy(res);
                                       setShowDomainModal(true);
                                     }}
-                                    className="h-8 px-3 rounded-xl bg-amber-400 text-black font-black text-[10px] uppercase hover:bg-amber-500 transition-all border-0 cursor-pointer"
+                                    className="h-10 px-5 rounded-xl bg-amber-400 text-black font-black text-[10px] tracking-widest uppercase hover:bg-amber-300 transition-all border-0 cursor-pointer shadow-lg shadow-amber-400/20 group-hover/card:scale-105"
                                   >
-                                    Buy
+                                    Claim
                                   </button>
                                 </div>
                               )}
@@ -1729,43 +1749,55 @@ export default function DashboardMyStore() {
                   {/* Checkout Dialog Modal */}
                   {showDomainModal && selectedDomainToBuy && (
                     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 animate-in fade-in duration-300">
-                      <div className="absolute inset-0 bg-black/85 backdrop-blur-md" onClick={() => !buyingDomain && setShowDomainModal(false)} />
-                      <div className="relative max-w-sm w-full bg-[#111116] border border-white/10 rounded-3xl p-6 text-left space-y-6 animate-in zoom-in-95 duration-200">
-                        <div>
-                          <h3 className="text-base font-black text-white">Purchase Custom Domain</h3>
-                          <p className="text-xs text-white/45 mt-0.5">Instant registration and automated whitelabel pointing</p>
+                      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => !buyingDomain && setShowDomainModal(false)} />
+                      <div className="relative max-w-md w-full bg-[#0a0a0f] border border-white/10 rounded-[2rem] p-8 text-left space-y-8 animate-in zoom-in-95 duration-300 shadow-2xl overflow-hidden">
+                        
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 blur-3xl rounded-full"></div>
+                        <div className="absolute bottom-0 left-0 w-32 h-32 bg-amber-400/5 blur-3xl rounded-full"></div>
+
+                        <div className="relative z-10 flex items-center gap-4 border-b border-white/5 pb-6">
+                          <div className="w-12 h-12 rounded-full bg-amber-400/10 flex items-center justify-center border border-amber-400/20 shrink-0">
+                            <Globe className="w-6 h-6 text-amber-400" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-black text-white tracking-wide">Complete Registration</h3>
+                            <p className="text-[11px] text-white/50 uppercase font-bold tracking-widest mt-1">Instant Activation & SSL</p>
+                          </div>
                         </div>
 
-                        <div className="rounded-2xl border border-white/6 p-4 space-y-3 bg-white/2">
+                        <div className="relative z-10 rounded-3xl border border-white/10 p-5 space-y-4 bg-white/[0.02] backdrop-blur-sm">
                           <div className="flex justify-between items-center">
-                            <span className="text-xs font-bold text-white/40">Domain Name</span>
-                            <span className="text-xs font-black text-white font-mono">{selectedDomainToBuy.domain}</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Target Domain</span>
+                            <span className="text-sm font-black text-white truncate max-w-[150px]">{selectedDomainToBuy.domain}</span>
                           </div>
-                          <div className="flex justify-between items-center border-t border-white/6 pt-2.5">
-                            <span className="text-xs font-bold text-white/40">Price (1 Year)</span>
-                            <span className="text-sm font-black text-amber-400 font-mono">₵{Number(selectedDomainToBuy.price_ghs).toFixed(2)}</span>
+                          <div className="flex justify-between items-center border-t border-white/5 pt-4">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Total Price (1 YR)</span>
+                            <span className="text-base font-black text-amber-400 font-mono">₵{Number(selectedDomainToBuy.price_ghs).toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between items-center border-t border-white/6 pt-2.5">
-                            <span className="text-xs font-bold text-white/40">Your Wallet</span>
-                            <span className="text-xs font-bold text-white/80 font-mono">₵{agentWalletBalance.toFixed(2)}</span>
+                          <div className="flex justify-between items-center border-t border-white/5 pt-4">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Available Balance</span>
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                              <span className="text-sm font-bold text-white/80 font-mono">₵{agentWalletBalance.toFixed(2)}</span>
+                            </div>
                           </div>
                         </div>
 
                         {buyStep === "idle" && (
-                          <div className="flex gap-3">
+                          <div className="flex gap-4 relative z-10">
                             <button
                               type="button"
                               onClick={() => setShowDomainModal(false)}
-                              className="flex-1 h-11 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-black uppercase border border-white/8 transition-all cursor-pointer"
+                              className="flex-1 h-12 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-black uppercase tracking-widest border border-white/8 transition-all cursor-pointer"
                             >
                               Cancel
                             </button>
                             <button
                               type="button"
                               onClick={handlePurchaseDomain}
-                              className="flex-1 h-11 rounded-2xl bg-amber-400 text-black text-xs font-black uppercase hover:bg-amber-500 transition-all border-0 cursor-pointer"
+                              className="flex-1 h-12 rounded-2xl bg-amber-400 text-black text-xs font-black uppercase tracking-widest hover:bg-amber-500 hover:shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all border-0 cursor-pointer"
                             >
-                              Confirm Purchase
+                              Confirm
                             </button>
                           </div>
                         )}
