@@ -142,6 +142,8 @@ function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string 
   } else if (handlerType === "spendless") {
     const alias = endpoint === "purchase" ? "purchase" : (endpoint === "status" ? "order-status" : endpoint);
     return [`${clean}/${alias}`];
+  } else if (handlerType === "justbuy") {
+    return [`${clean}`]; // We will append the correct path dynamically in callProviderApi
   }
 
   aliases = endpoint === "purchase"
@@ -284,6 +286,15 @@ async function callProviderApi(
     if (handlerType === "datamart" && endpoint === "status") {
       const ref = String(data.transaction_id || data.reference || "");
       url = `${url}/${ref}`;
+    } else if (handlerType === "justbuy") {
+       if (data.order_type === "airtime") {
+          url = `${url}/payment/airtime`;
+       } else if (data.order_type === "utility") {
+          if (data.utility_provider === "ECG") url = `${url}/payment/ecg`;
+          else url = `${url}/payment/bills/pay`;
+       } else {
+          url = `${url}/payment/data`;
+       }
     }
 
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -814,8 +825,12 @@ serve(async (req) => {
     }
 
 
-    // Standard Data/Airtime Fulfillment
-    const activeProviders = await getActiveProviders(supabaseAdmin, currentOrderType === "airtime" ? "airtime" : "data");
+    // Standard Data/Airtime/Utility Fulfillment
+    let providerCategory = "data";
+    if (currentOrderType === "airtime") providerCategory = "airtime";
+    else if (currentOrderType === "utility") providerCategory = "utility";
+    
+    const activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
     const { data: sysSettings } = await supabaseAdmin.from("system_settings").select("auto_api_switch").eq("id", 1).maybeSingle();
     const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
@@ -850,6 +865,16 @@ serve(async (req) => {
       const netKey = overrideNetKey || defaultNetKey;
       if (ht === "datamart") return { phoneNumber: recipient, network: netKey, planId: packageSize, plan: packageSize, bundle: packageSize, capacity: String(parseCapacity(packageSize)), orderReference: targetReference, gateway: "wallet", reference: targetReference };
       if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference };
+      if (ht === "justbuy") {
+        if (currentOrderType === "utility") {
+           if (metadata?.utility_provider === "ECG") {
+              return { phoneNumber: recipient, accountNumber: metadata?.utility_account_number || recipient, amount: claimedOrder.amount, order_type: "utility", utility_provider: "ECG" };
+           } else {
+              return { customerNumber: metadata?.utility_account_number || recipient, billType: metadata?.utility_provider, amount: claimedOrder.amount, senderName: metadata?.utility_account_name || "CUSTOMER", order_type: "utility" };
+           }
+        }
+        return { network: netKey, phone: recipient, amount: claimedOrder.amount, package_size: packageSize, request_id: targetReference, order_type: currentOrderType };
+      }
       
       // Pass override network to standard request body if provided
       if (overrideNetKey) return { ...requestBody, networkKey: overrideNetKey };
