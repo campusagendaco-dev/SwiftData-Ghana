@@ -311,11 +311,18 @@ serve(async (req: Request) => {
 
     // ── 1. Extract and Validate API key ─────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
-    const rawApiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const xApiKey = req.headers.get("X-API-Key");
+    
+    let rawApiKey = "";
+    if (authHeader?.startsWith("Bearer ")) {
+      rawApiKey = authHeader.slice(7).trim();
+    } else if (xApiKey) {
+      rawApiKey = xApiKey.trim();
+    }
     
     if (!rawApiKey) {
       await logAuthFailure("Missing or malformed Authorization header");
-      return json({ success: false, error: "Missing or malformed Authorization header. Use 'Authorization: Bearer <your_key>'." }, 401);
+      return json({ success: false, error: "Missing or malformed Authorization header. Use 'Authorization: Bearer <your_key>' or 'X-API-Key: <your_key>'." }, 401);
     }
 
     // ── 2. Authenticate Client ──────────────────────────────────────────────────
@@ -433,6 +440,17 @@ serve(async (req: Request) => {
         balance: Number(wallet?.balance ?? 0),
         api_balance: Number(wallet?.api_balance ?? 0),
         currency: "GHS"
+      });
+    }
+
+    if (finalAction === "account") {
+      const { data: wallet } = await supabase.schema("api").from("v_wallets").select("balance").eq("agent_id", currentUserId).maybeSingle();
+      return json({
+        success: true,
+        name: profile.full_name || "API User",
+        balance: Number(wallet?.balance ?? 0),
+        apiKey: rawApiKey,
+        active: profile.access_enabled
       });
     }
 

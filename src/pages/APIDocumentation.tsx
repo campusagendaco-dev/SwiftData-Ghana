@@ -39,10 +39,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$payload = json_encode(["from" => "main", "to" => "api", "amount" => 100.00]);\n$ch = curl_init("${BASE_URL}/wallet/transfer");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "Authorization: Bearer ${K}",\n        "Content-Type: application/json",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     account: {
-      curl: `curl -X GET "${BASE_URL}/account" \\\n  -H "Authorization: Bearer ${K}"`,
-      node: `const res = await fetch("${BASE_URL}/account", {\n  headers: { "Authorization": "Bearer ${K}" },\n});\nconst data = await res.json();\nconsole.log(data.name, data.active);`,
-      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/account",\n    headers={"Authorization": "Bearer ${K}"},\n)\nprint(res.json())`,
-      php: `<?php\n$ch = curl_init("${BASE_URL}/account");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["Authorization: Bearer ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X GET "${BASE_URL}/account" \\\n  -H "X-API-Key: ${K}"`,
+      node: `const res = await fetch("${BASE_URL}/account", {\n  headers: { "X-API-Key": "${K}" },\n});\nconst data = await res.json();\nconsole.log(data.name, data.active);`,
+      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/account",\n    headers={"X-API-Key": "${K}"},\n)\nprint(res.json())`,
+      php: `<?php\n$ch = curl_init("${BASE_URL}/account");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["X-API-Key: ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     plans: {
       curl: `curl -X GET "${BASE_URL}/plans" \\\n  -H "Authorization: Bearer ${K}"`,
@@ -142,7 +142,7 @@ const RESPONSES: Record<string, string> = {
   balance: `{\n  "success": true,\n  "balance": 250.00,\n  "api_balance": 100.00,\n  "currency": "GHS"\n}`,
   wallets_ok: `{\n  "success": true,\n  "wallets": {\n    "main": { "balance": 250.00, "currency": "GHS" },\n    "api":  { "balance": 100.00, "currency": "GHS" }\n  }\n}`,
   transfer_ok: `{\n  "success": true,\n  "message": "Transfer successful",\n  "from_balance": 150.00,\n  "to_balance":   200.00\n}`,
-  account: `{\n  "success": true,\n  "name": "John Doe",\n  "balance": 250.00,\n  "active": true\n}`,
+  account: `{\n  "success": true,\n  "name": "John Doe",\n  "balance": 250.00,\n  "apiKey": "sbp_live_abc123",\n  "active": true\n}`,
   plans: `{\n  "success": true,\n  "plans": [\n    {\n      "network": "MTN",\n      "package_size": "5GB",\n      "api_price": 22.00,\n      "is_unavailable": false\n    },\n    {\n      "network": "TELECEL",\n      "package_size": "6GB",\n      "api_price": 20.00,\n      "is_unavailable": false\n    }\n  ]\n}`,
   buy_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n  "status": "fulfilled",\n  "balance": 228.00\n}`,
   validate_ok: `{\n  "success": true,\n  "customerName": "JOHN DOE",\n  "validatedAmount": 41.00\n}`,
