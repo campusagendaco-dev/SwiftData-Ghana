@@ -63,16 +63,28 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$payload = json_encode([\n    "network"      => "MTN",\n    "phone"        => "0241234567",\n    "package_size" => "5GB",\n    "request_id"   => "my_ref_002",\n]);\n$ch = curl_init("${BASE_URL}/buy");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "Authorization: Bearer ${K}",\n        "Content-Type: application/json",\n        "X-Idempotency-Key: unique_key_def456",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     validate: {
-      curl: `curl -X POST "${BASE_URL}/payment/bills/validate" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "customerNumber": "8226349986",\n    "billType": "DSTV"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/payment/bills/validate", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n  },\n  body: JSON.stringify({\n    customerNumber: "8226349986",\n    billType: "DSTV"\n  }),\n});\nconst data = await res.json();\nconsole.log(data.customerName); // "JOHN DOE"`,
-      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/bills/validate",\n    headers={\n        "Authorization": "Bearer ${K}",\n        "Content-Type": "application/json",\n    },\n    json={\n        "customerNumber": "8226349986",\n        "billType": "DSTV"\n    },\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode([\n    "customerNumber" => "8226349986",\n    "billType"       => "DSTV",\n]);\n$ch = curl_init("${BASE_URL}/payment/bills/validate");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "Authorization: Bearer ${K}",\n        "Content-Type: application/json",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X POST "${BASE_URL}/payment/bills/validate" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_val123" \\\n  -d '{\n    "customerNumber": "8226349986",\n    "billType": "DSTV"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/payment/bills/validate", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_val123",\n  },\n  body: JSON.stringify({\n    customerNumber: "8226349986",\n    billType: "DSTV",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/bills/validate",\n    headers={"Authorization": f"Bearer {K}", "X-Idempotency-Key": "unique_key_val123"},\n    json={"customerNumber": "8226349986", "billType": "DSTV"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["customerNumber" => "8226349986", "billType" => "DSTV"]);\n$ch = curl_init("${BASE_URL}/payment/bills/validate");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
-    ecg: {
-      curl: `curl -X POST "${BASE_URL}/ecg" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "customerNumber": "0123456789",\n    "billType": "ECG",\n    "amount": 50.00,\n    "senderName": "JOHN DOE",\n    "phoneNumber": "0241234567"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/ecg", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n  },\n  body: JSON.stringify({\n    customerNumber: "0123456789",\n    billType: "ECG",\n    amount: 50.00,\n    senderName: "JOHN DOE",\n    phoneNumber: "0241234567"\n  }),\n});\nconst data = await res.json();\nconsole.log(data.transaction_id);`,
-      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/ecg",\n    headers={\n        "Authorization": "Bearer ${K}",\n        "Content-Type": "application/json",\n    },\n    json={\n        "customerNumber": "0123456789",\n        "billType": "ECG",\n        "amount": 50.00,\n        "senderName": "JOHN DOE",\n        "phoneNumber": "0241234567"\n    },\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode([\n    "customerNumber" => "0123456789",\n    "billType"       => "ECG",\n    "amount"         => 50.00,\n    "senderName"     => "JOHN DOE",\n    "phoneNumber"    => "0241234567",\n]);\n$ch = curl_init("${BASE_URL}/ecg");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "Authorization: Bearer ${K}",\n        "Content-Type: application/json",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    bill: {
+      curl: `curl -X POST "${BASE_URL}/payment/bills/pay" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_bill123" \\\n  -d '{\n    "customerNumber": "8226349986",\n    "billType": "DSTV",\n    "amount": 41.00,\n    "senderName": "JOHN DOE"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/payment/bills/pay", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_bill123",\n  },\n  body: JSON.stringify({\n    customerNumber: "8226349986",\n    billType: "DSTV",\n    amount: 41.00,\n    senderName: "JOHN DOE",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/bills/pay",\n    headers={"Authorization": f"Bearer {K}", "X-Idempotency-Key": "unique_key_bill123"},\n    json={"customerNumber": "8226349986", "billType": "DSTV", "amount": 41.00, "senderName": "JOHN DOE"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["customerNumber" => "8226349986", "billType" => "DSTV", "amount" => 41.00, "senderName" => "JOHN DOE"]);\n$ch = curl_init("${BASE_URL}/payment/bills/pay");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    },
+    ecg_lookup: {
+      curl: `curl -X POST "${BASE_URL}/payment/ecg/lookup" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_ecgl123" \\\n  -d '{\n    "accountNumber": "70013245710"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/payment/ecg/lookup", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_ecgl123",\n  },\n  body: JSON.stringify({\n    accountNumber: "70013245710",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/ecg/lookup",\n    headers={"Authorization": f"Bearer {K}", "X-Idempotency-Key": "unique_key_ecgl123"},\n    json={"accountNumber": "70013245710"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["accountNumber" => "70013245710"]);\n$ch = curl_init("${BASE_URL}/payment/ecg/lookup");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    },
+    ecg_pay: {
+      curl: `curl -X POST "${BASE_URL}/payment/ecg" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_ecg123" \\\n  -d '{\n    "phoneNumber": "233241234567",\n    "accountNumber": "70013245710",\n    "amount": 20.00\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/payment/ecg", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_ecg123",\n  },\n  body: JSON.stringify({\n    phoneNumber: "233241234567",\n    accountNumber: "70013245710",\n    amount: 20.00,\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/payment/ecg",\n    headers={"Authorization": f"Bearer {K}", "X-Idempotency-Key": "unique_key_ecg123"},\n    json={"phoneNumber": "233241234567", "accountNumber": "70013245710", "amount": 20.00}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["phoneNumber" => "233241234567", "accountNumber" => "70013245710", "amount" => 20.00]);\n$ch = curl_init("${BASE_URL}/payment/ecg");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     sms: {
       curl: `curl -X POST "${BASE_URL}/sms" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "to": "0241234567",\n    "message": "Your data bundle is ready!",\n    "senderId": "SwiftData"\n  }'`,
@@ -111,16 +123,16 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$body     = file_get_contents("php://input");\n$sig      = $_SERVER["HTTP_X_SWIFT_SIGNATURE"] ?? "";\n$expected = hash_hmac("sha256", $body, SWIFT_WEBHOOK_SECRET);\n\nif (!hash_equals($expected, $sig)) {\n    http_response_code(401);\n    exit("Invalid signature");\n}\n\n$event = json_decode($body, true);\necho $event["event"]; // "order.fulfilled"`,
     },
     afa: {
-      curl: `curl -X POST "${BASE_URL}/afa-registration" \\\n  -H "Authorization: Bearer \${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_afa123" \\\n  -d '{\n    "afa_full_name": "Kwame Mensah",\n    "afa_ghana_card": "GHA-123456789-0",\n    "afa_occupation": "Teacher",\n    "afa_email": "kwame@example.com",\n    "afa_residence": "Accra",\n    "afa_date_of_birth": "1990-01-01",\n    "customer_phone": "0201234567",\n    "amount": 5.00,\n    "request_id": "afa_req_001"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/afa-registration", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer \${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_afa123",\n  },\n  body: JSON.stringify({\n    afa_full_name: "Kwame Mensah",\n    afa_ghana_card: "GHA-123456789-0",\n    afa_occupation: "Teacher",\n    afa_email: "kwame@example.com",\n    afa_residence: "Accra",\n    afa_date_of_birth: "1990-01-01",\n    customer_phone: "0201234567",\n    amount: 5.00,\n    request_id: "afa_req_001",\n  }),\n});\nconst data = await res.json();`,
-      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/afa-registration",\n    headers={"Authorization": "Bearer \${K}", "X-Idempotency-Key": "unique_key_afa123"},\n    json={"afa_full_name": "Kwame Mensah", "afa_ghana_card": "GHA-123456789-0", "customer_phone": "0201234567", "amount": 5.00, "request_id": "afa_req_001"}\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode(["afa_full_name" => "Kwame Mensah", "afa_ghana_card" => "GHA-123456789-0", "customer_phone" => "0201234567", "amount" => 5.00, "request_id" => "afa_req_001"]);\n$ch = curl_init("${BASE_URL}/afa-registration");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer \${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X POST "${BASE_URL}/afa-registration" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_afa123" \\\n  -d '{\n    "afa_full_name": "Kwame Mensah",\n    "afa_ghana_card": "GHA-123456789-0",\n    "afa_occupation": "Teacher",\n    "afa_email": "kwame@example.com",\n    "afa_residence": "Accra",\n    "afa_date_of_birth": "1990-01-01",\n    "customer_phone": "0201234567",\n    "amount": 5.00,\n    "request_id": "afa_req_001"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/afa-registration", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_afa123",\n  },\n  body: JSON.stringify({\n    afa_full_name: "Kwame Mensah",\n    afa_ghana_card: "GHA-123456789-0",\n    afa_occupation: "Teacher",\n    afa_email: "kwame@example.com",\n    afa_residence: "Accra",\n    afa_date_of_birth: "1990-01-01",\n    customer_phone: "0201234567",\n    amount: 5.00,\n    request_id: "afa_req_001",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/afa-registration",\n    headers={"Authorization": "Bearer ${K}", "X-Idempotency-Key": "unique_key_afa123"},\n    json={"afa_full_name": "Kwame Mensah", "afa_ghana_card": "GHA-123456789-0", "customer_phone": "0201234567", "amount": 5.00, "request_id": "afa_req_001"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["afa_full_name" => "Kwame Mensah", "afa_ghana_card" => "GHA-123456789-0", "customer_phone" => "0201234567", "amount" => 5.00, "request_id" => "afa_req_001"]);\n$ch = curl_init("${BASE_URL}/afa-registration");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     results: {
-      curl: `curl -X POST "${BASE_URL}/results-checker" \\\n  -H "Authorization: Bearer \${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_res123" \\\n  -d '{\n    "checker_type": "WAEC",\n    "quantity": 1,\n    "amount": 25.00,\n    "customer_phone": "0241234567",\n    "request_id": "res_req_001"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer \${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_res123",\n  },\n  body: JSON.stringify({\n    checker_type: "WAEC", // WAEC, CSSPS, BECE\n    quantity: 1,\n    amount: 25.00,\n    customer_phone: "0241234567",\n    request_id: "res_req_001",\n  }),\n});\nconst data = await res.json();`,
-      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/results-checker",\n    headers={"Authorization": "Bearer \${K}", "X-Idempotency-Key": "unique_key_res123"},\n    json={"checker_type": "WAEC", "quantity": 1, "amount": 25.00, "customer_phone": "0241234567", "request_id": "res_req_001"}\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode(["checker_type" => "WAEC", "quantity" => 1, "amount" => 25.00, "customer_phone" => "0241234567", "request_id" => "res_req_001"]);\n$ch = curl_init("${BASE_URL}/results-checker");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer \${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X POST "${BASE_URL}/results-checker" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_res123" \\\n  -d '{\n    "checker_type": "WAEC",\n    "quantity": 1,\n    "amount": 25.00,\n    "customer_phone": "0241234567",\n    "request_id": "res_req_001"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_res123",\n  },\n  body: JSON.stringify({\n    checker_type: "WAEC", // WAEC, CSSPS, BECE\n    quantity: 1,\n    amount: 25.00,\n    customer_phone: "0241234567",\n    request_id: "res_req_001",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/results-checker",\n    headers={"Authorization": "Bearer ${K}", "X-Idempotency-Key": "unique_key_res123"},\n    json={"checker_type": "WAEC", "quantity": 1, "amount": 25.00, "customer_phone": "0241234567", "request_id": "res_req_001"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["checker_type" => "WAEC", "quantity" => 1, "amount" => 25.00, "customer_phone" => "0241234567", "request_id" => "res_req_001"]);\n$ch = curl_init("${BASE_URL}/results-checker");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
   };
 };
@@ -134,7 +146,9 @@ const RESPONSES: Record<string, string> = {
   plans: `{\n  "success": true,\n  "plans": [\n    {\n      "network": "MTN",\n      "package_size": "5GB",\n      "api_price": 22.00,\n      "is_unavailable": false\n    },\n    {\n      "network": "TELECEL",\n      "package_size": "6GB",\n      "api_price": 20.00,\n      "is_unavailable": false\n    }\n  ]\n}`,
   buy_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n  "status": "fulfilled",\n  "balance": 228.00\n}`,
   validate_ok: `{\n  "success": true,\n  "customerName": "JOHN DOE",\n  "validatedAmount": 41.00\n}`,
-  bill_ok: `{\n  "success": true,\n  "transaction_id": "SWFT_BILL_1234567890",\n  "cost": 41.00,\n  "balance": 209.00\n}`,
+  bill_ok: `{\n  "success": true,\n  "transaction_id": "JBG_BILL_1234567890",\n  "cost": 41.00,\n  "balance": 209.00\n}`,
+  ecg_lookup_ok: `{\n  "success": true,\n  "customerName": "JOHN DOE",\n  "validatedAmount": 20.00\n}`,
+  ecg_ok: `{\n  "success": true,\n  "transaction_id": "JBG_ECG_1234567890",\n  "cost": 20.00,\n  "balance": 189.00\n}`,
   afa_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-...",\n  "status": "pending",\n  "balance": 223.00\n}`,
   results_ok: `{\n  "success": true,\n  "order_id": "b4e3c2d1-...",\n  "status": "pending",\n  "balance": 198.00\n}`,
   sms_ok: `{\n  "success": true,\n  "message": "SMS sent successfully"\n}`,
@@ -255,8 +269,10 @@ const NAV_ITEMS = [
   { id: "buy",             label: "Airtime & Data",      icon: ShoppingCart },
   { id: "afa",             label: "AFA Registration",    icon: Activity },
   { id: "results",         label: "Results Checker",     icon: ShoppingCart },
-  { id: "bills-validate",  label: "Validate Bills",      icon: Search },
-  { id: "bills-pay",       label: "Pay Bills",           icon: CreditCard },
+  { id: "bills-validate",  label: "Validate TV Bills",   icon: Search },
+  { id: "bills-pay",       label: "Pay TV Bills",        icon: CreditCard },
+  { id: "ecg-lookup",      label: "ECG Lookup",          icon: Search },
+  { id: "ecg-pay",         label: "Pay ECG",             icon: Zap },
   { id: "sms",             label: "Send SMS",            icon: Zap },
   { id: "orders",          label: "Order History",       icon: List },
   { id: "status",          label: "Order Status",        icon: Activity },
@@ -444,8 +460,10 @@ const APIDocumentation = () => {
                 { method: "POST", path: "/buy",                   desc: "Purchase airtime or data bundle" },
                 { method: "POST", path: "/afa-registration",      desc: "Register AFA SIM card" },
                 { method: "POST", path: "/results-checker",       desc: "Buy WAEC/CSSPS result checkers" },
-                { method: "POST", path: "/payment/bills/validate",desc: "Look up utility account" },
-                { method: "POST", path: "/ecg",                   desc: "Pay electricity / TV bill" },
+                { method: "POST", path: "/payment/bills/validate",desc: "Validate TV bill account" },
+                { method: "POST", path: "/payment/bills/pay",     desc: "Pay TV bill" },
+                { method: "POST", path: "/payment/ecg/lookup",    desc: "Validate ECG meter" },
+                { method: "POST", path: "/payment/ecg",           desc: "Pay ECG bill" },
                 { method: "POST", path: "/sms",                   desc: "Send transactional SMS" },
                 { method: "GET",  path: "/orders",                desc: "Paginated order history with filters" },
                 { method: "GET",  path: "/status",                desc: "Single order status" },
@@ -722,14 +740,13 @@ const APIDocumentation = () => {
               <MethodBadge method="POST" />
               <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/bills/validate</code>
             </div>
-            <p className="text-white/40 text-sm mb-6 ml-11 max-w-xl">Look up the customer name and due amount before paying. Always validate before calling the pay endpoint to avoid rejected transactions.</p>
             <div className="ml-11 space-y-6">
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
                 </div>
-                <ParamRow name="customerNumber" type="string" required desc="Smartcard, account or meter number" />
-                <ParamRow name="billType"       type="string" required desc="DSTV · GOTV · STARTIMES · ECG" />
+                <ParamRow name="customerNumber" type="string" required desc="Smartcard or account number" />
+                <ParamRow name="billType"       type="string" required desc="DSTV | GOTV | STARTIMES | ECG" />
               </div>
               <div className="grid lg:grid-cols-2 gap-6">
                 <CodeBlock code={snippets.validate[activeLang]} label="Request" />
@@ -744,26 +761,45 @@ const APIDocumentation = () => {
             <SectionHeader icon={CreditCard} title="Pay Utility Bill" />
             <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
               <MethodBadge method="POST" />
-              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/ecg</code>
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/bills</code>
             </div>
-            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
-              Use <code className="text-sky-400">/ecg</code> for electricity. Use <code className="text-sky-400">/dstv</code>, <code className="text-sky-400">/gotv</code>, or <code className="text-sky-400">/startimes</code> for TV subscriptions.
-              Pass the <code className="text-amber-300">customerName</code> returned by the validate call.
-            </p>
             <div className="ml-11 space-y-6">
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
                 </div>
-                <ParamRow name="customerNumber" type="string" required desc="Account/Meter number" />
-                <ParamRow name="billType"       type="string" required desc="ECG · DSTV · GOTV · STARTIMES" />
-                <ParamRow name="amount"         type="number" required desc="Amount to pay in GHS" />
-                <ParamRow name="senderName"     type="string" required desc="Customer name from the validation response" />
-                <ParamRow name="phoneNumber"    type="string" required desc="Phone number to receive ECG token via SMS" />
+                <ParamRow name="customerNumber" type="string" required desc="Smartcard or account number" />
+                <ParamRow name="billType"       type="string" required desc="DSTV | GOTV | STARTIMES | ECG" />
+                <ParamRow name="amount"         type="number" required desc="Amount in GHS" />
+                <ParamRow name="senderName"     type="string" required desc="Customer full name from lookup" />
+              </div>
+              <div className="grid lg:grid-cols-2 gap-6">
+                <CodeBlock code={snippets.bill[activeLang]} label="Request" />
+                <ResponseBlock code={RESPONSES.bill_ok} label="Response · 200 OK" />
+              </div>
+            </div>
+          </section>
+
+          {/* ── Pay ECG ────────────────────────────────────────── */}
+          <section>
+            <SectionAnchor id="ecg-pay" />
+            <SectionHeader icon={Zap} title="Pay ECG" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/ecg</code>
+            </div>
+            <div className="ml-11 space-y-6">
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="phoneNumber"    type="string" required desc="Phone number in 233XXXXXXXXX format" />
+                <ParamRow name="accountNumber"  type="string" required desc="ECG meter or account number" />
+                <ParamRow name="amount"         type="number" required desc="Amount in GHS" />
               </div>
               <div className="grid lg:grid-cols-2 gap-6">
                 <CodeBlock code={snippets.ecg[activeLang]} label="Request" />
-                <ResponseBlock code={RESPONSES.bill_ok} label="Response · 201 Created" />
+                <ResponseBlock code={RESPONSES.ecg_ok} label="Response · 200 OK" />
               </div>
             </div>
           </section>
