@@ -21,10 +21,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
   const K = key || "swft_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
   return {
     balance: {
-      curl: `curl -X GET "${BASE_URL}/balance" \\\n  -H "Authorization: Bearer ${K}"`,
-      node: `const res = await fetch("${BASE_URL}/balance", {\n  headers: { "Authorization": "Bearer ${K}" },\n});\nconst { balance, api_balance } = await res.json();\nconsole.log("Main:", balance, "API:", api_balance);`,
-      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/balance",\n    headers={"Authorization": "Bearer ${K}"},\n)\nprint(res.json())`,
-      php: `<?php\n$ch = curl_init("${BASE_URL}/balance");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["Authorization: Bearer ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$res = json_decode(curl_exec($ch));\necho $res->balance;`,
+      curl: `curl -X GET "${BASE_URL}/balance" \\\n  -H "X-API-Key: ${K}"`,
+      node: `const res = await fetch("${BASE_URL}/balance", {\n  headers: { "X-API-Key": "${K}" },\n});\nconst data = await res.json();\nconsole.log(data.balance);`,
+      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/balance",\n    headers={"X-API-Key": "${K}"},\n)\nprint(res.json())`,
+      php: `<?php\n$ch = curl_init("${BASE_URL}/balance");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["X-API-Key: ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$data = json_decode(curl_exec($ch));\necho $data->balance;`,
     },
     wallets: {
       curl: `curl -X GET "${BASE_URL}/wallets" \\\n  -H "Authorization: Bearer ${K}"`,
@@ -139,7 +139,7 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
 
 // ─── Responses ────────────────────────────────────────────────────────────────
 const RESPONSES: Record<string, string> = {
-  balance: `{\n  "success": true,\n  "balance": 250.00,\n  "api_balance": 100.00,\n  "currency": "GHS"\n}`,
+  balance: `{\n  "success": true,\n  "balance": 50.00,\n  "currency": "GHS"\n}`,
   wallets_ok: `{\n  "success": true,\n  "wallets": {\n    "main": { "balance": 250.00, "currency": "GHS" },\n    "api":  { "balance": 100.00, "currency": "GHS" }\n  }\n}`,
   transfer_ok: `{\n  "success": true,\n  "message": "Transfer successful",\n  "from_balance": 150.00,\n  "to_balance":   200.00\n}`,
   account: `{\n  "success": true,\n  "name": "John Doe",\n  "balance": 250.00,\n  "apiKey": "sbp_live_abc123",\n  "active": true\n}`,
