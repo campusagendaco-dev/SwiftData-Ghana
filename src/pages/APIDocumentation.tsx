@@ -110,6 +110,18 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       python: `import hmac, hashlib\nfrom flask import Flask, request, abort\n\napp = Flask(__name__)\n\n@app.route("/webhooks/swiftdata", methods=["POST"])\ndef webhook():\n    sig      = request.headers.get("X-Swift-Signature", "")\n    body     = request.get_data()\n    expected = hmac.new(\n        SWIFT_WEBHOOK_SECRET.encode(),\n        body,\n        hashlib.sha256\n    ).hexdigest()\n\n    if not hmac.compare_digest(sig, expected):\n        abort(401)\n\n    event = request.json\n    print(event["event"], event["order_id"])\n    return "", 200`,
       php: `<?php\n$body     = file_get_contents("php://input");\n$sig      = $_SERVER["HTTP_X_SWIFT_SIGNATURE"] ?? "";\n$expected = hash_hmac("sha256", $body, SWIFT_WEBHOOK_SECRET);\n\nif (!hash_equals($expected, $sig)) {\n    http_response_code(401);\n    exit("Invalid signature");\n}\n\n$event = json_decode($body, true);\necho $event["event"]; // "order.fulfilled"`,
     },
+    afa: {
+      curl: `curl -X POST "${BASE_URL}/afa-registration" \\\n  -H "Authorization: Bearer \${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_afa123" \\\n  -d '{\n    "afa_full_name": "Kwame Mensah",\n    "afa_ghana_card": "GHA-123456789-0",\n    "afa_occupation": "Teacher",\n    "afa_email": "kwame@example.com",\n    "afa_residence": "Accra",\n    "afa_date_of_birth": "1990-01-01",\n    "customer_phone": "0201234567",\n    "amount": 5.00,\n    "request_id": "afa_req_001"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/afa-registration", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer \${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_afa123",\n  },\n  body: JSON.stringify({\n    afa_full_name: "Kwame Mensah",\n    afa_ghana_card: "GHA-123456789-0",\n    afa_occupation: "Teacher",\n    afa_email: "kwame@example.com",\n    afa_residence: "Accra",\n    afa_date_of_birth: "1990-01-01",\n    customer_phone: "0201234567",\n    amount: 5.00,\n    request_id: "afa_req_001",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/afa-registration",\n    headers={"Authorization": "Bearer \${K}", "X-Idempotency-Key": "unique_key_afa123"},\n    json={"afa_full_name": "Kwame Mensah", "afa_ghana_card": "GHA-123456789-0", "customer_phone": "0201234567", "amount": 5.00, "request_id": "afa_req_001"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["afa_full_name" => "Kwame Mensah", "afa_ghana_card" => "GHA-123456789-0", "customer_phone" => "0201234567", "amount" => 5.00, "request_id" => "afa_req_001"]);\n$ch = curl_init("${BASE_URL}/afa-registration");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer \${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    },
+    results: {
+      curl: `curl -X POST "${BASE_URL}/results-checker" \\\n  -H "Authorization: Bearer \${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_res123" \\\n  -d '{\n    "checker_type": "WAEC",\n    "quantity": 1,\n    "amount": 25.00,\n    "customer_phone": "0241234567",\n    "request_id": "res_req_001"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer \${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_res123",\n  },\n  body: JSON.stringify({\n    checker_type: "WAEC", // WAEC, CSSPS, BECE\n    quantity: 1,\n    amount: 25.00,\n    customer_phone: "0241234567",\n    request_id: "res_req_001",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/results-checker",\n    headers={"Authorization": "Bearer \${K}", "X-Idempotency-Key": "unique_key_res123"},\n    json={"checker_type": "WAEC", "quantity": 1, "amount": 25.00, "customer_phone": "0241234567", "request_id": "res_req_001"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["checker_type" => "WAEC", "quantity" => 1, "amount" => 25.00, "customer_phone" => "0241234567", "request_id" => "res_req_001"]);\n$ch = curl_init("${BASE_URL}/results-checker");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer \${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    },
   };
 };
 
@@ -123,6 +135,8 @@ const RESPONSES: Record<string, string> = {
   buy_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n  "status": "fulfilled",\n  "balance": 228.00\n}`,
   validate_ok: `{\n  "success": true,\n  "customerName": "JOHN DOE",\n  "validatedAmount": 41.00\n}`,
   bill_ok: `{\n  "success": true,\n  "transaction_id": "SWFT_BILL_1234567890",\n  "cost": 41.00,\n  "balance": 209.00\n}`,
+  afa_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-...",\n  "status": "pending",\n  "balance": 223.00\n}`,
+  results_ok: `{\n  "success": true,\n  "order_id": "b4e3c2d1-...",\n  "status": "pending",\n  "balance": 198.00\n}`,
   sms_ok: `{\n  "success": true,\n  "message": "SMS sent successfully"\n}`,
   orders_ok: `{\n  "success": true,\n  "total": 48,\n  "orders": [\n    {\n      "id": "a3f2b1c0-...",\n      "created_at": "2026-05-10T09:12:00Z",\n      "network": "MTN",\n      "package_size": "5GB",\n      "customer_phone": "0241234567",\n      "amount": 22.00,\n      "status": "fulfilled",\n      "profit": 2.00\n    }\n  ]\n}`,
   status_ok: `{\n  "success": true,\n  "order": {\n    "id": "a3f2b1c0-...",\n    "status": "fulfilled",\n    "network": "MTN",\n    "package_size": "5GB",\n    "customer_phone": "0241234567",\n    "amount": 22.00,\n    "profit": 2.00,\n    "created_at": "2026-05-10T09:12:00Z"\n  }\n}`,
@@ -239,6 +253,8 @@ const NAV_ITEMS = [
   { id: "transfer",        label: "Wallet Transfer",     icon: ArrowLeftRight },
   { id: "plans",           label: "List Plans",          icon: List },
   { id: "buy",             label: "Airtime & Data",      icon: ShoppingCart },
+  { id: "afa",             label: "AFA Registration",    icon: Activity },
+  { id: "results",         label: "Results Checker",     icon: ShoppingCart },
   { id: "bills-validate",  label: "Validate Bills",      icon: Search },
   { id: "bills-pay",       label: "Pay Bills",           icon: CreditCard },
   { id: "sms",             label: "Send SMS",            icon: Zap },
@@ -426,6 +442,8 @@ const APIDocumentation = () => {
                 { method: "POST", path: "/wallet/transfer",       desc: "Move funds between wallets" },
                 { method: "GET",  path: "/plans",                 desc: "Available data packages & prices" },
                 { method: "POST", path: "/buy",                   desc: "Purchase airtime or data bundle" },
+                { method: "POST", path: "/afa-registration",      desc: "Register AFA SIM card" },
+                { method: "POST", path: "/results-checker",       desc: "Buy WAEC/CSSPS result checkers" },
                 { method: "POST", path: "/payment/bills/validate",desc: "Look up utility account" },
                 { method: "POST", path: "/ecg",                   desc: "Pay electricity / TV bill" },
                 { method: "POST", path: "/sms",                   desc: "Send transactional SMS" },

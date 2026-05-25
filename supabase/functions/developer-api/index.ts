@@ -411,10 +411,12 @@ serve(async (req: Request) => {
     else if (p.endsWith("/status")) finalAction = "status";
     else if (p.endsWith("/wallets")) finalAction = "wallets";
     else if (p.endsWith("/wallet/transfer")) finalAction = "wallet_transfer";
+    else if (p.endsWith("/afa-registration")) finalAction = "afa_registration";
+    else if (p.endsWith("/results-checker")) finalAction = "results_checker";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
@@ -586,6 +588,108 @@ serve(async (req: Request) => {
         },
         body: JSON.stringify({ reference: orderId })
       }).catch(e => console.error("[developer-api] Background verification trigger failed:", e));
+
+      return json(result);
+    }
+
+    if (finalAction === "afa_registration" && req.method === "POST") {
+      const payload = await req.json().catch(() => null);
+      if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
+
+      const { afa_full_name, afa_ghana_card, customer_phone, amount, request_id } = payload;
+      if (!customer_phone || !amount || !afa_full_name || !afa_ghana_card)
+        return json({ success: false, error: "Missing required fields: customer_phone, amount, afa_full_name, afa_ghana_card" }, 400);
+
+      const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
+      
+      const { data: result, error: rpcError } = await supabase.schema("api").rpc("create_order_rpc", {
+        p_user_id: currentUserId,
+        p_network: "AFA",
+        p_package_size: "BUNDLE",
+        p_phone: normalizeRecipient(customer_phone),
+        p_amount: amount,
+        p_request_id: request_id || idemKey,
+        p_idem_key: idemKey,
+        p_test_mode: profile.test_mode
+      });
+
+      if (rpcError) throw rpcError;
+      if (!result.success) return json(result, 400);
+
+      const orderId = result.order_id;
+
+      await supabase.from("orders").update({
+        order_type: "afa",
+        metadata: {
+          client_reference: request_id || idemKey,
+          afa_full_name,
+          afa_ghana_card,
+          afa_occupation: payload.afa_occupation,
+          afa_email: payload.afa_email,
+          afa_residence: payload.afa_residence,
+          afa_date_of_birth: payload.afa_date_of_birth
+        }
+      }).eq("id", orderId);
+
+      if (profile.test_mode) {
+        console.log(`[TEST MODE] Skipping real AFA registration for ${orderId}`);
+        return json(result);
+      }
+
+      fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ reference: orderId })
+      }).catch(e => console.error("[developer-api] Background AFA trigger failed:", e));
+
+      return json(result);
+    }
+
+    if (finalAction === "results_checker" && req.method === "POST") {
+      const payload = await req.json().catch(() => null);
+      if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
+
+      const { checker_type, quantity, amount, customer_phone, request_id } = payload;
+      if (!checker_type || !quantity || !amount)
+        return json({ success: false, error: "Missing required fields: checker_type, quantity, amount" }, 400);
+
+      const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
+      
+      const { data: result, error: rpcError } = await supabase.schema("api").rpc("create_order_rpc", {
+        p_user_id: currentUserId,
+        p_network: checker_type,
+        p_package_size: String(quantity),
+        p_phone: normalizeRecipient(customer_phone || "0000000000"),
+        p_amount: amount,
+        p_request_id: request_id || idemKey,
+        p_idem_key: idemKey,
+        p_test_mode: profile.test_mode
+      });
+
+      if (rpcError) throw rpcError;
+      if (!result.success) return json(result, 400);
+
+      const orderId = result.order_id;
+
+      await supabase.from("orders").update({
+        order_type: "results_checker",
+        metadata: {
+          client_reference: request_id || idemKey,
+          checker_type,
+          quantity
+        }
+      }).eq("id", orderId);
+
+      if (profile.test_mode) {
+        console.log(`[TEST MODE] Skipping real Results Checker for ${orderId}`);
+        return json(result);
+      }
+
+      fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ reference: orderId })
+      }).catch(e => console.error("[developer-api] Background Checker trigger failed:", e));
 
       return json(result);
     }
