@@ -413,10 +413,12 @@ serve(async (req: Request) => {
     else if (p.endsWith("/wallet/transfer")) finalAction = "wallet_transfer";
     else if (p.endsWith("/afa-registration")) finalAction = "afa_registration";
     else if (p.endsWith("/results-checker")) finalAction = "results_checker";
+    else if (p.endsWith("/payment/bills/validate")) finalAction = "validate_bill";
+    else if (p.endsWith("/ecg")) finalAction = "pay_bill";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
@@ -692,6 +694,83 @@ serve(async (req: Request) => {
       }).catch(e => console.error("[developer-api] Background Checker trigger failed:", e));
 
       return json(result);
+    }
+
+    if (finalAction === "validate_bill" && req.method === "POST") {
+      const payload = await req.json().catch(() => null);
+      if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
+
+      const { customerNumber, billType } = payload;
+      if (!customerNumber || !billType)
+        return json({ success: false, error: "Missing required fields: customerNumber, billType" }, 400);
+
+      // We mock the validation for now. When the 3rd party API is integrated, we will fetch the real name.
+      return json({
+        success: true,
+        customerName: "TEST CUSTOMER - " + customerNumber,
+        validatedAmount: 41.00
+      });
+    }
+
+    if (finalAction === "pay_bill" && req.method === "POST") {
+      const payload = await req.json().catch(() => null);
+      if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
+
+      const { customerNumber, billType, amount, senderName } = payload;
+      if (!customerNumber || !billType || !amount || !senderName)
+        return json({ success: false, error: "Missing required fields: customerNumber, billType, amount, senderName" }, 400);
+
+      const idemKey = req.headers.get("X-Idempotency-Key") || crypto.randomUUID();
+      
+      const { data: result, error: rpcError } = await supabase.schema("api").rpc("create_order_rpc", {
+        p_user_id: currentUserId,
+        p_network: billType,
+        p_package_size: "UTILITY",
+        p_phone: normalizeRecipient(customerNumber),
+        p_amount: amount,
+        p_request_id: idemKey,
+        p_idem_key: idemKey,
+        p_test_mode: profile.test_mode
+      });
+
+      if (rpcError) throw rpcError;
+      if (!result.success) return json(result, 400);
+
+      const orderId = result.order_id;
+
+      await supabase.from("orders").update({
+        order_type: "utility",
+        metadata: {
+          client_reference: idemKey,
+          utility_account_number: customerNumber,
+          utility_provider: billType,
+          utility_type: "bill_payment",
+          utility_account_name: senderName
+        }
+      }).eq("id", orderId);
+
+      if (profile.test_mode) {
+        console.log(`[TEST MODE] Skipping real utility payment for ${orderId}`);
+        return json({
+          success: true,
+          transaction_id: orderId,
+          cost: amount,
+          balance: result.balance
+        });
+      }
+
+      fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ reference: orderId })
+      }).catch(e => console.error("[developer-api] Background Utility trigger failed:", e));
+
+      return json({
+        success: true,
+        transaction_id: orderId,
+        cost: amount,
+        balance: result.balance
+      });
     }
 
     if (finalAction === "orders") {
