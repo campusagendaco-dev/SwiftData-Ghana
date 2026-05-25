@@ -290,8 +290,7 @@ async function callProviderApi(
        if (data.order_type === "airtime") {
           url = `${url}/payment/airtime`;
        } else if (data.order_type === "utility") {
-          if (data.utility_provider === "ECG") url = `${url}/payment/ecg`;
-          else url = `${url}/payment/bills/pay`;
+          url = `${url}/api/payment/bills`;
        } else {
           url = `${url}/payment/data`;
        }
