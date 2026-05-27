@@ -43,6 +43,10 @@ const AdminSwiftVendorPro = () => {
     isFrozen: false
   });
 
+  const [manualSearchQuery, setManualSearchQuery] = useState("");
+  const [manualSearchResults, setManualSearchResults] = useState<any[]>([]);
+  const [searchingManual, setSearchingManual] = useState(false);
+
   useEffect(() => {
     fetchVendors();
     fetchLedger();
@@ -88,6 +92,51 @@ const AdminSwiftVendorPro = () => {
       toast.error(err.message || "Failed to save system rules");
     } finally {
       setSavingRules(false);
+    }
+  };
+
+  const handleManualSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualSearchQuery.trim()) return;
+    setSearchingManual(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email, phone, vendor_status')
+        .or(`full_name.ilike.%${manualSearchQuery}%,email.ilike.%${manualSearchQuery}%,phone.ilike.%${manualSearchQuery}%`)
+        .limit(5);
+      if (error) throw error;
+      setManualSearchResults(data || []);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to search agents");
+    } finally {
+      setSearchingManual(false);
+    }
+  };
+
+  const handleManualApprove = async (agentId: string) => {
+    if (!window.confirm("Are you sure you want to manually upgrade this user to a Momo Swift Vendor?")) return;
+    try {
+      toast.loading("Upgrading user...", { id: "manual-upgrade" });
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          vendor_status: 'active', 
+          vendor_rejection_reason: null, 
+          vendor_activated_at: new Date().toISOString(),
+          is_agent: true 
+        })
+        .eq('user_id', agentId);
+      
+      if (error) throw error;
+      toast.success("User upgraded to Swift Vendor successfully!", { id: "manual-upgrade" });
+      setManualSearchResults([]);
+      setManualSearchQuery("");
+      fetchVendors();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to upgrade user", { id: "manual-upgrade" });
     }
   };
 
@@ -521,6 +570,59 @@ const AdminSwiftVendorPro = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Manual Vendor Enrollment */}
+              <Card className="border border-indigo-500/30 bg-indigo-500/5 backdrop-blur-xl shadow-[0_0_50px_-12px_rgba(99,102,241,0.15)] relative overflow-hidden rounded-[2rem]">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500/0 via-indigo-500 to-indigo-500/0 opacity-50" />
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3 text-indigo-400 drop-shadow-sm">
+                    <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center border border-indigo-500/40 shadow-[0_0_15px_rgba(99,102,241,0.4)]">
+                      <Users className="w-4 h-4 text-indigo-400" />
+                    </div>
+                    Manual Vendor Enrollment
+                  </CardTitle>
+                  <CardDescription className="font-bold text-indigo-400/70 ml-11 uppercase tracking-widest text-[9px]">Force upgrade any user to a Swift Vendor without KYC</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0 px-6 pb-6 space-y-4">
+                  <form onSubmit={handleManualSearch} className="flex items-center gap-3">
+                    <Input 
+                      placeholder="Search by name, email, or phone number..." 
+                      value={manualSearchQuery}
+                      onChange={(e) => setManualSearchQuery(e.target.value)}
+                      className="bg-black/40 border-indigo-500/20 text-white placeholder:text-muted-foreground focus-visible:ring-indigo-500 rounded-xl h-12"
+                    />
+                    <Button type="submit" disabled={searchingManual} className="h-12 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-black text-white">
+                      {searchingManual ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Search"}
+                    </Button>
+                  </form>
+                  
+                  {manualSearchResults.length > 0 && (
+                    <div className="bg-black/40 border border-indigo-500/10 rounded-xl overflow-hidden mt-4">
+                      <table className="w-full text-left">
+                        <tbody className="divide-y divide-indigo-500/10">
+                          {manualSearchResults.map((user) => (
+                            <tr key={user.user_id} className="hover:bg-indigo-500/5 transition-colors">
+                              <td className="p-4">
+                                <p className="font-black text-white text-sm">{user.full_name || "Unknown Name"}</p>
+                                <p className="text-[10px] text-muted-foreground font-mono">{user.email} • {user.phone}</p>
+                              </td>
+                              <td className="p-4 text-right">
+                                {user.vendor_status === 'active' ? (
+                                  <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Already Vendor</Badge>
+                                ) : (
+                                  <Button size="sm" onClick={() => handleManualApprove(user.user_id)} className="h-8 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-lg text-xs">
+                                    Approve as Vendor
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Vendor Fleet List */}
               <Card className="border border-white/5 bg-white/[0.02] backdrop-blur-2xl rounded-[2rem] overflow-hidden shadow-2xl">
