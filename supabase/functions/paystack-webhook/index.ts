@@ -113,7 +113,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
 
   const urls = new Set<string>();
   const isDatamart = clean.includes("/api/developer") || clean.includes("datamartgh");
-  const endpointAliases = isDatamart
+  const endpointAliases = isDatamart || clean.includes("superbdatafy")
     ? (endpoint === "status" ? ["order-status"] : (endpoint === "purchase" ? ["purchase"] : [endpoint]))
     : (endpoint === "purchase" ? ["purchase", "order", "airtime", "buy", "data-purchase"] : [endpoint]);
 
@@ -168,8 +168,8 @@ function parseProviderResponse(body: string, contentType: string | null): { ok: 
     const status = String(rawStatus || "").toLowerCase();
     const statusCode = Number(parsed?.statusCode);
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
-    const orderId = parsed?.data?.orderNumber || parsed?.data?.reference || parsed?.transaction_id || parsed?.order_id || parsed?.reference || parsed?.id;
-    const deliveryStatus = String(parsed?.data?.status || parsed?.data?.orderStatus || parsed?.delivery_status || parsed?.status_message || "").toLowerCase();
+    const orderId = parsed?.transaction?.reference || parsed?.data?.orderNumber || parsed?.data?.reference || parsed?.transaction_id || parsed?.order_id || parsed?.reference || parsed?.id;
+    const deliveryStatus = String(parsed?.transaction?.status || parsed?.data?.status || parsed?.data?.orderStatus || parsed?.delivery_status || parsed?.status_message || "").toLowerCase();
 
     // Determine if it's actually delivered
     const isActuallyDelivered = !deliveryStatus || deliveryStatus === "delivered" || deliveryStatus === "success" || deliveryStatus === "successful" || deliveryStatus === "completed" || deliveryStatus === "fulfilled" || deliveryStatus === "true" || deliveryStatus === "sent";
@@ -333,8 +333,38 @@ async function callProviderApi(
   const urls = buildProviderUrls(baseUrl, endpoint);
 
   let baseRequestBody: Record<string, unknown> = body;
+  
+  // SuperbDatafy specific mapping
+  if (baseUrl.includes("superbdatafy.com") && endpoint === "purchase") {
+    const network = String(body.networkRaw || body.network || "").toLowerCase();
+    let sbNetwork = network;
+    if (network === "yello") sbNetwork = "mtn";
+    if (network === "vod" || network === "vodafone") sbNetwork = "telecel";
+    if (network === "airteltigo" || network === "at_premium") sbNetwork = "at";
+    
+    const pkgSize = String(body.package_size || body.plan || body.package_key || "").replace(/\s+/g, "").toLowerCase();
+    const phone = String(body.recipient || body.phoneNumber || body.recipient_phone || "");
 
-  if (endpoint === "purchase" && providerWebhookUrl && !Object.prototype.hasOwnProperty.call(body, "webhook_url")) {
+    try {
+      const bundleRes = await fetch(`${baseUrl}/bundles?network=${sbNetwork}`, {
+        headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" }
+      });
+      if (bundleRes.ok) {
+         const bData = await bundleRes.json();
+         const bundles = bData?.bundles || [];
+         const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgSize);
+         if (match) {
+           baseRequestBody = { bundle_id: match.id, phone_number: phone };
+         } else {
+           return { ok: false, status: 400, body: "", reason: `SuperbDatafy: Bundle ${pkgSize} not found for ${sbNetwork}`, url: null };
+         }
+      } else {
+         return { ok: false, status: 502, body: "", reason: `SuperbDatafy: Failed to fetch bundles (HTTP ${bundleRes.status})`, url: null };
+      }
+    } catch (e: any) {
+       return { ok: false, status: 502, body: "", reason: `SuperbDatafy: Network error fetching bundles - ${e.message}`, url: null };
+    }
+  } else if (endpoint === "purchase" && providerWebhookUrl && !Object.prototype.hasOwnProperty.call(body, "webhook_url")) {
     baseRequestBody = { ...body, webhook_url: providerWebhookUrl };
   }
 
@@ -351,9 +381,19 @@ async function callProviderApi(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000);
 
+      let reqUrl = url;
+      if (baseUrl.includes("superbdatafy.com")) {
+        if (endpoint === "status") {
+           const ref = String(body.transaction_id || body.reference || body.order_id || "");
+           reqUrl = `${url}/transaction/${ref}`;
+        } else {
+           reqUrl = `${url}/buy-data`;
+        }
+      }
+
       try {
-        const response = await fetch(url, {
-          method: "POST",
+        const response = await fetch(reqUrl, {
+          method: (baseUrl.includes("superbdatafy.com") && endpoint === "status") ? "GET" : "POST",
           headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -361,7 +401,7 @@ async function callProviderApi(
             "Authorization": `Bearer ${apiKey}`,
             "User-Agent": "DataHiveGH/1.0",
           },
-          body: JSON.stringify(baseRequestBody),
+          body: (baseUrl.includes("superbdatafy.com") && endpoint === "status") ? undefined : JSON.stringify(baseRequestBody),
           signal: controller.signal,
         });
 

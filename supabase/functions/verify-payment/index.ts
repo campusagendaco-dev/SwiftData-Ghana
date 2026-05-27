@@ -117,7 +117,7 @@ function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string 
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy") {
     return [clean];
   }
 
@@ -210,12 +210,12 @@ function parseProviderResponse(body: string, contentType: string | null): { ok: 
     const parsed = JSON.parse(body);
     const technicalStatus = String(parsed?.status ?? parsed?.success ?? "").toLowerCase();
     const data = parsed?.data || {};
-    const deliveryStatus = String(data?.status ?? data?.orderStatus ?? parsed?.delivery_status ?? parsed?.status_message ?? "").toLowerCase();
+    const deliveryStatus = String(parsed?.transaction?.status ?? data?.status ?? data?.orderStatus ?? parsed?.delivery_status ?? parsed?.status_message ?? "").toLowerCase();
     const effectiveStatus = deliveryStatus || technicalStatus;
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
     
     // DataMart uses purchaseId or orderReference
-    const orderId = String(data?.orderNumber ?? data?.reference ?? data?.purchaseId ?? data?.orderReference ?? parsed?.transaction_id ?? parsed?.order_id ?? parsed?.id ?? parsed?.reference ?? "");
+    const orderId = String(parsed?.transaction?.reference ?? data?.orderNumber ?? data?.reference ?? data?.purchaseId ?? data?.orderReference ?? parsed?.transaction_id ?? parsed?.order_id ?? parsed?.id ?? parsed?.reference ?? "");
 
     const ok = technicalStatus === "success" || technicalStatus === "true" || technicalStatus === "1" || technicalStatus === "completed" || technicalStatus === "pending" || parsed?.success === true || parsed?.ok === true;
 
@@ -255,23 +255,36 @@ async function callProviderApi(
   const apiKey = provider.api_key;
   
   let payload = { ...data };
-  if (handlerType === "bossu") {
-    if (endpoint === "status") {
-      payload = {
-        action: "order_status",
-        order_id: String(data.transaction_id || data.reference || data.order_id || ""),
-        api_key: apiKey,
-      };
-    } else {
-      payload = {
-        action: "create_order",
-        network: String(data.networkRaw || data.network || "").toLowerCase(),
-        package_key: String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase(),
-        recipient_phone: String(data.recipient || data.phoneNumber || data.recipient_phone || ""),
-        external_reference: String(data.orderReference || data.reference || ""),
-        callback_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/bossu-webhook`,
-        api_key: apiKey,
-      };
+  if (handlerType === "superbdatafy") {
+    if (endpoint !== "status") {
+      const network = String(data.networkRaw || data.network || "").toLowerCase();
+      let sbNetwork = network;
+      if (network === "yello") sbNetwork = "mtn";
+      if (network === "vod" || network === "vodafone") sbNetwork = "telecel";
+      if (network === "airteltigo" || network === "at_premium") sbNetwork = "at";
+      
+      const pkgSize = String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase();
+      const phone = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
+
+      try {
+        const bundleRes = await fetch(`${baseUrl}/bundles?network=${sbNetwork}`, {
+          headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" }
+        });
+        if (bundleRes.ok) {
+           const bData = await bundleRes.json();
+           const bundles = bData?.bundles || [];
+           const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgSize);
+           if (match) {
+             payload = { bundle_id: match.id, phone_number: phone };
+           } else {
+             return { ok: false, reason: `SuperbDatafy: Bundle ${pkgSize} not found for ${sbNetwork}` };
+           }
+        } else {
+           return { ok: false, reason: `SuperbDatafy: Failed to fetch bundles (HTTP ${bundleRes.status})` };
+        }
+      } catch (e: any) {
+         return { ok: false, reason: `SuperbDatafy: Network error fetching bundles - ${e.message}` };
+      }
     }
   } else if (handlerType === "datahub" && endpoint === "status") {
     payload = {
@@ -286,6 +299,13 @@ async function callProviderApi(
     if (handlerType === "datamart" && endpoint === "status") {
       const ref = String(data.transaction_id || data.reference || "");
       url = `${url}/${ref}`;
+    } else if (handlerType === "superbdatafy") {
+      if (endpoint === "status") {
+         const ref = String(data.transaction_id || data.reference || data.order_id || "");
+         url = `${url}/transaction/${ref}`;
+      } else {
+         url = `${url}/buy-data`;
+      }
     } else if (handlerType === "justbuy") {
        if (data.order_type === "airtime") {
           url = `${url}/payment/airtime`;
@@ -318,7 +338,7 @@ async function callProviderApi(
           headers["User-Agent"] = "SwiftDataGH/2.0";
         }
 
-        const isGet = handlerType === "datamart" && endpoint === "status";
+        const isGet = (handlerType === "datamart" && endpoint === "status") || (handlerType === "superbdatafy" && endpoint === "status");
 
         const res = await fetch(url, {
           method: isGet ? "GET" : "POST",

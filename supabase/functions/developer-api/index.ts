@@ -46,7 +46,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy") {
     return [clean];
   }
 
@@ -116,23 +116,36 @@ async function callProviderApi(
 ): Promise<{ ok: boolean; reason: string; id?: string; body: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
   let payload = { ...data };
-  if (handlerType === "bossu") {
-    if (endpoint === "status") {
-      payload = {
-        action: "order_status",
-        order_id: String(data.transaction_id || data.reference || data.order_id || ""),
-        api_key: provider.api_key,
-      };
-    } else {
-      payload = {
-        action: "create_order",
-        network: String(data.networkRaw || data.network || "").toLowerCase(),
-        package_key: String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase(),
-        recipient_phone: String(data.recipient || data.phoneNumber || data.recipient_phone || ""),
-        external_reference: String(data.orderReference || data.reference || ""),
-        callback_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/bossu-webhook`,
-        api_key: provider.api_key,
-      };
+  if (handlerType === "superbdatafy") {
+    if (endpoint !== "status") {
+      const network = String(data.networkRaw || data.network || "").toLowerCase();
+      let sbNetwork = network;
+      if (network === "yello") sbNetwork = "mtn";
+      if (network === "vod" || network === "vodafone") sbNetwork = "telecel";
+      if (network === "airteltigo" || network === "at_premium") sbNetwork = "at";
+      
+      const pkgSize = String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase();
+      const phone = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
+
+      try {
+        const bundleRes = await fetch(`${provider.base_url}/bundles?network=${sbNetwork}`, {
+          headers: { "Authorization": `Bearer ${provider.api_key}`, "Accept": "application/json" }
+        });
+        if (bundleRes.ok) {
+           const bData = await bundleRes.json();
+           const bundles = bData?.bundles || [];
+           const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgSize);
+           if (match) {
+             payload = { bundle_id: match.id, phone_number: phone };
+           } else {
+             return { ok: false, reason: `SuperbDatafy: Bundle ${pkgSize} not found for ${sbNetwork}`, body: "" };
+           }
+        } else {
+           return { ok: false, reason: `SuperbDatafy: Failed to fetch bundles (HTTP ${bundleRes.status})`, body: "" };
+        }
+      } catch (e: any) {
+         return { ok: false, reason: `SuperbDatafy: Network error fetching bundles - ${e.message}`, body: "" };
+      }
     }
   } else if (handlerType === "datahub" && endpoint === "status") {
     payload = {
@@ -159,10 +172,22 @@ async function callProviderApi(
         headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
         headers["User-Agent"] = "SwiftDataGH/2.0";
 
-        const res = await fetch(url, {
-          method: "POST",
+        const isGet = (handlerType === "datamart" && endpoint === "status") || (handlerType === "superbdatafy" && endpoint === "status");
+        
+        let reqUrl = url;
+        if (handlerType === "superbdatafy") {
+          if (endpoint === "status") {
+             const ref = String(data.transaction_id || data.reference || data.order_id || "");
+             reqUrl = `${url}/transaction/${ref}`;
+          } else {
+             reqUrl = `${url}/buy-data`;
+          }
+        }
+
+        const res = await fetch(reqUrl, {
+          method: isGet ? "GET" : "POST",
           headers,
-          body: JSON.stringify(payload),
+          body: isGet ? undefined : JSON.stringify(payload),
           signal: ctrl.signal,
         });
         clearTimeout(tid);
@@ -183,8 +208,8 @@ async function callProviderApi(
             const p = JSON.parse(text);
             const s = String(p?.status ?? p?.success ?? "").toLowerCase();
             const ok = p?.success === true || s === "success" || s === "true" || p?.status === true || s === "completed" || s === "pending";
-            const pStatus = String(p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
-            if (ok) return { ok: true, reason: "", body: lastBody, id: String(p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
+            const pStatus = String(p?.transaction?.status ?? p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
+            if (ok) return { ok: true, reason: "", body: lastBody, id: String(p?.transaction?.reference ?? p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
             lastReason = parsedMsg || "Provider rejected the order";
           } catch { return { ok: true, reason: "", body: lastBody, status: "" }; }
         } else {
