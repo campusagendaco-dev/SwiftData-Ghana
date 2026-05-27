@@ -95,12 +95,19 @@ const AdminUsers = () => {
       const parentIds = [...new Set(rows.filter(r => r.parent_agent_id).map(r => r.parent_agent_id as string))];
       const [parentsRes, salesRes, walletsRes, mfaRes] = await Promise.all([
         parentIds.length > 0 ? supabase.from("profiles").select("user_id, full_name").in("user_id", parentIds) : Promise.resolve({ data: [] }),
-        supabase.from("user_sales_stats").select("user_id, total_sales_volume").in("user_id", userIds),
+        supabase.from("orders").select("agent_id, amount").eq("status", "fulfilled").in("agent_id", userIds),
         supabase.from("wallets").select("agent_id, balance, api_balance").in("agent_id", userIds),
         Promise.resolve(supabase.from("user_mfa_status").select("user_id, has_mfa").in("user_id", userIds)).catch(() => ({ data: [] })),
       ]);
       const parentMap = new Map((parentsRes.data || []).map((p: any) => [p.user_id, p.full_name]));
-      const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s.total_sales_volume]));
+      
+      const salesMap = new Map();
+      (salesRes.data || []).forEach((s: any) => {
+        if (s.agent_id && s.amount) {
+          salesMap.set(s.agent_id, (salesMap.get(s.agent_id) || 0) + Number(s.amount));
+        }
+      });
+      
       const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, w]));
       const mfaMap = new Map((mfaRes?.data || []).map((m: any) => [m.user_id, m.has_mfa]));
       rows.forEach(r => {
