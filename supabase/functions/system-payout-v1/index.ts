@@ -411,8 +411,8 @@ serve(async (req: Request) => {
 
           if (findError) throw findError;
           if (!profile) {
-             return new Response(JSON.stringify({ error: `User ${email} not found in profiles.` }), {
-               status: 404,
+             return new Response(JSON.stringify({ error: `User ${email} not found in profiles. Please check the spelling.` }), {
+               status: 200,
                headers: { ...corsHeaders, "Content-Type": "application/json" },
              });
           }

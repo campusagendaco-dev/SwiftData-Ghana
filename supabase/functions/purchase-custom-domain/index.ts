@@ -137,6 +137,10 @@ serve(async (req: Request) => {
       let available = !existingStore && !existingPurchase;
 
       // Integrate GoDaddy live availability check
+      // BYPASS: GoDaddy now requires 50+ domains to access the Availability API.
+      // We will skip this check and attempt to blindly purchase it later. 
+      // If taken, the purchase API will fail and we will catch it there.
+      /*
       if (available && !isSimulation) {
         try {
           console.log(`[GODADDY_CHECK] Querying GoDaddy for ${domainInput}...`);
@@ -164,6 +168,7 @@ serve(async (req: Request) => {
           });
         }
       }
+      */
 
       return new Response(JSON.stringify({
         domain: domainInput,
