@@ -1835,7 +1835,7 @@ const AdminSettings = () => {
                             <option value="standard">Standard</option>
                             <option value="datamart">DataMart GH</option>
                             <option value="datahub">DataHub Ghana</option>
-                            <option value="bossu">Bossu Data Hub</option>
+                            <option value="superbdatafy">SuperbDatafy</option>
                           </select>
                         </div>
                         <div className="space-y-1">

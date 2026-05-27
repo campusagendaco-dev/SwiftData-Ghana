@@ -203,36 +203,33 @@ serve(async (req) => {
       } else {
         console.warn(`[sync:datahub] Balance fetch failed: ${balanceRes.status}`);
       }
-    } else if (handlerType === "bossu") {
-      console.log(`Syncing Bossu Data Hub provider: ${provider.name}`);
+    } else if (handlerType === "superbdatafy") {
+      console.log(`Syncing SuperbDatafy provider: ${provider.name}`);
 
       const allPackages = [];
-      const networks = ["mtn", "telecel", "airteltigo"];
+      const networks = ["mtn", "telecel", "at"];
 
       const parseCapacity = (packageSize: string): number => {
         if (!packageSize) return 0;
-        const match = packageSize.replace(/\s+/g, "").toLowerCase().match(/(\d+(?:\.\d+)?)\s*(gb|mb)/);
+        const match = packageSize.toString().replace(/\s+/g, "").toLowerCase().match(/(\d+(?:\.\d+)?)\s*(gb|mb)/);
         if (match) {
           const val = parseFloat(match[1]);
           const unit = match[2];
           return unit === "gb" ? val : val / 1024;
         }
-        const fallbackMatch = packageSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+        const fallbackMatch = packageSize.toString().replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
         return fallbackMatch ? parseFloat(fallbackMatch[1]) : 0;
       };
 
       // 1. Sync Packages
       for (const net of networks) {
         try {
-          const res = await fetch(baseUrl, {
-            method: "POST",
+          const res = await fetch(`${baseUrl}/bundles?network=${net}`, {
+            method: "GET",
             headers: {
-              "Content-Type": "application/json",
               "Accept": "application/json",
-              "X-API-Key": apiKey,
               "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({ action: "packages", network: net, api_key: apiKey })
+            }
           });
 
           if (!res.ok) {
@@ -240,29 +237,28 @@ serve(async (req) => {
             throw new Error(`HTTP ${res.status}: ${bodyText || res.statusText}`);
           }
           const result = await res.json();
-          if (result.success === false || result.status === "error" || result.message === "Access denied" || result.message === "Unauthorized") {
-            throw new Error(result.message || "API error");
-          }
-          const pkgs = result.packages || result.data || [];
+          const pkgs = result.bundles || result.data || result || [];
+          
           if (Array.isArray(pkgs)) {
             for (const pkg of pkgs) {
               const dbNetwork = net === "mtn" ? "MTN" : (net === "telecel" ? "Telecel" : "AirtelTigo");
-              const capacityGb = Number(pkg.capacity || parseCapacity(pkg.package_name || pkg.package_key || ""));
+              const capacityStr = pkg.capacity || pkg.name || pkg.bundle_name || "";
+              const capacityGb = Number(parseCapacity(capacityStr));
               
               allPackages.push({
                 provider_id: provider.id,
                 network: dbNetwork,
-                package_name: pkg.package_name || pkg.name || `${pkg.package_key || pkg.id}`,
+                package_name: capacityStr || `${capacityGb}GB`,
                 capacity_gb: capacityGb,
-                cost_price: Number(pkg.price || pkg.cost || 0),
-                external_id: String(pkg.package_key || pkg.id || `${dbNetwork}_${capacityGb}`),
+                cost_price: Number(pkg.price || pkg.amount || pkg.cost || 0),
+                external_id: String(pkg.id || pkg.bundle_id),
                 raw_data: pkg,
                 is_active: true
               });
             }
           }
         } catch (err: any) {
-          console.error(`[sync:bossu] Error fetching packages for ${net}:`, err);
+          console.error(`[sync:superbdatafy] Error fetching packages for ${net}:`, err);
           throw err;
         }
       }
@@ -271,39 +267,31 @@ serve(async (req) => {
         const { error: upsertError } = await supabaseAdmin
           .from("provider_packages")
           .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
-        if (upsertError) console.error("[sync:bossu] Package upsert error:", upsertError);
+        if (upsertError) console.error("[sync:superbdatafy] Package upsert error:", upsertError);
         packagesSynced = allPackages.length;
-        console.log(`[sync:bossu] Synced ${packagesSynced} packages`);
+        console.log(`[sync:superbdatafy] Synced ${packagesSynced} packages`);
       }
 
       // 2. Sync Balance
       try {
-        const balanceRes = await fetch(baseUrl, {
-          method: "POST",
+        const balanceRes = await fetch(`${baseUrl}/wallet`, {
+          method: "GET",
           headers: {
-            "Content-Type": "application/json",
             "Accept": "application/json",
-            "X-API-Key": apiKey,
             "Authorization": `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({ action: "balance", api_key: apiKey })
+          }
         });
 
-        if (!balanceRes.ok) {
-          const bText = await balanceRes.text().catch(() => "");
-          throw new Error(`HTTP ${balanceRes.status}: ${bText || balanceRes.statusText}`);
-        }
-        const bResult = await balanceRes.json();
-        if (bResult.success === false || bResult.status === "error" || bResult.message === "Access denied" || bResult.message === "Unauthorized") {
-          throw new Error(bResult.message || "API error");
-        }
-        const rawBal = bResult.balance ?? bResult.data?.balance;
-        if (rawBal !== undefined) {
-          balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
-          console.log(`[sync:bossu] Balance: GHS ${balance}`);
+        if (balanceRes.ok) {
+          const bResult = await balanceRes.json();
+          const rawBal = bResult.balance ?? bResult.data?.balance ?? bResult.wallet_balance;
+          if (rawBal !== undefined) {
+            balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
+            console.log(`[sync:superbdatafy] Balance: GHS ${balance}`);
+          }
         }
       } catch (err) {
-        console.error("[sync:bossu] Balance fetch error:", err);
+        console.error("[sync:superbdatafy] Balance fetch error:", err);
       }
     } else if (handlerType === "spendless") {
       console.log(`Syncing Spendless provider: ${provider.name}`);
