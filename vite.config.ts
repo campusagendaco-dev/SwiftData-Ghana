@@ -60,18 +60,6 @@ export default defineConfig(({ mode }) => ({
               },
             },
           },
-          {
-            urlPattern: /^https:\/\/lsocdjpflecduumopijn\.supabase\.co\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-api-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24, // 1 day
-              },
-              networkTimeoutSeconds: 15,
-            },
-          },
         ],
       },
     }),

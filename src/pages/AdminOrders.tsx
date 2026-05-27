@@ -108,7 +108,7 @@ const AdminOrders = () => {
 
     let q = supabase
       .from("orders")
-      .select("*", { count: "exact" })
+      .select("*", { count: "estimated" })
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -177,7 +177,7 @@ const AdminOrders = () => {
 
     setAllOrders(enriched);
     setLoading(false);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, profiles, toast]);
+  }, [page, search, statusFilter, networkFilter, orderTypeFilter, toast]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchOrders(), 300);

@@ -1,0 +1,7507 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Korba Xchange - API Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro%7CSource+Sans+Pro:400,700" rel="stylesheet" type="text/css">
+    <link href="https://netdna.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <link rel="icon" type="image/png" href="https://s3-us-west-2.amazonaws.com/korba-whitelabel/assets/img/favicon.png" />
+    <style>
+    ul.resp-tabs-list, p {
+        margin: 0px;
+        padding: 0px;
+    }
+
+    .resp-tabs-list li {
+        font-weight: 600;
+        font-size: 13px;
+        display: inline-block;
+        padding: 13px 15px;
+        margin: 0;
+        list-style: none;
+        cursor: pointer;
+        float: left;
+    }
+
+    .resp-tabs-container {
+        padding: 0px;
+        background-color: #fff;
+        clear: left;
+    }
+
+    h2.resp-accordion {
+        cursor: pointer;
+        padding: 5px;
+        display: none;
+    }
+
+    .resp-tab-content {
+        display: none;
+        padding: 15px;
+    }
+
+    .resp-tab-active {
+        border: 1px solid #c1c1c1;
+        border-bottom: none;
+        margin-bottom: -1px !important;
+        padding: 12px 14px 14px 14px !important;
+    }
+
+    .resp-tab-active {
+        border-bottom: none;
+        background-color: #fff;
+    }
+
+    .resp-content-active, .resp-accordion-active {
+        display: block;
+    }
+
+    .resp-tab-content {
+        border: 1px solid #c1c1c1;
+    }
+
+    h2.resp-accordion {
+        font-size: 13px;
+        border: 1px solid #c1c1c1;
+        border-top: 0px solid #c1c1c1;
+        margin: 0px;
+        padding: 10px 15px;
+    }
+
+    h2.resp-tab-active {
+        border-bottom: 0px solid #c1c1c1 !important;
+        margin-bottom: 0px !important;
+        padding: 10px 15px !important;
+    }
+
+    h2.resp-tab-title:last-child {
+        border-bottom: 12px solid #c1c1c1 !important;
+        background: blue;
+    }
+    /*-----------Vertical tabs-----------*/
+    .resp-vtabs ul.resp-tabs-list {
+        float: left;
+        width: 30%;
+    }
+
+    .resp-vtabs .resp-tabs-list li {
+        display: block;
+        padding: 15px 15px !important;
+        margin: 0;
+        cursor: pointer;
+        float: none;
+    }
+
+    .resp-vtabs .resp-tabs-container {
+        padding: 0px;
+        background-color: #fff;
+        border: 1px solid #c1c1c1;
+        float: left;
+        width: 68%;
+        min-height: 250px;
+        border-radius: 4px;
+        clear: none;
+    }
+
+    .resp-vtabs .resp-tab-content {
+        border: none;
+    }
+
+    .resp-vtabs li.resp-tab-active {
+        border: 1px solid #c1c1c1;
+        border-right: none;
+        background-color: #fff;
+        position: relative;
+        z-index: 1;
+        margin-right: -1px !important;
+        padding: 14px 15px 15px 14px !important;
+    }
+
+    .resp-arrow {
+        width: 0;
+        height: 0;
+        float: right;
+        margin-top: 3px;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-top: 12px solid #c1c1c1;
+    }
+
+    h2.resp-tab-active span.resp-arrow {
+        border: none;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-bottom: 12px solid #9B9797;
+    }
+
+    /*-----------Accordion styles-----------*/
+    h2.resp-tab-active {
+        background: #DBDBDB !important;
+    }
+    .resp-easy-accordion  h2.resp-accordion {
+        display: block;
+    }
+    .resp-easy-accordion .resp-tab-content {
+        border: 1px solid #c1c1c1;
+    }
+
+    .resp-easy-accordion .resp-tab-content:last-child {
+        border-bottom: 1px solid #c1c1c1 !important;
+    }
+
+    .resp-jfit {
+        width: 100%;
+        margin: 0px;
+    }
+
+    .resp-tab-content-active {
+        display: block;
+    }
+
+    h2.resp-accordion:first-child {
+        border-top: 1px solid #c1c1c1 !important;
+    }
+
+    /*Here your can change the breakpoint to set the accordion, when screen resolution changed*/
+    @media only screen and (max-width: 768px) {
+        ul.resp-tabs-list {
+            display: none;
+        }
+
+        h2.resp-accordion {
+            display: block;
+        }
+
+        .resp-vtabs .resp-tab-content {
+            border: 1px solid #C1C1C1;
+        }
+
+        .resp-vtabs .resp-tabs-container {
+            border: none;
+            float: none;
+            width: 100%;
+            min-height: initial;
+            clear: none;
+        }
+        .resp-accordion-closed {
+            display:none !important;
+        }
+        .resp-vtabs .resp-tab-content:last-child {
+            border-bottom: 1px solid #c1c1c1 !important;
+        }
+    }
+/* ============================================================
+ * Eric Meyer's Reset CSS v2.0 (http://meyerweb.com/eric/tools/css/reset/)
+ * http://cssreset.com
+ * ============================================================ */
+ html, body, div, span, applet, object, iframe, h1, h2, h3, h4, h5, h6, p,
+ blockquote, pre, a, abbr, acronym, address, big, cite, code, del, dfn, em, img,
+ ins, kbd, q, s, samp, small, strike, strong, sub, sup, tt, var, b, u, i,
+ center, dl, dt, dd, ol, ul, li, fieldset, form, label, legend, table, caption,
+ tbody, tfoot, thead, tr, th, td, article, aside, canvas, details, embed,
+ figure, figcaption, footer, header, hgroup, menu, nav, output, ruby, section,
+ summary, time, mark, audio, video {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: 100%;
+    font: inherit;
+    vertical-align: baseline;
+}
+
+/* HTML5 display-role reset for older browsers */
+article, aside, details, figcaption, figure,
+footer, header, hgroup, menu, nav, section {
+    display: block;
+}
+
+body {
+    line-height: 1;
+}
+
+ol, ul {
+    list-style: none;
+}
+
+blockquote, q {
+    quotes: none;
+}
+
+blockquote:before, blockquote:after,
+q:before, q:after {
+    content: "";
+    content: none;
+}
+
+table {
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+
+/* ============================================================
+ * General
+ * ============================================================ */
+ body {
+    margin: 0;
+    padding: 0;
+    background: #fcfcfc;
+    background: #f5f5f5;
+}
+
+body, div, p, th, td, li {
+    color: #3a3a3a;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 14px;
+    line-height: 20px;
+}
+
+a {
+    color: #0088cc;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+p {
+    margin-bottom: 6px;
+}
+
+i {
+    font-style: italic;
+}
+
+
+img.with-border {
+    border: #bbbbbb 1px solid;
+}
+
+ul {
+    margin: 0;
+}
+
+h1, h2, h3 {
+    font-family: "Source Sans Pro", sans-serif;
+    line-height: 1em;
+}
+
+table {
+    margin: 12px 0;
+    width: 100%;
+}
+
+th {
+    padding: 4px 8px;
+    background: #F5F5F5;
+    border: 1px solid #E0E0E0;
+    font-family: "Source Sans Pro",sans-serif;
+    font-weight: bold;
+    text-align: left;
+}
+
+td {
+    border: 1px solid #E0E0E0;
+    padding: 12px 8px;
+    vertical-align: top;
+    text-align: left;
+}
+
+td.code {
+    font-family: "Source Code Pro";
+    font-size: 14px;
+    width: 150px;
+}
+
+code {
+    display: inline-block;
+    margin: 0 0 2px 0;
+    padding: 0 4px;
+    background: #F8F8F8;
+    border: 1px solid #E0E0E0;
+    border-radius: 3px 3px 3px 3px;
+    color: #DD1144;
+    font-family: "Source Code Pro";
+    font-size: 14px;
+    white-space: pre;
+}
+
+code > code {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    color: #ffffff;
+}
+
+code > code.important {
+    background: #595b66;
+}
+
+pre > code {
+    display: block;
+    margin: 12px 0;
+    padding: 12px 20px;
+    background: #292b36;
+    border: none;
+    border-radius: 8px;
+    color: #ffffff;
+    overflow: auto;
+}
+
+pre.example > code {
+    background: #f5f5f5;
+    border: #e0e0e0 1px solid;
+    color: #3a3a3a;
+}
+
+pre.example > code > code {
+    color: inherit;
+}
+
+strong {
+    font-weight: bold;
+}
+
+/* ============================================================
+ * Container
+ * ============================================================ */
+ .container {
+    width: 90%;
+    margin-left: 10%;
+    margin-right: 10%;
+    background: #f5f5f5;
+    background: #fcfcfc;
+}
+
+.container:before,
+.container:after {
+    content: "";
+    display: table;
+    line-height: 0;
+}
+
+.container:after {
+    clear: both;
+}
+
+/* ============================================================
+ * Alignment
+ * ============================================================ */
+ .clearfix {
+    *zoom: 1;
+}
+
+.clearfix:before,
+.clearfix:after {
+    display: table;
+    line-height: 0;
+    content: "";
+}
+
+.clearfix:after {
+    clear: both;
+}
+
+.pull-right {
+    float: right;
+}
+
+.pull-left {
+    float: left;
+}
+
+/* ============================================================
+ * Span
+ * ============================================================ */
+ .span1 { width: 72px; }
+ .span2 { width: 144px; }
+ .span3 { width: 216px; }
+ .span4 { width: 288px; }
+ .span5 { width: 360px; }
+ .span6 { width: 432px; }
+ .span7 { width: 504px; }
+ .span8 { width: 576px; }
+ .span9 { width: 648px; }
+ .span10 { width: 720px; }
+ .span11 { width: 792px; }
+ .span12 { width: 864px; }
+
+/* ============================================================
+ * Different Elements
+ * ============================================================ */
+ #forkme img {
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+@media all and (max-width:1200px) {
+    #forkme img {
+        top: 52px;
+    }
+}
+
+@media all and (max-width:930px) {
+    #forkme img {
+        display: none;
+    }
+}
+
+.nowrap {
+    white-space: nowrap;
+}
+
+.label {
+    display: inline-block;
+    padding: 2px 4px;
+    background-color: #999999;
+    border-radius: 3px 3px 3px 3px;
+    color: #FFFFFF;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 14px;
+    text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.25);
+    vertical-align: baseline;
+    white-space: nowrap;
+}
+
+.label-optional {
+    float: right;
+}
+
+/* ============================================================
+ * Nav: Top
+ * ============================================================ */
+ nav.nav-top {
+    position: relative;
+    position: fixed;
+    width: 100%;
+    z-Index: 1;
+    background: #ED1944;
+    min-height: 52px;
+}
+
+nav.nav-top ul {
+    width: 940px;
+    margin: 0 auto;
+    text-align: right;
+}
+
+nav.nav-top ul > li {
+    display: inline-block;
+}
+
+nav.nav-top ul > li:last-child {
+    padding-right: 22px;
+}
+
+nav.nav-top ul > li > a {
+    display: block;
+    padding: 18px 0px;
+    color: #ffffff;
+    font-family: "Source Sans Pro", sans-serif;
+    font-size: 17px;
+    text-transform: uppercase;
+    text-decoration: none;
+    line-height: 1em;
+}
+
+nav.nav-top ul > li > a:hover {
+    background: #0074ae;
+    text-decoration: none;
+}
+
+/* ============================================================
+ * Header
+ * ============================================================ */
+ header {
+    margin: 52px 38px 40px 38px;
+}
+
+header:before,
+header:after {
+    content: "";
+    display: table;
+    line-height: 0;
+}
+
+header:after {
+    clear: both;
+}
+
+header h1 {
+    margin: 28px 0 0 2px;
+    color: #0088cc;
+    font-size: 55px;
+    font-weight: bold;
+    line-height: 1em;
+
+
+}
+
+header h2 {
+    margin: -23px 0 10px 0;
+    color: #b7b7b7;
+    font-size: 27px;
+    font-weight: bold;
+    line-height: 1em;
+    
+}
+
+header h3 {
+    margin: 0px 0 20px 0;
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+header p {
+    font-weight: bold;
+}
+
+/* ============================================================
+ * Aside
+ * ============================================================ */
+ aside {
+    float: left;
+    width: 220px;
+    margin-right: 20px;
+    display: block;
+    min-height: 1px;
+}
+
+/* ============================================================
+ * Nav: Main
+ * ============================================================ */
+ nav.nav-main ul > li > a {
+    display: block;
+    padding: 5px 12px 5px 12px;
+    color: #3a3a3a;
+    line-height: 1.4em;
+    text-decoration: none;
+}
+
+nav.nav-main ul > li.nav-header > a {
+    margin-top: 18px;
+    padding: 6px 2px 6px 2px;
+    color: #5f6469;
+    font-size: 18px;
+    line-height: 1em;
+}
+
+nav.nav-main ul > li.nav-header:first-child > a {
+    margin-top: 0;
+}
+
+nav.nav-main ul > li.deprecated > a {
+    color: #808080;
+    font-style: italic;
+}
+
+nav.nav-main ul > li > a:hover {
+    background: #0088cc;
+    color: #ffffff;
+    text-decoration: none;
+}
+
+/* ============================================================
+ * Main
+ * ============================================================ */
+ #main {
+    margin: 0 38px 0 38px;
+}
+
+#main:before,
+#main:after {
+    content: "";
+    display: table;
+    line-height: 0;
+}
+
+#main:after {
+    clear: both;
+}
+
+/* ============================================================
+ * Content
+ * ============================================================ */
+ #content {
+    float: left;
+    display: block;
+    width: 720px;
+    text-align:justify;
+}
+
+#content h1 {
+    margin: 60px 0 20px 0;
+    color: #5f6469;
+    font-size: 28px;
+    font-weight: bold;
+    line-height: 1em;
+}
+
+#content section:first-child h1 {
+    margin-top: 0;
+}
+
+#content h2 {
+    margin: 40px 0 20px 0;
+    color: #5f6469;
+    font-size: 24px;
+    font-weight: bold;
+    line-height: 1em;
+}
+
+#content h3 {
+    margin: 18px 0 10px 0;
+    color: #808080;
+    font-size: 20px;
+    font-weight: normal;
+    line-height: 1em;
+}
+
+/* nth-child 1=h1, 2=article */
+#content section>:nth-child(2) h2 {
+    margin-top: 0;
+}
+
+#content ul {
+    list-style: disc;
+    margin: 8px 0 8px 20px;
+}
+
+#content .similar-operation {
+    font-style: italic;
+}
+
+#content .deprecated {
+    display: inline-block;
+    color: #ffffff;
+    background-color: #dc0000;
+    margin: 0;
+    padding: 2px 4px;
+    text-transform: uppercase;
+}
+
+/* ============================================================
+ * Footer
+ * ============================================================ */
+ footer {
+    height: 20px;
+    margin-top: 60px;
+    padding: 10px 38px;
+    background-color: #7a7a7a !important;
+    color: #ffffff;
+    text-align: center;
+}
+
+footer a {
+    color: #ffffff;
+    text-decoration: underline;
+}
+
+/* ============================================================
+ * Plugin: Easy Responsive Tabs
+ * ============================================================ */
+ .resp-tabs-container {
+    margin-bottom: 12px;
+}
+
+.resp-tabs-list li {
+    padding: 6px 10px;
+}
+
+.resp-tab-active {
+    padding: 5px 9px 7px 10px !important;
+    background: #f5f5f5;
+}
+
+.resp-tab-content {
+    padding: 0;
+    margin: 0;
+    background: #f5f5f5;
+    color: #3a3a3a;
+}
+
+.resp-tabs-container pre > code {
+    margin: 0 !important;
+}
+
+.resp-tabs-container pre.example > code {
+    border: none;
+}
+
+h2.resp-accordion {
+    color: #000000 !important;
+    text-shadow: none;
+    font-weight: normal;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ============================================================
+ * Plugin: Carbon Ads
+ * ============================================================ */
+ #carbonads { 
+    max-width: 130px; 
+    padding: 12px 12px 8px 12px;
+    border: 1px solid #ccc; 
+    display: inline-block;
+}
+
+.carbon-text { 
+    display: block; 
+    width: 130px; 
+    padding: 8px 0; 
+    font-size: 0.9em;
+    line-height: 1.2em;
+    color: #3a3a3a;
+}
+
+.carbon-poweredby { 
+    font-size: 0.8em;
+    color: #808080;
+}
+
+</style>
+
+
+</head>
+<body>
+
+    <nav class="nav-top">
+
+        <ul>        
+      
+
+
+        </ul>
+    </nav>
+
+    <div class="container">
+
+        <header>
+            <h1><img src="https://korba-whitelabel.s3.amazonaws.com/assets/img/logo.png" alt="logo" style="width: 42%; margin-left:-2%" class="img-responsive"></h1>
+            <h2>API Documentation</h2>
+
+
+        </header>
+
+        <div id="main">
+            <aside>
+                <nav class="nav-main">
+                    <ul>                
+                        <li class="nav-header"><a href="#getting-started">Getting started</a></li>
+                        <li id="nav-main-params" class="nav-header"><a href="#">Services</a></li>
+                        <li><a href="#authentication"><i class="fa fa-caret-right" aria-hidden="true"></i> Authentication</a></li>
+                        <li><a href="#environments"><i class="fa fa-caret-right" aria-hidden="true"></i> Integration Modes</a></li> 
+                        <li><a href="#whitelist"><i class="fa fa-caret-right" aria-hidden="true"></i> IP Whitelisting</a></li> 
+                        <li><a href="#whitelist_numbers"><i class="fa fa-caret-right" aria-hidden="true"></i> Number Whitelisting</a></li>                       
+                        <li><a href="#collections"><i class="fa fa-caret-right" aria-hidden="true"></i> Collections</a></li>
+                        <li><a href="#payments"><i class="fa fa-caret-right" aria-hidden="true"></i> Disbursements / Remittance</a></li>
+                        <li><a href="#topup"><i class="fa fa-caret-right" aria-hidden="true"></i> Airtime Topup</a></li>
+                        <!-- <li><a href="#ecgpostpaid"><i class="fa fa-caret-right" aria-hidden="true"></i> ECG Post Paid</a></li>
+                        <li><a href="#ecgprepaid"><i class="fa fa-caret-right" aria-hidden="true"></i> ECG Pre-Paid</a></li>
+	                    <li><a href="#ecgprepaidnpostpaid"><i class="fa fa-caret-right" aria-hidden="true"></i> ECG Prepaid & Postpaid</a></li> -->
+                        <li><a href="#ussdotp"><i class="fa fa-caret-right" aria-hidden="true"></i>USSD OTP</a></li>
+                                <li><a href="#sms"><i class="fa fa-caret-right" aria-hidden="true"></i>SMS</a></li>
+                        <li><a href="#ecgdirect"><i class="fa fa-caret-right" aria-hidden="true"></i> ECG Direct</a></li>
+                        <li><a href="#gwcl"><i class="fa fa-caret-right" aria-hidden="true"></i> GWCL</a></li>
+                        <li><a href="#mtndata"><i class="fa fa-caret-right" aria-hidden="true"></i> MTN Data</a></li>
+                        <li><a href="#mtnfibre"><i class="fa fa-caret-right" aria-hidden="true"></i> MTN FIbre</a></li>
+                        <li><a href="#airteltigodata"><i class="fa fa-caret-right" aria-hidden="true"></i> Airtel Tigo Data</a></li>
+                        <li><a href="#vodafonedata"><i class="fa fa-caret-right" aria-hidden="true"></i> Vodafone Data</a></li>
+                        <li><a href="#mtnrecurring"><i class="fa fa-caret-right" aria-hidden="true"></i> MTN Direct Debit Order</a></li>
+                        <li><a href="#etranzact"><i class="fa fa-caret-right" aria-hidden="true"></i> Utilities </a></li>
+                        <li><a href="#transaction_status"><i class="fa fa-caret-right" aria-hidden="true"></i> Transaction Status</a></li>
+                        <li><a href="#xcheckout"><i class="fa fa-caret-right" aria-hidden="true"></i> Korba XCheckout</a></li>
+                         <li><a href="#ovabalance"><i class="fa fa-caret-right" aria-hidden="true"></i> OVA Balance</a></li>
+ <li><a href="#client_transactions"><i class="fa fa-caret-right" aria-hidden="true"></i>Transactions</a></li>
+  
+                    </ul>
+                </nav>
+            </aside>
+            <div id="content" role="main">
+
+<!--
+ /* ============================================================
+  * Demo
+  * ============================================================ */
+-->
+
+<!--
+ /* ============================================================
+  * Getting started
+  * ============================================================ */
+-->
+<section id="getting-started">
+    <h1>Getting started</h1>
+
+    <article id="preface">
+        <h2>Preface</h2>
+        <p>Welcome to Korba Xchange REST API Documentation which will help you integrate Korba Xchange platform into your application.<br><br>
+
+        Once you are registered you will be able to configure your account and operate transactions at <a target='_blank' href='https://xchange.korba365.com/'>https://xchange.korba365.com</a>
+
+        Korba Xchange REST API exposes the following services: Collections, Payments, Airtime Topup Distribution, Internet Data Distribution. These Services are enabled on your account based on your account type</p>
+
+
+    </article>
+
+    <article id="install">
+        <h2>Base URL</h2>
+        <p>All API requests must have Content-Type header as <code>application/json</code> and must use the base URL below.</p>
+        <pre><code>https://xchange.korba365.com/api/v1.0/</code></pre>
+    </article>
+
+    <article id="authentication">
+        <h2>Authentication</h2>
+        <p>The API uses a Hash-based Message Authentication Code (HMAC) which is a mechanism for calculating a message authentication code involving a hash function in combination with a secret key with a hash algorithm.<br><br>
+
+
+
+            You will need the <code>secret_key</code> and <code>client_key</code> which are both accessible on the client dashboard under <strong>API/Website Creds</strong>. Please make sure these credentials are kept secret. Regenerate new ones once it is compromised.<br><br>
+
+
+
+
+The HMAC signature is calculated using the <code> secret key </code>, a <code>message</code> and applying SHA-256 encryption algorithm . The <code>message</code> comprises of the request body which is converted to a string. The keys and values are separated by an "=", and each key-value pair is separated by an "&".  The request body must be sorted by the key in Ascending order first before generating the message. The example below illustrates above rules:
+<br><br>
+<p> Assuming your have the params below as your request body</p>
+ <pre><code>{
+    "customer_number": "0204000000",
+    "amount": 15.0,
+    "network_code": "MTN",
+    "transaction_id": "X4569",
+}</code></pre>
+<p>The message used for the calculation should be:
+ <br><br>
+<code>amount=15.0&customer_number=0204000000&network_code=MTN&transaction_id=X4569</code><br><br>
+
+
+               <strong>Note that the keys of the request have been sorted in ascending order. This must be followed strictly else the message string will be different</strong></p><br>
+
+               <p> The formula for calculating the signature is as shown below</p> <br>
+               <pre><code>HMAC Signature = HMAC(secret_key, message, SHA256).hexDecode</code></pre>
+               <br><br>
+               <p><strong>Note the above formula is language agnostic. Implementation varies based on the programming language you use.</strong><br><br>
+                You can use this <a href='https://www.freeformatter.com/hmac-generator.html'>online HMAC tester</a> to test your implementation. Note that the encryption algorithm is SHA-256
+
+                <br>
+
+                The calculated HMAC signature together with the <code>client_key</code> is used in the Authorization header as shown below </p><br> 
+
+                <pre><code>Authorization: HMAC {client_key}:{hmac_signature} </code></pre><br><br>
+
+                <p> Assuming your <code>client_key</code> is <strong>BDAKEY1234</strong> and you HMAC signature is <strong>bd93f30</strong> . A CURL request of the authentication is shown below</p>
+                <pre><code> curl -X POST -H "Authorization: HMAC BDAKEY1234:bd93f30" -H "Content-Type: application/json" http://xchange.korba365.com/api/v1.0/collect/</code></pre>
+
+
+                <p>  <strong> NB:</strong> The signature is calculated on the server based on the request received. The authenticity of the request is always guaranteed. If a party in the middle fiddles with the API call either for malicious reasons, or bug in a intermediary proxy that drops some important headers, the signature calculated on the server will not match because the request body used to calculate the signature before the request was sent has been altered.</p>
+            </article>
+
+
+            <article id="environments">
+                <h2>Integration Modes</h2>
+
+                <p><strong>Sandbox Mode</strong></p>
+                 <p>By default, your account will be in sandbox mode. To begin testing in sandbox mode, whitelist the number(s) you would like to use by navigating to <strong>Integration Mode</strong> on the client dashboard</p><br/>
+
+                <p> API request's will be accepted only from your whitelisted IP's. You can whitelist your IP's on the client dashboard</p>
+                <p><strong>Production Mode</strong></p>
+                <p>To switch from sandbox to production mode, navigate to <strong>Integration Mode</strong> and <strong>Request Production Access</strong> on the client dashboard</p>
+
+            </article>
+
+
+            <article id="whitelist">
+                <h2>IP Whitelisting</h2>
+                 <p>API request's will be accepted only from your whitelisted IP's. You can whitelist your IP's on the client dashboard by navigating to <strong>API/Website Creds</strong> and select <strong>Whitelisted IP(S)</strong> Tab</p>
+            </article>
+
+
+            <article id="whitelist_numbers">
+                <h2>Account Numbers Whitelisting (Sandbox mode)</h2>
+                 <p>In sandbox mode, API request's will be accepted only from your whitelisted account numbers (phone numbers or bank account numbers). You can whitelist your number on the client dashboard by navigating to <strong>Integration mode</strong> and select <strong>Add Number</strong> Tab</p>
+            </article>
+
+
+            <article id="collections">
+                <h2>Collections API</h2>
+                <p>The collections API is used accept or receive money and credited to your Partner Wallet (OVA).</p>
+                <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+                <pre><code>https://xchange.korba365.com/api/v1.0/collect/</code></pre>
+
+                <p>POST Parameters:</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="code nowrap">customer_number</td>
+
+                            <td>
+                                MANDATORY customer's mobile number.<br><br> This parameter is OPTIONAL only when a card transaction is being done. 
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="code">amount</td>
+
+                            <td>
+                             MANDATORY Amount to be debited from customers account
+                         </td>
+                     </tr>
+
+                     <tr>
+                        <td class="code">transaction_id</td>
+
+                        <td>
+                            MANDATORY Unique ID generated by your system
+                        </td>
+                    </tr>
+
+
+
+                    <tr>
+                        <td class="code">client_id</td>
+
+                        <td>
+                            MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td class="code">network_code</td>
+
+                        <td>
+
+                            MANDATORY The network selected by you, a channel you wish to receive money from. It needs to be the <code>code</code> field of the response returned by the Collection Network Options API below. <br><br>
+
+                            <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                            <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/collection_network_options/</code></pre>
+
+                            <table style='font-size:12px;'>
+                                <thead>
+                                    <tr>
+                                        <th>Parameter</th>
+
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                        <td style='font-size:12px;'>
+                                         MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                                     </td>
+                                 </tr>
+                             </tbody></table>
+
+                             <p style='font-size:12px;'><strong>Request Example</strong></p>
+                             <pre><code style='font-size:12px;'>{
+                               "client_id": 2,
+                           }</code></pre>
+                           <br>
+                           <p style='font-size:12px;'><strong>Response - Success</strong></p>
+                           <pre><code style='font-size:12px;'>[
+                            {"id":3,
+                            "name":"AIRTEL",
+                            "code":"AIR"
+                        },
+                        {"id":1,
+                        "name":"MTN",
+                        "code":"MTN"
+                    },
+                    {"id":4,
+                    "name":"TIGO",
+                    "code":"TIG"
+                },
+                {"id":5,
+                "name":"VISA / MASTER CARD",
+                "code":"CRD"
+            },
+            {"id":2,
+            "name":"VODAFONE",
+            "code":"VOD"
+        }
+        ]
+    </code></pre>
+    <p style='font-size:12px;'>** The<code> code</code> field shoud be used as the <code>network_code</code></p>
+    <p style='font-size:12px;'>** The<code> name</code> field can be displayed to users</p>
+</td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+        OPTIONAL description of your transaction. Description is Required When <span class="code"> network_code </span> is  <span class="code"> CRD </span>
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">redirect_url</td>
+
+    <td>
+
+        OPTIONAL - Only requited when Card(CRD) option is selected as the network code. This is where your users will be redirected to on your website after they make card payments
+    </td>
+</tr>
+
+
+
+</tbody>
+</table>
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "customer_number": "024000000",
+   "amount": 10.0,    
+   "transaction_id": "X13454",
+   "network_code": "MTN",
+   "callback_url": "http://www.myapp.com/callback",
+   "description": "awesome description",
+   "client_id": 2,
+}</code></pre>
+<br>
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success": true, 
+   "redirect_url": null, 
+   "results": "Transaction initiated successfully. Please Check Phone for prompt"
+}</code></pre>
+<p>** <code>redirect_url</code> is returned if it is a Card Transaction</p>
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+   "success": false, 
+   "error_code": 405, 
+   "error_message": "Invalid network code"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+             Unique Transaction ID was not provided
+         </td>
+     </tr>
+
+     <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Wallet Code was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Invalid Network Code
+        </td>
+    </tr>
+
+
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            Invalid amount
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">410</td>
+
+        <td>
+
+            Invalid customer number format. Number must be 10 digits in the format 02xxxxxxxx
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+</article>
+
+
+         <article id="elevy_collections">
+                <h2>Get Elevy (Collections)</h2>
+                <p>Get Elevy and taxable amount for collections</p>
+                <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+                <pre><code>https://xchange.korba365.com/api/v1.0/get_elevy_collections/</code></pre>
+
+                <p>POST Parameters:</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="code nowrap">customer_number</td>
+
+                            <td>
+                                MANDATORY customer's mobile number.<br><br> This parameter is OPTIONAL only when a card transaction is being done. 
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="code">amount</td>
+
+                            <td>
+                             MANDATORY Amount to be debited from customers account
+                         </td>
+                     </tr>
+
+           
+
+
+
+                    <tr>
+                        <td class="code">client_id</td>
+
+                        <td>
+                            MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td class="code">network_code</td>
+
+                        <td>
+
+                            MANDATORY The network selected by you, a channel you wish to receive money from. It needs to be the <code>code</code> field of the response returned by the Collection Network Options API below. <br><br>
+
+                            <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                            <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/collection_network_options/</code></pre>
+
+                            <table style='font-size:12px;'>
+                                <thead>
+                                    <tr>
+                                        <th>Parameter</th>
+
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                        <td style='font-size:12px;'>
+                                         MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                                     </td>
+                                 </tr>
+                             </tbody></table>
+
+                             <p style='font-size:12px;'><strong>Request Example</strong></p>
+                             <pre><code style='font-size:12px;'>{
+                               "client_id": 2,
+                           }</code></pre>
+                           <br>
+                           <p style='font-size:12px;'><strong>Response - Success</strong></p>
+                           <pre><code style='font-size:12px;'>[
+                            {"id":3,
+                            "name":"AIRTEL",
+                            "code":"AIR"
+                        },
+                        {"id":1,
+                        "name":"MTN",
+                        "code":"MTN"
+                    },
+                    {"id":4,
+                    "name":"TIGO",
+                    "code":"TIG"
+                },
+                {"id":5,
+                "name":"VISA / MASTER CARD",
+                "code":"CRD"
+            },
+            {"id":2,
+            "name":"VODAFONE",
+            "code":"VOD"
+        }
+        ]
+    </code></pre>
+    <p style='font-size:12px;'>** The<code> code</code> field shoud be used as the <code>network_code</code></p>
+    <p style='font-size:12px;'>** The<code> name</code> field can be displayed to users</p>
+</td>
+</tr>
+
+
+
+
+
+</tbody>
+</table>
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "customer_number": "024000000",
+   "amount": 105.0,    
+   "network_code": "MTN",
+   "client_id": 2,
+}</code></pre>
+<br>
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success": true, 
+   "taxable_amount": 5.0,
+   "elevy_charge": 0.1,
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+   "success": false, 
+   "error_code": 405, 
+   "error_message": "Invalid network code"
+}</code></pre>
+
+</article>
+
+
+
+         <article id="exchange_rates">
+                <h2>Get Exchange Rate</h2>
+                <p>Returns exchange for GHS against USD, EUR and GBP</p>
+                <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+                <pre><code>https://xchange.korba365.com/api/v1.0/get_exchange_rate/</code></pre>
+
+                <p>POST Parameters:</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+              
+
+                    <tr>
+                        <td class="code">client_id</td>
+
+                        <td>
+                            MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                        </td>
+                    </tr>
+
+            
+</tbody>
+</table>
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "client_id": 2,
+}</code></pre>
+<br>
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    'success': True, 
+    'results': {
+         'GHSUSD': "12.5",
+         'GHSGBP': "14.0",
+         'GHSEUR': "13.2", 
+     }
+ }</code></pre>
+
+</article>
+            <article id="DirectCardDebit">
+                <h2>Direct Card Collections</h2>
+                <p>The API Enables you to accept payment collections from cards. <br><br>
+
+             
+
+            
+                </p>
+                <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+                <pre><code>https://xchange.korba365.com/api/v1.0/direct_card_collection/</code></pre>
+
+                <p>POST Parameters:</p>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+        'card_number': '4042123456789012',
+        'cvv':'808',
+        'card_name':'THOMAS CLEGG',
+        'amount': "1",
+        'expiry_month':'07',
+        'expiry_year':'29',
+        'transaction_id':'123467890',
+        'callback_url':'https://webhook.site/2b4ef766-3c9eba4',
+        'description': 'Order ID - 4045',
+        'success_redirect_url':'https://www.myapp.com/card_success?id=3434',
+        'failure_redirect_url':'https://www.myapp.com/card_failure?id=3434'',
+        "client_id": 8
+}</code></pre>
+<br>
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success":true,
+   "results":"Transaction initiated successfully, follow the link to complete the transaction",
+   "redirect_url":"https://testxchange.korba365.com/threeds/?token=f7b272f"
+}
+</code></pre>
+<p>** A <code>redirect_url</code> is always returned in the response for user to complete 3D authentication. If 3DS is not present on the card. The user wont have to do anything, they will be redirected to the success / failure url</p>
+<p>** <code>success_redirect_url</code> This is the URL where users will be redirected to when their transaction is successful. <br>
+   <strong> NB: The fact that success redirect URL is called doesnt guarantee a transaction is successful and hence should not be treated as a status update. You can only confirm a transaction is successful via a callback or using the status check endpoint when this URL is called.</strong> </p>
+<p>** <code>failure_redirect_url</code> This is the URL a user will be redirected to when the transaction fails</p>
+<br><br>
+
+
+<p>** You will receive a callback immediately after a user completes 3D Authentication via the callback url provided in the request upon successful debit. <br><br>
+
+<strong>Successful Transaction </strong><br>
+The callback URL is called like so as a GET request
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://YOUR_CALLBACK_URL?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+
+<br><br>
+        <strong>Failed Transaction </strong><br>
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://YOUR_CALLBACK_URL?transaction_id=UNIQUE_ID&status=FAILED&message=MESSAGE</code></pre>
+
+<br>
+
+<br>
+
+</article>
+
+
+<article id="payments">
+    <h2>Disbursement / Remittance API</h2>   
+    <p>The disbursement and remittance API is used send or disburse money from your Partner Wallet (OVA).</p>
+
+    <h3> Disbursement API </h3>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/disburse/</code></pre>
+
+    <h3> Remittance API </h3>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/remittance/</code></pre>
+
+<p><i>Kindly note the parameters below works for both remittances and disbursements</i> </p><br>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer's mobile number.<br><br> This parameter is OPTIONAL only when a Bank transaction is being done. 
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">amount</td>
+                
+                <td>
+                 MANDATORY Amount to be disbursed to recipient
+             </td>
+         </tr>
+
+         <tr>
+            <td class="code">transaction_id</td>
+
+            <td>
+                MANDATORY Unique ID generated by your system
+            </td>
+        </tr>
+
+
+
+        <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">network_code</td>
+
+            <td>
+
+                MANDATORY The network selected by you, a channel you wish to disburse money to. It needs to be the <code>code</code> field of the response returned by the Collection Network Options API below. <br><br>
+
+                <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/disbursement_network_options/</code></pre>
+
+                <table style='font-size:12px;'>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                            <td style='font-size:12px;'>
+                             MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                         </td>
+                     </tr>
+                 </tbody></table>
+
+                 <p style='font-size:12px;'><strong>Request Example</strong></p>
+                 <pre><code style='font-size:12px;'>{
+                   "client_id": 2,
+               }</code></pre>
+               <br>
+               <p style='font-size:12px;'><strong>Response - Success</strong></p>
+               <pre><code style='font-size:12px;'>
+[
+    {"id":3,
+    "name":"AIRTEL",
+    "code":"AIR"
+    },
+    {"id":1,
+    "name":"MTN",
+    "code":"MTN"
+    },
+    {"id":4,
+    "name":"TIGO",
+    "code":"TIG"
+    },
+    {"id":16,
+    "name":"BANK-INSTANT",
+    "code":"ISP"
+    },
+    {"id":2,
+    "name":"VODAFONE",
+    "code":"VOD"
+    }
+]
+</code></pre>
+<p style='font-size:12px;'>** The<code> code</code> field shoud be used as the <code>network_code</code></p>
+<p style='font-size:12px;'>** The<code> name</code> field can be displayed to users</p>
+</td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL Payer Name. This is mandatory if transaction is a bank transaction
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">bank_code</td>
+
+    <td>
+
+        Only Required when network_code is ISP. Kindly refer to the <a href="#bank_lookup"> Bank Lookup</a> section to obtain the bank code
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">recipient_bank_name </td>
+
+    <td>
+        Only Required when network_code is ISP. This is returned in the <a href="#bank_lookup"> Bank Lookup</a> endpoint.
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">bank_account_number</td>
+
+    <td>
+        Only Required when network_code is ISP
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">bank_account_name</td>
+
+    <td>
+        Only Required when network_code is ISP. This is returned in the customer lookup endpoint. Kind refer to the <a href='#customer_lookup'>customer lookup</a> section for the API call
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">sender_amount</td>
+
+    <td>
+
+        OPTIONAL Sender Amount which is the  amount debited from the sender's account
+    </td>
+</tr>
+
+<tr>
+    <td class="code">sender_currency</td>
+
+    <td>
+
+        OPTIONAL Sender Currency which is the currency debited from the sender's account
+    </td>
+</tr>
+
+<tr>
+    <td class="code">sender_country</td>
+
+    <td>
+
+        OPTIONAL Sender Country which is the originating country of the transaction in ISO 3166-1 alpha-3 format
+    </td>
+</tr>
+
+<tr>
+    <td class="code">beneficiary_name</td>
+
+    <td>
+
+        OPTIONAL Beneficiary Name.
+    </td>
+</tr>
+
+</tbody>
+</table>
+
+<p><strong>Request Example (Mobile Money)</strong></p>
+<pre><code>{
+   "customer_number": "024000000",
+   "amount": 10.0,    
+   "transaction_id": "YX13454",
+   "network_code": "MTN",
+   "callback_url": "http://www.myapp.com/callback",
+   "description": "awesome description",
+   "client_id": 2,
+   "sender_amount": 1.0,
+   "sender_currency": "USD",
+   "sender_country": "USA",
+   "beneficiary_name": "Yaw Sarpong"
+}</code></pre>
+<br>
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success": true, 
+   "redirect_url": null, 
+   "results": "Transaction initiated successfully."
+}</code></pre>
+
+<br>
+
+<p><strong>*** For Instant bank tranfers, refer to below</strong></p>
+
+<h2 id='bank_lookup'>Bank / Mobile Money Destinations Lookup</h2>   
+    <p>This Lookup is used to get all available banks/mobile networks and their respective codes</p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/authorized_bank_list/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'client_id': 8,
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "response_code": "100",
+    "results": [{
+      "bank_code": "300322",
+      "short_name": "GT",
+      "full_name": "GUARANTY TRUST BANK GHANA",
+    }, {
+      "bank_code": "300329",
+      "short_name": "ACCESS",
+      "full_name": "ACCESS BANK",
+    }, {
+      "bank_code": "300360",
+      "short_name": "ASL",
+      "full_name": "ADOM SAVINGS AND LOANS",
+    }, {
+      "bank_code": "300307",
+      "short_name": "ADB",
+      "full_name": "AGRICULTURAL DEVELOPMENT BANK",
+    }]
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 405, 
+ "error_message": "Invalid Client ID"
+}</code></pre>
+
+
+<h2 id='customer_lookup'>Bank/Mobile Money Customer Lookup</h2>   
+    <p>The Customer Lookup is used to get information about the recipient bank account or mobile money number for user confirmation</p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/authorized_customer_lookup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">bank_account_number</td>
+                
+                <td>
+                    MANDATORY Mobile Number or Bank Account Number
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">bank_code</td>
+                
+                <td>
+                    MANDATORY Bank Code. This can be found in the response of the instant_pay_bank_lookup
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example (Bank)</strong></p>
+<pre><code>{
+    "customer_number": "203490346790",
+    'client_id': 8,
+    'bank_code': '300322'
+}</code></pre>
+<br>
+
+<br>
+<p><strong>Request Example (Mobile Money)</strong></p>
+<pre><code>{
+    "customer_number": "233246887680",
+    'client_id': 8,
+    'bank_code': '300591'
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>
+{
+    "success":true,
+    "data":{
+        "StatusCode":"100",
+        "StatusMessage":"Success",
+        "AccountName":"THOMAS AKOLOVI",
+        "AccountNumber":"20********8",
+        "BankCode":"300323",
+        "BankName":"FIDELITY BANK LIMITED"
+    }
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 405, 
+ "error_message": "Lookup Failed"
+}</code></pre>
+
+
+
+
+<p><strong>Request Example (BANK TRANSFER) </strong></p>
+<pre><code>{
+    "client_id": 2, 
+    "amount": "1.00", 
+    "transaction_id": "X231641908840998", 
+    "network_code": "ISP", 
+    "callback_url": "https://www.myapp.com/awesome_callback/", 
+    "description": "Yinga", 
+    "bank_account_number": "1001000425098", 
+    "bank_account_name": "Jane Doe", 
+    "recipient_bank_name": "ECOBANK GHANA LTD", 
+    "bank_code": "300312", 
+    "payer_name": "John Doe", 
+    "payer_mobile": "0244123456", 
+    "sender_amount": 1.0,
+    "sender_currency": "USD",
+    "sender_country": "USA"
+}</code></pre>
+<br>
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success": true, 
+   "redirect_url": null, 
+   "results": "Transaction initiated successfully. Please Check Phone for prompt"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+             Unique Transaction ID was not provided
+         </td>
+     </tr>
+
+     <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Wallet Code was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Invalid Network Code
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Bank Account Number was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Bank Account Name was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Bank Name was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            Bank Branch was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">410</td>
+
+        <td>
+
+            Payer Mobile Number not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">411</td>
+
+        <td>
+
+            Payer Name not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">412</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">413</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">414</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">415</td>
+
+        <td>
+
+            Invalid Customer Number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">416</td>
+
+        <td>
+
+            You do not have enough funds in your wallet to perform the transaction
+        </td>
+    </tr>
+</tbody>
+</table>
+
+
+</article>
+</section>
+
+<!--
+ /* ============================================================
+  * Examples
+  * ============================================================ */
+-->
+<section id="topup">
+    <h1>Topup API</h1>
+
+
+    <p>The Topup API is used to send airtime to mobile phones and debited from your Partner Wallet (OVA). <br><br>
+    NB:  For a complete transaction, the collections API must be called first to take money from customer before calling the topup API to transfer the airtime to the intended recipient</p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/topup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer's mobile number. 
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">amount</td>
+                
+                <td>
+                 MANDATORY Airtime amount
+             </td>
+         </tr>
+
+         <tr>
+            <td class="code">transaction_id</td>
+
+            <td>
+                MANDATORY Unique ID generated by your system
+            </td>
+        </tr>
+
+
+
+        <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">network_code</td>
+
+            <td>
+
+                MANDATORY Network selected by you to receive airtime. It needs to be the <code>code</code> field of the response returned by the Topup Network Options API call <br><br>
+
+                <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/topup_network_options/</code></pre>
+
+                <table style='font-size:12px;'>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                            <td style='font-size:12px;'>
+                             MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                         </td>
+                     </tr>
+                 </tbody></table>
+
+                 <p style='font-size:12px;'><strong>Request Example</strong></p>
+                 <pre><code style='font-size:12px;'>{
+                   "client_id": 2,
+               }</code></pre>
+               <br>
+               <p style='font-size:12px;'><strong>Response - Success</strong></p>
+               <pre><code style='font-size:12px;'>[
+{"id":3,
+"name":"AIRTEL",
+"code":"AIR"
+},
+{"id":1,
+"name":"MTN",
+"code":"MTN"
+},
+{"id":4,
+"name":"TIGO",
+"code":"TIG"
+},
+{"id":9,
+"name":"GLO",
+"code":"GLO"
+},
+{"id":2,
+"name":"VODAFONE",
+"code":"VOD"
+}
+]
+</code></pre>
+<p style='font-size:12px;'>** The<code> code</code> field shoud be used as the <code>network_code</code></p>
+</td>
+</tr>
+
+
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "customer_number": "024000000",
+   "amount": 10.0,    
+   "transaction_id": "X13454",
+   "network_code": "MTN",
+   "callback_url": "http://www.myapp.com/callback",
+   "description": "awesome description",
+   "client_id": 2,
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success": true, 
+   "results": "Transaction initiated successfully."
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+   "success": false, 
+   "error_code": 405, 
+   "error_message": "Invalid Network Code"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+             Unique Transaction ID was not provided
+         </td>
+     </tr>
+
+     <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Network Code was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Invalid Network Code
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">410</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+</section>
+
+
+
+<section id="ecgpostpaid">
+    <h1>ECG Post Paid</h1>
+    
+
+    <p>The ECG Post Paid API is used to pay ECG bills and is debited from your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_pay_bill/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY ECG account number. 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'customer_number': "001XXXXXXX",
+    'client_id': 2,
+    'amount': 0.5,
+    'transaction_id': '07790676',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "responseCode": "01",
+    "responseMessage": "Bill payment successful",
+    "data": {
+        "OK": true,
+        "ErrorCode": 0,
+        "Message": "OK",
+        "Receipt": {
+            "ECGTransactionID": "129XXXXX",
+            "TerminalID": "00XXXXX",
+            "AccountNumber": "827-XXXX-XXX",
+            "CustomerName": "JOHN DOE     ",
+            "CashierID": "KORBA",
+            "DistrictID": "XXXXXXX",
+            "MeterID": "XXXXXXX",
+            "AmountPaid": "0.50",
+            "PaymentDate": "26/04/2018",
+            "PaymentTime": "03:03 PM",
+            "PaymentMethodName": "",
+            "PaymentMethodValue": "",
+            "FileName": "",
+            "Bank": ""
+        }
+    }
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 400, 
+ "error_message": "Duplicate transaction amount"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+<section id="ecgprepaid">
+    <h1>ECG Pre-Paid</h1>
+    
+
+    <p>The ECG Pre-Paid API is used to topup <strong>smart meters</strong> and is debited from your Partner Wallet (OVA). <br><br></p>
+
+	<pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_meter_lookup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">meter_code</td>
+
+                <td>
+                    MANDATORY ECG meter number. Numbers only
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code nowrap">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'meter_code': "1234567"
+    'client_id': 2,
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success": true,
+   "data": "Jane Doe"
+}
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false,
+ "data": "meter code does not exist in our system"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Meter Code was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Meter Code should be numbers only
+           </td>
+       </tr>
+
+
+</tbody>
+</table>
+
+<br/>
+
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_prepaid_initiate_request/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">meter_code</td>
+                
+                <td>
+                    MANDATORY ECG meter number.
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter<br> <code>korba_trans_id</code> = unique ID from Korba<br/> <code>amount</code> = returns the transaction amount<br/> <code>prepaid_token</code> = returns ECG prepaid token<br/><br>
+        The callback URL is called like so
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">meter_owner</td>
+
+    <td>
+
+        MANDATORY name of meter owner.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'meter_code': "P1234567",
+    'meter_owner': "Jane Doe",
+    'client_id': 2,
+    'amount': 10.00,
+    'transaction_id': '477984798798798',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success":true,
+   "data":"Transaction added successfully"
+}
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 406,
+ "error_message": "Duplicate Transaction ID"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Meter Code was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Meter Owner was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+<section id="ecgprepaidnpostpaid">
+    <h1>ECG Prepaid & Postpaid</h1>
+
+
+    <p>The ECG Prepaid & Postpaid API is used to topup meters and is debited from your Partner Wallet (OVA). <br><br></p>
+
+	<pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_prepaid_postpaid_account_inquiry/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">power_app_number</td>
+
+                <td>
+                    MANDATORY ECG meter number. Eg. 233208795528
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code nowrap">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'power_app_number': "233208795528"
+    'client_id': 2,
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+	<pre><code>{
+    "success": true,
+    "message": {
+        "success": true,
+        "ResponseCode": "0000",
+        "Message": "Successful",
+        "Label": "Successful",
+        "Data": [
+            {
+                "Display": "KUMI ASAMOAH EMML (701411591)",
+                "Value": "701411591",
+                "Amount": 19.86,
+            }
+        ]
+    }
+}
+
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+"success": false,
+"message": {
+    "success": false,
+    "ResponseCode": "4000",
+    "Message": "Invalid destination value",
+    "Label": "Invalid destination value",
+    "Data": null
+    }
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">101</td>
+
+            <td>
+                Power App Number was not provided
+            </td>
+        </tr>
+</tbody>
+</table>
+
+<br/>
+
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_prepaid_postpaid_topup_account/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">bundle</td>
+
+                <td>
+                    MANDATORY ECG meter number that is being topped up.
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount to recharge.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter<br> <code>korba_trans_id</code> = unique ID from Korba<br/> <code>amount</code> = returns the transaction amount<br/><br>
+        The callback URL is called like so
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">destination</td>
+
+    <td>
+
+        MANDATORY ECG account number linked to the Meter.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'bundle': "P191177631",
+    'destination': "233208795528",
+    'client_id': 2,
+    'amount': 50.00,
+    'transaction_id': '8937982379872398',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+   "success":true,
+   "data":"Transaction pending. Expect callback request for final state."
+}
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false,
+ "error_code": 102,
+ "error_message": "Duplicate Transaction ID"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">101</td>
+
+            <td>
+                Please provide a transaction_id value
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">102</td>
+
+            <td>
+               Duplicate Transaction ID
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">103</td>
+
+        <td>
+            Please provide the destination value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">104</td>
+
+        <td>
+
+            Please provide the amount value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">105</td>
+
+        <td>
+            Please provide the bundle value
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">106</td>
+
+        <td>
+
+            Please provide the callback_url value
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">107</td>
+
+        <td>
+
+            Please provide only decimal values for amount
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+<section id="ecgdirect">
+    <h1>ECG Direct</h1>
+
+
+    <p>The ECG Direct API is also used to topup meters and is debited from your Partner Wallet (OVA). <br><br></p>
+
+	<pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_direct_meter_detail/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">phone_number</td>
+
+                <td>
+                    OPTIONAL phone number. Eg. 233208795528
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code nowrap">account_number</td>
+
+                <td>
+                    OPTIONAL account number. Eg. 700252531
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code nowrap">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre>
+    <code>
+        {
+            'phone_number': "233208795528"
+            'client_id': 2,
+        }
+    </code>
+    OR
+    <code>
+        {
+            'account_number': "700252531"
+            'client_id': 2,
+        }
+    </code>
+</pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+	<pre><code>{
+    "success": true,
+    "results": {
+        {
+            "success":true,
+            "data":[
+               {
+                  "id":"f26688edb1b540bbb8aae0ab048901a2",
+                  "customerName":"MENSA FREDUA  ",
+                  "nameOnMeter":"MENSA FREDUA  ",
+                  "meterNumber":"G13304130",
+                  "accountNumber":"737458440",
+                  "address":"|0020-H/NOABURASO",
+                  "meterType":"SMART G",
+                  "balance":null,
+                  "meterCategory":"PREPAID",
+                  "alias":"MENSA FREDUA  ",
+                  "region":"ASHANTI WEST",
+                  "district":"Ahenema Kokoben District",
+                  "spn":"203810210",
+                  "regionId":"E11",
+                  "districtId":"6120",
+                  "createSource":"oltpv"
+               }
+            ]
+         }
+         
+    }
+}
+
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+    "success":false,
+    "error_code": 400,
+    "error_message": "Please provide a phone_number value"
+ }</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">101</td>
+
+            <td>
+                Phone Number was not provided
+            </td>
+        </tr>
+</tbody>
+</table>
+
+<br/>
+
+<pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_direct_service_status/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">meter_id</td>
+
+                <td>
+                    MANDATORY ECG meter ID. Eg. P1234567
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code nowrap">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'meter_id': "P1234567"
+    'client_id': 2,
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+	<pre><code>{
+    "success": true,
+    "results": {
+        {
+            "success": true,
+            "data": {
+                "isOnline": false
+            }
+        }        
+         
+    }
+}
+
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+    "success":false,
+    "error_code": 400,
+    "error_message": "Please provide a meter_id value"
+ }</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">101</td>
+
+            <td>
+                Meter ID was not provided
+            </td>
+        </tr>
+</tbody>
+</table>
+
+<br/>
+
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_direct_add_meter/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">alias</td>
+
+                <td>
+                    MANDATORY ECG customer name.
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">meter_number</td>
+
+                <td>
+                    MANDATORY ECG meter number
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">account_number</td>
+
+    <td>
+       OPTIONAL ECG account number.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">phone_number</td>
+
+    <td>
+        MANDATORY phone number
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">meter_category</td>
+
+    <td>
+
+        MANDATORY ECG meter category found in a successful response of the Meter Detail API
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'alias': "MENSA FREDUA"
+    'meter_number': P1234567,
+    'phone_number': "233208795528"
+    'meter_category': PREPAID,
+    'account_number': "737458440"
+    'client_id': 2,
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "success":true,
+    "results":{
+       {
+          "message":"Meter added Successfully",
+          "code":"201",
+          "data":{
+             "unsupported":false,
+             "id":"a2c363ec6545486eaeb299bc7a64cefb",
+             "customerName":"PROSPER  TETTEH",
+             "nameOnMeter":"PROSPER  TETTEH",
+             "meterNumber":"P191177631",
+             "accountNumber":"733342761",
+             "address":"5240-, St1 - Achimota - KWASHIEMAN, KWASHIEMAN, ACHIMOTA",
+             "meterType":"NURI",
+             "balance":null,
+             "meterCategory":"PREPAID",
+             "alias":"my home meter",
+             "region":"Accra West Region",
+             "district":"Achimota District",
+             "spn":"203508274",
+             "regionId":"",
+             "districtId":"",
+             "createSource":"oltpv"
+          }
+       }
+    }
+ }
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+    "success":false,
+    "error_code": 400,
+    "error_message": "Please provide a phone_number value"
+ }</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">101</td>
+
+            <td>
+                Please provide a phone_number value
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">102</td>
+
+            <td>
+                Please provide the alias value
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">103</td>
+
+        <td>
+            Please provide the meter_number value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">104</td>
+
+        <td>
+
+            Please provide the meter_category value
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+
+<br/>
+
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ecg_direct_pay_bill/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code">transaction_id</td>
+
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount to recharge.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter<br> <code>korba_trans_id</code> = unique ID from Korba<br/> <code>amount</code> = returns the transaction amount<br/><br>
+        The callback URL is called like so
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">meter_id</td>
+
+    <td>
+
+        MANDATORY ECG meter ID.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">meter_number</td>
+
+    <td>
+
+        MANDATORY ECG meter number.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'meter_id': "P191177631",
+    'client_id': 2,
+    'amount': 50.00,
+    'transaction_id': '8937982379872398',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "success":true,
+    "results":{
+       {
+          "success":true,
+          "data":{
+             "id":"f26688edb1b540bbb8aae0ab048901a2",
+             "customerName":"MENSA FREDUA  ",
+             "nameOnMeter":"MENSA FREDUA  ",
+             "meterNumber":"G13304130",
+             "accountNumber":"737458440",
+             "address":"|0020-H/NOABURASO",
+             "meterType":"SMART G",
+             "balance":null,
+             "meterCategory":"PREPAID",
+             "alias":"MENSA FREDUA  ",
+             "region":"ASHANTI WEST",
+             "district":"Ahenema Kokoben District",
+             "spn":"203810210",
+             "regionId":"E11",
+             "districtId":"6120",
+             "createSource":"oltpv"
+          }
+       }
+    }
+ }</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false,
+ "error_code": 101,
+ "error_message": "Please provide a amount value"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">101</td>
+
+            <td>
+                Please provide a transaction_id value
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">102</td>
+
+            <td>
+                Duplicate Transaction ID
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">103</td>
+
+        <td>
+            Please provide the meter_id value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">104</td>
+
+        <td>
+
+            Please provide the amount value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">105</td>
+
+        <td>
+
+            Please provide the callback_url value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">106</td>
+
+        <td>
+
+            Please provide the meter_number value
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">107</td>
+
+        <td>
+
+            Please provide only decimal values for amount
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">108</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+<section id="gwcl">
+    <h1>GWCL Customer Lookup </h1>
+    
+
+    <p>The GWCL Customer Lookup API is used to get details about the customer <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/gwcl_customer_lookup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY GWCL customer number beginning with '233'. 
+                </td>
+            </tr>
+            
+            <tr>
+                <td class="code nowrap">account_number</td>
+                
+                <td>
+                    MANDATORY GWCL account number. 
+                </td>
+            </tr>
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "customer_number": "233200000000",
+    "account_number": "010******003",
+    'client_id': 2,
+    'transaction_id': '07790676',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+  "error_code": null,
+  "results": {
+    "payload": {
+      "accountRef": "030539061757",
+      "sessionId": "fb6774677b2922aae40596927115e62e32c041bd",
+      "name": "ABBAN GEORGE KWAKU YEBOAH .",
+      "charge": "83.05",
+      "extDetails": "{\"balance\":83.05}"
+    },
+    "responseMessage": "Success",
+    "responseCode": "01"
+  },
+  "success": true,
+  "transaction_id": "15375769322262"
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 405, 
+ "error_message": "Duplicate transaction id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+
+
+<h1>GWCL Pay Bill </h1>
+    
+
+    <p>The GWCL Pay Bill API is used to pay Ghana Water Company Limited bills <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/gwcl_pay_bill/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">transaction_id</td>
+                
+                <td>
+                    MANDATORY transaction ID from the GWCL Customer Lookup response. 
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "transaction_id": 'GWCL0XX06587',
+    "amount": 10.0,
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+  "results": {
+    "payload": {
+      "receiptNo": "180918000001",
+      "responseCode": "01",
+      "responseMessage": "Success",
+      "sessionId": "7329d714f2846853fedddab6f16ae3e53e96da60"
+    },
+    "responseCode": "01",
+    "responseMessage": "Bill payment successful"
+  },
+  "success": true,
+  "error_code": null
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 405, 
+ "error_message": "Duplicate transaction id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+<section id="mtndata">
+    <h1>MTN Data Topup</h1>
+    
+
+    <p>The MTN data API is used to purchase MTN data and debited from your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/mtn_data_topup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (0). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+            <tr>
+                <td class="code">product_id</td>
+                
+                <td>
+
+                    MANDATORY Product ID selected by you, this must be the <code>product_id</code> field of the MTN data product id list API below.<br><br>
+
+                    <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                    <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/get_mtndata_product_id/</code></pre>
+
+                    <table style='font-size:12px;'>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                <td style='font-size:12px;'>
+                                   MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                               </td>
+                           </tr>
+                   </tbody></table>
+
+                   <p style='font-size:12px;'><strong>Request Example</strong></p>
+                   <pre><code style='font-size:12px;'>
+                    {
+                     "client_id": 2
+                    }
+                </code></pre>
+                 <br>
+                 <p style='font-size:12px;'><strong>Sample Response - Success</strong></p>
+                 <pre><code style='font-size:12px;'> {
+                    "error_code":null,
+                    "success":true,
+                    "bundles":[
+                        {
+                            "name":"MTN Midnight Data Bundle 3G",
+                            "product_id":"MTNMIDNGT3G",
+                            "amount":"1.00",
+                            "validity":"7 days"
+                        },
+                        {
+                            "name":"MTN Midnight Data Bundle",
+                            "product_id":"MTNMIDNIGHT",
+                            "amount":"3.00",
+                            "validity":"7 days"
+                        },
+                        {
+                            "name":"MTN Monthly Data Bundle 200GB",
+                            "product_id":"MTNMTH200GB",
+                            "amount":"399.00",
+                            "validity":"7 days"
+                        }
+                    ]
+                }
+</code></pre>
+
+</td>
+</tr>
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY bundle amount. This is the <code>amount</code> field of the bundle selected from the MTN data product id list API.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'customer_number': "024000000",
+    'client_id': 2,
+    'product_id': 'MTNDLY20MB',
+    'amount': 0.5,
+    'transaction_id': '07790676',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "error_code":null
+    "success": true, 
+    "results": {
+                    "operatorRequestID":"1294993",
+                    "responseDescription":"Successful",
+                    "auditNo":"1329091",
+                    "responseCode":"000",
+                    "operatorRequestId":"1294993",
+                    "providerResponse":"{\"TransactionID\":\"2018041813285160703901350\"}",
+                    "productInfo":"MTN Daily Data Bundles",
+                    "confirmationCode":"2018041813285160703901350",
+                    "authorizeKey":"1348888"
+                }
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 402, 
+ "error_message": "Please make sure you provide a correct product_id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+
+<section id="mtnfibre">
+    <h1>MTN Fibre Topup</h1>
+    
+
+    <p>The MTN FIbre API is used to purchase MTN Fibre and debited from your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/mtn_fibre_topup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (0). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+            <tr>
+                <td class="code">product_id</td>
+                
+                <td>
+
+                    MANDATORY Product ID selected by you, this must be the <code>product_id</code> field of the MTN data product id list API below.<br><br>
+
+                    <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                    <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/get_mtnfibre_product_id/</code></pre>
+
+                    <table style='font-size:12px;'>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                <td style='font-size:12px;'>
+                                   MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                               </td>
+                           </tr>
+                   </tbody></table>
+
+                   <p style='font-size:12px;'><strong>Request Example</strong></p>
+                   <pre><code style='font-size:12px;'>
+                    {
+                     "client_id": 2
+                    }
+                </code></pre>
+                 <br>
+                 <p style='font-size:12px;'><strong>Sample Response - Success</strong></p>
+                 <pre><code style='font-size:12px;'> {
+                    "error_code":null,
+                    "success":true,
+                    "bundles":[
+                        {
+                            "name":"MTN Midnight Fibre Bundle 3G",
+                            "product_id":"MTNMIDNGT3G",
+                            "amount":"1.00"
+                        },
+                        {
+                            "name":"MTN Midnight Fibre Bundle",
+                            "product_id":"MTNMIDNIGHT",
+                            "amount":"3.00"
+                        },
+                        {
+                            "name":"MTN Monthly Fibre Bundle 200GB",
+                            "product_id":"MTNMTH200GB",
+                            "amount":"399.00"
+                        }
+                    ]
+                }
+</code></pre>
+
+</td>
+</tr>
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY bundle amount. This is the <code>amount</code> field of the bundle selected from the MTN data product id list API.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'customer_number': "024000000",
+    'client_id': 2,
+    'product_id': 'MTNDLY20MB',
+    'amount': 0.5,
+    'transaction_id': '07790676',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{'success': True, 'results': 'Transaction initiated successfully.', 'error_code':None} </code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 402, 
+ "error_message": "Please make sure you provide a correct product_id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+<section id="airteltigodata">
+    <h1>Airtel Tigo Data Topup</h1>
+    
+
+    <p>The Airtel Tigo Data API is used to purchase MTN Fibre and debited from your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/airteltigo_data_topup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (0). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+            <tr>
+                <td class="code">product_id</td>
+                
+                <td>
+
+                    MANDATORY Product ID selected by you, this must be the <code>product_id</code> field of the MTN data product id list API below.<br><br>
+
+                    <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                    <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/get_airteltigodata_product_id/</code></pre>
+
+                    <table style='font-size:12px;'>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                <td style='font-size:12px;'>
+                                   MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                               </td>
+                           </tr>
+                   </tbody></table>
+
+                   <p style='font-size:12px;'><strong>Request Example</strong></p>
+                   <pre><code style='font-size:12px;'>
+                    {
+                     "client_id": 2
+                    }
+                </code></pre>
+                 <br>
+                 <p style='font-size:12px;'><strong>Sample Response - Success</strong></p>
+                 <pre><code style='font-size:12px;'> {
+                    "error_code":null,
+                    "success":true,
+                    "bundles":[
+                        {
+                            "name":"Airtel Bundle 3G",
+                            "product_id":"AIRMIDNGT3G",
+                            "amount":"1.00",
+                            "validity":"7 days"
+                        },
+                        {
+                            "name":"Airtel Bundle",
+                            "product_id":"AIRMIDNIGHT",
+                            "amount":"3.00",
+                            "validity":"7 days"
+                        },
+                        {
+                            "name":"Airtel Bundle 200GB",
+                            "product_id":"AIRMTH200GB",
+                            "amount":"399.00",
+                            "validity":"7 days"
+                        }
+                    ]
+                }
+</code></pre>
+
+</td>
+</tr>
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY bundle amount. This is the <code>amount</code> field of the bundle selected from the MTN data product id list API.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'customer_number': "024000000",
+    'client_id': 2,
+    'product_id': 'AIRDLY20MB',
+    'amount': 0.5,
+    'transaction_id': '07790676',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>
+     {'success': True, 
+     'results': 'Transaction initiated successfully.', 
+     'error_code':None}
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 402, 
+ "error_message": "Please make sure you provide a correct product_id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+
+
+<section id="vodafonedata">
+    <h1>Vodafone Data Topup</h1>
+    
+
+    <p>The Vodafone Data API is used to purchase Vodafone Data and debited from your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/vodafone_data_topup/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (0). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+            <tr>
+                <td class="code">amount</td>
+                
+                <td>
+
+                    MANDATORY amount selected by you, this must be the <code>amount</code> field of the Vodafone data product id list API below.<br><br>
+
+                    <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                    <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/get_vodafonedata_product_id/</code></pre>
+
+                    <table style='font-size:12px;'>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                <td style='font-size:12px;'>
+                                   MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                               </td>
+                           </tr>
+                   </tbody></table>
+
+                   <p style='font-size:12px;'><strong>Request Example</strong></p>
+                   <pre><code style='font-size:12px;'>
+                    {
+                     "client_id": 2
+                    }
+                </code></pre>
+                 <br>
+                 <p style='font-size:12px;'><strong>Sample Response - Success</strong></p>
+                 <pre><code style='font-size:12px;'> {
+                    "error_code":null,
+                    "success":true,
+                    "bundles":[
+                        {
+                            "name":"Vodafone Bundle 3G",
+                            "bundle_size":"400 MB",
+                            "amount":"1.00",
+                            "bundle_id":"V0D34980",
+                            "validity":"7 days"
+                        },
+                        {
+                            "name":"Vodafone Bundle",
+                            "bundle_size":"1 GB",
+                            "bundle_id":"VD34980",
+                            "amount":"3.00",
+                            "validity":"7 days"
+                        },
+                        {
+                            "name":"Voda Bundle 200GB",
+                            "bundle_size":"200GB",
+                            "amount":"399.00",
+                            "bundle_id":"V0D34980",
+                            "validity":"7 days"
+                        }
+                    ]
+                }
+</code></pre>
+
+</td>
+</tr>
+
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+            <tr>
+                <td class="code nowrap">bundle_id</td>
+                
+                <td>
+                    MANDATORY returned in the get vodafone product data id above 
+                </td>
+            </tr>
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'customer_number': "024000000",
+    'client_id': 2,
+    'amount': 0.5,
+    'bundle_id': 'VDF4389345',
+    'transaction_id': '07790676',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>
+     {'success': True, 
+     'results': 'Transaction initiated successfully.', 
+     'error_code':None}
+</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 402, 
+ "error_message": "Please make sure you provide a correct bundle_id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+
+
+<section id="glodata">
+    <h1>Glo Data </h1>
+    
+
+    <p>The GLO data API is used to purchase GLO data and debited from your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/new_glo_data_purchase/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (0). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+            <tr>
+                <td class="code">bundle_id</td>
+                
+                <td>
+
+                    MANDATORY Bundle ID selected by you, this must be the <code>bundle_id</code> field of the Two API Calls below.<br><br>
+
+                    1. Use the first API Call to get the bundle types<br>
+                    2. Use the Second API Call to fetch the bundles under a particular bundle type.
+
+                    <pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                    <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/new_glo_data_get_bundle_types/</code></pre>
+
+                    <table style='font-size:12px;'>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                <td style='font-size:12px;'>
+                                   MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                               </td>
+                           </tr>
+                   </tbody></table>
+
+                   <p style='font-size:12px;'><strong>Request Example</strong></p>
+                   <pre><code style='font-size:12px;'>
+                    {
+                     "client_id": 2
+                    }
+                </code></pre>
+                 <br>
+                 <p style='font-size:12px;'><strong>Sample Response - Success</strong></p>
+                 <pre><code style='font-size:12px;'> {
+                    "success": true,
+                    "results": [
+                        {
+                            "id": 1,
+                            "name": "Monthly",
+                            "enabled": true
+                        },
+                        {
+                            "id": 2,
+                            "name": "Weekly",
+                            "enabled": true
+                        },
+                        {
+                            "id": 3,
+                            "name": "Daily",
+                            "enabled": true
+                        }
+                    ],
+                    "error_code": null
+                }
+</code></pre>
+
+<br> <br> <br>
+<pre><code style='background:#4070ec; color:#fff; width:7%; font-weight:700; font-size:14px; padding:8px 8px'>POST</code></pre>
+                    <pre><code style='font-size:11px; padding: 4px 10px'>https://xchange.korba365.com/api/v1.0/new_get_glodata_bundles/</code></pre>
+
+                    <table style='font-size:12px;'>
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">client_id</td>
+
+                                <td style='font-size:12px;'>
+                                   MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds 
+                               </td>
+                           </tr>
+                            <tr>
+                                <td style='font-size:12px;' class="code nowrap">bundle_type_id</td>
+
+                                <td style='font-size:12px;'>
+                                   Bundle Type ID is the <code>id</code> field of the selected bundle type from the previous API above
+                               </td>
+                           </tr>
+
+                   </tbody></table>
+
+                   <p style='font-size:12px;'><strong>Request Example</strong></p>
+                   <pre><code style='font-size:12px;'>
+                    {
+                     "client_id": 2,
+                     "bundle_type_id": 1,
+                    }
+                </code></pre>
+                 <br>
+                 <p style='font-size:12px;'><strong>Sample Response - Success</strong></p>
+                 <pre><code style='font-size:12px;'> {
+                    "success": true,
+                    "results": [
+                        {
+                            "name": "4.2GB Plan",
+                            "productId": "BUNDLE_4.2GB_Plan",
+                            "price": "GHS 20",
+                            "volume": "4.2GB",
+                            "validity": "30 days",
+                            "active": true
+                        },
+                        {
+                            "name": "10GB Plan",
+                            "productId": "BUNDLE_10GB_Plan",
+                            "price": "GHS 40",
+                            "volume": "10GB",
+                            "validity": "30 days",
+                            "active": true
+                        },
+                    ],
+                    "error_code": null
+                }
+</code></pre>
+</td>
+</tr>
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY bundle amount. This is the <code>price</code> field of the bundle selected from the Glo data bundle API.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    'customer_number': "024000000",
+    'client_id': 2,
+    'bundle_id': 'BUNDLE_4.2GB_Plan',
+    'amount': 0.5,
+    'transaction_id': '07790676',
+    'callback_url': 'https://webhook.site/fdd1d807-0147-4015-ab47-8ec7118ea595',
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "error_code":null
+    "success": true, 
+    "results": {
+                    "operatorRequestID":"1294993",
+                    "responseDescription":"Successful",
+                    "auditNo":"1329091",
+                    "responseCode":"000",
+                    "operatorRequestId":"1294993",
+                    "providerResponse":"{\"TransactionID\":\"2018041813285160703901350\"}",
+                    "productInfo":"MTN Daily Data Bundles",
+                    "confirmationCode":"2018041813285160703901350",
+                    "authorizeKey":"1348888"
+                }
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 402, 
+ "error_message": "Please make sure you provide a correct product_id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">403</td>
+
+        <td>
+            Bundle ID was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+
+<section id="transaction_status">
+    <h1>Transaction Status</h1>
+
+
+    <p>This endpoint enables you to check for the status of your transaction at anytime. <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/transaction_status/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+       
+
+         <tr>
+            <td class="code">transaction_id</td>
+
+            <td>
+                MANDATORY Unique transaction ID generated by your system
+            </td>
+        </tr>
+
+         <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID provided via the dashboard credentials
+            </td>
+        </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "transaction_id": "X13454",
+   "client_id": "2"
+}</code></pre>
+<br>
+
+<p><strong>Sample Response - Success</strong></p>
+<pre><code>{
+   'status': 'success',
+    'message': 'Transaction was processed successfully',
+    'transaction_id': "X13454",
+    'korba_trans_id': 'YY422',
+}</code></pre>
+
+<br>
+<p><strong>Sample Response - Failure</strong></p>
+<pre><code>{
+   "success": false, 
+   "error_code": 421, 
+   "error_message": "Transaction does not exist"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">421</td>
+
+            <td>
+                Transaction does not exist
+            </td>
+        </tr>
+
+</tbody>
+</table>
+
+</section>
+
+
+
+
+
+<section id="mtnrecurring">
+    <h1>Create Mandate</h1>
+    
+
+    <p>The MTN Momo Debit Order API is used accept or receive money and credited to your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/new_mtn_recurring_create_mandate/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (233). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount. This is the <code>amount</code> field.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">frequency_type</td>
+
+    <td>
+        MANDATORY Frequency Type. It has to be one of these: Daily, Weekly, Monthly, Yearly
+    </td>
+</tr>
+
+<tr>
+    <td class="code">frequency</td>
+
+    <td>
+        MANDATORY Frequency. The frequency at which schedules are generated for the frequencyTypes.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">start_date</td>
+
+    <td>
+        MANDATORY Start Date. Commencement date for the recurring payment [Default: today]
+    </td>
+</tr>
+
+<tr>
+    <td class="code">end_date</td>
+
+    <td>
+        MANDATORY End Date. Terminal date for the recurring payment [Default: infinte]
+    </td>
+</tr>
+
+<tr>
+    <td class="code">debit_day</td>
+
+    <td>
+        MANDATORY Debit Day. The day of the month the deductions should be carried out. It is a required field for the frequencyTypes for weekly and above
+    </td>
+</tr>
+
+<tr>
+    <td class="code">mandate_creation_call_back_url</td>
+
+    <td>
+        MANDATORY Mandate Creation Call Back URL. For every call to create a mandate, a pre-approval request is sent to MTN to prompt the user to either authorize or decline the recurring payment per the ova. Upon receiving the user's decision, the API sends a callback to the third party application. <br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the mandate went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">debit_customer_call_back_url</td>
+
+    <td>
+        MANDATORY Debit Customer Call Back URL. For every debit, a callback is sent to the third party application as a means of informing the third party on the outcome of the transaction. <br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "customer_number": "23324*********",
+    "transaction_id": "764545786777",
+    'client_id': 8,
+    "frequency_type":"Daily",
+    "frequency":"1",
+    "start_date":"2018-07-16",
+    "end_date":"2019-07-16",
+    "debit_day":"30",
+    "mandate_creation_call_back_url":"https://yourapp.com/mtn_mandate_creation_callback/",
+    "debit_customer_call_back_url":"https://yourapp.com/mtn_debit_customer_callback/",
+    "amount": "0.1",
+    'description': 'awesome description',
+}</code></pre>
+<br>
+
+<p><strong>Response - 200</strong></p>
+<pre><code>{
+      "success": True,
+      "results": "Transaction is being processed"
+      "error_code": None
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+    "success": False,
+    "error_code":400,
+    "message": "Mandate creation failed",
+    "data": {
+        "message": "Mandate creation failed",
+        "status": "failed",
+        "transaction_id": "675687687789689"
+    }
+}
+</code></pre>
+
+
+<h1>Update Mandate</h1>
+    
+
+    <p>The MTN Momo Debit Order API is used accept or receive money and credited to your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/new_mtn_recurring_update_mandate/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (233). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY bundle amount. This is the <code>amount</code> field of the bundle selected from the MTN data product id list API.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">frequency_type</td>
+
+    <td>
+        MANDATORY Frequency Type. It has to be one of these: Daily, Weekly, Monthly, Yearly
+    </td>
+</tr>
+
+<tr>
+    <td class="code">frequency</td>
+
+    <td>
+        MANDATORY Frequency. The frequency at which schedules are generated for the frequencyTypes.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">start_date</td>
+
+    <td>
+        MANDATORY Start Date. Commencement date for the recurring payment [Default: today]
+    </td>
+</tr>
+
+<tr>
+    <td class="code">end_date</td>
+
+    <td>
+        MANDATORY End Date. Terminal date for the recurring payment [Default: infinte]
+    </td>
+</tr>
+
+<tr>
+    <td class="code">debit_day</td>
+
+    <td>
+        MANDATORY Debit Day. The day of the month the deductions should be carried out. It is a required field for the frequencyTypes for weekly and above
+    </td>
+</tr>
+
+<tr>
+    <td class="code">mandate_id</td>
+
+    <td>
+        MANDATORY Mandate ID. Identifier for the mandate
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "customer_number": "23324*********",
+    "transaction_id": "76454675786777",
+    'client_id': 8,
+    "frequency_type":"Daily",
+    "frequency":"1",
+    "start_date":"2018-07-16",
+    "end_date":"2019-07-16",
+    "debit_day":"30",
+    "mandate_id":"009",
+    "amount": "0.1",
+    'description': 'awesome description updated',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "success": True,
+    "data": {
+        "message": "Mandate update successful",
+        "status": "success",
+           }
+    },
+    "message": "Mandate update successful"
+}</code></pre>
+
+<h1>Cancel Mandate</h1>
+    
+
+    <p>The MTN Momo Debit Order API is used accept or receive money and credited to your Partner Wallet (OVA). <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/new_mtn_recurring_cancel_mandate/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (233). 
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+<tr>
+    <td class="code">mandate_id</td>
+
+    <td>
+        MANDATORY Mandate ID. Identifier for the mandate
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction. Bundle Name can be used
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "customer_number": "23324*********",
+    "transaction_id": "76754545786777",
+    'client_id': 8,
+    "mandate_id":"009",
+    'description': 'awesome description updated',
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "success": True,
+    "data": {
+        "message": "Mandate cancel successful",
+        "status": "success",
+           }
+    },
+    "message": "Mandate cancel successful"
+}</code></pre>
+
+
+<h1>Cancel Pre Approval</h1>
+    
+
+    <p>This cancels automatic debits on a customers wallet. <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/new_mtn_recurring_cancel_pre_approval/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer mobile number beginning with (233). 
+                </td>
+            </tr>
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "customer_number": "23324*********",
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+    "success": True,
+    "data": {
+        "message": "Pre-Approval cancellation successful",
+        "status": "success",
+           }
+    },
+    "message": "Pre-Approval cancellation successful"
+}</code></pre>
+
+
+</section>
+
+
+<section id="etranzact">
+    <h1> Utilities Validate User </h1>
+    
+
+    <p>The Utilities Validate User API is used to check for information on the account holder. It is advisable to validate a user before making a payment. <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/utilities_validate_user/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY Utilities customer number. 
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">bill_type</td>
+                
+                <td>
+                    MANDATORY Bill Type. This should be one of the following DSTV, KWESETV, GBCTV, ECG, GOTV, STARTIMES
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "bill_type": "DSTV",
+    'client_id': 8,
+    'customer_number': '702*******4',
+    'transaction_id': '085694478'
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+  "results": {
+    "message": "ANTHONY BASSAW-5.00",
+    "totalSuccess": "0",
+    "amount": "0.0",
+    "totalFailed": "0",
+    "closingBalance": "0.0",
+    "korbaTransId": "1537274959004",
+    "error": "0",
+    "openingBalance": "0.0",
+    "etranzactTransId": "09FG09181246020216043"
+  },
+  "error_code": null
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 405, 
+ "error_message": "Duplicate transaction id"
+}</code></pre>
+
+
+
+
+<h1>Utilities Pay Bill (DSTV / GOTV / STARTIMES / ECG) </h1>
+    
+
+    <p>The Utility Pay Bill API is used to pay bills <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/utilities_pay_bill/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">customer_number</td>
+                
+                <td>
+                    MANDATORY customer number. 
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">bill_type</td>
+                
+                <td>
+                    MANDATORY Bill Type. This should be one of the following DSTV, KWESETV, GBCTV, ECG, GOTV, STARTIMES
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">transaction_id</td>
+                
+                <td>
+                    MANDATORY Unique ID generated by your system
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">sender_name</td>
+                
+                <td>
+                    MANDATORY sender_name from the validate_user response
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">address</td>
+                
+                <td>
+                    MANDATORY address.
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">client_id</td>
+                
+                <td>
+                    MANDATORY Client ID. This can be found on the merchant dashboard under API/Website Creds
+                </td>
+            </tr>
+
+
+<tr>
+    <td class="code">amount</td>
+
+    <td>
+       MANDATORY amount.
+   </td>
+</tr>
+
+<tr>
+    <td class="code">callback_url</td>
+
+    <td>
+
+        MANDATORY Callback URL that is called when the transaction is completed. Until you a receive a callback a transaction is not completed. Only a callback or a status check can confirm a transaction as complete<br><br>
+        <strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+    </td>
+</tr>
+
+
+<tr>
+    <td class="code">description</td>
+
+    <td>
+
+        OPTIONAL description of your transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">payer_name</td>
+
+    <td>
+
+        OPTIONAL payer name for the transaction.
+    </td>
+</tr>
+
+<tr>
+    <td class="code">extra_info</td>
+
+    <td>
+
+        OPTIONAL extra information of the transaction.
+    </td>
+</tr>
+
+
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+    "bill_type": "DSTV",
+    'client_id': 8,
+    'customer_number': '70*******4',
+    'sender_name': 'ANTHONY BASSAW',
+    'address': 'Accra',
+    'amount': '1.0',
+    'transaction_id': '986887909',
+    'callback_url': 'https://my_awesome_callback/'
+}</code></pre>
+<br>
+
+<p><strong>Response - Success</strong></p>
+<pre><code>{
+  "results": "Transaction initiated successfully.",
+  "error_code": null,
+  "success": true
+}</code></pre>
+
+<br>
+<p><strong>Response - Failure</strong></p>
+<pre><code>{
+ "success": false, 
+ "error_code": 405, 
+ "error_message": "Duplicate transaction id"
+}</code></pre>
+
+
+<p><strong>Error Codes</strong></p>
+<table>
+    <thead>
+        <tr>
+            <th>Error Code</th>
+
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="code nowrap">400</td>
+
+            <td>
+                Customer Number was not provided
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">401</td>
+
+            <td>
+               Unique Transaction ID was not provided
+           </td>
+       </tr>
+
+       <tr>
+        <td class="code">402</td>
+
+        <td>
+            Amount was not provided
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">404</td>
+
+        <td>
+
+            Callback URL was not provided
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">405</td>
+
+        <td>
+
+            Duplicate Transaction ID
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">406</td>
+
+        <td>
+
+            Invalid Callback URL
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">407</td>
+
+        <td>
+
+            Invalid Amount
+        </td>
+    </tr>
+
+
+    <tr>
+        <td class="code">408</td>
+
+        <td>
+
+            Invalid customer number format
+        </td>
+    </tr>
+
+    <tr>
+        <td class="code">409</td>
+
+        <td>
+
+            You do not have enough funds to perform this action
+        </td>
+    </tr>
+
+
+</tbody>
+</table>
+
+</section>
+
+
+
+<section id="xcheckout">
+    <h1> Korba Xcheckout </h1>
+    
+
+    <p>Korba XCheckout provides you a hosted Checkout page that allows you to collect payment details from your payer through an interaction hosted and displayed by the Korba Payment Gateway. XCheckout is simple and quick to integrate. You do not need to handle or store any payment details<br><br></p>
+
+<h4> Pre requisites </h4>
+<p>Ensure that you enable XCheckout on the dashboard under the developer section by generate a website token.</p> 
+<p>It is recommended that you add a callback URL on the merchant dashboard receive notifications when the payment is successful or fails </p>
+<pre><code>
+&lt;html&gt;
+    &lt;head&gt; 
+        &lt;script src='https://paywithkorba.s3-eu-west-1.amazonaws.com/checkout.js'&gt;&lt;/script&gt;
+
+        &lt;script type="text/javascript"&gt;
+                XCheckout.configure({
+                    merchantID: '&lt;your_merchant_id&gt;',
+                    orderID: '&lt;unique_order_id&gt;',
+                    description: 'Ordered goods',
+                    amount: 1.2,
+                    redirectURL: 'http://www.yourawesomeapp.com',
+                });
+        &lt;/script&gt;  
+    &lt;/head&gt;
+    &lt;body&gt;    
+        ...
+        &lt;input type="button" value="Pay" onclick="XCheckout.pay();" /&gt;
+        ...
+    &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+
+    <p>Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="code nowrap">merchantID</td>
+                
+                <td>
+                    Your XCheckout Merchant ID found on the merchant dashboard as <strong>WEBSITE ID</strong>
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">orderID</td>
+                
+                <td>
+                    A unique order ID provided by you to uniquely identify your transaction
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">description</td>
+                
+                <td>
+                    A short description of your order or transaction
+                </td>
+            </tr>
+
+
+
+            <tr>
+                <td class="code">amount</td>
+                
+                <td>
+                    amount to be collected
+                </td>
+            </tr>
+
+            <tr>
+                <td class="code">redirectURL</td>
+                
+                <td>
+                    your users will be redirected to this site after payment
+                </td>
+            </tr>
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Obtain the Payment Results</strong></p>
+<p> You will receive a webhook/callback notifications for every payment whether successful or failed via the Callback URL you provide on the merchant dashboard</p><br>
+
+<strong>CALLBACK PARAMETERS</strong><br>
+        <code>transaction_id </code> =  unique ID initially provided by you<br> 
+        <code>status</code> = returns the string <strong>SUCCESS</strong> or <strong>FAILED</strong> <br> 
+        <code>message</code> = details of how the transaction went. If it fails the reason for failure will be in the message parameter.<br><br>
+        The callback URL is called like so 
+        <pre><code style='font-size:11px; padding: 4px 10px'>https://webhook.site/1c4d4a5d?transaction_id=UNIQUE_ID&status=SUCCESS&message=MESSAGE</code></pre>
+
+
+
+<p> NB: To ensure the integrity of the callback a custom http header <code>X-Callback-Token</code> is added to the request and its value is also found on the merchant dashboard called <strong> CALLBACK TOKEN</strong> You are entreated to add this extra check as a security measure </p>
+
+</section>
+
+
+<section id="ovabalance">
+    <h1>OVA Balance</h1>
+
+
+    <p>This endpoint enables you to check your OVA Balance. <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/get_ova_balance/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+       
+
+
+
+         <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID provided via the dashboard credentials
+            </td>
+        </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "client_id": "2"
+}</code></pre>
+<br>
+
+<p><strong>Sample Response - Success</strong></p>
+<pre><code>{
+"success":true,
+"ova_balance":1480.5
+}</code></pre>
+
+<br>
+
+</section>
+
+
+<section id="client_transactions">
+    <h1>Fetch Transactions</h1>
+
+
+    <p>This endpoint enables you to fetch your transactions. <br><br></p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/client_transactions/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+       
+         <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID provided via the dashboard credentials
+            </td>
+        </tr>
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "client_id": "2"
+}</code></pre>
+<br>
+
+<p><strong>Sample Response - Success</strong></p>
+<pre><code>{
+   "success":true,
+   "count":5078,
+   "next":"https://xchange.korba365.com/api/v1.0/client_transactions/?page=2",
+   "previous":null,
+   "results":[
+      {
+         "korba_transaction_id": "COL00034543",
+         "client_transaction_id": "00034543",
+         "network_code":"AIR",
+         "time_created":"2022-04-04T20:34:24.139548",
+         "credit_amt":"10.10",
+         "debit_amt":"10.10",
+         "transaction_status":"failed",
+         "exchange_message":"No Message found",
+         "extra_info":"",
+         "bundle_id":"",
+         "description":"",
+         "momo_id":"",
+         "recipient_bank_account_name":"",
+         "recipient_bank_name": "",
+         "recipient_bank_account": "",
+         "payer_name": "",
+         "ova_balance_before":"1480.50",
+         "ova_balance_after":"1480.50",
+         "customer_number":"0262186242",
+      },
+      {
+         "korba_transaction_id": "DIS00034543",
+         "client_transaction_id": "00034543",
+         "network_code":"ISP",
+         "time_created":"2022-04-04T20:34:24.139548",
+         "credit_amt":"10.10",
+         "debit_amt":"10.10",
+         "transaction_status":"failed",
+         "exchange_message":"No Message found",
+         "extra_info":"",
+         "bundle_id":"",
+         "description":"",
+         "momo_id":"",
+         "recipient_bank_account_name":"",
+         "recipient_bank_name": "",
+         "recipient_bank_account": "",
+         "payer_name": "",
+         "ova_balance_before":"1480.50",
+         "ova_balance_after":"1480.50",
+         "customer_number":"0262186242",
+      }
+      
+   ]
+}</code></pre>
+
+<br>
+
+</section>
+
+
+<section id="ussdotp">
+    <h1>USSD/SMS OTP</h1>
+
+
+    <p>This endpoint enables you to submit an OTP ready to displayed via a USSD Short Code and or SMS. The USSD session is only valid for 5 minutes<br><br></p>
+    <p> For USSD Dial *365*0# to access the code in live and *365*5# to access the code in test</p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/ussd_otp/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+       
+
+
+
+         <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID provided via the dashboard credentials
+            </td>
+        </tr>
+
+
+                 <tr>
+            <td class="code">phone_number</td>
+
+            <td>
+                MANDATORY Phone Number in the format +233XXXXXXXXXX
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">ussd_code</td>
+
+            <td>
+               MANDATORY code to display to USSD User
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">sms_message</td>
+
+            <td>
+               OPTIONAL sms content 
+            </td>
+        </tr>
+
+        <tr>
+            <td class="code">platform</td>
+
+            <td>
+                OPTIONAL Platform basically an alias of the platform you are sending, this is helpful if you have multiple platforms using the same service for easy identification
+            </td>
+        </tr>
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "client_id": "2",
+   "phone_number": "+233XXXXXXXXXX",
+   "code": "123456",
+   "platform": "platform"
+}</code></pre>
+<br>
+
+<p><strong>Sample Response - Success</strong></p>
+<pre><code>{
+           "message": 'Code Created',
+           "response_code": '00'
+        }</code></pre>
+
+<br>
+
+</section>
+
+
+<section id="sms">
+    <h1>SMS</h1>
+
+
+    <p>This endpoint enables you to submit an OTP ready to displayed via a USSD Short Code and or SMS. The USSD session is only valid for 5 minutes<br><br></p>
+    <p> For USSD Dial *365*0# to access the code in live and *365*5# to access the code in test</p>
+    <pre><code style='background:#4070ec; color:#fff; width:6%; font-weight:700; font-size:15px; padding:8px 8px'>POST</code></pre>
+    <pre><code>https://xchange.korba365.com/api/v1.0/send_sms/</code></pre>
+
+    <p>POST Parameters:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Parameter</th>
+                
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+       
+
+
+
+         <tr>
+            <td class="code">client_id</td>
+
+            <td>
+                MANDATORY Client ID provided via the dashboard credentials
+            </td>
+        </tr>
+
+
+                 <tr>
+            <td class="code">phone_number</td>
+
+            <td>
+                MANDATORY Phone Number in the format +233XXXXXXXXXX
+            </td>
+        </tr>
+
+
+
+        <tr>
+            <td class="code">sms_message</td>
+
+            <td>
+               OPTIONAL sms content 
+            </td>
+        </tr>
+
+
+</tbody>
+</table>
+
+<br>
+<p><strong>Request Example</strong></p>
+<pre><code>{
+   "client_id": "2",
+   "phone_number": "+233XXXXXXXXXX",
+   "sms_message": "This is the sample message to send",
+}</code></pre>
+<br>
+
+<p><strong>Sample Response - Success</strong></p>
+<pre><code>{
+           "message": 'Code Created',
+           "response_code": '00'
+        }</code></pre>
+
+<br>
+
+</section>
+</div><!-- /#content -->
+</div><!-- /#main -->
+
+</div><!-- /.container -->
+<style>
+    .chat-container {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      width: 350px;
+      height: 500px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+      overflow: hidden;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+
+    .chat-container.minimized {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .chat-container.minimized .chat-bubble-icon{
+      margin-left: 20px;
+    }
+
+    .chat-header {
+      /* background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); */
+      color: white;
+      padding: 8px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.3s ease;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+    }
+
+    .chat-container.minimized .chat-header {
+      padding: 0;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      justify-content: center;
+    }
+
+    .chat-title {
+      font-weight: 600;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .chat-container.minimized .chat-title {
+      opacity: 0;
+      transform: scale(0);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #4ade80;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+      100% {
+        opacity: 1;
+      }
+    }
+
+    .chat-bubble-icon {
+      display: none;
+      font-size: 24px;
+    }
+
+    .chat-container.minimized .chat-bubble-icon {
+      display: block;
+    }
+
+    .minimize-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.3s ease;
+      padding-right: 30px;
+    }
+
+    .minimize-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .chat-container.minimized .minimize-btn {
+      opacity: 0;
+      transform: scale(0);
+    }
+
+    .chat-content {
+      /* height: calc(100% - 60px); */
+      height: 100%;
+      transition: all 0.3s ease;
+    }
+
+    .chat-container.minimized .chat-content {
+      height: 0;
+      opacity: 0;
+    }
+  </style>
+  
+
+
+
+<!-- upgrade jquery to 3.4.0 -->
+<script src="https://code.jquery.com/jquery-3.5.0.min.js"></script>
+<script>
+
+(function ($) {
+    $.fn.extend({
+        easyResponsiveTabs: function (options) {
+
+            var defaults = {
+                type: 'default', 
+                width: 'auto',
+                fit: true,
+                closed: false,
+                activate: function(){}
+            }
+            
+            var options = $.extend(defaults, options);            
+            var opt = options, jtype = opt.type, jfit = opt.fit, jwidth = opt.width, vtabs = 'vertical', accord = 'accordion';
+
+            
+            $(this).bind('tabactivate', function(e, currentTab) {
+                if(typeof options.activate === 'function') {
+                    options.activate.call(currentTab, e)
+                }
+            });
+
+            
+            this.each(function () {
+                var $respTabs = $(this);
+                var $respTabsList = $respTabs.find('ul.resp-tabs-list');
+                $respTabs.find('ul.resp-tabs-list li').addClass('resp-tab-item');
+                $respTabs.css({
+                    'display': 'block',
+                    'width': jwidth
+                });
+
+                $respTabs.find('.resp-tabs-container > div').addClass('resp-tab-content');
+                jtab_options();
+                //Properties Function
+                function jtab_options() {
+                    if (jtype == vtabs) {
+                        $respTabs.addClass('resp-vtabs');
+                    }
+                    if (jfit == true) {
+                        $respTabs.css({ width: '100%', margin: '0px' });
+                    }
+                    if (jtype == accord) {
+                        $respTabs.addClass('resp-easy-accordion');
+                        $respTabs.find('.resp-tabs-list').css('display', 'none');
+                    }
+                }
+
+                //Assigning the h2 markup to accordion title
+                var $tabItemh2;
+                $respTabs.find('.resp-tab-content').before("<h2 class='resp-accordion' role='tab'><span class='resp-arrow'></span></h2>");
+
+                var itemCount = 0;
+                $respTabs.find('.resp-accordion').each(function () {
+                    $tabItemh2 = $(this);
+                    var innertext = $respTabs.find('.resp-tab-item:eq(' + itemCount + ')').html();
+                    $respTabs.find('.resp-accordion:eq(' + itemCount + ')').append(innertext);
+                    $tabItemh2.attr('aria-controls', 'tab_item-' + (itemCount));
+                    itemCount++;
+                });
+
+                //Assigning the 'aria-controls' to Tab items
+                var count = 0,
+                $tabContent;
+                $respTabs.find('.resp-tab-item').each(function () {
+                    $tabItem = $(this);
+                    $tabItem.attr('aria-controls', 'tab_item-' + (count));
+                    $tabItem.attr('role', 'tab');
+
+                    //First active tab, keep closed if option = 'closed' or option is 'accordion' and the element is in accordion mode 
+                    if(options.closed !== true && !(options.closed === 'accordion' && !$respTabsList.is(':visible')) && !(options.closed === 'tabs' && $respTabsList.is(':visible'))) {                  
+                        $respTabs.find('.resp-tab-item').first().addClass('resp-tab-active');
+                        $respTabs.find('.resp-accordion').first().addClass('resp-tab-active');
+                        $respTabs.find('.resp-tab-content').first().addClass('resp-tab-content-active').attr('style', 'display:block');
+                    }
+
+                    //Assigning the 'aria-labelledby' attr to tab-content
+                    var tabcount = 0;
+                    $respTabs.find('.resp-tab-content').each(function () {
+                        $tabContent = $(this);
+                        $tabContent.attr('aria-labelledby', 'tab_item-' + (tabcount));
+                        tabcount++;
+                    });
+                    count++;
+                });
+
+                //Tab Click action function
+                $respTabs.find("[role=tab]").each(function () {
+                    var $currentTab = $(this);
+                    $currentTab.click(function () {
+
+                        var $tabAria = $currentTab.attr('aria-controls');
+
+                        if ($currentTab.hasClass('resp-accordion') && $currentTab.hasClass('resp-tab-active')) {
+                            $respTabs.find('.resp-tab-content-active').slideUp('', function () { $(this).addClass('resp-accordion-closed'); });
+                            $currentTab.removeClass('resp-tab-active');
+                            return false;
+                        }
+                        if (!$currentTab.hasClass('resp-tab-active') && $currentTab.hasClass('resp-accordion')) {
+                            $respTabs.find('.resp-tab-active').removeClass('resp-tab-active');
+                            $respTabs.find('.resp-tab-content-active').slideUp().removeClass('resp-tab-content-active resp-accordion-closed');
+                            $respTabs.find("[aria-controls=" + $tabAria + "]").addClass('resp-tab-active');
+
+                            $respTabs.find('.resp-tab-content[aria-labelledby = ' + $tabAria + ']').slideDown().addClass('resp-tab-content-active');
+                        } else {
+                            $respTabs.find('.resp-tab-active').removeClass('resp-tab-active');
+                            $respTabs.find('.resp-tab-content-active').removeAttr('style').removeClass('resp-tab-content-active').removeClass('resp-accordion-closed');
+                            $respTabs.find("[aria-controls=" + $tabAria + "]").addClass('resp-tab-active');
+                            $respTabs.find('.resp-tab-content[aria-labelledby = ' + $tabAria + ']').addClass('resp-tab-content-active').attr('style', 'display:block');
+                        }
+                        //Trigger tab activation event
+                        $currentTab.trigger('tabactivate', $currentTab);
+                    });
+                    //Window resize function                   
+                    $(window).resize(function () {
+                        $respTabs.find('.resp-accordion-closed').removeAttr('style');
+                    });
+                });
+            });
+}
+});
+})(jQuery);
+
+
+</script>
+
+<script>
+$(document).ready(function() {
+    var headerSize = 70;
+    // Anchor scroll
+    $("a").each(function() {
+        if($(this).attr("href").substr(0, 1) === "#") {
+            $(this).on("click", function(e) {
+                e.preventDefault();
+                var id = $(this).attr("href");
+                $("html,body").animate({ scrollTop: parseInt($(id).offset().top) - headerSize }, 200);
+                window.location.hash = $(this).attr("href");
+            });
+        }
+    });
+    if(window.location.hash) {
+        var id = window.location.hash;
+        setTimeout(function() {
+            $("html,body").animate({ scrollTop: parseInt($(id).offset().top) - headerSize }, 0);
+        }, 1);
+    }
+
+    // Easy-Responsive-Tabs
+    $('#exampleTab').easyResponsiveTabs();
+
+    // Simple fix nav-main Scrollposition (no-resize)
+    var $doc = $(document);
+    var $nav = $(".nav-main");
+    var $params = $("#nav-main-params");
+    var maxMove = $params.offset().top - headerSize;
+    var height = $nav.height() - ($params.position().top - $nav.position().top) + headerSize;
+    function moveNav() {
+        if($doc.scrollTop() > maxMove) $nav.css({ marginTop: $doc.scrollTop() - maxMove });
+        else $nav.css({ marginTop: 0 });
+    }
+    // Enable if screen is heigh enough
+    if($doc.height() >= height) {
+        moveNav();
+        $doc.scroll(function() { moveNav(); });
+    }
+});
+</script>
+
+
+</body>
+</html>

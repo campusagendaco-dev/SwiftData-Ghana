@@ -37,7 +37,7 @@ serve(async (req) => {
     }
 
     // Find the right provider
-    const activeProvider = activeProviders.find((p) => p.name === "JustBuy" || p.handler_type === "justbuy") || activeProviders[0];
+    const activeProvider = activeProviders.find((p) => p.name === "Korba" || p.handler_type === "justbuy") || activeProviders[0];
 
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "PLACEHOLDER_CLIENT_ID";
     const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "PLACEHOLDER_CLIENT_KEY";
@@ -102,11 +102,19 @@ serve(async (req) => {
       headers["X-API-Key"] = activeProvider.api_key;
     }
 
-    const response = await fetch(lookupUrl, {
+    const proxyUrl = Deno.env.get("FIXIE_URL") || Deno.env.get("QUOTAGUARDSTATIC_URL");
+    const fetchOptions: any = {
       method: "POST",
       headers,
       body: JSON.stringify(payload)
-    });
+    };
+
+    if (proxyUrl) {
+      const client = Deno.createHttpClient({ proxy: { url: proxyUrl } });
+      fetchOptions.client = client;
+    }
+
+    const response = await fetch(lookupUrl, fetchOptions);
 
     const responseText = await response.text();
     let jsonResponse;
@@ -127,7 +135,9 @@ serve(async (req) => {
     }
 
     if (!response.ok || !jsonResponse.success) {
-       return new Response(JSON.stringify({ success: false, error: jsonResponse.error_message || jsonResponse.error || jsonResponse.message || "Provider lookup failed" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+       const apiError = jsonResponse.error_message || jsonResponse.error || jsonResponse.message || (typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse));
+       console.error("Korba API Error:", responseText);
+       return new Response(JSON.stringify({ success: false, error: apiError }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     let customerName = null;
