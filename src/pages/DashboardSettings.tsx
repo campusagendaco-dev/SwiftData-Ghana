@@ -1118,9 +1118,16 @@ const DashboardSettings = () => {
                           >
                             <div>
                               <p className="text-xs font-black text-white truncate">{res.domain}</p>
-                              <p className="text-[9px] font-bold text-white/30 uppercase mt-0.5 tracking-wider">
-                                {res.available ? "✅ Available" : "❌ Taken"}
-                              </p>
+                              <div className="flex flex-col gap-0.5">
+                                <p className="text-[9px] font-bold text-white/30 uppercase mt-0.5 tracking-wider">
+                                  {res.available ? "✅ Available" : "❌ Taken"}
+                                </p>
+                                {!res.available && res.message && res.message !== "Domain is already registered" && (
+                                  <p className="text-[8px] font-medium text-red-400/80 leading-tight">
+                                    {res.message}
+                                  </p>
+                                )}
+                              </div>
                             </div>
 
                             {res.available && (

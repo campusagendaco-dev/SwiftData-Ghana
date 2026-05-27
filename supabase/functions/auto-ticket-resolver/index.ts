@@ -83,13 +83,7 @@ Description: ${ticket.description}
   * Assure them they can safely resubmit the order.
   * Decide to automatically close/resolve the ticket.
 - Otherwise, draft an intelligent, helpful next-step reply (e.g. telling them how to check Paystack top-up status, or telling them the support team is investigating) and set should_resolve to false.
-- Keep the response response concise (2-4 sentences max).
-
-You MUST respond strictly with a valid JSON object containing exactly these two keys:
-{
-  "reply": "Your Ghanaian-style response message here",
-  "should_resolve": true (or false)
-}`;
+- Keep the response response concise (2-4 sentences max).`;
 
     // Fetch and base64-encode image if present
     let imageBlock: any = null;
@@ -148,10 +142,23 @@ You MUST respond strictly with a valid JSON object containing exactly these two 
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 600,
         system: systemPrompt,
         messages: messages,
+        tools: [{
+          name: "resolve_ticket",
+          description: "Finalize the ticket resolution with a reply and a status decision.",
+          input_schema: {
+            type: "object",
+            properties: {
+              reply: { type: "string", description: "Your Ghanaian-style response message to the user." },
+              should_resolve: { type: "boolean", description: "True if the ticket is resolved (e.g. refunded or fixed), False if it needs human review." }
+            },
+            required: ["reply", "should_resolve"]
+          }
+        }],
+        tool_choice: { type: "tool", name: "resolve_ticket" }
       }),
     });
 
@@ -162,29 +169,22 @@ You MUST respond strictly with a valid JSON object containing exactly these two 
     }
 
     const claudeData = await claudeRes.json();
-    const rawText = claudeData?.content?.[0]?.text?.trim() || "";
-
-    // 5. Parse AI Response
+    
     let reply = "Hello! We have received your ticket and our support team is actively looking into it. We will update you shortly.";
     let shouldResolve = false;
 
     try {
-      let cleanText = rawText;
-      if (cleanText.includes("```")) {
-        const match = cleanText.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
-        if (match && match[1]) {
-          cleanText = match[1].trim();
-        }
+      const toolUse = claudeData?.content?.find((c: any) => c.type === "tool_use");
+      if (toolUse && toolUse.name === "resolve_ticket") {
+        reply = toolUse.input.reply;
+        shouldResolve = toolUse.input.should_resolve;
+      } else {
+        // Fallback
+        const rawText = claudeData?.content?.[0]?.text || "";
+        reply = rawText;
       }
-      const parsed = JSON.parse(cleanText);
-      if (parsed.reply) reply = parsed.reply;
-      if (typeof parsed.should_resolve === "boolean") shouldResolve = parsed.should_resolve;
     } catch (_e) {
-      // Fallback if Claude didn't output strict JSON
-      reply = rawText;
-      if (rawText.toLowerCase().includes("refunded") || rawText.toLowerCase().includes("credited")) {
-        shouldResolve = true;
-      }
+      console.error("[auto-ticket-resolver] Failed to parse tool use:", _e);
     }
 
     // 6. Update Ticket in Database

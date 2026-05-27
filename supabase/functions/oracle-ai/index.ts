@@ -123,6 +123,17 @@ const TOOLS = [
         phone_number: { type: "string", description: "The customer phone number the data was meant for." }
       }
     }
+  },
+  {
+    name: "get_current_prices",
+    description: "Fetch the live data bundle pricing table (wholesale and retail prices) for a specific network.",
+    input_schema: {
+      type: "object",
+      properties: {
+        network: { type: "string", enum: ["MTN", "Telecel", "AirtelTigo"] }
+      },
+      required: ["network"]
+    }
   }
 ];
 
@@ -169,7 +180,7 @@ serve(async (req: Request) => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: "claude-sonnet-4-5-20250929",
           max_tokens: 1000,
           system: `${SYSTEM_PROMPT}\n\n━━━ JUDGE DIRECTIVE ━━━\nYou are now in JUDGE MODE. Use the investigate_dispute tool to see the provider logs. If the provider says "Success" but the user says "Failed", check the timestamps. If the provider response is missing, issue a REFUND.`,
           messages,
@@ -210,9 +221,10 @@ serve(async (req: Request) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    // Build the "Super Context" string
-    let superContext = "";
+    
+    const ghanaTime = new Date().toLocaleString("en-GB", { timeZone: "Africa/Accra", dateStyle: "full", timeStyle: "short" });
+    let superContext = `\nSYSTEM AWARENESS: The current local time in Ghana is ${ghanaTime}.`;
+    
     if (context.profile) {
       const p = context.profile;
       let liveBalance = p.wallet_balance;
@@ -255,7 +267,7 @@ serve(async (req: Request) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 800,
         system: SYSTEM_PROMPT,
         messages,
@@ -279,7 +291,22 @@ serve(async (req: Request) => {
         const { name, input } = toolUse;
         let toolResult = "";
 
-        if (name === "get_loyalty_status") {
+        if (name === "get_current_prices") {
+          const { network } = input;
+          const { data: pkgs } = await supabaseAdmin.from("global_package_settings")
+            .select("package_size, agent_price, public_price, is_unavailable")
+            .eq("network", network)
+            .order("agent_price", { ascending: true });
+            
+          if (!pkgs || pkgs.length === 0) {
+            toolResult = `No pricing data found for ${network}.`;
+          } else {
+            toolResult = `Live ${network} Prices:\n` + pkgs.map((p: any) => 
+              `- ${p.package_size}: ${p.is_unavailable ? 'UNAVAILABLE' : `Agent Price: ${p.agent_price} GHS, Retail: ${p.public_price} GHS`}`
+            ).join('\n');
+          }
+        }
+        else if (name === "get_loyalty_status") {
           const { data: profile } = await supabase.from("profiles").select("loyalty_points").eq("id", context.profile?.id).maybeSingle();
           toolResult = `User has ${profile?.loyalty_points || 0} loyalty points. 100 points = 1 GHS.`;
         } 
@@ -466,7 +493,7 @@ serve(async (req: Request) => {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
+            model: "claude-sonnet-4-5-20250929",
             max_tokens: 800,
             system: SYSTEM_PROMPT,
             messages: [
@@ -491,7 +518,7 @@ serve(async (req: Request) => {
   } catch (error: any) {
     console.error("oracle-ai error:", error);
     return new Response(JSON.stringify({
-      oracle_opinion: "I'm having a moment — please try again! 😊",
+      oracle_opinion: "ERROR: " + error.message,
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

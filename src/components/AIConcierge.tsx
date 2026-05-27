@@ -833,7 +833,12 @@ export default function AIConcierge() {
       <ChatHeader
         isMobile={isMobile}
         isSpeaking={isSpeaking}
-        onToggleSpeak={() => setIsSpeaking(s => !s)}
+        onToggleSpeak={() => {
+          setIsSpeaking(s => {
+            if (s) window.speechSynthesis.cancel();
+            return !s;
+          });
+        }}
         onClose={() => setOpen(false)}
       />
       <MessageList messages={messages} typing={typing} bottomRef={bottomRef} />

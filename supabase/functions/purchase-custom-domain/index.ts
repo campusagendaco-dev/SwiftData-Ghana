@@ -35,8 +35,9 @@ serve(async (req: Request) => {
     const GODADDY_API_KEY = Deno.env.get("GODADDY_API_KEY")?.trim();
     const GODADDY_API_SECRET = Deno.env.get("GODADDY_API_SECRET")?.trim();
     const GODADDY_ENV = Deno.env.get("GODADDY_ENV")?.trim() || "sandbox";
+    const FORCE_SIMULATION = Deno.env.get("FORCE_SIMULATION")?.trim() === "true";
 
-    const isSimulation = !GODADDY_API_KEY || !GODADDY_API_SECRET;
+    const isSimulation = FORCE_SIMULATION || !GODADDY_API_KEY || !GODADDY_API_SECRET;
     const godaddyBase = GODADDY_ENV === "production" ? "https://api.godaddy.com" : "https://api.ote-godaddy.com";
 
     const godaddyHeaders: Record<string, string> = {
