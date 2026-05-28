@@ -185,7 +185,7 @@ serve(async (req) => {
 
           // Send SMS Confirmation
           if (order.customer_phone) {
-            await sendPaymentSms(supabaseAdmin, order.customer_phone, "payment_success");
+            await sendPaymentSms(supabaseAdmin, order.customer_phone, "payment_success", {}, order.agent_id);
           }
 
           fulfilledCount++;

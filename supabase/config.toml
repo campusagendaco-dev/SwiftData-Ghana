@@ -105,3 +105,36 @@ entrypoint = "./functions/utility-lookup/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/utility-lookup/*.html" ]
+
+[functions.ai-sales-recommender]
+enabled = true
+verify_jwt = false
+import_map = "./functions/ai-sales-recommender/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/ai-sales-recommender/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/ai-sales-recommender/*.html" ]
+
+[functions.ai-vendor-recommender]
+enabled = true
+verify_jwt = false
+import_map = "./functions/ai-vendor-recommender/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/ai-vendor-recommender/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/ai-vendor-recommender/*.html" ]
+
+[functions.ai-routing-recommender]
+enabled = true
+verify_jwt = false
+import_map = "./functions/ai-routing-recommender/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/ai-routing-recommender/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/ai-routing-recommender/*.html" ]

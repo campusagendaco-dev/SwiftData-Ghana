@@ -152,6 +152,7 @@ const AdminOverview = () => {
   const [verifiedLogs, setVerifiedLogs] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"topups" | "audit">("topups");
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     const now = new Date();
@@ -181,11 +182,16 @@ const AdminOverview = () => {
       supabase.from("wallets").select("balance"),
       supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
       supabase.rpc("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
+      supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
     ]);
 
     // Safely unwrap allSettled results — failed queries default to empty/null
     const unwrap = (r: PromiseSettledResult<any>) => r.status === "fulfilled" ? r.value : { data: null, error: null };
-    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes] = settled.map(unwrap);
+    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes, aiRes] = settled.map(unwrap);
+
+    if (aiRes && aiRes.data) {
+      setAiRecommendations(aiRes.data);
+    }
 
     const orders = ordersRes?.data || [];
     const profiles = profilesRes?.data || [];
@@ -660,6 +666,39 @@ const AdminOverview = () => {
           <RefreshCw className="w-3.5 h-3.5" /> Sync Data
         </Button>
       </div>
+
+      {/* AI Critical Alerts Banner */}
+      {aiRecommendations.length > 0 && (
+        <div className="grid gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+          {aiRecommendations.map((rec) => (
+            <div key={rec.id} className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between shadow-[0_0_30px_-5px_rgba(239,68,68,0.15)]">
+              <div className="absolute top-0 left-0 w-1 h-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
+              <div className="flex items-start gap-4 z-10">
+                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0 border border-red-500/30">
+                  <Activity className="w-5 h-5 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                </div>
+                <div>
+                  <h3 className="font-black text-red-500">{rec.title}</h3>
+                  <p className="text-sm mt-1 text-gray-800 dark:text-gray-200 font-medium">
+                    {rec.message}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto z-10">
+                <button 
+                  onClick={async () => {
+                    await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                    setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
+                  }}
+                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-black text-sm flex-1 sm:flex-none text-center shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all active:scale-95"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {statCards.map((c) => {

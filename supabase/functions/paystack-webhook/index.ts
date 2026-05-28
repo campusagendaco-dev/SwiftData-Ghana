@@ -953,7 +953,7 @@ serve(async (req) => {
     }
 
     if (shouldSendDataPaymentSms && smsPhone) {
-      await sendPaymentSms(supabaseAdmin, smsPhone, "payment_success");
+      await sendPaymentSms(supabaseAdmin, smsPhone, "payment_success", {}, existingOrder?.agent_id);
     }
 
     // Declare orderType BEFORE first use to avoid temporal dead zone crash
@@ -1440,7 +1440,7 @@ serve(async (req) => {
         if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
           await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
         }
-        if (customerPhone) await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success");
+        if (customerPhone) await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success", {}, existingOrder?.agent_id);
         if (metadata.channel === "whatsapp" && metadata.wa_from) {
           await sendWhatsAppFulfillmentNotification(String(metadata.wa_from), "airtime", network, `GH₵${airtimeAmount}`, customerPhone);
         }
@@ -1551,7 +1551,7 @@ serve(async (req) => {
         }
 
         if (customerPhone) {
-          await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success");
+          await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success", {}, existingOrder?.agent_id);
         }
 
         if (metadata.channel === "whatsapp" && metadata.wa_from) {

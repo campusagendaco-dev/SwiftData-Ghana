@@ -76,7 +76,7 @@ serve(async (req) => {
       await sendPaymentSms(supabaseAdmin, notificationPhone, "utility_paid", {
         utility_type,
         account: utility_account_number,
-      });
+      }, user.id);
     }
 
     console.log("Wallet utility payment created:", orderId, utility_provider, payAmount);

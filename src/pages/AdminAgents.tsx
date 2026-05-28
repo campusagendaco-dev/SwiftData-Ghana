@@ -66,6 +66,8 @@ const AdminAgents = () => {
   const [hasMore, setHasMore] = useState(true);
   const [forceEmail, setForceEmail] = useState("");
   const [forcingEmail, setForcingEmail] = useState(false);
+  const [pendingSenderIds, setPendingSenderIds] = useState<any[]>([]);
+  const [updatingSenderId, setUpdatingSenderId] = useState<string | null>(null);
   const PAGE_SIZE = 50;
   const { toast } = useToast();
   const { user: currentUser, session } = useAuth();
@@ -177,6 +179,19 @@ const AdminAgents = () => {
       }
     } else {
       setStuckActivations([]);
+    }
+
+    // Fetch pending SMS Sender IDs
+    const { data: pendingSenderData } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, store_name, sms_sender_id")
+      .eq("sms_sender_status", "pending")
+      .not("sms_sender_id", "is", null);
+      
+    if (pendingSenderData) {
+      setPendingSenderIds(pendingSenderData as any[]);
+    } else {
+      setPendingSenderIds([]);
     }
 
     setLoading(false);
@@ -322,6 +337,36 @@ const AdminAgents = () => {
     setForcingEmail(false);
   };
 
+  const handleApproveSenderId = async (userId: string) => {
+    setUpdatingSenderId(userId);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ sms_sender_status: 'approved' })
+      .eq("user_id", userId);
+    if (!error) {
+      toast({ title: "Sender ID Approved", description: "You must also register it with your SMS Provider." });
+      await fetchAgents(false);
+    } else {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    }
+    setUpdatingSenderId(null);
+  };
+
+  const handleRejectSenderId = async (userId: string) => {
+    setUpdatingSenderId(userId);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ sms_sender_status: 'rejected' })
+      .eq("user_id", userId);
+    if (!error) {
+      toast({ title: "Sender ID Rejected" });
+      await fetchAgents(false);
+    } else {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    }
+    setUpdatingSenderId(null);
+  };
+
   const toggleExpand = async (agentId: string) => {
     if (expandedId === agentId) { setExpandedId(null); return; }
     setExpandedId(agentId);
@@ -429,6 +474,58 @@ const AdminAgents = () => {
           ))}
         </div>
       </div>
+
+      {/* ── Pending Sender IDs Banner ── */}
+      {pendingSenderIds.length > 0 && (
+        <div className="relative group overflow-hidden rounded-[2rem] border border-indigo-500/20 bg-indigo-500/[0.05] shadow-sm animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-indigo-500 via-indigo-400 to-indigo-600" />
+          
+          <div className="flex flex-col px-8 py-6">
+            <div className="flex items-center gap-5 mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0 shadow-xl shadow-indigo-500/5">
+                <MessageCircle className="w-7 h-7 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="font-black text-xl tracking-tight text-foreground">
+                  {pendingSenderIds.length} Pending Sender ID{pendingSenderIds.length !== 1 ? "s" : ""}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Agents have requested custom SMS Sender IDs. Register them with your SMS provider before approving.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingSenderIds.map((item) => (
+                <div key={item.user_id} className="bg-background/60 border border-border rounded-xl p-4 flex flex-col gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-foreground truncate">{item.store_name || item.full_name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Requested: <span className="font-mono text-indigo-400">{item.sms_sender_id}</span></p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleApproveSenderId(item.user_id)}
+                      disabled={updatingSenderId === item.user_id}
+                      className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white"
+                    >
+                      {updatingSenderId === item.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Approve"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRejectSenderId(item.user_id)}
+                      disabled={updatingSenderId === item.user_id}
+                      className="flex-1"
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Stuck Activations Banner ── */}
       {stuckActivations.length > 0 && (

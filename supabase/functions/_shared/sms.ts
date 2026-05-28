@@ -23,16 +23,37 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return digits.length >= 10 ? digits : null;
 }
 
-export async function getSmsConfig(supabaseAdmin: any) {
+export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
   const { data: settings } = await supabaseAdmin
     .from("system_settings")
     .select("*")
     .eq("id", 1)
     .maybeSingle();
 
+  const defaultSenderId = settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh";
+  let finalSenderId = defaultSenderId;
+
+  if (agentId) {
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("sms_sender_id, sms_sender_status")
+      .eq("user_id", agentId)
+      .maybeSingle();
+      
+    if (profile && profile.sms_sender_status === 'approved' && profile.sms_sender_id) {
+      // Attempt to charge an SMS credit
+      const { data: charged } = await supabaseAdmin.rpc("charge_sms_credit", { p_user_id: agentId });
+      if (charged) {
+        finalSenderId = profile.sms_sender_id;
+      } else {
+        console.log(`[SMS] Agent ${agentId} has no SMS credits. Falling back to default Sender ID.`);
+      }
+    }
+  }
+
   return {
     apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY"),
-    senderId: settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh",
+    senderId: finalSenderId,
     templates: {
       payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} has been processed. Join for more giveaways & updates: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
       utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
@@ -141,10 +162,11 @@ export async function sendPaymentSms(
   supabaseAdmin: any,
   customerPhone: string,
   type: "payment_success" | "order_failed" | "wallet_topup" | "withdrawal_request" | "withdrawal_completed" | "manual_credit" | "utility_paid" = "payment_success",
-  vars: Record<string, string | number> = {}
+  vars: Record<string, string | number> = {},
+  agentId?: string
 ) {
   try {
-    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin);
+    const { apiKey, senderId, templates } = await getSmsConfig(supabaseAdmin, agentId);
     const recipient = normalizePhone(customerPhone);
     
     if (!apiKey || !recipient) {

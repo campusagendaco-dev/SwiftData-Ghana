@@ -32,6 +32,7 @@ const DashboardLayout = () => {
   const { supported, permissionState, subscribeUser, loading: subLoading } = usePushNotifications();
   const [pushDismissed, setPushDismissed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
   const showLowBalanceAlert = isPaidAgent && !alertDismissed && walletBalance < LOW_BALANCE_THRESHOLD && walletBalance >= 0;
@@ -62,11 +63,21 @@ const DashboardLayout = () => {
       if (data) {
         setWalletBalance(Number(data.balance || 0));
       } else {
-
         setWalletBalance(0);
       }
     };
     fetchBalance();
+
+    const fetchAiRecs = async () => {
+      const { data } = await supabase
+        .from("ai_recommendations")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_acted_upon", false)
+        .order("created_at", { ascending: false });
+      if (data) setAiRecommendations(data);
+    };
+    fetchAiRecs();
 
     const channel = supabase
       .channel("wallet-balance-header")
@@ -266,6 +277,49 @@ const DashboardLayout = () => {
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
+
+        {/* ── AI Profit Recommender Banner ── */}
+        {aiRecommendations.length > 0 && (
+          <div className="shrink-0 px-4 sm:px-6 py-3 transition-all duration-300">
+            {aiRecommendations.map((rec) => (
+              <div key={rec.id} className="p-4 mb-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between shadow-[0_0_30px_-5px_rgba(99,102,241,0.15)]">
+                <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
+                <div className="flex items-start gap-4 z-10">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                    <span className="text-xl">✨</span>
+                  </div>
+                  <div>
+                    <h3 className="font-black text-indigo-400">{rec.title}</h3>
+                    <p className="text-sm mt-1 text-gray-800 dark:text-gray-300 font-medium">
+                      {rec.message}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto z-10">
+                  <button 
+                    onClick={async () => {
+                      await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                      setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
+                      navigate("/dashboard/pricing");
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black text-sm flex-1 sm:flex-none text-center shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-all hover:scale-105"
+                  >
+                    Update Pricing
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                      setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
+                    }}
+                    className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

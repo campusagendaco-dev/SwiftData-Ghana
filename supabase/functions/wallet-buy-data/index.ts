@@ -250,7 +250,7 @@ serve(async (req: Request) => {
       phone: customer_phone,
       package: package_size || "Data Bundle",
       amount: requestedAmount
-    }).catch(e => console.error("[SMS-ERROR]", e));
+    }, user.id).catch(e => console.error("[SMS-ERROR]", e));
 
     // 4. AUTO-BRIDGE CHECK (NON-BLOCKING)
     if (agentProfile?.is_sub_agent) {

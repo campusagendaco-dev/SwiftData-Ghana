@@ -13,7 +13,7 @@ import {
   Search, Loader2, CheckCircle2, AlertCircle, Info,
   ArrowDownCircle, ArrowUpCircle, RefreshCw, Globe,
   Eye, EyeOff, Share2, UserPlus, Users, TrendingUp, AlertTriangle, Lock,
-  Download, History, ShieldAlert
+  Download, History, ShieldAlert, Sparkles, X
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -119,9 +119,10 @@ const DashboardSwiftVendor = () => {
   const [networkStatus, setNetworkStatus] = useState({
     MTN: "Stable",
     VOD: "Stable",
-    ATL: "Stable",
-    BANK: "Stable"
+    TGO: "Stable",
+    GLO: "Stable"
   });
+  const [aiRecommendations, setAiRecommendations] = useState<any[]>([]);
   
   // MoMo State
   const [momoAction, setMomoAction] = useState<"cash-in" | "cash-out">("cash-out");
@@ -156,6 +157,13 @@ const DashboardSwiftVendor = () => {
   const [bridgeAmount, setBridgeAmount] = useState("");
 
   const [minTxAmount, setMinTxAmount] = useState<number>(1.00);
+
+  // Gamification & Churn AI
+  const [swiftPoints, setSwiftPoints] = useState<number>(0);
+  const [showPointsModal, setShowPointsModal] = useState(false);
+  const [redeemAmount, setRedeemAmount] = useState<number>(100);
+  const [redeeming, setRedeeming] = useState(false);
+  const [churnInsights, setChurnInsights] = useState<any[]>([]);
 
   // Transaction processing overlay state
   const [overlay, setOverlay] = useState<{
@@ -590,6 +598,17 @@ const DashboardSwiftVendor = () => {
       }
     }
 
+    // Fetch AI Recommendations
+    const { data: recs } = await supabase
+      .from("ai_recommendations")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_acted_upon", false)
+      .order("created_at", { ascending: false });
+    if (recs) {
+      setAiRecommendations(recs);
+    }
+
     const { data: sysSettings } = await supabase
       .from("public_system_settings")
       .select("vendor_min_transaction")
@@ -602,8 +621,17 @@ const DashboardSwiftVendor = () => {
       }
     }
 
-    const { data } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).single();
-    if (data) setWalletBalance(Number(data.balance));
+    const { data } = await supabase.from("wallets").select("balance, swift_points").eq("agent_id", user.id).single();
+    if (data) {
+      setWalletBalance(Number(data.balance));
+      setSwiftPoints(Number(data.swift_points || 0));
+    }
+
+    // Fetch AI Churn Insights
+    const { data: churnData } = await supabase.rpc("get_agent_churn_insights", { p_agent_id: user.id });
+    if (churnData) {
+      setChurnInsights(churnData);
+    }
 
     // Fetch Today's Stats
     const today = new Date();
@@ -691,6 +719,29 @@ const DashboardSwiftVendor = () => {
       if (!silent) {
         toast.error(err.message || "Failed to verify transaction status", { id: "verify-order" });
       }
+    }
+  };
+
+  const handleRedeemPoints = async () => {
+    if (redeemAmount < 100 || redeemAmount % 100 !== 0) {
+      toast.error("Points must be redeemed in multiples of 100");
+      return;
+    }
+    setRedeeming(true);
+    try {
+      const { data, error } = await supabase.rpc("redeem_swift_points", { p_points: redeemAmount });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Redemption failed");
+      
+      toast.success(`Successfully redeemed GHS ${data.redeemed_amount.toFixed(2)} to wallet!`);
+      setSwiftPoints(data.new_points);
+      fetchBalance();
+      setShowPointsModal(false);
+      playSuccessSound();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to redeem points");
+    } finally {
+      setRedeeming(false);
     }
   };
 
@@ -1224,6 +1275,49 @@ const DashboardSwiftVendor = () => {
         </div>
       )}
 
+      {/* AI Profit Recommender Banner */}
+      {aiRecommendations.length > 0 && (
+        <div className="mb-6 grid gap-4 animate-in slide-in-from-top-4 duration-500">
+          {aiRecommendations.map((rec) => (
+            <div key={rec.id} className="p-4 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between shadow-[0_0_30px_-5px_rgba(99,102,241,0.15)]">
+              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
+              <div className="flex items-start gap-4 z-10">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                  <Sparkles className="w-5 h-5 text-indigo-400 drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                </div>
+                <div>
+                  <h3 className="font-black text-indigo-400">{rec.title}</h3>
+                  <p className="text-sm mt-1 text-gray-300 font-medium">
+                    {rec.message}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto z-10">
+                <button 
+                  onClick={async () => {
+                    await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                    setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
+                    navigate("/dashboard/vendor/pricing");
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black text-sm flex-1 sm:flex-none text-center shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-all hover:scale-105"
+                >
+                  Update Pricing
+                </button>
+                <button 
+                  onClick={async () => {
+                    await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                    setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
+                  }}
+                  className="p-2 rounded-xl hover:bg-white/10 text-gray-400 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
@@ -1234,7 +1328,7 @@ const DashboardSwiftVendor = () => {
           <p className="text-muted-foreground mt-1.5 font-medium text-sm">Flagship Agency Banking POS by theTeller</p>
         </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
           <p className="text-[9px] font-black uppercase tracking-widest text-primary/70">Float</p>
           <div className="flex items-center gap-2">
@@ -1255,7 +1349,20 @@ const DashboardSwiftVendor = () => {
           </div>
         </div>
 
-        <div className="col-span-2 sm:col-span-1 bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 relative overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+        <div 
+          onClick={() => setShowPointsModal(true)}
+          className="bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 shadow-[0_8px_30px_rgb(0,0,0,0.12)] cursor-pointer hover:bg-white/5 transition-all group"
+        >
+          <p className="text-[9px] font-black uppercase tracking-widest text-indigo-400/70 group-hover:text-indigo-400 transition-colors">Swift Points</p>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-400 group-hover:animate-pulse" />
+            <p className={cn("text-base font-black text-indigo-400 truncate", isPrivateMode && "blur-md")}>
+              {swiftPoints.toLocaleString()}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-[#1c1c1e]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-4 flex flex-col justify-center gap-1.5 relative overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
           <div className="flex items-center justify-between">
             <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Security</p>
              <Button 
@@ -2039,7 +2146,58 @@ const DashboardSwiftVendor = () => {
           </div>
         </TabsContent>
         <TabsContent value="insights" className="animate-in slide-in-from-bottom-4 duration-500">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="space-y-6">
+            <div className="bg-[#1c1c1e]/60 backdrop-blur-xl rounded-3xl p-6 border border-indigo-500/30">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-black text-indigo-400 flex items-center gap-2">
+                    <Sparkles className="w-5 h-5" /> AI Churn Insights
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">Smart alerts for loyal customers who haven't bought in a while.</p>
+                </div>
+              </div>
+
+              {churnInsights.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed border-indigo-500/20 rounded-2xl">
+                  <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle2 className="w-8 h-8 text-indigo-400" />
+                  </div>
+                  <h3 className="text-lg font-black text-white">Your customers are highly engaged!</h3>
+                  <p className="text-sm text-muted-foreground">Our AI couldn't find any loyal customers who are currently at risk of churning.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {churnInsights.map((insight, idx) => (
+                    <div key={idx} className="bg-black/40 rounded-2xl p-4 border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center border border-red-500/20 shrink-0">
+                          <AlertTriangle className="w-6 h-6 text-red-500" />
+                        </div>
+                        <div>
+                          <p className="font-black text-white text-lg">{insight.phone}</p>
+                          <p className="text-xs text-muted-foreground font-medium mt-1">
+                            <span className="text-red-400">At Risk!</span> Last bought {insight.days_since_last_purchase} days ago.
+                          </p>
+                          <div className="flex gap-2 mt-2">
+                            <Badge variant="outline" className="text-[10px] bg-white/5">{insight.total_orders} Past Orders</Badge>
+                            <Badge variant="outline" className="text-[10px] bg-white/5">Usually buys {insight.favorite_package}</Badge>
+                          </div>
+                        </div>
+                      </div>
+                      <Button 
+                        onClick={() => navigate('/dashboard/vendor/settings')}
+                        className="bg-indigo-500 hover:bg-indigo-600 text-white font-black rounded-xl h-10 shrink-0"
+                      >
+                        Send Promo SMS
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
             <Card className="border border-white/5 bg-[#1c1c1e]/60 backdrop-blur-2xl shadow-2xl shadow-black/20 lg:col-span-2 rounded-[24px]">
                <CardHeader className="bg-white/5 border-b border-white/5 pb-5 rounded-t-[24px]">
                 <CardTitle className="text-xl font-black flex items-center gap-2">
@@ -2409,6 +2567,66 @@ const DashboardSwiftVendor = () => {
         onApprove={securityApproval.onApprove}
         onCancel={() => setSecurityApproval(prev => ({ ...prev, isOpen: false }))}
       />
+
+      {/* Points Redemption Modal */}
+      {showPointsModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-[#111116] border border-indigo-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500"></div>
+            
+            <button 
+              onClick={() => setShowPointsModal(false)}
+              className="absolute top-4 right-4 text-white/40 hover:text-white transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col gap-5 mt-2">
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                  <Sparkles className="w-8 h-8 text-indigo-400" />
+                </div>
+                <h3 className="text-2xl font-black text-white mt-4">Swift Rewards</h3>
+                <p className="text-sm text-white/50">Turn your loyalty points into wallet cash.</p>
+              </div>
+
+              <div className="bg-black/50 rounded-2xl p-4 border border-white/5 text-center">
+                <p className="text-xs font-black uppercase tracking-widest text-indigo-400/70">Your Balance</p>
+                <p className="text-3xl font-black text-indigo-400 mt-1">{swiftPoints.toLocaleString()} PTS</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Points to Redeem</Label>
+                  <Input 
+                    type="number"
+                    min="100"
+                    step="100"
+                    value={redeemAmount}
+                    onChange={(e) => setRedeemAmount(parseInt(e.target.value) || 0)}
+                    className="bg-black/50 border-white/10 h-12 text-lg rounded-xl font-bold"
+                  />
+                  <p className="text-[10px] text-white/40 ml-1">Must be multiples of 100.</p>
+                </div>
+                
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex justify-between items-center">
+                  <span className="text-sm font-bold text-emerald-500/70">Cash Value:</span>
+                  <span className="text-xl font-black text-emerald-500">GHS {((redeemAmount / 100) * 1.00).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleRedeemPoints}
+                disabled={redeeming || redeemAmount < 100 || redeemAmount > swiftPoints}
+                className="w-full h-12 mt-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black transition-all disabled:opacity-50"
+              >
+                {redeeming ? <Loader2 className="w-5 h-5 animate-spin" /> : "Redeem Cash"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </SecurityGateway>
   );
 };

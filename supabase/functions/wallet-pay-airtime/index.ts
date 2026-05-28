@@ -152,7 +152,7 @@ serve(async (req) => {
       phone: customer_phone,
       package: "Airtime",
       amount: requestedAmount
-    }).catch(e => console.error("[SMS-ERROR-AIRTIME]", e));
+    }, user.id).catch(e => console.error("[SMS-ERROR-AIRTIME]", e));
 
     return new Response(JSON.stringify({ 
       success: true, 

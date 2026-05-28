@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { generateSlug } from "@/lib/data";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -104,19 +105,50 @@ const DashboardSettings = () => {
   const [showDomainModal, setShowDomainModal] = useState(false);
   const [selectedDomainToBuy, setSelectedDomainToBuy] = useState<any | null>(null);
 
+  // SMS Credits state
+  const [smsBalance, setSmsBalance] = useState<number>(0);
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsCreditAmount, setSmsCreditAmount] = useState<number>(100);
+  const [buyingSmsCredits, setBuyingSmsCredits] = useState(false);
+
   const fetchAgentWallet = async () => {
     if (!user) return;
     try {
       const { data } = await supabase
         .from("wallets")
-        .select("balance")
+        .select("balance, sms_balance")
         .eq("agent_id", user.id)
         .maybeSingle();
       if (data) {
         setAgentWalletBalance(Number(data.balance || 0));
+        setSmsBalance(Number(data.sms_balance || 0));
       }
     } catch (e) {
       console.error("Error fetching wallet balance:", e);
+    }
+  };
+
+  const handlePurchaseSmsCredits = async () => {
+    if (smsCreditAmount < 1) return;
+    const cost = smsCreditAmount * 0.09;
+    if (agentWalletBalance < cost) {
+      toast({ title: "Insufficient Balance", description: `You need GHS ${cost.toFixed(2)} to buy ${smsCreditAmount} credits.`, variant: "destructive" });
+      return;
+    }
+    setBuyingSmsCredits(true);
+    try {
+      const { data, error } = await supabase.rpc("purchase_sms_credits", { p_amount: smsCreditAmount });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Purchase failed");
+      
+      setSmsBalance(data.new_sms_balance);
+      setAgentWalletBalance(data.new_wallet_balance);
+      setShowSmsModal(false);
+      toast({ title: "Purchase Successful", description: `You bought ${smsCreditAmount} SMS credits.` });
+    } catch (e: any) {
+      toast({ title: "Purchase Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setBuyingSmsCredits(false);
     }
   };
 
@@ -371,6 +403,8 @@ const DashboardSettings = () => {
     store_description: "",
     store_primary_color: "#fbbf24",
     custom_domain: "",
+    sms_sender_id: "",
+    sms_sender_status: "none",
   });
 
   // Fetch all reseller stores
@@ -419,6 +453,8 @@ const DashboardSettings = () => {
         momo_number: profile.momo_number || "",
         momo_network: profile.momo_network || "",
         momo_account_name: profile.momo_account_name || "",
+        sms_sender_id: profile.sms_sender_id || "",
+        sms_sender_status: profile.sms_sender_status || "none",
       }));
     }
   }, [profile]);
@@ -590,6 +626,8 @@ const DashboardSettings = () => {
         momo_number: form.momo_number.trim(),
         momo_network: form.momo_network.trim(),
         momo_account_name: form.momo_account_name.trim(),
+        sms_sender_id: form.sms_sender_id.trim() || null,
+        sms_sender_status: form.sms_sender_id.trim() ? (form.sms_sender_status === 'none' || form.sms_sender_status === 'rejected' ? 'pending' : form.sms_sender_status) : 'none',
       }).eq("user_id", user.id);
 
       if (profileError) throw profileError;
@@ -833,6 +871,62 @@ const DashboardSettings = () => {
                   </div>
                 </Field>
               </div>
+            </SECTION>
+
+            <SECTION icon={MessageCircle} title="SMS Branding (Sender ID)" description="Customize the Sender ID for receipts and promos sent to your customers">
+              <Field label="Custom SMS Sender ID" hint="Must be 11 characters or less, alphanumeric. Subject to admin & telco approval.">
+                <div className="relative">
+                  <MessageCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <StyledInput
+                    value={form.sms_sender_id}
+                    onChange={(e) => update("sms_sender_id", e.target.value)}
+                    placeholder="e.g. SwiftData"
+                    maxLength={11}
+                    style={{ paddingLeft: "2.25rem", paddingRight: "2.25rem" }}
+                  />
+                  {form.sms_sender_status === 'approved' && <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" title="Approved" />}
+                  {form.sms_sender_status === 'pending' && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400 animate-spin" title="Pending Approval" />}
+                  {form.sms_sender_status === 'rejected' && <XCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-red-400" title="Rejected" />}
+                </div>
+                <div className="mt-2 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] uppercase tracking-widest font-black">
+                      Status: 
+                      <span className={cn(
+                        "ml-1",
+                        form.sms_sender_status === 'approved' ? "text-emerald-400" :
+                        form.sms_sender_status === 'pending' ? "text-amber-400" :
+                        form.sms_sender_status === 'rejected' ? "text-red-400" : "text-white/40"
+                      )}>
+                        {form.sms_sender_status || 'None'}
+                      </span>
+                    </div>
+                    {(!form.sms_sender_id || form.sms_sender_status === 'none') && form.store_name && (
+                      <button
+                        type="button"
+                        onClick={() => update("sms_sender_id", form.store_name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 11))}
+                        className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                      >
+                        <span>✨</span> AI Suggestion: {form.store_name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 11)}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-white/5">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest font-black text-white/40">SMS Credits</p>
+                      <p className="text-lg font-black text-white">{smsBalance.toLocaleString()}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSmsModal(true)}
+                      className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs font-bold transition-all"
+                    >
+                      Buy Credits
+                    </button>
+                  </div>
+                </div>
+              </Field>
             </SECTION>
 
             {selectedStoreId && selectedStoreId !== "new" && (
@@ -1594,6 +1688,55 @@ const DashboardSettings = () => {
           </div>
         )}
       </div>
+      {/* Buy SMS Credits Modal */}
+      {showSmsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-[#111116] border border-white/10 rounded-3xl p-6 shadow-2xl relative">
+            <button 
+              onClick={() => setShowSmsModal(false)}
+              className="absolute top-4 right-4 text-white/40 hover:text-white transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                <MessageCircle className="w-6 h-6 text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-white">Buy SMS Credits</h3>
+                <p className="text-sm text-white/40 mt-1">Purchase credits to use your custom Sender ID for customer receipts. 1 SMS = GHS 0.09.</p>
+              </div>
+
+              <div className="space-y-4 mt-2">
+                <Field label="Number of Credits">
+                  <Input 
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={smsCreditAmount}
+                    onChange={(e) => setSmsCreditAmount(parseInt(e.target.value) || 0)}
+                    className="bg-black/50 border-white/10 h-12 text-lg rounded-xl"
+                  />
+                </Field>
+                
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex justify-between items-center">
+                  <span className="text-sm font-bold text-white/70">Total Cost:</span>
+                  <span className="text-lg font-black text-amber-400">GHS {(smsCreditAmount * 0.09).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handlePurchaseSmsCredits}
+                disabled={buyingSmsCredits || smsCreditAmount < 1}
+                className="w-full h-12 mt-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-black transition-all disabled:opacity-50 flex items-center justify-center"
+              >
+                {buyingSmsCredits ? <Loader2 className="w-5 h-5 animate-spin" /> : "Purchase Now"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
