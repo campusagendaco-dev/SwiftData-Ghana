@@ -37,6 +37,8 @@ interface DailySalesPoint {
   "Sub-Agents": number;
   Deposits: number;
   Purchases: number;
+  GB: number;
+  Orders: number;
 }
 
 interface TodaySales {
@@ -70,6 +72,10 @@ const DailySalesTooltip = ({ active, payload, label, isDark }: any) => {
       <div className={`mt-3 pt-3 border-t flex items-center justify-between gap-4 ${isDark ? "border-white/10" : "border-gray-200"}`}>
         <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-white/40" : "text-gray-400"}`}>Total Vol</span>
         <span className={`font-black text-lg ${isDark ? "text-white" : "text-gray-900"}`}>GH₵{total.toFixed(2)}</span>
+      </div>
+      <div className="flex justify-between items-center mt-2 gap-4">
+        <span className="text-[10px] font-bold text-blue-400">{payload[0]?.payload?.GB?.toFixed(2) || "0.00"} GB Sold</span>
+        <span className="text-[10px] font-bold text-purple-400">{payload[0]?.payload?.Orders || 0} Orders</span>
       </div>
       {payload[0]?.payload?.Deposits > 0 && (
         <p className="text-[10px] text-amber-500 mt-1 font-bold text-right">
@@ -245,7 +251,7 @@ const AdminOverview = () => {
         const key = d.toISOString().slice(0, 10);
         dateMap[key] = {
           date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
-          Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0,
+          Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0, GB: 0, Orders: 0
         };
       }
       // Overlay RPC data — use string slice to avoid timezone shifts
@@ -257,6 +263,8 @@ const AdminOverview = () => {
           dateMap[key]["Sub-Agents"] = Number(r.sub_agent_sales) || 0;
           dateMap[key].Deposits = Number(r.deposit_volume) || 0;
           dateMap[key].Purchases = dateMap[key].Customers + dateMap[key].Agents + dateMap[key]["Sub-Agents"];
+          dateMap[key].GB = Number(r.data_volume_gb) || 0;
+          dateMap[key].Orders = Number(r.order_count) || 0;
         }
       }
       dailySalesData = Object.values(dateMap);
@@ -269,7 +277,7 @@ const AdminOverview = () => {
         const d = new Date(now);
         d.setDate(now.getDate() - i);
         const key = d.toISOString().slice(0, 10);
-        chartMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0 };
+        chartMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0, GB: 0, Orders: 0 };
       }
 
       rangeOrders.forEach((o: any) => {
@@ -281,6 +289,8 @@ const AdminOverview = () => {
           chartMap[key].Deposits += amt;
         } else if (SALE_TYPES.has(o.order_type)) {
           chartMap[key].Purchases += amt;
+          chartMap[key].GB += parseCapacity(o.package_size);
+          chartMap[key].Orders += 1;
           if (agentIds.has(o.agent_id)) chartMap[key].Agents += amt;
           else if (subAgentIds.has(o.agent_id)) chartMap[key]["Sub-Agents"] += amt;
           else chartMap[key].Customers += amt;
@@ -431,7 +441,7 @@ const AdminOverview = () => {
           const d = new Date(now);
           d.setDate(now.getDate() - i);
           const key = d.toISOString().slice(0, 10);
-          dateMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0 };
+          dateMap[key] = { date: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0, GB: 0, Orders: 0 };
         }
         for (const r of rpcStats) {
           const key = String(r.bucket_date || "").slice(0, 10);
@@ -441,6 +451,8 @@ const AdminOverview = () => {
             dateMap[key]["Sub-Agents"] = Number(r.sub_agent_sales) || 0;
             dateMap[key].Deposits = Number(r.deposit_volume) || 0;
             dateMap[key].Purchases = dateMap[key].Customers + dateMap[key].Agents + dateMap[key]["Sub-Agents"];
+            dateMap[key].GB = Number(r.data_volume_gb) || 0;
+            dateMap[key].Orders = Number(r.order_count) || 0;
           }
         }
         setDailySales(Object.values(dateMap));
