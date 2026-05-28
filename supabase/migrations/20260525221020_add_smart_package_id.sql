@@ -1,4 +1,5 @@
 -- Add smart package_id to api.v_plans
+DROP VIEW IF EXISTS api.v_plans;
 CREATE OR REPLACE VIEW api.v_plans AS
 SELECT 
   CASE 

@@ -88,6 +88,18 @@ const statusIcon = (s: string) => {
   return <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20"><Clock className="w-4 h-4 text-amber-500" /></div>;
 };
 
+const parseCapacity = (sizeStr: string | null) => {
+  if (!sizeStr) return 0;
+  const s = sizeStr.toUpperCase().replace(/\s+/g, "");
+  const match = s.match(/([0-9.]+)(MB|GB|TB)/);
+  if (!match) return 0;
+  const val = parseFloat(match[1]);
+  if (match[2] === "MB") return val / 1024;
+  if (match[2] === "TB") return val * 1024;
+  return val; // GB
+};
+
+
 const AdminOverview = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -113,10 +125,13 @@ const AdminOverview = () => {
     totalNetAdminProfit: 0,
     apiVolume: 0,
     paystackVolume: 0,
+    totalGb: 0,
+    rangeGb: 0,
+    rangeCount: 0,
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
-  const [todaySales, setTodaySales] = useState<TodaySales>({ total: 0, customers: 0, agents: 0, subAgents: 0, successCount: 0, failedCount: 0, pendingCount: 0, newUsers: 0 });
+  const [todaySales, setTodaySales] = useState<TodaySales & { gb: number; count: number }>({ total: 0, customers: 0, agents: 0, subAgents: 0, successCount: 0, failedCount: 0, pendingCount: 0, newUsers: 0, gb: 0, count: 0 });
   const [providerBalance, setProviderBalance] = useState<number | null>(null);
   const [providerDiagnostics, setProviderDiagnostics] = useState<any>(null);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "1y" | "all">("7d");
@@ -147,11 +162,11 @@ const AdminOverview = () => {
     const SALE_TYPES    = new Set(["data", "airtime", "utility", "afa", "api"]);
 
     const settled = await Promise.allSettled([
-      supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount"),
+      supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size"),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at"),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
-      supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type, paystack_verified_amount, paystack_fee, profit, parent_profit, cost_price").gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).limit(4000),
+      supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type, paystack_verified_amount, paystack_fee, profit, parent_profit, cost_price, package_size").gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).limit(4000),
       supabase.functions.invoke("system-payout-v1", { body: { action: "get_provider_balance" } }).catch(e => ({ data: { success: false, error: e.message }, error: e })),
       supabase.from("withdrawals").select("id, status", { count: "exact" }).in("status", ["pending", "processing"]),
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
@@ -315,7 +330,9 @@ const AdminOverview = () => {
       successCount: todaySuccess,
       failedCount: todayFailed,
       pendingCount: todayPending,
-      newUsers: todayUsers
+      newUsers: todayUsers,
+      gb: todayFulfilledPurchases.reduce((s, o) => s + parseCapacity(o.package_size), 0),
+      count: todayFulfilledPurchases.length,
     });
     const rangeInflow = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type) && Number(o.amount || 0) > 0).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
     const rangeVerifiedInflow = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type) && Number(o.amount || 0) > 0).reduce((s: number, o: any) => s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0), 0);
@@ -350,6 +367,9 @@ const AdminOverview = () => {
       totalNetAdminProfit,
       apiVolume,
       paystackVolume,
+      totalGb: purchaseOrders.reduce((s: number, o: any) => s + parseCapacity(o.package_size), 0),
+      rangeGb: rangePurchaseOrders.reduce((s: number, o: any) => s + parseCapacity(o.package_size), 0),
+      rangeCount: rangePurchaseOrders.length,
     });
     setRecentOrders((recentRes.data || []) as RecentOrder[]);
     setVerifiedLogs(topupsRes.data || []);
@@ -400,7 +420,7 @@ const AdminOverview = () => {
       const [rpcRes, recentRes, todayRes] = await Promise.all([
         supabase.rpc("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
         supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
-        supabase.from("orders").select("id, amount, agent_id, status, order_type, paystack_verified_amount, created_at").gte("created_at", `${todayStr}T00:00:00`),
+        supabase.from("orders").select("id, amount, agent_id, status, order_type, paystack_verified_amount, created_at, package_size").gte("created_at", `${todayStr}T00:00:00`),
       ]);
 
       const rpcStats = rpcRes.data;
@@ -437,6 +457,8 @@ const AdminOverview = () => {
         successCount: todayOrders.filter((o: any) => o.status === "fulfilled").length,
         failedCount: todayOrders.filter((o: any) => o.status === "fulfillment_failed").length,
         pendingCount: todayOrders.filter((o: any) => o.status === "pending").length,
+        gb: todayFulfilled.reduce((s: number, o: any) => s + parseCapacity(o.package_size), 0),
+        count: todayFulfilled.length,
       }));
 
       setLastUpdated(new Date());
@@ -523,7 +545,7 @@ const AdminOverview = () => {
 
   const statCards = [
     { title: "Total Inflow",     value: `GH₵ ${(stats.totalRevenue || 0).toFixed(2)}`,                                icon: DollarSign, color: "text-emerald-500",  bg: "bg-emerald-500/10",  border: "border-emerald-500/20"  },
-    { title: "Data/Airtime Volume",   value: `GH₵ ${(stats.totalPurchases || 0).toFixed(2)}`,                                icon: ShoppingCart, color: "text-blue-500",  bg: "bg-blue-500/10",  border: "border-blue-500/20"  },
+    { title: "Total Data Sold",   value: `${(stats.totalGb || 0).toFixed(2)} GB`,                                icon: Package, color: "text-blue-500",  bg: "bg-blue-500/10",  border: "border-blue-500/20"  },
     { title: "Agent Profits",   value: `GH₵ ${(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)).toFixed(2)}`, icon: DollarSign, color: "text-amber-500",  bg: "bg-amber-400/10",  border: "border-amber-400/20"  },
     { title: "User Balances",   value: `GH₵ ${(stats.totalSystemBalance || 0).toFixed(2)}`,                        icon: Wallet,     color: "text-red-400",    bg: "bg-red-400/10",    border: "border-red-400/20"    },
     { 
@@ -551,12 +573,14 @@ const AdminOverview = () => {
       bg: "bg-sky-500/10",
       border: "border-sky-500/20"
     },
+    { title: "Today's Data Sold", value: `${(todaySales.gb || 0).toFixed(2)} GB`, icon: Package, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
+    { title: "Today's Orders", value: todaySales.count, icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
     { title: "Today's Success", value: todaySales.successCount, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
     { title: "Today's Failed",  value: todaySales.failedCount,  icon: XCircle,      color: "text-red-500",     bg: "bg-red-500/10",     border: "border-red-500/20"     },
     { title: "Today's New Users", value: todaySales.newUsers,     icon: Users,        color: "text-indigo-500",  bg: "bg-indigo-500/10",  border: "border-indigo-500/20"  },
     { title: "Pending Withdrawals", value: stats.pendingWithdrawals, icon: Wallet,   color: stats.pendingWithdrawals > 0 ? "text-red-500" : "text-emerald-500", bg: stats.pendingWithdrawals > 0 ? "bg-red-500/10" : "bg-emerald-500/10", border: stats.pendingWithdrawals > 0 ? "border-red-500/20" : "border-emerald-500/20" },
     { title: "Open Tickets",      value: stats.unreadTickets,      icon: MessageCircle, color: stats.unreadTickets > 0 ? "text-amber-500" : "text-emerald-500", bg: stats.unreadTickets > 0 ? "bg-amber-500/10" : "bg-emerald-500/10", border: stats.unreadTickets > 0 ? "border-amber-500/20" : "border-emerald-500/20" },
-    { title: "Total Purchase", value: `GH₵ ${(stats.totalRangePurchase || 0).toFixed(2)}`, icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+    { title: "Total Orders", value: stats.totalOrders.toLocaleString(), icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
   ];
 
   const axisColor  = isDark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
