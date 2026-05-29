@@ -57,7 +57,7 @@ const StoreDepositFlow = ({
     
     const pollInterval = setInterval(async () => {
       try {
-        const { data } = await invokePublicFunctionAsUser("theteller-store-deposit", {
+        const { data } = await invokePublicFunctionAsUser("paystack-store-deposit", {
           body: { action: "check-status", transaction_id: pollingId }
         });
         
@@ -101,7 +101,7 @@ const StoreDepositFlow = ({
   const handleInitiatePayment = async () => {
     setStep("processing");
     try {
-      const { data, error } = await invokePublicFunctionAsUser("theteller-store-deposit", {
+      const { data, error } = await invokePublicFunctionAsUser("paystack-store-deposit", {
         body: {
           action: "initiate-deposit",
           amount: Number(amount),

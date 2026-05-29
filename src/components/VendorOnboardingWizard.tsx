@@ -83,7 +83,7 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
       toast.loading("Running AI Document Verification...", { id: "kyc" });
       setOcrScanning(true);
 
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: { 
           action: "submit-kyc",
           registration_number: regNumber,
@@ -140,7 +140,7 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
     setLoading(true);
     toast.loading("Processing payment...", { id: "pay" });
     try {
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: { action: "activate-with-wallet" }
       });
 

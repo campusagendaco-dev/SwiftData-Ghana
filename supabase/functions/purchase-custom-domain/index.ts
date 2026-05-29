@@ -32,12 +32,27 @@ serve(async (req: Request) => {
     supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
     // GoDaddy Registrar Configuration
+    const PRIMARY_DOMAIN_PROVIDER = Deno.env.get("PRIMARY_DOMAIN_PROVIDER")?.trim().toLowerCase() || "godaddy";
+
     const GODADDY_API_KEY = Deno.env.get("GODADDY_API_KEY")?.trim();
     const GODADDY_API_SECRET = Deno.env.get("GODADDY_API_SECRET")?.trim();
     const GODADDY_ENV = Deno.env.get("GODADDY_ENV")?.trim() || "sandbox";
     const FORCE_SIMULATION = Deno.env.get("FORCE_SIMULATION")?.trim() === "true";
 
-    const isSimulation = FORCE_SIMULATION || !GODADDY_API_KEY || !GODADDY_API_SECRET;
+    // Namecheap Configuration
+    const NAMECHEAP_API_USER = Deno.env.get("NAMECHEAP_API_USER")?.trim();
+    const NAMECHEAP_API_KEY = Deno.env.get("NAMECHEAP_API_KEY")?.trim();
+    const NAMECHEAP_CLIENT_IP = Deno.env.get("NAMECHEAP_CLIENT_IP")?.trim() || "1.1.1.1";
+    const PROXY_URL = Deno.env.get("PROXY_URL")?.trim();
+    const NAMECHEAP_ENV = Deno.env.get("NAMECHEAP_ENV")?.trim() || "sandbox";
+    const namecheapBase = NAMECHEAP_ENV === "production" ? "https://api.namecheap.com/xml.response" : "https://api.sandbox.namecheap.com/xml.response";
+
+    let isSimulation = FORCE_SIMULATION;
+    if (PRIMARY_DOMAIN_PROVIDER === "namecheap") {
+      isSimulation = isSimulation || !NAMECHEAP_API_KEY || !NAMECHEAP_API_USER;
+    } else {
+      isSimulation = isSimulation || !GODADDY_API_KEY || !GODADDY_API_SECRET;
+    }
     const godaddyBase = GODADDY_ENV === "production" ? "https://api.godaddy.com" : "https://api.ote-godaddy.com";
 
     const godaddyHeaders: Record<string, string> = {
@@ -139,36 +154,50 @@ serve(async (req: Request) => {
       // Integrate GoDaddy live availability check
       // BYPASS: GoDaddy now requires 50+ domains to access the Availability API.
       // We will skip this check and attempt to blindly purchase it later. 
-      // If taken, the purchase API will fail and we will catch it there.
       /*
-      if (available && !isSimulation) {
+      if (available && !isSimulation) { ... }
+      */
+      
+      if (available && !isSimulation && PRIMARY_DOMAIN_PROVIDER === "namecheap") {
+        let client;
         try {
-          console.log(`[GODADDY_CHECK] Querying GoDaddy for ${domainInput}...`);
-          const res = await fetch(`${godaddyBase}/v1/domains/available?domain=${domainInput}`, {
-            headers: godaddyHeaders
+          if (PROXY_URL) {
+            client = Deno.createHttpClient({ proxy: { url: PROXY_URL } });
+          }
+          console.log(`[NAMECHEAP_CHECK] Querying Namecheap for ${domainInput}...`);
+          const params = new URLSearchParams({
+            ApiUser: NAMECHEAP_API_USER || "",
+            ApiKey: NAMECHEAP_API_KEY || "",
+            UserName: NAMECHEAP_API_USER || "",
+            Command: "namecheap.domains.check",
+            ClientIp: NAMECHEAP_CLIENT_IP,
+            DomainList: domainInput
           });
-          if (res.ok) {
-            const data = await res.json();
-            available = data.available === true;
+          const res = await fetch(`${namecheapBase}?${params.toString()}`, { client });
+          const text = await res.text();
+          if (res.ok && !text.includes("<Error>")) {
+             // Look for Available="true"
+             const availableMatch = text.match(/Available="([^"]+)"/);
+             if (availableMatch) {
+               available = availableMatch[1].toLowerCase() === "true";
+             }
           } else {
-            const errBody = await res.text();
-            console.error(`[GODADDY_CHECK_ERR] GoDaddy API returned ${res.status}:`, errBody);
-            let errMsg = "GoDaddy API Error";
-            try { const p = JSON.parse(errBody); if (p.message) errMsg = p.message; } catch(e) {}
-            return new Response(JSON.stringify({ error: `Domain check failed: ${errMsg}` }), {
+            console.error(`[NAMECHEAP_CHECK_ERR] Status ${res.status}:`, text);
+            return new Response(JSON.stringify({ error: `Domain check failed on registry` }), {
               status: 502,
               headers: { ...corsHeaders, "Content-Type": "application/json" }
             });
           }
         } catch (err: any) {
-          console.error("[GODADDY_CHECK_ERR] Network error querying GoDaddy:", err);
-          return new Response(JSON.stringify({ error: `Network error querying GoDaddy: ${err.message}` }), {
+          console.error("[NAMECHEAP_CHECK_ERR] Network error querying Namecheap:", err);
+          return new Response(JSON.stringify({ error: `Network error querying Registry: ${err.message}` }), {
             status: 502,
             headers: { ...corsHeaders, "Content-Type": "application/json" }
           });
+        } finally {
+          if (client) client.close();
         }
       }
-      */
 
       return new Response(JSON.stringify({
         domain: domainInput,
@@ -308,12 +337,101 @@ serve(async (req: Request) => {
       let orderId = "";
       let errMsg = "";
 
-      if (isSimulation) {
+if (isSimulation) {
         console.log(`[REGISTRAR] Simulation Mode Active. Registering ${cleanDomain} programmatically...`);
-        // Wait 1.5 seconds to simulate API call latency
         await new Promise(resolve => setTimeout(resolve, 1500));
         registerSuccess = true;
         orderId = "MOCK-ORD-" + Math.floor(Math.random() * 900000 + 100000);
+      } else if (PRIMARY_DOMAIN_PROVIDER === "namecheap") {
+        console.log(`[REGISTRAR] Connecting to Namecheap Live API for ${cleanDomain}...`);
+        let client;
+        try {
+          if (PROXY_URL) client = Deno.createHttpClient({ proxy: { url: PROXY_URL } });
+          
+          const { data: userProfile } = await supabaseAdmin.from("profiles").select("full_name, phone_number").eq("user_id", user.id).maybeSingle();
+          const fullName = userProfile?.full_name || "SwiftData Agent";
+          const nameParts = fullName.trim().split(" ");
+          const firstName = nameParts[0] || "SwiftData";
+          const lastName = nameParts.slice(1).join(" ") || "Reseller";
+          const email = user.email || "domains@swiftdatagh.com";
+          
+          let phoneRaw = userProfile?.phone_number || "+233.240000000";
+          if (!phoneRaw.includes(".")) { phoneRaw = "+233.240000000"; } // basic fallback format
+
+          const params = new URLSearchParams({
+            ApiUser: NAMECHEAP_API_USER || "",
+            ApiKey: NAMECHEAP_API_KEY || "",
+            UserName: NAMECHEAP_API_USER || "",
+            Command: "namecheap.domains.create",
+            ClientIp: NAMECHEAP_CLIENT_IP,
+            DomainName: cleanDomain,
+            Years: "1",
+            RegistrantFirstName: firstName,
+            RegistrantLastName: lastName,
+            RegistrantAddress1: "Plot 12 Spintex Road",
+            RegistrantCity: "Accra",
+            RegistrantStateProvince: "Greater Accra",
+            RegistrantPostalCode: "00233",
+            RegistrantCountry: "GH",
+            RegistrantPhone: phoneRaw,
+            RegistrantEmailAddress: email,
+            TechFirstName: firstName,
+            TechLastName: lastName,
+            TechAddress1: "Plot 12 Spintex Road",
+            TechCity: "Accra",
+            TechStateProvince: "Greater Accra",
+            TechPostalCode: "00233",
+            TechCountry: "GH",
+            TechPhone: phoneRaw,
+            TechEmailAddress: email,
+            AdminFirstName: firstName,
+            AdminLastName: lastName,
+            AdminAddress1: "Plot 12 Spintex Road",
+            AdminCity: "Accra",
+            AdminStateProvince: "Greater Accra",
+            AdminPostalCode: "00233",
+            AdminCountry: "GH",
+            AdminPhone: phoneRaw,
+            AdminEmailAddress: email,
+            AuxBillingFirstName: firstName,
+            AuxBillingLastName: lastName,
+            AuxBillingAddress1: "Plot 12 Spintex Road",
+            AuxBillingCity: "Accra",
+            AuxBillingStateProvince: "Greater Accra",
+            AuxBillingPostalCode: "00233",
+            AuxBillingCountry: "GH",
+            AuxBillingPhone: phoneRaw,
+            AuxBillingEmailAddress: email
+          });
+
+          const res = await fetch(`${namecheapBase}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString(),
+            client
+          });
+          
+          const text = await res.text();
+          if (res.ok && !text.includes("<Error>")) {
+            const registeredMatch = text.match(/Registered="([^"]+)"/);
+            const orderMatch = text.match(/OrderID="([^"]+)"/);
+            if (registeredMatch && registeredMatch[1].toLowerCase() === "true") {
+              registerSuccess = true;
+              orderId = orderMatch ? orderMatch[1] : "NC-ORD-" + Math.floor(Math.random() * 900000 + 100000);
+            } else {
+              errMsg = "Namecheap Registration Rejected";
+            }
+          } else {
+             const errMatch = text.match(/<Error[^>]*>([^<]+)<\/Error>/);
+             errMsg = errMatch ? errMatch[1] : "Namecheap Registration Failed";
+             console.error(`[NAMECHEAP_PURCHASE_FAIL] Error:`, text);
+          }
+        } catch (err: any) {
+          errMsg = err.message || "Network connection failure to Namecheap";
+          console.error("[NAMECHEAP_PURCHASE_FAIL] Network/Internal crash:", err);
+        } finally {
+          if (client) client.close();
+        }
       } else {
         console.log(`[REGISTRAR] Connecting to GoDaddy Live API (${godaddyBase}) for ${cleanDomain}...`);
         try {

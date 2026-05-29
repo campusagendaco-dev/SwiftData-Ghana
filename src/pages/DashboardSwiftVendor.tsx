@@ -219,7 +219,7 @@ const DashboardSwiftVendor = () => {
     // Poll status every 3.5 seconds
     intervals.poll = setInterval(async () => {
       try {
-        const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+        const { data, error } = await supabase.functions.invoke("paystack-vendor", {
           body: {
             action: "check-status",
             transaction_id: overlay.orderId
@@ -559,7 +559,7 @@ const DashboardSwiftVendor = () => {
   const fetchAfricaBanks = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: {
           action: "list-banks",
           country: selectedCountry.toLowerCase() === "ng" ? "nigeria" : selectedCountry.toLowerCase() === "ke" ? "kenya" : "south africa"
@@ -679,7 +679,7 @@ const DashboardSwiftVendor = () => {
       toast.loading("Verifying transaction status...", { id: "verify-order" });
     }
     try {
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: {
           action: "check-status",
           transaction_id: orderId
@@ -770,7 +770,7 @@ const DashboardSwiftVendor = () => {
 
     try {
       const actionType = momoAction === "cash-out" ? "momo-collection" : "momo-disbursement";
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: {
           action: actionType,
           amount: amountVal,
@@ -859,7 +859,7 @@ const DashboardSwiftVendor = () => {
     }
     setVerifying(true);
     try {
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: {
           action: "momo-enquiry",
           phone: momoPhone,
@@ -901,7 +901,7 @@ const DashboardSwiftVendor = () => {
     }
     setVerifying(true);
     try {
-      const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+      const { data, error } = await supabase.functions.invoke("paystack-vendor", {
         body: {
           action: "momo-enquiry",
           phone: accountNumber,
@@ -958,7 +958,7 @@ const DashboardSwiftVendor = () => {
       });
 
       try {
-        const { data: initData, error: initError } = await supabase.functions.invoke("theteller-vendor", {
+        const { data: initData, error: initError } = await supabase.functions.invoke("paystack-vendor", {
           body: {
             action: "bank-transfer-init",
             amount: amountVal,
@@ -986,7 +986,7 @@ const DashboardSwiftVendor = () => {
           throw new Error("No reference ID returned from payment gateway");
         }
 
-        const { data: completeData, error: completeError } = await supabase.functions.invoke("theteller-vendor", {
+        const { data: completeData, error: completeError } = await supabase.functions.invoke("paystack-vendor", {
           body: {
             action: "bank-transfer-complete",
             reference_id: refId
@@ -1065,7 +1065,7 @@ const DashboardSwiftVendor = () => {
       });
 
       try {
-        const { data, error } = await supabase.functions.invoke("theteller-vendor", {
+        const { data, error } = await supabase.functions.invoke("paystack-vendor", {
           body: {
             action: "africa-transfer",
             amount: amountVal,

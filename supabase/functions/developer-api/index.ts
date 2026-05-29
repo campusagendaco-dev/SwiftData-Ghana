@@ -526,7 +526,8 @@ serve(async (req: Request) => {
     }
 
     if (finalAction === "plans") {
-      const { data: plans } = await supabase.schema("api").from("v_plans").select("*").eq("is_unavailable", false).order("network").order("package_size");
+      const { data: plans, error: plansErr } = await supabase.from("global_package_settings").select("*").eq("is_unavailable", false).order("network").order("package_size");
+      if (plansErr) console.error("Error fetching plans:", plansErr);
       
       const plansWithId = (plans ?? []).map(p => {
         let prefix = "pkg_";
@@ -563,7 +564,8 @@ serve(async (req: Request) => {
 
       // Smart Package ID Resolution
       if (package_id) {
-        const { data: plans } = await supabase.schema("api").from("v_plans").select("*").eq("is_unavailable", false);
+        const { data: plans, error: pErr } = await supabase.from("global_package_settings").select("*").eq("is_unavailable", false);
+        if (pErr) console.error("Error fetching packages:", pErr);
         const match = (plans ?? []).find(p => {
           let prefix = "pkg_";
           const net = String(p.network).toLowerCase();
