@@ -128,6 +128,9 @@ serve(async (req: Request) => {
     // the agent must pay based on their tier (Sub-Agent vs Direct Agent) and the global settings.
 
     let resolvedChargeAmount = adminBase;
+    let parentAgentId: string | null = null;
+    let parentProfit = 0;
+    let agentProfit = 0;
 
     if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id) {
       // Find parent's assigned price for this sub-agent
