@@ -109,19 +109,13 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     const next = !isSuspended;
     setSuspending(true);
     try {
-      const [rpcRes, adminRes] = await Promise.all([
-        (supabase as any).rpc("toggle_user_suspension", { p_user_id: user.user_id, p_suspend: next }),
-        supabase.auth.getUser(),
-      ]);
-      if (rpcRes.error) throw new Error(rpcRes.error.message);
-      await (supabase as any).from("admin_action_log").insert({
-        admin_id: adminRes.data?.user?.id,
-        admin_email: adminRes.data?.user?.email,
-        action: next ? "suspend_user" : "unsuspend_user",
-        target_user_id: user.user_id,
-        target_email: user.email,
-        metadata: { name: user.full_name },
+      const { data: res, error } = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
+      
+      if (error || res?.error) throw new Error(res?.error || error?.message);
+
       setIsSuspended(next);
       toast({ title: next ? "User suspended" : "User unsuspended", description: user.email });
     } catch (err: unknown) {

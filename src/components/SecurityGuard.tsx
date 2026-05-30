@@ -11,7 +11,7 @@ const COUNTDOWN_SECONDS = 30; // Final warning duration before ejection
 const INITIAL_REVEAL_DURATION_MS = 300; // Cinematic 0.3s auto-reveal requested by user
 
 export function SecurityGuard({ children }: { children: React.ReactNode }) {
-  const { user, signOut, profile } = useAuth();
+  const { user, signOut, profile, isAdmin } = useAuth();
   
   // Security Blocker States
   const [isEnabled, setIsEnabled] = useState(true);
@@ -167,7 +167,7 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
 
   const isSuspended = profile?.is_suspended === true;
 
-  if (user && isSuspended) {
+  if (user && isSuspended && !isAdmin) {
     return (
       <div className="fixed inset-0 z-[100001] flex flex-col items-center justify-center bg-[#06060c] text-white p-6">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.08)_0%,transparent_70%)] pointer-events-none" />
