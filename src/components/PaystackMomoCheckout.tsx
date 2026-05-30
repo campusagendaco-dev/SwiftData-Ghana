@@ -111,6 +111,45 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     };
   }, [step, countdown]);
 
+  // Polling for success verification
+  useEffect(() => {
+    let isPolling = true;
+    
+    if (step === 'success' && reference) {
+      const pollVerification = async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke("verify-payment", {
+            body: { reference }
+          });
+          
+          if (!isPolling) return;
+          
+          if (data?.status === "fulfilled" || data?.status === "paid") {
+            toast({ title: "Payment Verified", description: "Your transaction was successful!" });
+            onSuccess(reference);
+          } else if (data?.status === "failed") {
+            toast({ title: "Payment Failed", description: "The transaction was unsuccessful.", variant: "destructive" });
+            setErrorMessage("Payment failed. Please try again.");
+            setStep('payment_number');
+          } else {
+            // Still pending, poll again after 3 seconds
+            setTimeout(pollVerification, 3000);
+          }
+        } catch (err) {
+          if (!isPolling) return;
+          // on error, wait and try again
+          setTimeout(pollVerification, 5000);
+        }
+      };
+      
+      pollVerification();
+    }
+    
+    return () => {
+      isPolling = false;
+    };
+  }, [step, reference, onSuccess, toast]);
+
   // Handle single digit input
   const handleOtpChange = (value: string, index: number) => {
     if (isNaN(Number(value))) return;
@@ -218,9 +257,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         // Direct MoMo charge initiated successfully
         setStep('success');
         setReference(data.reference || orderId);
-        setTimeout(() => {
-          onSuccess(data.reference || orderId);
-        }, 20000);
+        // We do NOT call onSuccess automatically here. The polling useEffect will verify it!
       } else {
         throw new Error("Invalid payment response structure");
       }
@@ -253,9 +290,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       if (data?.status === "success") {
         setStep('success');
         toast({ title: "OTP Verified Successfully", description: "Processing your transaction..." });
-        setTimeout(() => {
-          onSuccess(reference);
-        }, 1200);
+        // The polling useEffect will verify it and call onSuccess
       } else {
         throw new Error(data?.message || "Invalid OTP");
       }
@@ -568,18 +603,19 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 </div>
                 <div className="w-full max-w-[200px] h-1 bg-white/10 rounded-full overflow-hidden mt-2 relative">
                   <motion.div 
-                    className="h-full bg-emerald-500 rounded-full absolute left-0 top-0"
+                    className="absolute inset-y-0 left-0 bg-emerald-500 rounded-full"
                     initial={{ width: "0%" }}
                     animate={{ width: "100%" }}
-                    transition={{ duration: 20, ease: "linear" }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </div>
+                <p className="text-xs font-bold text-emerald-400/80 uppercase tracking-widest animate-pulse mt-2">Waiting for approval...</p>
                 
                 <button
                   onClick={() => onSuccess(reference)}
-                  className="mt-4 px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all active:scale-95 flex items-center gap-2"
+                  className="mt-6 px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all active:scale-95 flex items-center gap-2"
                 >
-                  I've Approved It <ArrowRight className="w-3.5 h-3.5" />
+                  I've Approved It (Verify) <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </motion.div>
             )}
