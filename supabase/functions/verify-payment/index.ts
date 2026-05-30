@@ -418,10 +418,10 @@ serve(async (req) => {
     // ─── 🛡️ DOS & BRUTE-FORCE RATE LIMITING ─────────────────────────────────
     const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
     
-    // Limit IP-based requests to 12 per minute
+    // Limit IP-based requests to 60 per minute (allows 5-second polling with buffer)
     const { data: ipAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
       p_key: `ip_verify_${clientIp}`,
-      p_rate_limit: 12
+      p_rate_limit: 60
     });
     
     if (!ipAllowed) {

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { basePackages, networks, getPublicPrice } from "@/lib/data";
 import { WalletStatement } from "@/components/WalletStatement";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 interface WalletTopupRow {
   id: string;
@@ -96,6 +97,7 @@ const DashboardWallet = () => {
   const [topupAmount, setTopupAmount] = useState("");
   const [toppingUp, setToppingUp] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   // Fetch global package settings
   useEffect(() => {
@@ -228,32 +230,31 @@ const DashboardWallet = () => {
   }, [fetchBalance, fetchRecentTopups, toast]);
 
   const handlePaystackTopup = async () => {
+    console.log("Top Up Clicked, Amount:", topupAmount);
     const requestedCredit = Number(topupAmount);
     if (!Number.isFinite(requestedCredit) || requestedCredit < 10) {
       toast({ title: "Enter a valid top-up amount (minimum GHS 10)", variant: "destructive" });
       return;
     }
+    console.log("Opening Checkout modal...");
+    setCheckoutOpen(true);
+  };
 
-    const paystackFee = Math.round(calculatePaystackFee(requestedCredit) * 100) / 100;
-    const chargeAmount = Math.round((requestedCredit + paystackFee) * 100) / 100;
-
-    setToppingUp(true);
-    const { data, error } = await invokePublicFunctionAsUser("wallet-topup", {
-      body: {
-        amount: chargeAmount,
-        wallet_credit: requestedCredit,
-        callback_url: `${getAppBaseUrl()}/dashboard/wallet`,
-      },
-    });
-
-    if (error || !data?.authorization_url) {
-      const description = data?.error || await getFunctionErrorMessage(error, "Could not initialize wallet top-up.");
-      toast({ title: "Top-up failed", description, variant: "destructive" });
-      setToppingUp(false);
-      return;
+  const handleCheckoutSuccess = async (ref: string) => {
+    setCheckoutOpen(false);
+    toast({ title: "Deposit received", description: "Verifying top-up..." });
+    setTopupAmount("");
+    try {
+      await invokePublicFunctionAsUser("verify-payment", { body: { reference: ref } });
+      await fetchBalance();
+      await fetchRecentTopups();
+    } catch (e) {
+      console.error("Verification failed", e);
     }
+  };
 
-    window.location.href = data.authorization_url;
+  const handleCheckoutFailure = (error: string) => {
+    console.error("Checkout failed:", error);
   };
 
   const agentPackages = selectedNetwork
@@ -458,11 +459,12 @@ const DashboardWallet = () => {
                 />
               </div>
               <Button 
-                onClick={handlePaystackTopup} disabled={toppingUp} 
+                onClick={handlePaystackTopup} 
                 className="w-full h-10 bg-blue-500 hover:bg-blue-600 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/10"
               >
-                {toppingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CreditCard className="w-4 h-4 mr-2" /> Top Up Now</>}
+                <CreditCard className="w-4 h-4 mr-2" /> Top Up Now
               </Button>
+              <p className="text-[10px] text-muted-foreground text-center mt-2 font-medium">Accepts MoMo directly or Card</p>
             </CardContent>
           </Card>
 
@@ -594,6 +596,23 @@ const DashboardWallet = () => {
           </div>
         </div>
       )}
+
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={topupChargeTotal}
+        email={profile?.email || user?.email || ""}
+        recipientPhone={""}
+        recipientNetwork={""}
+        metadata={{
+          order_type: "wallet_topup",
+          agent_id: user?.id,
+          wallet_credit: topupRequestedAmount,
+          wallet_type: "main"
+        }}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

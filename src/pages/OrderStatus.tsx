@@ -255,7 +255,7 @@ const OrderStatus = () => {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${reference}` }, (payload) => {
         if (payload.new.status) handleStatusUpdate(payload.new.status as OrderStatusType, payload.new.message || payload.new.failure_reason);
       }).subscribe();
-    const interval = setInterval(pollStatus, 15000);
+    const interval = setInterval(pollStatus, 5000);
     return () => { supabase.removeChannel(channel); clearInterval(interval); };
   }, [reference]);
 

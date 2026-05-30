@@ -31,25 +31,71 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const { toast } = useToast();
   const { theme, isDark } = useAppTheme();
   
-  // Steps: 'payment_number' | 'initiating' | 'otp_entry' | 'otp_verifying' | 'success'
+  const [paymentPhone, setPaymentPhone] = useState("");
+  const [paymentNetwork, setPaymentNetwork] = useState<string>("MTN");
   const [step, setStep] = useState<'payment_number' | 'initiating' | 'otp_entry' | 'otp_verifying' | 'success'>('payment_number');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  const [paymentPhone, setPaymentPhone] = useState(recipientPhone);
-  const [paymentNetwork, setPaymentNetwork] = useState(recipientNetwork);
+  // Real-time verification state
+  const [verifiedName, setVerifiedName] = useState<string | null>(null);
+  const [isVerifyingName, setIsVerifyingName] = useState(false);
+  const [nameResolveError, setNameResolveError] = useState<string | null>(null);
+
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [countdown, setCountdown] = useState(60);
   const [reference, setReference] = useState<string>("");
   const [otpError, setOtpError] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countdownTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Prefill phone and network on change
+  // Initialize network once, but do NOT auto-fill the phone number
   useEffect(() => {
-    setPaymentPhone(recipientPhone);
-    setPaymentNetwork(recipientNetwork);
-  }, [recipientPhone, recipientNetwork]);
+    if (recipientNetwork) {
+      setPaymentNetwork(recipientNetwork);
+    }
+  }, [recipientNetwork]);
+
+  // Real-time verification effect
+  useEffect(() => {
+    setVerifiedName(null);
+    setNameResolveError(null);
+    const resolvePhone = paymentPhone.replace(/\D/g, "");
+    if (resolvePhone.length < 9 || !paymentNetwork) return;
+
+    const timeoutId = setTimeout(async () => {
+      setIsVerifyingName(true);
+      try {
+        let bankCode = "";
+        if (paymentNetwork === "MTN") bankCode = "MTN";
+        else if (paymentNetwork === "Telecel") bankCode = "VOD";
+        else if (paymentNetwork === "AirtelTigo") bankCode = "ATL";
+
+        let formattedPhone = resolvePhone;
+        if (formattedPhone.startsWith("233") && formattedPhone.length === 12) {
+          formattedPhone = "0" + formattedPhone.slice(3);
+        } else if (formattedPhone.length === 9) {
+          formattedPhone = "0" + formattedPhone;
+        }
+
+        const { data, error } = await supabase.functions.invoke("paystack-resolve", {
+          body: { account_number: formattedPhone, bank_code: bankCode }
+        });
+
+        if (error || !data?.success) {
+           setNameResolveError(data?.error || "Account not found");
+        } else if (data.account_name && data.account_name !== "TESTING ACCOUNT NAME") {
+           setVerifiedName(data.account_name);
+        }
+      } catch (err) {
+        setNameResolveError("Verification failed");
+      } finally {
+        setIsVerifyingName(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timeoutId);
+  }, [paymentPhone, paymentNetwork]);
 
   // Countdown timer logic
   useEffect(() => {
@@ -115,6 +161,34 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     const orderId = metadata.order_id || crypto.randomUUID();
     
     try {
+      // 1. Verify the MoMo number via Paystack
+      let bankCode = "";
+      if (paymentNetwork === "MTN") bankCode = "MTN";
+      else if (paymentNetwork === "Telecel") bankCode = "VOD";
+      else if (paymentNetwork === "AirtelTigo") bankCode = "ATL";
+
+      let resolvePhone = paymentPhone;
+      if (resolvePhone.startsWith("233") && resolvePhone.length === 12) {
+        resolvePhone = "0" + resolvePhone.slice(3);
+      } else if (resolvePhone.length === 9) {
+        resolvePhone = "0" + resolvePhone;
+      }
+
+      if (bankCode) {
+        const { data: resolveData, error: resolveError } = await supabase.functions.invoke("paystack-resolve", {
+          body: { account_number: resolvePhone, bank_code: bankCode }
+        });
+        
+        if (resolveError || !resolveData?.success) {
+           throw new Error(resolveData?.error || "Could not verify this Mobile Money number. Please check it and try again.");
+        }
+        
+        if (resolveData.account_name && resolveData.account_name !== "TESTING ACCOUNT NAME") {
+           toast({ title: "Account Verified", description: resolveData.account_name, duration: 3000 });
+        }
+      }
+
+      // 2. Initiate Payment
       const { data, error } = await supabase.functions.invoke("initialize-payment", {
         body: {
           email: email.trim() || `${paymentPhone}@customer.swiftdata.gh`,
@@ -141,11 +215,12 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         setTimeout(() => otpRefs.current[0]?.focus(), 150);
         toast({ title: "OTP Sent Successfully", description: data.message || "Enter the OTP sent to your phone" });
       } else if (data?.authorization_url) {
-        // Direct MoMo charge initiated successfully and approved
+        // Direct MoMo charge initiated successfully
         setStep('success');
+        setReference(data.reference || orderId);
         setTimeout(() => {
           onSuccess(data.reference || orderId);
-        }, 1200);
+        }, 20000);
       } else {
         throw new Error("Invalid payment response structure");
       }
@@ -304,6 +379,37 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     </div>
                   </div>
 
+                  {/* Account Name resolution indicator */}
+                  {(isVerifyingName || verifiedName || nameResolveError) && paymentPhone.replace(/\D/g, "").length >= 9 && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+                      className={`flex items-start gap-2 p-3 rounded-xl text-xs font-semibold leading-normal border ${
+                        isVerifyingName 
+                          ? "bg-primary/5 border-primary/10 text-primary/80" 
+                          : verifiedName 
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                            : "bg-red-500/10 border-red-500/20 text-red-400"
+                      }`}
+                    >
+                      {isVerifyingName ? (
+                        <>
+                          <Loader2 className="w-4 h-4 shrink-0 mt-0.5 animate-spin" />
+                          <span>Verifying registered account name...</span>
+                        </>
+                      ) : verifiedName ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>Verified: <span className="font-black tracking-wide">{verifiedName}</span></span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                          <span>{nameResolveError || "Account not found"}</span>
+                        </>
+                      )}
+                    </motion.div>
+                  )}
+
                   {errorMessage && (
                     <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal">
                       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -448,18 +554,33 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 key="success"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="py-8 flex flex-col items-center justify-center text-center space-y-4 animate-in duration-300"
+                className="py-10 flex flex-col items-center text-center space-y-5"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl" />
-                  <div className="w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 border-4 border-emerald-400/20">
-                    <CheckCircle2 className="w-9 h-9 text-black font-extrabold" />
-                  </div>
+                  <div className="absolute inset-0 rounded-full blur-2xl opacity-30 animate-pulse bg-emerald-500" />
+                  <Loader2 className="w-16 h-16 animate-spin text-emerald-400 relative z-10" />
                 </div>
-                <div className="space-y-1 px-4">
-                  <h4 className="text-lg font-black text-white uppercase tracking-wide leading-tight">Payment Initiated!</h4>
-                  <p className="text-xs text-muted-foreground">PIN prompt sent successfully. Transitioning to order status monitor...</p>
+                <div className="space-y-2">
+                  <h4 className="text-xl font-black text-white uppercase tracking-tight">Authorize Payment</h4>
+                  <p className="text-[13px] text-emerald-400/80 font-bold max-w-[240px] mx-auto leading-relaxed px-2">
+                    Please check your phone now and enter your Mobile Money PIN to approve the transaction.
+                  </p>
                 </div>
+                <div className="w-full max-w-[200px] h-1 bg-white/10 rounded-full overflow-hidden mt-2 relative">
+                  <motion.div 
+                    className="h-full bg-emerald-500 rounded-full absolute left-0 top-0"
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 20, ease: "linear" }}
+                  />
+                </div>
+                
+                <button
+                  onClick={() => onSuccess(reference)}
+                  className="mt-4 px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all active:scale-95 flex items-center gap-2"
+                >
+                  I've Approved It <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </motion.div>
             )}
 

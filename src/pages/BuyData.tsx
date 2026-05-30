@@ -528,7 +528,7 @@ const BuyData = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => { setSelectedPkg(null); setPhone(""); setEmail(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-              className="absolute inset-0 bg-[#030407]/90 backdrop-blur-[6px] cursor-pointer"
+              className="absolute inset-0 bg-background/80 backdrop-blur-[6px] cursor-pointer"
             />
             
             {/* Premium Modal Enclosure */}
@@ -566,12 +566,12 @@ const BuyData = () => {
                 />
                 
                 {/* Absolute Background Shell (Gradient overlay to darken the top slightly) */}
-                <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-card z-[1]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-foreground/10 via-transparent to-card z-[1]" />
 
                 {/* Close Vector */}
                 <button 
                   onClick={() => { setSelectedPkg(null); setPhone(""); setEmail(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-                  className="absolute top-3 right-3 z-30 p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-white/40 hover:text-white transition-all active:scale-90"
+                  className="absolute top-3 right-3 z-30 p-2 rounded-full bg-foreground/5 hover:bg-foreground/10 border border-border/50 text-muted-foreground hover:text-foreground transition-all active:scale-90"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -585,11 +585,9 @@ const BuyData = () => {
                 >
                   {/* Network Indicator Pill */}
                   <div 
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] shadow-[0_4px_12px_rgba(0,0,0,0.2)] border border-white/10 mb-3"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.2)] border border-border/50 bg-foreground/5 backdrop-blur-md mb-3"
                     style={{
-                      background: "rgba(255,255,255,0.04)",
-                      color: `hsl(${theme.primary})`,
-                      backdropFilter: "blur(10px)"
+                      color: `hsl(${theme.primary})`
                     }}
                   >
                     <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: `hsl(${theme.primary})` }} />
@@ -597,7 +595,7 @@ const BuyData = () => {
                   </div>
 
                   {/* Magnitude Display */}
-                  <h3 className="text-4xl font-black tracking-tighter text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]">
+                  <h3 className="text-4xl font-black tracking-tighter text-foreground drop-shadow-[0_4px_10px_rgba(0,0,0,0.1)] dark:drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]">
                     {selectedPkg.size}
                   </h3>
 
@@ -627,7 +625,7 @@ const BuyData = () => {
                       <Gift className="w-3 h-3" /> Free Reward
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 text-white/70 text-xs font-bold bg-white/5 border border-white/5 rounded-full px-3 py-0.5 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 text-foreground/80 text-xs font-bold bg-foreground/5 border border-border/50 rounded-full px-3 py-0.5 backdrop-blur-sm">
                       {validPromo ? (
                         <>
                           <span className="opacity-40 line-through font-medium">GH₵{selectedPkg.price.toFixed(2)}</span> 
@@ -636,7 +634,7 @@ const BuyData = () => {
                       ) : (
                         <span className="font-black">GH₵{selectedPkg.price.toFixed(2)}</span>
                       )}
-                      <span className="w-1 h-1 rounded-full bg-white/20" />
+                      <span className="w-1 h-1 rounded-full bg-foreground/20" />
                       <span className="text-[10px] opacity-60 font-medium">+GH₵{fee.toFixed(2)}</span>
                     </div>
                   )}
@@ -783,7 +781,7 @@ const BuyData = () => {
                               <Tag className="w-3 h-3 shrink-0" />
                               <span className="truncate text-[10px]">{validPromo.is_free ? "FREE ACTIVATED" : `${validPromo.discount_percentage}% OFF!`}</span>
                             </div>
-                            <button onClick={() => { setPromoResult(null); setPromoCode(""); setPromoOpen(true); }} className="p-1 hover:bg-white/10 rounded-lg transition-colors text-current opacity-60 hover:opacity-100">
+                            <button onClick={() => { setPromoResult(null); setPromoCode(""); setPromoOpen(true); }} className="p-1 hover:bg-foreground/10 rounded-lg transition-colors text-current opacity-60 hover:opacity-100">
                               <X className="w-3 h-3" />
                             </button>
                           </div>
@@ -877,9 +875,9 @@ const BuyData = () => {
                   )}
                   
                   {/* Final Verification Anchor */}
-                  <div className="flex items-center justify-center gap-1.5 mt-4 opacity-30 group-hover:opacity-50 transition-opacity duration-500">
-                    <ShieldCheck className="w-3 h-3 text-white" />
-                    <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white">
+                  <div className="flex items-center justify-center gap-1.5 mt-4 opacity-40 hover:opacity-70 transition-opacity duration-500">
+                    <ShieldCheck className="w-3 h-3 text-muted-foreground" />
+                    <p className="text-[8px] font-black uppercase tracking-[0.2em] text-muted-foreground">
                       Safe & Encrypted
                     </p>
                   </div>
