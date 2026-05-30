@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,6 +16,7 @@ import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
 import { playSuccessSound } from "@/lib/sound";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -110,6 +111,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [showCustomers, setShowCustomers] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [resolvingName, setResolvingName] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [activationFee, setActivationFee] = useState(50);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
@@ -247,14 +250,18 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     setResolvedName(null);
   }, [network]);
 
+  const lastAttemptRef = useRef<string | null>(null);
+
   // Reset resolved name when phone changes
   useEffect(() => {
     setResolvedName(null);
+    lastAttemptRef.current = null;
   }, [phone]);
 
   // Auto-resolve recipient name
   useEffect(() => {
-    if (!isPhoneValid || resolvedName || resolvingName) return;
+    const attemptKey = `${network}-${normalizedPhone}`;
+    if (!isPhoneValid || resolvedName || resolvingName || lastAttemptRef.current === attemptKey) return;
 
     const timer = setTimeout(async () => {
       setResolvingName(true);
@@ -267,18 +274,20 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         const { data, error } = await supabase.functions.invoke("paystack-resolve", {
           body: { account_number: normalizedPhone, bank_code: bankCode }
         });
+        lastAttemptRef.current = attemptKey;
         if (!error && data?.success) {
           setResolvedName(data.account_name);
         }
       } catch (e) {
         console.error("Auto-resolution failed:", e);
+        lastAttemptRef.current = attemptKey;
       } finally {
         setResolvingName(false);
       }
     }, 300); // Faster debounce
 
     return () => clearTimeout(timer);
-  }, [phone, network, isPhoneValid, resolvedName, resolvingName, normalizedPhone]);
+  }, [network, isPhoneValid, resolvedName, resolvingName, normalizedPhone]);
 
   const selectedPackage = packages.find((item) => item.size === selectedSize);
   const cardColors = getNetworkCardColors(network);
@@ -437,7 +446,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
   const handlePaystackBuy = async () => {
     if (!validate()) return;
-    setBuying(true);
 
     const orderId = crypto.randomUUID();
     const callbackParams = new URLSearchParams({
@@ -447,37 +455,46 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       phone: normalizedPhone,
     });
 
-    const { data, error } = await invokePublicFunction("initialize-payment", {
-      body: {
-        email: user?.email || `${normalizedPhone}@customer.swiftdata.gh`,
-        amount: paystackTotal,
-        reference: orderId,
-        callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
-        metadata: {
-          order_id: orderId,
-          order_type: "data",
-          network,
-          package_size: selectedPackage!.size,
-          customer_phone: normalizedPhone,
-          fee: paystackFee,
-          agent_id: user?.id,
-          ...(validPromo && !validPromo.is_free ? {
-            promo_code: promoCode.trim(),
-            promo_id: validPromo.promo_id,
-            discount_percentage: validPromo.discount_percentage,
-          } : {}),
-        },
-      },
+    const meta = {
+      order_id: orderId,
+      order_type: "data",
+      network,
+      package_size: selectedPackage!.size,
+      customer_phone: normalizedPhone,
+      fee: paystackFee,
+      agent_id: user?.id,
+      callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
+      ...(validPromo && !validPromo.is_free ? {
+        promo_code: promoCode.trim(),
+        promo_id: validPromo.promo_id,
+        discount_percentage: validPromo.discount_percentage,
+      } : {}),
+    };
+
+    setCheckoutMetadata(meta);
+    setCheckoutOpen(true);
+  };
+
+  const handleCheckoutSuccess = (ref: string) => {
+    setCheckoutOpen(false);
+    setSelectedSize("");
+    setPhone("");
+    setPromoCode("");
+    setPromoResult(null);
+    setPromoOpen(false);
+    
+    const callbackParams = new URLSearchParams({
+      reference: ref,
+      network,
+      package: selectedPackage?.size || "",
+      phone: normalizedPhone,
     });
+    
+    window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
+  };
 
-    if (error || !data?.authorization_url) {
-      const description = data?.error || await getFunctionErrorMessage(error, "Could not initialize payment.");
-      toast({ title: "Payment failed", description, variant: "destructive" });
-      setBuying(false);
-      return;
-    }
-
-    window.location.href = data.authorization_url;
+  const handleCheckoutFailure = (error: string) => {
+    setBuying(false);
   };
 
   return (
@@ -886,6 +903,18 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           </div>
         </div>
       )}
+
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={paystackTotal}
+        email={user?.email || ""}
+        recipientPhone={normalizedPhone}
+        recipientNetwork={network}
+        metadata={checkoutMetadata}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

@@ -56,6 +56,25 @@ function normalizeNetwork(network: string): string {
   return "MTN";
 }
 
+function normalizePhoneForPaystack(phone: string): string {
+  let digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("233") && digits.length > 10) {
+    return "0" + digits.slice(3);
+  }
+  if (!digits.startsWith("0") && digits.length === 9) {
+    return "0" + digits;
+  }
+  return digits;
+}
+
+function getMomoProviderCode(network: string): string {
+  const normalized = network.trim().toUpperCase();
+  if (normalized.includes("MTN")) return "mtn";
+  if (normalized.includes("TELECEL") || normalized.includes("VODA") || normalized.includes("VDF")) return "vod";
+  if (normalized.includes("AIRTEL") || normalized.includes("TIGO") || normalized.includes("AT") || normalized.includes("ATL")) return "atl";
+  return "mtn";
+}
+
 function resolvePriceFromMap(
   prices: Record<string, Record<string, string | number>>,
   normalizedNetwork: string,
@@ -87,16 +106,8 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY");
   const SUPABASE_URL = (Deno as any).env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!PAYSTACK_SECRET_KEY) {
-    console.error("PAYSTACK_SECRET_KEY is not configured");
-    return new Response(JSON.stringify({ error: "Paystack not configured" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
@@ -107,21 +118,34 @@ serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Validate key type — must be a secret key
-  if (PAYSTACK_SECRET_KEY.startsWith("pk_")) {
-    console.error("PAYSTACK_SECRET_KEY contains a public key instead of secret key");
-    return new Response(JSON.stringify({ error: "Invalid Paystack key configuration" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   try {
     const { data: settings } = await supabaseAdmin
       .from("system_settings")
-      .select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent")
+      .select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
+
+    let PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+    if (!PAYSTACK_SECRET_KEY) {
+      PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
+    }
+
+    if (!PAYSTACK_SECRET_KEY) {
+      console.error("PAYSTACK_SECRET_KEY is not configured");
+      return new Response(JSON.stringify({ error: "Paystack not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Validate key type — must be a secret key
+    if (PAYSTACK_SECRET_KEY.startsWith("pk_")) {
+      console.error("PAYSTACK_SECRET_KEY contains a public key instead of secret key");
+      return new Response(JSON.stringify({ error: "Invalid Paystack key configuration" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (settings?.paystack_deposit_fee_percent !== undefined) {
       PAYSTACK_FEE_RATE = Number(settings.paystack_deposit_fee_percent);
@@ -146,6 +170,61 @@ serve(async (req: Request) => {
     }
 
     const payload = await req.json();
+
+    if (payload?.action === "submit_otp") {
+      const otp = typeof payload?.otp === "string" ? payload.otp.trim() : "";
+      const reference = typeof payload?.reference === "string" ? payload.reference.trim() : "";
+      if (!otp || !reference) {
+        return new Response(JSON.stringify({ error: "Missing OTP or Reference" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      console.log(`Submitting OTP "${otp}" for transaction reference: "${reference}"`);
+      const response = await fetch("https://api.paystack.co/charge/submit_otp", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          otp,
+          reference,
+        }),
+      });
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        const textResponse = await response.text();
+        console.error("Paystack returned non-JSON:", textResponse.substring(0, 500));
+        return new Response(JSON.stringify({ error: "Paystack returned an invalid response" }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const data = await response.json();
+      console.log("Paystack OTP response:", JSON.stringify(data));
+
+      if (!response.ok || !data.status) {
+        return new Response(JSON.stringify({ error: data.message || "OTP submission failed" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        status: "success",
+        message: data.message || "OTP verified successfully",
+        reference: reference,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const email = typeof payload?.email === "string" ? payload.email.trim() : "";
     const amount = Number(payload?.amount);
     const reference = typeof payload?.reference === "string" ? payload.reference.trim() : "";
@@ -734,55 +813,90 @@ serve(async (req: Request) => {
   const amountInPesewas = Math.round(resolvedAmount * 100);
   console.log("Initializing payment:", { email, amount: resolvedAmount, amountInPesewas, reference });
 
-    const response = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
+  const paystackPhone = enrichedMetadata.customer_phone ? normalizePhoneForPaystack(String(enrichedMetadata.customer_phone)) : "";
+  const paystackProvider = enrichedMetadata.network ? getMomoProviderCode(String(enrichedMetadata.network)) : "";
+
+  let paystackUrl = "https://api.paystack.co/transaction/initialize";
+  let requestBody: Record<string, any> = {
+    email,
+    amount: amountInPesewas,
+    reference,
+    callback_url,
+    metadata: enrichedMetadata,
+    currency: "GHS",
+  };
+
+  const isMomoCharge = paystackPhone && paystackProvider && enrichedMetadata.order_type !== "wallet_topup" && enrichedMetadata.order_type !== "store_wallet_topup";
+
+  if (isMomoCharge) {
+    paystackUrl = "https://api.paystack.co/charge";
+    requestBody = {
+      email,
+      amount: amountInPesewas,
+      reference,
+      metadata: enrichedMetadata,
+      currency: "GHS",
+      mobile_money: {
+        phone: paystackPhone,
+        provider: paystackProvider,
       },
-      body: JSON.stringify({
-        email,
-        amount: amountInPesewas,
-        reference,
-        callback_url,
-        metadata: enrichedMetadata,
-        currency: "GHS",
-      }),
+    };
+    console.log("Using direct Mobile Money charge for:", { paystackPhone, paystackProvider });
+  }
+
+  const response = await fetch(paystackUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const contentType = response.headers.get("content-type");
+  if (!contentType?.includes("application/json")) {
+    const textResponse = await response.text();
+    console.error("Paystack returned non-JSON:", textResponse.substring(0, 500));
+    return new Response(JSON.stringify({ error: "Paystack returned an invalid response" }), {
+      status: 502,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
 
-    const contentType = response.headers.get("content-type");
-    if (!contentType?.includes("application/json")) {
-      const textResponse = await response.text();
-      console.error("Paystack returned non-JSON:", textResponse.substring(0, 500));
-      return new Response(JSON.stringify({ error: "Paystack returned an invalid response" }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+  const data = await response.json();
+  console.log("Paystack response:", JSON.stringify(data));
 
-    const data = await response.json();
-    console.log("Paystack response:", JSON.stringify(data));
+  if (!response.ok || !data.status) {
+    console.error("Paystack operation failed", {
+      status: response.status,
+      statusText: response.statusText,
+      paystackMessage: data?.message,
+    });
+    return new Response(JSON.stringify({ error: data.message || "Payment operation failed" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-    if (!response.ok || !data.status) {
-      console.error("Paystack initialization failed", {
-        status: response.status,
-        statusText: response.statusText,
-        paystackMessage: data?.message,
-      });
-      return new Response(JSON.stringify({ error: data.message || "Payment initialization failed" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+  if (isMomoCharge && data.data?.status === "send_otp") {
     return new Response(JSON.stringify({
-      authorization_url: data.data.authorization_url,
-      reference: data.data.reference,
+      status: "send_otp",
+      message: data.data.otp_message || "Please enter the OTP sent to your phone",
+      reference: reference,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  return new Response(JSON.stringify({
+    authorization_url: isMomoCharge ? callback_url : data.data.authorization_url,
+    reference: isMomoCharge ? reference : data.data.reference,
+  }), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
   } catch (error) {
     console.error("Payment init error:", error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Internal server error" }), {

@@ -74,11 +74,27 @@ async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string
   return { ok: false, status: 502, reason: lastError };
 }
 
-async function verifyPaystack(reference: string) {
-  if (!PAYSTACK_SECRET_KEY) return { ok: false, reason: "Missing Paystack Key" };
+async function verifyPaystack(supabaseAdmin: any, reference: string) {
+  let paystackKey = "";
+  try {
+    const { data: settings } = await supabaseAdmin
+      .from("system_settings")
+      .select("paystack_secret_key")
+      .eq("id", 1)
+      .maybeSingle();
+    paystackKey = settings?.paystack_secret_key || "";
+  } catch (dbErr) {
+    console.error("Failed to fetch paystack_secret_key from DB in verifyPaystack:", dbErr);
+  }
+
+  if (!paystackKey) {
+    paystackKey = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
+  }
+
+  if (!paystackKey) return { ok: false, reason: "Missing Paystack Key" };
   try {
     const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, Accept: "application/json" },
+      headers: { Authorization: `Bearer ${paystackKey}`, Accept: "application/json" },
     });
     const data = await response.json();
     return {
@@ -151,7 +167,7 @@ serve(async (req: Request) => {
 
     for (const order of pendingOrders || []) {
       console.log(`[retry-orders] Verifying pending order: ${order.id}`);
-      const verification = await verifyPaystack(order.id);
+      const verification = await verifyPaystack(supabaseAdmin, order.id);
 
       if (verification.ok) {
         console.log(`[retry-orders] Payment confirmed for ${order.id}. Marking as PAID.`);

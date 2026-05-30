@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.paystack-webhook]
 verify_jwt = false
 
+[functions.paystack-resolve]
+verify_jwt = false
+
 [functions.bulk-fulfill-orders]
 verify_jwt = false
 
@@ -138,3 +141,15 @@ entrypoint = "./functions/ai-routing-recommender/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/ai-routing-recommender/*.html" ]
+
+[functions.ussd-webhook]
+verify_jwt = false
+
+[functions.paystack-vendor]
+verify_jwt = false
+
+[functions.paystack-store-deposit]
+verify_jwt = false
+
+[functions.system-payout-v1]
+verify_jwt = false

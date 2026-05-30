@@ -9,8 +9,27 @@ declare const Deno: any;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")!;
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") || "https://swiftdatagh.shop";
+
+let cachedPaystackKey = "";
+async function getPaystackSecretKey(supabase: any): Promise<string> {
+  if (cachedPaystackKey) return cachedPaystackKey;
+  try {
+    const { data: settings } = await supabase
+      .from("system_settings")
+      .select("paystack_secret_key")
+      .eq("id", 1)
+      .maybeSingle();
+    if (settings?.paystack_secret_key) {
+      cachedPaystackKey = settings.paystack_secret_key;
+      return cachedPaystackKey;
+    }
+  } catch (err) {
+    console.error("Failed to fetch paystack_secret_key from DB in whatsapp-webhook:", err);
+  }
+  cachedPaystackKey = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+  return cachedPaystackKey;
+}
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
@@ -259,9 +278,10 @@ async function initDataPayment(
   };
 
   try {
+    const paystackKey = await getPaystackSecretKey(supabase);
     const res = await fetch("https://api.paystack.co/charge", {
       method: "POST",
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${paystackKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: `wa-${from}@swiftdatagh.shop`,
 
@@ -335,9 +355,10 @@ async function initAirtimePayment(
   };
 
   try {
+    const paystackKey = await getPaystackSecretKey(supabase);
     const res = await fetch("https://api.paystack.co/charge", {
       method: "POST",
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${paystackKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: `wa-${from}@swiftdatagh.shop`,
 
@@ -425,8 +446,9 @@ serve(async (req: Request) => {
     if (input === "done" && data.lastOrderId) {
       sendWhatsAppMessage(from, `⏳ _Checking payment status..._`).catch(console.error);
       try {
+        const paystackKey = await getPaystackSecretKey(supabase);
         const vRes = await fetch(`https://api.paystack.co/transaction/verify/${data.lastOrderId}`, {
-          headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+          headers: { Authorization: `Bearer ${paystackKey}` },
         });
         const vJson = await vRes.json();
         

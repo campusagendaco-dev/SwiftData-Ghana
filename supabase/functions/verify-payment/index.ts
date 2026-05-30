@@ -695,7 +695,11 @@ serve(async (req) => {
            return new Response(JSON.stringify({ status: "error", error: "Payment gateway returned invalid response" }), { headers: corsHeaders });
         }
 
-        if (verifyData.data?.status === "failed") {
+        const txStatus = verifyData.data?.status;
+
+        if (txStatus === "success") {
+          verifiedAmount = verifyData.data.amount / 100;
+        } else if (txStatus === "failed") {
           const failMsg = verifyData.data.gateway_response || verifyData.data.message || verifyData.message || "Payment failed";
           console.warn(`[verify-payment] Payment failed explicitly:`, failMsg);
           await supabaseAdmin.from("orders").update({
@@ -703,14 +707,30 @@ serve(async (req) => {
             failure_reason: failMsg
           }).eq("id", targetReference);
           return new Response(JSON.stringify({ status: "error", error: failMsg }), { headers: corsHeaders });
-        }
-
-        if (!verifyData.status || !verifyData.data || verifyData.data.status !== "success") {
-          console.warn(`[verify-payment] Payment not confirmed:`, verifyData.message);
+        } else if (txStatus === "reversed") {
+          console.warn(`[verify-payment] Payment reversed explicitly`);
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            failure_reason: "Transaction was reversed (refunded/charged back)"
+          }).eq("id", targetReference);
+          return new Response(JSON.stringify({ status: "error", error: "The transaction was reversed." }), { headers: corsHeaders });
+        } else if (txStatus === "abandoned") {
+          console.warn(`[verify-payment] Payment abandoned`);
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            failure_reason: "Customer abandoned transaction"
+          }).eq("id", targetReference);
+          return new Response(JSON.stringify({ status: "not_paid", error: "The customer abandoned the transaction." }), { headers: corsHeaders });
+        } else if (txStatus === "ongoing") {
+          console.log(`[verify-payment] Payment ongoing: user action needed (OTP/transfer)`);
+          return new Response(JSON.stringify({ status: "pending", message: "Awaiting customer action (OTP / Transfer) to complete payment." }), { headers: corsHeaders });
+        } else if (txStatus === "pending" || txStatus === "processing" || txStatus === "queued") {
+          console.log(`[verify-payment] Payment in progress (${txStatus})`);
+          return new Response(JSON.stringify({ status: "pending", message: "Transaction is currently in progress." }), { headers: corsHeaders });
+        } else {
+          console.warn(`[verify-payment] Payment not confirmed or unknown status:`, txStatus);
           return new Response(JSON.stringify({ status: "not_paid", error: verifyData.message || "Payment not verified" }), { headers: corsHeaders });
         }
-
-        verifiedAmount = verifyData.data.amount / 100;
         
         // Fetch dynamic fee configuration for estimation
         const { data: settings } = await supabaseAdmin

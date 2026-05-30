@@ -504,7 +504,20 @@ serve(async (req: Request) => {
       }
 
       case "get_paystack_transactions": {
-        const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+        let PAYSTACK_SECRET_KEY = "";
+        try {
+          const { data: settings } = await supabaseAdmin
+            .from("system_settings")
+            .select("paystack_secret_key")
+            .eq("id", 1)
+            .maybeSingle();
+          PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+        } catch (dbErr) {
+          console.error("Failed to fetch paystack_secret_key from DB in system-payout:", dbErr);
+        }
+        if (!PAYSTACK_SECRET_KEY) {
+          PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+        }
         if (!PAYSTACK_SECRET_KEY) throw new Error("Paystack secret key not configured");
 
         const { from, to, status, page: pPage } = body;
@@ -739,7 +752,20 @@ serve(async (req: Request) => {
           });
         }
 
-        const PAYSTACK_SECRET = (Deno as any).env.get("PAYSTACK_SECRET_KEY");
+        let PAYSTACK_SECRET = "";
+        try {
+          const { data: settings } = await supabaseAdmin
+            .from("system_settings")
+            .select("paystack_secret_key")
+            .eq("id", 1)
+            .maybeSingle();
+          PAYSTACK_SECRET = settings?.paystack_secret_key || "";
+        } catch (dbErr) {
+          console.error("Failed to fetch paystack_secret_key from DB in system-payout payout:", dbErr);
+        }
+        if (!PAYSTACK_SECRET) {
+          PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+        }
         if (!PAYSTACK_SECRET) {
           return new Response(JSON.stringify({ error: "Paystack Secret Key not configured in Edge Functions" }), {
             status: 500,

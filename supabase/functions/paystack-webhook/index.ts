@@ -523,15 +523,20 @@ serve(async (req) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  let PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
-
-  if (!PAYSTACK_SECRET_KEY) {
+  let PAYSTACK_SECRET_KEY = "";
+  try {
     const { data: settings } = await supabaseAdmin
       .from("system_settings")
       .select("paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
     PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+  } catch (dbErr) {
+    console.error("Failed to fetch paystack_secret_key from DB in webhook:", dbErr);
+  }
+
+  if (!PAYSTACK_SECRET_KEY) {
+    PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
   }
 
   const DATA_PROVIDER_WEBHOOK_URL = getFirstEnvValue([

@@ -24,6 +24,7 @@ import StoreDepositFlow from "@/components/StoreDepositFlow";
 import StoreTransactionHistory from "@/components/StoreTransactionHistory";
 import StoreManagementOverlay from "@/components/StoreManagementOverlay";
 import { playSuccessSound } from "@/lib/sound";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 interface PromoResult {
   valid: boolean;
@@ -99,6 +100,8 @@ const AgentStore = () => {
   const [utilityAmount, setUtilityAmount] = useState("");
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
 
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -502,7 +505,7 @@ const AgentStore = () => {
       phoneInputRef.current?.focus();
       return;
     }
-    setBuying(true);
+
     const orderId = crypto.randomUUID();
     const orderType = selectedService === "utility" ? "utility" : selectedService === "airtime" ? "airtime" : "data";
     const packageSize = selectedService === "data" ? selectedPkg?.size : selectedService === "airtime" ? `${airtimeAmount} GHS Airtime` : `${utilityType} Bill`;
@@ -510,28 +513,55 @@ const AgentStore = () => {
       reference: orderId, network: selectedNetwork, package: packageSize || "", phone: phoneDigits,
       ...(slug ? { slug } : {}),
     });
-    const metadata: Record<string, any> = {
-      order_id: orderId, order_type: orderType, network: selectedNetwork, package_size: packageSize,
-      customer_phone: phoneDigits, fee, agent_id: agent.user_id, payment_source: "agent_store",
+
+    const meta = {
+      order_id: orderId,
+      order_type: orderType,
+      network: selectedNetwork,
+      package_size: packageSize,
+      customer_phone: phoneDigits,
+      fee,
+      agent_id: agent.user_id,
+      payment_source: "agent_store",
+      callback_url: slug
+        ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`
+        : `${window.location.origin}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? { promo_code: promoCode.trim(), promo_id: validPromo.promo_id, discount_percentage: validPromo.discount_percentage } : {}),
+      ...(selectedService === "utility" ? { bill_type: utilityType, customer_number: utilityNumber } : {}),
     };
-    if (selectedService === "utility") { metadata.bill_type = utilityType; metadata.customer_number = utilityNumber; }
-    const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
-      body: {
-        email: `${phoneDigits}@customer.data-portal.gh`, amount: total, reference: orderId,
-        callback_url: slug
-          ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`
-          : `${window.location.origin}/order-status?${callbackParams.toString()}`,
-        metadata,
-      },
+
+    setCheckoutMetadata(meta);
+    setCheckoutOpen(true);
+  };
+
+  const handleCheckoutSuccess = (ref: string) => {
+    setCheckoutOpen(false);
+    setSelectedPkg(null);
+    setPhone("");
+    setPromoCode("");
+    setPromoResult(null);
+    setAirtimeAmount("");
+    setUtilityNumber("");
+    setUtilityAmount("");
+    
+    const orderType = selectedService === "utility" ? "utility" : selectedService === "airtime" ? "airtime" : "data";
+    const packageSize = selectedService === "data" ? selectedPkg?.size : selectedService === "airtime" ? `${airtimeAmount} GHS Airtime` : `${utilityType} Bill`;
+    
+    const callbackParams = new URLSearchParams({
+      reference: ref,
+      network: selectedNetwork,
+      package: packageSize || "",
+      phone: phoneDigits,
+      ...(slug ? { slug } : {}),
     });
-    if (paymentError || !paymentData?.authorization_url) {
-      const description = paymentData?.error || await getFunctionErrorMessage(paymentError, "Could not initialize payment.");
-      toast({ title: "Payment failed", description, variant: "destructive" });
-      setBuying(false);
-      return;
-    }
-    window.location.href = paymentData.authorization_url;
+    
+    window.location.href = slug
+      ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`
+      : `${window.location.origin}/order-status?${callbackParams.toString()}`;
+  };
+
+  const handleCheckoutFailure = (error: string) => {
+    setBuying(false);
   };
 
   const handlePay = async () => {
@@ -1262,6 +1292,18 @@ const AgentStore = () => {
           }}
         />
       )}
+
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={total}
+        email={profile?.email || ""}
+        recipientPhone={phoneDigits}
+        recipientNetwork={selectedNetwork}
+        metadata={checkoutMetadata}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

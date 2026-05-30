@@ -13,6 +13,7 @@ import { invokePublicFunction } from "@/lib/public-function-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import SEO from "@/components/SEO";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 const NETWORK_GLASS_ACTIVE: Record<string, Record<string, string>> = {
   MTN: {
@@ -86,6 +87,8 @@ const BuyData = () => {
   const [claiming, setClaiming] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [resolvingName, setResolvingName] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
 
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
@@ -127,8 +130,11 @@ const BuyData = () => {
     setResolvedName(null);
   }, [selectedNetwork]);
 
+  const lastAttemptRef = useRef<string | null>(null);
+
   useEffect(() => {
     setResolvedName(null);
+    lastAttemptRef.current = null;
   }, [phone]);
 
   // Auto-focus phone input on modal open for blazing fast speeds
@@ -140,7 +146,8 @@ const BuyData = () => {
 
   // Auto-resolve recipient name
   useEffect(() => {
-    if (!isPhoneValid || resolvedName || resolvingName) return;
+    const attemptKey = `${selectedNetwork}-${phoneDigits}`;
+    if (!isPhoneValid || resolvedName || resolvingName || lastAttemptRef.current === attemptKey) return;
 
     const timer = setTimeout(async () => {
       setResolvingName(true);
@@ -153,18 +160,20 @@ const BuyData = () => {
         const { data, error } = await supabase.functions.invoke("paystack-resolve", {
           body: { account_number: phoneDigits, bank_code: bankCode }
         });
+        lastAttemptRef.current = attemptKey;
         if (!error && data?.success) {
           setResolvedName(data.account_name);
         }
       } catch (e) {
         console.error("Auto-resolution failed:", e);
+        lastAttemptRef.current = attemptKey;
       } finally {
         setResolvingName(false);
       }
     }, 300); // 300ms debounce for faster response
 
     return () => clearTimeout(timer);
-  }, [phone, selectedNetwork, isPhoneValid, resolvedName, resolvingName, phoneDigits]);
+  }, [selectedNetwork, isPhoneValid, resolvedName, resolvingName, phoneDigits]);
 
   const packages = useMemo(() => {
     return (basePackages[selectedNetwork] || [])
@@ -273,7 +282,6 @@ const BuyData = () => {
       return;
     }
 
-    setBuying(true);
     const orderId = crypto.randomUUID();
     const callbackParams = new URLSearchParams({
       reference: orderId,
@@ -282,37 +290,48 @@ const BuyData = () => {
       phone: phoneDigits,
     });
 
-    const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
-      body: {
-        email: email.trim() || `${phoneDigits}@swiftdata-anon.gh`,
-        amount: total,
-        reference: orderId,
-        callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
-        metadata: {
-          order_id: orderId,
-          order_type: "data",
-          network: selectedNetwork,
-          package_size: selectedPkg.size,
-          customer_phone: phoneDigits,
-          customer_name: resolvedName,
-          fee,
-          payment_source: "direct",
-          ...(validPromo && !validPromo.is_free ? {
-            promo_code: promoCode.trim(),
-            promo_id: validPromo.promo_id,
-            discount_percentage: validPromo.discount_percentage,
-          } : {}),
-        },
-      },
-    });
+    const meta = {
+      order_id: orderId,
+      order_type: "data",
+      network: selectedNetwork,
+      package_size: selectedPkg.size,
+      customer_phone: phoneDigits,
+      customer_name: resolvedName,
+      fee,
+      payment_source: "direct",
+      callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
+      ...(validPromo && !validPromo.is_free ? {
+        promo_code: promoCode.trim(),
+        promo_id: validPromo.promo_id,
+        discount_percentage: validPromo.discount_percentage,
+      } : {}),
+    };
 
-    if (paymentError || !paymentData?.authorization_url) {
-      const description = paymentData?.error || await getFunctionErrorMessage(paymentError, "Could not initialize payment.");
-      toast({ title: "Payment failed", description, variant: "destructive" });
-      setBuying(false);
-      return;
-    }
-    window.location.href = paymentData.authorization_url;
+    setCheckoutMetadata(meta);
+    setCheckoutOpen(true);
+  };
+
+  const handleCheckoutSuccess = (ref: string) => {
+    setCheckoutOpen(false);
+    setSelectedPkg(null);
+    setPhone("");
+    setEmail("");
+    setPromoCode("");
+    setPromoResult(null);
+    setPromoOpen(false);
+    
+    const callbackParams = new URLSearchParams({
+      reference: ref,
+      network: selectedNetwork,
+      package: selectedPkg?.size || "",
+      phone: phoneDigits,
+    });
+    
+    window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
+  };
+
+  const handleCheckoutFailure = (error: string) => {
+    setBuying(false);
   };
 
   const colors = getNetworkCardColors(selectedNetwork);
@@ -870,6 +889,18 @@ const BuyData = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={total}
+        email={email}
+        recipientPhone={phoneDigits}
+        recipientNetwork={selectedNetwork}
+        metadata={checkoutMetadata}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
 
       <style>{`
         @keyframes shimmer {

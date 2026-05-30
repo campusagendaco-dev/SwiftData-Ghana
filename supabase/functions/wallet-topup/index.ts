@@ -8,11 +8,10 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!PAYSTACK_SECRET_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(JSON.stringify({ error: "Server misconfigured" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -51,12 +50,23 @@ serve(async (req) => {
       });
     }
 
-    // Fetch dynamic fee configuration
+    // Fetch dynamic fee configuration & paystack secret key
     const { data: settings } = await supabaseAdmin
       .from("system_settings")
-      .select("paystack_deposit_fee_percent")
+      .select("paystack_deposit_fee_percent, paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
+
+    let PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+    if (!PAYSTACK_SECRET_KEY) {
+      PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+    }
+
+    if (!PAYSTACK_SECRET_KEY) {
+      return new Response(JSON.stringify({ error: "Paystack API key not configured" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const feeRate = Number(settings?.paystack_deposit_fee_percent ?? 0.03);
     const feeCap = 100;
