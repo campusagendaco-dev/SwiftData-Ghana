@@ -165,6 +165,61 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
   const brandName = isStoreRoute ? (cachedStore?.name || "Online Store") : "SwiftData";
   const brandColor = isStoreRoute ? (cachedStore?.color || "#f59e0b") : "#f59e0b";
 
+  const isSuspended = profile?.is_suspended === true;
+
+  if (user && isSuspended) {
+    return (
+      <div className="fixed inset-0 z-[100001] flex flex-col items-center justify-center bg-[#06060c] text-white p-6">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.08)_0%,transparent_70%)] pointer-events-none" />
+        
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="bg-card/30 backdrop-blur-xl border border-red-500/20 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden"
+        >
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="w-20 h-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-6 relative group">
+            <div className="absolute inset-0 rounded-2xl bg-red-500/20 blur-md animate-pulse" />
+            <Lock className="w-10 h-10 text-red-500 relative z-10" />
+          </div>
+
+          <h2 className="text-2xl font-black mb-3 tracking-tight bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
+            Account Suspended
+          </h2>
+          
+          <p className="text-red-400/90 text-xs font-bold uppercase tracking-widest mb-4">
+            Access Restricted
+          </p>
+
+          <p className="text-muted-foreground text-sm leading-relaxed mb-8">
+            Your account has been suspended by the platform administrator. You are currently restricted from accessing your wallet, dashboard, and making purchases.
+          </p>
+
+          <div className="flex flex-col gap-3">
+            {profile?.support_number && (
+              <a
+                href={`https://wa.me/${profile.support_number.replace(/\D+/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-4 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl transition-all shadow-lg shadow-red-600/10 text-center text-sm"
+              >
+                Contact Customer Support
+              </a>
+            )}
+            <button
+              onClick={handleLogout}
+              className="w-full py-3.5 px-4 bg-white/5 hover:bg-white/10 text-muted-foreground font-bold rounded-2xl flex items-center justify-center gap-2 transition-all border border-white/5 text-sm"
+            >
+              <LogOut className="w-4 h-4" /> Log Out
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden selection:bg-primary selection:text-black">
       {/* Main Application Layer */}
