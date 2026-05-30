@@ -184,7 +184,7 @@ const DashboardSettings = () => {
              try {
                const errData = await (error as any).context.json();
                if (errData?.error) errorMessage = errData.error;
-             } catch(e) {}
+             } catch(e) { /* ignore */ }
           }
           
           checkedResults.push({

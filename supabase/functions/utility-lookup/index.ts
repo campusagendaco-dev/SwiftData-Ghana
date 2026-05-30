@@ -64,7 +64,7 @@ serve(async (req) => {
       };
     }
 
-    let headers: Record<string, string> = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 

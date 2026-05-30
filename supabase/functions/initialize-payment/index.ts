@@ -57,7 +57,7 @@ function normalizeNetwork(network: string): string {
 }
 
 function normalizePhoneForPaystack(phone: string): string {
-  let digits = phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
   if (digits.startsWith("233") && digits.length > 10) {
     return "0" + digits.slice(3);
   }

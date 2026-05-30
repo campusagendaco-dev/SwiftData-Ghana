@@ -551,8 +551,8 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: "Insufficient wallet balance" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      let acctPhone = action === "momo-disbursement" ? phone! : account_number!;
-      let netCode = action === "momo-disbursement" ? network! : bank_code!;
+      const acctPhone = action === "momo-disbursement" ? phone! : account_number!;
+      const netCode = action === "momo-disbursement" ? network! : bank_code!;
       
       let commType: "momo-out" | "bank" | "africa" = "momo-out";
       if (action === "bank-transfer-init") commType = "bank";

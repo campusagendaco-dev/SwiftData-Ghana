@@ -552,7 +552,8 @@ serve(async (req: Request) => {
       const payload = await req.json().catch(() => null);
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
-      let { network, phone, amount, package_size, package_id, request_id } = payload;
+      const { phone, amount, package_id, request_id } = payload;
+      let { network, package_size } = payload;
 
       // Map smart network names back to DB names if they are using the legacy network + package_size method
       if (network) {
