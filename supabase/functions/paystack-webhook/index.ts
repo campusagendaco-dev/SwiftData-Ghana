@@ -1237,6 +1237,7 @@ serve(async (req) => {
         .maybeSingle();
 
       const customerId = (storeOrder?.customer_id as string | null)
+        ?? (storeOrder?.metadata?.customer_id as string | null)
         ?? (typeof metadata?.customer_id === "string" ? metadata.customer_id : null);
       const agentId = (storeOrder?.agent_id as string | null)
         ?? (typeof metadata?.agent_id === "string" ? metadata.agent_id : null);
