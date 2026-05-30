@@ -52,8 +52,7 @@ serve(async (req) => {
 
     // Fetch dynamic fee configuration & paystack secret key
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("paystack_deposit_fee_percent, paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("paystack_deposit_fee_percent, paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
 

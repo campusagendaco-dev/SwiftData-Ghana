@@ -33,8 +33,7 @@ async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: str
 
   // Fall back to DB if env vars are not set
   const { data: settings } = await supabaseAdmin
-    .from("system_settings")
-    .select("data_provider_api_key, data_provider_base_url")
+    .from("v_system_settings_with_secrets").select("data_provider_api_key, data_provider_base_url")
     .eq("id", 1)
     .maybeSingle();
 
@@ -46,7 +45,7 @@ async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: str
 
 async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: string; baseUrl: string }> {
   // Try fetching from DB first
-  const { data: dbSettings } = await supabaseAdmin.from("system_settings").select("*").eq("id", 1).maybeSingle();
+  const { data: dbSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("*").eq("id", 1).maybeSingle();
 
   const apiKey = Deno.env.get("AIRTIME_PROVIDER_API_KEY") || 
                  Deno.env.get("PRIMARY_DATA_PROVIDER_API_KEY") || 
@@ -526,8 +525,7 @@ serve(async (req) => {
   let PAYSTACK_SECRET_KEY = "";
   try {
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
     PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
@@ -1065,8 +1063,7 @@ serve(async (req) => {
 
     if (orderType === "agent_activation") {
       const { data: settings } = await supabaseAdmin
-        .from("system_settings")
-        .select("agent_activation_fee")
+        .from("v_system_settings_with_secrets").select("agent_activation_fee")
         .eq("id", 1)
         .maybeSingle();
       const AGENT_ACTIVATION_MINIMUM = Number(settings?.agent_activation_fee || 50);
@@ -1128,8 +1125,7 @@ serve(async (req) => {
 
     if (orderType === "sub_agent_activation") {
       const { data: settings } = await supabaseAdmin
-        .from("system_settings")
-        .select("sub_agent_base_fee")
+        .from("v_system_settings_with_secrets").select("sub_agent_base_fee")
         .eq("id", 1)
         .maybeSingle();
       const SUB_AGENT_MINIMUM = Number(settings?.sub_agent_base_fee || 5);
@@ -1149,7 +1145,7 @@ serve(async (req) => {
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || existingOrder?.amount || verifiedAmount || 0);
       
-      const { data: settings } = await supabaseAdmin.from("system_settings").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
+      const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
       const baseFee = Number(settings?.sub_agent_base_fee || 5); // Default to 5 if DB missing
 
       // Security: Never trust client-supplied profit metadata. 

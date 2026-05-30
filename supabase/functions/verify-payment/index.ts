@@ -65,8 +65,7 @@ async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: str
   ).replace(/\/+$/, "");
 
   const { data: settings } = await supabaseAdmin
-    .from("system_settings")
-    .select("data_provider_api_key, data_provider_base_url, paystack_secret_key")
+    .from("v_system_settings_with_secrets").select("data_provider_api_key, data_provider_base_url, paystack_secret_key")
     .eq("id", 1)
     .maybeSingle();
 
@@ -78,7 +77,7 @@ async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: str
 }
 
 async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: string; baseUrl: string }> {
-  const { data: dbSettings } = await supabaseAdmin.from("system_settings").select("*").eq("id", 1).maybeSingle();
+  const { data: dbSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("*").eq("id", 1).maybeSingle();
 
   const apiKey = getFirstEnv("AIRTIME_PROVIDER_API_KEY", "PRIMARY_DATA_PROVIDER_API_KEY") || 
                  dbSettings?.airtime_provider_api_key || 
@@ -622,8 +621,7 @@ serve(async (req) => {
     // Special validation for free data claims to prevent spamming
     if (orderType.toLowerCase() === "free_data_claim") {
       const { data: settings } = await supabaseAdmin
-        .from("system_settings")
-        .select("free_data_enabled, free_data_max_claims, free_data_claims_count")
+        .from("v_system_settings_with_secrets").select("free_data_enabled, free_data_max_claims, free_data_claims_count")
         .eq("id", 1)
         .maybeSingle();
 
@@ -734,8 +732,7 @@ serve(async (req) => {
         
         // Fetch dynamic fee configuration for estimation
         const { data: settings } = await supabaseAdmin
-          .from("system_settings")
-          .select("paystack_deposit_fee_percent")
+          .from("v_system_settings_with_secrets").select("paystack_deposit_fee_percent")
           .eq("id", 1)
           .maybeSingle();
         
@@ -822,7 +819,7 @@ serve(async (req) => {
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || claimedOrder.amount || verifiedAmount || 0);
       
-      const { data: settings } = await supabaseAdmin.from("system_settings").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
+      const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
       const baseFee = Number(settings?.sub_agent_base_fee || 5);
 
       const agentProfit = Math.max(0, parseFloat((activationAmount - baseFee).toFixed(2)));
@@ -871,7 +868,7 @@ serve(async (req) => {
     else if (currentOrderType === "utility") providerCategory = "utility";
     
     const activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
-    const { data: sysSettings } = await supabaseAdmin.from("system_settings").select("auto_api_switch").eq("id", 1).maybeSingle();
+    const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch").eq("id", 1).maybeSingle();
     const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
     const network = claimedOrder.network || metadata?.network || "";

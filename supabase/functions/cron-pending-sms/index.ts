@@ -23,8 +23,7 @@ serve(async (req: Request) => {
   try {
     // 1. Check if auto SMS is enabled
     const { data: settings, error: settingsError } = await supabaseAdmin
-      .from("system_settings")
-      .select("auto_pending_sms_enabled, auto_pending_sms_message, txtconnect_api_key, txtconnect_sender_id")
+      .from("v_system_settings_with_secrets").select("auto_pending_sms_enabled, auto_pending_sms_message, txtconnect_api_key, txtconnect_sender_id")
       .eq("id", 1)
       .maybeSingle();
 

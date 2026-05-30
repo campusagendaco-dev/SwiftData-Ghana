@@ -63,8 +63,7 @@ serve(async (req) => {
 
     // ── VALIDATE API IS OFF (disable_ordering = true) ─────────────────────────
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("disable_ordering")
+      .from("v_system_settings_with_secrets").select("disable_ordering")
       .eq("id", 1)
       .maybeSingle();
 

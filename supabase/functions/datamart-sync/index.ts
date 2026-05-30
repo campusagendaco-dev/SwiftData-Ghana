@@ -32,8 +32,7 @@ serve(async (req: Request) => {
     
     // 1. Get DataMart Credentials
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("data_provider_api_key, data_provider_base_url")
+      .from("v_system_settings_with_secrets").select("data_provider_api_key, data_provider_base_url")
       .eq("id", 1)
       .maybeSingle();
 

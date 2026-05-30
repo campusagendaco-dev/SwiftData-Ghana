@@ -83,8 +83,7 @@ serve(async (req) => {
 
     // 4. Resolve dynamic prices from Admin Settings
     const { data: sysSettings } = await supabaseAdmin
-      .from("system_settings")
-      .select("wassce_price, bece_price, wassce_cost_price, bece_cost_price")
+      .from("v_system_settings_with_secrets").select("wassce_price, bece_price, wassce_cost_price, bece_cost_price")
       .eq("id", 1)
       .maybeSingle();
 

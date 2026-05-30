@@ -32,7 +32,7 @@ serve(async (req: Request) => {
 
     // 2. Fetch SMS Config & Templates
     const { apiKey, senderId, templates: anyTemplates } = await getSmsConfig(supabaseAdmin);
-    const { data: settings } = await supabaseAdmin.from("system_settings").select("terminal_locked_sms_message, terminal_unlocked_sms_message").single();
+    const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("terminal_locked_sms_message, terminal_unlocked_sms_message").single();
     
     const message = isLocked 
       ? (settings?.terminal_locked_sms_message || "Your terminal has been LOCKED.")

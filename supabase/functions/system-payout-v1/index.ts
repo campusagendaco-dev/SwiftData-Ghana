@@ -507,7 +507,7 @@ serve(async (req: Request) => {
         let PAYSTACK_SECRET_KEY = "";
         try {
           const { data: settings } = await supabaseAdmin
-            .from("system_settings")
+            .from("v_system_settings_with_secrets")
             .select("paystack_secret_key")
             .eq("id", 1)
             .maybeSingle();
@@ -733,11 +733,53 @@ serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
+        
+        // Handle Secret updates separately
+        const SECRET_KEYS = new Set([
+          "paystack_secret_key", "hubtel_client_id", "hubtel_client_secret", 
+          "txtconnect_api_key", "txtconnect_sender_id", 
+          "data_provider_api_key", "data_provider_base_url", 
+          "secondary_data_provider_api_key", "secondary_data_provider_base_url", 
+          "airtime_provider_api_key", "airtime_provider_base_url"
+        ]);
+        
+        const secretUpdates: Record<string, any> = {};
+        for (const key of Object.keys(settings)) {
+          if (SECRET_KEYS.has(key) && typeof settings[key] === "string") {
+            secretUpdates[key] = settings[key];
+          }
+        }
+        
+        if (Object.keys(secretUpdates).length > 0) {
+          const { error: secretsError } = await supabaseAdmin.from("system_secrets").update(secretUpdates).eq("id", 1);
+          if (secretsError) {
+            console.error("Failed to update system_secrets:", secretsError);
+            return new Response(JSON.stringify({ error: "Failed to save sensitive settings. Ensure database is updated." }), {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
 
         return new Response(JSON.stringify({ 
           success: true, 
-          skipped: Object.keys(settings).filter(k => !validKeys.includes(k)) 
+          skipped: Object.keys(settings).filter(k => !validKeys.includes(k) && !SECRET_KEYS.has(k)) 
         }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      case "get_admin_secrets": {
+        const { data: secrets, error: secretsErr } = await supabaseAdmin
+          .from("system_secrets")
+          .select("*")
+          .eq("id", 1)
+          .maybeSingle();
+          
+        if (secretsErr) throw secretsErr;
+        
+        return new Response(JSON.stringify({ success: true, secrets: secrets || {} }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -755,7 +797,7 @@ serve(async (req: Request) => {
         let PAYSTACK_SECRET = "";
         try {
           const { data: settings } = await supabaseAdmin
-            .from("system_settings")
+            .from("v_system_settings_with_secrets")
             .select("paystack_secret_key")
             .eq("id", 1)
             .maybeSingle();

@@ -41,7 +41,7 @@ serve(async (req) => {
 
   try {
     // Fetch system settings to check for DB-configured secrets
-    const { data: dbSettings } = await supabaseAdmin.from("system_settings").select("*").eq("id", 1).maybeSingle();
+    const { data: dbSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("*").eq("id", 1).maybeSingle();
 
     const requiredSecrets: SecretCheck[] = [
       {

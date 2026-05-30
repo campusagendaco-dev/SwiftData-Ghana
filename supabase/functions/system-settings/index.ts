@@ -145,15 +145,13 @@ serve(async (req) => {
       "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link";
 
     const { data: fullData, error: fullError } = await supabaseAdmin
-      .from("system_settings")
-      .select(fullSelect)
+      .from("v_system_settings_with_secrets").select(fullSelect)
       .eq("id", 1)
       .maybeSingle();
 
     const { data, error } = fullError
       ? await supabaseAdmin
-          .from("system_settings")
-          .select(legacySelect)
+          .from("v_system_settings_with_secrets").select(legacySelect)
           .eq("id", 1)
           .maybeSingle()
       : { data: fullData, error: null as { message?: string } | null };
@@ -247,8 +245,7 @@ serve(async (req) => {
     const secondaryMarkupPct = 0;
 
     const { data: existingSettings } = await supabaseAdmin
-      .from("system_settings")
-      .select("customer_service_number, support_channel_link")
+      .from("v_system_settings_with_secrets").select("customer_service_number, support_channel_link")
       .eq("id", 1)
       .maybeSingle();
 

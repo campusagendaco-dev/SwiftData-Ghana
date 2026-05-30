@@ -37,11 +37,10 @@ interface GlobalPackageSetting {
   is_unavailable: boolean;
 }
 
-const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100;
 
-const calculatePaystackFee = (amount: number) => {
-  const fee = amount * PAYSTACK_FEE_RATE;
+const calculatePaystackFee = (amount: number, feeRate: number) => {
+  const fee = amount * feeRate;
   return Math.min(fee, PAYSTACK_FEE_CAP);
 };
 
@@ -85,6 +84,7 @@ const DashboardWallet = () => {
   const [loading, setLoading] = useState(true);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
+  const [feeRate, setFeeRate] = useState(0.03);
   const [priceMultiplier, setPriceMultiplier] = useState(1);
 
   // Buy data form
@@ -153,11 +153,12 @@ const DashboardWallet = () => {
   const fetchBalance = useCallback(async () => {
     if (!user) return;
 
-    const [walletRes, ordersRes, parentProfitRes, withdrawalsRes] = await Promise.all([
+    const [walletRes, ordersRes, parentProfitRes, withdrawalsRes, settingsRes] = await Promise.all([
       supabase.from("wallets").select("balance, loyalty_balance, api_balance").eq("agent_id", user.id).maybeSingle(),
       supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("withdrawals").select("amount, status").eq("agent_id", user.id).in("status", ["completed", "pending", "processing"]),
+      supabase.from("system_settings").select("paystack_deposit_fee_percent").eq("id", 1).maybeSingle(),
     ]);
 
     const walletData = walletRes.data;
@@ -174,6 +175,9 @@ const DashboardWallet = () => {
     setApiBalance(apiBal);
     setLoyaltyBalance(Number(loyaltyPoints));
     setAvailableProfit(Math.max(0, profitBalance));
+    if (settingsRes.data?.paystack_deposit_fee_percent !== undefined) {
+      setFeeRate(Number(settingsRes.data.paystack_deposit_fee_percent));
+    }
     setLoading(false);
   }, [user]);
 
@@ -267,7 +271,7 @@ const DashboardWallet = () => {
   const selectedPkg = agentPackages.find((p) => p.size === selectedPackage);
   const topupRequestedAmount = Number(topupAmount);
   const topupFee = Number.isFinite(topupRequestedAmount) && topupRequestedAmount > 0
-    ? Math.round(calculatePaystackFee(topupRequestedAmount) * 100) / 100
+    ? Math.round(calculatePaystackFee(topupRequestedAmount, feeRate) * 100) / 100
     : 0;
   const topupChargeTotal = Number.isFinite(topupRequestedAmount) && topupRequestedAmount > 0
     ? Math.round((topupRequestedAmount + topupFee) * 100) / 100

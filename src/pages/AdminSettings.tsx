@@ -197,6 +197,24 @@ const AdminSettings = () => {
       if (error) {
         toast({ title: "Error loading settings", description: error.message, variant: "destructive" });
       } else if (data) {
+        let secrets: any = {};
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/system-payout-v1`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+              'apikey': SUPABASE_PUBLISHABLE_KEY
+            },
+            body: JSON.stringify({ action: "get_admin_secrets" })
+          });
+          const secData = await res.json();
+          if (secData.success) secrets = secData.secrets;
+        } catch (e) {
+          console.error("Failed to fetch admin secrets", e);
+        }
+
         const d = data as any;
         setSettings({
           auto_api_switch: d.auto_api_switch || false,
@@ -211,11 +229,11 @@ const AdminSettings = () => {
           customer_service_number: d.customer_service_number || "",
           support_channel_link: d.support_channel_link || "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
           sub_agent_base_fee: String(d.sub_agent_base_fee || "5.00"),
-          txtconnect_api_key: String(d.txtconnect_api_key || ""),
-          txtconnect_sender_id: String(d.txtconnect_sender_id || ""),
-          paystack_secret_key: String(d.paystack_secret_key || ""),
-          hubtel_client_id: String(d.hubtel_client_id || ""),
-          hubtel_client_secret: String(d.hubtel_client_secret || ""),
+          txtconnect_api_key: String(secrets.txtconnect_api_key || ""),
+          txtconnect_sender_id: String(secrets.txtconnect_sender_id || ""),
+          paystack_secret_key: String(secrets.paystack_secret_key || ""),
+          hubtel_client_id: String(secrets.hubtel_client_id || ""),
+          hubtel_client_secret: String(secrets.hubtel_client_secret || ""),
           mtn_markup_percentage: String(d.mtn_markup_percentage || "0"),
           telecel_markup_percentage: String(d.telecel_markup_percentage || "0"),
           at_markup_percentage: String(d.at_markup_percentage || "0"),
@@ -227,12 +245,12 @@ const AdminSettings = () => {
           withdrawal_completed_sms_message: d.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
           order_failed_sms_message: d.order_failed_sms_message || "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
           manual_credit_sms_message: d.manual_credit_sms_message || "Your account has been manually credited with GHS {amount} by admin.",
-          data_provider_api_key: String(d.data_provider_api_key || ""),
-          data_provider_base_url: String(d.data_provider_base_url || ""),
-          airtime_provider_api_key: String(d.airtime_provider_api_key || ""),
-          airtime_provider_base_url: String(d.airtime_provider_base_url || ""),
-          secondary_data_provider_api_key: String(d.secondary_data_provider_api_key || ""),
-          secondary_data_provider_base_url: String(d.secondary_data_provider_base_url || ""),
+          data_provider_api_key: String(secrets.data_provider_api_key || ""),
+          data_provider_base_url: String(secrets.data_provider_base_url || ""),
+          airtime_provider_api_key: String(secrets.airtime_provider_api_key || ""),
+          airtime_provider_base_url: String(secrets.airtime_provider_base_url || ""),
+          secondary_data_provider_api_key: String(secrets.secondary_data_provider_api_key || ""),
+          secondary_data_provider_base_url: String(secrets.secondary_data_provider_base_url || ""),
           auto_failover_enabled: d.auto_failover_enabled || false,
           show_announcement: d.show_announcement || false,
           announcement_title: d.announcement_title || "Welcome to SwiftPoints!",

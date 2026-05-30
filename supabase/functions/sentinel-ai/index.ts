@@ -61,7 +61,7 @@ serve(async (req: Request) => {
       const { data: recentOrders } = await supabaseAdmin.from("orders").select("*").gt("created_at", new Date(Date.now() - 3600000).toISOString());
       ordersToAnalyze = recentOrders || [];
     }
-    const { data: settings } = await supabaseAdmin.from("system_settings").select("*").single();
+    const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("*").single();
     const { data: providers } = await supabaseAdmin.from("providers").select("*").order("priority", { ascending: true });
     
     // Fetch Admin Contact

@@ -74,8 +74,7 @@ serve(async (req) => {
   let PAYSTACK_SECRET_KEY = "";
   try {
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
     PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";

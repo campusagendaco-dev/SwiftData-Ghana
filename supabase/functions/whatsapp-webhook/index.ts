@@ -16,8 +16,7 @@ async function getPaystackSecretKey(supabase: any): Promise<string> {
   if (cachedPaystackKey) return cachedPaystackKey;
   try {
     const { data: settings } = await supabase
-      .from("system_settings")
-      .select("paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
     if (settings?.paystack_secret_key) {
@@ -504,8 +503,7 @@ serve(async (req: Request) => {
       let customPrompt = SYSTEM_PROMPT;
       try {
         const { data: settingsData } = await supabase
-          .from("system_settings")
-          .select("whatsapp_bot_prompt")
+          .from("v_system_settings_with_secrets").select("whatsapp_bot_prompt")
           .eq("id", 1)
           .maybeSingle();
         if (settingsData && settingsData.whatsapp_bot_prompt && settingsData.whatsapp_bot_prompt.trim().length > 0) {

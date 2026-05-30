@@ -120,8 +120,7 @@ serve(async (req: Request) => {
 
   try {
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key")
       .eq("id", 1)
       .maybeSingle();
 

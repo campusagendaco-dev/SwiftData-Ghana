@@ -662,8 +662,7 @@ serve(async (req: Request) => {
 
         // Dynamically fetch existing columns to avoid crashing on missing columns
         const { data: existing, error: fetchError } = await supabaseAdmin
-          .from("system_settings")
-          .select("*")
+          .from("v_system_settings_with_secrets").select("*")
           .limit(1)
           .maybeSingle();
 

@@ -74,7 +74,7 @@ serve(async (req: Request) => {
 
     // Maintenance mode check
     const { data: sysSettings } = await supabaseAdmin
-      .from("system_settings").select("maintenance_mode, maintenance_message").eq("id", 1).maybeSingle();
+      .from("v_system_settings_with_secrets").select("maintenance_mode, maintenance_message").eq("id", 1).maybeSingle();
     if (sysSettings?.maintenance_mode) {
       return new Response(JSON.stringify({
         error: sysSettings.maintenance_message || "System is under maintenance. Please try again shortly."
@@ -123,44 +123,71 @@ serve(async (req: Request) => {
     const adminBase = Number(pkgRow?.agent_price || 0);
     const resolvedCostPrice = Number(pkgRow?.cost_price || 0) > 0 ? Number(pkgRow!.cost_price) : adminBase;
 
-    // Calculate profit and parent referral commission
-    let parentAgentId: string | null = null;
-    let parentProfit = 0;
-    let agentProfit = 0;
+    // --- 🔴 SECURITY ENFORCEMENT: STRICT SERVER-SIDE PRICING ---
+    // Ignore the frontend's requested amount entirely. Calculate the exact wholesale price 
+    // the agent must pay based on their tier (Sub-Agent vs Direct Agent) and the global settings.
 
-    if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id && adminBase > 0) {
-      // Sub-agent: profit stays 0 (they sell at their own price); parent earns the margin
+    let resolvedChargeAmount = adminBase;
+
+    if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id) {
+      // Find parent's assigned price for this sub-agent
+      const { data: parentProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("sub_agent_prices, agent_prices")
+        .eq("user_id", agentProfile.parent_agent_id)
+        .maybeSingle();
+
+      if (parentProfile) {
+        const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+        const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+        
+        let parentAssignedBase = 0;
+        const netCandidates = [normalizedNet, networkRaw, networkRaw.replace(/\s+/g, "")];
+        const pkgCandidates = [normalizeSize(package_size), package_size];
+        
+        // Helper to search price maps
+        const searchMap = (map: Record<string, Record<string, string | number>>) => {
+          for (const n of netCandidates) {
+            if (!map[n]) continue;
+            for (const p of pkgCandidates) {
+              const val = Number(map[n][p]);
+              if (Number.isFinite(val) && val > 0) return val;
+            }
+          }
+          return 0;
+        };
+
+        if (Object.keys(subPrices).length > 0) {
+          parentAssignedBase = searchMap(subPrices);
+        }
+        if (!(parentAssignedBase > 0)) {
+          parentAssignedBase = searchMap(agentPrices);
+        }
+
+        if (parentAssignedBase > 0) {
+          resolvedChargeAmount = parentAssignedBase;
+        }
+      }
+
+      // Sub-agent pays parent's wholesale price; parent keeps margin above admin wholesale
       parentAgentId = agentProfile.parent_agent_id;
-      parentProfit = Math.max(0, parseFloat((Number(requestedAmount) - adminBase).toFixed(2)));
-    } else if (resolvedCostPrice > 0) {
-      // Regular agent: profit = selling price - cost price
-      agentProfit = Math.max(0, parseFloat((Number(requestedAmount) - resolvedCostPrice).toFixed(2)));
+      parentProfit = Math.max(0, parseFloat((resolvedChargeAmount - adminBase).toFixed(2)));
+      agentProfit = 0; // Sub-agent profit is collected offline as cash
+    } else {
+      // Direct agent pays admin wholesale price
+      resolvedChargeAmount = adminBase;
+      agentProfit = 0; // Regular agent profit is collected offline as cash
     }
 
-    // --- 🔴 SECURITY ENFORCEMENT: AMOUNT & PRICE FLOOR CHECK ---
-    const amountNum = Number(requestedAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      console.error(`[SECURITY] Blocked invalid amount from user ${user.id}: ${requestedAmount}`);
-      return new Response(JSON.stringify({ error: "Invalid order amount. Transaction rejected." }), {
+    if (resolvedChargeAmount <= 0) {
+      console.error(`[SECURITY] Blocked order: Could not resolve valid wholesale price for ${normalizedNet} ${package_size}.`);
+      return new Response(JSON.stringify({ error: "Pricing configuration error. Please contact support." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Enforce a loose safety floor (50% of cost or agent price) to prevent 
-    // malicious API abuse (e.g. paying 1 pesewa) while still fully allowing 
-    // legitimate loss-leader promotional discounts from the frontend.
-    const dbCostPrice = Number(pkgRow?.cost_price || 0);
-    const referencePrice = dbCostPrice > 0 ? dbCostPrice : adminBase;
-    const absoluteFloor = referencePrice * 0.5;
-
-    if (amountNum < absoluteFloor && absoluteFloor > 0) {
-      console.error(`[SECURITY] Blocked underpriced order from user ${user.id}. Received: ${amountNum}, Absolute Floor: ${absoluteFloor}`);
-      return new Response(JSON.stringify({ error: "Transaction rejected due to package price discrepancy. Price is below minimum floor." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const amountNum = resolvedChargeAmount;
 
     // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
@@ -189,18 +216,18 @@ serve(async (req: Request) => {
     }
 
     // 1. ATOMIC DEBIT (wallet first, credit fallback)
-    console.log(`[DEBIT] Starting debit for ${requestedAmount}...`);
+    console.log(`[DEBIT] Starting debit for ${amountNum}...`);
     let paymentMethod = "wallet";
     const { data: debitResult, error: debitError } = await supabaseAdmin.rpc("debit_wallet", {
       p_agent_id: user.id,
-      p_amount: requestedAmount,
+      p_amount: amountNum,
     });
 
     if (debitError || !debitResult?.success) {
       const debitErrMsg = debitError?.message || debitResult?.message || debitResult?.error || "Insufficient funds and credit limit";
       console.error(`[DEBIT_FAIL] ${user.id}: ${debitErrMsg}`, { debitError, debitResult });
       
-      log(supabaseAdmin, { level: "error", source: "wallet-buy-data", event: "debit.failed", message: `Wallet debit failed: ${debitErrMsg}`, agent_id: user.id, data: { amount: requestedAmount, debit_error: debitError?.message, debit_result: debitResult } });
+      log(supabaseAdmin, { level: "error", source: "wallet-buy-data", event: "debit.failed", message: `Wallet debit failed: ${debitErrMsg}`, agent_id: user.id, data: { amount: amountNum, debit_error: debitError?.message, debit_result: debitResult } });
       
       return new Response(JSON.stringify({ error: debitErrMsg }), {
         status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -209,7 +236,7 @@ serve(async (req: Request) => {
 
     if (debitResult?.new_balance < 0) {
       paymentMethod = "credit";
-      log(supabaseAdmin, { level: "info", source: "wallet-buy-data", event: "credit.drawn", message: `Credit drawn. Account is in overdraft (GHS ${debitResult.new_balance}) for ${user.id}`, agent_id: user.id, data: { amount: requestedAmount, new_balance: debitResult.new_balance } });
+      log(supabaseAdmin, { level: "info", source: "wallet-buy-data", event: "credit.drawn", message: `Credit drawn. Account is in overdraft (GHS ${debitResult.new_balance}) for ${user.id}`, agent_id: user.id, data: { amount: amountNum, new_balance: debitResult.new_balance } });
     }
     
     console.log(`[DEBIT_SUCCESS] New balance: ${(debitResult as any).new_balance}`);
@@ -224,7 +251,7 @@ serve(async (req: Request) => {
       customer_phone: normalizeRecipient(customer_phone),
       network: normalizeNetworkForPricing(networkRaw),
       package_size: package_size,
-      amount: requestedAmount,
+      amount: amountNum, // Use strictly resolved server-side amount
       payment_method: paymentMethod,
       cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
       profit: agentProfit,
@@ -235,21 +262,21 @@ serve(async (req: Request) => {
 
     if (insertError) {
       console.error(`[INSERT_FAIL] ${orderId}:`, insertError);
-      log(supabaseAdmin, { level: "error", source: "wallet-buy-data", event: "order.create_failed", message: `Order insert failed: ${insertError.message}`, order_id: orderId, agent_id: user.id, data: { network: networkRaw, package_size, amount: requestedAmount, error: insertError.message } });
-      await supabaseAdmin.rpc("credit_wallet", { p_agent_id: user.id, p_amount: requestedAmount });
+      log(supabaseAdmin, { level: "error", source: "wallet-buy-data", event: "order.create_failed", message: `Order insert failed: ${insertError.message}`, order_id: orderId, agent_id: user.id, data: { network: networkRaw, package_size, amount: amountNum, error: insertError.message } });
+      await supabaseAdmin.rpc("credit_wallet", { p_agent_id: user.id, p_amount: amountNum });
       return new Response(JSON.stringify({ error: "Failed to create order record" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     console.log(`[INSERT_SUCCESS] Order ${orderId} created as PAID.`);
-    log(supabaseAdmin, { level: "info", source: "wallet-buy-data", event: "order.created", message: `Order created — ${networkRaw} ${package_size} for ${customer_phone}`, order_id: orderId, agent_id: user.id, data: { network: networkRaw, package_size, amount: requestedAmount, profit: agentProfit, parent_profit: parentProfit, cost_price: resolvedCostPrice } });
+    log(supabaseAdmin, { level: "info", source: "wallet-buy-data", event: "order.created", message: `Order created — ${networkRaw} ${package_size} for ${customer_phone}`, order_id: orderId, agent_id: user.id, data: { network: networkRaw, package_size, amount: amountNum, profit: agentProfit, parent_profit: parentProfit, cost_price: resolvedCostPrice } });
 
     // 3. TRIGGER SMS (NON-BLOCKING)
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
       package: package_size || "Data Bundle",
-      amount: requestedAmount
+      amount: amountNum
     }, user.id).catch(e => console.error("[SMS-ERROR]", e));
 
     // 4. AUTO-BRIDGE CHECK (NON-BLOCKING)

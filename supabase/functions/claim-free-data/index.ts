@@ -17,7 +17,7 @@ serve(async (req) => {
 
   try {
     const { data: sysSettings } = await supabase
-      .from("system_settings").select("disable_ordering, holiday_message").eq("id", 1).maybeSingle();
+      .from("v_system_settings_with_secrets").select("disable_ordering, holiday_message").eq("id", 1).maybeSingle();
     if (sysSettings?.disable_ordering) {
       return new Response(JSON.stringify({
         error: sysSettings.holiday_message || "Ordering is currently disabled.",
