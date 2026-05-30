@@ -189,6 +189,31 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     }
   };
 
+  const handleFallbackCheckout = async () => {
+    setErrorMessage(null);
+    setStep('initiating');
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("wallet-topup", {
+        body: {
+          amount: amount,
+          wallet_credit: metadata?.wallet_credit || amount,
+          callback_url: metadata?.callback_url || window.location.href,
+          wallet_type: metadata?.wallet_type || "main"
+        }
+      });
+      
+      if (error || !data?.authorization_url) {
+        throw new Error(data?.error || "Could not initialize Paystack checkout.");
+      }
+      
+      window.location.href = data.authorization_url;
+    } catch (err: any) {
+      setErrorMessage(err.message || "Failed to launch Paystack checkout.");
+      setStep('payment_number');
+    }
+  };
+
   const initiatePayment = async () => {
     if (!paymentPhone || paymentPhone.length < 9) {
       toast({ title: "Check Payment Phone", description: "Please enter a valid mobile money number", variant: "destructive" });
@@ -461,6 +486,17 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     <span>Send MoMo Prompt</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
+
+                  {/* Fallback Checkout Button */}
+                  <div className="pt-2 text-center">
+                    <p className="text-[10px] text-muted-foreground mb-2">MoMo Prompt not working? Use Standard Checkout instead.</p>
+                    <button
+                      onClick={handleFallbackCheckout}
+                      className="w-full h-10 border border-white/10 hover:bg-white/5 rounded-xl transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white/80"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" /> Pay with Card / Standard
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -630,6 +666,15 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-wider text-white transition-all active:scale-95 flex justify-center items-center gap-1"
                   >
                     Verify Now <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                
+                <div className="w-full px-4 mt-2">
+                  <button
+                    onClick={handleFallbackCheckout}
+                    className="w-full py-2.5 bg-black hover:bg-black/80 border border-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/60 transition-all active:scale-95 flex justify-center items-center gap-1.5"
+                  >
+                    <ShieldCheck className="w-3 h-3" /> Still no prompt? Use Standard Checkout
                   </button>
                 </div>
               </motion.div>
