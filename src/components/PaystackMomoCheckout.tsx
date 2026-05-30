@@ -347,7 +347,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           />
           
           <button 
-            disabled={step === 'initiating' || step === 'otp_verifying' || step === 'success'}
+            disabled={step === 'initiating' || step === 'otp_verifying'}
             onClick={onClose}
             className="absolute top-3 right-3 p-1.5 rounded-full bg-white/5 border border-white/5 text-white/40 hover:text-white transition-all disabled:opacity-20 active:scale-90"
           >
@@ -609,14 +609,29 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </div>
-                <p className="text-xs font-bold text-emerald-400/80 uppercase tracking-widest animate-pulse mt-2">Waiting for approval...</p>
+                <p className="text-xs font-bold text-emerald-400/80 uppercase tracking-widest animate-pulse mt-2 mb-1">Waiting for approval...</p>
                 
-                <button
-                  onClick={() => onSuccess(reference)}
-                  className="mt-6 px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all active:scale-95 flex items-center gap-2"
-                >
-                  I've Approved It (Verify) <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                <p className="text-[10px] text-muted-foreground font-medium px-4">
+                  Didn't receive a prompt? Dial <span className="font-bold text-white">*170#</span> &rarr; Option 6 (My Approvals) for MTN, or <span className="font-bold text-white">*110#</span> for Telecel.
+                </p>
+
+                <div className="flex w-full gap-2 mt-4 px-4">
+                  <button
+                    onClick={() => {
+                      setStep('payment_number');
+                      setErrorMessage(null);
+                    }}
+                    className="flex-1 py-2.5 bg-transparent hover:bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-wider text-white/70 transition-all active:scale-95"
+                  >
+                    Change Number
+                  </button>
+                  <button
+                    onClick={() => onSuccess(reference)}
+                    className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-wider text-white transition-all active:scale-95 flex justify-center items-center gap-1"
+                  >
+                    Verify Now <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </motion.div>
             )}
 
