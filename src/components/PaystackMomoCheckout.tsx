@@ -374,14 +374,14 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           <button 
             disabled={step === 'initiating' || step === 'otp_verifying'}
             onClick={onClose}
-            className="absolute top-3 right-3 p-1.5 rounded-full bg-white/5 border border-white/5 text-white/40 hover:text-white transition-all disabled:opacity-20 active:scale-90"
+            className="absolute top-3 right-3 p-1.5 rounded-full bg-foreground/5 border border-border text-foreground/40 hover:text-foreground transition-all disabled:opacity-20 active:scale-90"
           >
             <X className="w-4 h-4" />
           </button>
 
           <div className="relative z-10 flex flex-col items-center px-5">
             <span className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-500 mb-1">MoMo Direct Pay</span>
-            <h3 className="text-3xl font-black tracking-tight text-white">GH₵{amount.toFixed(2)}</h3>
+            <h3 className="text-3xl font-black tracking-tight text-foreground drop-shadow-sm">GH₵{amount.toFixed(2)}</h3>
           </div>
         </div>
 
@@ -399,7 +399,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 className="space-y-4"
               >
                 <div className="space-y-1">
-                  <h4 className="text-sm font-black text-white uppercase tracking-wide">Enter Payment Number</h4>
+                  <h4 className="text-sm font-black text-foreground uppercase tracking-wide">Enter Payment Number</h4>
                   <p className="text-xs text-muted-foreground">Receive the instant Mobile Money PIN approval prompt directly on this phone.</p>
                 </div>
 
@@ -414,7 +414,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       onChange={(e) => setPaymentPhone(e.target.value.replace(/\D/g, ""))}
                       placeholder="0XX XXXXXXX"
                       maxLength={12}
-                      className="w-full h-12 bg-background border border-white/10 rounded-xl px-4 text-white text-base font-bold tracking-wide focus:outline-none focus:border-primary/40 focus:bg-accent/5 transition-all"
+                      className="w-full h-12 bg-background border border-border rounded-xl px-4 text-foreground text-base font-bold tracking-wide focus:outline-none focus:border-primary/40 focus:bg-accent/5 transition-all"
                     />
                   </div>
 
@@ -429,8 +429,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                           onClick={() => setPaymentNetwork(net)}
                           className={`h-10 rounded-xl border text-xs font-black transition-all ${
                             paymentNetwork === net
-                              ? "bg-white/10 border-white/40 text-white font-black shadow-lg"
-                              : "border-white/5 bg-background text-muted-foreground hover:border-white/20 hover:text-white"
+                              ? "bg-primary border-primary/20 text-primary-foreground font-black shadow-lg"
+                              : "border-border bg-background text-muted-foreground hover:border-foreground/20 hover:text-foreground"
                           }`}
                         >
                           {net}
@@ -492,7 +492,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     <p className="text-[10px] text-muted-foreground mb-2">MoMo Prompt not working? Use Standard Checkout instead.</p>
                     <button
                       onClick={handleFallbackCheckout}
-                      className="w-full h-10 border border-white/10 hover:bg-white/5 rounded-xl transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white/80"
+                      className="w-full h-10 border border-border hover:bg-foreground/5 rounded-xl transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-foreground/80"
                     >
                       <ShieldCheck className="w-3.5 h-3.5" /> Pay with Card / Standard
                     </button>
@@ -515,7 +515,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <Loader2 className="w-12 h-12 text-amber-500 animate-spin relative z-10" />
                 </div>
                 <div className="space-y-1 px-4">
-                  <h4 className="text-sm font-black text-white uppercase tracking-wider animate-pulse">Contacting Operator</h4>
+                  <h4 className="text-sm font-black text-foreground uppercase tracking-wider animate-pulse">Contacting Operator</h4>
                   <p className="text-xs text-muted-foreground">Requesting direct payment prompt for {paymentPhone} on {paymentNetwork} network...</p>
                 </div>
               </motion.div>
@@ -534,7 +534,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-amber-500">
                     <KeyRound className="w-3.5 h-3.5" /> Additional Security
                   </div>
-                  <h4 className="text-sm font-black text-white uppercase tracking-wide">Enter OTP Code</h4>
+                  <h4 className="text-sm font-black text-foreground uppercase tracking-wide">Enter OTP Code</h4>
                   <p className="text-xs text-muted-foreground">Please enter the 6-digit verification code sent to your mobile wallet phone number.</p>
                 </div>
 
@@ -552,7 +552,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                         onChange={(e) => handleOtpChange(e.target.value, idx)}
                         onKeyDown={(e) => handleKeyDown(e, idx)}
                         onPaste={idx === 0 ? handlePaste : undefined}
-                        className="w-11 h-12 bg-background border border-white/10 rounded-xl text-center text-xl font-extrabold text-white focus:outline-none focus:border-amber-500/50 focus:bg-white/5 transition-all"
+                        className="w-11 h-12 bg-background border border-border rounded-xl text-center text-xl font-extrabold text-foreground focus:outline-none focus:border-amber-500/50 focus:bg-foreground/5 transition-all"
                       />
                     ))}
                   </div>
@@ -568,7 +568,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <div className="flex items-center justify-between px-1 text-xs">
                     {countdown > 0 ? (
                       <span className="text-muted-foreground/60 font-medium">
-                        Resend in <span className="text-white font-mono font-bold">{countdown}s</span>
+                        Resend in <span className="text-foreground font-mono font-bold">{countdown}s</span>
                       </span>
                     ) : (
                       <button
@@ -580,7 +580,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     )}
                     <button
                       onClick={() => setStep('payment_number')}
-                      className="text-muted-foreground hover:text-white font-bold tracking-wide select-none"
+                      className="text-muted-foreground hover:text-foreground font-bold tracking-wide select-none"
                     >
                       Change Number
                     </button>
@@ -613,7 +613,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <Loader2 className="w-12 h-12 text-primary animate-spin relative z-10" style={{ color: `hsl(${theme.primary})` }} />
                 </div>
                 <div className="space-y-1 px-4">
-                  <h4 className="text-sm font-black text-white uppercase tracking-wider animate-pulse">Securing Verification</h4>
+                  <h4 className="text-sm font-black text-foreground uppercase tracking-wider animate-pulse">Securing Verification</h4>
                   <p className="text-xs text-muted-foreground">Confirming OTP signature with Paystack billing engines...</p>
                 </div>
               </motion.div>
@@ -632,7 +632,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <Loader2 className="w-16 h-16 animate-spin text-emerald-400 relative z-10" />
                 </div>
                 <div className="space-y-2">
-                  <h4 className="text-xl font-black text-white uppercase tracking-tight">Authorize Payment</h4>
+                  <h4 className="text-xl font-black text-foreground uppercase tracking-tight">Authorize Payment</h4>
                   <p className="text-[13px] text-emerald-400/80 font-bold max-w-[240px] mx-auto leading-relaxed px-2">
                     Please check your phone now and enter your Mobile Money PIN to approve the transaction.
                   </p>
@@ -648,7 +648,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 <p className="text-xs font-bold text-emerald-400/80 uppercase tracking-widest animate-pulse mt-2 mb-1">Waiting for approval...</p>
                 
                 <p className="text-[10px] text-muted-foreground font-medium px-4">
-                  Didn't receive a prompt? Dial <span className="font-bold text-white">*170#</span> &rarr; Option 6 (My Approvals) for MTN, or <span className="font-bold text-white">*110#</span> for Telecel.
+                  Didn't receive a prompt? Dial <span className="font-bold text-foreground">*170#</span> &rarr; Option 6 (My Approvals) for MTN, or <span className="font-bold text-foreground">*110#</span> for Telecel.
                 </p>
 
                 <div className="flex w-full gap-2 mt-4 px-4">
@@ -657,13 +657,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       setStep('payment_number');
                       setErrorMessage(null);
                     }}
-                    className="flex-1 py-2.5 bg-transparent hover:bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-wider text-white/70 transition-all active:scale-95"
+                    className="flex-1 py-2.5 bg-transparent hover:bg-foreground/5 border border-border rounded-xl text-[10px] font-black uppercase tracking-wider text-foreground/70 transition-all active:scale-95"
                   >
                     Change Number
                   </button>
                   <button
                     onClick={() => onSuccess(reference)}
-                    className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-wider text-white transition-all active:scale-95 flex justify-center items-center gap-1"
+                    className="flex-1 py-2.5 bg-foreground/5 hover:bg-foreground/10 border border-border rounded-xl text-[10px] font-black uppercase tracking-wider text-foreground transition-all active:scale-95 flex justify-center items-center gap-1"
                   >
                     Verify Now <ArrowRight className="w-3.5 h-3.5" />
                   </button>
@@ -672,7 +672,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 <div className="w-full px-4 mt-2">
                   <button
                     onClick={handleFallbackCheckout}
-                    className="w-full py-2.5 bg-black hover:bg-black/80 border border-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white/60 transition-all active:scale-95 flex justify-center items-center gap-1.5"
+                    className="w-full py-2.5 hover:bg-foreground/5 border border-border rounded-xl text-[10px] font-black uppercase tracking-widest text-foreground/60 transition-all active:scale-95 flex justify-center items-center gap-1.5"
                   >
                     <ShieldCheck className="w-3 h-3" /> Still no prompt? Use Standard Checkout
                   </button>
