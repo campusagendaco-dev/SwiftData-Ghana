@@ -117,7 +117,21 @@ const AdminOrders = () => {
       if (isUuid) {
         q = q.or(`id.eq.${search.trim()},agent_id.eq.${search.trim()}`);
       } else {
-        q = q.or(`customer_phone.ilike.%${search}%,customer_name.ilike.%${search}%,network.ilike.%${search}%,status.ilike.%${search}%`);
+        // Resolve profile user_ids first to search by email/name/phone
+        const { data: matchedProfiles } = await supabase
+          .from("profiles")
+          .select("user_id")
+          .or(`full_name.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%,phone.ilike.%${search.trim()}%`);
+
+        const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
+        
+        let orString = `customer_phone.ilike.%${search}%,customer_name.ilike.%${search}%,network.ilike.%${search}%,status.ilike.%${search}%`;
+        if (matchedUserIds.length > 0) {
+          matchedUserIds.forEach(id => {
+            orString += `,agent_id.eq.${id}`;
+          });
+        }
+        q = q.or(orString);
       }
     }
 
@@ -454,8 +468,12 @@ const AdminOrders = () => {
   };
 
   // Client-side filtering
-  const filtered = allOrders;
-  const paginated = allOrders;
+  const filtered = allOrders.filter(o => {
+    if (typeFilter === "agents") return !o.is_sub_agent;
+    if (typeFilter === "sub_agents") return o.is_sub_agent;
+    return true;
+  });
+  const paginated = filtered;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const safePage = page;
 
