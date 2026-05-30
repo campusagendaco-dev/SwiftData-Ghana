@@ -585,9 +585,10 @@ const BuyData = () => {
                 >
                   {/* Network Indicator Pill */}
                   <div 
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.2)] border border-border/50 bg-foreground/5 backdrop-blur-md mb-3"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] shadow-[0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.2)] border border-primary/20 backdrop-blur-md mb-3"
                     style={{
-                      color: `hsl(${theme.primary})`
+                      color: `hsl(${theme.primary})`,
+                      backgroundColor: `hsl(${theme.primary} / 0.1)`
                     }}
                   >
                     <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: `hsl(${theme.primary})` }} />
@@ -666,7 +667,7 @@ const BuyData = () => {
                       placeholder="Enter Phone (0XX XXXXXXX)"
                       value={phone} onChange={(e) => setPhone(e.target.value)}
                       maxLength={12}
-                      className="w-full h-[56px] bg-background border border-border rounded-[1.25rem] pl-4 pr-12 text-foreground placeholder:text-muted-foreground/40 text-lg font-bold tracking-wide focus:outline-none focus:border-primary/40 focus:bg-accent/5 focus:shadow-[0_0_0_4px_hsl(var(--primary)/0.05)] transition-all duration-300 selection:bg-primary/30"
+                      className="w-full h-[56px] bg-background border border-foreground/10 dark:border-border/60 rounded-[1.25rem] pl-4 pr-12 text-foreground placeholder:text-muted-foreground/60 text-lg font-bold tracking-wide focus:outline-none focus:border-primary/50 focus:bg-accent/5 focus:shadow-[0_0_0_4px_hsl(var(--primary)/0.1)] transition-all duration-300 selection:bg-primary/30"
                       style={resolvedName ? { 
                         borderColor: "rgba(16, 185, 129, 0.4)",
                         background: isDark ? "rgba(16, 185, 129, 0.04)" : "rgba(16, 185, 129, 0.02)",
@@ -754,7 +755,7 @@ const BuyData = () => {
                           placeholder="For delivery receipt..."
                           value={email} onChange={(e) => setEmail(e.target.value)}
                           autoComplete="email"
-                          className="w-full h-[42px] bg-background border border-border rounded-lg px-3.5 text-foreground placeholder:text-muted-foreground/40 text-sm focus:outline-none focus:border-primary/40 transition-all"
+                          className="w-full h-[42px] bg-background border border-foreground/10 dark:border-border/60 rounded-lg px-3.5 text-foreground placeholder:text-muted-foreground/60 text-sm focus:outline-none focus:border-primary/50 transition-all"
                         />
                       </motion.div>
                     )}
@@ -791,7 +792,7 @@ const BuyData = () => {
                               ref={promoInputRef}
                               type="text" placeholder="TYPE CODE"
                               value={promoCode} onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); }}
-                              className="flex-1 h-9 bg-background border border-border rounded-lg px-3 text-foreground placeholder:text-muted-foreground/30 text-[10px] font-mono font-black tracking-widest uppercase focus:outline-none focus:border-amber-500/50 transition-colors"
+                              className="flex-1 h-9 bg-background border border-foreground/10 dark:border-border/60 rounded-lg px-3 text-foreground placeholder:text-muted-foreground/50 text-[10px] font-mono font-black tracking-widest uppercase focus:outline-none focus:border-amber-500/50 transition-colors"
                             />
                             <button 
                               onClick={handleApplyPromo} disabled={promoValidating || !promoCode.trim()}
@@ -842,11 +843,7 @@ const BuyData = () => {
                       <button 
                         onClick={handlePay} 
                         disabled={buying || !resolvedName}
-                        className="w-full h-[72px] relative overflow-hidden rounded-[1.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.6)] transition-all active:scale-[0.95] hover:-translate-y-1 disabled:opacity-30 disabled:grayscale disabled:transform-none flex items-center justify-center group/btn"
-                        style={{ 
-                          background: `linear-gradient(135deg, hsl(${theme.primary}) 0%, #F59E0B 100%)`,
-                          color: "#000"
-                        }}
+                        className="w-full h-[72px] relative overflow-hidden rounded-[1.5rem] shadow-[0_15px_40px_-10px_rgba(0,0,0,0.3)] dark:shadow-[0_15px_40px_-10px_rgba(0,0,0,0.6)] transition-all active:scale-[0.95] hover:-translate-y-1 disabled:opacity-30 disabled:grayscale disabled:transform-none flex items-center justify-center group/btn bg-primary text-primary-foreground"
                       >
                         {/* Internal Light Shimmer */}
                         <div className="absolute inset-0 bg-white/20 transform -translate-x-full group-hover/btn:animate-shimmer pointer-events-none" style={{ width: '60%', skewX: '-25deg' }} />
@@ -859,12 +856,12 @@ const BuyData = () => {
                             </div>
                           ) : (
                             <>
-                              <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-80">
+                              <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-90">
                                 <CreditCard className="w-3 h-3" />
                                 Pay & Deliver
                               </div>
                               <div className="flex items-baseline gap-0.5 font-black text-3xl tracking-tighter transition-transform duration-300 group-hover/btn:scale-105">
-                                <span className="text-sm font-black align-top opacity-70">GH₵</span>
+                                <span className="text-sm font-black align-top opacity-80">GH₵</span>
                                 {total.toFixed(2)}
                               </div>
                             </>

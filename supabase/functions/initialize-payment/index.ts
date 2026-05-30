@@ -812,8 +812,12 @@ serve(async (req: Request) => {
   const amountInPesewas = Math.round(resolvedAmount * 100);
   console.log("Initializing payment:", { email, amount: resolvedAmount, amountInPesewas, reference });
 
-  const paystackPhone = enrichedMetadata.customer_phone ? normalizePhoneForPaystack(String(enrichedMetadata.customer_phone)) : "";
-  const paystackProvider = enrichedMetadata.network ? getMomoProviderCode(String(enrichedMetadata.network)) : "";
+  const paystackPhone = enrichedMetadata.payment_phone 
+    ? normalizePhoneForPaystack(String(enrichedMetadata.payment_phone)) 
+    : (enrichedMetadata.customer_phone ? normalizePhoneForPaystack(String(enrichedMetadata.customer_phone)) : "");
+  const paystackProvider = enrichedMetadata.payment_network 
+    ? getMomoProviderCode(String(enrichedMetadata.payment_network)) 
+    : (enrichedMetadata.network ? getMomoProviderCode(String(enrichedMetadata.network)) : "");
 
   let paystackUrl = "https://api.paystack.co/transaction/initialize";
   let requestBody: Record<string, any> = {
