@@ -29,32 +29,32 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 0%;
+    --background: 220 14% 96%; /* Premium off-white/cool gray background */
+    --foreground: 220 20% 15%; /* Softer, highly legible dark slate */
 
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 0%;
+    --card: 0 0% 100%; /* Pure white to pop against the background */
+    --card-foreground: 220 20% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 0%;
+    --popover-foreground: 220 20% 15%;
 
     --primary: 48 96% 53%;
     --primary-foreground: 0 0% 5%;
 
-    --secondary: 40 20% 94%;
-    --secondary-foreground: 0 0% 0%;
+    --secondary: 220 10% 92%;
+    --secondary-foreground: 220 20% 15%;
 
-    --muted: 40 15% 93%;
-    --muted-foreground: 0 0% 0%;
+    --muted: 220 10% 92%;
+    --muted-foreground: 220 10% 45%; /* Smoother muted text */
 
     --accent: 48 80% 48%;
     --accent-foreground: 0 0% 5%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 40 15% 85%;
-    --input: 40 15% 85%;
+    --border: 220 13% 88%;
+    --input: 220 13% 88%;
     --ring: 48 96% 53%;
 
     --radius: 0.75rem;
