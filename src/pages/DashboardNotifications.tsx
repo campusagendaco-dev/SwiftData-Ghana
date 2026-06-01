@@ -41,6 +41,19 @@ const DashboardNotifications = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // iOS Detection for Push Notifications
+  const [isIosNotStandalone, setIsIosNotStandalone] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isIos = /ipad|iphone|ipod/.test(navigator.userAgent.toLowerCase()) && !(window as any).MSStream;
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+      if (isIos && !isStandalone) {
+        setIsIosNotStandalone(true);
+      }
+    }
+  }, []);
+
   // Preference Settings (Local Storage backed)
   const [soundEnabled, setSoundEnabled] = useState(() => {
     return localStorage.getItem("swift_sound_alerts") !== "false";
@@ -362,6 +375,49 @@ const DashboardNotifications = () => {
               >
                 {subLoading ? "Subscribing..." : "Enable Push Alerts"}
               </Button>
+            </motion.div>
+          )}
+
+          {/* iOS Specific Push Opt-In Guidance */}
+          {(!supported || permissionState === "unsupported") && isIosNotStandalone && (
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-6 rounded-3xl border relative overflow-hidden group shadow-xl transition-all ${
+                isDark 
+                  ? "border-amber-500/20 bg-amber-500/5 text-amber-400" 
+                  : "border-amber-200 bg-amber-50/50 text-amber-600"
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`p-2.5 rounded-xl border ${
+                  isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-100 border-amber-200"
+                }`}>
+                  <Smartphone className="w-5 h-5 text-amber-500" />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-wider ${
+                  isDark ? "text-white" : "text-slate-900"
+                }`}>Enable iOS Push Alerts</h3>
+              </div>
+              <p className={`text-xs leading-relaxed mb-4 ${
+                isDark ? "text-white/70" : "text-slate-700"
+              }`}>
+                Apple restricts Push Notifications in standard Safari tabs. To receive notifications on your iPhone or iPad, you must first add this app to your Home Screen:
+              </p>
+              <ul className="text-[11px] font-bold space-y-2 mb-4">
+                <li className="flex items-center gap-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">1</span>
+                  Tap the <strong>Share</strong> icon at the bottom of Safari.
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">2</span>
+                  Scroll down and tap <strong>Add to Home Screen</strong>.
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">3</span>
+                  Open the new app from your home screen and return here to enable alerts.
+                </li>
+              </ul>
             </motion.div>
           )}
 

@@ -40,6 +40,19 @@ const DashboardAccountSettings = () => {
   const [searchParams] = useSearchParams();
   const forceAdminMfa = searchParams.get("force_admin_mfa") === "true";
 
+  // iOS Detection for Push Notifications
+  const [isIosNotStandalone, setIsIosNotStandalone] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isIos = /ipad|iphone|ipod/.test(navigator.userAgent.toLowerCase()) && !(window as any).MSStream;
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+      if (isIos && !isStandalone) {
+        setIsIosNotStandalone(true);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (forceAdminMfa) {
       const timer = setTimeout(() => {
@@ -587,10 +600,30 @@ const DashboardAccountSettings = () => {
                   </div>
                 </div>
               )}
-              {pushSupported && permissionState === "denied" && (
-                <p className="text-[10px] text-rose-400 font-medium bg-rose-500/5 border border-rose-500/10 p-2.5 rounded-lg">
-                  ⚠️ Notice: You have previously blocked notifications. To enable them, tap the 🔒 lock icon in your browser's URL bar and toggle notifications to "Allow".
-                </p>
+              {(!pushSupported || permissionState === "unsupported") && isIosNotStandalone && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 mt-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-5 h-5 shrink-0" />
+                    <h3 className="text-sm font-black uppercase tracking-wider">Enable iOS Push Alerts</h3>
+                  </div>
+                  <p className="text-xs leading-relaxed">
+                    Apple restricts Push Notifications in standard Safari tabs. To receive notifications on your iPhone or iPad, you must first add this app to your Home Screen:
+                  </p>
+                  <ul className="text-[11px] font-bold space-y-2 mt-2">
+                    <li className="flex items-center gap-2">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">1</span>
+                      Tap the <strong>Share</strong> icon at the bottom of Safari.
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">2</span>
+                      Scroll down and tap <strong>Add to Home Screen</strong>.
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">3</span>
+                      Open the new app from your home screen and return here to enable alerts.
+                    </li>
+                  </ul>
+                </div>
               )}
             </CardContent>
           </Card>
