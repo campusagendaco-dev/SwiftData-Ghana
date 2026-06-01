@@ -65,6 +65,26 @@ async function sendWithdrawalCompletedSms(userId: string, amount: number) {
   }
 }
 
+async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: string; title: string; body: string; url?: string; icon?: string }) {
+  try {
+    const url = `${SUPABASE_URL}/functions/v1/send-push-notification`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("[Push Webhook] Trigger failed in system-payout:", text);
+    }
+  } catch (e) {
+    console.error("[Push Webhook] Trigger error in system-payout:", e);
+  }
+}
+
 type AdminUserAction = 
   | "get_api_users" 
   | "send_reset_link" 
@@ -101,7 +121,8 @@ type AdminUserAction =
   | "reset_user_mfa"
   | "get_admins"
   | "grant_admin_role"
-  | "revoke_admin_role";
+  | "revoke_admin_role"
+  | "verify_paystack_transfer";
 
 
 
@@ -974,6 +995,192 @@ serve(async (req: Request) => {
         } catch (paystackErr: any) {
           console.error("PAYSTACK_PAYOUT_ERROR", paystackErr);
           return new Response(JSON.stringify({ error: paystackErr.message }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      case "verify_paystack_transfer": {
+        const { withdrawal_id } = body;
+        if (!withdrawal_id || !isValidUuid(withdrawal_id)) {
+          return new Response(JSON.stringify({ error: "Invalid or missing withdrawal_id" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        console.log(`Verifying Paystack transfer for withdrawal ID: "${withdrawal_id}"`);
+
+        // 1. Fetch withdrawal record first
+        const { data: withdrawal, error: fetchErr } = await supabaseAdmin
+          .from("withdrawals")
+          .select("*")
+          .eq("id", withdrawal_id.trim())
+          .maybeSingle();
+
+        if (fetchErr) {
+          console.error("Database fetch error (withdrawals):", fetchErr);
+          return new Response(JSON.stringify({ error: `Database error: ${fetchErr.message}` }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (!withdrawal) {
+          console.error(`Withdrawal NOT FOUND in DB for ID: ${withdrawal_id}`);
+          return new Response(JSON.stringify({ error: `Withdrawal request not found in database for ID: ${withdrawal_id}` }), {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        let PAYSTACK_SECRET = "";
+        try {
+          const { data: settings } = await supabaseAdmin
+            .from("v_system_settings_with_secrets")
+            .select("paystack_secret_key")
+            .eq("id", 1)
+            .maybeSingle();
+          PAYSTACK_SECRET = settings?.paystack_secret_key || "";
+        } catch (dbErr) {
+          console.error("Failed to fetch paystack_secret_key from DB in verify:", dbErr);
+        }
+        if (!PAYSTACK_SECRET) {
+          PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+        }
+        if (!PAYSTACK_SECRET) {
+          return new Response(JSON.stringify({ error: "Paystack Secret Key not configured in Edge Functions" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // We use either the paystack_transfer_reference or withdrawal.id as fallback
+        const reference = withdrawal.paystack_transfer_reference || withdrawal.id;
+
+        try {
+          // 2. Query Paystack verify transfer endpoint
+          console.log(`Querying Paystack for transfer reference: ${reference}`);
+          const verifyRes = await fetch(`https://api.paystack.co/transfer/verify/${reference}`, {
+            headers: { 
+              "Authorization": `Bearer ${PAYSTACK_SECRET}`,
+              "Accept": "application/json"
+            },
+          });
+
+          const verifyData = await verifyRes.json();
+
+          if (!verifyRes.ok || !verifyData.status) {
+            throw new Error(verifyData.message || "Failed to verify transfer with Paystack");
+          }
+
+          const transferStatus = verifyData.data?.status; // e.g., 'success', 'failed', 'otp', 'pending', 'reversed', 'abandoned'
+          const gatewayResponse = verifyData.data?.gateway_response || verifyData.data?.reason || transferStatus;
+
+          console.log(`Paystack returned status '${transferStatus}' for reference: ${reference}`);
+
+          if (transferStatus === "success") {
+            // Only finalize if currently processing
+            if (withdrawal.status === "processing") {
+              const { data: finalizeResult, error: finalizeErr } = await supabaseAdmin.rpc("finalize_withdrawal", {
+                p_withdrawal_id: withdrawal_id
+              });
+
+              if (finalizeErr || !finalizeResult?.success) {
+                throw new Error(finalizeErr?.message || finalizeResult?.error || "Failed to finalize withdrawal in database");
+              }
+
+              // Send SMS notification
+              try {
+                await sendWithdrawalCompletedSms(withdrawal.agent_id, withdrawal.amount);
+              } catch (smsErr) {
+                console.error("SMS_ERROR", smsErr);
+              }
+
+              // Trigger Push Notification for Withdrawal Success
+              try {
+                await triggerPushNotification(supabaseAdmin, {
+                  user_id: withdrawal.agent_id,
+                  title: "✅ Withdrawal Successful",
+                  body: `Your withdrawal of GHS ${Number(withdrawal.amount).toFixed(2)} has been sent to your MoMo.`,
+                  url: "/dashboard/withdrawals",
+                  icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
+                });
+              } catch (pushErr) {
+                console.error("Push notification error:", pushErr);
+              }
+
+              return new Response(JSON.stringify({ 
+                success: true, 
+                status: "success", 
+                message: "Paystack transfer completed successfully. Withdrawal finalized." 
+              }), {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            } else {
+              return new Response(JSON.stringify({ 
+                success: true, 
+                status: "success", 
+                message: `Paystack transfer is successful, but withdrawal is already in status '${withdrawal.status}'.` 
+              }), {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+          } else if (transferStatus === "failed" || transferStatus === "reversed" || transferStatus === "abandoned") {
+            if (withdrawal.status === "processing") {
+              const { error: updateError } = await supabaseAdmin
+                .from("withdrawals")
+                .update({ 
+                  status: "failed", 
+                  failure_reason: `Paystack Transfer ${transferStatus}: ${gatewayResponse}` 
+                })
+                .eq("id", withdrawal_id);
+
+              if (updateError) throw updateError;
+
+              return new Response(JSON.stringify({ 
+                success: true, 
+                status: "failed", 
+                message: `Paystack transfer failed with status '${transferStatus}'. Withdrawal marked as failed.` 
+              }), {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            } else {
+              return new Response(JSON.stringify({ 
+                success: true, 
+                status: "failed", 
+                message: `Paystack transfer failed/reversed, but withdrawal is already in status '${withdrawal.status}'.` 
+              }), {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+          } else {
+            // status is 'pending', 'otp', or similar
+            let statusMessage = `Paystack transfer is currently '${transferStatus}'.`;
+            if (transferStatus === "otp") {
+              statusMessage += " Release / OTP confirmation is required on the Paystack dashboard.";
+            } else if (transferStatus === "pending") {
+              statusMessage += " It is awaiting processing by Paystack.";
+            }
+
+            return new Response(JSON.stringify({ 
+              success: true, 
+              status: transferStatus, 
+              message: statusMessage 
+            }), {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+        } catch (err: any) {
+          console.error("VERIFY_PAYSTACK_TRANSFER_ERROR", err);
+          return new Response(JSON.stringify({ error: err.message }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });

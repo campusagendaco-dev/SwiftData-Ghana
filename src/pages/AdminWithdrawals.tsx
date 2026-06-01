@@ -760,6 +760,57 @@ const AdminWithdrawals = () => {
                         </div>
                       )}
 
+                      {w.status === "processing" && (
+                        <div className="flex flex-col gap-1.5">
+                          <Button
+                            size="sm" className="text-xs gap-1.5 h-8 bg-indigo-600 hover:bg-indigo-700 text-white"
+                            disabled={busy}
+                            onClick={async () => {
+                              setConfirming(w.id);
+                              const toastId = toast.loading("Checking Paystack status...");
+                              try {
+                                const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+                                  body: { action: "verify_paystack_transfer", withdrawal_id: w.id },
+                                  headers: { Authorization: `Bearer ${session?.access_token}` }
+                                });
+                                
+                                if (error || !data?.success) {
+                                  throw new Error(data?.error || error?.message || "Verification request failed");
+                                }
+                                
+                                if (data.status === "success") {
+                                  toast.success("Sync Successful", { description: data.message, id: toastId });
+                                } else if (data.status === "failed" || data.status === "reversed" || data.status === "abandoned") {
+                                  toast.error("Transfer Failed", { description: data.message, id: toastId });
+                                } else {
+                                  toast.info("Transfer Pending", { description: data.message, id: toastId });
+                                }
+                                fetchWithdrawals(true);
+                              } catch (e: any) {
+                                toast.error("Sync Failed", { description: e.message, id: toastId });
+                              } finally {
+                                setConfirming(null);
+                              }
+                            }}
+                          >
+                            {confirming === w.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                            Sync Status
+                          </Button>
+                          <Button
+                            size="sm" variant="outline" className="text-xs gap-1.5 h-8 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10"
+                            disabled={busy}
+                            onClick={() => handleConfirm(w.id)}
+                          >
+                            <CheckCircle className="w-3 h-3" />
+                            Force Complete
+                          </Button>
+                        </div>
+                      )}
+
                       {/* Inline reject form */}
                       {w.status === "pending" && isRejectingThis && (
                         <div className="space-y-1.5 min-w-[180px]">
