@@ -66,11 +66,47 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
   };
 }
 
+async function logSmsToDb(
+  recipient: string,
+  senderId: string,
+  body: string,
+  type: string,
+  status: "success" | "failed",
+  errorMessage?: string,
+  agentId?: string
+) {
+  const url = Deno.env.get("SUPABASE_URL") || "";
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  
+  if (!url || !key) {
+    console.warn("[SMS Log] Supabase credentials missing from environment. Skipping DB log.");
+    return;
+  }
+
+  try {
+    const supabase = createClient(url, key);
+    const { error } = await supabase.from("sms_logs").insert({
+      recipient,
+      sender_id: senderId,
+      body,
+      type,
+      status,
+      error_message: errorMessage || null,
+      agent_id: agentId || null
+    });
+    if (error) console.error("[SMS Log] Failed to insert log row:", error.message);
+  } catch (err: any) {
+    console.error("[SMS Log] Exception during database insertion:", err.message);
+  }
+}
+
 export async function sendSmsViaTxtConnect(
   apiKey: string,
   from: string,
   to: string,
   body: string,
+  type = "broadcast",
+  agentId?: string
 ) {
   if (!apiKey || !to) return;
   const effectiveKey = apiKey;
@@ -101,9 +137,17 @@ export async function sendSmsViaTxtConnect(
     if (data && data.msg !== "Sms send Successful" && !data.messageId) {
        throw new Error(`TxtConnect API failure: ${data.msg || "Unknown error"}`);
     }
+    
+    // Log success
+    await logSmsToDb(to, from, body, type, "success", undefined, agentId).catch(console.error);
+    
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Failed to send SMS to ${to}:`, error);
+    
+    // Log failure
+    await logSmsToDb(to, from, body, type, "failed", error instanceof Error ? error.message : String(error), agentId).catch(console.error);
+    
     throw error;
   }
 }
@@ -114,6 +158,8 @@ export async function sendBulkSmsViaTxtConnect(
   from: string,
   recipients: string[],
   body: string,
+  type = "broadcast",
+  agentId?: string
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
   const effectiveKey = apiKey;
   const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
@@ -138,12 +184,21 @@ export async function sendBulkSmsViaTxtConnect(
         }),
       });
       if (!response.ok) {
-        for (const p of batch) failures.push({ phone: p, reason: `HTTP ${response.status}` });
+        for (const p of batch) {
+          failures.push({ phone: p, reason: `HTTP ${response.status}` });
+          await logSmsToDb(p, from, body, type, "failed", `HTTP ${response.status}`, agentId).catch(console.error);
+        }
       } else {
         sent += batch.length;
+        for (const p of batch) {
+          await logSmsToDb(p, from, body, type, "success", undefined, agentId).catch(console.error);
+        }
       }
     } catch (err: any) {
-      for (const p of batch) failures.push({ phone: p, reason: err?.message || "Network error" });
+      for (const p of batch) {
+        failures.push({ phone: p, reason: err?.message || "Network error" });
+        await logSmsToDb(p, from, body, type, "failed", err?.message || "Network error", agentId).catch(console.error);
+      }
     }
   }
 
