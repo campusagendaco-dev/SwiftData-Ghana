@@ -24,28 +24,90 @@ Deno.cron("Network Routing Recommender", "*/5 * * * *", async () => {
     return;
   }
 
-  // 2. Calculate failure rates per network
-  const stats = new Map<string, { total: number; failed: number }>();
+  // 2. Aggregate failure rates per network and per provider
+  // Structure: Map<network, Record<providerName, { total: number; failed: number }>>
+  const networkProviderStats = new Map<string, Record<string, { total: number; failed: number }>>();
+
   for (const o of recentOrders) {
-    if (!o.network) continue;
-    if (!stats.has(o.network)) {
-      stats.set(o.network, { total: 0, failed: 0 });
+    if (!o.network || !o.provider) continue;
+    if (!networkProviderStats.has(o.network)) {
+      networkProviderStats.set(o.network, {});
     }
-    const stat = stats.get(o.network)!;
-    stat.total++;
-    if (o.status === "fulfillment_failed") stat.failed++;
+    const provStats = networkProviderStats.get(o.network)!;
+    if (!provStats[o.provider]) {
+      provStats[o.provider] = { total: 0, failed: 0 };
+    }
+    provStats[o.provider].total++;
+    if (o.status === "fulfillment_failed") {
+      provStats[o.provider].failed++;
+    }
   }
 
-  // 3. Generate recommendations for Admins
+  // 3. Generate Bayesian Outage & Alternative Path recommendations for Admins
   let recommendationsGenerated = 0;
 
-  for (const [network, data] of stats.entries()) {
-    if (data.total >= 5) { // Need at least 5 orders to establish a valid failure rate
-      const failureRate = data.failed / data.total;
+  for (const [network, provStats] of networkProviderStats.entries()) {
+    // Calculate total stats for the network across all providers
+    let totalNetworkOrders = 0;
+    let totalNetworkFailed = 0;
+    
+    let worstProvider = "";
+    let worstFailureRate = 0;
+    let worstFailedCount = 0;
+
+    let bestProvider = "";
+    let bestSuccessRate = 0;
+    let bestVolume = 0;
+
+    for (const [provider, stats] of Object.entries(provStats)) {
+      totalNetworkOrders += stats.total;
+      totalNetworkFailed += stats.failed;
+
+      const failRate = stats.failed / stats.total;
+      const successRate = 1 - failRate;
+
+      // Identify the failing provider
+      if (stats.total >= 3 && failRate > worstFailureRate) {
+        worstFailureRate = failRate;
+        worstProvider = provider;
+        worstFailedCount = stats.failed;
+      }
+
+      // Identify the most stable alternative provider
+      if (successRate > bestSuccessRate || (successRate === bestSuccessRate && stats.total > bestVolume)) {
+        bestSuccessRate = successRate;
+        bestProvider = provider;
+        bestVolume = stats.total;
+      }
+    }
+
+    if (totalNetworkOrders >= 4) { // Establish valid base sample size
+      const globalFailRate = totalNetworkFailed / totalNetworkOrders;
       
-      if (failureRate >= 0.25) { // 25% or more failure rate
+      // Bayesian Outage Confidence Formula: Dampens small volume noise, scales with larger samples
+      // OutageConfidence = FailRate * (1 - Math.exp(-TotalOrders / 6))
+      const outageConfidence = globalFailRate * (1 - Math.exp(-totalNetworkOrders / 6));
+
+      // We alert if the confidence threshold indicates severe disruption (Confidence >= 0.20)
+      if (outageConfidence >= 0.20) {
         const title = `AI Alert: High Failure Rate on ${network}`;
-        const message = `${network} is experiencing a ${(failureRate * 100).toFixed(0)}% failure rate over the last 15 minutes (${data.failed} failed out of ${data.total}). AI recommends switching your primary provider routing for ${network} immediately.`;
+        
+        let priority = "medium";
+        if (outageConfidence >= 0.65) priority = "critical";
+        else if (outageConfidence >= 0.40) priority = "high";
+
+        // Construct detailed message pointing to the culprit and the solution
+        let message = `SwiftData AI detected severe latency on ${network} with a ${(globalFailRate * 100).toFixed(0)}% failure rate (${totalNetworkFailed}/${totalNetworkOrders} orders failing).`;
+        
+        if (worstProvider) {
+          message += ` The primary culprit appears to be provider [${worstProvider}] showing a ${(worstFailureRate * 100).toFixed(0)}% failure rate.`;
+        }
+        
+        if (bestProvider && bestProvider !== worstProvider && bestSuccessRate >= 0.85) {
+          message += ` AI recommends switching your primary routing for ${network} immediately to [${bestProvider}], which is running stable at a ${(bestSuccessRate * 100).toFixed(0)}% success rate.`;
+        } else {
+          message += ` AI recommends disabling or checking the connections for your primary ${network} gateways immediately.`;
+        }
 
         // Check for recent alerts to prevent spam (don't alert more than once per hour per network)
         const { data: existing } = await supabase
@@ -64,8 +126,15 @@ Deno.cron("Network Routing Recommender", "*/5 * * * *", async () => {
             agent_type: "network-routing",
             title,
             message,
-            priority: "critical",
-            action_data: { network, failureRate, switch_recommended: true }
+            priority,
+            action_data: { 
+              network, 
+              global_failure_rate: globalFailRate, 
+              confidence_score: outageConfidence,
+              culprit_provider: worstProvider,
+              recommended_provider: bestProvider,
+              switch_recommended: true 
+            }
           });
           recommendationsGenerated++;
           console.log(`Generated routing recommendation for ${network}`);

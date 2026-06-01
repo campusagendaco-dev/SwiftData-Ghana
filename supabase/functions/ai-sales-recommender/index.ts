@@ -79,26 +79,44 @@ async function runSalesPromoRecommender(supabase: any, isManualTrigger = false):
     }
   }
 
-  // 3. Identify users who buy small packages very frequently
+  // 3. Identify and run personalized savings analysis for frequent, small-bundle buyers
   let recommendationsSent = 0;
   const SMS_LIMIT_PER_RUN = 50; // Prevent spamming and high SMS costs
 
   for (const [phone, stats] of userStats.entries()) {
     if (recommendationsSent >= SMS_LIMIT_PER_RUN) break;
 
-    // AI Logic: If they bought > 5 times in 30 days, and total spent > 50 GHS, and mostly small packages
-    // Recommend a 10GB or 20GB monthly plan.
-    if (stats.count >= 5 && stats.totalSpent >= 40) {
+    // AI Logic: Detect users who make >= 4 small package purchases and spend >= 20 GHS in 30 days
+    if (stats.count >= 4 && stats.totalSpent >= 20) {
       const sizesArray = Array.from(stats.sizes);
-      const mostlySmall = sizesArray.some(s => s.includes("MB") || s === "1GB" || s === "2GB");
+      const mostlySmall = sizesArray.some(s => s.includes("MB") || s === "1GB" || s === "2GB" || s === "3GB");
 
       if (mostlySmall) {
-        // Send SMS recommendation
-        const formattedTime = stats.lastOrderTime ? formatLastDeliveryTime(stats.lastOrderTime) : "";
-        const timeSuffix = formattedTime ? ` (your last delivery was on ${formattedTime})` : "";
-        const message = `Hi! SwiftData AI noticed you buy data frequently${timeSuffix}. Did you know our 10GB Monthly package is cheaper for you? Log in to upgrade and save money today!`;
+        // Dynamic Segmented Recommendations based on actual customer spending tiers
+        let recBundleName = "5GB Monthly Plan";
+        let recBundleCost = 30;
+
+        if (stats.totalSpent >= 120) {
+          recBundleName = "20GB Monthly Plan";
+          recBundleCost = 80;
+        } else if (stats.totalSpent >= 40) {
+          recBundleName = "10GB Monthly Plan";
+          recBundleCost = 50;
+        }
+
+        // Calculate custom Projected Monthly Savings
+        const projectedSavings = stats.totalSpent - recBundleCost;
+        let message = "";
+
+        if (projectedSavings > 5) {
+          message = `SwiftData AI: We noticed you bought small packages ${stats.count} times this month, spending GH₵${stats.totalSpent.toFixed(2)}. Upgrading to our unified ${recBundleName} for just GH₵${recBundleCost} would save you roughly GH₵${projectedSavings.toFixed(0)}! Log in to save now.`;
+        } else {
+          const formattedTime = stats.lastOrderTime ? formatLastDeliveryTime(stats.lastOrderTime) : "";
+          const timeSuffix = formattedTime ? ` (last active ${formattedTime})` : "";
+          message = `SwiftData AI noticed you buy data frequently${timeSuffix}. Consolidating to our standard ${recBundleName} will give you uninterrupted data at a lower unit rate. Log in to check details!`;
+        }
         
-        // Push to internal SMS queue or queue a table row to avoid blocking
+        // Push to internal SMS queue
         const { error: insertError } = await supabase.from("sms_logs").insert({
           phone_number: phone,
           message: message,
@@ -107,7 +125,7 @@ async function runSalesPromoRecommender(supabase: any, isManualTrigger = false):
 
         if (!insertError) {
           recommendationsSent++;
-          console.log(`Recommendation sent to ${phone}`);
+          console.log(`Personalized recommendation sent to ${phone} (Savings: GH₵${projectedSavings.toFixed(2)})`);
         }
       }
     }

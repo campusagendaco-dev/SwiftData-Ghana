@@ -113,20 +113,78 @@ serve(async (req: Request) => {
       });
     }
 
-    // Resolve profile details for suspicious agents
+    // Resolve profiles, 30-day daily averages, and current wallet details for active agents
+    const suspiciousAgentIds = suspiciousAgents.map(a => a.agent_id);
+    let historicalAvgs: Record<string, number> = {};
+    let walletInfo: Record<string, { balance: number; credit_limit: number }> = {};
+
+    if (suspiciousAgentIds.length > 0) {
+      // 1. Fetch 30-day historical transaction volume
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: histOrders } = await supabaseAdmin
+        .from("orders")
+        .select("agent_id, amount")
+        .in("agent_id", suspiciousAgentIds)
+        .eq("status", "fulfilled")
+        .gte("created_at", thirtyDaysAgo);
+
+      const agentTotals: Record<string, number> = {};
+      (histOrders || []).forEach((o: any) => {
+        if (o.agent_id) {
+          agentTotals[o.agent_id] = (agentTotals[o.agent_id] || 0) + Number(o.amount || 0);
+        }
+      });
+      suspiciousAgentIds.forEach(id => {
+        // Daily average volume
+        historicalAvgs[id] = Number(((agentTotals[id] || 0) / 30).toFixed(2));
+      });
+
+      // 2. Fetch current wallet details
+      const { data: wallets } = await supabaseAdmin
+        .from("wallets")
+        .select("agent_id, balance, credit_limit")
+        .in("agent_id", suspiciousAgentIds);
+
+      (wallets || []).forEach((w: any) => {
+        if (w.agent_id) {
+          walletInfo[w.agent_id] = {
+            balance: Number(w.balance || 0),
+            credit_limit: Number(w.credit_limit || 0)
+          };
+        }
+      });
+    }
+
     const { data: profiles } = await supabaseAdmin
       .from("profiles")
       .select("user_id, full_name, phone, terminal_locked, is_agent, role")
-      .in("user_id", suspiciousAgents.map(a => a.agent_id));
+      .in("user_id", suspiciousAgentIds);
 
     const enrichedAgents = suspiciousAgents.map(a => {
       const p = profiles?.find(prof => prof.user_id === a.agent_id);
+      const dailyAvg = historicalAvgs[a.agent_id] || 0;
+      const wallet = walletInfo[a.agent_id] || { balance: 0, credit_limit: 0 };
+      
+      // Hourly baseline = dailyAvg / 24. Volume in 15 mins (a.volume) is compared to 1/4 of hourly baseline.
+      const hourlyAvg = dailyAvg / 24;
+      const expected15MinVol = hourlyAvg / 4;
+      
+      // Compute Velocity Burst Ratio. If they are selling 8x their historical hourly rate, it's a huge spike.
+      const agentActivityObj = agentActivity[a.agent_id];
+      const volume15m = agentActivityObj?.volume || 0;
+      const velocityBurstRatio = expected15MinVol > 0 ? Number((volume15m / expected15MinVol).toFixed(2)) : 0.00;
+
       return {
         ...a,
         full_name: p?.full_name || "Unknown",
         phone: p?.phone || "Unknown",
         terminal_locked: p?.terminal_locked || false,
-        is_admin: p?.role === 'admin'
+        is_admin: p?.role === 'admin',
+        current_wallet_balance: wallet.balance,
+        credit_limit: wallet.credit_limit,
+        historical_30d_daily_avg_volume: dailyAvg,
+        velocity_burst_ratio: velocityBurstRatio,
+        volume_15m: volume15m
       };
     }).filter(a => !a.is_admin); // Never lock admins!
 
@@ -139,10 +197,11 @@ serve(async (req: Request) => {
       1. FRAUD & BOT DETECTION: High failure rates (>60%) combined with high volume indicate a bot or gateway exploit attempt.
       2. CARD TESTING: Multiple micro-transactions (under 2 GHS) is a severe red flag.
       3. IMPOSSIBLE TRAVEL: "distinct_ips_count" > 1 indicates compromised credentials (hijacked account).
-      4. WALLET DRAINING: "cashout_volume" > 3000 GHS in 15 mins indicates rapid draining.
-      5. API ABUSE: Malicious IPs with >15 auth failures must be blocked immediately.
-      6. OUTAGE PROTECTION: If a network is failing across >=3 distinct agents, broadcast an outage.
-      7. ACTION PROTOCOL: If an agent exhibits behaviors 1-4, you MUST output a "lock_terminal" action to freeze their account.
+      4. WALLET DRAINING: "cashout_volume" > 3000 GHS in 15 mins OR "cashout_volume" exceeding 75% of "current_wallet_balance" in a single audit sweep indicates rapid draining/compromise.
+      5. VELOCITY BURST: If "velocity_burst_ratio" > 8.00 (sales volume is 8x their normal historical hourly baseline), this is a velocity burst anomaly indicating automated scraping or compromised script abuse. LOCK terminal immediately unless "is_admin" (do not lock admins).
+      6. API ABUSE: Malicious IPs with >15 auth failures must be blocked immediately.
+      7. OUTAGE PROTECTION: If a network is failing across >=3 distinct agents, broadcast an outage.
+      8. ACTION PROTOCOL: If an agent exhibits behaviors 1-5, you MUST output a "lock_terminal" action to freeze their account.
 
       ━━━ AVAILABLE ACTIONS ━━━
       - lock_terminal: { "target": "uuid", "reason": "string" }
