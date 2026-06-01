@@ -17,6 +17,7 @@ import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
 import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
+import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -562,6 +563,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           </button>
         ))}
       </div>
+
+      {/* MTN Live Delivery Speed Widget */}
+      {network === "MTN" && (
+        <LastMtnOrderWidget variant="card" className="w-full animate-in slide-in-from-top-4 duration-300" />
+      )}
 
       {/* ── Inline Purchase Panel (Swift Payment Layout) ── */}
       {selectedPackage && (

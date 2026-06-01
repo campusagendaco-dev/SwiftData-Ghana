@@ -43,6 +43,8 @@ interface SystemSettings {
   withdrawal_completed_sms_message: string;
   order_failed_sms_message: string;
   manual_credit_sms_message: string;
+  scheduled_success_sms_message: string;
+  scheduled_failed_sms_message: string;
   data_provider_api_key: string;
   data_provider_base_url: string;
   airtime_provider_api_key: string;
@@ -70,6 +72,7 @@ interface SystemSettings {
   traditional_background_enabled: boolean;
   background_custom_image_url: string;
   enable_privacy_shield: boolean;
+  ai_recommender_enabled: boolean;
   tutorial_buy_video_url?: string;
   tutorial_agent_video_url?: string;
   tutorial_subagent_video_url?: string;
@@ -121,6 +124,8 @@ const AdminSettings = () => {
     withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
     order_failed_sms_message: "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
     manual_credit_sms_message: "Your account has been manually credited with GHS {amount}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+    scheduled_success_sms_message: "Your scheduled {package} bundle to {phone} has been successfully renewed. Thank you for using SwiftData!",
+    scheduled_failed_sms_message: "Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance. Please top up to resume.",
     data_provider_api_key: "",
     data_provider_base_url: "",
     airtime_provider_api_key: "",
@@ -148,6 +153,7 @@ const AdminSettings = () => {
     traditional_background_enabled: true,
     background_custom_image_url: "",
     enable_privacy_shield: true,
+    ai_recommender_enabled: true,
     withdrawal_auto_approve_enabled: false,
     withdrawal_auto_approve_max_amount: "200.00",
     withdrawal_auto_approve_min_age_days: "7",
@@ -185,6 +191,42 @@ const AdminSettings = () => {
         });
     }
   }, [session?.user.id]);
+
+  const [triggeringAI, setTriggeringAI] = useState(false);
+
+  const handleTriggerAIRecommender = async () => {
+    setTriggeringAI(true);
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-sales-recommender`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSession?.access_token}`,
+          'apikey': SUPABASE_PUBLISHABLE_KEY
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Failed to trigger recommender");
+      }
+
+      toast({
+        title: "✨ AI Scan Completed",
+        description: `Successfully analyzed user behavior and sent ${data.sent} recommended SMS promo messages.`,
+      });
+      playSound("success");
+    } catch (err: any) {
+      toast({
+        title: "Scan failed",
+        description: err.message || "An error occurred while running the AI recommender.",
+        variant: "destructive"
+      });
+    } finally {
+      setTriggeringAI(false);
+    }
+  };
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -245,6 +287,8 @@ const AdminSettings = () => {
           withdrawal_completed_sms_message: d.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
           order_failed_sms_message: d.order_failed_sms_message || "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
           manual_credit_sms_message: d.manual_credit_sms_message || "Your account has been manually credited with GHS {amount} by admin.",
+          scheduled_success_sms_message: d.scheduled_success_sms_message || "Your scheduled {package} bundle to {phone} has been successfully renewed. Thank you for using SwiftData!",
+          scheduled_failed_sms_message: d.scheduled_failed_sms_message || "Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance. Please top up to resume.",
           data_provider_api_key: String(secrets.data_provider_api_key || ""),
           data_provider_base_url: String(secrets.data_provider_base_url || ""),
           airtime_provider_api_key: String(secrets.airtime_provider_api_key || ""),
@@ -270,6 +314,7 @@ const AdminSettings = () => {
           traditional_background_enabled: d.traditional_background_enabled !== false,
           background_custom_image_url: String(d.background_custom_image_url || ""),
           enable_privacy_shield: d.enable_privacy_shield !== false,
+          ai_recommender_enabled: d.ai_recommender_enabled !== false,
           tutorial_buy_video_url: String(d.tutorial_buy_video_url || ""),
           tutorial_agent_video_url: String(d.tutorial_agent_video_url || ""),
           tutorial_subagent_video_url: String(d.tutorial_subagent_video_url || ""),
@@ -334,6 +379,7 @@ const AdminSettings = () => {
       traditional_background_enabled: settings.traditional_background_enabled,
       background_custom_image_url: settings.background_custom_image_url,
       enable_privacy_shield: settings.enable_privacy_shield,
+      ai_recommender_enabled: settings.ai_recommender_enabled,
       tutorial_buy_video_url: (settings.tutorial_buy_video_url || "").trim(),
       tutorial_agent_video_url: (settings.tutorial_agent_video_url || "").trim(),
       tutorial_subagent_video_url: (settings.tutorial_subagent_video_url || "").trim(),
@@ -547,6 +593,43 @@ const AdminSettings = () => {
                   checked={settings.welcome_promo_enabled}
                   onCheckedChange={(c) => setSettings({ ...settings, welcome_promo_enabled: c })}
                 />
+              </div>
+
+              <div className="flex items-start justify-between p-3 bg-primary/5 border border-primary/20 rounded-xl">
+                <div className="space-y-0.5">
+                  <Label className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                    AI Promo Recommender (SMS)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Automatically scan and send cost-saving data package recommendations to frequent buyers.</p>
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <Switch
+                    checked={settings.ai_recommender_enabled}
+                    onCheckedChange={(c) => setSettings({ ...settings, ai_recommender_enabled: c })}
+                  />
+                  {settings.ai_recommender_enabled && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-[10px] h-6 px-2 gap-1 mt-1 border-primary/30 hover:bg-primary/10"
+                      onClick={handleTriggerAIRecommender}
+                      disabled={triggeringAI}
+                    >
+                      {triggeringAI ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3 h-3" />
+                          Run Scan Now
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-start justify-between p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
@@ -1711,6 +1794,26 @@ const AdminSettings = () => {
                         onChange={(e) => setSettings({ ...settings, manual_credit_sms_message: e.target.value })}
                       />
                       <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Scheduled Order Success SMS Message</Label>
+                      <Input
+                        value={settings.scheduled_success_sms_message}
+                        onChange={(e) => setSettings({ ...settings, scheduled_success_sms_message: e.target.value })}
+                        placeholder="Your scheduled {package} bundle to {phone} has been successfully renewed..."
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Scheduled Order Failed (No Balance) SMS Message</Label>
+                      <Input
+                        value={settings.scheduled_failed_sms_message}
+                        onChange={(e) => setSettings({ ...settings, scheduled_failed_sms_message: e.target.value })}
+                        placeholder="Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance..."
+                      />
+                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}"}</p>
                     </div>
                   </div>
                 </>

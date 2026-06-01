@@ -18,6 +18,9 @@ const DEFAULT_SETTINGS = {
   sub_agent_base_fee: 80,
   agent_activation_fee: 50,
   enable_privacy_shield: true,
+  ai_recommender_enabled: true,
+  scheduled_success_sms_message: "Your scheduled {package} bundle to {phone} has been successfully renewed. Thank you for using SwiftData!",
+  scheduled_failed_sms_message: "Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance. Please top up to resume.",
 };
 
 const coerceText = (value: unknown): string => String(value ?? "").trim();
@@ -140,7 +143,7 @@ serve(async (req) => {
 
   const readSettings = async () => {
     const fullSelect =
-      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield";
+      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message";
     const legacySelect =
       "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link";
 
@@ -184,6 +187,9 @@ serve(async (req) => {
       traditional_background_enabled: data?.traditional_background_enabled !== false,
       background_custom_image_url: coerceText(data?.background_custom_image_url),
       enable_privacy_shield: data?.enable_privacy_shield !== false,
+      ai_recommender_enabled: data?.ai_recommender_enabled !== false,
+      scheduled_success_sms_message: data?.scheduled_success_sms_message || DEFAULT_SETTINGS.scheduled_success_sms_message,
+      scheduled_failed_sms_message: data?.scheduled_failed_sms_message || DEFAULT_SETTINGS.scheduled_failed_sms_message,
       table_ready: true,
       warning: null,
     };
@@ -285,6 +291,9 @@ serve(async (req) => {
       traditional_background_enabled: payload?.traditional_background_enabled !== false,
       background_custom_image_url: coerceText(payload?.background_custom_image_url),
       enable_privacy_shield: payload?.enable_privacy_shield !== false,
+      ai_recommender_enabled: payload?.ai_recommender_enabled !== false,
+      scheduled_success_sms_message: coerceText(payload?.scheduled_success_sms_message) || DEFAULT_SETTINGS.scheduled_success_sms_message,
+      scheduled_failed_sms_message: coerceText(payload?.scheduled_failed_sms_message) || DEFAULT_SETTINGS.scheduled_failed_sms_message,
       updated_at: new Date().toISOString(),
       updated_by: user.id,
     };

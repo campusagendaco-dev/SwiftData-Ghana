@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
+import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
 interface PhoneOrderTrackerProps {
   title?: string;
@@ -74,7 +75,7 @@ const PhoneOrderTracker = ({
       
       <div className="relative rounded-3xl border border-white/8 bg-[#0A0A0C]/80 backdrop-blur-xl overflow-hidden shadow-2xl">
         <div className="p-6 bg-white/[0.02]">
-            <div className="flex items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+            <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
               <div className="flex items-center gap-2.5 sm:gap-3.5">
                 <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/5">
                   <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
@@ -84,7 +85,8 @@ const PhoneOrderTracker = ({
                   <p className="text-[10px] sm:text-xs font-medium text-white/40">{subtitle}</p>
                 </div>
               </div>
-          </div>
+              <LastMtnOrderWidget variant="pill" className="scale-90 sm:scale-100 origin-right self-start xs:self-center shrink-0" />
+            </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">

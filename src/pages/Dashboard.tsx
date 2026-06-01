@@ -18,6 +18,7 @@ import ReferAndEarn from "@/components/ReferAndEarn";
 import DailyCheckIn from "@/components/DailyCheckIn";
 import PromoCarousel from "@/components/PromoCarousel";
 import CompleteProfileBanner from "@/components/CompleteProfileBanner";
+import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
 interface DashboardStats {
   walletBalance: number;
@@ -223,6 +224,11 @@ const Dashboard = () => {
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      {/* MTN Live Delivery Status Widget */}
+      <div className="flex justify-start">
+        <LastMtnOrderWidget variant="pill" />
       </div>
 
       <DailyCheckIn />

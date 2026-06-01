@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import SEO from "@/components/SEO";
 import { LiveActivityToast } from "@/components/LiveActivityToast";
 import { WelcomePromoModal } from "@/components/WelcomePromoModal";
+import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const NETWORK_CARDS = [
@@ -383,6 +384,11 @@ const Index = () => {
                 ][activeMessageIndex]}
               </div>
             </div>
+          </div>
+
+          {/* MTN Live Delivery Status Widget */}
+          <div className="mb-8 block" style={{ animation: "fade-in 0.6s cubic-bezier(0.22,1,0.36,1) 0.1s both" }}>
+            <LastMtnOrderWidget variant="pill" />
           </div>
 
           <h1
