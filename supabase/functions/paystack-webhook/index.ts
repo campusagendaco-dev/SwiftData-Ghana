@@ -523,14 +523,18 @@ serve(async (req) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   let PAYSTACK_SECRET_KEY = "";
+  let PAYSTACK_DEPOSIT_FEE_PERCENT = 0.03;
   try {
     const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("paystack_secret_key, paystack_deposit_fee_percent")
       .eq("id", 1)
       .maybeSingle();
     PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+    if (settings?.paystack_deposit_fee_percent !== undefined) {
+      PAYSTACK_DEPOSIT_FEE_PERCENT = Number(settings.paystack_deposit_fee_percent);
+    }
   } catch (dbErr) {
-    console.error("Failed to fetch paystack_secret_key from DB in webhook:", dbErr);
+    console.error("Failed to fetch settings from DB in webhook:", dbErr);
   }
 
   if (!PAYSTACK_SECRET_KEY) {
@@ -799,18 +803,33 @@ serve(async (req) => {
       let resolvedCostPrice = 0;
       
       const orderType = orderTypeFromMetadata || "data";
+      const isApiWallet = metadata?.wallet_type === "api";
       const requestedWalletCredit = Number(metadata?.wallet_credit);
-      let walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
-        ? Math.min(requestedWalletCredit, verifiedAmount)
-        : verifiedAmount;
-
-      // Fallback: If wallet_credit is missing in metadata but it's a top-up, 
-      // assume the 3% fee was meant to be applied (unless it's an API wallet).
-      if (!requestedWalletCredit && orderType === "wallet_topup" && metadata?.wallet_type !== "api") {
-        walletCredit = Number((verifiedAmount / 1.03).toFixed(2));
+      
+      let walletCredit = verifiedAmount;
+      
+      if (orderType === "wallet_topup" || orderType === "store_wallet_topup") {
+        if (isApiWallet) {
+          // 0% fee for API wallet top-ups
+          walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
+            ? Math.min(requestedWalletCredit, verifiedAmount)
+            : verifiedAmount;
+        } else {
+          // Enforce dynamic standard fee for main or store wallet topups
+          const divisor = 1 + PAYSTACK_DEPOSIT_FEE_PERCENT;
+          const maxAllowedCredit = Number((verifiedAmount / divisor).toFixed(2));
+          
+          walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
+            ? Math.min(requestedWalletCredit, maxAllowedCredit)
+            : maxAllowedCredit;
+        }
+      } else {
+        walletCredit = Number.isFinite(requestedWalletCredit) && requestedWalletCredit > 0
+          ? Math.min(requestedWalletCredit, verifiedAmount)
+          : verifiedAmount;
       }
 
-      const normalizedAmount = orderType === "wallet_topup"
+      const normalizedAmount = (orderType === "wallet_topup" || orderType === "store_wallet_topup")
         ? walletCredit
         : (Number.isFinite(verifiedAmount) && verifiedAmount > 0 ? verifiedAmount : 0);
 
