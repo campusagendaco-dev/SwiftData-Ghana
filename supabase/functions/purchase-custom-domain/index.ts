@@ -101,6 +101,58 @@ serve(async (req: Request) => {
     const action = payload.action || (path.endsWith("/check") ? "check" : path.endsWith("/purchase") ? "purchase" : null);
 
     // ────────────────────────────────────────────────────────────────
+    // ACTION 0: Test GoDaddy API connection
+    // ────────────────────────────────────────────────────────────────
+    if (action === "test-godaddy" || (req.method === "POST" && path.endsWith("/test-godaddy"))) {
+      if (!GODADDY_API_KEY || !GODADDY_API_SECRET) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Missing GODADDY_API_KEY or GODADDY_API_SECRET environment variables"
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      console.log(`[TEST-GODADDY] Testing GoDaddy API connection to ${godaddyBase}...`);
+      try {
+        const testDomain = `check-eligibility-test-${Math.floor(Math.random() * 1000000)}.com`;
+        const res = await fetch(`${godaddyBase}/v1/domains/available?domain=${testDomain}`, {
+          method: "GET",
+          headers: godaddyHeaders
+        });
+
+        const status = res.status;
+        const resText = await res.text();
+        let parsed: any = {};
+        try { parsed = JSON.parse(resText); } catch { /* ignore */ }
+
+        console.log(`[TEST-GODADDY] Response status: ${status}, Body: ${resText}`);
+
+        return new Response(JSON.stringify({
+          success: status === 200,
+          status,
+          env: GODADDY_ENV,
+          hasKey: !!GODADDY_API_KEY,
+          hasSecret: !!GODADDY_API_SECRET,
+          response: parsed || resText
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } catch (err: any) {
+        console.error("[TEST-GODADDY] Fetch crash:", err);
+        return new Response(JSON.stringify({
+          success: false,
+          error: err.message || "Failed to contact GoDaddy API"
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // ACTION 1: Domain Availability & Price Checker
     // ────────────────────────────────────────────────────────────────
     if (action === "check" || (req.method === "GET" && path.endsWith("/check"))) {
@@ -477,8 +529,8 @@ if (isSimulation) {
           const purchasePayload = {
             consent: {
               agreementKeys: ["DNRA"],
-              agreements: ["https://www.godaddy.com/agreements/showdoc.aspx?pageid=REG_SA"],
-              requestIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "1.1.1.1"
+              agreedBy: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "1.1.1.1",
+              agreedAt: new Date().toISOString()
             },
             contactAdmin: contact,
             contactBilling: contact,

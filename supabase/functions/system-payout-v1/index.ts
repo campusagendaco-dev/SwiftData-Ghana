@@ -100,6 +100,7 @@ type AdminUserAction =
   | "manual_api_topup"
   | "update_system_settings"
   | "confirm_withdrawal"
+  | "get_admin_secrets"
   | "get_provider_balance"
   | "update_credit_limit"
   | "approve_by_email"
