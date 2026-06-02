@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { playSound } from "@/lib/sound";
+import { playSound, safeVibrate } from "@/lib/sound";
 
 const AdminNotifications = () => {
   const { toast } = useToast();
@@ -38,20 +38,11 @@ const AdminNotifications = () => {
       }
 
       if (isVibeEnabled && vibePatternStr) {
-        if (typeof navigator !== "undefined" && navigator.vibrate) {
-          try {
-            const pattern = String(vibePatternStr)
-              .split(",")
-              .map(Number)
-              .filter((num) => !isNaN(num) && num >= 0);
-
-            if (pattern.length > 0) {
-              navigator.vibrate(pattern);
-            }
-          } catch (e) {
-            console.warn("[Vibration] Blocked or unsupported in AdminNotifications:", e);
-          }
-        }
+        const pattern = String(vibePatternStr)
+          .split(",")
+          .map(Number)
+          .filter((num) => !isNaN(num) && num >= 0);
+        if (pattern.length > 0) safeVibrate(pattern);
       }
     };
 

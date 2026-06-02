@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Bell, X, Info, Zap, AlertCircle } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { playSound } from "@/lib/sound";
+import { playSound, safeVibrate } from "@/lib/sound";
 
 interface Notification {
   id: string;
@@ -138,21 +138,11 @@ const NotificationPopup = () => {
     }
 
     if (customVibeEnabled && customVibePattern) {
-      if (typeof navigator !== "undefined" && navigator.vibrate) {
-        try {
-          const patternStr = String(customVibePattern);
-          const pattern = patternStr
-            .split(",")
-            .map(Number)
-            .filter((num) => !isNaN(num) && num >= 0);
-
-          if (pattern.length > 0) {
-            navigator.vibrate(pattern);
-          }
-        } catch (e) {
-          console.warn("[Vibration] Direct navigator.vibrate crash prevented:", e);
-        }
-      }
+      const pattern = String(customVibePattern)
+        .split(",")
+        .map(Number)
+        .filter((num) => !isNaN(num) && num >= 0);
+      if (pattern.length > 0) safeVibrate(pattern);
     }
   };
 

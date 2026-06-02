@@ -13,6 +13,17 @@ export const SOUNDS = {
 
 let audioContextUnlocked = false;
 let synthContext: AudioContext | null = null;
+let userHasInteracted = false;
+
+const markInteracted = () => {
+  userHasInteracted = true;
+  document.removeEventListener("click", markInteracted, true);
+  document.removeEventListener("touchstart", markInteracted, true);
+  document.removeEventListener("keydown", markInteracted, true);
+};
+document.addEventListener("click", markInteracted, true);
+document.addEventListener("touchstart", markInteracted, true);
+document.addEventListener("keydown", markInteracted, true);
 
 // Pre-unlock web audio to prevent browser autoplay restriction errors on click
 export function unlockAudio() {
@@ -30,6 +41,20 @@ export function unlockAudio() {
   };
   document.addEventListener("click", unlock);
   document.addEventListener("touchstart", unlock);
+}
+
+/**
+ * Calls navigator.vibrate only after the user has interacted with the page.
+ * Chrome blocks vibration until a user gesture has occurred in the frame.
+ */
+export function safeVibrate(pattern: number | number[]): boolean {
+  if (!userHasInteracted) return false;
+  if (typeof navigator === "undefined" || !navigator.vibrate) return false;
+  try {
+    return navigator.vibrate(pattern);
+  } catch {
+    return false;
+  }
 }
 
 const playSynth = (type: string, volume: number) => {

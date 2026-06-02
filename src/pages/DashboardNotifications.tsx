@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { safeVibrate } from "@/lib/sound";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -117,9 +118,7 @@ const DashboardNotifications = () => {
               // Ignore audio autoplay restrictions
             }
           }
-          if (vibeEnabled && typeof navigator !== "undefined" && navigator.vibrate) {
-            navigator.vibrate(150);
-          }
+          if (vibeEnabled) safeVibrate(150);
         }
       )
       .subscribe();
