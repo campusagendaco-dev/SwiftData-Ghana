@@ -131,8 +131,90 @@ serve(async (req: Request) => {
     let parentAgentId: string | null = null;
     let parentProfit = 0;
     let agentProfit = 0;
+    let orderAgentId = user.id;
+    let orderCustomerId: string | null = null;
 
-    if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id) {
+    const isStorefrontCustomer = agentProfile?.parent_agent_id && !agentProfile?.is_sub_agent;
+
+    if (isStorefrontCustomer) {
+      const storeOwnerId = agentProfile.parent_agent_id!;
+      orderAgentId = storeOwnerId;
+      orderCustomerId = user.id;
+
+      // Fetch store owner's profile
+      const { data: sellerProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("is_sub_agent, parent_agent_id, agent_prices")
+        .eq("user_id", storeOwnerId)
+        .maybeSingle();
+
+      if (sellerProfile) {
+        const sellerPrices = (sellerProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+        
+        let sellerListed = 0;
+        const netCandidates = [normalizedNet, networkRaw, networkRaw.replace(/\s+/g, "")];
+        const pkgCandidates = [normalizeSize(package_size), package_size];
+        
+        // Helper to search price maps
+        const searchMap = (map: Record<string, Record<string, string | number>>) => {
+          for (const n of netCandidates) {
+            if (!map[n]) continue;
+            for (const p of pkgCandidates) {
+              const val = Number(map[n][p]);
+              if (Number.isFinite(val) && val > 0) return val;
+            }
+          }
+          return 0;
+        };
+
+        sellerListed = searchMap(sellerPrices);
+
+        let chargeBase = adminBase;
+
+        if (sellerProfile.is_sub_agent) {
+          parentAgentId = sellerProfile.parent_agent_id || null;
+          let parentAssignedBase = 0;
+
+          if (parentAgentId) {
+            const { data: parentProfile } = await supabaseAdmin
+              .from("profiles")
+              .select("sub_agent_prices, agent_prices")
+              .eq("user_id", parentAgentId)
+              .maybeSingle();
+
+            if (parentProfile) {
+              const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+              const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+              const hasSubPrices = Object.keys(subPrices).length > 0;
+
+              parentAssignedBase = searchMap(hasSubPrices ? subPrices : agentPrices);
+
+              if (!(parentAssignedBase > 0) && hasSubPrices) {
+                parentAssignedBase = searchMap(agentPrices);
+              }
+            }
+          }
+
+          if (!(parentAssignedBase >= adminBase)) {
+            parentAssignedBase = adminBase;
+          }
+
+          chargeBase = Number.isFinite(sellerListed) && sellerListed > parentAssignedBase
+            ? sellerListed
+            : parentAssignedBase;
+
+          parentProfit = Math.max(0, parseFloat((parentAssignedBase - adminBase).toFixed(2)));
+          agentProfit = Math.max(0, parseFloat((chargeBase - parentAssignedBase).toFixed(2)));
+        } else {
+          chargeBase = Number.isFinite(sellerListed) && sellerListed > adminBase
+            ? sellerListed
+            : adminBase;
+          agentProfit = Math.max(0, parseFloat((chargeBase - adminBase).toFixed(2)));
+        }
+
+        resolvedChargeAmount = chargeBase;
+      }
+    } else if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id) {
       // Find parent's assigned price for this sub-agent
       const { data: parentProfile } = await supabaseAdmin
         .from("profiles")
@@ -148,7 +230,6 @@ serve(async (req: Request) => {
         const netCandidates = [normalizedNet, networkRaw, networkRaw.replace(/\s+/g, "")];
         const pkgCandidates = [normalizeSize(package_size), package_size];
         
-        // Helper to search price maps
         const searchMap = (map: Record<string, Record<string, string | number>>) => {
           for (const n of netCandidates) {
             if (!map[n]) continue;
@@ -250,7 +331,8 @@ serve(async (req: Request) => {
     console.log(`[INSERT] Creating order ${orderId}...`);
     const { error: insertError } = await supabaseAdmin.from("orders").insert({
       id: orderId,
-      agent_id: user.id,
+      agent_id: orderAgentId,
+      customer_id: orderCustomerId || undefined,
       customer_phone: normalizeRecipient(customer_phone),
       network: normalizeNetworkForPricing(networkRaw),
       package_size: package_size,
