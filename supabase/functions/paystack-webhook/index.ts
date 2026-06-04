@@ -1164,8 +1164,7 @@ serve(async (req) => {
       const parentAgentId = metadata?.parent_agent_id;
       const activationAmount = Number(metadata?.activation_fee || existingOrder?.amount || verifiedAmount || 0);
       
-      const { data: settings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("sub_agent_base_fee").eq("id", 1).maybeSingle();
-      const baseFee = Number(settings?.sub_agent_base_fee || 5); // Default to 5 if DB missing
+      const baseFee = SUB_AGENT_MINIMUM; // Reuse the previously fetched SUB_AGENT_MINIMUM
 
       // Security: Never trust client-supplied profit metadata. 
       // Activation fee base is dynamic. Anything above that is agent profit.
@@ -1219,7 +1218,7 @@ serve(async (req) => {
       if (order) {
         const walletType = order.metadata?.wallet_type === "api" ? "api" : "main";
         if (walletType === "api") {
-          await supabaseAdmin.rpc("api.credit_api_wallet", { p_user_id: order.agent_id, p_amount: order.amount });
+          await supabaseAdmin.schema("api").rpc("credit_api_wallet", { p_user_id: order.agent_id, p_amount: order.amount });
         } else {
           await supabaseAdmin.rpc("repay_credit", { p_agent_id: order.agent_id, p_amount: order.amount });
         }

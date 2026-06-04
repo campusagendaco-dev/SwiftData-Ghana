@@ -21,6 +21,7 @@ const SubAgentPending = () => {
   const [parentStore, setParentStore] = useState<{
     store_name: string | null;
     store_logo_url: string | null;
+    slug: string | null;
   } | null>(null);
 
   // Load fees + auto-verify on return from Paystack
@@ -31,7 +32,7 @@ const SubAgentPending = () => {
 
       const { data: parentRes } = await supabase
         .from("agent_stores")
-        .select("sub_agent_activation_markup, store_name, store_logo_url")
+        .select("sub_agent_activation_markup, store_name, store_logo_url, slug")
         .eq("user_id", profile.parent_agent_id)
         .maybeSingle();
 
@@ -42,6 +43,7 @@ const SubAgentPending = () => {
         setParentStore({
           store_name: parentRes.store_name,
           store_logo_url: parentRes.store_logo_url,
+          slug: parentRes.slug,
         });
       }
 

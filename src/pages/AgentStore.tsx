@@ -273,7 +273,7 @@ const AgentStore = () => {
           .from("agent_stores")
           .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
 
-        if (slug) {
+        if (slug && slug !== "undefined" && slug !== "null") {
           storeQuery = storeQuery.eq("slug", slug);
         } else if (activeDomain) {
           storeQuery = storeQuery.eq("custom_domain", activeDomain);

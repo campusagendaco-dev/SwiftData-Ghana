@@ -105,10 +105,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$q = http_build_query(["limit"=>20,"offset"=>40,"status"=>"fulfilled","network"=>"MTN"]);\n$ch = curl_init("${BASE_URL}/orders?$q");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["Authorization: Bearer ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     status: {
-      curl: `curl -X GET "${BASE_URL}/status?order_id=a3f2b1c0-..." \\\n  -H "Authorization: Bearer ${K}"`,
-      node: `const res = await fetch("${BASE_URL}/status?order_id=a3f2b1c0-...", {\n  headers: { "Authorization": "Bearer ${K}" },\n});\nconst { order } = await res.json();\nconsole.log("Status:", order.status);`,
-      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/status",\n    params={"order_id": "a3f2b1c0-..."},\n    headers={"Authorization": "Bearer ${K}"},\n)\nprint(res.json()["order"]["status"])`,
-      php: `<?php\n$ch = curl_init("${BASE_URL}/status?order_id=a3f2b1c0-...");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["Authorization: Bearer ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$data = json_decode(curl_exec($ch));\necho $data->order->status;`,
+      curl: `curl -X GET "https://user.datahubgh.com/api/external/order-status?orderNumber=123456" \\\n  -H "X-API-Key: \${K}"`,
+      node: `const res = await fetch("https://user.datahubgh.com/api/external/order-status?orderNumber=123456", {\n  headers: { "X-API-Key": "\${K}" },\n});\nconst { data } = await res.json();\nconsole.log("Status:", data.status);`,
+      python: `import requests\n\nres = requests.get(\n    "https://user.datahubgh.com/api/external/order-status",\n    params={"orderNumber": "123456"},\n    headers={"X-API-Key": "\${K}"},\n)\nprint(res.json()["data"]["status"])`,
+      php: `<?php\n$ch = curl_init("https://user.datahubgh.com/api/external/order-status?orderNumber=123456");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["X-API-Key: \${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$data = json_decode(curl_exec($ch));\necho $data->data->status;`,
     },
     hmac: {
       curl: `# 1. Compute HMAC-SHA256 of the raw JSON body using your secret key\nBODY='{"network":"MTN","phone":"0241234567","package_size":"5GB"}'\nSIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$YOUR_SECRET_KEY" -hex | awk '{print $2}')\n\n# 2. Send with both API key + signature headers\ncurl -X POST "${BASE_URL}/buy" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "X-Swift-Signature: $SIG" \\\n  -H "Content-Type: application/json" \\\n  -d "$BODY"`,
@@ -129,10 +129,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$payload = json_encode(["afa_full_name" => "Kwame Mensah", "afa_ghana_card" => "GHA-123456789-0", "customer_phone" => "0201234567", "amount" => 5.00, "request_id" => "afa_req_001"]);\n$ch = curl_init("${BASE_URL}/afa-registration");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     results: {
-      curl: `curl -X POST "${BASE_URL}/results-checker" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Idempotency-Key: unique_key_res123" \\\n  -d '{\n    "checker_type": "WAEC",\n    "quantity": 1,\n    "amount": 25.00,\n    "customer_phone": "0241234567",\n    "request_id": "res_req_001"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n    "X-Idempotency-Key": "unique_key_res123",\n  },\n  body: JSON.stringify({\n    checker_type: "WAEC", // WAEC, CSSPS, BECE\n    quantity: 1,\n    amount: 25.00,\n    customer_phone: "0241234567",\n    request_id: "res_req_001",\n  }),\n});\nconst data = await res.json();`,
-      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/results-checker",\n    headers={"Authorization": "Bearer ${K}", "X-Idempotency-Key": "unique_key_res123"},\n    json={"checker_type": "WAEC", "quantity": 1, "amount": 25.00, "customer_phone": "0241234567", "request_id": "res_req_001"}\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode(["checker_type" => "WAEC", "quantity" => 1, "amount" => 25.00, "customer_phone" => "0241234567", "request_id" => "res_req_001"]);\n$ch = curl_init("${BASE_URL}/results-checker");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X POST "https://user.datahubgh.com/api/external/voucher-purchase" \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Key: \${K}" \\\n  -d '{\n    "VoucherType": "WASSCE",\n    "Recipient": "0201234567",\n    "Quantity": 1\n  }'`,
+      node: `const res = await fetch("https://user.datahubgh.com/api/external/voucher-purchase", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "X-API-Key": "\${K}"\n  },\n  body: JSON.stringify({\n    VoucherType: "WASSCE",\n    Recipient: "0201234567",\n    Quantity: 1\n  })\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "https://user.datahubgh.com/api/external/voucher-purchase",\n    headers={\n        "Content-Type": "application/json",\n        "X-API-Key": "\${K}"\n    },\n    json={\n        "VoucherType": "WASSCE",\n        "Recipient": "0201234567",\n        "Quantity": 1\n    }\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode([\n    "VoucherType" => "WASSCE",\n    "Recipient"   => "0201234567",\n    "Quantity"    => 1\n]);\n$ch = curl_init("https://user.datahubgh.com/api/external/voucher-purchase");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "Content-Type: application/json",\n        "X-API-Key: \${K}"\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
   };
 };
@@ -151,6 +151,18 @@ const RESPONSES: Record<string, string> = {
   ecg_ok: `{\n  "success": true,\n  "transaction_id": "JBG_ECG_1234567890",\n  "cost": 20.00,\n  "balance": 189.00\n}`,
   afa_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-...",\n  "status": "pending",\n  "balance": 223.00\n}`,
   results_ok: `{\n  "success": true,\n  "order_id": "b4e3c2d1-...",\n  "status": "pending",\n  "balance": 198.00\n}`,
+  voucher_purchase_200: `{\n  "success": true,\n  "message": "Voucher purchase completed",\n  "vouchers": [\n    {\n      "serial": "CMYJ3344",\n      "pin": "QDVB5566",\n      "type": "WASSCE Results Checker",\n      "price": 17,\n      "purchasedAt": "2025-11-14T15:12:11.123Z"\n    },\n    {\n      "serial": "GXZN7788",\n      "pin": "FHRK9900",\n      "type": "WASSCE Results Checker",\n      "price": 17,\n      "purchasedAt": "2025-11-14T15:12:11.123Z"\n    }\n  ],\n  "transactions": [\n    {\n      "id": "vt_abc123",\n      "userId": "usr_xyz",\n      "voucherTypeId": "type_1",\n      "amount": 17,\n      "recipientPhone": "0201234567",\n      "status": "COMPLETED",\n      "createdAt": "2025-11-14T15:12:11.123Z"\n    },\n    {\n      "id": "vt_abc124",\n      "userId": "usr_xyz",\n      "voucherTypeId": "type_1",\n      "amount": 17,\n      "recipientPhone": "0201234567",\n      "status": "COMPLETED",\n      "createdAt": "2025-11-14T15:12:11.123Z"\n    }\n  ],\n  "wallet": {\n    "balance": 24105.97\n  }\n}`,
+  voucher_purchase_400: `{\n  "Missing voucherType": {\n    "success": false,\n    "error": "VoucherType is required (WASSCE or BECE)"\n  },\n  "Invalid recipient": {\n    "success": false,\n    "error": "Recipient must be a valid 10-digit phone number starting with 0"\n  },\n  "Quantity out of range": {\n    "success": false,\n    "error": "Quantity must be between 1 and 100"\n  }\n}`,
+  voucher_purchase_401: `{\n  "success": false,\n  "error": "Invalid or inactive API key"\n}`,
+  voucher_purchase_403: `{\n  "success": false,\n  "error": "API key is not linked to a user account. Please contact support."\n}`,
+  voucher_purchase_404: `{\n  "success": false,\n  "error": "No available WASSCE vouchers in stock"\n}`,
+  voucher_purchase_500: `{\n  "success": false,\n  "error": "Failed to complete voucher purchase"\n}`,
+  order_status_200: `{\n  "success": true,\n  "message": "Order status retrieved successfully",\n  "data": {\n    "orderNumber": 123456,\n    "reference": "ORDER_123456_1635123456789",\n    "status": "PROCESSING",\n    "network": "MTN",\n    "recipient": "0201234567",\n    "dataAmount": "1GB",\n    "amountPaid": 7,\n    "orderDate": "2024-01-15T10:30:00Z",\n    "statusDescription": "Order sent to network provider, awaiting completion"\n  }\n}`,
+  order_status_400: `{\n  "success": false,\n  "error": "Either 'reference' or 'orderNumber' is required"\n}`,
+  order_status_401: `{\n  "success": false,\n  "error": "Invalid or inactive API key"\n}`,
+  order_status_403: `{\n  "success": false,\n  "error": "API key is not linked to a user account. Please contact support."\n}`,
+  order_status_404: `{\n  "By reference": {\n    "success": false,\n    "error": "Order not found with reference: ORDER_123456_1635123456789"\n  },\n  "By order number": {\n    "success": false,\n    "error": "Order not found with order number: 123456"\n  }\n}`,
+  order_status_500: `{\n  "success": false,\n  "error": "Internal server error"\n}`,
   sms_ok: `{\n  "success": true,\n  "message": "SMS sent successfully"\n}`,
   orders_ok: `{\n  "success": true,\n  "total": 48,\n  "orders": [\n    {\n      "id": "a3f2b1c0-...",\n      "created_at": "2026-05-10T09:12:00Z",\n      "network": "MTN",\n      "package_size": "5GB",\n      "customer_phone": "0241234567",\n      "amount": 22.00,\n      "status": "fulfilled",\n      "profit": 2.00\n    }\n  ]\n}`,
   status_ok: `{\n  "success": true,\n  "order": {\n    "id": "a3f2b1c0-...",\n    "status": "fulfilled",\n    "network": "MTN",\n    "package_size": "5GB",\n    "customer_phone": "0241234567",\n    "amount": 22.00,\n    "profit": 2.00,\n    "created_at": "2026-05-10T09:12:00Z"\n  }\n}`,
@@ -269,7 +281,7 @@ const NAV_ITEMS = [
   { id: "airtime",         label: "Purchase Airtime",    icon: ShoppingCart },
   { id: "data",            label: "Data Bundles",        icon: ShoppingCart },
   { id: "afa",             label: "AFA Registration",    icon: Activity },
-  { id: "results",         label: "Results Checker",     icon: ShoppingCart },
+  { id: "results",         label: "Voucher Purchase",     icon: ShoppingCart },
   { id: "bills-validate",  label: "Validate TV Bills",   icon: Search },
   { id: "bills-pay",       label: "Pay TV Bills",        icon: CreditCard },
   { id: "ecg-lookup",      label: "ECG Lookup",          icon: Search },
@@ -460,14 +472,14 @@ const APIDocumentation = () => {
                 { method: "GET",  path: "/plans",                 desc: "Available data packages & prices" },
                 { method: "POST", path: "/buy",                   desc: "Purchase airtime or data bundle" },
                 { method: "POST", path: "/afa-registration",      desc: "Register AFA SIM card" },
-                { method: "POST", path: "/results-checker",       desc: "Buy WAEC/CSSPS result checkers" },
+                { method: "POST", path: "/api/external/voucher-purchase", desc: "Buy WASSCE/BECE results checker vouchers" },
                 { method: "POST", path: "/payment/bills/validate",desc: "Validate TV bill account" },
                 { method: "POST", path: "/payment/bills/pay",     desc: "Pay TV bill" },
                 { method: "POST", path: "/payment/ecg/lookup",    desc: "Validate ECG meter" },
                 { method: "POST", path: "/payment/ecg",           desc: "Pay ECG bill" },
                 { method: "POST", path: "/sms",                   desc: "Send transactional SMS" },
                 { method: "GET",  path: "/orders",                desc: "Paginated order history with filters" },
-                { method: "GET",  path: "/status",                desc: "Single order status" },
+                { method: "GET",  path: "/api/external/order-status", desc: "Check single order status" },
               ].map(({ method, path, desc }) => (
                 <div key={path} className="flex flex-col sm:grid sm:grid-cols-12 sm:gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02] gap-1">
                   <div className="sm:col-span-1">
@@ -721,6 +733,73 @@ const APIDocumentation = () => {
             </div>
           </section>
 
+          {/* ── AFA Registration ────────────────────────────────────────── */}
+          <section>
+            <SectionAnchor id="afa" />
+            <SectionHeader icon={Activity} title="AFA Registration" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/afa-registration</code>
+            </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Register AFA SIM cards by submitting the customer's full name, Ghana card, occupation, email, residence, date of birth, phone, and payment amount.</p>
+            <div className="ml-11 space-y-6">
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="afa_full_name"    type="string" required desc="Full name on Ghana card" />
+                <ParamRow name="afa_ghana_card"   type="string" required desc="Ghana card number (GHA-XXXXXXXXX-X)" />
+                <ParamRow name="customer_phone"   type="string" required desc="Customer phone number" />
+                <ParamRow name="amount"           type="number" required desc="Amount to register (GHS)" />
+                <ParamRow name="request_id"       type="string" required={false} desc="Unique tracking ID" />
+              </div>
+              <div className="grid lg:grid-cols-2 gap-6">
+                <CodeBlock code={snippets.afa[activeLang]} label="Request" />
+                <ResponseBlock code={RESPONSES.afa_ok} label="Response · 200 OK" />
+              </div>
+            </div>
+          </section>
+
+          {/* ── Voucher Purchase (Results Checker) ────────────────────────────────────────── */}
+          <section>
+            <SectionAnchor id="results" />
+            <SectionHeader icon={ShoppingCart} title="Voucher Purchase" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/api/external/voucher-purchase</code>
+            </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Purchase WASSCE/BECE result checker vouchers using your API key. Supports bulk purchases up to 100 vouchers per request.</p>
+            <div className="ml-11 space-y-6">
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="VoucherType" type="string" required desc="WASSCE or BECE" />
+                <ParamRow name="Recipient"   type="string" required desc="Recipient phone number (10-digit, starting with 0)" />
+                <ParamRow name="Quantity"    type="number" required desc="Quantity of vouchers to purchase (1 to 100)" />
+              </div>
+              <div className="space-y-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-sky-400 mb-2">Request Example</p>
+                <CodeBlock code={snippets.results[activeLang]} label="Request" />
+              </div>
+              <div className="space-y-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-white/20 mb-2">Response Examples</p>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ResponseBlock code={RESPONSES.voucher_purchase_200} label="Response · 200 OK" />
+                  <ResponseBlock code={RESPONSES.voucher_purchase_400} variant="error" label="Response · 400 Bad Request" />
+                </div>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ResponseBlock code={RESPONSES.voucher_purchase_401} variant="error" label="Response · 401 Unauthorized" />
+                  <ResponseBlock code={RESPONSES.voucher_purchase_403} variant="error" label="Response · 403 Forbidden" />
+                </div>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ResponseBlock code={RESPONSES.voucher_purchase_404} variant="error" label="Response · 404 Not Found" />
+                  <ResponseBlock code={RESPONSES.voucher_purchase_500} variant="error" label="Response · 500 Server Error" />
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* ── Bill Validation ────────────────────────────────────────── */}
           <section>
             <SectionAnchor id="bills-validate" />
@@ -863,18 +942,35 @@ const APIDocumentation = () => {
             <SectionHeader icon={Activity} title="Check Order Status" />
             <div className="ml-11 flex flex-wrap items-center gap-3 mb-6">
               <MethodBadge method="GET" />
-              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/status</code>
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/api/external/order-status</code>
             </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Retrieve the status of any order using the order number or reference.</p>
             <div className="ml-11 space-y-6">
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Query Parameters</span>
                 </div>
-                <ParamRow name="order_id" type="string" required desc="The UUID returned in the purchase response" />
+                <ParamRow name="orderNumber" type="string" required={false} desc="The numeric order number" />
+                <ParamRow name="reference"   type="string" required={false} desc="The order reference UUID (either reference or orderNumber is required)" />
               </div>
-              <div className="grid lg:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-sky-400 mb-2">Request Example</p>
                 <CodeBlock code={snippets.status[activeLang]} label="Request" />
-                <ResponseBlock code={RESPONSES.status_ok} label="Response · 200 OK" />
+              </div>
+              <div className="space-y-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-white/20 mb-2">Response Examples</p>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ResponseBlock code={RESPONSES.order_status_200} label="Response · 200 OK" />
+                  <ResponseBlock code={RESPONSES.order_status_400} variant="error" label="Response · 400 Bad Request" />
+                </div>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ResponseBlock code={RESPONSES.order_status_401} variant="error" label="Response · 401 Unauthorized" />
+                  <ResponseBlock code={RESPONSES.order_status_403} variant="error" label="Response · 403 Forbidden" />
+                </div>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ResponseBlock code={RESPONSES.order_status_404} variant="error" label="Response · 404 Not Found" />
+                  <ResponseBlock code={RESPONSES.order_status_500} variant="error" label="Response · 500 Server Error" />
+                </div>
               </div>
             </div>
           </section>

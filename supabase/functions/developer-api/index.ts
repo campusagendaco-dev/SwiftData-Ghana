@@ -497,7 +497,7 @@ serve(async (req: Request) => {
       const { amount, from, to } = payload;
       if (!amount || !from || !to) return json({ success: false, error: "Missing amount, from, or to." }, 400);
 
-      const { data: result, error: rpcError } = await supabase.rpc("api.transfer_funds", {
+      const { data: result, error: rpcError } = await supabase.schema("api").rpc("transfer_funds", {
         p_user_id: currentUserId,
         p_amount: Number(amount),
         p_from: from,
@@ -951,11 +951,22 @@ serve(async (req: Request) => {
     }
 
     if (finalAction === "status") {
-      const orderId = url.searchParams.get("order_id") || url.searchParams.get("id");
-      if (!orderId) return json({ success: false, error: "Missing order_id" }, 400);
+      const orderId = url.searchParams.get("order_id") || 
+                      url.searchParams.get("id") || 
+                      url.searchParams.get("reference") || 
+                      url.searchParams.get("orderNumber");
+                      
+      if (!orderId) {
+        return json({ success: false, error: "Either 'reference' or 'orderNumber' is required" }, 400);
+      }
+      
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(orderId)) {
+        return json({ success: false, error: `Order not found with order number/reference: ${orderId}` }, 404);
+      }
       
       const { data: order, error } = await supabase.schema("api").from("v_orders").select("*").eq("agent_id", currentUserId).eq("id", orderId).maybeSingle();
-      if (error || !order) return json({ success: false, error: "Order not found" }, 404);
+      if (error || !order) return json({ success: false, error: `Order not found with reference: ${orderId}` }, 404);
       
       return json({ success: true, order });
     }
@@ -969,7 +980,7 @@ serve(async (req: Request) => {
 
   } catch (err: any) {
     // ── 9. Zero-Knowledge Error Handling ────────────────────────────────────────
-    const logRef = await supabase.rpc("api.log_internal_error", {
+    const logRef = await supabase.schema("api").rpc("log_internal_error", {
       p_user_id: currentUserId,
       p_endpoint: endpoint,
       p_method: req.method,

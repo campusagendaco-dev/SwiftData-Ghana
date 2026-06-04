@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -77,6 +77,14 @@ const STATUS_TEMPLATES: Record<string, { title: string; text: string }[]> = {
   ],
 };
 
+const MOCKUP_BGS = [
+  { class: "from-teal-600 to-emerald-700", label: "Teal" },
+  { class: "from-purple-600 to-indigo-700", label: "Purple" },
+  { class: "from-rose-500 to-red-600", label: "Rose" },
+  { class: "from-amber-500 to-orange-600", label: "Amber" },
+  { class: "from-slate-800 to-slate-950", label: "Slate" },
+];
+
 const DashboardMarketing = () => {
   const { profile } = useAuth();
   const { isDark } = useAppTheme();
@@ -84,9 +92,11 @@ const DashboardMarketing = () => {
   const [copied, setCopied] = useState<string | null>(null);
   const [statusCategory, setStatusCategory] = useState("daily");
   const [selectedNetwork, setSelectedNetwork] = useState<"MTN" | "Telecel" | "AirtelTigo">("MTN");
+  const [selectedStatusText, setSelectedStatusText] = useState("");
+  const [mockupBg, setMockupBg] = useState("from-teal-600 to-emerald-700");
 
   const storeUrl = profile?.slug
-    ? `${window.location.origin}/store/${profile.store_slug}`
+    ? `${window.location.origin}/store/${profile.slug}`
     : `${window.location.origin}/agent-program`;
 
   const packages = basePackages[selectedNetwork] || [];
@@ -109,6 +119,12 @@ const DashboardMarketing = () => {
       .replace(/\{storeUrl\}/g, storeUrl);
 
   const currentMessages = STATUS_TEMPLATES[statusCategory] ?? [];
+
+  useEffect(() => {
+    if (currentMessages.length > 0) {
+      setSelectedStatusText(hydrateMsg(currentMessages[0].text));
+    }
+  }, [statusCategory, profile]);
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-8 animate-in fade-in duration-700">
@@ -197,52 +213,122 @@ const DashboardMarketing = () => {
               </div>
             </div>
 
-            {/* Message cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {currentMessages.map((msg, i) => {
-                const hydrated = hydrateMsg(msg.text);
-                const cardId = `status-${statusCategory}-${i}`;
-                return (
-                  <div
-                    key={cardId}
-                    className={cn(
-                      "group rounded-2xl border p-5 space-y-4 transition-all",
-                      isDark ? "bg-black/20 border-white/8 hover:border-green-500/25" : "bg-white border-gray-200 hover:border-green-200",
-                    )}
-                  >
-                    <p className={cn("text-[10px] font-black uppercase tracking-widest", isDark ? "text-white/30" : "text-gray-400")}>{msg.title}</p>
-                    <p className={cn("text-xs leading-relaxed whitespace-pre-line line-clamp-6", isDark ? "text-white/65" : "text-gray-600")}>
-                      {hydrated}
-                    </p>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(hydrated, cardId)}
-                        className={cn(
-                          "flex-1 h-9 rounded-xl border text-[10px] font-black flex items-center justify-center gap-1.5 transition-all",
-                          copied === cardId
-                            ? "bg-green-500/15 border-green-500/30 text-green-400"
-                            : isDark
-                            ? "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
-                            : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100",
-                        )}
-                      >
-                        {copied === cardId ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                        {copied === cardId ? "Copied!" : "Copy"}
-                      </button>
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(hydrated)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex-1 h-9 rounded-xl bg-green-500/15 border border-green-500/25 text-[10px] font-black text-green-400 hover:bg-green-500/25 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <MessageCircle className="w-3 h-3" />
-                        WhatsApp
-                      </a>
+            {/* Mobile Mockup split layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Message cards */}
+              <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4 h-fit">
+                {currentMessages.map((msg, i) => {
+                  const hydrated = hydrateMsg(msg.text);
+                  const cardId = `status-${statusCategory}-${i}`;
+                  const isSelected = selectedStatusText === hydrated;
+                  return (
+                    <div
+                      key={cardId}
+                      onClick={() => setSelectedStatusText(hydrated)}
+                      className={cn(
+                        "group rounded-2xl border p-5 space-y-4 transition-all cursor-pointer",
+                        isSelected 
+                          ? "bg-green-500/10 border-green-500 shadow-md shadow-green-500/5"
+                          : isDark ? "bg-black/20 border-white/8 hover:border-green-500/25" : "bg-white border-gray-200 hover:border-green-200",
+                      )}
+                    >
+                      <div className="flex justify-between items-center">
+                        <p className={cn("text-[10px] font-black uppercase tracking-widest", isDark ? "text-white/30" : "text-gray-400")}>{msg.title}</p>
+                        {isSelected && <span className="text-[9px] font-black text-green-400 uppercase bg-green-500/10 px-2 py-0.5 rounded-full">Viewing Preview</span>}
+                      </div>
+                      <p className={cn("text-xs leading-relaxed whitespace-pre-line line-clamp-6", isDark ? "text-white/65" : "text-gray-600")}>
+                        {hydrated}
+                      </p>
+                      <div className="flex gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(hydrated, cardId)}
+                          className={cn(
+                            "flex-1 h-9 rounded-xl border text-[10px] font-black flex items-center justify-center gap-1.5 transition-all active:scale-95",
+                            copied === cardId
+                              ? "bg-green-500/15 border-green-500/30 text-green-400"
+                              : isDark
+                              ? "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
+                              : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100",
+                          )}
+                        >
+                          {copied === cardId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copied === cardId ? "Copied!" : "Copy"}
+                        </button>
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(hydrated)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 h-9 rounded-xl bg-green-500/15 border border-green-500/25 text-[10px] font-black text-green-400 hover:bg-green-500/25 transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          WhatsApp
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Phone Mockup Preview */}
+              <div className="lg:col-span-4 flex flex-col items-center gap-4">
+                <p className={cn("text-xs font-black uppercase tracking-wider", isDark ? "text-white/50" : "text-gray-500")}>Live Status Preview</p>
+                
+                {/* Phone container */}
+                <div className="relative border-4 border-slate-800 dark:border-slate-700 rounded-[2.5rem] h-[480px] w-[240px] bg-slate-950 shadow-2xl overflow-hidden flex flex-col">
+                  {/* Speaker and Notch */}
+                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-24 h-3.5 bg-slate-800 rounded-full z-40 flex items-center justify-center">
+                    <span className="w-8 h-1 bg-slate-900 rounded-full" />
+                  </div>
+
+                  {/* Status Screen Header Mock */}
+                  <div className="pt-6 pb-2 px-3 bg-black/40 backdrop-blur-md flex items-center justify-between text-white border-b border-white/5 shrink-0 z-10">
+                    <div className="flex items-center gap-2">
+                      {/* Avatar */}
+                      <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-slate-300 ring-1 ring-white/20">
+                        {profile?.store_name?.slice(0, 2).toUpperCase() || "ST"}
+                      </div>
+                      <div className="leading-none">
+                        <p className="text-[10px] font-black truncate max-w-[100px]">{profile?.store_name || "My Store"}</p>
+                        <span className="text-[8px] text-white/60 text-left block">Today, 10:07 AM</span>
+                      </div>
+                    </div>
+                    {/* Mock close */}
+                    <div className="flex items-center gap-1 opacity-70">
+                      <span className="w-1 h-1 rounded-full bg-white" />
+                      <span className="w-1 h-1 rounded-full bg-white" />
+                      <span className="w-1 h-1 rounded-full bg-white" />
                     </div>
                   </div>
-                );
-              })}
+
+                  {/* Status text background */}
+                  <div className={cn("flex-1 flex flex-col items-center justify-center p-4 text-center text-white text-[11px] font-medium leading-relaxed whitespace-pre-line overflow-y-auto break-words select-none bg-gradient-to-br transition-all duration-300", mockupBg)}>
+                    {selectedStatusText || "Select a status template to preview"}
+                  </div>
+
+                  {/* Mock status footer */}
+                  <div className="py-2.5 bg-black/40 text-center text-white/50 text-[8px] font-black uppercase tracking-wider border-t border-white/5 shrink-0 z-10">
+                    ▲ Swipe Up to Reply
+                  </div>
+                </div>
+
+                {/* Color picker for preview bg */}
+                <div className="flex items-center gap-1.5 mt-1 bg-black/10 dark:bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
+                  {MOCKUP_BGS.map(bg => (
+                    <button
+                      key={bg.label}
+                      type="button"
+                      onClick={() => setMockupBg(bg.class)}
+                      className={cn(
+                        "w-5 h-5 rounded-full bg-gradient-to-br border transition-all hover:scale-110",
+                        bg.class,
+                        mockupBg === bg.class ? "border-white scale-105" : "border-transparent"
+                      )}
+                      title={bg.label}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
 
             <p className={cn("text-[10px]", isDark ? "text-white/20" : "text-gray-400")}>

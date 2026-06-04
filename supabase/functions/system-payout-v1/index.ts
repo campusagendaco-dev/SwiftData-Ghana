@@ -23,7 +23,12 @@ async function sendManualCreditSms(userId: string, amount: number) {
     ]);
     const recipient = normalizePhone(profileRes.data?.phone);
     if (!smsConfig.apiKey || !recipient) return;
-    const message = formatTemplate(smsConfig.templates.manual_credit, { amount: amount.toFixed(2) });
+    let message = "";
+    if (amount < 0) {
+      message = `Your account has been manually debited with GHS ${Math.abs(amount).toFixed(2)}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+    } else {
+      message = formatTemplate(smsConfig.templates.manual_credit, { amount: amount.toFixed(2) });
+    }
     await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
   } catch (error) {
     console.error("sendManualCreditSms error:", error);
@@ -38,7 +43,10 @@ async function sendManualApiCreditSms(userId: string, amount: number) {
     ]);
     const recipient = normalizePhone(profileRes.data?.phone);
     if (!smsConfig.apiKey || !recipient) return;
-    const message = `Your SwiftData API Wallet has been manually credited with GHS ${amount.toFixed(2)} by admin. Thanks for your business.`;
+    const absAmount = Math.abs(amount).toFixed(2);
+    const message = amount < 0
+      ? `Your SwiftData API Wallet has been manually debited with GHS ${absAmount} by admin.`
+      : `Your SwiftData API Wallet has been manually credited with GHS ${absAmount} by admin. Thanks for your business.`;
     await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
   } catch (error) {
     console.error("sendManualApiCreditSms error:", error);
@@ -621,13 +629,20 @@ serve(async (req: Request) => {
           });
         }
 
-        const { data: result, error: rpcError } = await supabaseAdmin.rpc("credit_wallet", {
+        const isDeduction = amount < 0;
+        const rpcName = isDeduction ? "debit_wallet" : "credit_wallet";
+        const rpcParams = {
           p_agent_id: user_id,
-          p_amount: amount,
-        });
+          p_amount: Math.abs(amount),
+        };
 
-        if (rpcError) throw new Error("credit_wallet RPC Error: " + JSON.stringify(rpcError));
-        const newBalance = result?.new_balance || 0;
+        const { data: result, error: rpcError } = await supabaseAdmin.rpc(rpcName, rpcParams);
+
+        if (rpcError) throw new Error(`${rpcName} RPC Error: ` + JSON.stringify(rpcError));
+        if (result?.success === false) {
+          throw new Error(result.error || "Transaction failed");
+        }
+        const newBalance = result?.new_balance ?? 0;
 
         const { error: orderError } = await supabaseAdmin
           .from("orders")
@@ -658,7 +673,7 @@ serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        const { data: result, error: rpcError } = await supabaseAdmin.rpc("credit_api_wallet", {
+        const { data: result, error: rpcError } = await supabaseAdmin.schema("api").rpc("credit_api_wallet", {
           p_user_id: user_id,
           p_amount: amount,
         });
@@ -1073,6 +1088,35 @@ serve(async (req: Request) => {
           const verifyData = await verifyRes.json();
 
           if (!verifyRes.ok || !verifyData.status) {
+            const isNotFound = verifyRes.status === 404 || 
+                               (verifyData.message && verifyData.message.toLowerCase().includes("not found")) ||
+                               (verifyData.message && verifyData.message.toLowerCase().includes("reference"));
+            
+            if (isNotFound) {
+              console.log(`Transfer not found on Paystack for withdrawal ${withdrawal_id}. Marking withdrawal as failed.`);
+              const { error: updateError } = await supabaseAdmin
+                .from("withdrawals")
+                .update({ 
+                  status: "failed", 
+                  failure_reason: "Transfer not found on Paystack" 
+                })
+                .eq("id", withdrawal_id);
+              
+              if (updateError) {
+                console.error("Failed to update withdrawal status to failed:", updateError);
+                throw new Error(`Transfer not found on Paystack, and failed to update DB: ${updateError.message}`);
+              }
+              
+              return new Response(JSON.stringify({
+                success: true,
+                status: "failed",
+                message: "Transfer not found on Paystack. Withdrawal marked as failed."
+              }), {
+                status: 200,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              });
+            }
+            
             throw new Error(verifyData.message || "Failed to verify transfer with Paystack");
           }
 

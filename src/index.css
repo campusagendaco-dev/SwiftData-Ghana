@@ -369,7 +369,37 @@
     background-position: right center;
   }
 }
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
 
+.animate-skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--primary) / 0.12) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 2.2s infinite linear;
+}
+
+.shadow-primary-glow {
+  box-shadow: 0 10px 30px -10px hsl(var(--primary) / 0.45);
+}
+
+.shadow-primary-glow-hover {
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.shadow-primary-glow-hover:hover {
+  box-shadow: 0 15px 35px -8px hsl(var(--primary) / 0.55);
+}
 
 /* ── Secure Shield: Anti-Print & Anti-Snapshot Overrides ─── */
 @media print {

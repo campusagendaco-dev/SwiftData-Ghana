@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +6,8 @@ import {
   GraduationCap, Loader2, ShieldCheck,
   CreditCard, Wallet, ChevronRight, RotateCcw,
   CheckCircle2, Hash, Smartphone, Copy,
+  AlertTriangle, FlaskConical, ClipboardList,
+  Clock, CopyCheck, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConnectivity } from "@/hooks/useConnectivity";
@@ -32,8 +34,16 @@ const DashboardResultCheckers = () => {
   const [loading, setLoading] = useState(false);
   const [successData, setSuccessData] = useState<any | null>(null);
 
+  // New state for UI improvements
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [copiedAll, setCopiedAll] = useState(false);
+
   // Fetch live prices from system settings
-  React.useEffect(() => {
+  useEffect(() => {
     supabase
       .from("public_system_settings")
       .select("wassce_price, bece_price")
@@ -50,14 +60,53 @@ const DashboardResultCheckers = () => {
       .finally(() => setPricesLoading(false));
   }, []);
 
+  // Fetch wallet balance
+  const fetchWalletBalance = useCallback(async () => {
+    if (!user?.id) return;
+    setWalletLoading(true);
+    const { data } = await supabase
+      .from("wallets")
+      .select("balance")
+      .eq("agent_id", user.id)
+      .maybeSingle();
+    setWalletBalance(data?.balance ?? null);
+    setWalletLoading(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchWalletBalance();
+  }, [fetchWalletBalance]);
+
+  // Fetch recent voucher orders
+  const fetchRecentOrders = useCallback(async () => {
+    if (!user?.id) return;
+    setOrdersLoading(true);
+    const { data } = await supabase
+      .from("orders")
+      .select("id, package_size, amount, status, created_at, metadata, customer_phone")
+      .eq("agent_id", user.id)
+      .eq("network", "VOUCHER")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    setRecentOrders(data || []);
+    setOrdersLoading(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchRecentOrders();
+  }, [fetchRecentOrders]);
+
   const reset = () => {
     setVoucherType(null);
     setQuantity("1");
     setRecipient("");
     setSuccessData(null);
+    setErrorMessage(null);
+    setCopiedAll(false);
   };
 
   const handlePurchase = async () => {
+    setErrorMessage(null);
 
     if (!voucherType) {
       toast({ title: "Select a checker type", variant: "destructive" });
@@ -87,18 +136,25 @@ const DashboardResultCheckers = () => {
       });
 
       if (error || !data?.success) {
+        const msg = data?.error || error?.message || "Insufficient balance or provider error.";
+        setErrorMessage(msg);
         toast({ 
           title: "Purchase Failed", 
-          description: data?.error || error?.message || "Insufficient balance or provider error.", 
+          description: msg, 
           variant: "destructive" 
         });
       } else {
         playSuccessSound();
         toast({ title: "Purchase Successful!", description: `Vouchers delivered to ${digits}` });
         setSuccessData(data);
+        // Refresh wallet balance and order history after successful purchase
+        fetchWalletBalance();
+        fetchRecentOrders();
       }
     } catch (err: any) {
-      toast({ title: "Network Error", description: err.message, variant: "destructive" });
+      const msg = err.message || "Network error occurred.";
+      setErrorMessage(msg);
+      toast({ title: "Network Error", description: msg, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -107,12 +163,27 @@ const DashboardResultCheckers = () => {
   const activePrice = voucherType ? vouchers.find(v => v.id === voucherType)?.price || 0 : 0;
   const qtyNum = parseInt(quantity, 10) || 0;
   const totalCost = activePrice * qtyNum;
-  const canSubmit = voucherType && qtyNum > 0 && recipient.replace(/\D/g, "").length === 10 && isOnline;
+  const insufficientBalance = walletBalance !== null && totalCost > 0 && totalCost > walletBalance;
+  const canSubmit = voucherType && qtyNum > 0 && recipient.replace(/\D/g, "").length === 10 && isOnline && !insufficientBalance;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast({ title: "Copied to Clipboard" });
   };
+
+  const copyAllVouchers = () => {
+    if (!successData?.vouchers?.length) return;
+    const allText = successData.vouchers
+      .map((v: any, i: number) => `${i + 1}. Serial: ${v.serial}  |  PIN: ${v.pin}`)
+      .join("\n");
+    navigator.clipboard.writeText(allText);
+    setCopiedAll(true);
+    toast({ title: "All Pins Copied!" });
+    setTimeout(() => setCopiedAll(false), 2500);
+  };
+
+  // Detect if the purchase was made in test mode
+  const isTestModePurchase = successData?.vouchers?.[0]?.serial?.startsWith("TST-");
 
   // SUCCESS STATE SCREEN
   if (successData) {
@@ -123,6 +194,15 @@ const DashboardResultCheckers = () => {
             <CheckCircle2 className="w-10 h-10 text-emerald-500" />
           </div>
           <h1 className="font-black text-3xl tracking-tight text-foreground">Order Completed!</h1>
+
+          {/* Test Mode Badge */}
+          {isTestModePurchase && (
+            <div className="inline-flex items-center gap-1.5 bg-violet-500/15 text-violet-400 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-violet-500/20 mx-auto">
+              <FlaskConical className="w-3.5 h-3.5" />
+              Test Mode — Not a real purchase
+            </div>
+          )}
+
           <p className="text-muted-foreground max-w-md mx-auto">
             Your result checker pins have been generated successfully and delivered to the recipient.
           </p>
@@ -135,13 +215,34 @@ const DashboardResultCheckers = () => {
               <p className="font-black text-foreground">{voucherType} Checker (x{qtyNum})</p>
             </div>
             <div className="text-right">
-              <p className="text-[11px] font-black uppercase tracking-widest text-emerald-500/70">Total Deducted</p>
+              <p className="text-[11px] font-black uppercase tracking-widest text-emerald-500/70">
+                {isTestModePurchase ? "Simulated Cost" : "Total Deducted"}
+              </p>
               <p className="font-black text-foreground text-lg">₵{totalCost.toFixed(2)}</p>
             </div>
           </div>
 
           <div className="p-6 space-y-4">
-            <h3 className="font-black text-sm uppercase tracking-wider text-muted-foreground/60">Generated Pins</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-sm uppercase tracking-wider text-muted-foreground/60">Generated Pins</h3>
+              
+              {/* Copy All Button */}
+              {Array.isArray(successData.vouchers) && successData.vouchers.length > 1 && (
+                <button
+                  onClick={copyAllVouchers}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all border",
+                    copiedAll
+                      ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/20"
+                      : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-primary/30"
+                  )}
+                >
+                  {copiedAll ? <CopyCheck className="w-3.5 h-3.5" /> : <ClipboardList className="w-3.5 h-3.5" />}
+                  {copiedAll ? "Copied!" : "Copy All"}
+                </button>
+              )}
+            </div>
+
             {Array.isArray(successData.vouchers) && successData.vouchers.length > 0 ? (
               <div className="grid gap-3">
                 {successData.vouchers.map((v: any, i: number) => (
@@ -220,7 +321,11 @@ const DashboardResultCheckers = () => {
                   <div>
                     <p className="font-black text-sm leading-tight mb-0.5">{v.label}</p>
                     <p className="text-[10px] font-medium opacity-70 mb-1.5">{v.description}</p>
-                    <span className="inline-flex items-center bg-card border px-2 py-0.5 rounded-md font-black text-xs text-foreground">₵{v.price.toFixed(2)}</span>
+                    {pricesLoading ? (
+                      <span className="inline-block w-16 h-5 rounded-md bg-secondary animate-pulse" />
+                    ) : (
+                      <span className="inline-flex items-center bg-card border px-2 py-0.5 rounded-md font-black text-xs text-foreground">₵{v.price.toFixed(2)}</span>
+                    )}
                   </div>
                   {voucherType === v.id && (
                     <CheckCircle2 className="w-4 h-4 text-primary absolute top-3 right-3" />
@@ -269,6 +374,35 @@ const DashboardResultCheckers = () => {
             </div>
           </div>
 
+          {/* Inline Error Banner */}
+          {errorMessage && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-red-500/10 border border-red-500/20 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="w-8 h-8 bg-red-500/15 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                <XCircle className="w-4 h-4 text-red-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-sm text-red-500 mb-0.5">Purchase Failed</p>
+                <p className="text-xs text-red-400/80 leading-relaxed">{errorMessage}</p>
+              </div>
+              <button
+                onClick={() => setErrorMessage(null)}
+                className="text-red-400/60 hover:text-red-400 transition-colors p-1 shrink-0"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Insufficient Balance Warning */}
+          {insufficientBalance && (
+            <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 animate-in fade-in duration-300">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              <p className="text-xs text-amber-500 font-bold">
+                Insufficient balance. You need ₵{(totalCost - (walletBalance || 0)).toFixed(2)} more. Please top up your wallet.
+              </p>
+            </div>
+          )}
+
           {/* Action Button */}
           <button
             onClick={handlePurchase}
@@ -284,6 +418,11 @@ const DashboardResultCheckers = () => {
               <>
                 <WifiOff className="w-5 h-5" />
                 Waiting for Internet...
+              </>
+            ) : insufficientBalance ? (
+              <>
+                <AlertTriangle className="w-5 h-5" />
+                Insufficient Balance
               </>
             ) : (
               <>
@@ -315,6 +454,39 @@ const DashboardResultCheckers = () => {
             </div>
           </div>
 
+          {/* Wallet Balance Card */}
+          <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center shrink-0">
+                <Wallet className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Available Balance</p>
+                {walletLoading ? (
+                  <span className="inline-block w-20 h-5 rounded bg-secondary animate-pulse mt-0.5" />
+                ) : (
+                  <p className={cn(
+                    "font-black text-base",
+                    insufficientBalance ? "text-red-500" : "text-foreground"
+                  )}>
+                    ₵{(walletBalance ?? 0).toFixed(2)}
+                  </p>
+                )}
+              </div>
+            </div>
+            {totalCost > 0 && walletBalance !== null && !walletLoading && (
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">After Purchase</p>
+                <p className={cn(
+                  "font-black text-sm",
+                  insufficientBalance ? "text-red-500" : "text-emerald-500"
+                )}>
+                  {insufficientBalance ? "—" : `₵${(walletBalance - totalCost).toFixed(2)}`}
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Trust Banner */}
           <div className="bg-card/40 border border-border rounded-2xl p-4 flex items-center gap-3">
             <div className="w-8 h-8 bg-primary/10 text-primary rounded-full flex items-center justify-center shrink-0">
@@ -335,6 +507,87 @@ const DashboardResultCheckers = () => {
           </button>
         </div>
       </div>
+
+      {/* Recent Purchase History */}
+      <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-black text-foreground text-base flex items-center gap-2">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            Recent Purchases
+          </h3>
+          <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">Last 5</span>
+        </div>
+
+        {ordersLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/30 animate-pulse">
+                <div className="w-10 h-10 rounded-xl bg-secondary" />
+                <div className="flex-1 space-y-2">
+                  <div className="w-32 h-3.5 rounded bg-secondary" />
+                  <div className="w-24 h-3 rounded bg-secondary" />
+                </div>
+                <div className="w-16 h-5 rounded bg-secondary" />
+              </div>
+            ))}
+          </div>
+        ) : recentOrders.length === 0 ? (
+          <div className="text-center py-10">
+            <div className="w-12 h-12 bg-secondary/50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <GraduationCap className="w-6 h-6 text-muted-foreground/40" />
+            </div>
+            <p className="text-sm font-bold text-muted-foreground/60">No voucher purchases yet</p>
+            <p className="text-xs text-muted-foreground/40 mt-1">Your purchase history will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {recentOrders.map((order) => {
+              const isTest = order.metadata?.test_mode === true;
+              const vouchersList = order.metadata?.vouchers || [];
+              const orderDate = new Date(order.created_at);
+              const timeAgo = getTimeAgo(orderDate);
+
+              return (
+                <div key={order.id} className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/20 border border-border/50 hover:border-border transition-all group">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                    order.status === "fulfilled" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
+                  )}>
+                    {order.status === "fulfilled" ? (
+                      <CheckCircle2 className="w-5 h-5" />
+                    ) : (
+                      <Clock className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-black text-sm text-foreground truncate">{order.package_size}</p>
+                      {isTest && (
+                        <span className="inline-flex items-center gap-1 bg-violet-500/15 text-violet-400 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-violet-500/20 shrink-0">
+                          <FlaskConical className="w-2.5 h-2.5" />
+                          Test
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {order.customer_phone} · {timeAgo}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-black text-sm text-foreground">₵{Number(order.amount).toFixed(2)}</p>
+                    <p className={cn(
+                      "text-[10px] font-bold uppercase tracking-wider",
+                      order.status === "fulfilled" ? "text-emerald-500" : "text-amber-500"
+                    )}>
+                      {order.status}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -345,5 +598,19 @@ const SummaryRow = ({ label, value }: { label: string; value: string }) => (
     <span className="font-bold text-foreground text-right">{value}</span>
   </div>
 );
+
+function getTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
 
 export default DashboardResultCheckers;

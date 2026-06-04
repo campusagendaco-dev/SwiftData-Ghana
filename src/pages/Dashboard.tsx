@@ -19,6 +19,7 @@ import DailyCheckIn from "@/components/DailyCheckIn";
 import PromoCarousel from "@/components/PromoCarousel";
 import CompleteProfileBanner from "@/components/CompleteProfileBanner";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
+import { CardTilt } from "@/components/ui/CardTilt";
 
 interface DashboardStats {
   walletBalance: number;
@@ -191,7 +192,10 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl space-y-5">
+    <div className="p-4 sm:p-6 max-w-5xl space-y-5 relative overflow-hidden">
+      {/* Ambient background mesh blobs */}
+      <div className="absolute top-12 left-1/4 w-72 h-72 bg-primary/5 rounded-full blur-[120px] pointer-events-none -z-10 animate-blob" />
+      <div className="absolute bottom-24 right-1/4 w-72 h-72 bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none -z-10 animate-blob-2" />
 
       <FreeDataClaimBanner />
       <CompleteProfileBanner />
@@ -296,7 +300,7 @@ const Dashboard = () => {
             <button
               type="button"
               onClick={() => navigate("/dashboard/wallet")}
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-black transition-all hover:opacity-90 active:scale-95 shadow-lg"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-black transition-all hover:opacity-90 active:scale-95 shadow-lg shadow-primary-glow-hover"
               style={{ background: primary, color: "#000" }}
             >
               <Wallet className="w-4 h-4" /> Top Up
@@ -371,16 +375,21 @@ const Dashboard = () => {
               </div>
             ))
           : statCards.map((s) => (
-              <div
+              <CardTilt
                 key={s.label}
-                className={`rounded-2xl p-4 flex flex-col gap-2 border shadow-lg ${s.bg} ${s.glow}`}
+                glowColor={s.color.includes("blue") ? "217 91% 60%" : s.color.includes("emerald") ? "142 70% 45%" : s.color.includes("violet") ? "262 83% 58%" : "48 96% 53%"}
+                className="rounded-2xl"
               >
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${s.bg}`}>
-                  <s.icon className={`w-4 h-4 ${s.color}`} />
+                <div
+                  className={`rounded-2xl p-4 flex flex-col gap-2 border shadow-lg ${s.bg} ${s.glow} h-full`}
+                >
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${s.bg}`}>
+                    <s.icon className={`w-4 h-4 ${s.color}`} />
+                  </div>
+                  <p className={`font-black text-base sm:text-lg leading-tight ${s.color}`}>{s.value}</p>
+                  <p className="text-muted-foreground text-[11px] font-medium">{s.label}</p>
                 </div>
-                <p className={`font-black text-base sm:text-lg leading-tight ${s.color}`}>{s.value}</p>
-                <p className="text-muted-foreground text-[11px] font-medium">{s.label}</p>
-              </div>
+              </CardTilt>
             ))}
       </div>
 
@@ -391,27 +400,32 @@ const Dashboard = () => {
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {quickActions.map((a) => (
-            <button
-              type="button"
+            <CardTilt
               key={a.label}
-              onClick={() => navigate(a.path)}
-              className={`group flex flex-col items-start gap-3 rounded-2xl border p-4 transition-all hover:scale-[1.02] active:scale-[0.98] ${a.bg} ${a.border}`}
+              glowColor={a.color.includes("amber") ? "48 96% 53%" : a.color.includes("cyan") ? "185 85% 45%" : a.color.includes("blue") ? "217 91% 60%" : "142 70% 45%"}
+              className="rounded-2xl w-full"
             >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${a.bg} border ${a.border}`}>
-                <a.icon className={`w-4 h-4 ${a.color}`} />
-              </div>
-              <div className="flex items-center justify-between w-full">
-                <div className="flex flex-col items-start gap-1">
-                  <span className="text-xs font-black text-foreground/80">{a.label}</span>
-                  {(a as any).isNew && (
-                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500 text-white font-black uppercase leading-none shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-                      NEW
-                    </span>
-                  )}
+              <button
+                type="button"
+                onClick={() => navigate(a.path)}
+                className={`group flex flex-col items-start gap-3 rounded-2xl border p-4 transition-all w-full h-full ${a.bg} ${a.border}`}
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${a.bg} border ${a.border}`}>
+                  <a.icon className={`w-4 h-4 ${a.color}`} />
                 </div>
-                <ChevronRight className={`w-3.5 h-3.5 ${a.color} opacity-0 group-hover:opacity-100 transition-opacity`} />
-              </div>
-            </button>
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-xs font-black text-foreground/80">{a.label}</span>
+                    {(a as any).isNew && (
+                      <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500 text-white font-black uppercase leading-none shadow-[0_0_8px_rgba(16,185,129,0.3)]">
+                        NEW
+                      </span>
+                    )}
+                  </div>
+                  <ChevronRight className={`w-3.5 h-3.5 ${a.color} opacity-0 group-hover:opacity-100 transition-opacity`} />
+                </div>
+              </button>
+            </CardTilt>
           ))}
         </div>
       </div>

@@ -15,6 +15,7 @@ import SEO from "@/components/SEO";
 import { LiveActivityToast } from "@/components/LiveActivityToast";
 import { WelcomePromoModal } from "@/components/WelcomePromoModal";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
+import { CardTilt } from "@/components/ui/CardTilt";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const NETWORK_CARDS = [
@@ -510,56 +511,61 @@ const Index = () => {
             }}
           >
             {NETWORK_CARDS.map((net, i) => (
-              <div
+              <CardTilt
                 key={net.name}
-                className={`group relative rounded-2xl border border-gray-200 dark:border-white/8 bg-white dark:bg-white/[0.025] overflow-hidden transition-all duration-300 hover:border-gray-300 dark:hover:border-white/14 hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:shadow-2xl ${net.glow} shadow-sm`}
+                glowColor={net.name === "MTN" ? "48 96% 53%" : net.name === "Telecel" ? "0 72% 51%" : "217 91% 60%"}
+                className="rounded-2xl"
                 style={{ transitionDelay: `${i * 80}ms` }}
               >
-                {/* Colored top accent bar */}
-                <div className={`h-[3px] ${net.top}`} />
+                <div
+                  className={`group relative rounded-2xl border border-gray-200 dark:border-white/8 bg-white dark:bg-white/[0.025] overflow-hidden transition-all duration-300 hover:border-gray-300 dark:hover:border-white/14 hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:shadow-2xl h-full shadow-sm`}
+                >
+                  {/* Colored top accent bar */}
+                  <div className={`h-[3px] ${net.top}`} />
 
-                <div className="p-4 md:p-6">
-                  {/* Network identity */}
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className={`w-10 h-10 rounded-xl ${net.accent} flex items-center justify-center shrink-0`}>
-                      <Wifi className={`w-5 h-5 ${net.iconText}`} />
-                    </div>
-                    <div>
-                      <p className="font-black text-lg leading-tight">{net.name} Ghana</p>
-                      <p className="text-gray-400 dark:text-white/30 text-[11px]">Non-expiry · Instant</p>
-                    </div>
-                  </div>
-
-                  {/* Price list */}
-                  <div className="space-y-0 mb-6 rounded-xl border border-gray-100 dark:border-white/6 overflow-hidden">
-                    {net.samples.map(({ size, price, savings }, j) => (
-                      <div
-                        key={size}
-                        className={`flex items-center justify-between px-4 py-2.5 text-sm ${j % 2 === 0 ? "bg-gray-50 dark:bg-white/[0.02]" : ""
-                          } border-b border-gray-100 dark:border-white/5 last:border-0 group/row`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-700 dark:text-white/70">{size}</span>
-                          {savings && (
-                            <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 scale-95 origin-left group-hover/row:scale-100 transition-transform">
-                              {savings}
-                            </span>
-                          )}
-                        </div>
-                        <span className="font-black text-amber-500">{price}</span>
+                  <div className="p-4 md:p-6">
+                    {/* Network identity */}
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className={`w-10 h-10 rounded-xl ${net.accent} flex items-center justify-center shrink-0`}>
+                        <Wifi className={`w-5 h-5 ${net.iconText}`} />
                       </div>
-                    ))}
-                    <div className="px-4 py-2 text-[10px] text-gray-400 dark:text-white/20">+ many more packages available</div>
-                  </div>
+                      <div>
+                        <p className="font-black text-lg leading-tight">{net.name} Ghana</p>
+                        <p className="text-gray-400 dark:text-white/30 text-[11px]">Non-expiry · Instant</p>
+                      </div>
+                    </div>
 
-                  <Link
-                    to="/buy-data"
-                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-gray-100 dark:bg-white/6 hover:bg-amber-400 text-gray-600 dark:text-white/60 hover:text-black font-bold text-sm py-3 transition-all duration-200"
-                  >
-                    Buy {net.name} Data <ArrowRight className="w-4 h-4" />
-                  </Link>
+                    {/* Price list */}
+                    <div className="space-y-0 mb-6 rounded-xl border border-gray-100 dark:border-white/6 overflow-hidden">
+                      {net.samples.map(({ size, price, savings }, j) => (
+                        <div
+                          key={size}
+                          className={`flex items-center justify-between px-4 py-2.5 text-sm ${j % 2 === 0 ? "bg-gray-50 dark:bg-white/[0.02]" : ""
+                            } border-b border-gray-100 dark:border-white/5 last:border-0 group/row`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-700 dark:text-white/70">{size}</span>
+                            {savings && (
+                              <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 scale-95 origin-left group-hover/row:scale-100 transition-transform">
+                                {savings}
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-black text-amber-500">{price}</span>
+                        </div>
+                      ))}
+                      <div className="px-4 py-2 text-[10px] text-gray-400 dark:text-white/20">+ many more packages available</div>
+                    </div>
+
+                    <Link
+                      to="/buy-data"
+                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-gray-100 dark:bg-white/6 hover:bg-amber-400 text-gray-600 dark:text-white/60 hover:text-black font-bold text-sm py-3 transition-all duration-200"
+                    >
+                      Buy {net.name} Data <ArrowRight className="w-4 h-4" />
+                    </Link>
+                  </div>
                 </div>
-              </div>
+              </CardTilt>
             ))}
           </div>
 

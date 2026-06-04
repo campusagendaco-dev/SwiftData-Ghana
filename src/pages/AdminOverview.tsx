@@ -19,6 +19,7 @@ import {
   ResponsiveContainer, Legend,
 } from "recharts";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
+import { CardTilt } from "@/components/ui/CardTilt";
 
 interface RecentOrder {
   id: string;
@@ -704,37 +705,42 @@ const AdminOverview = () => {
         {statCards.map((c) => {
           const isFlashing = updatedKeys.has(c.title);
           return (
-            <div
+            <CardTilt
               key={c.title}
-              className={`relative group p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl ${
-                isDark ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.05]" : "bg-white border-gray-100 shadow-xl shadow-black/[0.02]"
-              }`}
+              glowColor={c.color.includes("emerald") ? "142 70% 45%" : c.color.includes("blue") ? "217 91% 60%" : c.color.includes("amber") ? "48 96% 53%" : c.color.includes("red") ? "0 72% 51%" : c.color.includes("sky") ? "185 85% 45%" : c.color.includes("purple") ? "262 83% 58%" : "238 75% 70%"}
+              className="rounded-[2rem] w-full"
             >
-              {/* Animated Background Glow */}
-              <div className={`absolute -top-12 -right-12 w-32 h-32 ${c.bg} blur-[60px] opacity-40 group-hover:scale-150 transition-transform duration-700 rounded-full`} />
-              
-              <div className="relative z-10 flex items-center justify-between mb-5">
-                <div className={`w-12 h-12 rounded-2xl ${c.bg} ${c.border} border-2 flex items-center justify-center shadow-lg`}>
-                  <c.icon className={`w-6 h-6 ${c.color}`} />
+              <div
+                className={`relative group p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl h-full ${
+                  isDark ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.05]" : "bg-white border-gray-100 shadow-xl shadow-black/[0.02]"
+                }`}
+              >
+                {/* Animated Background Glow */}
+                <div className={`absolute -top-12 -right-12 w-32 h-32 ${c.bg} blur-[60px] opacity-40 group-hover:scale-150 transition-transform duration-700 rounded-full`} />
+                
+                <div className="relative z-10 flex items-center justify-between mb-5">
+                  <div className={`w-12 h-12 rounded-2xl ${c.bg} ${c.border} border-2 flex items-center justify-center shadow-lg`}>
+                    <c.icon className={`w-6 h-6 ${c.color}`} />
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${muted}`}>{c.title}</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${muted}`}>{c.title}</p>
+                
+                <div className="relative z-10 flex items-baseline gap-2">
+                   <p className={`text-3xl font-black tracking-tighter ${head}`}>{c.value}</p>
+                   {isFlashing && (
+                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                   )}
                 </div>
+                
+                {c.description && (
+                  <p className={`relative z-10 text-[10px] mt-2 font-medium ${sub} italic`}>
+                    {c.description}
+                  </p>
+                )}
               </div>
-              
-              <div className="relative z-10 flex items-baseline gap-2">
-                 <p className={`text-3xl font-black tracking-tighter ${head}`}>{c.value}</p>
-                 {isFlashing && (
-                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                 )}
-              </div>
-              
-              {c.description && (
-                <p className={`relative z-10 text-[10px] mt-2 font-medium ${sub} italic`}>
-                  {c.description}
-                </p>
-              )}
-            </div>
+            </CardTilt>
           );
         })}
       </div>

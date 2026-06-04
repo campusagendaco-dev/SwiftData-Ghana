@@ -23,7 +23,12 @@ async function sendManualCreditSms(userId: string, amount: number) {
     ]);
     const recipient = normalizePhone(profileRes.data?.phone);
     if (!smsConfig.apiKey || !recipient) return;
-    const message = formatTemplate(smsConfig.templates.manual_credit, { amount: amount.toFixed(2) });
+    let message = "";
+    if (amount < 0) {
+      message = `Your account has been manually debited with GHS ${Math.abs(amount).toFixed(2)}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+    } else {
+      message = formatTemplate(smsConfig.templates.manual_credit, { amount: amount.toFixed(2) });
+    }
     await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
   } catch (error) {
     console.error("sendManualCreditSms error:", error);
@@ -38,7 +43,10 @@ async function sendManualApiCreditSms(userId: string, amount: number) {
     ]);
     const recipient = normalizePhone(profileRes.data?.phone);
     if (!smsConfig.apiKey || !recipient) return;
-    const message = `Your SwiftData API Wallet has been manually credited with GHS ${amount.toFixed(2)} by admin. Thanks for your business.`;
+    const absAmount = Math.abs(amount).toFixed(2);
+    const message = amount < 0
+      ? `Your SwiftData API Wallet has been manually debited with GHS ${absAmount} by admin.`
+      : `Your SwiftData API Wallet has been manually credited with GHS ${absAmount} by admin. Thanks for your business.`;
     await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, recipient, message);
   } catch (error) {
     console.error("sendManualApiCreditSms error:", error);
@@ -586,13 +594,20 @@ serve(async (req: Request) => {
           });
         }
 
-        const { data: result, error: rpcError } = await supabaseAdmin.rpc("credit_wallet", {
+        const isDeduction = amount < 0;
+        const rpcName = isDeduction ? "debit_wallet" : "credit_wallet";
+        const rpcParams = {
           p_agent_id: user_id,
-          p_amount: amount,
-        });
+          p_amount: Math.abs(amount),
+        };
+
+        const { data: result, error: rpcError } = await supabaseAdmin.rpc(rpcName, rpcParams);
 
         if (rpcError) throw rpcError;
-        const newBalance = result?.new_balance || 0;
+        if (result?.success === false) {
+          throw new Error(result.error || "Transaction failed");
+        }
+        const newBalance = result?.new_balance ?? 0;
 
         const { error: orderError } = await supabaseAdmin
           .from("orders")
@@ -623,7 +638,7 @@ serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        const { data: result, error: rpcError } = await supabaseAdmin.rpc("credit_api_wallet", {
+        const { data: result, error: rpcError } = await supabaseAdmin.schema("api").rpc("credit_api_wallet", {
           p_user_id: user_id,
           p_amount: amount,
         });
