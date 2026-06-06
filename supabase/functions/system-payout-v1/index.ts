@@ -898,7 +898,8 @@ serve(async (req: Request) => {
           });
         }
 
-        if (withdrawal.status !== "pending") {
+        const allowedStatuses = ["pending", "processing", "failed"];
+        if (!allowedStatuses.includes(withdrawal.status)) {
           return new Response(JSON.stringify({ error: `Withdrawal is already ${withdrawal.status}` }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -985,6 +986,7 @@ serve(async (req: Request) => {
               status: "processing",
               transfer_code: transferCode,
               paystack_transfer_reference: transferReference,
+              failure_reason: null, // Clear any previous failure reason
             })
             .eq("id", withdrawal_id);
 
@@ -1242,6 +1244,21 @@ serve(async (req: Request) => {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
+        }
+
+        // If the withdrawal was previously failed, temporarily mark it as processing
+        // so that the database RPC function finalize_withdrawal can run successfully
+        const { data: wd } = await supabaseAdmin
+          .from("withdrawals")
+          .select("status")
+          .eq("id", withdrawal_id)
+          .maybeSingle();
+
+        if (wd && wd.status === "failed") {
+          await supabaseAdmin
+            .from("withdrawals")
+            .update({ status: "processing", failure_reason: null })
+            .eq("id", withdrawal_id);
         }
 
         const { data: result, error: rpcError } = await supabaseAdmin.rpc("finalize_withdrawal", {
@@ -1562,8 +1579,9 @@ serve(async (req: Request) => {
           .eq("id", withdrawal_id)
           .maybeSingle();
 
-        if (!wd || wd.status !== "pending") {
-          return new Response(JSON.stringify({ error: "Withdrawal is not pending" }), {
+        const allowedStatuses = ["pending", "processing", "failed"];
+        if (!wd || !allowedStatuses.includes(wd.status)) {
+          return new Response(JSON.stringify({ error: `Withdrawal is already ${wd?.status}` }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });

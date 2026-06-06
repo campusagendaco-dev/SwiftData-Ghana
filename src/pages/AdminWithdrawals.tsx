@@ -696,7 +696,7 @@ const AdminWithdrawals = () => {
 
                     {/* Action */}
                     <td className="p-4">
-                      {w.status === "pending" && !isRejectingThis && (
+                      {(w.status === "pending" || w.status === "failed" || (w.status === "processing" && !w.paystack_transfer_reference)) && !isRejectingThis && (
                         <div className="flex flex-col gap-1.5">
                           <Button
                             size="sm" variant="outline" className="text-xs gap-1.5 h-8 bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20"
@@ -760,7 +760,7 @@ const AdminWithdrawals = () => {
                         </div>
                       )}
 
-                      {w.status === "processing" && (
+                      {w.status === "processing" && w.paystack_transfer_reference && (
                         <div className="flex flex-col gap-1.5">
                           <Button
                             size="sm" className="text-xs gap-1.5 h-8 bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -812,7 +812,7 @@ const AdminWithdrawals = () => {
                       )}
 
                       {/* Inline reject form */}
-                      {w.status === "pending" && isRejectingThis && (
+                      {(w.status === "pending" || w.status === "failed" || (w.status === "processing" && !w.paystack_transfer_reference)) && isRejectingThis && (
                         <div className="space-y-1.5 min-w-[180px]">
                           <Input
                             placeholder="Reason for rejection…"
