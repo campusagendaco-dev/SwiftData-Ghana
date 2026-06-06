@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2, XCircle, Loader2, ShieldCheck, Zap,
@@ -87,7 +87,8 @@ const OrderStatus = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
 
-  const storeParam = searchParams.get("store") || "";
+  const { slug: routeSlug } = useParams<{ slug?: string }>();
+  const storeParam = searchParams.get("store") || searchParams.get("slug") || routeSlug || "";
   const activeDomain = getActiveStoreDomain();
   const isStoreRoute = !!activeDomain || !!storeParam || window.location.pathname.startsWith("/store/");
 

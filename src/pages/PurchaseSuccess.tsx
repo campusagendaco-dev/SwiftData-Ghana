@@ -37,7 +37,23 @@ const PurchaseSuccess = () => {
   const packageSize = searchParams.get("package") || "";
   const customerPhone = formatPhone(searchParams.get("phone") || "");
   const source = searchParams.get("source") || "";
-  const slug = searchParams.get("slug") || "";
+  let slug = searchParams.get("slug") || "";
+
+  // Fallback to localStorage cached store if slug is missing or invalid
+  if (!slug || slug === "undefined" || slug === "null") {
+    try {
+      const savedTenant = localStorage.getItem("current_store_tenant");
+      if (savedTenant) {
+        const parsed = JSON.parse(savedTenant);
+        if (parsed?.slug) {
+          slug = parsed.slug;
+        }
+      }
+    } catch (e) {
+      console.error("[PurchaseSuccess] Error reading fallback tenant from localStorage:", e);
+    }
+  }
+
   const [copied, setCopied] = useState(false);
 
   // Play success sound on mount
@@ -47,7 +63,7 @@ const PurchaseSuccess = () => {
     audio.play().catch(() => console.log("[PurchaseSuccess] Audio blocked"));
   });
 
-  const fromStore = Boolean(slug);
+  const fromStore = Boolean(slug && slug !== "undefined" && slug !== "null");
   const storeUrl = fromStore ? `/store/${slug}` : null;
 
   const copyReceipt = () => {

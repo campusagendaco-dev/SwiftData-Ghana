@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Search, Package, Clock, CheckCircle2, 
@@ -36,7 +36,8 @@ const MyOrders = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showReceipt, setShowReceipt] = useState<Order | null>(null);
 
-  const storeParam = searchParams.get("store") || "";
+  const { slug: routeSlug } = useParams<{ slug?: string }>();
+  const storeParam = searchParams.get("store") || searchParams.get("slug") || routeSlug || "";
   const activeDomain = getActiveStoreDomain();
   const isStoreRoute = !!activeDomain || !!storeParam || window.location.pathname.startsWith("/store/");
 
