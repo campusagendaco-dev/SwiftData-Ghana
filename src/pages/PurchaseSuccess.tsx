@@ -138,12 +138,57 @@ const PurchaseSuccess = () => {
             <div className="relative bg-[#0A0A0C]/80 backdrop-blur-3xl border border-white/10 rounded-[3rem] overflow-hidden shadow-3xl">
               
               {/* Header */}
-              <div className="pt-12 pb-8 px-8 text-center space-y-6">
-                <div className="relative mx-auto w-24 h-24">
-                  <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-20 animate-pulse" />
-                  <div className="relative w-full h-full rounded-full bg-emerald-500 flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.3)]">
-                    <CheckCircle2 className="w-12 h-12 text-white" />
-                  </div>
+              <div className="pt-12 pb-6 px-8 text-center space-y-6">
+                {/* SVG Illustration */}
+                <div className="relative mx-auto w-48 h-48">
+                  <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
+                  <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {/* Phone Body */}
+                    <rect x="55" y="25" width="90" height="150" rx="16" fill="url(#phoneGrad)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
+                    {/* Phone Screen */}
+                    <rect x="62" y="32" width="76" height="136" rx="10" fill="#0A0A0C"/>
+                    {/* Phone Notch */}
+                    <rect x="90" y="35" width="20" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
+                    
+                    {/* Decorative Data Waves/Grid */}
+                    <path d="M 65 100 Q 100 85 135 100" stroke="rgba(16,185,129,0.3)" strokeWidth="2" fill="none"/>
+                    <path d="M 65 120 Q 100 105 135 120" stroke="rgba(16,185,129,0.15)" strokeWidth="2" fill="none"/>
+                    
+                    {/* Success Badge */}
+                    <circle cx="100" cy="90" r="32" fill="url(#badgeGrad)" filter="url(#shadow)"/>
+                    <circle cx="100" cy="90" r="26" fill="#0A0A0C"/>
+                    
+                    {/* Success Checkmark */}
+                    <path d="M 90 90 L 97 97 L 112 82" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                    
+                    {/* Sparkles/Stars */}
+                    <path d="M 45 60 L 48 65 L 53 66 L 49 70 L 50 75 L 45 72 L 40 75 L 41 70 L 37 66 L 42 65 Z" fill="#ffd43b" opacity="0.8"/>
+                    <path d="M 155 120 L 157 123 L 161 124 L 158 127 L 159 131 L 155 129 L 151 131 L 152 127 L 149 124 L 153 123 Z" fill="#ff9f1c" opacity="0.8"/>
+                    <circle cx="145" cy="55" r="4" fill="#0ea5e9"/>
+                    <circle cx="50" cy="130" r="3" fill="#10B981"/>
+                    
+                    {/* Gradients */}
+                    <defs>
+                      <linearGradient id="phoneGrad" x1="55" y1="25" x2="145" y2="175" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="rgba(255,255,255,0.08)"/>
+                        <stop offset="1" stopColor="rgba(255,255,255,0.02)"/>
+                      </linearGradient>
+                      <linearGradient id="badgeGrad" x1="68" y1="58" x2="132" y2="122" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#10B981"/>
+                        <stop offset="1" stopColor="#059669"/>
+                      </linearGradient>
+                      <filter id="shadow" x="64" y="58" width="72" height="72" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+                        <feFlood floodOpacity="0" result="BackgroundImageFix"/>
+                        <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+                        <feOffset dy="4"/>
+                        <feGaussianBlur stdDeviation="2"/>
+                        <feComposite in2="hardAlpha" operator="out"/>
+                        <feColorMatrix type="matrix" values="0 0 0 0 0.0627451 0 0 0 0 0.72549 0 0 0 0 0.505882 0 0 0 0.3 0"/>
+                        <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1"/>
+                        <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1" result="shape"/>
+                      </filter>
+                    </defs>
+                  </svg>
                 </div>
 
                 <div className="space-y-2">
