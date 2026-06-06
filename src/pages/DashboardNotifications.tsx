@@ -623,15 +623,54 @@ const DashboardNotifications = () => {
                 }`}>Loading Inbox Stream...</p>
               </div>
             ) : filteredNotifs.length === 0 ? (
-              <div className={`p-16 text-center border border-dashed rounded-3xl flex flex-col items-center justify-center gap-4 ${
+              <div className={`p-16 text-center border border-dashed rounded-3xl flex flex-col items-center justify-center gap-6 ${
                 isDark 
                   ? "border-white/5 bg-[#0a0a0e]/30 text-white/20" 
                   : "border-slate-200 bg-slate-50/50 text-slate-400/60"
               }`}>
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center opacity-70 ${
-                  isDark ? "bg-white/5 border border-white/5" : "bg-slate-100 border border-slate-200"
-                }`}>
-                  <Bell className="w-8 h-8 text-slate-400" />
+                {/* SVG Illustration */}
+                <div className="relative w-40 h-40">
+                  <div className="absolute inset-0 bg-sky-500 rounded-full blur-3xl opacity-10 animate-pulse" />
+                  <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(14,165,233,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {/* Glowing Ripple Waves */}
+                    <circle cx="100" cy="100" r="70" stroke="url(#rippleGrad1)" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.6" />
+                    <circle cx="100" cy="100" r="50" stroke="url(#rippleGrad2)" strokeWidth="1.5" opacity="0.4" />
+                    
+                    {/* Sparkles / Diamonds */}
+                    <path d="M 50 60 L 53 63 L 56 60 L 53 57 Z" fill="#ffd43b" opacity="0.85" />
+                    <path d="M 145 130 L 147 132 L 149 130 L 147 128 Z" fill="#38bdf8" opacity="0.9" />
+                    <path d="M 155 70 L 158 73 L 161 70 L 158 67 Z" fill="#a78bfa" opacity="0.8" />
+                    
+                    {/* Floating Bell Body */}
+                    <path d="M 100 45 C 85 45 75 55 75 70 L 70 115 L 130 115 L 125 70 C 125 55 115 45 100 45 Z" fill="url(#bellBodyGrad)" stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
+                    
+                    {/* Bell Clapper */}
+                    <circle cx="100" cy="125" r="10" fill="url(#bellClapperGrad)" />
+                    
+                    {/* Bell Ring Attachment */}
+                    <circle cx="100" cy="38" r="8" stroke="rgba(255,255,255,0.2)" strokeWidth="2" fill="none" />
+                    
+                    {/* Glow and Gradients */}
+                    <defs>
+                      <linearGradient id="rippleGrad1" x1="30" y1="30" x2="170" y2="170" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#0ea5e9" stopOpacity="0"/>
+                        <stop offset="0.5" stopColor="#38bdf8" stopOpacity="0.4"/>
+                        <stop offset="1" stopColor="#818cf8" stopOpacity="0"/>
+                      </linearGradient>
+                      <linearGradient id="rippleGrad2" x1="50" y1="50" x2="150" y2="150" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#38bdf8" stopOpacity="0.5"/>
+                        <stop offset="1" stopColor="#0ea5e9" stopOpacity="0.1"/>
+                      </linearGradient>
+                      <linearGradient id="bellBodyGrad" x1="70" y1="45" x2="130" y2="115" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="rgba(56, 189, 248, 0.25)"/>
+                        <stop offset="1" stopColor="rgba(14, 165, 233, 0.05)"/>
+                      </linearGradient>
+                      <linearGradient id="bellClapperGrad" x1="90" y1="115" x2="110" y2="135" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#38bdf8"/>
+                        <stop offset="1" stopColor="#0284c7"/>
+                      </linearGradient>
+                    </defs>
+                  </svg>
                 </div>
                 <div className="space-y-1 max-w-sm">
                   <p className={`font-black text-sm uppercase tracking-wider ${
@@ -817,6 +856,15 @@ const DashboardNotifications = () => {
           </div>
         </div>
       </div>
+      <style>{`
+        @keyframes bounce-subtle {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        .animate-bounce-subtle {
+          animation: bounce-subtle 3s infinite ease-in-out;
+        }
+      `}</style>
     </div>
   );
 };

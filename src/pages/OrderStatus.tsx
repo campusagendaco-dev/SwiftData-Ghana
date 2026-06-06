@@ -314,10 +314,51 @@ const OrderStatus = () => {
             </div>
             <div className="px-8 pt-8 pb-10 flex flex-col items-center text-center">
               <div className="relative mb-6">
-                <div className="absolute inset-0 blur-xl opacity-20 animate-pulse" style={{ backgroundColor: meta.color }} />
-                <div className="relative w-10 h-10 rounded-2xl border border-white/5 flex items-center justify-center bg-white/[0.03]">
-                  {orderStatus === "fulfilled" ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : failed ? <XCircle className="w-5 h-5 text-red-400" /> : <div className="w-4 h-4 rounded-full border-2 border-white/10 border-t-white/40 animate-spin" />}
-                </div>
+                {orderStatus === "fulfilled" ? (
+                  <div className="relative w-32 h-32">
+                    <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
+                    <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      {/* Phone Body */}
+                      <rect x="55" y="25" width="90" height="150" rx="16" fill="url(#phoneGradTracker)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
+                      {/* Phone Screen */}
+                      <rect x="62" y="32" width="76" height="136" rx="10" fill="#0A0A0C"/>
+                      {/* Phone Notch */}
+                      <rect x="90" y="35" width="20" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
+                      
+                      {/* Decorative waves */}
+                      <path d="M 65 100 Q 100 85 135 100" stroke="rgba(16,185,129,0.3)" strokeWidth="2" fill="none"/>
+                      
+                      {/* Success Badge */}
+                      <circle cx="100" cy="90" r="32" fill="url(#badgeGradTracker)" />
+                      <circle cx="100" cy="90" r="26" fill="#0A0A0C"/>
+                      
+                      {/* Success Checkmark */}
+                      <path d="M 90 90 L 97 97 L 112 82" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                      
+                      {/* Sparkles */}
+                      <path d="M 45 60 L 48 65 L 53 66 L 49 70 L 50 75 L 45 72 L 40 75 L 41 70 L 37 66 L 42 65 Z" fill="#ffd43b" opacity="0.8"/>
+                      <circle cx="145" cy="55" r="4" fill="#0ea5e9"/>
+                      
+                      <defs>
+                        <linearGradient id="phoneGradTracker" x1="55" y1="25" x2="145" y2="175" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="rgba(255,255,255,0.08)"/>
+                          <stop offset="1" stopColor="rgba(255,255,255,0.02)"/>
+                        </linearGradient>
+                        <linearGradient id="badgeGradTracker" x1="68" y1="58" x2="132" y2="122" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#10B981"/>
+                          <stop offset="1" stopColor="#059669"/>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </div>
+                ) : (
+                  <>
+                    <div className="absolute inset-0 blur-xl opacity-20 animate-pulse" style={{ backgroundColor: meta.color }} />
+                    <div className="relative w-10 h-10 rounded-2xl border border-white/5 flex items-center justify-center bg-white/[0.03]">
+                      {failed ? <XCircle className="w-5 h-5 text-red-400" /> : <div className="w-4 h-4 rounded-full border-2 border-white/10 border-t-white/40 animate-spin" />}
+                    </div>
+                  </>
+                )}
               </div>
               <h2 className="text-lg font-bold text-white tracking-tight mb-1">{meta.label}</h2>
               <p className="text-[10px] text-white/30 font-medium max-w-[200px]">{meta.sub}</p>
@@ -686,6 +727,15 @@ const OrderStatus = () => {
               <p className="text-[9px] font-medium text-white/20 tracking-wider">Secure Realtime Delivery Network</p>
            </div>
         </div>
+        <style>{`
+          @keyframes bounce-subtle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+          }
+          .animate-bounce-subtle {
+            animation: bounce-subtle 3s infinite ease-in-out;
+          }
+        `}</style>
       </div>
     </div>
   );

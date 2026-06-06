@@ -190,8 +190,52 @@ const DashboardResultCheckers = () => {
     return (
       <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-8 animate-in zoom-in-95 duration-300">
         <div className="text-center space-y-4">
-          <div className="w-20 h-20 bg-emerald-500/15 rounded-full flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+          {/* SVG Illustration */}
+          <div className="relative mx-auto w-36 h-36">
+            <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
+            <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+              {/* Document / Certificate Body */}
+              <rect x="50" y="35" width="100" height="130" rx="12" fill="url(#certGrad)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
+              {/* Document Inner Lines / Text Lines */}
+              <line x1="65" y1="120" x2="135" y2="120" stroke="rgba(255,255,255,0.1)" strokeWidth="3" strokeLinecap="round" />
+              <line x1="65" y1="135" x2="115" y2="135" stroke="rgba(255,255,255,0.1)" strokeWidth="3" strokeLinecap="round" />
+              <line x1="65" y1="150" x2="125" y2="150" stroke="rgba(255,255,255,0.1)" strokeWidth="3" strokeLinecap="round" />
+              
+              {/* Graduation Cap */}
+              <path d="M 100 50 L 145 65 L 100 80 L 55 65 Z" fill="url(#capGrad)" stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
+              <path d="M 75 72 L 75 90 C 75 95 100 100 100 100 C 100 100 125 95 125 90 L 125 72" fill="url(#capGrad)" stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
+              {/* Cap Tassel */}
+              <path d="M 100 65 L 132 75 L 132 92" stroke="#ffd43b" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+              <circle cx="132" cy="92" r="2.5" fill="#ffd43b"/>
+              
+              {/* Success Badge */}
+              <circle cx="100" cy="100" r="28" fill="url(#badgeGrad)" />
+              <circle cx="100" cy="100" r="23" fill="#0A0A0C"/>
+              
+              {/* Success Checkmark */}
+              <path d="M 92 100 L 97 105 L 110 92" stroke="#10B981" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+              
+              {/* Sparkles/Stars */}
+              <path d="M 40 50 L 42 52 L 44 50 L 42 48 Z" fill="#ffd43b" opacity="0.8"/>
+              <path d="M 160 110 L 162 112 L 164 110 L 162 108 Z" fill="#ff9f1c" opacity="0.8"/>
+              <circle cx="150" cy="45" r="3" fill="#0ea5e9"/>
+              <circle cx="45" cy="120" r="2.5" fill="#10B981"/>
+              
+              <defs>
+                <linearGradient id="certGrad" x1="50" y1="35" x2="150" y2="165" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="rgba(255,255,255,0.08)"/>
+                  <stop offset="1" stopColor="rgba(255,255,255,0.02)"/>
+                </linearGradient>
+                <linearGradient id="capGrad" x1="55" y1="50" x2="145" y2="100" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="rgba(255,255,255,0.12)"/>
+                  <stop offset="1" stopColor="rgba(255,255,255,0.04)"/>
+                </linearGradient>
+                <linearGradient id="badgeGrad" x1="72" y1="72" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#10B981"/>
+                  <stop offset="1" stopColor="#059669"/>
+                </linearGradient>
+              </defs>
+            </svg>
           </div>
           <h1 className="font-black text-3xl tracking-tight text-foreground">Order Completed!</h1>
 
@@ -276,6 +320,15 @@ const DashboardResultCheckers = () => {
         >
           Buy More Pins
         </button>
+        <style>{`
+          @keyframes bounce-subtle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+          }
+          .animate-bounce-subtle {
+            animation: bounce-subtle 3s infinite ease-in-out;
+          }
+        `}</style>
       </div>
     );
   }

@@ -1194,9 +1194,47 @@ const AgentStore = () => {
       {showSuccessOverlay && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">
           <div className="absolute inset-0 bg-black/85 backdrop-blur-3xl" />
-          <div className="relative max-w-xs w-full bg-white/4 border border-white/10 rounded-3xl p-8 text-center space-y-5 animate-in zoom-in-95 duration-300">
-            <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center mx-auto shadow-[0_0_40px_rgba(16,185,129,0.4)]">
-              <CheckCircle2 className="w-10 h-10 text-white" />
+          <div className="relative max-w-sm w-full bg-[#0A0A0C] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 animate-in zoom-in-95 duration-300 shadow-3xl">
+            {/* SVG Illustration */}
+            <div className="relative mx-auto w-36 h-36">
+              <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
+              <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Phone Body */}
+                <rect x="55" y="25" width="90" height="150" rx="16" fill="url(#phoneGradOverlay)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
+                {/* Phone Screen */}
+                <rect x="62" y="32" width="76" height="136" rx="10" fill="#0A0A0C"/>
+                {/* Phone Notch */}
+                <rect x="90" y="35" width="20" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
+                
+                {/* Decorative Data Waves/Grid */}
+                <path d="M 65 100 Q 100 85 135 100" stroke="rgba(16,185,129,0.3)" strokeWidth="2" fill="none"/>
+                <path d="M 65 120 Q 100 105 135 120" stroke="rgba(16,185,129,0.15)" strokeWidth="2" fill="none"/>
+                
+                {/* Success Badge */}
+                <circle cx="100" cy="90" r="32" fill="url(#badgeGradOverlay)" />
+                <circle cx="100" cy="90" r="26" fill="#0A0A0C"/>
+                
+                {/* Success Checkmark */}
+                <path d="M 90 90 L 97 97 L 112 82" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                
+                {/* Sparkles/Stars */}
+                <path d="M 45 60 L 48 65 L 53 66 L 49 70 L 50 75 L 45 72 L 40 75 L 41 70 L 37 66 L 42 65 Z" fill="#ffd43b" opacity="0.8"/>
+                <path d="M 155 120 L 157 123 L 161 124 L 158 127 L 159 131 L 155 129 L 151 131 L 152 127 L 149 124 L 153 123 Z" fill="#ff9f1c" opacity="0.8"/>
+                <circle cx="145" cy="55" r="4" fill="#0ea5e9"/>
+                <circle cx="50" cy="130" r="3" fill="#10B981"/>
+                
+                {/* Gradients */}
+                <defs>
+                  <linearGradient id="phoneGradOverlay" x1="55" y1="25" x2="145" y2="175" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="rgba(255,255,255,0.08)"/>
+                    <stop offset="1" stopColor="rgba(255,255,255,0.02)"/>
+                  </linearGradient>
+                  <linearGradient id="badgeGradOverlay" x1="68" y1="58" x2="132" y2="122" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#10B981"/>
+                    <stop offset="1" stopColor="#059669"/>
+                  </linearGradient>
+                </defs>
+              </svg>
             </div>
             <div>
               <h2 className="text-3xl font-black text-white mb-2">Done!</h2>
@@ -1207,11 +1245,20 @@ const AgentStore = () => {
             <button
               type="button"
               onClick={() => { setShowSuccessOverlay(false); setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-              className="w-full py-3 rounded-2xl bg-white/6 border border-white/10 text-white font-black text-sm"
+              className="w-full py-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black text-xs uppercase tracking-widest transition-all"
             >
               Close
             </button>
           </div>
+          <style>{`
+            @keyframes bounce-subtle {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-6px); }
+            }
+            .animate-bounce-subtle {
+              animation: bounce-subtle 3s infinite ease-in-out;
+            }
+          `}</style>
         </div>
       )}
 

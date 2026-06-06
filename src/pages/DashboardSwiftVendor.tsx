@@ -1276,7 +1276,7 @@ const DashboardSwiftVendor = () => {
       )}
 
       {/* AI Profit Recommender Banner */}
-      {aiRecommendations.length > 0 && (
+      {aiRecommendations.length > 0 ? (
         <div className="mb-6 grid gap-4 animate-in slide-in-from-top-4 duration-500">
           {aiRecommendations.map((rec) => (
             <div key={rec.id} className="p-4 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between shadow-[0_0_30px_-5px_rgba(99,102,241,0.15)]">
@@ -1315,6 +1315,54 @@ const DashboardSwiftVendor = () => {
               </div>
             </div>
           ))}
+        </div>
+      ) : (
+        <div className="mb-6 p-5 rounded-2xl border border-indigo-500/10 bg-indigo-500/5 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-5 items-center justify-between shadow-[0_0_30px_-5px_rgba(99,102,241,0.1)]">
+          {/* Glowing background blob */}
+          <div className="absolute top-1/2 left-6 -translate-y-1/2 w-36 h-36 bg-indigo-500/5 rounded-full blur-[60px]" />
+          
+          <div className="flex flex-col sm:flex-row items-center gap-5 z-10 w-full">
+            {/* Custom AI Illustration SVG */}
+            <div className="w-16 h-16 shrink-0 relative">
+              <svg className="w-full h-full drop-shadow-[0_4px_12px_rgba(99,102,241,0.25)] animate-bounce-subtle" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* AI brain node structure / network */}
+                <circle cx="50" cy="50" r="18" fill="url(#aiCoreGrad)" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
+                {/* Orbiting particles/nodes */}
+                <circle cx="50" cy="22" r="3.5" fill="#818CF8" />
+                <circle cx="25" cy="62" r="3.5" fill="#C084FC" />
+                <circle cx="75" cy="62" r="3.5" fill="#60A5FA" />
+                
+                {/* Connection lines */}
+                <line x1="50" y1="22" x2="50" y2="32" stroke="rgba(129,140,248,0.4)" strokeWidth="1.5" strokeDasharray="2 2" />
+                <line x1="25" y1="62" x2="35" y2="57" stroke="rgba(192,132,252,0.4)" strokeWidth="1.5" strokeDasharray="2 2" />
+                <line x1="75" y1="62" x2="65" y2="57" stroke="rgba(96,165,250,0.4)" strokeWidth="1.5" strokeDasharray="2 2" />
+                
+                {/* Sparkles */}
+                <path d="M 22 28 L 24 30 L 26 28 L 24 26 Z" fill="#ffd43b" opacity="0.8" />
+                <path d="M 78 32 L 80 34 L 82 32 L 80 30 Z" fill="#ff9f1c" opacity="0.8" />
+                <path d="M 48 80 L 50 82 L 52 80 L 50 78 Z" fill="#10B981" opacity="0.8" />
+                
+                {/* Inner lightning symbol */}
+                <path d="M 47 53 L 51 43 L 50 49 L 54 49 L 49 57 L 50 52 Z" fill="#ffffff" />
+                
+                <defs>
+                  <linearGradient id="aiCoreGrad" x1="32" y1="32" x2="68" y2="68" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#6366F1" />
+                    <stop offset="1" stopColor="#4F46E5" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            
+            <div className="text-center sm:text-left flex-1">
+              <h3 className="text-sm font-black text-indigo-400 uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
+                <Sparkles className="w-4 h-4" /> AI Copilot Active
+              </h3>
+              <p className="text-xs text-white/50 mt-1 leading-relaxed max-w-2xl">
+                Our sales strategy algorithm is scanning store traffic & transaction data. We'll display instant wholesale profit optimizations and customer promo alerts here.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2627,6 +2675,15 @@ const DashboardSwiftVendor = () => {
         </div>
       )}
 
+      <style>{`
+        @keyframes bounce-subtle {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-6px); }
+        }
+        .animate-bounce-subtle {
+          animation: bounce-subtle 3s infinite ease-in-out;
+        }
+      `}</style>
     </SecurityGateway>
   );
 };
