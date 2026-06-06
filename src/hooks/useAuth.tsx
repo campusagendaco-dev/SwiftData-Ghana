@@ -42,7 +42,20 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   isAdmin: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    referralCodeOrMetadata?: string | {
+      referralCode?: string;
+      phone?: string;
+      storeName?: string;
+      slug?: string;
+      isSubAgent?: boolean;
+      parentAgentId?: string;
+      isAgent?: boolean;
+    }
+  ) => Promise<{ data: any; error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signInWithOAuth: (provider: Provider, redirectPath?: string) => Promise<{ error: any }>;
   requestPasswordReset: (email: string, redirectPath?: string) => Promise<{ error: any }>;
@@ -207,20 +220,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, referralCode?: string) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    referralCodeOrMetadata?: string | {
+      referralCode?: string;
+      phone?: string;
+      storeName?: string;
+      slug?: string;
+      isSubAgent?: boolean;
+      parentAgentId?: string;
+      isAgent?: boolean;
+    }
+  ) => {
     const normalizedEmail = normalizeEmailInput(email);
-    const { error } = await supabase.auth.signUp({
+    
+    let referralCode: string | undefined;
+    let phone: string | undefined;
+    let storeName: string | undefined;
+    let slug: string | undefined;
+    let isSubAgent = false;
+    let parentAgentId: string | undefined;
+    let isAgent = false;
+
+    if (typeof referralCodeOrMetadata === "string") {
+      referralCode = referralCodeOrMetadata;
+    } else if (referralCodeOrMetadata && typeof referralCodeOrMetadata === "object") {
+      referralCode = referralCodeOrMetadata.referralCode;
+      phone = referralCodeOrMetadata.phone;
+      storeName = referralCodeOrMetadata.storeName;
+      slug = referralCodeOrMetadata.slug;
+      isSubAgent = referralCodeOrMetadata.isSubAgent || false;
+      parentAgentId = referralCodeOrMetadata.parentAgentId;
+      isAgent = referralCodeOrMetadata.isAgent || false;
+    }
+
+    const role = isAgent ? "agent" : "user";
+
+    const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
       options: {
-        emailRedirectTo: appBaseUrl,
+        emailRedirectTo: `${appBaseUrl}/auth/callback?role=${role}`,
         data: { 
           full_name: fullName,
-          referral_code: referralCode
+          referral_code: referralCode || null,
+          phone: phone || "",
+          store_name: storeName || "",
+          slug: slug || null,
+          is_sub_agent: isSubAgent,
+          parent_agent_id: parentAgentId || null,
+          is_agent: isAgent
         },
       },
     });
-    return { error };
+    return { data, error };
   };
 
   const signIn = async (email: string, password: string) => {

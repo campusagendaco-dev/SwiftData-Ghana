@@ -32,6 +32,9 @@ verify_jwt = false
 [functions.developer-api]
 verify_jwt = false
 
+[functions.voucher-purchase]
+verify_jwt = false
+
 [functions.admin-user-actions]
 verify_jwt = false
 

@@ -144,12 +144,13 @@ serve(async (req: Request) => {
       // Fetch store owner's profile
       const { data: sellerProfile } = await supabaseAdmin
         .from("profiles")
-        .select("is_sub_agent, parent_agent_id, agent_prices")
+        .select("is_sub_agent, parent_agent_id, agent_prices, registered_user_prices")
         .eq("user_id", storeOwnerId)
         .maybeSingle();
 
       if (sellerProfile) {
-        const sellerPrices = (sellerProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+        const guestPrices = (sellerProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+        const regPrices = (sellerProfile.registered_user_prices || {}) as Record<string, Record<string, string | number>>;
         
         let sellerListed = 0;
         const netCandidates = [normalizedNet, networkRaw, networkRaw.replace(/\s+/g, "")];
@@ -167,7 +168,10 @@ serve(async (req: Request) => {
           return 0;
         };
 
-        sellerListed = searchMap(sellerPrices);
+        sellerListed = searchMap(regPrices);
+        if (!(sellerListed > 0)) {
+          sellerListed = searchMap(guestPrices);
+        }
 
         let chargeBase = adminBase;
 

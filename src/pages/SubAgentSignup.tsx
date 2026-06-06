@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2, Users2, TrendingUp, CheckCircle2,
@@ -30,6 +31,7 @@ const SubAgentSignup = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { signUp } = useAuth();
 
   const [agent, setAgent] = useState<ParentAgent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,35 +80,34 @@ const SubAgentSignup = () => {
     }
     setSubmitting(true);
 
-    const { data: authData, error: signUpError } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { data: { full_name: fullName.trim() } },
+    const autoStoreName = storeName.trim() || `${fullName.trim().split(" ")[0]}'s Store`;
+    const baseSlug = generateSlug(fullName.trim(), slug || "store");
+    const autoSlug = `${baseSlug}-${Math.floor(Math.random() * 10000)}`;
+
+    const { data: authData, error: signUpError } = await signUp(email.trim(), password, fullName.trim(), {
+      phone: phone.trim(),
+      storeName: autoStoreName,
+      slug: autoSlug,
+      isSubAgent: true,
+      parentAgentId: agent!.user_id,
     });
 
-    if (signUpError || !authData.user) {
+    if (signUpError || !authData?.user) {
       toast({ title: "Sign up failed", description: signUpError?.message || "Please try again.", variant: "destructive" });
       setSubmitting(false); return;
     }
 
     const userId = authData.user.id;
-    const autoStoreName = storeName.trim() || `${fullName.trim().split(" ")[0]}'s Store`;
-    const baseSlug = generateSlug(fullName.trim(), slug || "store");
-    const autoSlug = `${baseSlug}-${Math.floor(Math.random() * 10000)}`;
 
-    const { error: profileError } = await supabase.from("profiles").update({
-      full_name: fullName.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      whatsapp_number: phone.trim(),
-      store_name: autoStoreName,
-      slug: autoSlug,
-      is_sub_agent: true,
-      parent_agent_id: agent!.user_id,
-    } as any).eq("user_id", userId);
-
-    if (profileError) {
-      console.error("Profile setup error:", profileError);
+    if (!authData.session) {
+      toast({
+        title: "Verification Email Sent",
+        description: "Your reseller account has been registered. Please check your email inbox and click the verification link to confirm your email before signing in and completing payment.",
+        variant: "default"
+      });
+      setSubmitting(false);
+      navigate(`/store/${slug}`);
+      return;
     }
 
     toast({ title: "Account created!", description: "Initializing activation payment..." });

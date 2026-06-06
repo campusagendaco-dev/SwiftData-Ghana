@@ -56,6 +56,8 @@ interface AgentProfile {
   email: string;
   whatsapp_group_link: string | null;
   agent_prices: Record<string, Record<string, string | number>>;
+  sub_agent_prices?: Record<string, Record<string, string | number>>;
+  registered_user_prices?: Record<string, Record<string, string | number>>;
   disabled_packages: Record<string, string[]>;
   is_sub_agent: boolean;
   parent_agent_id: string | null;
@@ -238,15 +240,13 @@ const AgentStore = () => {
           window.history.replaceState({}, "", window.location.pathname);
         })
         .catch(() => {
-          toast({ title: "Deposit complete", description: "Refreshing your balance..." });
-          refreshProfile();
-          window.history.replaceState({}, "", window.location.pathname);
+          console.error("Payment verification failed");
         });
     }
   }, [refreshProfile, toast]);
 
-  const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>({});
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
+  const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>({});
   const [subAgentBaseFee, setSubAgentBaseFee] = useState<number | null>(null);
   const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>({ MTN: 1, Telecel: 1, AirtelTigo: 1 });
 
@@ -271,7 +271,7 @@ const AgentStore = () => {
         const activeDomain = getActiveStoreDomain();
         let storeQuery = supabase
           .from("agent_stores")
-          .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
+          .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, registered_user_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
 
         if (slug && slug !== "undefined" && slug !== "null") {
           storeQuery = storeQuery.eq("slug", slug);
@@ -332,7 +332,7 @@ const AgentStore = () => {
 
         if (profile.is_sub_agent && profile.parent_agent_id) {
           const { data: parentProfile } = await supabase
-            .from("profiles").select("sub_agent_prices, agent_prices").eq("user_id", profile.parent_agent_id).maybeSingle();
+            .from("agent_stores").select("sub_agent_prices, agent_prices").eq("user_id", profile.parent_agent_id).maybeSingle();
           if (parentProfile) {
             const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, any>;
             const parentSellingPrices = (parentProfile.agent_prices || {}) as Record<string, any>;

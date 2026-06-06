@@ -88,6 +88,7 @@ const AdminEngagement = lazy(() => import("./pages/AdminEngagement"));
 const AdminReconciliation = lazy(() => import("./pages/AdminReconciliation"));
 const AdminSubAgents = lazy(() => import("./pages/AdminSubAgents"));
 const AdminSystemLogs = lazy(() => import("./pages/AdminSystemLogs"));
+const AdminAPIOrders = lazy(() => import("./pages/AdminAPIOrders"));
 const AdminBroadcast = lazy(() => import("./pages/AdminBroadcast"));
 const AdminFeatureFlags = lazy(() => import("./pages/AdminFeatureFlags"));
 const AdminSmsTemplates = lazy(() => import("./pages/AdminSmsTemplates"));
@@ -444,6 +445,7 @@ const AppContent = () => {
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />
           <Route path="orders" element={<AdminOrders />} />
+          <Route path="api-orders" element={<AdminAPIOrders />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="reconciliation" element={<AdminReconciliation />} />
           <Route path="withdrawals" element={<AdminWithdrawals />} />

@@ -78,6 +78,19 @@ serve(async (req: Request) => {
         });
       }
 
+      // Ghanaian Mobile Money networks do not support name verification on Paystack live
+      const isMomo = ["MTN", "VOD", "ATL"].includes(String(bank_code).toUpperCase());
+      if (isMomo) {
+        return new Response(JSON.stringify({
+          success: true,
+          account_name: "Mobile Money User",
+          account_number: account_number,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({ 
         success: false,
         error: data.message || "Failed to resolve account",

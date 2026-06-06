@@ -12,7 +12,20 @@ serve(async (req) => {
 
   // Security: Verify webhook secret if configured in Supabase vault
   const PROVIDER_WEBHOOK_SECRET = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
-  if (PROVIDER_WEBHOOK_SECRET) {
+  const XCEL_WEBHOOK_SECRET = Deno.env.get("XCEL_WEBHOOK_SECRET");
+  
+  const xWebhookSecret = req.headers.get("x-webhook-secret");
+  
+  if (xWebhookSecret) {
+    const expectedSecret = XCEL_WEBHOOK_SECRET || PROVIDER_WEBHOOK_SECRET;
+    if (expectedSecret && xWebhookSecret !== expectedSecret) {
+      console.warn("[provider-webhook] XCEL Unauthorized request blocked - Secret mismatch.");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } else if (PROVIDER_WEBHOOK_SECRET) {
     const query = new URL(req.url).searchParams;
     const providedSecret = req.headers.get("X-Webhook-Secret") || query.get("key") || query.get("secret");
     if (providedSecret !== PROVIDER_WEBHOOK_SECRET) {
@@ -40,7 +53,21 @@ serve(async (req) => {
     }
 
     const payload = JSON.parse(body);
-    const reference = payload?.data?.reference || payload?.reference || payload?.order_id;
+    let reference = payload?.data?.reference || payload?.reference || payload?.order_id || payload?.data?.transactionId;
+    
+    if (payload?.data?.metadata) {
+      try {
+        const meta = typeof payload.data.metadata === "string" 
+          ? JSON.parse(payload.data.metadata) 
+          : payload.data.metadata;
+        if (meta?.ref_no) {
+          reference = meta.ref_no;
+        }
+      } catch (e) {
+        console.warn("[provider-webhook] Failed to parse metadata JSON:", e);
+      }
+    }
+
     const rawStatus = (payload?.data?.status || payload?.status || "").toLowerCase();
     
     let systemStatus = "processing";

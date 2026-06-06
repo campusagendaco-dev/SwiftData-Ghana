@@ -21,6 +21,7 @@ import {
   Activity, Users, TrendingUp, Ban,
   CheckCircle, XCircle, ChevronDown, ChevronUp, Copy,
   Globe, Webhook, ListChecks, Clock, BarChart2, Save, BadgePercent, ChevronRight,
+  Coins, Lightbulb, ShieldAlert,
 } from "lucide-react";
 import { networks, basePackages } from "@/lib/data";
 
@@ -86,6 +87,45 @@ const AdminAPIUsers = () => {
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [userOrders, setUserOrders] = useState<Record<string, APIOrder[]>>({});
   const [loadingOrders, setLoadingOrders] = useState<string | null>(null);
+  const [sales, setSales] = useState<Record<string, number>>({});
+  const [deposits, setDeposits] = useState<Record<string, number>>({});
+  const [aiRecs, setAiRecs] = useState<Record<string, any[]>>({});
+
+  const getRecommendedFeatures = (u: APIUser, depositAmt: number, salesAmt: number) => {
+    const recs: string[] = [];
+    
+    // 1. IP whitelist recommendation
+    const ips = ipEdits[u.user_id] ?? (u.api_ip_whitelist || []).join(", ");
+    if (!ips.trim()) {
+      recs.push("Security: Enable IP Whitelisting to lock down API access to only designated server IPs.");
+    }
+    
+    // 2. Webhook recommendation
+    const webhook = webhookEdits[u.user_id] ?? u.api_webhook_url ?? "";
+    if (!webhook.trim()) {
+      recs.push("Integration: Add Webhook URL to receive live callbacks for transaction fulfillment status.");
+    }
+    
+    // 3. Balance recommendation
+    const apiBal = u.api_wallet_balance ?? 0;
+    if (apiBal < 100 && salesAmt > 200) {
+      recs.push(`Liquidity: API balance is low (GH₵${apiBal.toFixed(2)}). Recommend reloading to avoid out-of-funds errors.`);
+    }
+    
+    // 4. Rate limit suggestion
+    const currentLimit = rateLimitEdits[u.user_id] ?? u.api_rate_limit ?? 30;
+    if (salesAmt > 1000 && currentLimit <= 30) {
+      recs.push(`Scale: High sales traffic detected. Suggest increasing rate limit from ${currentLimit} req/min to prevent rate limiting.`);
+    }
+    
+    // 5. Action permissions recommendation
+    const currentActs = actionEdits[u.user_id] ?? u.api_allowed_actions ?? [];
+    if (!currentActs.includes("buy")) {
+      recs.push("Permissions: Enable the 'buy' action so this API developer key can actually initiate data purchases.");
+    }
+
+    return recs;
+  };
 
   // Editable field state per user
   const [rateLimitEdits, setRateLimitEdits] = useState<Record<string, number>>({});
@@ -153,6 +193,55 @@ const AdminAPIUsers = () => {
       setIpEdits(ip);
       setWebhookEdits(wh);
       setPriceEdits(pr);
+
+      // Load deposits, sales, and AI recommendations
+      try {
+        const { data: salesData } = await supabase
+          .from("orders")
+          .select("agent_id, amount")
+          .eq("order_type", "api")
+          .eq("status", "fulfilled");
+
+        const salesMap: Record<string, number> = {};
+        if (salesData) {
+          salesData.forEach((s) => {
+            salesMap[s.agent_id] = (salesMap[s.agent_id] || 0) + Number(s.amount || 0);
+          });
+        }
+        setSales(salesMap);
+
+        const { data: depositsData } = await supabase
+          .from("orders")
+          .select("agent_id, amount")
+          .eq("order_type", "wallet_topup")
+          .eq("status", "fulfilled");
+
+        const depositsMap: Record<string, number> = {};
+        if (depositsData) {
+          depositsData.forEach((d) => {
+            depositsMap[d.agent_id] = (depositsMap[d.agent_id] || 0) + Number(d.amount || 0);
+          });
+        }
+        setDeposits(depositsMap);
+
+        const { data: recsData } = await supabase
+          .from("ai_recommendations")
+          .select("*")
+          .eq("is_acted_upon", false);
+
+        const recsMap: Record<string, any[]> = {};
+        if (recsData) {
+          recsData.forEach((r) => {
+            if (r.user_id) {
+              if (!recsMap[r.user_id]) recsMap[r.user_id] = [];
+              recsMap[r.user_id].push(r);
+            }
+          });
+        }
+        setAiRecs(recsMap);
+      } catch (err) {
+        console.error("Failed to load user traction stats:", err);
+      }
     }
     setLoading(false);
   };
@@ -533,6 +622,68 @@ const AdminAPIUsers = () => {
                   {/* Expanded panel */}
                   {isExpanded && (
                     <div className="border-t border-white/5 bg-black/20 divide-y divide-white/5">
+
+                      {/* ── Traction, Deposits & Recommendations Section ── */}
+                      <div className="p-4 grid md:grid-cols-2 gap-4 border-b border-white/5 bg-white/[0.01]">
+                        {/* Traction & Deposit Summary */}
+                        <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/5">
+                          <p className="text-xs font-black uppercase tracking-widest text-amber-500/80 flex items-center gap-1.5">
+                            <TrendingUp className="w-4 h-4" /> Performance & Traction
+                          </p>
+                          <div className="grid grid-cols-2 gap-3 pt-1">
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Total Sales (API)</p>
+                              <p className="text-lg font-black text-white">GH₵{(sales[user.user_id] || 0).toFixed(2)}</p>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Total Deposits</p>
+                              <p className="text-lg font-black text-cyan-400">GH₵{(deposits[user.user_id] || 0).toFixed(2)}</p>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">Main Wallet</p>
+                              <p className="text-base font-bold text-white/80">GH₵{(user.wallet_balance ?? 0).toFixed(2)}</p>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] text-white/30 uppercase tracking-wider font-bold">API Wallet</p>
+                              <p className="text-base font-bold text-emerald-400">GH₵{(user.api_wallet_balance ?? 0).toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* AI & System Recommendations */}
+                        <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-white/5">
+                          <p className="text-xs font-black uppercase tracking-widest text-sky-400 flex items-center gap-1.5">
+                            <Lightbulb className="w-4 h-4 text-amber-400" /> AI & System Recommendations
+                          </p>
+                          <div className="space-y-2 max-h-[140px] overflow-y-auto scrollbar-thin">
+                            {/* Dynamic System check recommendations */}
+                            {(() => {
+                              const sysRecs = getRecommendedFeatures(user, deposits[user.user_id] || 0, sales[user.user_id] || 0);
+                              const dbRecs = aiRecs[user.user_id] || [];
+                              const allRecs = [
+                                ...dbRecs.map(r => ({ text: `[AI ${r.agent_type}] ${r.title}: ${r.message}`, type: 'ai' })),
+                                ...sysRecs.map(r => ({ text: r, type: 'sys' }))
+                              ];
+
+                              if (allRecs.length === 0) {
+                                return (
+                                  <div className="flex items-center gap-1.5 text-green-400 text-xs py-1">
+                                    <CheckCircle className="w-4 h-4 shrink-0" />
+                                    <span>All integration checks passing! No action items.</span>
+                                  </div>
+                                );
+                              }
+
+                              return allRecs.map((rec, idx) => (
+                                <div key={idx} className="flex items-start gap-1.5 text-[11px] text-white/70 bg-black/20 p-2 rounded border border-white/5">
+                                  <ShieldAlert className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", rec.type === 'ai' ? "text-amber-400" : "text-amber-500")} />
+                                  <span>{rec.text}</span>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      </div>
 
                       {/* ── Settings section ──────────────────────────────── */}
                       <div className="p-4 space-y-5">

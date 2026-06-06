@@ -1957,6 +1957,7 @@ const AdminSettings = () => {
                             <option value="datamart">DataMart GH</option>
                             <option value="datahub">DataHub Ghana</option>
                             <option value="superbdatafy">SuperbDatafy</option>
+                            <option value="xcel">XCEL Payment API</option>
                           </select>
                         </div>
                         <div className="space-y-1">
@@ -1967,10 +1968,23 @@ const AdminSettings = () => {
                             onChange={(e) => handleUpdateProvider(provider.id, { 
                               settings: { ...provider.settings, webhook_secret: e.target.value } 
                             })}
-                            placeholder="DataMart Webhook Key"
+                            placeholder={provider.handler_type === "xcel" ? "XCEL Webhook Key" : "DataMart Webhook Key"}
                             className="h-8 bg-background border-border text-xs"
                           />
                         </div>
+                        {provider.handler_type === "xcel" && (
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">Merchant ID</Label>
+                            <Input 
+                              value={provider.settings?.merchant_id || ""} 
+                              onChange={(e) => handleUpdateProvider(provider.id, { 
+                                settings: { ...provider.settings, merchant_id: e.target.value } 
+                              })}
+                              placeholder="XCEL Merchant ID"
+                              className="h-8 bg-background border-border text-xs"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       {provider.balance > 0 && (

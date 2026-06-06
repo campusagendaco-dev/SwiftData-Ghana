@@ -61,26 +61,26 @@ const StoreAuth = ({
           return;
         }
 
-        const { error } = await signUp(email, password, fullName);
+        const { data, error } = await signUp(email, password, fullName, {
+          parentAgentId: agentId,
+        });
         if (error) {
           toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
         } else {
-          // Force sign in immediately
-          const { error: signInError } = await signIn(email, password);
-          if (!signInError) {
-            // Update newly created profile with this parent agent ID for scoping!
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase
-                .from("profiles")
-                .update({ parent_agent_id: agentId })
-                .eq("user_id", user.id);
-            }
+          if (data?.session) {
             toast({ title: "Welcome!", description: `Account created successfully on ${storeName}!` });
             resetForm();
             onClose();
             // Refresh to update state
             window.location.reload();
+          } else {
+            toast({
+              title: "Verification Email Sent",
+              description: "Please check your inbox (and spam folder) for a verification link to confirm your email before signing in.",
+              variant: "default",
+            });
+            resetForm();
+            setIsSignUp(false);
           }
         }
       } else {

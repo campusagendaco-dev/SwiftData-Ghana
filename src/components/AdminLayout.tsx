@@ -133,6 +133,7 @@ const NAV_SECTIONS = [
       { label: "SMS Templates",  icon: MessageSquare, path: "/admin/sms-templates" },
       { label: "Audit Logs",     icon: FileSearch,    path: "/admin/audit-logs" },
       { label: "API Users",     icon: Key,        path: "/admin/api-users" },
+      { label: "API Orders",    icon: ShoppingCart, path: "/admin/api-orders" },
       { label: "Settings",      icon: Settings,   path: "/admin/settings" },
     ],
   },

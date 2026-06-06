@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,12 +93,15 @@ export default function AdminSystemLogs() {
   // Tab
   const [activeTab, setActiveTab] = useState<Tab>("logs");
 
+  const [searchParams] = useSearchParams();
+  const initialOrderId = searchParams.get("order_id") || "";
+
   // Filters
-  const [timeRange, setTimeRange] = useState("24h");
+  const [timeRange, setTimeRange] = useState(initialOrderId ? "7d" : "24h");
   const [levelFilter, setLevelFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const [resolvedFilter, setResolvedFilter] = useState("unresolved");
-  const [orderSearch, setOrderSearch] = useState("");
+  const [resolvedFilter, setResolvedFilter] = useState(initialOrderId ? "all" : "unresolved");
+  const [orderSearch, setOrderSearch] = useState(initialOrderId);
   const [textSearch, setTextSearch] = useState("");
   const [page, setPage] = useState(0);
 

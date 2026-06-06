@@ -102,12 +102,15 @@ const AuthPage = () => {
         return;
       }
 
-      const { error } = await signUp(email, password, fullName, referralCode);
+      const { data, error } = await signUp(email, password, fullName, {
+        referralCode,
+        isAgent: isAgentRoute,
+      });
+
       if (error) {
         toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
       } else {
-        const { error: signInError } = await signIn(email, password);
-        if (!signInError) {
+        if (data?.session) {
           if (enableBiometricsOnSignUp) {
             try {
               toast({ title: "Sign Up Success!", description: "Please scan your fingerprint now to enable Biometric Login." });
@@ -120,6 +123,15 @@ const AuthPage = () => {
           toast({ title: "Welcome!", description: "Your account is ready." });
           const route = await getPostLoginRoute();
           navigate(route);
+        } else {
+          toast({ 
+            title: "Verification Email Sent", 
+            description: "Please check your inbox (and spam folder) for a verification link to confirm your email before signing in.", 
+            variant: "default" 
+          });
+          setPassword("");
+          setConfirmPassword("");
+          setIsSignUp(false);
         }
       }
     } else {

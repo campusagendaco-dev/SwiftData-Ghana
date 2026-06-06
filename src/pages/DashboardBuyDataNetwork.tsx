@@ -312,10 +312,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       toast({ title: "Invalid phone number", description: "Use a valid Ghana number.", variant: "destructive" });
       return false;
     }
-    if (!resolvedName) {
-      toast({ title: "Recipient not verified", description: "Please wait for the recipient name to be verified.", variant: "destructive" });
-      return false;
-    }
     return true;
   };
 

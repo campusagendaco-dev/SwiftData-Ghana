@@ -239,16 +239,20 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       }
 
       if (bankCode) {
-        const { data: resolveData, error: resolveError } = await supabase.functions.invoke("paystack-resolve", {
-          body: { account_number: resolvePhone, bank_code: bankCode }
-        });
-        
-        if (resolveError || !resolveData?.success) {
-           throw new Error(resolveData?.error || "Could not verify this Mobile Money number. Please check it and try again.");
-        }
-        
-        if (resolveData.account_name && resolveData.account_name !== "TESTING ACCOUNT NAME") {
-           toast({ title: "Account Verified", description: resolveData.account_name, duration: 3000 });
+        try {
+          const { data: resolveData, error: resolveError } = await supabase.functions.invoke("paystack-resolve", {
+            body: { account_number: resolvePhone, bank_code: bankCode }
+          });
+          
+          if (!resolveError && resolveData?.success) {
+            if (resolveData.account_name && resolveData.account_name !== "TESTING ACCOUNT NAME") {
+              toast({ title: "Account Verified", description: resolveData.account_name, duration: 3000 });
+            }
+          } else {
+            console.warn("Mobile Money verification failed or returned failure:", resolveError || resolveData?.error);
+          }
+        } catch (e) {
+          console.warn("Mobile Money verification failed with exception:", e);
         }
       }
 

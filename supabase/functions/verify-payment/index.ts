@@ -116,7 +116,7 @@ function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string 
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu" || handlerType === "superbdatafy") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel") {
     return [clean];
   }
 
@@ -213,8 +213,21 @@ function parseProviderResponse(body: string, contentType: string | null): { ok: 
     const effectiveStatus = deliveryStatus || technicalStatus;
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
     
-    // DataMart uses purchaseId or orderReference
-    const orderId = String(parsed?.transaction?.reference ?? data?.orderNumber ?? data?.reference ?? data?.purchaseId ?? data?.orderReference ?? parsed?.transaction_id ?? parsed?.order_id ?? parsed?.id ?? parsed?.reference ?? "");
+    // DataMart uses purchaseId or orderReference. XCEL uses transactionId.
+    const orderId = String(
+      parsed?.transaction?.reference ?? 
+      data?.orderNumber ?? 
+      data?.reference ?? 
+      data?.purchaseId ?? 
+      data?.orderReference ?? 
+      data?.transactionId ?? 
+      data?.transaction_id ?? 
+      parsed?.transaction_id ?? 
+      parsed?.order_id ?? 
+      parsed?.id ?? 
+      parsed?.reference ?? 
+      ""
+    );
 
     const ok = technicalStatus === "success" || technicalStatus === "true" || technicalStatus === "1" || technicalStatus === "completed" || technicalStatus === "pending" || parsed?.success === true || parsed?.ok === true;
 
@@ -245,6 +258,7 @@ function parseProviderResponse(body: string, contentType: string | null): { ok: 
 }
 
 async function callProviderApi(
+  supabaseAdmin: any,
   provider: any,
   data: Record<string, unknown>,
   endpoint: string = "purchase"
@@ -289,6 +303,79 @@ async function callProviderApi(
     payload = {
       reference: String(data.reference || data.transaction_id || data.order_id || ""),
     };
+  } else if (handlerType === "xcel") {
+    if (endpoint !== "status") {
+      const orderType = String(data.order_type || "data").toLowerCase();
+      const recipient = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
+      const amount = String(Number(data.amount || 0).toFixed(2));
+      const extRef = String(data.orderReference || data.reference || "");
+      const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/provider-webhook`);
+      
+      let productId = String(data.plan || data.package_size || data.productId || "");
+      
+      if (orderType === "utility") {
+        const utilityProvider = String(data.utility_provider || "").toUpperCase();
+        if (utilityProvider.includes("ECG")) {
+          payload = {
+            productId: "ECG_PREPAID",
+            amount,
+            meterNumber: data.utility_account_number || recipient,
+            ext_transaction_id: extRef,
+            callback_url: callbackUrl
+          };
+        } else {
+          payload = {
+            productId: data.utility_provider || productId,
+            amount,
+            smartCardNumber: data.utility_account_number || recipient,
+            ext_transaction_id: extRef,
+            callback_url: callbackUrl
+          };
+        }
+      } else {
+        // Airtime / Data
+        if (orderType === "data") {
+          try {
+            const { data: pkgMapping } = await supabaseAdmin
+              .from("provider_packages")
+              .select("external_id")
+              .eq("provider_id", provider.id)
+              .eq("network", data.networkRaw || data.network || "")
+              .eq("package_name", data.package_size || data.plan || "")
+              .maybeSingle();
+            if (pkgMapping?.external_id) {
+              productId = pkgMapping.external_id;
+            }
+          } catch (e) {
+            console.error("[xcel-payload-resolve] Error:", e);
+          }
+        } else if (orderType === "airtime") {
+          try {
+            const { data: pkgMapping } = await supabaseAdmin
+              .from("provider_packages")
+              .select("external_id")
+              .eq("provider_id", provider.id)
+              .eq("network", data.networkRaw || data.network || "")
+              .ilike("package_name", "%Airtime%")
+              .limit(1)
+              .maybeSingle();
+            if (pkgMapping?.external_id) {
+              productId = pkgMapping.external_id;
+            }
+          } catch (e) {
+            console.error("[xcel-payload-resolve-airtime] Error:", e);
+          }
+        }
+        
+        payload = {
+          productId,
+          amount,
+          recipient,
+          ext_transaction_id: extRef,
+          callback_url: callbackUrl
+        };
+      }
+    }
   }
 
   const urls = buildProviderUrls(baseUrl, endpoint, handlerType);
@@ -304,6 +391,22 @@ async function callProviderApi(
          url = `${url}/transaction/${ref}`;
       } else {
          url = `${url}/buy-data`;
+      }
+    } else if (handlerType === "xcel") {
+      if (endpoint === "status") {
+         const ref = String(data.transaction_id || data.reference || data.order_id || "");
+         url = `${url}/partners/momo/status/${ref}`;
+      } else {
+         const orderType = String(data.order_type || "data").toLowerCase();
+         if (orderType === "airtime") {
+            url = `${url}/partners/vas/airtime`;
+         } else if (orderType === "utility") {
+            const utilityProvider = String(data.utility_provider || "").toUpperCase();
+            if (utilityProvider.includes("ECG")) url = `${url}/partners/vas/ecg`;
+            else url = `${url}/partners/vas/tv`;
+         } else {
+            url = `${url}/partners/vas/data`;
+         }
       }
     } else if (handlerType === "justbuy") {
        if (data.order_type === "airtime") {
@@ -332,12 +435,15 @@ async function callProviderApi(
           headers["X-Idempotency-Key"] = idempotencyKey;
         }
 
-        if (handlerType !== "datamart" && handlerType !== "spendless") {
+        if (handlerType === "xcel") {
+          headers["x-api-key"] = apiKey;
+          headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
+        } else if (handlerType !== "datamart" && handlerType !== "spendless") {
           headers["Authorization"] = `Bearer ${apiKey}`;
           headers["User-Agent"] = "SwiftDataGH/2.0";
         }
 
-        const isGet = (handlerType === "datamart" && endpoint === "status") || (handlerType === "superbdatafy" && endpoint === "status");
+        const isGet = (handlerType === "datamart" && endpoint === "status") || (handlerType === "superbdatafy" && endpoint === "status") || (handlerType === "xcel" && endpoint === "status");
 
         const res = await fetch(url, {
           method: isGet ? "GET" : "POST",
@@ -533,7 +639,7 @@ serve(async (req) => {
       let foundOnProvider = false;
       for (const provider of providers) {
         console.log(`[verify-payment] Checking status for ${targetReference} at ${provider.name}`);
-        const checkResult = await callProviderApi(provider, {
+        const checkResult = await callProviderApi(supabaseAdmin, provider, {
           transaction_id: existingOrder.provider_order_id,
           order_id: existingOrder.provider_order_id || targetReference,
           reference: targetReference,
@@ -586,7 +692,7 @@ serve(async (req) => {
     if (existingOrder?.status === "pending" && isProviderOrder) {
       const providers = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
       for (const provider of providers) {
-        const checkResult = await callProviderApi(provider, { 
+        const checkResult = await callProviderApi(supabaseAdmin, provider, { 
           transaction_id: targetReference,
           reference: targetReference, 
           order_id: targetReference 
@@ -921,7 +1027,7 @@ serve(async (req) => {
     // Auto-failover: try each active provider in priority order
     for (const provider of activeProviders) {
       const providerCallStart = Date.now();
-      result = await callProviderApi(provider, buildDataPayload(provider), "purchase");
+      result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider), "purchase");
       
       // Auto-fallback for AirtelTigo: If AT_PREMIUM fails with "Bundle not available", try AT_BIGTIME
       if (!result.ok && /bundle not available|invalid bundle/i.test(result.reason) && (network.toUpperCase().includes("AIRTEL") || network.toUpperCase() === "AT")) {
@@ -930,7 +1036,7 @@ serve(async (req) => {
           console.log(`[verify-payment] Retrying ${provider.name} with AT_BIGTIME/AT for AirtelTigo bundle...`);
           // Datamart/Datahub use AT_BIGTIME. Bossu uses AT.
           const fallbackNetKey = (ht === "bossu" || ht === "standard") ? "AT" : "AT_BIGTIME";
-          result = await callProviderApi(provider, buildDataPayload(provider, fallbackNetKey), "purchase");
+          result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider, fallbackNetKey), "purchase");
         }
       }
 

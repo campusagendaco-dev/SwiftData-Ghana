@@ -395,8 +395,79 @@ serve(async (req) => {
             console.log(`[sync:spendless] Balance: GHS ${balance}`);
             break;
           }
-        }
       }
+    } else if (handlerType === "xcel") {
+      console.log(`Syncing XCEL provider: ${provider.name}`);
+      const merchantId = String(provider.settings?.merchant_id || "");
+
+      // 1. Fetch Products
+      const productsUrl = `${baseUrl}/partners/vas/products?country=GH`;
+      console.log(`[sync:xcel] Fetching products from: ${productsUrl}`);
+      const productsRes = await fetch(productsUrl, {
+        headers: {
+          "x-api-key": apiKey,
+          "x-merchant-id": merchantId,
+          "Accept": "application/json"
+        }
+      });
+
+      if (productsRes.ok) {
+        const result = await productsRes.json();
+        const products = result.data || [];
+        const allPackages = [];
+
+        const networkMap: Record<string, string> = {
+          MTN: "MTN",
+          TELECEL: "Telecel",
+          VODAFONE: "Telecel",
+          AIRTELTIGO: "AirtelTigo",
+          AT: "AirtelTigo"
+        };
+
+        const parseCapacity = (packageSize: string): number => {
+          if (!packageSize) return 0;
+          const match = packageSize.toString().replace(/\s+/g, "").toLowerCase().match(/(\d+(?:\.\d+)?)\s*(gb|mb)/);
+          if (match) {
+            const val = parseFloat(match[1]);
+            const unit = match[2];
+            return unit === "gb" ? val : val / 1024;
+          }
+          const fallbackMatch = packageSize.toString().replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+          return fallbackMatch ? parseFloat(fallbackMatch[1]) : 0;
+        };
+
+        for (const prod of products) {
+          const rawNet = String(prod.provider || "MTN").toUpperCase();
+          const dbNetwork = networkMap[rawNet] || prod.provider || "MTN";
+          const capacityGb = parseCapacity(prod.name);
+
+          allPackages.push({
+            provider_id: provider.id,
+            network: dbNetwork,
+            package_name: prod.name,
+            capacity_gb: capacityGb,
+            cost_price: 0,
+            external_id: prod.productId,
+            raw_data: prod,
+            is_active: true
+          });
+        }
+
+        if (allPackages.length > 0) {
+          const { error: upsertError } = await supabaseAdmin
+            .from("provider_packages")
+            .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
+          if (upsertError) console.error("[sync:xcel] Package upsert error:", upsertError);
+          packagesSynced = allPackages.length;
+          console.log(`[sync:xcel] Synced ${packagesSynced} products/packages`);
+        }
+      } else {
+        const errorText = await productsRes.text().catch(() => "");
+        console.error(`[sync:xcel] Failed to fetch products (HTTP ${productsRes.status}):`, errorText);
+        throw new Error(`XCEL API products fetch failed: HTTP ${productsRes.status}`);
+      }
+
+      balance = provider.balance || 0;
     } else {
       throw new Error(`Sync not implemented for handler type: ${handlerType}`);
     }
