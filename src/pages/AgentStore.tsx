@@ -283,13 +283,56 @@ const AgentStore = () => {
           return;
         }
 
-        const [agentRes, pkgRes, pricingCtx] = await Promise.all([
-          storeQuery.maybeSingle(),
-          supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
-          fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
-        ]);
+        let agentRes;
+        let pkgRes;
+        let pricingCtx;
 
-        if (agentRes.error) { setNotFound(true); setLoading(false); return; }
+        try {
+          const [res, pkgResData, pricingCtxData] = await Promise.all([
+            storeQuery.maybeSingle(),
+            supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
+            fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
+          ]);
+          
+          pkgRes = pkgResData;
+          pricingCtx = pricingCtxData;
+
+          if (res.error) {
+            const errMsg = res.error.message || "";
+            const errDet = res.error.details || "";
+            if (errMsg.includes("registered_user_prices") || errDet.includes("registered_user_prices")) {
+              console.warn("[AgentStore] registered_user_prices column missing in view, retrying without it");
+              let fallbackQuery = supabase
+                .from("agent_stores")
+                .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
+              
+              if (slug && slug !== "undefined" && slug !== "null") {
+                fallbackQuery = fallbackQuery.eq("slug", slug);
+              } else if (activeDomain) {
+                fallbackQuery = fallbackQuery.eq("custom_domain", activeDomain);
+              }
+              
+              const fallbackRes = await fallbackQuery.maybeSingle();
+              if (fallbackRes.error) {
+                setNotFound(true);
+                setLoading(false);
+                return;
+              }
+              agentRes = fallbackRes;
+            } else {
+              setNotFound(true);
+              setLoading(false);
+              return;
+            }
+          } else {
+            agentRes = res;
+          }
+        } catch (err) {
+          console.error("Error executing store queries:", err);
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
 
         const gsMap: Record<string, GlobalPkgSetting> = {};
         (pkgRes.data || []).forEach((r: any) => { 
