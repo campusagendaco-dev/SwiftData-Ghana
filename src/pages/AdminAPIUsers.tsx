@@ -24,6 +24,7 @@ import {
   Coins, Lightbulb, ShieldAlert,
 } from "lucide-react";
 import { networks, basePackages } from "@/lib/data";
+import { cn } from "@/lib/utils";
 
 const ALLOWED_ACTION_OPTIONS = ["balance", "plans", "buy", "orders"] as const;
 type AllowedAction = typeof ALLOWED_ACTION_OPTIONS[number];
