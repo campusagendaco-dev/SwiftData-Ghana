@@ -182,6 +182,21 @@ const SubAgentSignup = () => {
       if (activateError) {
         console.error("Activation error:", activateError);
       }
+
+      // Also create the reseller store storefront row
+      try {
+        await supabase
+          .from("reseller_stores")
+          .insert({
+            user_id: userId,
+            store_name: autoStoreName,
+            slug: autoSlug,
+            store_primary_color: "#fbbf24",
+          });
+      } catch (e) {
+        console.error("Error creating sub-agent reseller store:", e);
+      }
+      
       navigate(`/store/${autoSlug}`);
     }
     setSubmitting(false);

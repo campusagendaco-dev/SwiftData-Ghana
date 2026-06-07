@@ -62,6 +62,20 @@ const Onboarding = () => {
     if (error) {
       toast({ title: "Error saving details", description: error.message, variant: "destructive" });
     } else {
+      // Direct insertion to reseller_stores so storefront exists immediately
+      try {
+        await supabase
+          .from("reseller_stores")
+          .insert({
+            user_id: user.id,
+            store_name: form.store_name.trim(),
+            slug,
+            store_primary_color: "#fbbf24",
+          });
+      } catch (e) {
+        console.error("[Onboarding] Error creating reseller store:", e);
+      }
+
       await refreshProfile();
       
       let activationFee = 50;

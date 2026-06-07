@@ -267,7 +267,7 @@ export default function DashboardMyStore() {
       fetchAgentWallet();
       fetchGlobalPackageSettings();
     }
-  }, [user]);
+  }, [user, profile]);
 
   // Sync profile central data to form
   useEffect(() => {
@@ -327,10 +327,32 @@ export default function DashboardMyStore() {
         .order("created_at", { ascending: true });
 
       if (error) throw error;
-      setStores(data || []);
+      
+      let currentStores = data || [];
+      const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
+      
+      if (currentStores.length === 0 && isPaidAgent && profile?.store_name && profile?.slug) {
+        console.log("[MyStore] Auto-healing: Creating missing reseller store storefront");
+        const { data: newStore, error: insertError } = await supabase
+          .from("reseller_stores")
+          .insert({
+            user_id: user?.id,
+            store_name: profile.store_name,
+            slug: profile.slug,
+            store_primary_color: profile.store_primary_color || PRESET_COLORS[0],
+            store_logo_url: profile.store_logo_url || null,
+          })
+          .select()
+          .single();
+        if (!insertError && newStore) {
+          currentStores = [newStore];
+        }
+      }
+      
+      setStores(currentStores);
 
-      if (data && data.length > 0 && !selectedStoreId) {
-        setSelectedStoreId(data[0].id);
+      if (currentStores.length > 0 && !selectedStoreId) {
+        setSelectedStoreId(currentStores[0].id);
       }
     } catch (e: any) {
       console.error("Error loading stores:", e);
