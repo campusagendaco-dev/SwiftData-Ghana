@@ -912,7 +912,7 @@ serve(async (req: Request) => {
         const network = (profile.momo_network || "").toUpperCase();
         let bankCode = "";
         if (network.includes("MTN")) bankCode = "MTN";
-        else if (network.includes("VODA") || network.includes("TELECEL") || network.includes("VDF")) bankCode = "VDF";
+        else if (network.includes("VODA") || network.includes("TELECEL") || network.includes("VDF")) bankCode = "VOD";
         else if (network.includes("AIRTEL") || network.includes("TIGO") || network.includes("AT") || network.includes("ATL")) bankCode = "ATL";
 
         if (!bankCode || !profile.momo_number) {
