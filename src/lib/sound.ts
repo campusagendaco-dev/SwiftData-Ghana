@@ -117,6 +117,7 @@ export function playSound(path: string, volume = 0.4) {
     }
 
     const audio = new Audio(path);
+    audio.crossOrigin = "anonymous";
     audio.volume = volume;
     const playPromise = audio.play();
     

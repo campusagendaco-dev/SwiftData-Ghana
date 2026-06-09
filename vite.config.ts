@@ -60,6 +60,17 @@ export default defineConfig(({ mode }) => ({
               },
             },
           },
+          {
+            urlPattern: /\.(?:mp3|wav|ogg)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "audio-cache",
+              rangeRequests: true,
+              cacheableResponse: {
+                statuses: [0, 200, 206],
+              },
+            },
+          },
         ],
       },
     }),

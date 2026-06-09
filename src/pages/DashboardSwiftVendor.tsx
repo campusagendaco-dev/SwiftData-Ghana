@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { SecurityGateway } from "@/components/SecurityGateway";
 import { VendorOnboardingWizard } from "@/components/VendorOnboardingWizard";
 import { VendorSecurityApproval } from "@/components/VendorSecurityApproval";
+import { playSuccessSound } from "@/lib/sound";
 
 const GHANA_BANKS = [
   { code: "SCH", name: "Standard Chartered Bank" },
@@ -87,15 +88,6 @@ const getErrorMessageFromData = (data: any) => {
     return THETELLER_ERRORS[code];
   }
   return data.description || data.reason || data.message || data.error || data.desc || data.status || "Unknown error";
-};
-
-const playSuccessSound = () => {
-  try {
-    const audio = new Audio("https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/success-beep.mp3");
-    audio.play().catch(e => console.log('Audio playback prevented:', e));
-  } catch (e) {
-    console.warn("Audio playback failed:", e);
-  }
 };
 
 const DashboardSwiftVendor = () => {

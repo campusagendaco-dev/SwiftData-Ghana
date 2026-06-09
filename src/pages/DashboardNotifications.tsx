@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { safeVibrate } from "@/lib/sound";
+import { safeVibrate, playAlertSound } from "@/lib/sound";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -110,13 +110,7 @@ const DashboardNotifications = () => {
           setNotifications((prev) => [newNotif, ...prev]);
 
           if (soundEnabled) {
-            try {
-              const audio = new Audio("/sounds/notification_system.mp3");
-              audio.volume = 0.4;
-              audio.play().catch(() => {});
-            } catch (e) {
-              // Ignore audio autoplay restrictions
-            }
+            playAlertSound();
           }
           if (vibeEnabled) safeVibrate(150);
         }

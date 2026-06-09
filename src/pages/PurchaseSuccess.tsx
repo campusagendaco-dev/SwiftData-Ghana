@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Home, ReceiptText, Wallet, ShoppingBag, Copy, Check, Package as PackageIcon, Phone as PhoneIcon, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { playSuccessSound } from "@/lib/sound";
 
 type ConfettiPiece = {
   id: number;
@@ -57,11 +58,9 @@ const PurchaseSuccess = () => {
   const [copied, setCopied] = useState(false);
 
   // Play success sound on mount
-  useState(() => {
-    const audio = new Audio("/sounds/success.mp3");
-    audio.volume = 0.5;
-    audio.play().catch(() => console.log("[PurchaseSuccess] Audio blocked"));
-  });
+  useEffect(() => {
+    playSuccessSound();
+  }, []);
 
   const fromStore = Boolean(slug && slug !== "undefined" && slug !== "null");
   const storeUrl = fromStore ? `/store/${slug}` : null;
