@@ -128,4 +128,25 @@ describe("purchase flow guardrails", () => {
     expect(dashboardSwiftVendor).toContain("URLSearchParams(window.location.search)");
     expect(dashboardSwiftVendor).toContain("handleVerifyOrderStatus");
   });
+
+  it("enforces offline queuing on connection failures in public-function-client", () => {
+    const publicClient = read("src/lib/public-function-client.ts");
+    expect(publicClient).toContain("queueTransaction");
+    expect(publicClient).toContain("navigator.onLine");
+    expect(publicClient).toContain("pending_sync");
+  });
+
+  it("handles Background Sync sync event in service worker", () => {
+    const pushSw = read("public/push-sw.js");
+    expect(pushSw).toContain("self.addEventListener('sync'");
+    expect(pushSw).toContain("sync-transactions");
+    expect(pushSw).toContain("SwiftDataOfflineQueue");
+  });
+
+  it("integrates OfflineQueueWidget into buy data and wallet dashboards", () => {
+    const buyData = read("src/pages/DashboardBuyDataNetwork.tsx");
+    const wallet = read("src/pages/DashboardWallet.tsx");
+    expect(buyData).toContain("OfflineQueueWidget");
+    expect(wallet).toContain("OfflineQueueWidget");
+  });
 });

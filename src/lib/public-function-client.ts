@@ -17,6 +17,44 @@ const publicFunctionClient = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLI
 });
 
 export async function invokePublicFunction(functionName: string, options?: { body?: unknown; headers?: Record<string, string> }) {
+  // Optimize for offline purchases: queue immediately if offline
+  if (typeof window !== "undefined" && !window.navigator.onLine && functionName.includes("wallet-buy-data")) {
+    const body = options?.body as any;
+    const reference = body?.reference || crypto.randomUUID();
+    try {
+      const { queueTransaction } = await import("./offline-queue");
+      const SUPABASE_URL = publicFunctionClient.supabaseUrl;
+      const cacheBuster = `cb=${Date.now()}`;
+      const finalUrl = functionName.includes("?") 
+        ? `${SUPABASE_URL}/functions/v1/${functionName}&${cacheBuster}` 
+        : `${SUPABASE_URL}/functions/v1/${functionName}?${cacheBuster}`;
+      
+      await queueTransaction({
+        id: reference,
+        url: finalUrl,
+        method: "POST",
+        body: JSON.stringify(body || {}),
+        headers: options?.headers || {},
+        network: body?.network,
+        packageSize: body?.package_size,
+        phone: body?.customer_phone,
+        amount: body?.amount,
+      });
+      
+      return {
+        data: {
+          success: true,
+          status: "pending_sync",
+          order_id: reference,
+          queued: true
+        },
+        error: null
+      } as any;
+    } catch (queueErr) {
+      console.error("[Resilience] Failed to queue transaction offline:", queueErr);
+    }
+  }
+
   let retries = 0;
   const maxRetries = 3;
   const baseDelay = 800; // start with 800ms
@@ -46,6 +84,40 @@ export async function invokePublicFunction(functionName: string, options?: { bod
       if (retries === maxRetries || !isConnectionError) {
         if (isConnectionError) {
           console.error(`[Resilience] Final retry for ${functionName} failed:`, error);
+          
+          if (functionName.includes("wallet-buy-data")) {
+            try {
+              const body = options?.body as any;
+              const reference = body?.reference || crypto.randomUUID();
+              const { queueTransaction } = await import("./offline-queue");
+              const SUPABASE_URL = publicFunctionClient.supabaseUrl;
+              const finalUrl = `${SUPABASE_URL}/functions/v1/${finalFunctionName}`;
+              
+              await queueTransaction({
+                id: reference,
+                url: finalUrl,
+                method: "POST",
+                body: JSON.stringify(body || {}),
+                headers: options?.headers || {},
+                network: body?.network,
+                packageSize: body?.package_size,
+                phone: body?.customer_phone,
+                amount: body?.amount,
+              });
+              
+              return {
+                data: {
+                  success: true,
+                  status: "pending_sync",
+                  order_id: reference,
+                  queued: true
+                },
+                error: null
+              } as any;
+            } catch (queueErr) {
+              console.error("[Resilience] Failed to queue failed transaction offline:", queueErr);
+            }
+          }
         }
         throw error;
       }
@@ -56,6 +128,7 @@ export async function invokePublicFunction(functionName: string, options?: { bod
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
+
   return await publicFunctionClient.functions.invoke(finalFunctionName, finalOptions);
 }
 

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { basePackages, networks, getPublicPrice } from "@/lib/data";
 import { WalletStatement } from "@/components/WalletStatement";
+import { OfflineQueueWidget } from "@/components/OfflineQueueWidget";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 interface WalletTopupRow {
@@ -196,6 +197,17 @@ const DashboardWallet = () => {
   useEffect(() => { fetchBalance(); }, [fetchBalance]);
   useEffect(() => { fetchRecentTopups(); }, [fetchRecentTopups]);
 
+  useEffect(() => {
+    const handleSyncComplete = () => {
+      void fetchBalance();
+      void fetchRecentTopups();
+    };
+    window.addEventListener("offline-sync-complete", handleSyncComplete);
+    return () => {
+      window.removeEventListener("offline-sync-complete", handleSyncComplete);
+    };
+  }, [fetchBalance, fetchRecentTopups]);
+
   useRealtimeRefresh({
     tables: ["wallets", "orders"],
     onRefresh: () => { fetchBalance(); fetchRecentTopups(); },
@@ -301,6 +313,13 @@ const DashboardWallet = () => {
     if (error || data?.error) {
       const description = data?.error || await getFunctionErrorMessage(error, "Could not complete wallet purchase.");
       toast({ title: "Purchase failed", description, variant: "destructive" });
+    } else if (data?.queued) {
+      toast({
+        title: "Order Queued Offline 📶",
+        description: "No network connection. Order queued locally and will be processed when online.",
+      });
+      setCustomerPhone("");
+      setSelectedPackage("");
     } else if (data?.success || data?.status === "paid" || data?.status === "fulfilled") {
       if (data?.order_id) {
         invokePublicFunction("verify-payment", { body: { reference: data.order_id } }).catch(e => console.error("[FastTrack-Error]", e));
@@ -562,6 +581,7 @@ const DashboardWallet = () => {
               </Button>
             </CardContent>
           </Card>
+          <OfflineQueueWidget />
         </div>
 
         <div className="lg:col-span-2 space-y-6">

@@ -15,6 +15,7 @@ import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
+import { OfflineQueueWidget } from "@/components/OfflineQueueWidget";
 import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
@@ -240,6 +241,16 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   };
 
   useEffect(() => { void refreshBalance(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+ 
+  useEffect(() => {
+    const handleSyncComplete = () => {
+      void refreshBalance();
+    };
+    window.addEventListener("offline-sync-complete", handleSyncComplete);
+    return () => {
+      window.removeEventListener("offline-sync-complete", handleSyncComplete);
+    };
+  }, []);
 
   useEffect(() => { 
     setSelectedSize(""); 
@@ -406,6 +417,17 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         return;
       }
 
+      if (data?.queued) {
+        toast({
+          title: "Order Queued Offline 📶",
+          description: "Connection is offline. Your purchase is queued and will automatically sync when online.",
+        });
+        setPhone("");
+        setSelectedSize("");
+        setBuying(false);
+        return;
+      }
+
       console.log("Wallet buy response data:", data);
 
       if (typeof data?.order_id === "string" || data?.success) {
@@ -532,6 +554,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           onDismiss={() => setLastOrder(null)}
         />
       )}
+
+      <OfflineQueueWidget />
 
       {/* Agent upsell */}
       {!isPaidAgent && (
