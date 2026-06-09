@@ -1289,7 +1289,7 @@ const DashboardSwiftVendor = () => {
                   onClick={async () => {
                     await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
                     setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
-                    navigate("/dashboard/vendor/pricing");
+                    navigate("/dashboard/pricing");
                   }}
                   className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black text-sm flex-1 sm:flex-none text-center shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-all hover:scale-105"
                 >
@@ -2225,7 +2225,7 @@ const DashboardSwiftVendor = () => {
                         </div>
                       </div>
                       <Button 
-                        onClick={() => navigate('/dashboard/vendor/settings')}
+                        onClick={() => navigate('/dashboard/settings')}
                         className="bg-indigo-500 hover:bg-indigo-600 text-white font-black rounded-xl h-10 shrink-0"
                       >
                         Send Promo SMS

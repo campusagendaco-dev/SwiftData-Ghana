@@ -49,6 +49,13 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
     if (countdownTimerRef.current) window.clearInterval(countdownTimerRef.current);
   }, []);
 
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      clearTimers();
+    };
+  }, [clearTimers]);
+
   const handleLogout = useCallback(async () => {
     clearTimers();
     setIsWarning(false);
@@ -131,7 +138,6 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
       document.body.classList.remove("shield-active");
       return () => {
         activityEvents.forEach(event => window.removeEventListener(event, resetIdleTimer));
-        clearTimers();
       };
     }
     document.body.classList.add("shield-active");
@@ -151,12 +157,11 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
 
     return () => {
       activityEvents.forEach(event => window.removeEventListener(event, resetIdleTimer));
-      clearTimers();
       
       window.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isEnabled, resetIdleTimer, clearTimers]);
+  }, [isEnabled, resetIdleTimer]);
 
   // Consolidated Visual State (Removed passive blurred state, keeping cinematic reveal)
   const isCurrentlyShielded = isInitialReveal && isEnabled;
@@ -303,7 +308,11 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
                     setIsWarning(false);
                     resetIdleTimer(); // Restart the 15m window
                   }}
-                  className="w-full py-3 px-4 bg-primary text-black font-black rounded-2xl hover:opacity-90 active:scale-95 transition-all shadow-lg shadow-primary/20"
+                  className="w-full py-3 px-4 text-black font-black rounded-2xl hover:opacity-90 active:scale-95 transition-all shadow-lg"
+                  style={{
+                    backgroundColor: brandColor,
+                    boxShadow: `0 10px 15px -3px ${brandColor}33, 0 4px 6px -4px ${brandColor}33`
+                  }}
                 >
                   I'm Still Here
                 </button>

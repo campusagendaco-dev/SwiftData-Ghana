@@ -11,8 +11,7 @@ serve(async () => {
 
     // Fetch Scheduled SMS templates from system settings
     const { data: settings } = await supabaseAdmin
-      .from("system_settings")
-      .select("scheduled_success_sms_message, scheduled_failed_sms_message")
+      .from("v_system_settings_with_secrets").select("scheduled_success_sms_message, scheduled_failed_sms_message")
       .eq("id", 1)
       .maybeSingle();
 

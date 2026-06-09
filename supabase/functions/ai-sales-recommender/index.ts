@@ -10,8 +10,7 @@ const corsHeaders = {
 async function runSalesPromoRecommender(supabase: any, isManualTrigger = false): Promise<{ success: boolean; sent: number; error?: string }> {
   // 1. Check if AI Recommender is enabled in system settings
   const { data: settings, error: settingsError } = await supabase
-    .from("system_settings")
-    .select("ai_recommender_enabled")
+    .from("v_system_settings_with_secrets").select("ai_recommender_enabled")
     .eq("id", 1)
     .maybeSingle();
 
