@@ -46,7 +46,7 @@ serve(async (req: Request) => {
     const payload = await req.json().catch(() => ({}));
     console.log("[PAYLOAD]", JSON.stringify(payload));
 
-    const { network: networkRaw, package_size, customer_phone, amount: requestedAmount, reference } = payload;
+    const { network: networkRaw, package_size, customer_phone, amount: requestedAmount, reference, agent_id } = payload;
     
     // Auth
     const authHeader = req.headers.get("Authorization");
@@ -134,10 +134,11 @@ serve(async (req: Request) => {
     let orderAgentId = user.id;
     let orderCustomerId: string | null = null;
 
-    const isStorefrontCustomer = agentProfile?.parent_agent_id && !agentProfile?.is_sub_agent;
+    const isStoreOwnerBuyingFromOwnStore = agent_id && agent_id === user.id;
+    const isStorefrontCustomer = (agentProfile?.parent_agent_id && !agentProfile?.is_sub_agent) || isStoreOwnerBuyingFromOwnStore;
 
     if (isStorefrontCustomer) {
-      const storeOwnerId = agentProfile.parent_agent_id!;
+      const storeOwnerId = isStoreOwnerBuyingFromOwnStore ? user.id : agentProfile.parent_agent_id!;
       orderAgentId = storeOwnerId;
       orderCustomerId = user.id;
 

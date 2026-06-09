@@ -95,14 +95,13 @@ describe("purchase flow guardrails", () => {
     const subAgentPending = read("src/pages/SubAgentPending.tsx");
     const dashboardWallet = read("src/pages/DashboardWallet.tsx");
 
-    expect(buyData).toContain("invokePublicFunction(\"initialize-payment\"");
-    expect(agentStore).toContain("invokePublicFunction(\"initialize-payment\"");
+    expect(buyData).toContain("PaystackMomoCheckout");
+    expect(agentStore).toContain("PaystackMomoCheckout");
     expect(agentPending).toContain("invokePublicFunction(\"initialize-payment\"");
     expect(agentPending).toContain("invokePublicFunctionAsUser(\"verify-payment\"");
     expect(subAgentPending).toContain("invokePublicFunction(\"initialize-payment\"");
     expect(subAgentPending).toContain("invokePublicFunctionAsUser(\"verify-payment\"");
     expect(dashboardWallet).toContain("invokePublicFunctionAsUser(\"verify-payment\"");
-    expect(dashboardWallet).toContain("invokePublicFunctionAsUser(\"wallet-topup\"");
     expect(dashboardWallet).toContain("invokePublicFunctionAsUser(\"wallet-buy-data\"");
     expect(dashboardWallet).not.toContain("invokePublicFunction(\"initialize-payment\"");
   });

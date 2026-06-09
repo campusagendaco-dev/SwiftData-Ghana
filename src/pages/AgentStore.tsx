@@ -189,6 +189,7 @@ const AgentStore = () => {
           customer_phone: phone,
           amount: selectedPkg!.price,
           reference: orderId,
+          agent_id: agent?.user_id,
         },
       });
 
