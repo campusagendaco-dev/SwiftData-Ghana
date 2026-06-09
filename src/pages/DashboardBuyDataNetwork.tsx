@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -272,6 +272,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
   // Auto-resolve recipient name
   useEffect(() => {
+    if (typeof window !== "undefined" && !window.navigator.onLine) return;
+
     const attemptKey = `${network}-${normalizedPhone}`;
     if (!isPhoneValid || resolvedName || resolvingName || lastAttemptRef.current === attemptKey) return;
 
@@ -659,32 +661,39 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 maxLength={12}
               />
               {isPhoneValid && !resolvedName && (
-                <button
-                  onClick={async () => {
-                    setResolvingName(true);
-                    try {
-                      let bankCode = "MTN";
-                      const net = network.toUpperCase();
-                      if (net.includes("VODA") || net.includes("TELECEL")) bankCode = "VOD";
-                      if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) bankCode = "ATL";
+                typeof window !== "undefined" && window.navigator.onLine ? (
+                  <button
+                    onClick={async () => {
+                      setResolvingName(true);
+                      try {
+                        let bankCode = "MTN";
+                        const net = network.toUpperCase();
+                        if (net.includes("VODA") || net.includes("TELECEL")) bankCode = "VOD";
+                        if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) bankCode = "ATL";
 
-                      const { data, error } = await supabase.functions.invoke("paystack-resolve", {
-                        body: { account_number: normalizedPhone, bank_code: bankCode }
-                      });
-                      if (error || !data?.success) throw new Error(data?.error || "Could not resolve name");
-                      setResolvedName(data.account_name);
-                    } catch (e: any) {
-                      toast({ title: "Verification Failed", description: e.message, variant: "destructive" });
-                    } finally {
-                      setResolvingName(false);
-                    }
-                  }}
-                  disabled={resolvingName}
-                  className="mt-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary/80 transition-colors"
-                >
-                  {resolvingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-                  Verify Recipient Name
-                </button>
+                        const { data, error } = await supabase.functions.invoke("paystack-resolve", {
+                          body: { account_number: normalizedPhone, bank_code: bankCode }
+                        });
+                        if (error || !data?.success) throw new Error(data?.error || "Could not resolve name");
+                        setResolvedName(data.account_name);
+                      } catch (e: any) {
+                        toast({ title: "Verification Failed", description: e.message, variant: "destructive" });
+                      } finally {
+                        setResolvingName(false);
+                      }
+                    }}
+                    disabled={resolvingName}
+                    className="mt-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary/80 transition-colors"
+                  >
+                    {resolvingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                    Verify Recipient Name
+                  </button>
+                ) : (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-500/85">
+                    <WifiOff className="w-3.5 h-3.5" />
+                    Verification offline (will queue order without name)
+                  </div>
+                )
               )}
               {resolvedName && (
                 <div className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-widest animate-in fade-in slide-in-from-top-1">
