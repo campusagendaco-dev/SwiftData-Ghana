@@ -32,10 +32,21 @@ const NotificationPopup = () => {
     vibePattern: "200,100,200"
   });
   const dismissingRef = useRef<string | null>(null);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      fetchedRef.current = false;
+      return;
+    }
 
+    // Prevent duplicate fetch loops when profile/user updates
+    if (fetchedRef.current) return;
+
+    // Wait for profile data to load so we know user's role (isAgent status)
+    if (!profile) return;
+
+    fetchedRef.current = true;
     let active = true;
 
     const fetchNotifications = async () => {
