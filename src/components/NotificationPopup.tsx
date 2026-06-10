@@ -80,8 +80,16 @@ const NotificationPopup = () => {
       const p = profile as Profile | null;
       const isAgent = Boolean(p?.agent_approved || p?.sub_agent_approved || p?.is_agent || p?.is_sub_agent);
       
+      // Calculate user signup time to avoid historical notifications spam
+      const userJoinedAt = new Date(p?.created_at || user.created_at || 0).getTime();
+      
       const filtered = notifs.filter((n: any) => {
         if (dismissedIds.includes(n.id)) return false;
+
+        // Skip historical announcements created before the user signed up
+        const notifTime = new Date(n.created_at).getTime();
+        if (notifTime < userJoinedAt) return false;
+
         if (n.target_type === "all") return true;
         if (n.target_type === "agents" && isAgent) return true;
         if (n.target_type === "users" && !isAgent) return true;
