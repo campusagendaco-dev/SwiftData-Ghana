@@ -8,16 +8,33 @@ serve(async (req) => {
     
     const sql = postgres(dbUrl);
     
-    const result = await sql`
-      SELECT n.nspname as schema_name, p.proname as function_name, pg_get_functiondef(p.oid) as definition
-      FROM pg_proc p
-      JOIN pg_namespace n ON p.pronamespace = n.oid
-      WHERE p.proname IN ('create_order_rpc', 'debit_wallet', 'credit_wallet', 'refund_failed_order')
-    `;
+    // Parse query from request body
+    let queryText = "";
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        queryText = body.sql || body.query || "";
+      } catch (e) {
+        console.error("Failed to parse request JSON:", e);
+      }
+    }
+    
+    let result;
+    if (queryText) {
+      console.log("Executing raw query:", queryText);
+      result = await sql.unsafe(queryText);
+    } else {
+      result = await sql`
+        SELECT n.nspname as schema_name, p.proname as function_name, pg_get_functiondef(p.oid) as definition
+        FROM pg_proc p
+        JOIN pg_namespace n ON p.pronamespace = n.oid
+        WHERE p.proname IN ('create_order_rpc', 'debit_wallet', 'credit_wallet', 'refund_failed_order')
+      `;
+    }
     
     await sql.end();
     
-    return new Response(JSON.stringify({ success: true, functions: result }), {
+    return new Response(JSON.stringify({ success: true, result }), {
       headers: { "Content-Type": "application/json" }
     });
   } catch (err) {
