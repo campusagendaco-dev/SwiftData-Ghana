@@ -4,6 +4,7 @@ import { Lock, Clock, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
+import { getOrCreateDeviceId } from "@/utils/device";
 
 // Constants for the Ghost Idle Timer
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutes of complete inactivity
@@ -24,6 +25,34 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
   const countdownTimerRef = useRef<number | null>(null);
 
   const [cachedStore, setCachedStore] = useState<{ name: string; logo: string | null; color: string | null } | null>(null);
+  const [isDeviceBlocked, setIsDeviceBlocked] = useState(false);
+  const [supportNumber, setSupportNumber] = useState("0540309637");
+
+  useEffect(() => {
+    const checkDeviceStatus = async () => {
+      try {
+        const deviceId = getOrCreateDeviceId();
+        const { data: isBlocked } = await supabase.rpc("check_device_blocked", {
+          p_device_id: deviceId
+        });
+        if (isBlocked) {
+          setIsDeviceBlocked(true);
+        }
+        
+        const { data: systemSettings } = await supabase
+          .from("public_system_settings")
+          .select("customer_service_number")
+          .eq("id", 1)
+          .maybeSingle();
+        if (systemSettings?.customer_service_number) {
+          setSupportNumber(systemSettings.customer_service_number);
+        }
+      } catch (err) {
+        console.error("Failed to check device block in SecurityGuard:", err);
+      }
+    };
+    checkDeviceStatus();
+  }, []);
 
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
   const activeDomain = getActiveStoreDomain();
@@ -172,7 +201,7 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
 
   const isSuspended = profile?.is_suspended === true;
 
-  if (user && isSuspended && !isAdmin) {
+  if (user && (isSuspended || isDeviceBlocked) && !isAdmin) {
     return (
       <div className="fixed inset-0 z-[100001] flex flex-col items-center justify-center bg-[#06060c] text-white p-6">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.08)_0%,transparent_70%)] pointer-events-none" />
@@ -191,7 +220,7 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
           </div>
 
           <h2 className="text-2xl font-black mb-3 tracking-tight bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
-            Account Suspended
+            {isDeviceBlocked ? "Device Blocked" : "Account Suspended"}
           </h2>
           
           <p className="text-red-400/90 text-xs font-bold uppercase tracking-widest mb-4">
@@ -199,20 +228,20 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
           </p>
 
           <p className="text-muted-foreground text-sm leading-relaxed mb-8">
-            Your account has been suspended by the platform administrator. You are currently restricted from accessing your wallet, dashboard, and making purchases.
+            {isDeviceBlocked 
+              ? "A disabled account is associated with this device. Access is restricted for security enforcement."
+              : "Your account has been suspended by the platform administrator. You are currently restricted from accessing your wallet, dashboard, and making purchases."}
           </p>
 
           <div className="flex flex-col gap-3">
-            {profile?.support_number && (
-              <a
-                href={`https://wa.me/${profile.support_number.replace(/\D+/g, "")}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3.5 px-4 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl transition-all shadow-lg shadow-red-600/10 text-center text-sm"
-              >
-                Contact Customer Support
-              </a>
-            )}
+            <a
+              href={`https://wa.me/${(profile?.support_number || supportNumber).replace(/\D+/g, "")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3.5 px-4 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl transition-all shadow-lg shadow-red-600/10 text-center text-sm"
+            >
+              Contact Customer Support
+            </a>
             <button
               onClick={handleLogout}
               className="w-full py-3.5 px-4 bg-white/5 hover:bg-white/10 text-muted-foreground font-bold rounded-2xl flex items-center justify-center gap-2 transition-all border border-white/5 text-sm"

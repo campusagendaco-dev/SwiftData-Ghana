@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session, Provider } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { getOrCreateDeviceId } from "@/utils/device";
 
 export interface Profile {
   id: string;
@@ -156,8 +157,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               ]).catch((error) => {
                 console.error("Background auth profile refresh failed:", error);
               });
-              // Log IP on every fresh sign-in (not on token refreshes)
+              // Log IP and update device_id on every fresh sign-in (not on token refreshes)
               if (event === "SIGNED_IN") {
+                const localDeviceId = getOrCreateDeviceId();
+                void supabase
+                  .from("profiles")
+                  .update({ device_id: localDeviceId })
+                  .eq("user_id", userId);
+
                 void supabase.functions.invoke("log-user-activity", {
                   headers: { Authorization: `Bearer ${token}` },
                 });
@@ -258,6 +265,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const role = isAgent ? "agent" : "user";
 
+    const deviceId = getOrCreateDeviceId();
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
@@ -271,7 +279,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           slug: slug || null,
           is_sub_agent: isSubAgent,
           parent_agent_id: parentAgentId || null,
-          is_agent: isAgent
+          is_agent: isAgent,
+          device_id: deviceId
         },
       },
     });

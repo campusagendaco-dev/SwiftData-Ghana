@@ -19,6 +19,12 @@ interface ProfileRow {
   last_location: string | null; login_count: number;
   is_agent: boolean; agent_approved: boolean; is_sub_agent: boolean;
   referred_by: string | null; created_at: string; is_suspended: boolean;
+  device_id: string | null;
+}
+interface DeviceCluster {
+  device_id: string;
+  accounts: ProfileRow[];
+  is_blocked: boolean;
 }
 interface IpCluster { ip: string; location: string | null; accounts: ProfileRow[] }
 interface RecentLogin {
@@ -213,6 +219,8 @@ const AdminSecurity = () => {
 
   /* core data */
   const [clusters,       setClusters]       = useState<IpCluster[]>([]);
+  const [deviceClusters, setDeviceClusters] = useState<DeviceCluster[]>([]);
+  const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
   const [recentLogins,   setRecentLogins]   = useState<RecentLogin[]>([]);
   const [velocityAccts,  setVelocityAccts]  = useState<VelocityAccount[]>([]);
   const [referralGroups, setReferralGroups] = useState<ReferralGroup[]>([]);
@@ -402,7 +410,7 @@ const AdminSecurity = () => {
     const [profilesRes, recentRes, velocityRes, ordersRes, signupsRes, actionRes, blacklistRes, settingsRes] =
       await Promise.all([
         (supabase as any).from("profiles")
-          .select("user_id,full_name,email,last_ip,last_seen_at,last_location,login_count,is_agent,agent_approved,is_sub_agent,referred_by,created_at,is_suspended")
+          .select("user_id,full_name,email,last_ip,last_seen_at,last_location,login_count,is_agent,agent_approved,is_sub_agent,referred_by,created_at,is_suspended,device_id")
           .order("created_at", { ascending: false }).limit(2000),
         (supabase as any).from("profiles")
           .select("user_id,full_name,email,last_ip,last_seen_at,last_location,login_count,is_agent")
@@ -457,7 +465,17 @@ const AdminSecurity = () => {
 
     const vel = velocityRes.error ? [] : (velocityRes.data || []) as unknown as VelocityAccount[];
 
+    const deviceMap = new Map<string, ProfileRow[]>();
+    profiles.forEach(p => { if (p.device_id) { const a = deviceMap.get(p.device_id) || []; a.push(p); deviceMap.set(p.device_id, a); } });
+    const devClusters: DeviceCluster[] = [];
+    deviceMap.forEach((accs, devId) => {
+      const isBlocked = accs.some(a => a.is_suspended);
+      devClusters.push({ device_id: devId, accounts: accs, is_blocked: isBlocked });
+    });
+    devClusters.sort((a, b) => b.accounts.length - a.accounts.length);
+
     setClusters(shared);
+    setDeviceClusters(devClusters);
     setRecentLogins((recentRes.data || []) as unknown as RecentLogin[]);
     setVelocityAccts(vel);
     setReferralGroups(groups);
@@ -624,6 +642,7 @@ const AdminSecurity = () => {
   /* ── filtered ────────────────────────────────────────────────────── */
   const q = search.toLowerCase();
   const fClusters  = useMemo(() => clusters.filter(c => !q || c.ip.includes(q) || c.accounts.some(a => a.full_name?.toLowerCase().includes(q) || a.email?.toLowerCase().includes(q))), [clusters, q]);
+  const fDeviceClusters = useMemo(() => deviceClusters.filter(c => !q || c.device_id.toLowerCase().includes(q) || c.accounts.some(a => a.full_name?.toLowerCase().includes(q) || a.email?.toLowerCase().includes(q))), [deviceClusters, q]);
   const fLogins    = useMemo(() => recentLogins.filter(r => !q || r.full_name?.toLowerCase().includes(q) || r.email?.toLowerCase().includes(q) || r.last_ip?.includes(q)), [recentLogins, q]);
   const fHighLogin = useMemo(() => highLogins.filter(p => !q || p.full_name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q)), [highLogins, q]);
   const fFailed    = useMemo(() => failedUsers.filter(u => !q || u.full_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)), [failedUsers, q]);
@@ -1169,6 +1188,79 @@ const AdminSecurity = () => {
                     className="text-[9px] font-black text-zinc-600 hover:text-red-400 transition-colors ml-3 shrink-0 uppercase tracking-widest font-mono">REMOVE</button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Device Fingerprint Audit */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20"><ShieldAlert className="w-3.5 h-3.5 text-red-500" /></div>
+            <span className="font-black text-white text-xs uppercase tracking-[0.12em] font-mono">Device Fingerprint Audit</span>
+            <span className="text-[9px] font-black bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-mono">{fDeviceClusters.length} devices</span>
+          </div>
+          <button type="button" onClick={() => exportCsv(deviceClusters.flatMap(c => c.accounts.map(a => ({ device_id: c.device_id, is_blocked: c.is_blocked, ...a } as Record<string, unknown>))), "device_clusters.csv")}
+            className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-white transition-colors px-2 py-1 rounded hover:bg-zinc-800 font-mono">
+            <FileDown className="w-3 h-3" /> CSV
+          </button>
+        </div>
+        <div className="p-5 space-y-3">
+          {fDeviceClusters.length === 0 ? <EmptyState icon={Shield} message="No device identifiers tracked yet." /> : (
+            <div className="space-y-2">
+              {fDeviceClusters.map(cluster => {
+                const exp = expandedDevice === cluster.device_id;
+                const hasSuspended = cluster.is_blocked;
+                return (
+                  <div key={cluster.device_id} className={`rounded-xl border overflow-hidden ${hasSuspended ? "border-red-500/40 bg-red-950/15" : "border-zinc-800 bg-zinc-950/40"}`}>
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <button type="button" onClick={() => setExpandedDevice(exp ? null : cluster.device_id)} className="flex-1 flex items-center gap-3 text-left flex-wrap min-w-0">
+                        {exp ? <ChevronUp className="w-3 h-3 text-red-400 shrink-0" /> : <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" />}
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border font-mono tracking-wider ${hasSuspended ? "text-red-400 bg-red-500/10 border-red-500/30" : "text-zinc-400 bg-zinc-850 border-zinc-700"}`}>
+                          {hasSuspended ? "BLOCKED DEVICE" : "ACTIVE DEVICE"}
+                        </span>
+                        <span className="font-mono text-xs font-bold text-white truncate max-w-[200px] sm:max-w-xs">{cluster.device_id}</span>
+                        <span className="text-[9px] font-black bg-zinc-800 text-zinc-400 border border-zinc-700 px-2 py-0.5 rounded font-mono">
+                          {cluster.accounts.length} linked account{cluster.accounts.length !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <button type="button" onClick={() => copyText(cluster.device_id, "Device ID copied")} className="p-1.5 rounded text-zinc-600 hover:text-white hover:bg-zinc-800 transition-all"><Copy className="w-3 h-3" /></button>
+                        <button type="button" onClick={() => handleBulkSuspend(cluster.accounts.map(a => a.user_id), !hasSuspended)}
+                          className={`text-[9px] font-black uppercase px-3 py-1.5 rounded transition-all tracking-widest font-mono ${
+                            hasSuspended 
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white" 
+                              : "bg-red-600 hover:bg-red-700 text-white"
+                          }`}>
+                          {hasSuspended ? "RESTORE ALL" : "SUSPEND ALL"}
+                        </button>
+                      </div>
+                    </div>
+                    {exp && (
+                      <div className="border-t border-zinc-800/60 divide-y divide-zinc-800/40">
+                        {cluster.accounts.map(acc => {
+                          const role = roleLabel(acc);
+                          return (
+                            <div key={acc.user_id} className="flex items-center justify-between px-4 py-2.5 bg-zinc-950/50">
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-white truncate">{acc.full_name || "—"}</p>
+                                <p className="text-[11px] text-zinc-500 font-mono truncate">{acc.email}</p>
+                                {acc.last_seen_at && <p className="text-[10px] text-zinc-600 font-mono">Seen: {fmt(acc.last_seen_at)}</p>}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                                {acc.is_suspended && <span className="text-[9px] font-black px-2 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/20 font-mono">SUSPENDED</span>}
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded border ${role.cls}`}>{role.label}</span>
+                                <span className="text-[10px] text-zinc-500 font-mono">{acc.login_count ?? 0}× logins</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

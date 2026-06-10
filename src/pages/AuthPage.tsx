@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { getOrCreateDeviceId } from "@/utils/device";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,36 @@ const itemVariants = {
 const AuthPage = () => {
   const [isSignUp, setIsSignUp] = useState(true);
   const [email, setEmail] = useState("");
+  const [supportNumber, setSupportNumber] = useState("0540309637");
+  const [isDeviceBlocked, setIsDeviceBlocked] = useState(false);
+  const [dismissedBlockedBanner, setDismissedBlockedBanner] = useState(false);
+
+  useEffect(() => {
+    const checkDeviceStatus = async () => {
+      try {
+        const { data: systemSettings } = await supabase
+          .from("public_system_settings")
+          .select("customer_service_number")
+          .eq("id", 1)
+          .maybeSingle();
+        if (systemSettings?.customer_service_number) {
+          setSupportNumber(systemSettings.customer_service_number);
+        }
+
+        const deviceId = getOrCreateDeviceId();
+        const { data: isBlocked, error } = await supabase.rpc("check_device_blocked", {
+          p_device_id: deviceId
+        });
+        if (!error && isBlocked) {
+          setIsDeviceBlocked(true);
+        }
+      } catch (err) {
+        console.error("Failed to check device status:", err);
+      }
+    };
+    checkDeviceStatus();
+  }, []);
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -220,6 +251,46 @@ const AuthPage = () => {
           </div>
         </motion.div>
 
+        {isDeviceBlocked && !dismissedBlockedBanner && (
+          <motion.div 
+            variants={itemVariants} 
+            className="w-full mb-6 border border-red-500/20 rounded-3xl overflow-hidden shadow-2xl bg-[#0a0a0f] backdrop-blur-xl"
+          >
+            {/* Red Header Banner */}
+            <div className="bg-red-600 px-5 py-4 flex items-center justify-between relative">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+                  <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    <line x1="9" y1="9" x2="15" y2="15" />
+                    <line x1="15" y1="9" x2="9" y2="15" />
+                  </svg>
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-white font-black text-sm uppercase tracking-wider leading-none">Access Restricted</span>
+                  <span className="text-white/80 text-[10px] font-bold mt-1 uppercase tracking-widest leading-none">Device blocked</span>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setDismissedBlockedBanner(true)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            {/* White Content Section */}
+            <div className="bg-white p-6 dark:bg-zinc-950 border-t border-red-500/10 text-left">
+              <p className="text-zinc-800 dark:text-zinc-200 text-xs font-semibold leading-relaxed">
+                Registration not allowed. A disabled account is associated with this device. Contact support at <a href={`https://wa.me/${supportNumber.replace(/\D+/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-red-600 font-bold hover:underline">{supportNumber}</a>
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         <motion.p variants={itemVariants} className="text-center text-muted-foreground text-sm mb-4 font-medium">
           {isSignUp
             ? "Create your account to access your dashboard"
@@ -381,7 +452,7 @@ const AuthPage = () => {
               <Button 
                 type="submit" 
                 className="w-full h-12 text-sm font-black shadow-lg shadow-primary/20 rounded-xl transition-all hover:shadow-primary/30 active:scale-[0.98]" 
-                disabled={loading || !!oauthLoading || biometricLoading}
+                disabled={loading || !!oauthLoading || biometricLoading || (isSignUp && isDeviceBlocked)}
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -430,7 +501,7 @@ const AuthPage = () => {
               type="button"
               variant="outline"
               onClick={() => handleOAuthSignIn("google")}
-              disabled={loading || !!oauthLoading || biometricLoading}
+              disabled={loading || !!oauthLoading || biometricLoading || (isSignUp && isDeviceBlocked)}
               className="w-full h-12 border border-border bg-background/40 backdrop-blur-sm hover:bg-secondary/80 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-3 shadow-sm group"
             >
               {oauthLoading === "google" ? (
