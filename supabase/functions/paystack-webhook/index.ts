@@ -565,6 +565,23 @@ serve(async (req) => {
     });
   }
 
+  // Paystack Webhook IP Whitelisting security check
+  const paystackIPs = ["52.31.139.75", "52.49.173.169", "52.214.14.220"];
+  const bypassIpCheck = Deno.env.get("BYPASS_PAYSTACK_IP_WHITELIST") === "true";
+  if (!bypassIpCheck) {
+    const cfConnectingIp = req.headers.get("cf-connecting-ip")?.trim();
+    const xForwardedFor = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    const clientIp = cfConnectingIp || xForwardedFor;
+    
+    if (!clientIp || !paystackIPs.includes(clientIp)) {
+      console.warn(`Blocked webhook request from unauthorized IP: ${clientIp || "unknown"}`);
+      return new Response(JSON.stringify({ error: "Unauthorized IP address" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const enc = new TextEncoder();
   const cryptoKey = await crypto.subtle.importKey(
     "raw", enc.encode(PAYSTACK_SECRET_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]
