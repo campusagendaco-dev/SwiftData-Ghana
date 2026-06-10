@@ -394,8 +394,20 @@ const AdminNotificationsPage = () => {
   };
 
   const handleDeleteNotification = async (id: string) => {
-    await supabase.from("notifications").delete().eq("id", id);
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    const { error } = await supabase.from("notifications").delete().eq("id", id);
+    if (error) {
+      toast({
+        title: "Failed to delete notification",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      toast({
+        title: "Notification deleted",
+        description: "The broadcast notification was successfully removed from the database.",
+      });
+    }
   };
 
   const handleRunScheduler = async () => {
