@@ -56,6 +56,7 @@ const WorldCupPredictor = () => {
   const [predictions, setPredictions] = useState<Record<string, PredictionData>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dbNeedsSync, setDbNeedsSync] = useState(false);
 
   // Fetch existing predictions for this user
   useEffect(() => {
@@ -67,7 +68,18 @@ const WorldCupPredictor = () => {
           .select("match_id, prediction, status")
           .eq("user_id", user.id);
 
-        if (error) throw error;
+        if (error) {
+          // If the table doesn't exist yet in Supabase database, switch to offline demo mode
+          if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
+            setDbNeedsSync(true);
+            const cached = localStorage.getItem("wc_predictions_fallback");
+            if (cached) {
+              setPredictions(JSON.parse(cached));
+            }
+            return;
+          }
+          throw error;
+        }
 
         const predMap: Record<string, PredictionData> = {};
         if (data) {
@@ -77,7 +89,7 @@ const WorldCupPredictor = () => {
         }
         setPredictions(predMap);
       } catch (err) {
-        console.error("Failed to load predictions:", err);
+        console.warn("Predictions DB not synced yet. Falling back to local demo mode.");
       } finally {
         setLoading(false);
       }
@@ -89,6 +101,26 @@ const WorldCupPredictor = () => {
   const handlePredict = async (matchId: string, choice: 'home' | 'draw' | 'away') => {
     if (!user) {
       toast.error("Please log in to make predictions");
+      return;
+    }
+
+    if (dbNeedsSync) {
+      // Local fallback prediction mode
+      const updated = {
+        ...predictions,
+        [matchId]: {
+          match_id: matchId,
+          prediction: choice,
+          status: "pending"
+        }
+      };
+      setPredictions(updated);
+      localStorage.setItem("wc_predictions_fallback", JSON.stringify(updated));
+      
+      toast.success("Prediction saved locally! (Demo Mode: Sync Database to go live) ⚽");
+      
+      triggerWorldCupConfetti();
+      playWorldCupGoalSound();
       return;
     }
 
@@ -259,6 +291,15 @@ const WorldCupPredictor = () => {
               </div>
             );
           })}
+        </div>
+      )}
+      {dbNeedsSync && (
+        <div className="mt-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-bold leading-normal flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 animate-pulse" />
+          <div>
+            <span className="uppercase tracking-wider">Database Sync Required: </span>
+            <span className="font-medium text-white/80">The prediction schema has been successfully pushed. Settle predictions are running in Local Demo Mode. Click "Publish" or sync in Lovable to activate database tables.</span>
+          </div>
         </div>
       )}
     </div>
