@@ -205,38 +205,40 @@ const WorldCupPredictor = () => {
   if (!user) return null;
 
   return (
-    <div className={`relative rounded-3xl overflow-hidden border ${
+    <div className={`relative rounded-2xl overflow-hidden border ${
       isDark 
-        ? "border-emerald-500/20 bg-gradient-to-br from-[#061f10]/80 via-[#020a05]/95 to-black/95 shadow-[0_16px_40px_-15px_rgba(16,185,129,0.15)]" 
-        : "border-gray-200 bg-white shadow-xl shadow-gray-100"
-    } p-5 sm:p-6`}>
+        ? "border-emerald-500/20 bg-gradient-to-br from-[#061f10]/80 via-[#020a05]/95 to-black/95 shadow-[0_12px_32px_-12px_rgba(16,185,129,0.12)]" 
+        : "border-gray-200 bg-white shadow-lg shadow-gray-100"
+    } p-3.5 sm:p-4`}>
       {/* Decorative vector elements simulating pitch lines */}
-      <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.06] pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 border-4 border-white rounded-full" />
-        <div className="absolute top-0 bottom-0 left-1/2 w-1 bg-white" />
+      <div className="absolute inset-0 opacity-[0.02] dark:opacity-[0.04] pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-36 h-36 border-2 border-white rounded-full" />
+        <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white" />
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-3 border-b border-white/5 relative z-10">
-        <div>
-          <h3 className="text-lg font-black tracking-tight flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-amber-500 animate-bounce" />
-            <span>World Cup Predictor</span>
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5 font-medium">Predict the correct outcome and score 10 SwiftPoints! 🏆</p>
+      <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-white/5 relative z-10">
+        <div className="flex items-center gap-1.5">
+          <Trophy className="w-4 h-4 text-amber-500 animate-pulse" />
+          <div>
+            <h3 className="text-xs sm:text-sm font-black tracking-tight flex items-center gap-1 text-foreground">
+              World Cup Predictor
+            </h3>
+            <p className="text-[9px] sm:text-[10px] text-muted-foreground font-medium">Predict outcomes & win SwiftPoints! 🏆</p>
+          </div>
         </div>
-        <div className="px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold text-[10px] uppercase tracking-wider w-fit">
-          10 pts per correct pick
+        <div className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 font-black text-[9px] uppercase tracking-wider shrink-0">
+          10 pts / pick
         </div>
       </div>
 
       {loading ? (
-        <div className="space-y-3.5">
+        <div className="space-y-2.5">
           {[1, 2].map(i => (
-            <div key={i} className="h-28 rounded-2xl bg-card border border-border animate-pulse" />
+            <div key={i} className="h-20 rounded-xl bg-card border border-border animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="space-y-4 relative z-10">
+        <div className="space-y-2.5 relative z-10">
           {matches.map((match) => {
             const pred = predictions[match.id];
             const isMatchStarted = new Date(match.kickoff) <= new Date();
@@ -245,9 +247,9 @@ const WorldCupPredictor = () => {
             return (
               <div
                 key={match.id}
-                className={`rounded-2xl border p-4 transition-all duration-300 ${
+                className={`rounded-xl border p-2.5 sm:p-3 transition-all duration-300 ${
                   pred?.status === "correct"
-                    ? "border-emerald-500/30 bg-emerald-500/5 shadow-[0_8px_20px_-8px_rgba(16,185,129,0.2)]"
+                    ? "border-emerald-500/30 bg-emerald-500/5 shadow-[0_6px_16px_-6px_rgba(16,185,129,0.15)]"
                     : pred?.status === "incorrect"
                       ? "border-red-500/20 bg-red-500/5"
                       : isDark
@@ -256,55 +258,55 @@ const WorldCupPredictor = () => {
                 }`}
               >
                 {/* Match Details header */}
-                <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground/80 mb-3 font-mono">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-amber-500" />
+                <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-bold text-muted-foreground/80 mb-2 font-mono">
+                  <span className="flex items-center gap-0.5">
+                    <Calendar className="w-3 h-3 text-amber-500" />
                     {kickoffDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at {kickoffDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                   </span>
                   
                   {/* Result/Badge Indicators */}
                   {pred ? (
                     pred.status === "correct" ? (
-                      <span className="text-emerald-400 flex items-center gap-1 font-black text-[10px] uppercase bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
-                        <Check className="w-3 h-3" /> Correct +10 pts
+                      <span className="text-emerald-400 flex items-center gap-0.5 font-black text-[8px] sm:text-[9px] uppercase bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        <Check className="w-2.5 h-2.5" /> Correct +10 pts
                       </span>
                     ) : pred.status === "incorrect" ? (
-                      <span className="text-red-400 flex items-center gap-1 font-black text-[10px] uppercase bg-red-500/10 px-2 py-0.5 rounded-lg border border-red-500/20">
-                        <AlertCircle className="w-3 h-3" /> Incorrect Pick
+                      <span className="text-red-400 flex items-center gap-0.5 font-black text-[8px] sm:text-[9px] uppercase bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                        <AlertCircle className="w-2.5 h-2.5" /> Incorrect
                       </span>
                     ) : (
-                      <span className="text-amber-400 flex items-center gap-1 font-black text-[10px] uppercase bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                        <Clock className="w-3 h-3 animate-spin-reverse" /> Pending Settle
+                      <span className="text-amber-400 flex items-center gap-0.5 font-black text-[8px] sm:text-[9px] uppercase bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                        <Clock className="w-2.5 h-2.5 animate-spin-reverse" /> Pending
                       </span>
                     )
                   ) : isMatchStarted ? (
-                    <span className="text-red-400/80 font-black text-[9px] uppercase">Locked</span>
+                    <span className="text-red-400/80 font-black text-[8px] uppercase">Locked</span>
                   ) : (
-                    <span className="text-primary font-black text-[9px] uppercase tracking-wider" style={{ color: `hsl(${theme.primary})` }}>Open</span>
+                    <span className="text-primary font-black text-[8px] uppercase tracking-wider" style={{ color: `hsl(${theme.primary})` }}>Open</span>
                   )}
                 </div>
 
                 {/* Team display */}
-                <div className="grid grid-cols-5 items-center justify-items-center mb-4">
-                  <div className="col-span-2 flex flex-col items-center gap-1 text-center">
-                    <span className="text-3xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
-                    <span className="text-xs font-black tracking-tight text-foreground">{match.homeTeam}</span>
+                <div className="grid grid-cols-5 items-center justify-items-center mb-2">
+                  <div className="col-span-2 flex flex-col items-center gap-0.5 text-center">
+                    <span className="text-2xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
+                    <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground">{match.homeTeam}</span>
                   </div>
-                  <div className="col-span-1 flex flex-col items-center justify-center font-black text-xs text-muted-foreground/60 italic">
+                  <div className="col-span-1 flex flex-col items-center justify-center font-black text-[9px] text-muted-foreground/60 italic">
                     VS
                   </div>
-                  <div className="col-span-2 flex flex-col items-center gap-1 text-center">
-                    <span className="text-3xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
-                    <span className="text-xs font-black tracking-tight text-foreground">{match.awayTeam}</span>
+                  <div className="col-span-2 flex flex-col items-center gap-0.5 text-center">
+                    <span className="text-2xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
+                    <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground">{match.awayTeam}</span>
                   </div>
                 </div>
 
                 {/* Button actions */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   {[
-                    { key: "home", label: `${match.homeTeam} Win` },
+                    { key: "home", label: `${match.homeTeam}` },
                     { key: "draw", label: "Draw 🤝" },
-                    { key: "away", label: `${match.awayTeam} Win` }
+                    { key: "away", label: `${match.awayTeam}` }
                   ].map((btn) => {
                     const isSelected = pred?.prediction === btn.key;
                     const isDisabled = isMatchStarted || submitting !== null || pred?.status !== undefined;
@@ -315,7 +317,7 @@ const WorldCupPredictor = () => {
                         type="button"
                         disabled={isDisabled}
                         onClick={() => handlePredict(match.id, btn.key as any)}
-                        className={`h-9 rounded-xl text-[10px] font-black uppercase tracking-wide border transition-all active:scale-[0.97] ${
+                        className={`h-7.5 rounded-lg text-[9px] font-black uppercase tracking-wide border transition-all active:scale-[0.97] ${
                           isSelected
                             ? pred.status === "correct"
                               ? "bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20"

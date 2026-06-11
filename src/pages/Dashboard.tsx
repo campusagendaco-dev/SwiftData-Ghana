@@ -218,7 +218,6 @@ const Dashboard = () => {
 
       <FreeDataClaimBanner />
       <CompleteProfileBanner />
-      {predictorEnabled && <WorldCupPredictor />}
 
       {/* ── Greeting row ── */}
       <div className="flex items-center justify-between">
@@ -286,6 +285,7 @@ const Dashboard = () => {
       <DailyCheckIn />
       <WelcomeAnnouncement />
       <PromoCarousel />
+      {predictorEnabled && <WorldCupPredictor />}
 
       {/* ── Hero balance card ── */}
       <div
