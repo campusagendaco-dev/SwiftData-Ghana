@@ -48,6 +48,24 @@ export class ChunkErrorBoundary extends Component<Props, State> {
     }
   }
 
+  handleManualReload = async () => {
+    try {
+      sessionStorage.removeItem("chunk_boundary_retry_timestamp");
+      localStorage.removeItem("asset-failure-reload");
+
+      if ("caches" in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map(key => caches.delete(key)));
+      }
+    } catch (err) {
+      console.error("Manual reload cleanup failed:", err);
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("t", Date.now().toString());
+    window.location.href = url.toString();
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -59,7 +77,7 @@ export class ChunkErrorBoundary extends Component<Props, State> {
             </pre>
             <button
               type="button"
-              onClick={() => window.location.reload()}
+              onClick={this.handleManualReload}
               className="w-full py-3 rounded-2xl bg-amber-400 text-black font-black text-sm hover:bg-amber-300 active:scale-95 transition-all"
             >
               Reload Page
