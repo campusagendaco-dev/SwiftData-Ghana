@@ -38,7 +38,19 @@ const PromoCarousel = () => {
           .eq("is_active", true)
           .order("priority", { ascending: false });
         if (error) throw error;
-        setBanners((data as unknown as PromoBanner[]) || []);
+        
+        const dbBanners = (data as unknown as PromoBanner[]) || [];
+        const localWcBanner: PromoBanner = {
+          id: "wc_promo_banner_static",
+          banner_type: "image",
+          image_url: "/assets/world_cup_promo.png",
+          content: "Predict outcomes and win SwiftPoints!",
+          background_color: "#061f10",
+          text_color: "#fbbf24",
+          target_url: "/dashboard",
+          title: "WORLD CUP PREDICTORS: Predict & Win SwiftPoints! 🏆"
+        };
+        setBanners([localWcBanner, ...dbBanners]);
       } catch (err) {
         console.error("Error fetching banners:", err);
       } finally {

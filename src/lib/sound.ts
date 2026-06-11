@@ -9,6 +9,8 @@ export const SOUNDS = {
   LASER: "synth:laser",
   SOFT_ALERT: "synth:soft_alert",
   CASH_REGISTER: "synth:cash",
+  WHISTLE: "synth:whistle",
+  GOAL_HORN: "synth:goal_horn",
 };
 
 let audioContextUnlocked = false;
@@ -106,6 +108,22 @@ const playSynth = (type: string, volume: number) => {
       playOsc(1200, "square", t + 0.05, 0.2, 0.3);
       playOsc(1600, "square", t + 0.1, 0.4, 0.4);
       break;
+    case "whistle":
+      // Crisp double whistle blast
+      playOsc(1050, "square", t, 0.12, 0.4);
+      playOsc(1150, "square", t, 0.12, 0.4);
+      playOsc(1050, "square", t + 0.18, 0.35, 0.4);
+      playOsc(1150, "square", t + 0.18, 0.35, 0.4);
+      break;
+    case "goal_horn":
+      // High-energy deep goal horn buzzing sweeps
+      playOsc(160, "sawtooth", t, 0.6, 0.6);
+      playOsc(220, "sawtooth", t, 0.6, 0.4);
+      playOsc(160, "sawtooth", t + 0.7, 0.6, 0.6);
+      playOsc(220, "sawtooth", t + 0.7, 0.6, 0.4);
+      playOsc(160, "sawtooth", t + 1.4, 1.0, 0.7);
+      playOsc(220, "sawtooth", t + 1.4, 1.0, 0.5);
+      break;
   }
 };
 
@@ -138,4 +156,57 @@ export function playSuccessSound() {
 
 export function playAlertSound() {
   playSound(SOUNDS.SYSTEM_NOTIF, 0.4);
+}
+
+export function playWorldCupGoalSound() {
+  playSound(SOUNDS.WHISTLE, 0.5);
+  setTimeout(() => {
+    playSound(SOUNDS.GOAL_HORN, 0.6);
+  }, 500);
+}
+
+export function triggerWorldCupConfetti() {
+  if (typeof document === "undefined") return;
+  
+  const container = document.createElement("div");
+  container.className = "world-cup-confetti-container";
+  container.style.position = "fixed";
+  container.style.inset = "0";
+  container.style.pointerEvents = "none";
+  container.style.zIndex = "99999";
+  document.body.appendChild(container);
+
+  const colors = ["#10b981", "#fbbf24", "#ef4444", "#ffffff"]; // Green, Gold, Red, White
+
+  for (let i = 0; i < 80; i++) {
+    const el = document.createElement("div");
+    el.style.position = "absolute";
+    el.style.width = `${Math.random() * 8 + 6}px`;
+    el.style.height = `${Math.random() * 12 + 6}px`;
+    el.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+    el.style.borderRadius = "2px";
+    
+    const startX = Math.random() * 100;
+    el.style.left = `${startX}%`;
+    el.style.top = `-20px`;
+    
+    const duration = Math.random() * 2 + 1.8; // 1.8s - 3.8s
+    const delay = Math.random() * 0.4;
+    
+    el.style.opacity = "1";
+    el.style.transform = `rotate(${Math.random() * 360}deg)`;
+    el.style.transition = `transform ${duration}s linear ${delay}s, top ${duration}s cubic-bezier(0.1, 0.7, 0.3, 1) ${delay}s, opacity ${duration}s ease-in ${delay}s`;
+    
+    container.appendChild(el);
+    
+    requestAnimationFrame(() => {
+      el.style.top = "105vh";
+      el.style.transform = `rotate(${Math.random() * 720 + 360}deg) translateX(${Math.random() * 80 - 40}px)`;
+      el.style.opacity = "0";
+    });
+  }
+
+  setTimeout(() => {
+    container.remove();
+  }, 4500);
 }

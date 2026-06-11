@@ -20,6 +20,8 @@ import PromoCarousel from "@/components/PromoCarousel";
 import CompleteProfileBanner from "@/components/CompleteProfileBanner";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import { CardTilt } from "@/components/ui/CardTilt";
+import { Badge } from "@/components/ui/badge";
+import WorldCupPredictor from "@/components/WorldCupPredictor";
 
 interface DashboardStats {
   walletBalance: number;
@@ -202,9 +204,27 @@ const Dashboard = () => {
 
       {/* ── Greeting row ── */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-muted-foreground text-xs font-medium">{getGreeting()} 👋</p>
-          <h1 className="text-xl font-black text-foreground tracking-tight">{firstName}</h1>
+        <div className="flex items-center gap-3">
+          {/* World Cup avatar glowing ring */}
+          <div className="relative w-10 h-10 rounded-full bg-[#10b981]/10 border-2 border-emerald-500/30 flex items-center justify-center overflow-visible">
+            {/* Animated outer ring */}
+            <span className="absolute -inset-1 rounded-full border border-emerald-500/40 animate-ping pointer-events-none opacity-45" />
+            <span className="text-lg font-black font-mono text-emerald-400">
+              {firstName.charAt(0).toUpperCase()}
+            </span>
+            <span className="absolute -bottom-1 -right-1 text-[10px] bg-amber-500 text-black font-black w-4.5 h-4.5 rounded-full flex items-center justify-center select-none shadow-md">
+              🏆
+            </span>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <p className="text-muted-foreground text-xs font-medium">{getGreeting()} 👋</p>
+              <Badge className="bg-amber-500 text-black hover:bg-amber-400 border-none font-black text-[8px] px-1.5 py-0.5 rounded-md tracking-wider flex items-center gap-0.5">
+                🏆 World Cup Season
+              </Badge>
+            </div>
+            <h1 className="text-xl font-black text-foreground tracking-tight">{firstName}</h1>
+          </div>
         </div>
         
         <div className="flex items-center gap-2">
@@ -238,6 +258,7 @@ const Dashboard = () => {
       <DailyCheckIn />
       <WelcomeAnnouncement />
       <PromoCarousel />
+      <WorldCupPredictor />
 
       {/* ── Hero balance card ── */}
       <div

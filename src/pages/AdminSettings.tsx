@@ -6,13 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet } from "lucide-react";
+import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { playSound } from "@/lib/sound";
+import { WORLD_CUP_MATCHES } from "@/components/WorldCupPredictor";
 
 interface SystemSettings {
   auto_api_switch: boolean;
@@ -172,6 +173,8 @@ const AdminSettings = () => {
 
   const [currentIp, setCurrentIp] = useState("");
   const [allowedIps, setAllowedIps] = useState<string[]>([]);
+  const [matchResults, setMatchResults] = useState<Record<string, 'home' | 'draw' | 'away'>>({});
+  const [settlingMatch, setSettlingMatch] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetch("https://api.ipify.org?format=json")
@@ -1010,6 +1013,100 @@ const AdminSettings = () => {
                 <p className="text-xs text-muted-foreground">
                   Paste a link or upload directly. Providing an image will load a solid fixed background instead of drifting symbols.
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-500 animate-bounce" />
+                World Cup Match Settlement
+              </CardTitle>
+              <CardDescription>
+                Settle World Cup match predictions and automatically credit SwiftPoints to correct predictors.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-4">
+                {WORLD_CUP_MATCHES.map((match) => {
+                  const result = matchResults[match.id] || 'home';
+                  const settling = settlingMatch[match.id] || false;
+
+                  const handleSettle = async () => {
+                    setSettlingMatch(prev => ({ ...prev, [match.id]: true }));
+                    try {
+                      const { data, error } = await supabase.rpc("settle_world_cup_match", {
+                        p_match_id: match.id,
+                        p_result: result,
+                        p_points: 10
+                      });
+
+                      if (error) throw error;
+
+                      const res = data as any;
+                      if (res.success) {
+                        toast({
+                          title: "🏆 Match Settled Successfully",
+                          description: `Rewarded ${res.winners_rewarded} winners with ${res.points_per_winner} SwiftPoints each!`
+                        });
+                        playSound("success");
+                      } else {
+                        toast({
+                          title: "Match settlement failed",
+                          description: res.error || "Unknown error occurred",
+                          variant: "destructive"
+                        });
+                      }
+                    } catch (err: any) {
+                      toast({
+                        title: "Settlement failed",
+                        description: err.message || "An error occurred",
+                        variant: "destructive"
+                      });
+                    } finally {
+                      setSettlingMatch(prev => ({ ...prev, [match.id]: false }));
+                    }
+                  };
+
+                  return (
+                    <div key={match.id} className="p-4 rounded-xl border border-white/5 bg-white/5 space-y-3.5">
+                      <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-amber-500" />
+                          {new Date(match.kickoff).toLocaleDateString()} at {new Date(match.kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between font-black text-sm text-foreground">
+                        <span>{match.homeFlag} {match.homeTeam}</span>
+                        <span className="text-muted-foreground/40 font-medium text-xs font-mono">VS</span>
+                        <span>{match.awayTeam} {match.awayFlag}</span>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                        <select
+                          value={result}
+                          onChange={(e) => setMatchResults(prev => ({ ...prev, [match.id]: e.target.value as any }))}
+                          className="w-full sm:w-auto h-9 bg-[#0b0c10] border border-white/10 rounded-lg px-3 text-xs font-bold text-white focus:outline-none"
+                        >
+                          <option value="home">{match.homeTeam} Win</option>
+                          <option value="draw">Draw 🤝</option>
+                          <option value="away">{match.awayTeam} Win</option>
+                        </select>
+                        
+                        <Button
+                          size="sm"
+                          onClick={handleSettle}
+                          disabled={settling}
+                          className="w-full sm:w-auto ml-auto bg-amber-500 hover:bg-amber-400 text-black font-black text-xs h-9 gap-1.5"
+                        >
+                          {settling ? "Settling..." : "Settle Match"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
