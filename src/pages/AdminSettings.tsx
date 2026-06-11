@@ -854,6 +854,7 @@ const AdminSettings = () => {
                   {[
                     { id: "traditional", label: "Ghana Drifting (Default)", url: "" },
                     { id: "slideshow", label: "🔄 Auto Slideshow", url: "/auto_switch" },
+                    { id: "worldcup", label: "🏆 World Cup Special", url: "/assets/backgrounds/bg_world_cup.png" },
                     { id: "mb1", label: "Cyan & Gold V1", url: "/assets/backgrounds/bg_motherboard_1.png" },
                     { id: "mb2", label: "Elegant Gold/White", url: "/assets/backgrounds/bg_motherboard_2.png" },
                     { id: "mb3", label: "Neon Cyberpunk", url: "/assets/backgrounds/bg_motherboard_3.png" },

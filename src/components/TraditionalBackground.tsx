@@ -19,6 +19,7 @@ const SLIDESHOW_BACKGROUNDS = [
   "/assets/backgrounds/bg_mesh_gradient.png",
   "/assets/backgrounds/bg_gold_ribbons.png",
   "/assets/backgrounds/bg_ghana_3d.png",
+  "/assets/backgrounds/bg_world_cup.png",
 ];
 
 export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opacity-[0.15] dark:opacity-[0.25]" }: { className?: string }) => {
