@@ -124,8 +124,15 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
   const baseClasses = "w-full h-full overflow-hidden pointer-events-none select-none";
 
   if (customBgUrl) {
+    // Override standard faint symbol opacity for custom backgrounds so they are visible
+    const cleanClassName = className
+      .replace(/opacity-\[[^\]]+\]/g, "")
+      .replace(/opacity-\d+/g, "")
+      .replace(/dark:opacity-\[[^\]]+\]/g, "")
+      .replace(/dark:opacity-\d+/g, "") + " opacity-[0.6] dark:opacity-[0.8]";
+
     return (
-      <div className={`${className} ${baseClasses}`}>
+      <div className={`${cleanClassName} ${baseClasses}`}>
         {isSlideshow ? (
           SLIDESHOW_BACKGROUNDS.map((bg, idx) => {
             const isActive = idx === bgIndex;
