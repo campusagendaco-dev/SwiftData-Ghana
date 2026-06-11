@@ -857,6 +857,8 @@ const AdminSettings = () => {
                     { id: "worldcup", label: "🏆 World Cup Special", url: "/assets/backgrounds/bg_world_cup.png" },
                     { id: "worldcup_gold", label: "🏆 Gold Trophy Special", url: "/assets/backgrounds/bg_world_cup_gold.png" },
                     { id: "worldcup_stars", label: "🇬🇭 Black Stars Special", url: "/assets/backgrounds/bg_world_cup_stars.png" },
+                    { id: "worldcup_stadium", label: "🏟️ Stadium Lights Special", url: "/assets/backgrounds/bg_world_cup_stadium.png" },
+                    { id: "worldcup_abstract", label: "🏆 Golden Pitch Special", url: "/assets/backgrounds/bg_world_cup_abstract.png" },
                     { id: "mb1", label: "Cyan & Gold V1", url: "/assets/backgrounds/bg_motherboard_1.png" },
                     { id: "mb2", label: "Elegant Gold/White", url: "/assets/backgrounds/bg_motherboard_2.png" },
                     { id: "mb3", label: "Neon Cyberpunk", url: "/assets/backgrounds/bg_motherboard_3.png" },
