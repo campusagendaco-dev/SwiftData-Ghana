@@ -29,6 +29,11 @@ const TEMPLATES = [
   { label: "New Feature",         title: "New Feature Available!",body: "We've just launched a new feature! Log in to your SwiftData dashboard to check it out." },
   { label: "Promo Announcement",  title: "Special Promotion 🎉",  body: "For a limited time, enjoy special rates on {network} data bundles! Log in now to take advantage." },
   { label: "Balance Reminder",    title: "Top Up Your Wallet",    body: "Your SwiftData wallet balance is running low. Top up now to keep selling without interruption." },
+  { label: "World Cup Promo",     title: "🏆 World Cup Special Promo! ⚽", body: "Catch every match live! Get cheap, non-expiry data bundles for MTN, Telecel, and AirtelTigo to stream the games without interruption. Top up now! 📲" },
+  { label: "System Restored",     title: "⚡ System Restored & Fully Active", body: "All carrier networks (MTN, Telecel, AirtelTigo) are fully operational. You can now resume purchases safely. Thank you for your patience! 🤝" },
+  { label: "Weekend Flash Sale",  title: "🔥 Weekend Flash Data Sale!", body: "Super discounts on all MTN & Telecel data bundles active right now! Purchase high-speed bundles at absolute wholesale rates. Ends Sunday midnight! 💸" },
+  { label: "Wallet Bonus",        title: "💰 2% Wallet Top-Up Bonus!", body: "Get a 2% cash bonus instantly in your wallet on all manual top-ups above GHS 200 today! Boost your selling capacity and earn more profit. 🚀" },
+  { label: "Referral Bonus",      title: "🎁 Invite Friends & Earn Cash!", body: "Share your referral link with friends! Get GHS 5.00 cash bonus credited to your wallet immediately they complete their first purchase. Start sharing! 🔗" },
   { label: "Custom",              title: "",                       body: "" },
 ];
 
