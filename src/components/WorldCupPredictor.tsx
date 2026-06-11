@@ -16,8 +16,8 @@ export interface Match {
   kickoff: string; // ISO string
 }
 
-// Configured World Cup matches for the dashboard
-export const WORLD_CUP_MATCHES: Match[] = [
+// Configured default matches (fallback)
+export const DEFAULT_WORLD_CUP_MATCHES: Match[] = [
   {
     id: "wc_match_1",
     homeTeam: "Ghana",
@@ -44,6 +44,9 @@ export const WORLD_CUP_MATCHES: Match[] = [
   }
 ];
 
+// Re-export as WORLD_CUP_MATCHES for external compatibility
+export const WORLD_CUP_MATCHES = DEFAULT_WORLD_CUP_MATCHES;
+
 interface PredictionData {
   match_id: string;
   prediction: string; // 'home' | 'draw' | 'away'
@@ -57,20 +60,48 @@ const WorldCupPredictor = () => {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dbNeedsSync, setDbNeedsSync] = useState(false);
+  const [matches, setMatches] = useState<Match[]>(DEFAULT_WORLD_CUP_MATCHES);
 
-  // Fetch existing predictions for this user
+  // Fetch matches and existing predictions
   useEffect(() => {
-    const fetchPredictions = async () => {
+    const loadData = async () => {
       if (!user) return;
       try {
-        const { data, error } = await supabase
+        // 1. Fetch matches from database
+        const { data: matchesData, error: matchesError } = await supabase
+          .from("world_cup_matches")
+          .select("*")
+          .order("kickoff", { ascending: true });
+
+        if (matchesError) {
+          if (matchesError.message?.includes("relation") && matchesError.message?.includes("does not exist")) {
+            setDbNeedsSync(true);
+            setMatches(DEFAULT_WORLD_CUP_MATCHES);
+          } else {
+            throw matchesError;
+          }
+        } else if (matchesData) {
+          const formattedMatches = matchesData.map((m: any) => ({
+            id: m.id,
+            homeTeam: m.home_team,
+            homeFlag: m.home_flag,
+            awayTeam: m.away_team,
+            awayFlag: m.away_flag,
+            kickoff: m.kickoff,
+            status: m.status,
+            result: m.result
+          }));
+          setMatches(formattedMatches);
+        }
+
+        // 2. Fetch predictions
+        const { data: predData, error: predError } = await supabase
           .from("world_cup_predictions")
           .select("match_id, prediction, status")
           .eq("user_id", user.id);
 
-        if (error) {
-          // If the table doesn't exist yet in Supabase database, switch to offline demo mode
-          if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
+        if (predError) {
+          if (predError.message?.includes("relation") && predError.message?.includes("does not exist")) {
             setDbNeedsSync(true);
             const cached = localStorage.getItem("wc_predictions_fallback");
             if (cached) {
@@ -78,12 +109,12 @@ const WorldCupPredictor = () => {
             }
             return;
           }
-          throw error;
+          throw predError;
         }
 
         const predMap: Record<string, PredictionData> = {};
-        if (data) {
-          data.forEach((p: any) => {
+        if (predData) {
+          predData.forEach((p: any) => {
             predMap[p.match_id] = p;
           });
         }
@@ -95,7 +126,19 @@ const WorldCupPredictor = () => {
       }
     };
 
-    fetchPredictions();
+    loadData();
+
+    // Listen for match changes
+    const matchesChannel = supabase
+      .channel("world-cup-matches-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "world_cup_matches" }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(matchesChannel);
+    };
   }, [user]);
 
   const handlePredict = async (matchId: string, choice: 'home' | 'draw' | 'away') => {
@@ -194,7 +237,7 @@ const WorldCupPredictor = () => {
         </div>
       ) : (
         <div className="space-y-4 relative z-10">
-          {WORLD_CUP_MATCHES.map((match) => {
+          {matches.map((match) => {
             const pred = predictions[match.id];
             const isMatchStarted = new Date(match.kickoff) <= new Date();
             const kickoffDate = new Date(match.kickoff);

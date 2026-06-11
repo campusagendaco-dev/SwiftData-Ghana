@@ -88,6 +88,7 @@ interface SystemSettings {
   notification_vibration_enabled: boolean;
   notification_vibration_pattern: string;
   vendor_min_transaction: string;
+  world_cup_predictor_enabled: boolean;
 }
 
 const AdminSettings = () => {
@@ -169,12 +170,34 @@ const AdminSettings = () => {
     notification_vibration_enabled: true,
     notification_vibration_pattern: "200,100,200",
     vendor_min_transaction: "1.00",
+    world_cup_predictor_enabled: true,
   });
 
   const [currentIp, setCurrentIp] = useState("");
   const [allowedIps, setAllowedIps] = useState<string[]>([]);
-  const [matchResults, setMatchResults] = useState<Record<string, 'home' | 'draw' | 'away'>>({});
   const [settlingMatch, setSettlingMatch] = useState<Record<string, boolean>>({});
+  const [matchResults, setMatchResults] = useState<Record<string, 'home' | 'draw' | 'away'>>({});
+
+  // World Cup matches states
+  const [worldCupMatches, setWorldCupMatches] = useState<any[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  
+  // Add match form states
+  const [homeTeam, setHomeTeam] = useState("");
+  const [homeFlag, setHomeFlag] = useState("");
+  const [awayTeam, setAwayTeam] = useState("");
+  const [awayFlag, setAwayFlag] = useState("");
+  const [kickoff, setKickoff] = useState("");
+  const [addingMatch, setAddingMatch] = useState(false);
+
+  // Edit match states
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
+  const [editHomeTeam, setEditHomeTeam] = useState("");
+  const [editHomeFlag, setEditHomeFlag] = useState("");
+  const [editAwayTeam, setEditAwayTeam] = useState("");
+  const [editAwayFlag, setEditAwayFlag] = useState("");
+  const [editKickoff, setEditKickoff] = useState("");
+  const [updatingMatch, setUpdatingMatch] = useState(false);
 
   useEffect(() => {
     fetch("https://api.ipify.org?format=json")
@@ -231,6 +254,113 @@ const AdminSettings = () => {
     }
   };
 
+  const fetchMatches = async () => {
+    setLoadingMatches(true);
+    try {
+      const { data, error } = await supabase
+        .from("world_cup_matches")
+        .select("*")
+        .order("kickoff", { ascending: true });
+
+      if (error) {
+        if (!error.message?.includes("relation") || !error.message?.includes("does not exist")) {
+          toast({ title: "Error loading matches", description: error.message, variant: "destructive" });
+        }
+      } else if (data) {
+        setWorldCupMatches(data);
+      }
+    } catch (err: any) {
+      console.error("Error loading matches:", err);
+    } finally {
+      setLoadingMatches(false);
+    }
+  };
+
+  const handleAddMatch = async () => {
+    if (!homeTeam || !homeFlag || !awayTeam || !awayFlag || !kickoff) {
+      toast({ title: "Validation Error", description: "Please fill all fields for the new match.", variant: "destructive" });
+      return;
+    }
+
+    setAddingMatch(true);
+    try {
+      const { error } = await supabase
+        .from("world_cup_matches")
+        .insert({
+          home_team: homeTeam,
+          home_flag: homeFlag,
+          away_team: awayTeam,
+          away_flag: awayFlag,
+          kickoff: new Date(kickoff).toISOString(),
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
+      toast({ title: "🏆 Match Added", description: `${homeTeam} vs ${awayTeam} has been scheduled.` });
+      setHomeTeam("");
+      setHomeFlag("");
+      setAwayTeam("");
+      setAwayFlag("");
+      setKickoff("");
+      fetchMatches();
+    } catch (err: any) {
+      toast({ title: "Failed to add match", description: err.message, variant: "destructive" });
+    } finally {
+      setAddingMatch(false);
+    }
+  };
+
+  const handleUpdateMatch = async () => {
+    if (!editingMatchId || !editHomeTeam || !editHomeFlag || !editAwayTeam || !editAwayFlag || !editKickoff) {
+      toast({ title: "Validation Error", description: "Please fill all fields.", variant: "destructive" });
+      return;
+    }
+
+    setUpdatingMatch(true);
+    try {
+      const { error } = await supabase
+        .from("world_cup_matches")
+        .update({
+          home_team: editHomeTeam,
+          home_flag: editHomeFlag,
+          away_team: editAwayTeam,
+          away_flag: editAwayFlag,
+          kickoff: new Date(editKickoff).toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", editingMatchId);
+
+      if (error) throw error;
+
+      toast({ title: "Match Updated", description: "The match details have been successfully saved." });
+      setEditingMatchId(null);
+      fetchMatches();
+    } catch (err: any) {
+      toast({ title: "Failed to update match", description: err.message, variant: "destructive" });
+    } finally {
+      setUpdatingMatch(false);
+    }
+  };
+
+  const handleDeleteMatch = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this match? This will also affect user predictions.")) return;
+
+    try {
+      const { error } = await supabase
+        .from("world_cup_matches")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast({ title: "Match Deleted", description: "The match was removed from the database." });
+      fetchMatches();
+    } catch (err: any) {
+      toast({ title: "Failed to delete match", description: err.message, variant: "destructive" });
+    }
+  };
+
   useEffect(() => {
     const fetchSettings = async () => {
       const { data, error } = await supabase
@@ -284,7 +414,7 @@ const AdminSettings = () => {
           at_markup_percentage: String(d.at_markup_percentage || "0"),
           auto_pending_sms_enabled: d.auto_pending_sms_enabled || false,
           auto_pending_sms_message: d.auto_pending_sms_message || "Your SwiftData transaction is pending. Please try again or contact support.",
-          payment_success_sms_message: d.payment_success_sms_message || "Your data bundle is being processed. Thanks for choosing SwiftData GH",
+          payment_success_sms_message: d.payment_success_sms_message || "Your data bundle is being processed. Join for more giveaways & updates: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
           wallet_topup_sms_message: d.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
           withdrawal_request_sms_message: d.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
           withdrawal_completed_sms_message: d.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
@@ -308,7 +438,7 @@ const AdminSettings = () => {
           free_data_max_claims: String(d.free_data_max_claims || "100"),
           whatsapp_bot_prompt: d.whatsapp_bot_prompt || "",
           home_page_video_url: d.home_page_video_url || "/assets/videos/ai_video.mp4",
-          home_page_video_muted: d.home_page_video_muted !== false, // default true
+          home_page_video_muted: d.home_page_video_muted !== false,
           agent_activation_fee: String(d.agent_activation_fee || "50.00"),
           wassce_price: String(d.wassce_price || "18.00"),
           bece_price: String(d.bece_price || "15.00"),
@@ -332,12 +462,14 @@ const AdminSettings = () => {
           notification_vibration_enabled: d.notification_vibration_enabled !== false,
           notification_vibration_pattern: d.notification_vibration_pattern || "200,100,200",
           vendor_min_transaction: String(d.vendor_min_transaction || "1.00"),
+          world_cup_predictor_enabled: d.world_cup_predictor_enabled !== false,
         });
       }
       setLoading(false);
     };
 
     fetchSettings();
+    fetchMatches();
   }, [toast]);
 
   const handleSave = async () => {
@@ -397,6 +529,7 @@ const AdminSettings = () => {
       notification_vibration_enabled: settings.notification_vibration_enabled,
       notification_vibration_pattern: settings.notification_vibration_pattern,
       vendor_min_transaction: parseFloat(settings.vendor_min_transaction) || 1.00,
+      world_cup_predictor_enabled: settings.world_cup_predictor_enabled,
     };
 
     try {
@@ -1021,92 +1154,283 @@ const AdminSettings = () => {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-amber-500 animate-bounce" />
-                World Cup Match Settlement
+                World Cup Predictor Dashboard
               </CardTitle>
               <CardDescription>
-                Settle World Cup match predictions and automatically credit SwiftPoints to correct predictors.
+                Configure the World Cup predictor widget status, add match schedules, and settle completed picks.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                {WORLD_CUP_MATCHES.map((match) => {
-                  const result = matchResults[match.id] || 'home';
-                  const settling = settlingMatch[match.id] || false;
+            <CardContent className="space-y-6">
+              {/* Feature Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-amber-500 animate-pulse" />
+                    World Cup Predictor Feature
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Toggle the World Cup predictor widget, avatar glow, and season badge on user dashboards.</p>
+                </div>
+                <Switch
+                  checked={settings.world_cup_predictor_enabled}
+                  onCheckedChange={(c) => setSettings({ ...settings, world_cup_predictor_enabled: c })}
+                />
+              </div>
 
-                  const handleSettle = async () => {
-                    setSettlingMatch(prev => ({ ...prev, [match.id]: true }));
-                    try {
-                      const { data, error } = await supabase.rpc("settle_world_cup_match", {
-                        p_match_id: match.id,
-                        p_result: result,
-                        p_points: 10
-                      });
+              {/* Settlement Section */}
+              <div className="space-y-4 pt-4 border-t border-white/5">
+                <h4 className="text-sm font-black text-foreground flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-amber-500" />
+                  Match Settlement & SwiftPoints Rewards
+                </h4>
+                
+                <div className="space-y-3.5">
+                  {loadingMatches ? (
+                    <div className="text-center py-4 text-xs text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> Loading match list...
+                    </div>
+                  ) : worldCupMatches.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-muted-foreground border border-dashed border-white/10 rounded-xl bg-white/5">
+                      No active matches found in the database. Use the scheduling form below to create matches.
+                    </div>
+                  ) : (
+                    worldCupMatches.map((match) => {
+                      const result = matchResults[match.id] || 'home';
+                      const settling = settlingMatch[match.id] || false;
 
-                      if (error) throw error;
+                      const handleSettle = async () => {
+                        setSettlingMatch(prev => ({ ...prev, [match.id]: true }));
+                        try {
+                          const { data, error } = await supabase.rpc("settle_world_cup_match", {
+                            p_match_id: match.id,
+                            p_result: result,
+                            p_points: 10
+                          });
 
-                      const res = data as any;
-                      if (res.success) {
-                        toast({
-                          title: "🏆 Match Settled Successfully",
-                          description: `Rewarded ${res.winners_rewarded} winners with ${res.points_per_winner} SwiftPoints each!`
-                        });
-                        playSound("success");
-                      } else {
-                        toast({
-                          title: "Match settlement failed",
-                          description: res.error || "Unknown error occurred",
-                          variant: "destructive"
-                        });
-                      }
-                    } catch (err: any) {
-                      toast({
-                        title: "Settlement failed",
-                        description: err.message || "An error occurred",
-                        variant: "destructive"
-                      });
-                    } finally {
-                      setSettlingMatch(prev => ({ ...prev, [match.id]: false }));
-                    }
-                  };
+                          if (error) throw error;
 
-                  return (
-                    <div key={match.id} className="p-4 rounded-xl border border-white/5 bg-white/5 space-y-3.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5 text-amber-500" />
-                          {new Date(match.kickoff).toLocaleDateString()} at {new Date(match.kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                          const res = data as any;
+                          if (res.success) {
+                            toast({
+                              title: "🏆 Match Settled Successfully",
+                              description: `Rewarded ${res.winners_rewarded} winners with ${res.points_per_winner} SwiftPoints each!`
+                            });
+                            playSound("success");
+                            fetchMatches();
+                          } else {
+                            toast({
+                              title: "Match settlement failed",
+                              description: res.error || "Unknown error occurred",
+                              variant: "destructive"
+                            });
+                          }
+                        } catch (err: any) {
+                          toast({
+                            title: "Settlement failed",
+                            description: err.message || "An error occurred",
+                            variant: "destructive"
+                          });
+                        } finally {
+                          setSettlingMatch(prev => ({ ...prev, [match.id]: false }));
+                        }
+                      };
+
+                      return (
+                        <div key={match.id} className="p-4 rounded-xl border border-white/5 bg-[#0a110d]/40 space-y-3.5 relative overflow-hidden">
+                          {match.status === 'settled' && (
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-bl-full pointer-events-none" />
+                          )}
+                          <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-500" />
+                              {new Date(match.kickoff).toLocaleDateString()} at {new Date(match.kickoff).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {match.status === 'settled' ? (
+                              <span className="text-[9px] bg-emerald-500 text-black font-black px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                                Settled
+                              </span>
+                            ) : (
+                              <span className="text-[9px] bg-amber-500/10 text-amber-400 font-bold px-2 py-0.5 rounded-lg border border-amber-500/20 uppercase tracking-wider">
+                                Pending Result
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center justify-between font-black text-sm text-foreground">
+                            <span className="flex items-center gap-2">
+                              <span className="text-xl">{match.home_flag}</span> {match.home_team}
+                            </span>
+                            <span className="text-muted-foreground/30 font-medium text-xs font-mono">VS</span>
+                            <span className="flex items-center gap-2">
+                              {match.away_team} <span className="text-xl">{match.away_flag}</span>
+                            </span>
+                          </div>
+
+                          {match.status !== 'settled' ? (
+                            <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-white/5">
+                              <select
+                                value={result}
+                                onChange={(e) => setMatchResults(prev => ({ ...prev, [match.id]: e.target.value as any }))}
+                                className="w-full sm:w-auto h-9 bg-[#0b0c10] border border-white/10 rounded-lg px-3 text-xs font-bold text-white focus:outline-none"
+                              >
+                                <option value="home">{match.home_team} Win</option>
+                                <option value="draw">Draw 🤝</option>
+                                <option value="away">{match.away_team} Win</option>
+                              </select>
+                              
+                              <Button
+                                size="sm"
+                                onClick={handleSettle}
+                                disabled={settling}
+                                className="w-full sm:w-auto ml-auto bg-amber-500 hover:bg-amber-400 text-black font-black text-xs h-9 gap-1.5"
+                              >
+                                {settling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Settle Match"}
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-muted-foreground/80 font-bold pt-1.5 border-t border-white/5 flex items-center justify-between">
+                              <span>Settled Outcome:</span>
+                              <span className="font-black text-emerald-400 uppercase tracking-wider">
+                                {match.result === 'home' ? `${match.home_team} Win` : match.result === 'away' ? `${match.away_team} Win` : 'Draw Game 🤝'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Match Scheduling & Editing CRUD */}
+              <div className="pt-5 border-t border-white/5 space-y-4">
+                <h4 className="text-sm font-black text-foreground flex items-center gap-2">
+                  <Database className="w-4 h-4 text-primary" />
+                  Manage Match Schedules
+                </h4>
+
+                {/* Add Match Form */}
+                <div className="p-4 rounded-xl border border-white/5 bg-white/5 space-y-3.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">Schedule New Match</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground uppercase">Home Team Name</Label>
+                      <Input placeholder="Ghana" value={homeTeam} onChange={e => setHomeTeam(e.target.value)} className="h-9 text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground uppercase">Home Team Flag (Emoji)</Label>
+                      <Input placeholder="🇬🇭" value={homeFlag} onChange={e => setHomeFlag(e.target.value)} className="h-9 text-xs text-center" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground uppercase">Away Team Name</Label>
+                      <Input placeholder="Uruguay" value={awayTeam} onChange={e => setAwayTeam(e.target.value)} className="h-9 text-xs" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground uppercase">Away Team Flag (Emoji)</Label>
+                      <Input placeholder="🇺🇾" value={awayFlag} onChange={e => setAwayFlag(e.target.value)} className="h-9 text-xs text-center" />
+                    </div>
+                    <div className="col-span-1 sm:col-span-2 space-y-1.5">
+                      <Label className="text-[10px] text-muted-foreground uppercase">Kickoff Date & Time</Label>
+                      <Input type="datetime-local" value={kickoff} onChange={e => setKickoff(e.target.value)} className="h-9 text-xs" />
+                    </div>
+                  </div>
+                  <Button onClick={handleAddMatch} disabled={addingMatch} size="sm" className="w-full bg-primary hover:bg-primary/90 text-black font-black text-xs h-9">
+                    {addingMatch ? <Loader2 className="w-4 h-4 animate-spin" /> : "Schedule Match Outcome"}
+                  </Button>
+                </div>
+
+                {/* Edit Match Form popup */}
+                {editingMatchId && (
+                  <div className="p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3.5 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center justify-between">
+                      <span>Edit Match Details</span>
+                      <button onClick={() => setEditingMatchId(null)} className="text-[10px] text-muted-foreground hover:text-white uppercase font-bold">Close</button>
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground uppercase">Home Team</Label>
+                        <Input value={editHomeTeam} onChange={e => setEditHomeTeam(e.target.value)} className="h-9 text-xs" />
                       </div>
-                      
-                      <div className="flex items-center justify-between font-black text-sm text-foreground">
-                        <span>{match.homeFlag} {match.homeTeam}</span>
-                        <span className="text-muted-foreground/40 font-medium text-xs font-mono">VS</span>
-                        <span>{match.awayTeam} {match.awayFlag}</span>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground uppercase">Home Flag</Label>
+                        <Input value={editHomeFlag} onChange={e => setEditHomeFlag(e.target.value)} className="h-9 text-xs text-center" />
                       </div>
-
-                      <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
-                        <select
-                          value={result}
-                          onChange={(e) => setMatchResults(prev => ({ ...prev, [match.id]: e.target.value as any }))}
-                          className="w-full sm:w-auto h-9 bg-[#0b0c10] border border-white/10 rounded-lg px-3 text-xs font-bold text-white focus:outline-none"
-                        >
-                          <option value="home">{match.homeTeam} Win</option>
-                          <option value="draw">Draw 🤝</option>
-                          <option value="away">{match.awayTeam} Win</option>
-                        </select>
-                        
-                        <Button
-                          size="sm"
-                          onClick={handleSettle}
-                          disabled={settling}
-                          className="w-full sm:w-auto ml-auto bg-amber-500 hover:bg-amber-400 text-black font-black text-xs h-9 gap-1.5"
-                        >
-                          {settling ? "Settling..." : "Settle Match"}
-                        </Button>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground uppercase">Away Team</Label>
+                        <Input value={editAwayTeam} onChange={e => setEditAwayTeam(e.target.value)} className="h-9 text-xs" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground uppercase">Away Flag</Label>
+                        <Input value={editAwayFlag} onChange={e => setEditAwayFlag(e.target.value)} className="h-9 text-xs text-center" />
+                      </div>
+                      <div className="col-span-1 sm:col-span-2 space-y-1.5">
+                        <Label className="text-[10px] text-muted-foreground uppercase">Kickoff Date & Time</Label>
+                        <Input type="datetime-local" value={editKickoff} onChange={e => setEditKickoff(e.target.value)} className="h-9 text-xs" />
                       </div>
                     </div>
-                  );
-                })}
+                    <div className="flex gap-2">
+                      <Button onClick={handleUpdateMatch} disabled={updatingMatch} size="sm" className="flex-1 bg-primary hover:bg-primary/90 text-black font-black text-xs h-9">
+                        {updatingMatch ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save Changes"}
+                      </Button>
+                      <Button onClick={() => setEditingMatchId(null)} variant="secondary" size="sm" className="h-9 text-xs">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Database List */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Scheduled Matches ({worldCupMatches.length})</span>
+                  {worldCupMatches.length > 0 ? (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {worldCupMatches.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-white/5 text-xs">
+                          <div className="flex flex-col gap-1 min-w-0">
+                            <span className="font-bold flex items-center gap-1.5 text-foreground truncate">
+                              <span>{m.home_flag} {m.home_team}</span>
+                              <span className="text-[9px] text-muted-foreground font-normal">vs</span>
+                              <span>{m.away_team} {m.away_flag}</span>
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60 font-mono">
+                              {new Date(m.kickoff).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-4">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-7 w-7 p-0 flex items-center justify-center bg-white/5 border border-white/5 hover:border-white/10"
+                              onClick={() => {
+                                setEditingMatchId(m.id);
+                                setEditHomeTeam(m.home_team);
+                                setEditHomeFlag(m.home_flag);
+                                setEditAwayTeam(m.away_team);
+                                setEditAwayFlag(m.away_flag);
+                                const d = new Date(m.kickoff);
+                                const localISO = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                                setEditKickoff(localISO);
+                              }}
+                            >
+                              ✏️
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="h-7 w-7 p-0 flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
+                              onClick={() => handleDeleteMatch(m.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-xs text-muted-foreground border border-dashed border-white/10 rounded-xl bg-white/5">
+                      No matches currently in database. Add matching teams to start.
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
