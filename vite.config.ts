@@ -44,7 +44,14 @@ export default defineConfig(({ mode }) => ({
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
         // Never serve cached HTML for JS/CSS asset requests — prevents stale chunk errors
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/\/assets\//],
+        navigateFallbackDenylist: [
+          /\/assets\//,
+          /^\/auth\/callback/,
+          /^\/reset-password/,
+          /^\/order-status/,
+          /^\/agent\/pending/,
+          /^\/sub-agent\/pending/
+        ],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

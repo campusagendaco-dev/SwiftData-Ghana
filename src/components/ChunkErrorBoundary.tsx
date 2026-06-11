@@ -57,6 +57,14 @@ export class ChunkErrorBoundary extends Component<Props, State> {
         const cacheKeys = await caches.keys();
         await Promise.all(cacheKeys.map(key => caches.delete(key)));
       }
+
+      // Safety fallback: Unregister all service workers on manual reload to guarantee a fresh copy of everything.
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
     } catch (err) {
       console.error("Manual reload cleanup failed:", err);
     }
