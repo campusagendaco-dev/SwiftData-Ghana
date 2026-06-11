@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { playSound } from "@/lib/sound";
 import { WORLD_CUP_MATCHES } from "@/components/WorldCupPredictor";
+import { getFlagUrl } from "@/lib/utils";
 
 interface SystemSettings {
   auto_api_switch: boolean;
@@ -1257,11 +1258,27 @@ const AdminSettings = () => {
                           
                           <div className="flex items-center justify-between font-black text-sm text-foreground">
                             <span className="flex items-center gap-2">
-                              <span className="text-xl">{match.home_flag}</span> {match.home_team}
+                              {(() => {
+                                const flagUrl = getFlagUrl(match.home_flag) || getFlagUrl(match.home_team);
+                                return flagUrl ? (
+                                  <img src={flagUrl} alt={match.home_team} className="w-8 h-5.5 object-cover rounded border border-white/10" />
+                                ) : (
+                                  <span className="text-xl">{match.home_flag}</span>
+                                );
+                              })()}
+                              {match.home_team}
                             </span>
                             <span className="text-muted-foreground/30 font-medium text-xs font-mono">VS</span>
                             <span className="flex items-center gap-2">
-                              {match.away_team} <span className="text-xl">{match.away_flag}</span>
+                              {match.away_team}
+                              {(() => {
+                                const flagUrl = getFlagUrl(match.away_flag) || getFlagUrl(match.away_team);
+                                return flagUrl ? (
+                                  <img src={flagUrl} alt={match.away_team} className="w-8 h-5.5 object-cover rounded border border-white/10" />
+                                ) : (
+                                  <span className="text-xl">{match.away_flag}</span>
+                                );
+                              })()}
                             </span>
                           </div>
 
@@ -1387,9 +1404,25 @@ const AdminSettings = () => {
                         <div key={m.id} className="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-white/5 text-xs">
                           <div className="flex flex-col gap-1 min-w-0">
                             <span className="font-bold flex items-center gap-1.5 text-foreground truncate">
-                              <span>{m.home_flag} {m.home_team}</span>
+                              {(() => {
+                                const flagUrl = getFlagUrl(m.home_flag) || getFlagUrl(m.home_team);
+                                return flagUrl ? (
+                                  <img src={flagUrl} alt={m.home_team} className="w-5.5 h-3.5 object-cover rounded border border-white/10 inline-block mr-1" />
+                                ) : (
+                                  <span className="mr-1">{m.home_flag}</span>
+                                );
+                              })()}
+                              <span>{m.home_team}</span>
                               <span className="text-[9px] text-muted-foreground font-normal">vs</span>
-                              <span>{m.away_team} {m.away_flag}</span>
+                              <span>{m.away_team}</span>
+                              {(() => {
+                                const flagUrl = getFlagUrl(m.away_flag) || getFlagUrl(m.away_team);
+                                return flagUrl ? (
+                                  <img src={flagUrl} alt={m.away_team} className="w-5.5 h-3.5 object-cover rounded border border-white/10 inline-block ml-1" />
+                                ) : (
+                                  <span className="ml-1">{m.away_flag}</span>
+                                );
+                              })()}
                             </span>
                             <span className="text-[10px] text-muted-foreground/60 font-mono">
                               {new Date(m.kickoff).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}

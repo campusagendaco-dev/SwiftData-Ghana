@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Clock, HelpCircle, Check, AlertCircle, Calendar } from "lucide-react";
 import { playWorldCupGoalSound, triggerWorldCupConfetti } from "@/lib/sound";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { getFlagUrl } from "@/lib/utils";
 
 export interface Match {
   id: string;
@@ -288,15 +289,37 @@ const WorldCupPredictor = () => {
 
                 {/* Team display */}
                 <div className="grid grid-cols-5 items-center justify-items-center mb-2">
-                  <div className="col-span-2 flex flex-col items-center gap-0.5 text-center">
-                    <span className="text-2xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
+                  <div className="col-span-2 flex flex-col items-center gap-1.5 text-center">
+                    {(() => {
+                      const flagUrl = getFlagUrl(match.homeFlag) || getFlagUrl(match.homeTeam);
+                      return flagUrl ? (
+                        <img 
+                          src={flagUrl} 
+                          alt={match.homeTeam} 
+                          className="w-10 h-7 object-cover rounded shadow-sm border border-white/10"
+                        />
+                      ) : (
+                        <span className="text-2xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
+                      );
+                    })()}
                     <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground">{match.homeTeam}</span>
                   </div>
                   <div className="col-span-1 flex flex-col items-center justify-center font-black text-[9px] text-muted-foreground/60 italic">
                     VS
                   </div>
-                  <div className="col-span-2 flex flex-col items-center gap-0.5 text-center">
-                    <span className="text-2xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
+                  <div className="col-span-2 flex flex-col items-center gap-1.5 text-center">
+                    {(() => {
+                      const flagUrl = getFlagUrl(match.awayFlag) || getFlagUrl(match.awayTeam);
+                      return flagUrl ? (
+                        <img 
+                          src={flagUrl} 
+                          alt={match.awayTeam} 
+                          className="w-10 h-7 object-cover rounded shadow-sm border border-white/10"
+                        />
+                      ) : (
+                        <span className="text-2xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
+                      );
+                    })()}
                     <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground">{match.awayTeam}</span>
                   </div>
                 </div>

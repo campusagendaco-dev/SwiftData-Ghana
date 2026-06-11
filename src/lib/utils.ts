@@ -72,3 +72,86 @@ export function detectNetwork(phone: string): "MTN" | "Telecel" | "AirtelTigo" |
 
   return null;
 }
+
+/**
+ * Returns a high-quality FlagCDN URL mapping common team names, abbreviations,
+ * or emoji characters to their corresponding ISO two-letter country flag.
+ */
+export function getFlagUrl(val: string): string | null {
+  if (!val) return null;
+  const clean = val.trim().toLowerCase();
+
+  // Emoji to ISO code mapping
+  const emojiToIso: Record<string, string> = {
+    "🇬🇭": "gh", "🇺🇾": "uy", "🇧🇷": "br", "🇫🇷": "fr", "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "gb-eng", "🇸🇳": "sn",
+    "🇲🇽": "mx", "🇿🇦": "za", "🇦🇷": "ar", "🇭🇷": "hr", "🇺🇸": "us", "🇩🇪": "de",
+    "🇪🇸": "es", "🇵🇹": "pt", "🇮🇹": "it", "🇳🇱": "nl", "🇧🇪": "be", "🇲🇦": "ma",
+    "🇯🇵": "jp", "🇰🇷": "kr", "🇳🇬": "ng", "🇨🇲": "cm", "🇨🇦": "ca", "🇶🇦": "qa",
+    "🇪🇨": "ec", "🇸🇦": "sa", "🇮🇷": "ir", "🇼🇸": "ws", "🇦🇺": "au", "🇩🇰": "dk",
+    "🇹🇳": "tn", "🇨🇷": "cr", "🇵🇪": "pe", "🇨🇱": "cl", "🇨🇴": "co", "🇵🇾": "py",
+    "🇻🇪": "ve", "🇧🇴": "bo", "🇩🇿": "dz", "🇨🇮": "ci", "🇪🇬": "eg", "🇿🇲": "zm",
+    "🇺🇬": "ug", "🇰🇪": "ke"
+  };
+
+  if (emojiToIso[val]) {
+    return `https://flagcdn.com/w80/${emojiToIso[val]}.png`;
+  }
+
+  // Common team names, abbreviations, or codes to ISO mapping
+  const nameToIso: Record<string, string> = {
+    ghana: "gh", gha: "gh",
+    uruguay: "uy", uru: "uy",
+    brazil: "br", bra: "br",
+    france: "fr", fra: "fr",
+    england: "gb-eng", eng: "gb-eng",
+    senegal: "sn", sen: "sn",
+    mexico: "mx", mex: "mx",
+    "south africa": "za", sa: "za", rsa: "za",
+    argentina: "ar", arg: "ar",
+    croatia: "hr", cro: "hr",
+    usa: "us", "united states": "us", "united states of america": "us",
+    germany: "de", ger: "de", deutschland: "de",
+    spain: "es", esp: "es", espana: "es",
+    portugal: "pt", por: "pt",
+    italy: "it", ita: "it", italia: "it",
+    netherlands: "nl", ned: "nl", holland: "nl",
+    belgium: "be", bel: "be",
+    morocco: "ma", mar: "ma",
+    japan: "jp", jpn: "jp",
+    "south korea": "kr", kor: "kr", korea: "kr",
+    nigeria: "ng", nga: "ng",
+    cameroon: "cm", cmr: "cm",
+    canada: "ca", can: "ca",
+    qatar: "qa", qat: "qa",
+    ecuador: "ec", ecu: "ec",
+    "saudi arabia": "sa", ksa: "sa",
+    iran: "ir", irn: "ir",
+    wales: "gb-wls", wls: "gb-wls",
+    poland: "pl", pol: "pl",
+    tunisia: "tn", tun: "tn",
+    "costa rica": "cr", crc: "cr",
+    denmark: "dk", den: "dk",
+    switzerland: "ch", sui: "ch", che: "ch",
+    serbia: "rs", srb: "rs",
+    australia: "au", aus: "au",
+    colombia: "co", col: "co",
+    peru: "pe", per: "pe",
+    chile: "cl", chi: "cl",
+    egypt: "eg", egy: "eg",
+    algeria: "dz", alg: "dz",
+    "ivory coast": "ci", civ: "ci", "côte d'ivoire": "ci",
+    kenya: "ke", ken: "ke"
+  };
+
+  const code = nameToIso[clean];
+  if (code) {
+    return `https://flagcdn.com/w80/${code}.png`;
+  }
+
+  // Fallback: if it's a clean 2-letter ISO code itself
+  if (clean.length === 2 && /^[a-z]{2}$/.test(clean)) {
+    return `https://flagcdn.com/w80/${clean}.png`;
+  }
+
+  return null;
+}
