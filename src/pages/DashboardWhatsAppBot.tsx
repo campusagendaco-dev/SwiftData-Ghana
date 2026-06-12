@@ -64,7 +64,7 @@ const DashboardWhatsAppBot = () => {
 
   const waLink = `https://wa.me/${PLATFORM_WA_NUMBER}?text=${encodeURIComponent(`Hi ${slug}`)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(waLink)}`;
-  const shareMessage = `Buy cheap data & airtime from ${storeName}! 📶📱\n\nScan our QR code or click to order via WhatsApp:\n${waLink}`;
+  const shareMessage = `Buy cheap data, airtime & AFA registration from ${storeName}! 📶📱🛡️\n\nScan our QR code or click to order via WhatsApp:\n${waLink}`;
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -103,7 +103,7 @@ const DashboardWhatsAppBot = () => {
           WhatsApp Bot
         </h1>
         <p className={cn("text-sm mt-1.5 ml-[52px]", isDark ? "text-white/35" : "text-gray-500")}>
-          Your fully automated store — selling data & airtime around the clock.
+          Your fully automated store — selling data, airtime & AFA registration around the clock.
         </p>
       </div>
 

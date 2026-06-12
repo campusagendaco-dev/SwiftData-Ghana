@@ -401,6 +401,110 @@ async function initAirtimePayment(
   return { orderId };
 }
 
+async function getAfaPrice(supabase: any): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from("global_package_settings")
+      .select("agent_price, public_price")
+      .eq("network", "AFA")
+      .eq("package_size", "BUNDLE")
+      .maybeSingle();
+    if (data) {
+      return Number(data.agent_price ?? data.public_price ?? 15.00);
+    }
+  } catch (e) {
+    console.error("[WA Bot] Error querying AFA price:", e);
+  }
+  return 15.00;
+}
+
+async function initAfaPayment(
+  supabase: any,
+  from: string,
+  agent: Agent,
+  afaPrice: number,
+  data: any
+): Promise<PayResult | null> {
+  const orderId = crypto.randomUUID();
+  const fee = feeAmount(afaPrice);
+  const total = addPaystackFee(afaPrice);
+
+  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "tgo" };
+  let provider = "mtn";
+  const userPhone = normalizePhone(from);
+  if (userPhone.startsWith("020") || userPhone.startsWith("050")) provider = "vod";
+  else if (userPhone.startsWith("027") || userPhone.startsWith("057") || userPhone.startsWith("026") || userPhone.startsWith("056")) provider = "tgo";
+
+  const metadata = {
+    order_id: orderId,
+    order_type: "afa",
+    agent_id: agent.id,
+    network: "AFA",
+    package_size: "BUNDLE",
+    customer_phone: data.afaPhone,
+    channel: "whatsapp",
+    wa_from: from,
+    base_price: afaPrice,
+    cost_price: 15.00,
+    profit: 0,
+    parent_profit: 0,
+    parent_agent_id: agent.parentAgentId,
+    afa_full_name: data.afaName,
+    afa_ghana_card: data.afaCard,
+    afa_occupation: data.afaOccupation,
+    afa_email: data.afaEmail || null,
+    afa_residence: data.afaResidence,
+    afa_date_of_birth: data.afaDob
+  };
+
+  try {
+    const paystackKey = await getPaystackSecretKey(supabase);
+    const res = await fetch("https://api.paystack.co/charge", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${paystackKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: `wa-${from}@swiftdatagh.shop`,
+        amount: Math.round(total * 100),
+        reference: orderId,
+        metadata,
+        currency: "GHS",
+        mobile_money: {
+          phone: userPhone,
+          provider,
+        }
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.status || !json.data?.reference) {
+      console.error("[WA Bot] Paystack AFA charge failed:", json);
+      return null;
+    }
+  } catch (err) {
+    console.error("[WA Bot] initAfaPayment fetch error:", err);
+    return null;
+  }
+
+  const { error } = await supabase.from("orders").insert({
+    id: orderId,
+    agent_id: agent.id,
+    parent_agent_id: agent.parentAgentId || null,
+    order_type: "afa",
+    network: "AFA",
+    package_size: "BUNDLE",
+    customer_phone: data.afaPhone,
+    amount: afaPrice,
+    paystack_fee: fee,
+    cost_price: 15.00,
+    profit: 0,
+    parent_profit: 0,
+    status: "pending",
+    failure_reason: null,
+  });
+  if (error) { console.error("[WA Bot] AFA order insert error:", error); return null; }
+
+  return { orderId };
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -457,10 +561,13 @@ serve(async (req: Request) => {
 
           // Clear session — fulfillment is handled by the Paystack webhook automatically
           await supabase.from("whatsapp_sessions").delete().eq("phone_number", from);
+          const orderLabel = data.afaPhone
+            ? "AFA Registration"
+            : `*${data.net || ""} ${data.pkg || "airtime"}*`;
           await sendWhatsAppMessage(from, [
             `✅ *Payment Confirmed!*`,
             ``,
-            `Your *${data.net || ""} ${data.pkg || "airtime"}* order is being processed and will arrive shortly. 🚀`,
+            `Your *${orderLabel}* order is being processed and will arrive shortly. 🚀`,
             ``,
             `_Reply *Hi* anytime to place a new order._`,
           ].join("\n"));
@@ -499,7 +606,7 @@ serve(async (req: Request) => {
     }
 
     // ── AI Intent Parsing (Training Like a Pro) ─────────────────────────────
-    if (step === "MENU" && !["1","2","3","4"].includes(input)) {
+    if (step === "MENU" && !["1","2","3","4","5"].includes(input)) {
       let customPrompt = SYSTEM_PROMPT;
       try {
         const { data: settingsData } = await supabase
@@ -526,6 +633,9 @@ serve(async (req: Request) => {
         } else if (aiResponse.includes("TRACK") || text.toLowerCase().includes("track")) {
           step = "SELECT_SERVICE";
           input = "3";
+        } else if (aiResponse.includes("AFA") || text.toLowerCase().includes("afa")) {
+          step = "SELECT_SERVICE";
+          input = "5";
         } else {
           await sendWhatsAppMessage(from, aiResponse);
           return new Response("ok");
@@ -552,8 +662,9 @@ serve(async (req: Request) => {
           `*2* — Buy Airtime 📱`,
           `*3* — Track Order 🔍`,
           `*4* — Talk to Agent 👨‍💼`,
+          `*5* — AFA Registration 🛡️`,
           ``,
-          `_Reply with 1, 2, 3 or 4_`,
+          `_Reply with 1, 2, 3, 4 or 5_`,
         ].join("\n");
         nextStep = "SELECT_SERVICE";
         break;
@@ -576,8 +687,11 @@ serve(async (req: Request) => {
             ? `👨‍💼 *Agent Support:*\n\nhttps://wa.me/${waNum}\n\n_Tap the link to message your agent directly._`
             : `👨‍💼 *Agent support is currently unavailable.*\n\n_Reply 0 to return to menu._`;
           nextStep = "MENU";
+        } else if (input === "5" || input.includes("afa")) {
+          reply = `🛡️ *AFA Registration*\n\nTo register, we will need a few details. Let's start with the phone number that will receive the AFA registration.\n\n📱 *Enter the AFA phone number:*`;
+          nextStep = "AFA_ENTER_PHONE";
         } else {
-          reply = `⚠️ Please reply with *1*, *2*, *3*, or *4*.`;
+          reply = `⚠️ Please reply with *1*, *2*, *3*, *4*, or *5*.`;
         }
         break;
       }
@@ -854,6 +968,180 @@ serve(async (req: Request) => {
         lines.push(``, `_Reply 0 to return to the menu._`);
         reply = lines.join("\n");
         nextStep = "MENU";
+        break;
+      }
+
+      // ── AFA Registration Steps ─────────────────────────────────────────────
+      case "AFA_ENTER_PHONE": {
+        const phone = normalizePhone(input);
+        if (phone.length !== 10 || !phone.startsWith("0")) {
+          reply = `❌ *Invalid phone number.*\n\nEnter a 10-digit Ghanaian number (e.g. 0244123456):`;
+          break;
+        }
+        data.afaPhone = phone;
+        reply = `👤 *Enter the Full Name as it appears on your Ghana Card:*`;
+        nextStep = "AFA_ENTER_NAME";
+        break;
+      }
+
+      case "AFA_ENTER_NAME": {
+        if (input.length < 3) {
+          reply = `❌ Name is too short. Please enter your Full Name as it appears on your Ghana Card:`;
+          break;
+        }
+        data.afaName = text.trim();
+        reply = `🪪 *Enter your Ghana Card Number (Format: GHA-XXXXXXXXX-X):*\n_Example: GHA-123456789-0_`;
+        nextStep = "AFA_ENTER_CARD";
+        break;
+      }
+
+      case "AFA_ENTER_CARD": {
+        let raw = input.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        if (raw.length > 0 && !raw.startsWith("G")) raw = "GHA" + raw;
+        else if (raw.length > 1 && !raw.startsWith("GH")) raw = "GHA" + raw.slice(1);
+        else if (raw.length > 2 && !raw.startsWith("GHA")) raw = "GHA" + raw.slice(2);
+
+        let formatted = "";
+        if (raw.length > 0) formatted += raw.slice(0, 3);
+        if (raw.length > 3) formatted += "-" + raw.slice(3, 12);
+        if (raw.length > 12) formatted += "-" + raw.slice(12, 13);
+
+        const ghanaCardRegex = /^GHA-\d{9}-\d$/i;
+        if (!ghanaCardRegex.test(formatted)) {
+          reply = `❌ *Invalid Ghana Card Format.*\n\nMust follow the format: *GHA-XXXXXXXXX-X* (e.g., GHA-123456789-0)\n\nPlease enter it again:`;
+          break;
+        }
+        data.afaCard = formatted;
+        reply = `📅 *Enter your Date of Birth (Format: YYYY-MM-DD):*\n_Example: 1995-10-24_`;
+        nextStep = "AFA_ENTER_DOB";
+        break;
+      }
+
+      case "AFA_ENTER_DOB": {
+        const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dobRegex.test(input)) {
+          reply = `❌ *Invalid Date Format.*\n\nEnter date as *YYYY-MM-DD* (e.g. 1995-10-24):`;
+          break;
+        }
+        const [year, month, day] = input.split("-").map(Number);
+        if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > new Date().getFullYear()) {
+          reply = `❌ *Invalid Date.*\n\nPlease enter a realistic date of birth (YYYY-MM-DD):`;
+          break;
+        }
+        data.afaDob = input;
+        reply = `💼 *Enter your Occupation (e.g., Trader, Student, Teacher):*`;
+        nextStep = "AFA_ENTER_OCCUPATION";
+        break;
+      }
+
+      case "AFA_ENTER_OCCUPATION": {
+        if (input.length < 2) {
+          reply = `❌ Occupation too short. Please enter your Occupation (e.g., Trader, Student):`;
+          break;
+        }
+        data.afaOccupation = text.trim();
+        reply = `📍 *Enter your Place of Residence (e.g., Accra, Kumasi, Tema):*`;
+        nextStep = "AFA_ENTER_RESIDENCE";
+        break;
+      }
+
+      case "AFA_ENTER_RESIDENCE": {
+        if (input.length < 2) {
+          reply = `❌ Residence too short. Please enter your Place of Residence (e.g., Accra, Kumasi):`;
+          break;
+        }
+        data.afaResidence = text.trim();
+        reply = `✉️ *Enter your Email Address (or reply 00 to skip):*`;
+        nextStep = "AFA_ENTER_EMAIL";
+        break;
+      }
+
+      case "AFA_ENTER_EMAIL": {
+        let email = text.trim();
+        if (input === "00" || input === "skip" || input === "none" || input === "no") {
+          email = "";
+        } else {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email)) {
+            reply = `❌ *Invalid email address.*\n\nEnter a valid email, or reply *00* to skip:`;
+            break;
+          }
+        }
+        data.afaEmail = email;
+
+        sendWhatsAppMessage(from, `⏳ _Preparing your AFA registration order..._`).catch(console.error);
+        const afaPrice = await getAfaPrice(supabase);
+        data.afaPrice = afaPrice;
+        data.totalPrice = addPaystackFee(afaPrice);
+
+        const summary = [
+          `📋 *AFA Registration Summary*`,
+          ``,
+          `AFA Number:  *${data.afaPhone}*`,
+          `Full Name:   *${data.afaName}*`,
+          `Ghana Card:  *${data.afaCard}*`,
+          `Date of Birth: *${data.afaDob}*`,
+          `Occupation:  *${data.afaOccupation}*`,
+          `Residence:   *${data.afaResidence}*`,
+          data.afaEmail ? `Email:       *${data.afaEmail}*` : `Email:       *Not provided*`,
+          `Price:       *GH₵ ${afaPrice.toFixed(2)}*`,
+          `You Pay:     *GH₵ ${data.totalPrice.toFixed(2)}*`,
+          `_(includes 3% payment processing fee)_`,
+          ``,
+          `Reply *1* to confirm ✅`,
+          `Reply *0* to cancel ❌`,
+        ];
+
+        reply = summary.join("\n");
+        nextStep = "AFA_CONFIRM";
+        break;
+      }
+
+      case "AFA_CONFIRM": {
+        if (input === "0") {
+          reply = `❌ *Registration cancelled.* Reply *Hi* to return to the menu.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
+        if (input !== "1") {
+          reply = `Reply *1* to confirm or *0* to cancel.`;
+          break;
+        }
+
+        if (!agent) {
+          reply = `⚠️ *Store error.* Please restart by sending *Hi*.`;
+          nextStep = "MENU";
+          data = {};
+          break;
+        }
+
+        sendWhatsAppMessage(from, `⏳ _Pushing payment prompt to your phone..._`).catch(console.error);
+
+        const result = await initAfaPayment(supabase, from, agent, data.afaPrice || 15.00, data);
+        if (!result) {
+          reply = `❌ *Payment prompt failed.* Please try again or reply *0* for the menu.`;
+          nextStep = "MENU";
+          data = {};
+          break;
+        }
+
+        data.lastOrderId = result.orderId;
+        reply = [
+          `📲 *MoMo Prompt Sent!*`,
+          ``,
+          `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
+          ``,
+          `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
+          ``,
+          `*Step 3* — Reply *Done* here once payment is complete.`,
+          ``,
+          `⚠️ *Safety Note:* Do NOT send your MoMo PIN or any codes to this chat. Only enter it on the secure prompt that appears on your phone screen.`,
+          ``,
+          `_Your order is processed instantly after payment._`,
+          `_Reply 0 to cancel._`,
+        ].join("\n");
+        nextStep = "AWAIT_PAYMENT";
         break;
       }
 
