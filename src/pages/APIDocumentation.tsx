@@ -9,6 +9,8 @@ import {
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 
 const BASE_URL = "https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api";
 
@@ -305,6 +307,47 @@ const APIDocumentation = () => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [serviceStatuses, setServiceStatuses] = useState<any[]>([]);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+
+  const defaultStatuses = [
+    { network: "mtn", display_name: "MTN Ghana", status: "operational" },
+    { network: "telecel", display_name: "Telecel Ghana", status: "operational" },
+    { network: "airteltigo", display_name: "AirtelTigo Ghana", status: "operational" },
+  ];
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("service_status")
+          .select("*")
+          .order("network");
+        if (!error && data) {
+          setServiceStatuses(data);
+        }
+      } catch (err) {
+        console.error("Failed to load service status:", err);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+
+    fetchStatus();
+
+    // Subscribe to real-time status updates
+    const channel = supabase
+      .channel("service-status-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "service_status" }, () => {
+        fetchStatus();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const userApiKey = profile?.api_key || null;
   const snippets = makeSnippets(userApiKey);
 
@@ -456,6 +499,66 @@ const APIDocumentation = () => {
               <div className="px-5 py-4 flex items-center gap-3">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 <code className="text-sm font-mono text-emerald-300 break-all">{BASE_URL}</code>
+              </div>
+            </div>
+
+            {/* Live Service Status */}
+            <div className="rounded-xl border border-white/8 overflow-hidden bg-white/[0.02] mb-8">
+              <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Live Service Status</span>
+                <span className="text-[9px] text-emerald-400 font-bold uppercase flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  Real-time
+                </span>
+              </div>
+              <div className="p-4 sm:p-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {(serviceStatuses.length > 0 ? serviceStatuses : defaultStatuses).map((net) => {
+                    const getStatusStyles = (status: string) => {
+                      switch (status) {
+                        case "down":
+                          return {
+                            bg: "bg-red-500/10 border-red-500/20 text-red-400",
+                            dot: "bg-red-500",
+                            label: "Offline",
+                          };
+                        case "maintenance":
+                          return {
+                            bg: "bg-amber-500/10 border-amber-500/20 text-amber-400",
+                            dot: "bg-amber-500",
+                            label: "Maintenance",
+                          };
+                        default:
+                          return {
+                            bg: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+                            dot: "bg-emerald-500",
+                            label: "Operational",
+                          };
+                      }
+                    };
+                    const styles = getStatusStyles(net.status);
+                    return (
+                      <div
+                        key={net.network}
+                        className={cn(
+                          "p-3 rounded-xl border flex items-center justify-between transition-all duration-300",
+                          net.status === "down" ? "border-red-500/20 bg-red-500/[0.02]" :
+                          net.status === "maintenance" ? "border-amber-500/20 bg-amber-500/[0.02]" :
+                          "border-white/5 bg-white/[0.01] hover:bg-white/[0.02]"
+                        )}
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-bold text-xs text-white/80">{net.display_name}</span>
+                          <span className="text-[9px] text-white/45 font-medium uppercase font-mono tracking-wider">{net.network} gateway</span>
+                        </div>
+                        <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border shrink-0", styles.bg)}>
+                          <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", styles.dot, net.status === "operational" && "animate-pulse")} />
+                          {styles.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
