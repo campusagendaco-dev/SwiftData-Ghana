@@ -449,15 +449,31 @@ serve(async (req: Request) => {
     else if (p.endsWith("/payment/bills/pay")) finalAction = "pay_bill";
     else if (p.endsWith("/payment/ecg/lookup")) finalAction = "ecg_lookup";
     else if (p.endsWith("/payment/ecg")) finalAction = "ecg_pay";
+    else if (p.endsWith("/service-status")) finalAction = "service_status";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
     // ── 8. Execute Logic via RPCs ──────────────────────────────────────────────
     
+    if (finalAction === "service_status") {
+      const { data: statusList, error: err } = await supabase
+        .from("service_status")
+        .select("network, display_name, status, updated_at")
+        .order("network");
+      if (err) {
+        console.error("Error fetching service status:", err);
+        return json({ success: false, error: "Failed to fetch service status" }, 500);
+      }
+      return json({
+        success: true,
+        services: statusList ?? []
+      });
+    }
+
     if (finalAction === "balance") {
       const { data: wallet } = await supabase.schema("api").from("v_wallets").select("balance, api_balance").eq("agent_id", currentUserId).maybeSingle();
       return json({

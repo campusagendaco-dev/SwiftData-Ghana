@@ -23,6 +23,12 @@ const LANG_LABELS: Record<Lang, string> = { curl: "cURL", node: "Node.js", pytho
 const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
   const K = key || "swft_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
   return {
+    service_status: {
+      curl: `curl -X GET "${BASE_URL}/service-status" \\\n  -H "X-API-Key: ${K}"`,
+      node: `const res = await fetch("${BASE_URL}/service-status", {\n  headers: { "X-API-Key": "${K}" },\n});\nconst data = await res.json();\nconsole.log(data.services);`,
+      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/service-status",\n    headers={"X-API-Key": "${K}"},\n)\nprint(res.json())`,
+      php: `<?php\n$ch = curl_init("${BASE_URL}/service-status");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["X-API-Key: ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$data = json_decode(curl_exec($ch));\nprint_r($data->services);`,
+    },
     balance: {
       curl: `curl -X GET "${BASE_URL}/balance" \\\n  -H "X-API-Key: ${K}"`,
       node: `const res = await fetch("${BASE_URL}/balance", {\n  headers: { "X-API-Key": "${K}" },\n});\nconst data = await res.json();\nconsole.log(data.balance);`,
@@ -142,6 +148,7 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
 
 // ─── Responses ────────────────────────────────────────────────────────────────
 const RESPONSES: Record<string, string> = {
+  service_status: `{\n  "success": true,\n  "services": [\n    {\n      "network": "mtn",\n      "display_name": "MTN Ghana",\n      "status": "operational",\n      "updated_at": "2026-06-12T00:30:00.000Z"\n    },\n    {\n      "network": "telecel",\n      "display_name": "Telecel Ghana",\n      "status": "maintenance",\n      "updated_at": "2026-06-12T00:35:00.000Z"\n    },\n    {\n      "network": "airteltigo",\n      "display_name": "AirtelTigo Ghana",\n      "status": "operational",\n      "updated_at": "2026-06-12T00:40:00.000Z"\n    }\n  ]\n}`,
   balance: `{\n  "success": true,\n  "balance": 50.00,\n  "currency": "GHS"\n}`,
   wallets_ok: `{\n  "success": true,\n  "wallets": {\n    "main": { "balance": 250.00, "currency": "GHS" },\n    "api":  { "balance": 100.00, "currency": "GHS" }\n  }\n}`,
   transfer_ok: `{\n  "success": true,\n  "message": "Transfer successful",\n  "from_balance": 150.00,\n  "to_balance":   200.00\n}`,
@@ -281,6 +288,7 @@ const NAV_ITEMS = [
   { id: "wallets",         label: "All Wallets",         icon: Database },
   { id: "transfer",        label: "Wallet Transfer",     icon: ArrowLeftRight },
   { id: "plans",           label: "List Plans",          icon: List },
+  { id: "service-status",  label: "Service Status",      icon: Activity },
   { id: "airtime",         label: "Purchase Airtime",    icon: ShoppingCart },
   { id: "data",            label: "Data Bundles",        icon: ShoppingCart },
   { id: "afa",             label: "AFA Registration",    icon: Activity },
@@ -580,6 +588,7 @@ const APIDocumentation = () => {
                 { method: "GET",  path: "/wallets",               desc: "Full wallet breakdown" },
                 { method: "POST", path: "/wallet/transfer",       desc: "Move funds between wallets" },
                 { method: "GET",  path: "/plans",                 desc: "Available data packages & prices" },
+                { method: "GET",  path: "/service-status",        desc: "Get live ISP gateway statuses" },
                 { method: "POST", path: "/buy",                   desc: "Purchase airtime or data bundle" },
                 { method: "POST", path: "/afa-registration",      desc: "Register AFA SIM card" },
                 { method: "POST", path: "/api/external/voucher-purchase", desc: "Buy WASSCE/BECE results checker vouchers" },
@@ -758,6 +767,23 @@ const APIDocumentation = () => {
             <div className="grid lg:grid-cols-2 gap-6 ml-11">
               <CodeBlock code={snippets.plans[activeLang]} label="Request" />
               <ResponseBlock code={RESPONSES.plans} label="Response · 200 OK" />
+            </div>
+          </section>
+
+          {/* ── Service Status ────────────────────────────────────────── */}
+          <section>
+            <SectionAnchor id="service-status" />
+            <SectionHeader icon={Activity} title="Service Status" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
+              <MethodBadge method="GET" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/service-status</code>
+            </div>
+            <p className="text-white/40 text-sm mb-6 ml-11 max-w-xl">
+              Returns the real-time operational status of all registered ISP gateways. Use this to dynamically warn or disable specific network purchases in your application when a gateway goes offline or undergoes maintenance.
+            </p>
+            <div className="grid lg:grid-cols-2 gap-6 ml-11">
+              <CodeBlock code={snippets.service_status[activeLang]} label="Request" />
+              <ResponseBlock code={RESPONSES.service_status} label="Response · 200 OK" />
             </div>
           </section>
 
