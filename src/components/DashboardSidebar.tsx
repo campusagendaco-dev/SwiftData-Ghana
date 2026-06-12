@@ -137,6 +137,10 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const topupRef = (profile as any)?.topup_reference;
   const accountId = topupRef ? `DH-${topupRef}` : "DH-USER";
 
+  const visibleAgentItemsCount = agentNavItems.filter(
+    (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
+  ).length;
+
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
@@ -315,7 +319,17 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                   )}></span>
                   Business Suite
                 </span>
-                <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", businessSuiteOpen ? "transform rotate-180" : "")} />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!businessSuiteOpen && (
+                    <Badge className={cn(
+                      "text-[8px] h-4.5 border-none uppercase font-black px-1.5 animate-pulse",
+                      isDark ? "bg-amber-400/20 text-amber-400 animate-pulse" : "bg-amber-500/10 text-amber-600 animate-pulse"
+                    )}>
+                      {visibleAgentItemsCount} Tools
+                    </Badge>
+                  )}
+                  <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", businessSuiteOpen ? "transform rotate-180" : "")} />
+                </div>
               </button>
 
               <AnimatePresence initial={false}>
