@@ -257,7 +257,7 @@ async function initDataPayment(
   const fee = feeAmount(pkg.basePrice);
   const { profit, parentProfit, parentAgentId, costPrice } = await resolveProfit(supabase, network, pkg.size, agent, pkg.basePrice);
 
-  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "tgo" };
+  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "atl" };
   const provider = providerMap[network];
 
   const metadata = {
@@ -337,7 +337,7 @@ async function initAirtimePayment(
   const fee = feeAmount(airtimeBase);
   const total = parseFloat((airtimeBase + fee).toFixed(2));
 
-  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "tgo" };
+  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "atl" };
   const provider = providerMap[network];
 
   const metadata = {
@@ -429,11 +429,11 @@ async function initAfaPayment(
   const fee = feeAmount(afaPrice);
   const total = addPaystackFee(afaPrice);
 
-  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "tgo" };
+  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "atl" };
   let provider = "mtn";
   const userPhone = normalizePhone(from);
   if (userPhone.startsWith("020") || userPhone.startsWith("050")) provider = "vod";
-  else if (userPhone.startsWith("027") || userPhone.startsWith("057") || userPhone.startsWith("026") || userPhone.startsWith("056")) provider = "tgo";
+  else if (userPhone.startsWith("027") || userPhone.startsWith("057") || userPhone.startsWith("026") || userPhone.startsWith("056")) provider = "atl";
 
   const metadata = {
     order_id: orderId,
