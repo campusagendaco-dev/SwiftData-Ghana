@@ -625,7 +625,7 @@ const Navbar = () => {
                     </p>
                     {[
                       { to: isAdmin ? "/admin" : "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-                      { to: "/dashboard/wallet", label: "My Wallet", icon: Wallet },
+                      { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
                       { to: "/dashboard/transactions", label: "My Transactions", icon: ClipboardList },
                       ...(agentApproved ? [{ to: "/dashboard/my-store", label: "My Store", icon: Store }] : []),
                       { to: "/dashboard/account-settings", label: "Account Settings", icon: Settings },

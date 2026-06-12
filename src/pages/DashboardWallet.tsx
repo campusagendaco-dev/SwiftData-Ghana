@@ -402,10 +402,10 @@ const DashboardWallet = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-black tracking-tight text-foreground flex items-center gap-3">
-            <Wallet className="w-8 h-8 text-amber-500 dark:text-amber-400" /> My Wallet
+            <Wallet className="w-8 h-8 text-amber-500 dark:text-amber-400" /> Account Balance
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-md">
-            Manage your funds, top up instantly with Paystack, and track your loyalty points.
+            Manage your account balance, top up instantly with Paystack, and track your loyalty points.
           </p>
         </div>
         <div className="flex items-center gap-2">

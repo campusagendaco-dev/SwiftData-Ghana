@@ -50,7 +50,7 @@ const userNavItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/dashboard/profile", label: "My Profile", icon: User },
   { to: "/dashboard/account-settings", label: "Account & Security", icon: UserCog },
-  { to: "/dashboard/wallet", label: "Wallet", icon: Wallet },
+  { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
   { to: "/dashboard/schedule", label: "Auto-Renewal", icon: CalendarClock },
   { to: "/dashboard/transactions", label: "Transactions", icon: ClipboardList },
   { to: "/dashboard/notifications", label: "Inbox Notifications", icon: Bell },

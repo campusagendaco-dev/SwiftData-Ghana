@@ -32,9 +32,27 @@ import {
   AlertCircle,
   TrendingUp,
   Wallet,
-  Search
+  Search,
+  ArrowDownToLine,
+  Clock,
+  Fingerprint,
+  Key,
+  Lock,
+  ShieldCheck,
+  HandCoins
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import { useWebAuthn } from "@/hooks/useWebAuthn";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Safe SVG QR renderer
 const SafeQRCodeSVG = (props: any) => {
@@ -69,6 +87,9 @@ const MOMO_NETWORKS = [
   { id: "AirtelTigo", label: "AirtelTigo Money", color: "#3b82f6" },
 ];
 
+const WITHDRAWAL_FEE_FLAT = 1.00;
+const WITHDRAWAL_FEE_PERCENT = 0.01; // 1%
+
 export default function DashboardMyStore() {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
@@ -82,7 +103,26 @@ export default function DashboardMyStore() {
   const [copiedStoreId, setCopiedStoreId] = useState<string | null>(null);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<"overview" | "design" | "pricing" | "customers" | "deposits" | "settings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "design" | "pricing" | "customers" | "deposits" | "withdrawals" | "settings">("overview");
+
+  // Withdrawal States & Hook
+  const { isSupported, credentials, authenticate } = useWebAuthn();
+  const hasBiometric = isSupported && credentials.length > 0;
+
+  const [totalProfit, setTotalProfit] = useState(0);
+  const [completedWithdrawals, setCompletedWithdrawals] = useState(0);
+  const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+  const [loadingWithdrawals, setLoadingWithdrawals] = useState(true);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [confirmWithdrawOpen, setConfirmWithdrawOpen] = useState(false);
+  const [pinWithdrawDialogOpen, setPinWithdrawDialogOpen] = useState(false);
+  const [enteredWithdrawPin, setEnteredWithdrawPin] = useState("");
+  const [biometricWithdrawScanning, setBiometricWithdrawScanning] = useState(false);
+  const [minWithdrawal, setMinWithdrawal] = useState(25);
+  const [maxWithdrawal, setMaxWithdrawal] = useState(5000);
+  const [withdrawalSystemEnabled, setWithdrawalSystemEnabled] = useState(true);
 
   // Core Data lists
   const [customers, setCustomers] = useState<any[]>([]);
@@ -310,12 +350,213 @@ export default function DashboardMyStore() {
       fetchCustomers();
     } else if (activeTab === "deposits") {
       fetchDeposits();
+    } else if (activeTab === "withdrawals") {
+      fetchWithdrawalData();
     } else if (activeTab === "overview") {
       fetchCustomers();
       fetchDeposits();
       fetchAgentWallet();
     }
   }, [activeTab, user]);
+
+  const fetchWithdrawalData = useCallback(async () => {
+    if (!user) return;
+    setLoadingWithdrawals(true);
+    try {
+      const [ordersRes, parentRes, withdrawalsRes, walletRes] = await Promise.all([
+        supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
+        supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
+        supabase.from("withdrawals").select("*").eq("agent_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle(),
+      ]);
+
+      let settingsRes: any = { data: null };
+      try {
+        settingsRes = await supabase
+          .from("public_system_settings")
+          .select("min_withdrawal_amount, max_withdrawal_amount, withdrawal_system_enabled")
+          .eq("id", 1)
+          .maybeSingle();
+      } catch (err) {
+        // ignore
+      }
+
+      const profits = (ordersRes.data || []).reduce((sum, o: any) => sum + (o.profit || 0), 0);
+      const parentProfits = (parentRes.data || []).reduce((sum, o: any) => sum + (o.parent_profit || 0), 0);
+      setTotalProfit(parseFloat((profits + parentProfits).toFixed(2)));
+
+      const wds = withdrawalsRes.data || [];
+      setWithdrawals(wds);
+
+      const completed = wds
+        .filter((w: any) => w.status === "completed")
+        .reduce((sum: number, w: any) => sum + w.amount, 0);
+      
+      const pending = wds
+        .filter((w: any) => ["pending", "processing"].includes(w.status))
+        .reduce((sum: number, w: any) => sum + w.amount, 0);
+
+      setCompletedWithdrawals(completed);
+      setPendingWithdrawals(pending);
+
+      if (settingsRes.data) {
+        setMinWithdrawal(Number(settingsRes.data.min_withdrawal_amount) || 25);
+        setMaxWithdrawal(Number(settingsRes.data.max_withdrawal_amount) || 5000);
+        setWithdrawalSystemEnabled(settingsRes.data.withdrawal_system_enabled !== false);
+      }
+    } catch (err) {
+      console.error("Error fetching withdrawal data:", err);
+    } finally {
+      setLoadingWithdrawals(false);
+    }
+  }, [user]);
+
+  const handleWithdraw = async () => {
+    setConfirmWithdrawOpen(false);
+    setWithdrawing(true);
+
+    const numAmount = parseFloat(withdrawalAmount);
+    if (!withdrawalSystemEnabled) {
+      toast({ title: "Request failed", description: "Withdrawals are temporarily disabled for maintenance.", variant: "destructive" });
+      setWithdrawing(false);
+      return;
+    }
+
+    if (isNaN(numAmount) || numAmount < minWithdrawal) {
+      toast({ title: "Request failed", description: `Minimum withdrawal is GHS ${minWithdrawal.toFixed(2)}`, variant: "destructive" });
+      setWithdrawing(false);
+      return;
+    }
+
+    const availableBalance = parseFloat((totalProfit - (completedWithdrawals + pendingWithdrawals)).toFixed(2));
+    if (numAmount > availableBalance) {
+      toast({ title: "Request failed", description: "Amount exceeds available balance", variant: "destructive" });
+      setWithdrawing(false);
+      return;
+    }
+
+    if (numAmount > maxWithdrawal) {
+      toast({ title: "Request failed", description: `Maximum withdrawal is GHS ${maxWithdrawal.toFixed(2)}`, variant: "destructive" });
+      setWithdrawing(false);
+      return;
+    }
+
+    if (profile?.last_security_update) {
+      const lastUpdate = new Date(profile.last_security_update);
+      const now = new Date();
+      const diffHours = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
+      if (diffHours < 24) {
+        toast({
+          title: "Security Hold Active",
+          description: `You recently updated your security settings. Withdrawals are disabled for 24 hours (approx. ${Math.ceil(24 - diffHours)} hours remaining).`,
+          variant: "destructive"
+        });
+        setWithdrawing(false);
+        return;
+      }
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("agent-withdraw", {
+        body: { amount: numAmount },
+      });
+
+      const errorMsg = data?.error
+        || (error as any)?.context?.error
+        || error?.message
+        || "Withdrawal failed. Please try again.";
+
+      if (error || data?.error) {
+        toast({ title: "Withdrawal failed", description: errorMsg, variant: "destructive" });
+      } else {
+        toast({ title: "Withdrawal request placed!", description: "You will receive your funds within 24 hours." });
+        setWithdrawalAmount("");
+        setEnteredWithdrawPin("");
+      }
+    } catch (err: any) {
+      toast({ title: "Request error", description: err.message || "An unexpected error occurred.", variant: "destructive" });
+    } finally {
+      await fetchWithdrawalData();
+      setWithdrawing(false);
+    }
+  };
+
+  const handleBiometricCheck = async () => {
+    const n = parseFloat(withdrawalAmount);
+    if (isNaN(n) || n < minWithdrawal) {
+      toast({ title: "Error", description: `Minimum withdrawal is GHS ${minWithdrawal.toFixed(2)}`, variant: "destructive" });
+      return;
+    }
+    const availableBalance = parseFloat((totalProfit - (completedWithdrawals + pendingWithdrawals)).toFixed(2));
+    if (n > availableBalance) {
+      toast({ title: "Error", description: "Amount exceeds available balance", variant: "destructive" });
+      return;
+    }
+    if (n > maxWithdrawal) {
+      toast({ title: "Error", description: `Maximum withdrawal is GHS ${maxWithdrawal.toFixed(2)}`, variant: "destructive" });
+      return;
+    }
+    if (hasBiometric) {
+      setBiometricWithdrawScanning(true);
+      try {
+        const ok = await authenticate();
+        if (!ok) {
+          toast({ title: "Error", description: "Biometric check failed. Withdrawal blocked.", variant: "destructive" });
+          return;
+        }
+      } catch (e: any) {
+        const msg: string = e?.message ?? "";
+        if (msg.includes("cancelled") || msg.includes("NotAllowedError")) {
+          toast({ title: "Authentication cancelled", description: "Please authenticate to complete withdrawal." });
+        } else {
+          toast({ title: "Biometric error", description: msg, variant: "destructive" });
+        }
+        return;
+      } finally {
+        setBiometricWithdrawScanning(false);
+      }
+    } else if (profile?.transaction_pin) {
+      setPinWithdrawDialogOpen(true);
+      return;
+    } else {
+      toast({
+        title: "Security Required",
+        description: "Please set a Transaction PIN or Biometric in Account Settings to secure your withdrawals.",
+        variant: "destructive"
+      });
+      return;
+    }
+    setConfirmWithdrawOpen(true);
+  };
+
+  const handleVerifyMomoName = async () => {
+    if (!profile?.momo_number || !profile?.momo_network) {
+       toast({ title: "Details Missing", description: "Set your MoMo number and network in Settings first.", variant: "destructive" });
+       return;
+    }
+    
+    toast({ title: "Resolving account identity...", description: "Talking to Paystack gateways." });
+    try {
+      const net = profile.momo_network.toUpperCase();
+      let bankCode = "MTN";
+      if (net.includes("VODA") || net.includes("TELECEL")) bankCode = "VOD";
+      if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) bankCode = "ATL";
+
+      const { data, error } = await supabase.functions.invoke("paystack-resolve", {
+        body: { account_number: profile.momo_number, bank_code: bankCode }
+      });
+
+      if (error || !data?.success) throw new Error(data?.error || "Could not resolve name");
+
+      await supabase.from("profiles").update({ momo_account_name: data.account_name }).eq("user_id", user?.id);
+      
+      toast({ title: "Identity Verified!", description: `Account resolved to: ${data.account_name}` });
+      await refreshProfile();
+      await fetchWithdrawalData();
+    } catch (e: any) {
+      toast({ title: "Verification Failed", description: e.message, variant: "destructive" });
+    }
+  };
 
   const fetchStores = async () => {
     setLoading(true);
@@ -892,6 +1133,7 @@ export default function DashboardMyStore() {
                   { id: "pricing", label: "💲 Profit Margins", icon: DollarSign },
                   { id: "customers", label: "👥 Customer Management", icon: Users },
                   { id: "deposits", label: "💰 MoMo Deposits", icon: CreditCard, badge: deposits.filter(d => d.status === "pending").length },
+                  { id: "withdrawals", label: "💸 Profit Payouts", icon: HandCoins },
                   { id: "settings", label: "⚙️ System Configuration", icon: SettingsIcon },
                 ].map((item) => {
                   const isActive = activeTab === item.id;
@@ -1555,6 +1797,208 @@ export default function DashboardMyStore() {
                 </div>
               )}
 
+              {/* WITHDRAWALS & PAYOUTS */}
+              {activeTab === "withdrawals" && activeStore && (
+                <div className="space-y-6">
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="rounded-3xl border border-white/6 p-5 bg-[#111116] flex flex-col gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+                        <TrendingUp className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <p className="text-xl md:text-2xl font-black">₵ {totalProfit.toFixed(2)}</p>
+                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Lifetime Profit</p>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/6 p-5 bg-[#111116] flex flex-col gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <p className="text-xl md:text-2xl font-black text-emerald-400">₵ {completedWithdrawals.toFixed(2)}</p>
+                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Paid Out</p>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/6 p-5 bg-[#111116] flex flex-col gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                        <Clock className="w-4 h-4 text-blue-400" />
+                      </div>
+                      <p className="text-xl md:text-2xl font-black text-blue-400">₵ {pendingWithdrawals.toFixed(2)}</p>
+                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Pending Payouts</p>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/6 p-5 bg-gradient-to-br from-amber-400/10 to-transparent border-amber-400/20 flex flex-col gap-2 relative overflow-hidden group">
+                      <div className="absolute -right-4 -top-4 w-12 h-12 bg-amber-400/10 rounded-full blur-xl group-hover:bg-amber-400/20 transition-all duration-500" />
+                      <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/30 flex items-center justify-center">
+                        <Wallet className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <p className="text-xl md:text-2xl font-black text-amber-400">₵ {(totalProfit - (completedWithdrawals + pendingWithdrawals)).toFixed(2)}</p>
+                      <p className="text-[10px] font-black text-white/50 uppercase tracking-widest">Available Profit</p>
+                    </div>
+                  </div>
+
+                  {/* Recipient Details & Payout Request Form */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Destination details card */}
+                    <div className="rounded-3xl border border-white/6 p-6 bg-[#111116] flex flex-col justify-between space-y-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-black text-sm flex items-center gap-2">
+                            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                            Verified Payout Destination
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                            Active
+                          </span>
+                        </div>
+
+                        <div className="space-y-3.5 pt-2">
+                          <div className="flex justify-between border-b border-white/5 pb-2.5">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">MOMO Account Owner</span>
+                            <span className="text-xs font-black text-white">{profile?.momo_account_name || "Verification Needed"}</span>
+                          </div>
+                          <div className="flex justify-between border-b border-white/5 pb-2.5">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">MoMo Wallet Number</span>
+                            <span className="text-xs font-mono font-bold text-white">{profile?.momo_number || "Not Setup"}</span>
+                          </div>
+                          <div className="flex justify-between pb-1.5">
+                            <span className="text-[10px] font-black text-white/40 uppercase tracking-wider">Network Carrier</span>
+                            <span className="text-xs font-black text-emerald-400 uppercase">{profile?.momo_network || "Not Setup"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={handleVerifyMomoName}
+                          className="w-full h-11 rounded-2xl border border-white/8 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Verify & Sync Legal Name
+                        </button>
+                        <p className="text-[10px] text-white/30 text-center font-medium leading-relaxed">
+                          Your earnings are transferred directly to this mobile money address. To update these details, visit System Configuration.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Withdrawal form card */}
+                    <div className="rounded-3xl border border-white/6 p-6 bg-[#111116] space-y-6">
+                      <div>
+                        <h3 className="font-black text-sm flex items-center gap-2">
+                          <ArrowDownToLine className="w-5 h-5 text-amber-400" />
+                          Request Payout
+                        </h3>
+                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider mt-0.5">Withdraw storefront profit to your MoMo account</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase text-white/40 tracking-wider">Amount (GHS)</label>
+                          <div className="relative">
+                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-base font-bold">₵</div>
+                            <input
+                              type="number"
+                              required
+                              min={minWithdrawal}
+                              max={maxWithdrawal}
+                              placeholder={`min. GHS ${minWithdrawal.toFixed(2)}`}
+                              value={withdrawalAmount}
+                              onChange={(e) => setWithdrawalAmount(e.target.value)}
+                              className="w-full h-12 pl-10 pr-4 rounded-2xl text-sm font-black bg-[#1a1a24] border border-white/8 outline-none focus:border-amber-400 text-white placeholder:text-white/20"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleBiometricCheck}
+                          disabled={!withdrawalSystemEnabled || withdrawing || biometricWithdrawScanning || !withdrawalAmount}
+                          className="w-full h-12 rounded-2xl bg-amber-400 hover:bg-amber-500 text-black text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 border-0"
+                        >
+                          {biometricWithdrawScanning ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Verifying...</>
+                          ) : withdrawing ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Processing...</>
+                          ) : (
+                            <>{hasBiometric ? <Fingerprint className="w-4.5 h-4.5" /> : <Lock className="w-4 h-4" />} Request Withdrawal</>
+                          )}
+                        </button>
+
+                        <p className="text-[10px] text-white/40 leading-relaxed text-center font-medium">
+                          Payout processing is subject to flat GHS 1.00 fee + 1% dynamic network charges. Funds typically arrive within 24 hours.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* History card */}
+                  <div className="rounded-3xl border border-white/6 p-6 bg-[#111116] space-y-4">
+                    <h3 className="font-black text-sm flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-white/60" />
+                      Withdrawal History
+                    </h3>
+
+                    {loadingWithdrawals ? (
+                      <div className="py-12 flex justify-center">
+                        <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+                      </div>
+                    ) : withdrawals.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-white/40 font-bold uppercase tracking-wider">
+                        No profit payouts processed yet.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-white/6 text-white/40 uppercase font-black tracking-widest text-[9px]">
+                              <th className="py-3 px-4">Withdrawal ID</th>
+                              <th className="py-3 px-4">Initiation Date</th>
+                              <th className="py-3 px-4 text-right">Fee Charges</th>
+                              <th className="py-3 px-4 text-right">Gross Amount</th>
+                              <th className="py-3 px-4 text-center">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {withdrawals.map((w) => {
+                              const badgeStyle = 
+                                w.status === "completed" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25" :
+                                ["pending", "processing"].includes(w.status) ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/25 animate-pulse" :
+                                "bg-red-500/10 text-red-400 border border-red-500/25";
+                              
+                              return (
+                                <tr key={w.id} className="border-b border-white/5 hover:bg-white/3 transition-colors font-medium">
+                                  <td className="py-3.5 px-4 font-mono text-[10px] text-white/60">
+                                    {w.id}
+                                    {w.failure_reason && (
+                                      <p className="text-[10px] text-red-400 mt-1 font-sans">{w.failure_reason}</p>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-4 font-mono text-white/80">
+                                    {new Date(w.created_at).toLocaleDateString()} - {new Date(w.created_at).toLocaleTimeString()}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right text-red-400 font-mono">
+                                    ₵ {Number(w.fee || 0).toFixed(2)}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right text-white font-black font-mono">
+                                    ₵ {Number(w.amount).toFixed(2)}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-center">
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${badgeStyle}`}>
+                                      {w.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* SYSTEM CONFIGURATION / SETTINGS */}
               {activeTab === "settings" && activeStore && (
                 <form onSubmit={handleSaveSettings} className="rounded-3xl border border-white/6 p-6 bg-[#111116] space-y-6">
@@ -1896,6 +2340,81 @@ export default function DashboardMyStore() {
           </div>
         )}
       </div>
+
+      {/* Payout Confirmation dialog */}
+      <AlertDialog open={confirmWithdrawOpen} onOpenChange={setConfirmWithdrawOpen}>
+        <AlertDialogContent className="bg-[#111116] border border-white/10 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">Confirm Withdrawal Request</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 text-white/60">
+              <div className="p-4 rounded-xl bg-white/2 border border-white/5 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">Request Amount:</span>
+                  <span className="font-bold text-white">GHS {parseFloat(withdrawalAmount || "0").toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">Processing Fee (GHS 1.00 + 1%):</span>
+                  <span className="font-bold text-red-400">- GHS {(WITHDRAWAL_FEE_FLAT + (parseFloat(withdrawalAmount || "0") * WITHDRAWAL_FEE_PERCENT)).toFixed(2)}</span>
+                </div>
+                <div className="pt-2 border-t border-white/5 flex justify-between text-base">
+                  <span className="font-semibold text-white">You will receive:</span>
+                  <span className="font-black text-amber-400">GHS {(parseFloat(withdrawalAmount || "0") - (WITHDRAWAL_FEE_FLAT + (parseFloat(withdrawalAmount || "0") * WITHDRAWAL_FEE_PERCENT))).toFixed(2)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-white/40">
+                Funds will be sent to your MoMo: <span className="text-white font-medium">{profile?.momo_number}</span> ({profile?.momo_network}).
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-white/5 border border-white/8 text-white hover:bg-white/10">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWithdraw} className="bg-amber-400 text-black hover:bg-amber-500 border-0">Submit Request</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Transaction PIN entry dialog */}
+      <AlertDialog open={pinWithdrawDialogOpen} onOpenChange={setPinWithdrawDialogOpen}>
+        <AlertDialogContent className="max-w-[340px] bg-[#111116] border border-white/10 text-white">
+          <AlertDialogHeader>
+            <div className="mx-auto w-12 h-12 rounded-full bg-amber-400/10 flex items-center justify-center mb-2 border border-amber-400/20">
+              <Key className="w-6 h-6 text-amber-400" />
+            </div>
+            <AlertDialogTitle className="text-center text-white">Enter Transaction PIN</AlertDialogTitle>
+            <AlertDialogDescription className="text-center text-white/50">
+              Verify your identity to authorize this withdrawal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              placeholder="••••"
+              className="h-14 w-full text-center text-2xl tracking-[0.5em] font-black bg-white/3 border border-white/10 rounded-2xl outline-none focus:border-amber-400 text-white"
+              value={enteredWithdrawPin}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "");
+                setEnteredWithdrawPin(val);
+                if (val.length === 4) {
+                  if (val === profile?.transaction_pin) {
+                    setPinWithdrawDialogOpen(false);
+                    setConfirmWithdrawOpen(true);
+                  } else {
+                    toast({ title: "Verification failed", description: "Incorrect PIN", variant: "destructive" });
+                    setEnteredWithdrawPin("");
+                  }
+                }
+              }}
+              autoFocus
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="w-full bg-white/5 border border-white/8 text-white hover:bg-white/10">Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
