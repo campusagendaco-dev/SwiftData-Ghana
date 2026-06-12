@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
 const BASE_URL = "https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api";
 
@@ -502,17 +503,18 @@ const APIDocumentation = () => {
               </div>
             </div>
 
-            {/* Live Service Status */}
-            <div className="rounded-xl border border-white/8 overflow-hidden bg-white/[0.02] mb-8">
-              <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Live Service Status</span>
-                <span className="text-[9px] text-emerald-400 font-bold uppercase flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                  Real-time
-                </span>
-              </div>
-              <div className="p-4 sm:p-5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Live Service & Speed Status */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+              {/* ISP Gateways Status */}
+              <div className="lg:col-span-7 rounded-xl border border-white/8 overflow-hidden bg-[#080810]/40 flex flex-col justify-between">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">ISP Gateways Status</span>
+                  <span className="text-[9px] text-emerald-400 font-bold uppercase flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    Real-time
+                  </span>
+                </div>
+                <div className="p-4 sm:p-5 flex-1 flex flex-col justify-center gap-3.5">
                   {(serviceStatuses.length > 0 ? serviceStatuses : defaultStatuses).map((net) => {
                     const getStatusStyles = (status: string) => {
                       switch (status) {
@@ -559,6 +561,11 @@ const APIDocumentation = () => {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Live Delivery Speed Card */}
+              <div className="lg:col-span-5 flex flex-col justify-stretch">
+                <LastMtnOrderWidget variant="card" className="h-full" />
               </div>
             </div>
 
