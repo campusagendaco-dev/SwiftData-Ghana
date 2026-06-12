@@ -73,7 +73,7 @@ serve(async (req) => {
       .eq("package_size", "BUNDLE")
       .maybeSingle();
 
-    const price = Number(afaSetting?.agent_price ?? afaSetting?.public_price ?? 12.50);
+    const price = Number(afaSetting?.agent_price ?? afaSetting?.public_price ?? 15.00);
 
     // Fetch agent profile
     const { data: agentProfile } = await supabaseAdmin

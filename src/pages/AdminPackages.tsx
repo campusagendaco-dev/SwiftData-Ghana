@@ -118,36 +118,43 @@ const AdminPackages = () => {
   const handleSave = async () => {
     setSaving(true);
 
-    for (const n of networks) {
-      for (const pkg of basePackages[n.name] || []) {
-        const s = getSetting(n.name, pkg.size);
-        if (s.public_price !== null && s.public_price < 0) {
-          toast({
-            title: "Invalid public price",
-            description: `${n.name} ${pkg.size} public price cannot be negative.`,
-            variant: "destructive",
-          });
-          setSaving(false);
-          return;
-        }
-        if (s.agent_price !== null && s.agent_price < 0) {
-          toast({
-            title: "Invalid agent price",
-            description: `${n.name} ${pkg.size} agent price cannot be negative.`,
-            variant: "destructive",
-          });
-          setSaving(false);
-          return;
-        }
-        if (s.api_price !== null && s.api_price < 0) {
-          toast({
-            title: "Invalid API price",
-            description: `${n.name} ${pkg.size} API price cannot be negative.`,
-            variant: "destructive",
-          });
-          setSaving(false);
-          return;
-        }
+    for (const key of Object.keys(settings)) {
+      const s = settings[key];
+      if (s.public_price !== null && s.public_price < 0) {
+        toast({
+          title: "Invalid public price",
+          description: `${s.network} ${s.package_size} public price cannot be negative.`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+      if (s.agent_price !== null && s.agent_price < 0) {
+        toast({
+          title: "Invalid agent price",
+          description: `${s.network} ${s.package_size} agent price cannot be negative.`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+      if (s.api_price !== null && s.api_price < 0) {
+        toast({
+          title: "Invalid API price",
+          description: `${s.network} ${s.package_size} API price cannot be negative.`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+      if (s.sub_agent_price !== null && s.sub_agent_price < 0) {
+        toast({
+          title: "Invalid sub-agent price",
+          description: `${s.network} ${s.package_size} sub-agent price cannot be negative.`,
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
       }
     }
     const session = await getValidSession();
@@ -278,6 +285,7 @@ const AdminPackages = () => {
           {networks.map((n) => (
             <TabsTrigger key={n.name} value={n.name}>{n.name}</TabsTrigger>
           ))}
+          <TabsTrigger value="AFA">AFA Registration</TabsTrigger>
         </TabsList>
 
         {networks.map((n) => (
@@ -410,6 +418,141 @@ const AdminPackages = () => {
             </Card>
           </TabsContent>
         ))}
+
+        <TabsContent value="AFA">
+          <Card>
+            <CardHeader>
+              <CardTitle>AFA Registration Settings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Manage wholesale and public pricing for AFA member registrations.
+                </p>
+
+                <div className="space-y-3">
+                  {/* Desktop Header */}
+                  <div className="hidden md:grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-2">
+                    <div className="col-span-2">Package</div>
+                    <div className="col-span-2">Cost (₵)</div>
+                    <div className="col-span-2">Agent (₵)</div>
+                    <div className="col-span-2">Sub-Agent (₵)</div>
+                    <div className="col-span-2">Public (₵)</div>
+                    <div className="col-span-2">API (₵)</div>
+                    <div className="col-span-1 text-center">Active</div>
+                  </div>
+
+                  {(() => {
+                    const s = getSetting("AFA", "BUNDLE");
+                    return (
+                      <div className={`flex flex-col md:grid md:grid-cols-12 gap-3 items-start md:items-center p-3 md:p-2 rounded-xl border shadow-sm ${s.is_unavailable ? "bg-red-500/[0.05] border-red-500/20 opacity-60" : "bg-card border-border"}`}>
+                        {/* Package Info */}
+                        <div className="flex items-center justify-between w-full md:col-span-2">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-sm text-foreground">AFA Registration</span>
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Default: ₵15.00</span>
+                          </div>
+                          <div className="md:hidden flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground">Active</span>
+                            <Switch
+                              checked={!s.is_unavailable}
+                              onCheckedChange={(checked) => updateSetting("AFA", "BUNDLE", "is_unavailable", !checked)}
+                              className="scale-75 data-[state=checked]:bg-amber-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Cost Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Cost Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="15.00"
+                              value={s.cost_price ?? ""}
+                              onChange={(e) => updateSetting("AFA", "BUNDLE", "cost_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm rounded-lg md:rounded-md"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Agent Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Agent Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="15.00"
+                              value={s.agent_price ?? ""}
+                              onChange={(e) => updateSetting("AFA", "BUNDLE", "agent_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm rounded-lg md:rounded-md focus:border-amber-500/30"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Sub-Agent Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Sub-Agent Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="15.00"
+                              value={s.sub_agent_price ?? ""}
+                              onChange={(e) => updateSetting("AFA", "BUNDLE", "sub_agent_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm bg-purple-500/5 border-purple-500/20 text-purple-600 dark:text-purple-400 rounded-lg md:rounded-md focus:border-purple-400/40"
+                            />
+                          </div>
+                        </div>
+
+                        {/* User Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-muted-foreground uppercase font-bold tracking-widest">User Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="15.00"
+                              value={s.public_price ?? ""}
+                              onChange={(e) => updateSetting("AFA", "BUNDLE", "public_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm rounded-lg md:rounded-md focus:border-blue-500/30"
+                            />
+                          </div>
+                        </div>
+
+                        {/* API Price */}
+                        <div className="w-full md:col-span-2 space-y-1">
+                          <label className="md:hidden text-[10px] text-muted-foreground uppercase font-bold tracking-widest">API Price (₵)</label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="15.00"
+                              value={s.api_price ?? ""}
+                              onChange={(e) => updateSetting("AFA", "BUNDLE", "api_price", e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-9 md:h-8 text-sm bg-amber-400/5 border-amber-400/20 text-amber-600 dark:text-amber-500 rounded-lg md:rounded-md focus:border-amber-500/40"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Switch (Desktop) */}
+                        <div className="hidden md:flex col-span-1 justify-center items-center">
+                          <Switch
+                            checked={!s.is_unavailable}
+                            onCheckedChange={(checked) => updateSetting("AFA", "BUNDLE", "is_unavailable", !checked)}
+                            className="scale-75 data-[state=checked]:bg-amber-400"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );

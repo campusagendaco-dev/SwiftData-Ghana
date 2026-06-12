@@ -495,8 +495,8 @@ serve(async (req: Request) => {
 
       const baseAfa = Number(
         isAgentLinkedOrder
-          ? (afaSetting?.agent_price ?? afaSetting?.public_price ?? 0)
-          : (afaSetting?.public_price ?? afaSetting?.agent_price ?? 0),
+          ? (afaSetting?.agent_price ?? afaSetting?.public_price ?? 15.00)
+          : (afaSetting?.public_price ?? afaSetting?.agent_price ?? 15.00),
       );
       if (Number.isFinite(baseAfa) && baseAfa > 0) {
         const adjustedBase = Number((baseAfa * priceMultiplier).toFixed(2));

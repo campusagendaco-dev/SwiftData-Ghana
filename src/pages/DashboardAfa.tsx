@@ -29,7 +29,7 @@ const DashboardAfa = () => {
   const [payMethod, setPayMethod] = useState<"wallet" | "paystack">("wallet");
 
   // Dynamic price & loading states
-  const [afaPrice, setAfaPrice] = useState<number>(12.50);
+  const [afaPrice, setAfaPrice] = useState<number>(15.00);
   const [fetchingPrice, setFetchingPrice] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
@@ -46,7 +46,7 @@ const DashboardAfa = () => {
           .maybeSingle();
 
         if (data && !error) {
-          const priceVal = Number(data.agent_price ?? data.public_price ?? 12.50);
+          const priceVal = Number(data.agent_price ?? data.public_price ?? 15.00);
           setAfaPrice(priceVal);
         }
       } catch (err) {
