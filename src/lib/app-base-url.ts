@@ -22,7 +22,11 @@ export const getActiveStoreDomain = (): string | null => {
     (dh) => host === dh || host.startsWith("192.168.") || host.startsWith("10.") || host.startsWith("172.")
   );
 
-  const isCentral = host === centralDomain || host.endsWith("." + centralDomain);
+  const isCentral =
+    host === centralDomain ||
+    host.endsWith("." + centralDomain) ||
+    host.endsWith(".vercel.app") ||
+    host.endsWith(".lovableproject.com");
 
   if (isLocalDev) {
     // Allow local development testing via a query parameter or localStorage

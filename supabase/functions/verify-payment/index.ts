@@ -968,12 +968,28 @@ serve(async (req) => {
     }
 
 
-    // Standard Data/Airtime/Utility Fulfillment
+    // Standard Data/Airtime/Utility/AFA Fulfillment
     let providerCategory = "data";
     if (currentOrderType === "airtime") providerCategory = "airtime";
     else if (currentOrderType === "utility") providerCategory = "utility";
     
-    const activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
+    let activeProviders = [];
+    if (currentOrderType === "afa") {
+      const { data: spendless } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .eq("handler_type", "spendless")
+        .maybeSingle();
+      if (spendless) {
+        activeProviders = [spendless];
+        console.log(`[verify-payment] Routing AFA order ${targetReference} via Spendless API`);
+      } else {
+        console.warn(`[verify-payment] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
+        activeProviders = await getActiveProviders(supabaseAdmin, "data");
+      }
+    } else {
+      activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
+    }
     const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch").eq("id", 1).maybeSingle();
     const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
@@ -1027,7 +1043,28 @@ serve(async (req) => {
     // Auto-failover: try each active provider in priority order
     for (const provider of activeProviders) {
       const providerCallStart = Date.now();
-      result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider), "purchase");
+      if (currentOrderType === "afa") {
+        result = await callProviderApi(
+          supabaseAdmin,
+          provider,
+          {
+            fullName: metadata.afa_full_name,
+            ghanaCardNumber: metadata.afa_ghana_card,
+            occupation: metadata.afa_occupation,
+            email: metadata.afa_email,
+            placeOfResidence: metadata.afa_residence,
+            dateOfBirth: metadata.afa_date_of_birth,
+            customer_phone: customerPhone,
+            phone: customerPhone,
+            recipient,
+            amount: claimedOrder.amount,
+            reference: targetReference,
+          },
+          "afa-registration"
+        );
+      } else {
+        result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider), "purchase");
+      }
       
       // Auto-fallback for AirtelTigo: If AT_PREMIUM fails with "Bundle not available", try AT_BIGTIME
       if (!result.ok && /bundle not available|invalid bundle/i.test(result.reason) && (network.toUpperCase().includes("AIRTEL") || network.toUpperCase() === "AT")) {

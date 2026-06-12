@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import SEO from "@/components/SEO";
 import html2canvas from "html2canvas";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
+import { playSuccessSound } from "@/lib/sound";
 
 type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid";
 
@@ -77,6 +78,7 @@ const OrderStatus = () => {
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const redirectedRef = useRef(false);
+  const hasPlayedSoundRef = useRef(false);
 
   // State for global system tracking (from DeliveryTracker)
   const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
@@ -188,6 +190,10 @@ const OrderStatus = () => {
       return;
     }
     if (status === "fulfilled") {  
+      if (!hasPlayedSoundRef.current) {
+        hasPlayedSoundRef.current = true;
+        playSuccessSound();
+      }
       return;
     }
   };

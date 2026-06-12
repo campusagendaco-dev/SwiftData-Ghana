@@ -20,6 +20,10 @@ verify_jwt = false
 
 [functions.wallet-topup]
 verify_jwt = false
+
+[functions.wallet-pay-afa]
+verify_jwt = false
+
 [functions.cron-pending-sms]
 verify_jwt = false
 

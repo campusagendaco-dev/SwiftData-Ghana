@@ -1333,33 +1333,53 @@ serve(async (req) => {
       });
     }
 
-    // --- ACTIVE PROVIDER CHECK / PAUSE GATE ---
-    // Fetch active providers from the central 'providers' table database. 
-    // If all providers are toggled OFF by the admin, gracefully PAUSE automatic execution.
-    const activeProviders = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
-    
-    if (!activeProviders || activeProviders.length === 0) {
-      console.log(`[Webhook] ALL APIs OFF for type '${orderType}'. Halting auto-fulfillment for order ${orderId}. Queueing for manual processing.`);
-      await supabaseAdmin.from("orders").update({ 
-        status: "paid", 
-        failure_reason: "Queued for manual fulfillment (All APIs toggled OFF by admin)" 
-      }).eq("id", orderId);
-      
-      return new Response(JSON.stringify({ 
-        received: true, 
-        fulfilled: false, 
-        status: "paid", 
-        message: "Provider APIs currently OFF. Enqueued for manual review." 
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Spendless override for AFA orders
+    let isSpendlessAfaResolved = false;
+    if (orderType === "afa") {
+      const { data: spendless } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .eq("handler_type", "spendless")
+        .maybeSingle();
+      if (spendless?.api_key && spendless?.base_url) {
+        DATA_PROVIDER_API_KEY = spendless.api_key;
+        DATA_PROVIDER_BASE_URL = spendless.base_url.replace(/\/+$/, "");
+        isSpendlessAfaResolved = true;
+        console.log(`[Webhook] Routing AFA order ${orderId} exclusively via Spendless API`);
+      } else {
+        console.warn(`[Webhook] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
+      }
     }
 
-    // Dynamic Resolution: Override default credentials with the selected active provider's live configs
-    const primaryProvider = activeProviders[0];
-    if (primaryProvider.api_key) DATA_PROVIDER_API_KEY = primaryProvider.api_key;
-    if (primaryProvider.base_url) DATA_PROVIDER_BASE_URL = primaryProvider.base_url.replace(/\/+$/, "");
+    if (!isSpendlessAfaResolved) {
+      // --- ACTIVE PROVIDER CHECK / PAUSE GATE ---
+      // Fetch active providers from the central 'providers' table database. 
+      // If all providers are toggled OFF by the admin, gracefully PAUSE automatic execution.
+      const activeProviders = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
+      
+      if (!activeProviders || activeProviders.length === 0) {
+        console.log(`[Webhook] ALL APIs OFF for type '${orderType}'. Halting auto-fulfillment for order ${orderId}. Queueing for manual processing.`);
+        await supabaseAdmin.from("orders").update({ 
+          status: "paid", 
+          failure_reason: "Queued for manual fulfillment (All APIs toggled OFF by admin)" 
+        }).eq("id", orderId);
+        
+        return new Response(JSON.stringify({ 
+          received: true, 
+          fulfilled: false, 
+          status: "paid", 
+          message: "Provider APIs currently OFF. Enqueued for manual review." 
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Dynamic Resolution: Override default credentials with the selected active provider's live configs
+      const primaryProvider = activeProviders[0];
+      if (primaryProvider.api_key) DATA_PROVIDER_API_KEY = primaryProvider.api_key;
+      if (primaryProvider.base_url) DATA_PROVIDER_BASE_URL = primaryProvider.base_url.replace(/\/+$/, "");
+    }
 
     if (!DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
       console.error("Data provider not configured for fulfillment");

@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/integrations/supabase/client";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   Bell,
@@ -25,6 +26,7 @@ import {
   Trophy,
   ShieldCheck,
   ChevronRight,
+  ChevronDown,
   Zap,
   Activity,
   Star,
@@ -52,11 +54,10 @@ const userNavItems = [
   { to: "/dashboard/schedule", label: "Auto-Renewal", icon: CalendarClock },
   { to: "/dashboard/transactions", label: "Transactions", icon: ClipboardList },
   { to: "/dashboard/notifications", label: "Inbox Notifications", icon: Bell },
-  { to: "/dashboard/buy-data/mtn", label: "Buy Data - MTN", icon: ShoppingCart },
-  { to: "/dashboard/buy-data/telecel", label: "Buy Data - Telecel", icon: ShoppingCart },
-  { to: "/dashboard/buy-data/airteltigo", label: "Buy Data - AirtelTigo", icon: ShoppingCart },
+  { to: "/dashboard/buy-data/mtn", label: "Buy Data", icon: ShoppingCart },
   { to: "/dashboard/buy-airtime", label: "Buy Airtime", icon: CreditCard },
   { to: "/dashboard/utilities", label: "Utility Bills", icon: Zap },
+  { to: "/dashboard/afa", label: "AFA Registration", icon: ShieldCheck },
   // { to: "/dashboard/airtime-to-cash", label: "Airtime to Cash", icon: CreditCard },
   { to: "/dashboard/my-store", label: "My Store", icon: Store },
   { to: "/dashboard/report-issue", label: "Report Issue", icon: Flag },
@@ -99,6 +100,17 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
     store_logo_url: string | null;
     store_primary_color: string | null;
   } | null>(null);
+  const [businessSuiteOpen, setBusinessSuiteOpen] = useState(() => 
+    agentNavItems.some(item => location.pathname === item.to)
+  );
+
+  // Auto-expand if the route changes to an agent page
+  useEffect(() => {
+    const isActive = agentNavItems.some(item => location.pathname === item.to);
+    if (isActive) {
+      setBusinessSuiteOpen(true);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const fetchParentStore = async () => {
@@ -250,7 +262,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
             </p>
             <div className="space-y-1">
               {userNavItems.map((item) => {
-                const isActive = location.pathname === item.to;
+                const isActive = location.pathname === item.to || (item.to === "/dashboard/buy-data/mtn" && location.pathname.startsWith("/dashboard/buy-data/"));
                 return (
                   <Link
                     key={item.to}
@@ -286,49 +298,88 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
 
           {/* Agent Menu */}
           {isPaidAgent && (
-            <div>
-              <p className={cn("px-4 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2", isDark ? "text-white/20" : "text-gray-400")}>
-                <span className={cn("w-1 h-1 rounded-full", isDark ? "bg-amber-400/40" : "bg-amber-500/30")}></span>
-                Business Suite
-              </p>
-              <div className="space-y-1">
-                {agentNavItems
-                  .filter(
-                    (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
-                  )
-                  .map((item) => {
-                    const isActive = location.pathname === item.to;
-                    return (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        onClick={onClose}
-                        className={cn(
-                          "group flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
-                          isActive 
-                            ? (isDark ? "text-white bg-gradient-to-r from-amber-400/10 to-transparent border-l-2 border-amber-400 shadow-lg shadow-amber-400/5" : "text-gray-900 bg-amber-50 border-l-2 border-amber-400")
-                            : (isDark ? "text-white/50 hover:text-white hover:bg-white/5" : "text-gray-500 hover:text-gray-900 hover:bg-gray-100")
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <item.icon className={cn(
-                            "w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                            isActive 
-                              ? "text-amber-400" 
-                              : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
-                          )} />
-                          {item.label}
-                        </div>
-                        {["/dashboard/swift-vendor", "/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to) && (
-                          <Badge className="text-[8px] h-4 bg-emerald-500 text-white border-none uppercase font-black px-1.5 shadow-[0_0_10px_rgba(16,185,129,0.4)] animate-pulse">
-                            NEW
-                          </Badge>
-                        )}
-                        {isActive && <Star className="w-3 h-3 text-amber-400 fill-amber-400" />}
-                      </Link>
-                    );
-                  })}
-              </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => setBusinessSuiteOpen(!businessSuiteOpen)}
+                className={cn(
+                  "w-full px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-between transition-all",
+                  isDark 
+                    ? "text-white/50 hover:text-white hover:bg-white/5" 
+                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={cn(
+                    "w-1.5 h-1.5 rounded-full animate-pulse", 
+                    isDark ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]" : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                  )}></span>
+                  Business Suite
+                </span>
+                <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-300", businessSuiteOpen ? "transform rotate-180" : "")} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {businessSuiteOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: [0.04, 0.62, 0.23, 0.98] }}
+                    className="overflow-hidden"
+                  >
+                    <div className={cn(
+                      "p-2 space-y-1 rounded-2xl border backdrop-blur-xl shadow-lg relative overflow-hidden",
+                      isDark
+                        ? "bg-gradient-to-b from-white/[0.07] to-white/[0.02] border-white/[0.08] shadow-black/40"
+                        : "bg-gradient-to-b from-black/[0.03] to-black/[0.01] border-black/[0.05] shadow-white/40"
+                    )}>
+                      {/* Ambient background glow inside liquid glass */}
+                      <div className="absolute -top-12 -right-12 w-24 h-24 bg-amber-400/5 rounded-full blur-2xl pointer-events-none" />
+                      
+                      {agentNavItems
+                        .filter(
+                          (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
+                        )
+                        .map((item) => {
+                          const isActive = location.pathname === item.to;
+                          return (
+                            <Link
+                              key={item.to}
+                              to={item.to}
+                              onClick={onClose}
+                              className={cn(
+                                "group flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 relative overflow-hidden",
+                                isActive 
+                                  ? (isDark 
+                                      ? "text-white bg-amber-400/10 border-l-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.1)]" 
+                                      : "text-black bg-amber-500/10 border-l-2 border-amber-500")
+                                  : (isDark 
+                                      ? "text-white/60 hover:text-white hover:bg-white/5" 
+                                      : "text-gray-600 hover:text-gray-900 hover:bg-black/5")
+                              )}
+                            >
+                              <div className="flex items-center gap-3 relative z-10">
+                                <item.icon className={cn(
+                                  "w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover:scale-110",
+                                  isActive 
+                                    ? "text-amber-400" 
+                                    : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
+                                )} />
+                                {item.label}
+                              </div>
+                              {["/dashboard/swift-vendor", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/afa"].includes(item.to) && (
+                                <Badge className="text-[8px] h-4 bg-emerald-500 text-white border-none uppercase font-black px-1.5 shadow-[0_0_10px_rgba(16,185,129,0.4)] animate-pulse relative z-10">
+                                  NEW
+                                </Badge>
+                              )}
+                              {isActive && <Star className="w-3 h-3 text-amber-400 fill-amber-400 relative z-10" />}
+                            </Link>
+                          );
+                        })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </nav>

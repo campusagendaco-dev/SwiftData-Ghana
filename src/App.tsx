@@ -106,6 +106,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const DashboardCustomers = lazy(() => import("./pages/DashboardCustomers"));
 const DashboardMarketing = lazy(() => import("./pages/DashboardMarketing"));
 const DashboardUtilities = lazy(() => import("./pages/DashboardUtilities"));
+const DashboardAfa = lazy(() => import("./pages/DashboardAfa"));
 const DashboardAirtimeCash = lazy(() => import("./pages/DashboardAirtimeCash"));
 const DashboardReferral = lazy(() => import("./pages/DashboardReferral"));
 const DashboardBulk = lazy(() => import("./pages/DashboardBulk"));
@@ -404,6 +405,7 @@ const AppContent = () => {
           <Route path="buy-data/airteltigo" element={<DashboardBuyDataNetwork network="AirtelTigo" />} />
           <Route path="buy-airtime" element={<DashboardBuyAirtime />} />
           <Route path="utilities" element={<DashboardUtilities />} />
+          <Route path="afa" element={<DashboardAfa />} />
           <Route path="airtime-to-cash" element={<DashboardAirtimeCash />} />
           <Route path="my-store" element={<DashboardMyStore />} />
           <Route path="report-issue" element={<DashboardReportIssue />} />

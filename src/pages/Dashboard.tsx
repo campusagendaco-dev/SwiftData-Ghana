@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Wallet, ShoppingCart, TrendingUp, ArrowDownToLine, ArrowUpRight,
   Users2, Zap, Store, ClipboardList, ChevronRight, RefreshCw, CloudOff,
-  Gift, Sparkles, Activity, Clock, Eye, EyeOff
+  Gift, Sparkles, Activity, Clock, Eye, EyeOff, ShieldCheck
 } from "lucide-react";
 import { format } from "date-fns";
 import { useMaskedBalance } from "@/hooks/useMaskedBalance";
@@ -205,6 +205,7 @@ const Dashboard = () => {
 
   const quickActions = [
     { label: "Swift Vendor",   icon: Zap,          path: "/dashboard/swift-vendor",  color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20", isNew: true },
+    { label: "AFA Register",   icon: ShieldCheck,  path: "/dashboard/afa",           color: "text-purple-400",  bg: "bg-purple-500/10",  border: "border-purple-500/20", isNew: true },
     { label: "Sub Agents",     icon: Users2,       path: "/dashboard/subagents",     color: "text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/20", isNew: true },
     { label: "Transactions",   icon: ClipboardList, path: "/dashboard/transactions",  color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20" },
     { label: "My Store",       icon: Store,         path: "/dashboard/my-store",      color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
@@ -450,7 +451,7 @@ const Dashboard = () => {
           {quickActions.map((a) => (
             <CardTilt
               key={a.label}
-              glowColor={a.color.includes("amber") ? "48 96% 53%" : a.color.includes("cyan") ? "185 85% 45%" : a.color.includes("blue") ? "217 91% 60%" : "142 70% 45%"}
+              glowColor={a.color.includes("amber") ? "48 96% 53%" : a.color.includes("cyan") ? "185 85% 45%" : a.color.includes("blue") ? "217 91% 60%" : a.color.includes("purple") ? "271 91% 65%" : "142 70% 45%"}
               className="rounded-2xl w-full"
             >
               <button
