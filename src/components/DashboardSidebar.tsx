@@ -284,7 +284,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                       )} />
                       {item.label}
                     </div>
-                    {item.to === "/dashboard/buy-airtime" && (
+                    {["/dashboard/buy-airtime", "/dashboard/afa"].includes(item.to) && (
                       <Badge className="text-[8px] h-4 bg-emerald-500 text-white border-none uppercase font-black px-1.5 shadow-[0_0_10px_rgba(16,185,129,0.4)] animate-pulse">
                         NEW
                       </Badge>

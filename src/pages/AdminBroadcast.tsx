@@ -34,6 +34,7 @@ const TEMPLATES = [
   { label: "Weekend Flash Sale",  title: "🔥 Weekend Flash Data Sale!", body: "Super discounts on all MTN & Telecel data bundles active right now! Purchase high-speed bundles at absolute wholesale rates. Ends Sunday midnight! 💸" },
   { label: "Wallet Bonus",        title: "💰 2% Wallet Top-Up Bonus!", body: "Get a 2% cash bonus instantly in your wallet on all manual top-ups above GHS 200 today! Boost your selling capacity and earn more profit. 🚀" },
   { label: "Referral Bonus",      title: "🎁 Invite Friends & Earn Cash!", body: "Share your referral link with friends! Get GHS 5.00 cash bonus credited to your wallet immediately they complete their first purchase. Start sharing! 🔗" },
+  { label: "AFA Update",          title: "AFA Registration Active 🛡️", body: "AFA Registration is now live on SwiftData! You can register yourself or customers for AFA at just GHS 15.00. Keep selling and earning commissions! 🚀" },
   { label: "Custom",              title: "",                       body: "" },
 ];
 
