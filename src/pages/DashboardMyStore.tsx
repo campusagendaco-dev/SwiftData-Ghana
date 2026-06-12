@@ -39,7 +39,8 @@ import {
   Key,
   Lock,
   ShieldCheck,
-  HandCoins
+  HandCoins,
+  RefreshCw
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useWebAuthn } from "@/hooks/useWebAuthn";
