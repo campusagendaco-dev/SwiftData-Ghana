@@ -1059,6 +1059,8 @@ serve(async (req) => {
             recipient,
             amount: claimedOrder.amount,
             reference: targetReference,
+            networkKey: "AFA",
+            capacity: "BUNDLE",
           },
           "afa-registration"
         );

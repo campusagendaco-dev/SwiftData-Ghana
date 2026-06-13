@@ -464,7 +464,7 @@ async function callProviderApi(
   return lastFailure;
 }
 
-function buildAfaPayload(metadata: Record<string, unknown>) {
+function buildAfaPayload(metadata: Record<string, unknown>, recipient: string) {
   return {
     fullName: metadata.afa_full_name,
     ghanaCardNumber: metadata.afa_ghana_card,
@@ -472,6 +472,11 @@ function buildAfaPayload(metadata: Record<string, unknown>) {
     email: metadata.afa_email,
     placeOfResidence: metadata.afa_residence,
     dateOfBirth: metadata.afa_date_of_birth,
+    networkKey: "AFA",
+    capacity: "BUNDLE",
+    recipient,
+    customer_phone: recipient,
+    phone: recipient,
   };
 }
 
@@ -1396,11 +1401,16 @@ serve(async (req) => {
     }
 
     if (orderType === "afa") {
+      const customerPhone = typeof existingOrder?.customer_phone === "string"
+        ? existingOrder.customer_phone
+        : (typeof (metadata?.customer_phone || metadata?.phone) === "string" ? (metadata.customer_phone || metadata.phone) : "");
+      const recipient = normalizeRecipient(customerPhone);
+
       const result = await callProviderApi(
         DATA_PROVIDER_BASE_URL,
         DATA_PROVIDER_API_KEY,
         "afa-registration",
-        buildAfaPayload(metadata),
+        buildAfaPayload(metadata, recipient),
       );
 
       console.log("Webhook AFA fulfillment response:", {

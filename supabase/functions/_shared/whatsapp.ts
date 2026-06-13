@@ -30,23 +30,51 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
     formattedTo = "+" + formattedTo;
   }
 
-  try {
-    const res = await fetch(WHATSAPP_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${resolvedKey}`,
-      },
-      body: JSON.stringify({ to: formattedTo, text }),
-    });
+  let attempts = 0;
+  const maxAttempts = 3;
 
-    if (!res.ok) {
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      const res = await fetch(WHATSAPP_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${resolvedKey}`,
+        },
+        body: JSON.stringify({ to: formattedTo, text }),
+      });
+
+      if (res.ok) {
+        console.log("[WhatsApp] Sent to", formattedTo);
+        return;
+      }
+
       const errBody = await res.text();
-      console.error("[WhatsApp] Send failed:", res.status, errBody);
-    } else {
-      console.log("[WhatsApp] Sent to", formattedTo);
+      console.error(`[WhatsApp] Send failed (attempt ${attempts}/${maxAttempts}):`, res.status, errBody);
+
+      if (res.status === 429 && attempts < maxAttempts) {
+        let retryAfter = 3; // default fallback if parsing fails
+        try {
+          const parsedErr = JSON.parse(errBody);
+          if (typeof parsedErr.retry_after === "number") {
+            retryAfter = parsedErr.retry_after;
+          }
+        } catch (e) {}
+
+        console.log(`[WhatsApp] Rate limited (429). Retrying after ${retryAfter} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+        continue;
+      }
+      
+      // If it's not a 429 or we ran out of attempts, stop retrying
+      break;
+    } catch (error) {
+      console.error(`[WhatsApp] Error on attempt ${attempts}:`, error);
+      if (attempts >= maxAttempts) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-  } catch (error) {
-    console.error("[WhatsApp] Error:", error);
   }
 }

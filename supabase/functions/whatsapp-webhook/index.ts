@@ -46,6 +46,13 @@ function normalizePhone(raw: string): string {
   return d;
 }
 
+function getPaymentProvider(phone: string): string {
+  const norm = normalizePhone(phone);
+  if (norm.startsWith("020") || norm.startsWith("050")) return "vod";
+  if (norm.startsWith("027") || norm.startsWith("057") || norm.startsWith("026") || norm.startsWith("056")) return "atl";
+  return "mtn";
+}
+
 function normalizeNetworkKey(network: string): "MTN" | "Telecel" | "AirtelTigo" {
   const n = network.trim().toUpperCase();
   if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AirtelTigo";
@@ -131,12 +138,12 @@ async function getPackagesForNetwork(supabase: any, network: string, agentPrices
   // 1. Use agent's custom selling prices if configured (case-insensitive)
   const networkLower = network.toLowerCase();
   const custom = (agentPrices?.[network] || agentPrices?.[network.toUpperCase()] || agentPrices?.[networkLower] || {}) as Record<string, number>;
-  
+
   for (const [size, price] of Object.entries(custom)) {
     const base = Number(price);
     if (base > 0) pkgs.push({ size, basePrice: base, total: addPaystackFee(base) });
   }
-  
+
   if (pkgs.length > 0) {
     console.log(`[WA Bot] Found ${pkgs.length} custom prices for ${network}`);
     return pkgs.sort((a, b) => a.total - b.total);
@@ -144,11 +151,8 @@ async function getPackagesForNetwork(supabase: any, network: string, agentPrices
 
   // 2. Fall back to global public prices
   console.log(`[WA Bot] Querying global bundles for ${network}...`);
-  
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
+  try {
     console.log(`[WA Bot] Executing global query for ${network}...`);
     const { data: rows, error } = await supabase
       .from("global_package_settings")
@@ -156,10 +160,7 @@ async function getPackagesForNetwork(supabase: any, network: string, agentPrices
       .ilike("network", network)
       .eq("is_unavailable", false)
       .order("public_price", { ascending: true })
-      .limit(30)
-      .abortSignal(controller.signal);
-
-    clearTimeout(timeoutId);
+      .limit(30);
 
     if (error) {
       console.error("[WA Bot] DB Error fetching bundles:", error);
@@ -180,7 +181,7 @@ async function getPackagesForNetwork(supabase: any, network: string, agentPrices
     console.error("[WA Bot] getPackagesForNetwork caught error:", err);
     throw err;
   }
-  
+
   return pkgs;
 }
 
@@ -243,7 +244,7 @@ async function resolveProfit(
 
 // ── Paystack initialization ───────────────────────────────────────────────────
 
-type PayResult = { orderId: string };
+type PayResult = { orderId: string; status?: string; otpMessage?: string };
 
 async function initDataPayment(
   supabase: any,
@@ -257,8 +258,7 @@ async function initDataPayment(
   const fee = feeAmount(pkg.basePrice);
   const { profit, parentProfit, parentAgentId, costPrice } = await resolveProfit(supabase, network, pkg.size, agent, pkg.basePrice);
 
-  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "atl" };
-  const provider = providerMap[network];
+  const provider = getPaymentProvider(from);
 
   const metadata = {
     order_id: orderId,
@@ -276,6 +276,7 @@ async function initDataPayment(
     parent_agent_id: parentAgentId,
   };
 
+  let json: any = null;
   try {
     const paystackKey = await getPaystackSecretKey(supabase);
     const res = await fetch("https://api.paystack.co/charge", {
@@ -294,7 +295,7 @@ async function initDataPayment(
         }
       }),
     });
-    const json = await res.json();
+    json = await res.json();
     if (!res.ok || !json.status || !json.data?.reference) {
       console.error("[WA Bot] Paystack data direct charge failed:", json);
       return null;
@@ -319,10 +320,11 @@ async function initDataPayment(
     parent_profit: parentProfit,
     status: "pending",
     failure_reason: null,
+    metadata,
   });
   if (error) { console.error("[WA Bot] Order insert error:", error); return null; }
 
-  return { orderId };
+  return { orderId, status: json?.data?.status, otpMessage: json?.data?.otp_message };
 }
 
 async function initAirtimePayment(
@@ -337,8 +339,7 @@ async function initAirtimePayment(
   const fee = feeAmount(airtimeBase);
   const total = parseFloat((airtimeBase + fee).toFixed(2));
 
-  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "atl" };
-  const provider = providerMap[network];
+  const provider = getPaymentProvider(from);
 
   const metadata = {
     order_id: orderId,
@@ -353,6 +354,7 @@ async function initAirtimePayment(
     parent_profit: 0,
   };
 
+  let json: any = null;
   try {
     const paystackKey = await getPaystackSecretKey(supabase);
     const res = await fetch("https://api.paystack.co/charge", {
@@ -371,7 +373,7 @@ async function initAirtimePayment(
         }
       }),
     });
-    const json = await res.json();
+    json = await res.json();
     if (!res.ok || !json.status || !json.data?.reference) {
       console.error("[WA Bot] Paystack airtime direct charge failed:", json);
       return null;
@@ -395,10 +397,11 @@ async function initAirtimePayment(
     parent_profit: 0,
     status: "pending",
     failure_reason: null,
+    metadata,
   });
   if (error) { console.error("[WA Bot] Airtime order insert error:", error); return null; }
 
-  return { orderId };
+  return { orderId, status: json?.data?.status, otpMessage: json?.data?.otp_message };
 }
 
 async function getAfaPrice(supabase: any): Promise<number> {
@@ -429,11 +432,8 @@ async function initAfaPayment(
   const fee = feeAmount(afaPrice);
   const total = addPaystackFee(afaPrice);
 
-  const providerMap: Record<string, string> = { "MTN": "mtn", "Telecel": "vod", "AirtelTigo": "atl" };
-  let provider = "mtn";
+  const provider = getPaymentProvider(from);
   const userPhone = normalizePhone(from);
-  if (userPhone.startsWith("020") || userPhone.startsWith("050")) provider = "vod";
-  else if (userPhone.startsWith("027") || userPhone.startsWith("057") || userPhone.startsWith("026") || userPhone.startsWith("056")) provider = "atl";
 
   const metadata = {
     order_id: orderId,
@@ -457,6 +457,7 @@ async function initAfaPayment(
     afa_date_of_birth: data.afaDob
   };
 
+  let json: any = null;
   try {
     const paystackKey = await getPaystackSecretKey(supabase);
     const res = await fetch("https://api.paystack.co/charge", {
@@ -474,7 +475,7 @@ async function initAfaPayment(
         }
       }),
     });
-    const json = await res.json();
+    json = await res.json();
     if (!res.ok || !json.status || !json.data?.reference) {
       console.error("[WA Bot] Paystack AFA charge failed:", json);
       return null;
@@ -499,6 +500,13 @@ async function initAfaPayment(
     parent_profit: 0,
     status: "pending",
     failure_reason: null,
+    metadata,
+    afa_full_name: data.afaName,
+    afa_ghana_card: data.afaCard,
+    afa_occupation: data.afaOccupation,
+    afa_email: data.afaEmail || null,
+    afa_residence: data.afaResidence,
+    afa_date_of_birth: data.afaDob,
   });
   if (error) { console.error("[WA Bot] AFA order insert error:", error); return null; }
 
@@ -547,17 +555,16 @@ serve(async (req: Request) => {
 
     // ── GLOBAL: "done" — verify payment ──────────────────────────────────────
     if (input === "done" && data.lastOrderId) {
-      sendWhatsAppMessage(from, `⏳ _Checking payment status..._`).catch(console.error);
       try {
         const paystackKey = await getPaystackSecretKey(supabase);
         const vRes = await fetch(`https://api.paystack.co/transaction/verify/${data.lastOrderId}`, {
           headers: { Authorization: `Bearer ${paystackKey}` },
         });
         const vJson = await vRes.json();
-        
+
         if (vJson.status && vJson.data?.status === "success") {
-          // Force DB update so dashboard tracks it instantly
-          await supabase.from("orders").update({ status: "paid" }).eq("id", data.lastOrderId);
+          // Force DB update so dashboard tracks it instantly (only if still pending/failed)
+          await supabase.from("orders").update({ status: "paid" }).eq("id", data.lastOrderId).in("status", ["pending", "fulfillment_failed"]);
 
           // Clear session — fulfillment is handled by the Paystack webhook automatically
           await supabase.from("whatsapp_sessions").delete().eq("phone_number", from);
@@ -571,9 +578,9 @@ serve(async (req: Request) => {
             ``,
             `_Reply *Hi* anytime to place a new order._`,
           ].join("\n"));
-          
+
           if (data.recipient) {
-             sendPaymentSms(supabase, data.recipient, "payment_success", { phone: data.recipient }).catch(console.error);
+            sendPaymentSms(supabase, data.recipient, "payment_success", { phone: data.recipient }).catch(console.error);
           }
         } else {
           await sendWhatsAppMessage(from, [
@@ -605,8 +612,13 @@ serve(async (req: Request) => {
       }
     }
 
+    const FALLBACK_AGENT_ID = "8a0c1533-7e85-4626-9479-eb770a6739e2";
+    if (!agentId) {
+      agentId = FALLBACK_AGENT_ID;
+    }
+
     // ── AI Intent Parsing (Training Like a Pro) ─────────────────────────────
-    if (step === "MENU" && !["1","2","3","4","5"].includes(input)) {
+    if (step === "MENU" && !["1", "2", "3", "4", "5"].includes(input)) {
       let customPrompt = SYSTEM_PROMPT;
       try {
         const { data: settingsData } = await supabase
@@ -702,14 +714,11 @@ serve(async (req: Request) => {
         if (input === "1" || input.includes("mtn")) net = "MTN";
         else if (input === "2" || input.includes("tele") || input.includes("voda")) net = "Telecel";
         else if (input === "3" || input.includes("at") || input.includes("tigo")) net = "AirtelTigo";
-        
+
         if (!net) { reply = `❌ Please pick *1*, *2*, or *3* (MTN, Telecel, AirtelTigo).`; break; }
         data.net = net;
         data.isAirtime = false;
 
-        // Send status message without awaiting to avoid delay, but catch errors
-        sendWhatsAppMessage(from, `⏳ _Fetching ${net} bundles..._`).catch(e => console.error("[WA Bot] Status msg error:", e));
-        
         let pkgs: Pkg[] = [];
         try {
           console.log(`[WA Bot] Calling getPackagesForNetwork for ${net}...`);
@@ -819,7 +828,7 @@ serve(async (req: Request) => {
           if (recent && recent.length > 0) {
             const last = recent[0];
             const timeDiff = Math.round((Date.now() - new Date(last.created_at).getTime()) / 60000);
-            
+
             if (last.status === "fulfilled") {
               duplicateWarning = `\n\n⚠️ *Duplicate Warning:* A successful order for *${phone}* was placed ${timeDiff} mins ago. To avoid network issues, we recommend waiting 60 mins between orders for the same number.`;
             } else {
@@ -843,7 +852,7 @@ serve(async (req: Request) => {
         summary.push(`Recipient: *${phone}*`);
         summary.push(`You Pay:   *GH₵ ${(data.totalPrice || 0).toFixed(2)}*`);
         summary.push(`_(includes 3% payment processing fee)_`);
-        
+
         if (duplicateWarning) {
           summary.push(duplicateWarning);
         }
@@ -877,8 +886,6 @@ serve(async (req: Request) => {
           break;
         }
 
-        sendWhatsAppMessage(from, `⏳ _Pushing payment prompt to your phone..._`).catch(console.error);
-
         let result: PayResult | null = null;
         if (!data.isAirtime && data.pkg) {
           const pkg: Pkg = { size: data.pkg, basePrice: data.basePrice, total: data.totalPrice };
@@ -895,26 +902,46 @@ serve(async (req: Request) => {
         }
 
         data.lastOrderId = result.orderId;
-        reply = [
-          `📲 *MoMo Prompt Sent!*`,
-          ``,
-          `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
-          ``,
-          `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
-          ``,
-          `*Step 3* — Reply *Done* here once payment is complete.`,
-          ``,
-          `⚠️ *Safety Note:* Do NOT send your MoMo PIN or any codes to this chat. Only enter it on the secure prompt that appears on your phone screen.`,
-          ``,
-          `_Your order is processed instantly after payment._`,
-          `_Reply 0 to cancel._`,
-        ].join("\n");
-        nextStep = "AWAIT_PAYMENT";
+        if (result.status === "send_otp") {
+          data.otpMessage = result.otpMessage || "Please enter the OTP sent to your phone";
+          reply = [
+            `🔑 *OTP Verification Required*`,
+            ``,
+            `Paystack has sent a verification code (OTP) to your phone number.`,
+            ``,
+            `💬 *Please reply with the OTP code here to complete your payment:*`,
+            ``,
+            `_Reply 0 to cancel._`,
+          ].join("\n");
+          nextStep = "AWAIT_OTP";
+        } else {
+          reply = [
+            `📲 *MoMo Prompt Sent!*`,
+            ``,
+            `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
+            ``,
+            `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
+            ``,
+            `*Step 3* — Reply *Done* here once payment is complete.`,
+            ``,
+            `⚠️ *Safety Note:* Do NOT send your MoMo PIN or any codes to this chat. Only enter it on the secure prompt that appears on your phone screen.`,
+            ``,
+            `_Your order is processed instantly after payment._`,
+            `_Reply 0 to cancel._`,
+          ].join("\n");
+          nextStep = "AWAIT_PAYMENT";
+        }
         break;
       }
 
       // ── Awaiting payment confirmation ─────────────────────────────────────────
       case "AWAIT_PAYMENT": {
+        if (input === "0") {
+          reply = `❌ *Order cancelled.* Reply *Hi* to return to the menu.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
         // "done" is handled by the global block above
         reply = [
           `⏳ *Waiting for your payment...*`,
@@ -923,6 +950,66 @@ serve(async (req: Request) => {
           ``,
           `_Reply 0 to cancel and restart._`,
         ].join("\n");
+        break;
+      }
+
+      // ── Awaiting OTP submission ───────────────────────────────────────────────
+      case "AWAIT_OTP": {
+        if (input === "0") {
+          reply = `❌ *Order cancelled.* Reply *Hi* to return to the menu.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
+
+        const otp = text.trim();
+        if (!otp || otp.length < 4) {
+          reply = `⚠️ *Invalid OTP format.* Please enter the verification code sent to your phone, or reply *0* to cancel.`;
+          break;
+        }
+
+        try {
+          const paystackKey = await getPaystackSecretKey(supabase);
+          console.log(`[WA Bot] Submitting OTP for ${data.lastOrderId}...`);
+          const res = await fetch("https://api.paystack.co/charge/submit_otp", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${paystackKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              otp,
+              reference: data.lastOrderId,
+            }),
+          });
+
+          const json = await res.json();
+          console.log("[WA Bot] Paystack submit_otp response:", json);
+
+          if (!res.ok || !json.status) {
+            reply = `❌ *OTP verification failed:* ${json.message || "Invalid code"}\n\nPlease check the OTP and try again, or reply *0* to cancel.`;
+            break;
+          }
+
+          reply = [
+            `📲 *OTP Verified! MoMo Prompt Sent!*`,
+            ``,
+            `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
+            ``,
+            `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
+            ``,
+            `*Step 3* — Reply *Done* here once payment is complete.`,
+            ``,
+            `⚠️ *Safety Note:* Do NOT send your MoMo PIN or any codes to this chat. Only enter it on the secure prompt that appears on your phone screen.`,
+            ``,
+            `_Your order is processed instantly after payment._`,
+            `_Reply 0 to cancel._`,
+          ].join("\n");
+          nextStep = "AWAIT_PAYMENT";
+        } catch (err) {
+          console.error("[WA Bot] OTP submission error:", err);
+          reply = `⚠️ *Connection Error:* Could not verify OTP right now. Please try again or reply *0* to cancel.`;
+        }
         break;
       }
 
@@ -1069,7 +1156,6 @@ serve(async (req: Request) => {
         }
         data.afaEmail = email;
 
-        sendWhatsAppMessage(from, `⏳ _Preparing your AFA registration order..._`).catch(console.error);
         const afaPrice = await getAfaPrice(supabase);
         data.afaPrice = afaPrice;
         data.totalPrice = addPaystackFee(afaPrice);
@@ -1116,8 +1202,6 @@ serve(async (req: Request) => {
           break;
         }
 
-        sendWhatsAppMessage(from, `⏳ _Pushing payment prompt to your phone..._`).catch(console.error);
-
         const result = await initAfaPayment(supabase, from, agent, data.afaPrice || 15.00, data);
         if (!result) {
           reply = `❌ *Payment prompt failed.* Please try again or reply *0* for the menu.`;
@@ -1127,21 +1211,35 @@ serve(async (req: Request) => {
         }
 
         data.lastOrderId = result.orderId;
-        reply = [
-          `📲 *MoMo Prompt Sent!*`,
-          ``,
-          `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
-          ``,
-          `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
-          ``,
-          `*Step 3* — Reply *Done* here once payment is complete.`,
-          ``,
-          `⚠️ *Safety Note:* Do NOT send your MoMo PIN or any codes to this chat. Only enter it on the secure prompt that appears on your phone screen.`,
-          ``,
-          `_Your order is processed instantly after payment._`,
-          `_Reply 0 to cancel._`,
-        ].join("\n");
-        nextStep = "AWAIT_PAYMENT";
+        if (result.status === "send_otp") {
+          data.otpMessage = result.otpMessage || "Please enter the OTP sent to your phone";
+          reply = [
+            `🔑 *OTP Verification Required*`,
+            ``,
+            `Paystack has sent a verification code (OTP) to your phone number.`,
+            ``,
+            `💬 *Please reply with the OTP code here to complete your payment:*`,
+            ``,
+            `_Reply 0 to cancel._`,
+          ].join("\n");
+          nextStep = "AWAIT_OTP";
+        } else {
+          reply = [
+            `📲 *MoMo Prompt Sent!*`,
+            ``,
+            `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
+            ``,
+            `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
+            ``,
+            `*Step 3* — Reply *Done* here once payment is complete.`,
+            ``,
+            `⚠️ *Safety Note:* Do NOT send your MoMo PIN or any codes to this chat. Only enter it on the secure prompt that appears on your phone screen.`,
+            ``,
+            `_Your order is processed instantly after payment._`,
+            `_Reply 0 to cancel._`,
+          ].join("\n");
+          nextStep = "AWAIT_PAYMENT";
+        }
         break;
       }
 
