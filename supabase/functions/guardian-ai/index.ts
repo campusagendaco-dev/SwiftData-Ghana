@@ -115,8 +115,8 @@ serve(async (req: Request) => {
 
     // Resolve profiles, 30-day daily averages, and current wallet details for active agents
     const suspiciousAgentIds = suspiciousAgents.map(a => a.agent_id);
-    let historicalAvgs: Record<string, number> = {};
-    let walletInfo: Record<string, { balance: number; credit_limit: number }> = {};
+    const historicalAvgs: Record<string, number> = {};
+    const walletInfo: Record<string, { balance: number; credit_limit: number }> = {};
 
     if (suspiciousAgentIds.length > 0) {
       // 1. Fetch 30-day historical transaction volume

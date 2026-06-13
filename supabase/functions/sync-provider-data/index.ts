@@ -395,6 +395,7 @@ serve(async (req) => {
             console.log(`[sync:spendless] Balance: GHS ${balance}`);
             break;
           }
+        }
       }
     } else if (handlerType === "xcel") {
       console.log(`Syncing XCEL provider: ${provider.name}`);

@@ -60,7 +60,9 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
           if (typeof parsedErr.retry_after === "number") {
             retryAfter = parsedErr.retry_after;
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn("[WhatsApp] Failed to parse 429 response body:", e);
+        }
 
         console.log(`[WhatsApp] Rate limited (429). Retrying after ${retryAfter} seconds...`);
         await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));

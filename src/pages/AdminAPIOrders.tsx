@@ -242,7 +242,7 @@ export default function AdminAPIOrders() {
     const returnedAgentIds = [...new Set((data || []).map((o: any) => o.agent_id))];
     const missingAgentIds = returnedAgentIds.filter(id => !profiles[id]);
 
-    let updatedProfiles = { ...profiles };
+    const updatedProfiles = { ...profiles };
     if (missingAgentIds.length > 0) {
       const { data: profilesData } = await supabase
         .from("profiles")

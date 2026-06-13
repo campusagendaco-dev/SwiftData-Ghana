@@ -581,25 +581,29 @@ serve(async (req: Request) => {
           .eq("user_id", user_id)
           .maybeSingle();
 
-        if (!profile?.parent_agent_id) {
-          return new Response(JSON.stringify({ error: "User is not a sub-agent or missing parent" }), {
-            status: 400,
+        if (!profile) {
+          return new Response(JSON.stringify({ error: "User profile not found" }), {
+            status: 404,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        const { data: parent } = await supabaseAdmin
-          .from("profiles")
-          .select("sub_agent_prices, agent_prices")
-          .eq("user_id", profile.parent_agent_id)
-          .single();
+        let pricesToAssign = {};
 
-        // Seed sub-agent with parent's explicit wholesale prices if set;
-        // otherwise use parent's own published selling prices so the sub-agent
-        // starts at (or above) the parent's customer-facing prices.
-        const subPrices = parent?.sub_agent_prices as Record<string, unknown> | undefined;
-        const hasSubPrices = subPrices && Object.keys(subPrices).length > 0;
-        const pricesToAssign = hasSubPrices ? subPrices : (parent?.agent_prices || {});
+        if (profile.parent_agent_id) {
+          const { data: parent } = await supabaseAdmin
+            .from("profiles")
+            .select("sub_agent_prices, agent_prices")
+            .eq("user_id", profile.parent_agent_id)
+            .single();
+
+          // Seed sub-agent with parent's explicit wholesale prices if set;
+          // otherwise use parent's own published selling prices so the sub-agent
+          // starts at (or above) the parent's customer-facing prices.
+          const subPrices = parent?.sub_agent_prices as Record<string, unknown> | undefined;
+          const hasSubPrices = subPrices && Object.keys(subPrices).length > 0;
+          pricesToAssign = hasSubPrices ? subPrices : (parent?.agent_prices || {});
+        }
 
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
@@ -613,6 +617,15 @@ serve(async (req: Request) => {
           .eq("user_id", user_id);
 
         if (updateError) throw updateError;
+
+        // Fulfill any pending activation orders for these agents
+        await supabaseAdmin
+          .from("orders")
+          .update({ status: "fulfilled", failure_reason: null })
+          .eq("agent_id", user_id)
+          .in("order_type", ["agent_activation", "sub_agent_activation"])
+          .in("status", ["paid", "pending", "processing"]);
+
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
