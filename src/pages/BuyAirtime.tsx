@@ -8,6 +8,7 @@ import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction } from "@/lib/public-function-client";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
+import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 
 const NETWORK_GLASS_ACTIVE: Record<string, Record<string, string>> = {
   MTN: {
@@ -98,10 +99,7 @@ const BuyAirtime = () => {
           <p className="text-white/60 text-sm md:text-base max-w-lg">
             Send airtime to any network instantly. Enter a number, pick an amount & pay safely.
           </p>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 text-[11px] font-black uppercase tracking-wider mt-3.5 backdrop-blur-md">
-            <Clock className="w-3.5 h-3.5 text-rose-400" />
-            <span>Est. delivery: Less than 10 mins.</span>
-          </div>
+          <LiveDeliveryBadge />
           <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 text-xs text-white/45">
             <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-green-400" /> Secured by Paystack</span>
             <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-amber-400" /> Instant delivery</span>

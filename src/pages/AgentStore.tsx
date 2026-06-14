@@ -25,6 +25,7 @@ import StoreTransactionHistory from "@/components/StoreTransactionHistory";
 import StoreManagementOverlay from "@/components/StoreManagementOverlay";
 import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
+import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 
 interface PromoResult {
   valid: boolean;
@@ -950,10 +951,7 @@ const AgentStore = () => {
           <p className="text-white/60 text-[13px] font-semibold leading-relaxed mb-3 max-w-[280px] relative z-10">
             Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant fulfillment.
           </p>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 text-[11px] font-black uppercase tracking-wider mb-6 relative z-10 backdrop-blur-md">
-            <Clock className="w-3.5 h-3.5 text-rose-400" />
-            <span>Est. delivery: Less than 10 mins.</span>
-          </div>
+          <LiveDeliveryBadge className="mb-6 relative z-10" />
 
           <div className="flex items-center justify-between p-4 rounded-[24px] bg-white/[0.05] border border-white/10 backdrop-blur-xl shadow-inner relative z-10">
             <div className="flex items-center gap-3 min-w-0">
