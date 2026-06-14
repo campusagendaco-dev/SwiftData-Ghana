@@ -17,6 +17,14 @@ const publicFunctionClient = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLI
 });
 
 export async function invokePublicFunction(functionName: string, options?: { body?: unknown; headers?: Record<string, string> }) {
+  let supportsQueryInPath = false;
+  try {
+    const testUrl = new URL("https://example.com/a?b=c");
+    supportsQueryInPath = testUrl.pathname === "/a";
+  } catch (e) {
+    supportsQueryInPath = false;
+  }
+
   // Optimize for offline purchases: queue immediately if offline
   if (typeof window !== "undefined" && !window.navigator.onLine && functionName.includes("wallet-buy-data")) {
     const body = options?.body as any;
@@ -25,9 +33,11 @@ export async function invokePublicFunction(functionName: string, options?: { bod
       const { queueTransaction } = await import("./offline-queue");
       const SUPABASE_URL = publicFunctionClient.supabaseUrl;
       const cacheBuster = `cb=${Date.now()}`;
-      const finalUrl = functionName.includes("?") 
-        ? `${SUPABASE_URL}/functions/v1/${functionName}&${cacheBuster}` 
-        : `${SUPABASE_URL}/functions/v1/${functionName}?${cacheBuster}`;
+      const finalUrl = supportsQueryInPath
+        ? (functionName.includes("?") 
+            ? `${SUPABASE_URL}/functions/v1/${functionName}&${cacheBuster}` 
+            : `${SUPABASE_URL}/functions/v1/${functionName}?${cacheBuster}`)
+        : `${SUPABASE_URL}/functions/v1/${functionName}`;
       
       await queueTransaction({
         id: reference,
@@ -61,9 +71,11 @@ export async function invokePublicFunction(functionName: string, options?: { bod
   
   // Dynamic Cache-Buster to prevent Opera Mini, Phoenix, and Telecom caching proxies from serving stale API responses
   const cacheBuster = `cb=${Date.now()}`;
-  const finalFunctionName = functionName.includes("?") 
-    ? `${functionName}&${cacheBuster}` 
-    : `${functionName}?${cacheBuster}`;
+  const finalFunctionName = supportsQueryInPath
+    ? (functionName.includes("?") 
+        ? `${functionName}&${cacheBuster}` 
+        : `${functionName}?${cacheBuster}`)
+    : functionName;
 
   const finalOptions = {
     ...options,

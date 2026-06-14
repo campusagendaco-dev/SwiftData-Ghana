@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -164,13 +165,8 @@ const DashboardWithdraw = () => {
       body: { amount: numAmount },
     });
 
-    // supabase.functions.invoke puts non-2xx responses in `error` with the body in error.context
-    const errorMsg = data?.error
-      || (error as any)?.context?.error
-      || error?.message
-      || "Withdrawal failed. Please try again.";
-
     if (error || data?.error) {
+      const errorMsg = data?.error || await getFunctionErrorMessage(error, "Withdrawal failed. Please try again.");
       toast.error("Withdrawal failed", { description: errorMsg });
     } else {
       toast.success("Withdrawal request placed!", { description: "You will receive your funds within 24 hours." });

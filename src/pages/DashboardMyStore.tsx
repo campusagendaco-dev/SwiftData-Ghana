@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { basePackages, generateSlug } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import {
@@ -462,12 +463,8 @@ export default function DashboardMyStore() {
         body: { amount: numAmount },
       });
 
-      const errorMsg = data?.error
-        || (error as any)?.context?.error
-        || error?.message
-        || "Withdrawal failed. Please try again.";
-
       if (error || data?.error) {
+        const errorMsg = data?.error || await getFunctionErrorMessage(error, "Withdrawal failed. Please try again.");
         toast({ title: "Withdrawal failed", description: errorMsg, variant: "destructive" });
       } else {
         toast({ title: "Withdrawal request placed!", description: "You will receive your funds within 24 hours." });
