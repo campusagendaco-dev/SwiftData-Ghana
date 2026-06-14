@@ -114,10 +114,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$q = http_build_query(["limit"=>20,"offset"=>40,"status"=>"fulfilled","network"=>"MTN"]);\n$ch = curl_init("${BASE_URL}/orders?$q");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["Authorization: Bearer ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     status: {
-      curl: `curl -X GET "https://user.datahubgh.com/api/external/order-status?orderNumber=123456" \\\n  -H "X-API-Key: \${K}"`,
-      node: `const res = await fetch("https://user.datahubgh.com/api/external/order-status?orderNumber=123456", {\n  headers: { "X-API-Key": "\${K}" },\n});\nconst { data } = await res.json();\nconsole.log("Status:", data.status);`,
-      python: `import requests\n\nres = requests.get(\n    "https://user.datahubgh.com/api/external/order-status",\n    params={"orderNumber": "123456"},\n    headers={"X-API-Key": "\${K}"},\n)\nprint(res.json()["data"]["status"])`,
-      php: `<?php\n$ch = curl_init("https://user.datahubgh.com/api/external/order-status?orderNumber=123456");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["X-API-Key: \${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$data = json_decode(curl_exec($ch));\necho $data->data->status;`,
+      curl: `curl -X GET "${BASE_URL}/status?order_id=a3f2b1c0-d4e5-6789-ab01-cd2345ef6789" \\\n  -H "Authorization: Bearer ${K}"`,
+      node: `const res = await fetch("${BASE_URL}/status?order_id=a3f2b1c0-d4e5-6789-ab01-cd2345ef6789", {\n  headers: { "Authorization": "Bearer ${K}" },\n});\nconst { order } = await res.json();\nconsole.log("Status:", order.status);`,
+      python: `import requests\n\nres = requests.get(\n    "${BASE_URL}/status",\n    params={"order_id": "a3f2b1c0-d4e5-6789-ab01-cd2345ef6789"},\n    headers={"Authorization": "Bearer ${K}"},\n)\nprint(res.json()["order"]["status"])`,
+      php: `<?php\n$ch = curl_init("${BASE_URL}/status?order_id=a3f2b1c0-d4e5-6789-ab01-cd2345ef6789");\ncurl_setopt_array($ch, [\n    CURLOPT_HTTPHEADER    => ["Authorization: Bearer ${K}"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\n$data = json_decode(curl_exec($ch));\necho $data->order->status;`,
     },
     hmac: {
       curl: `# 1. Compute HMAC-SHA256 of the raw JSON body using your secret key\nBODY='{"network":"MTN","phone":"0241234567","package_size":"5GB"}'\nSIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$YOUR_SECRET_KEY" -hex | awk '{print $2}')\n\n# 2. Send with both API key + signature headers\ncurl -X POST "${BASE_URL}/buy" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "X-Swift-Signature: $SIG" \\\n  -H "Content-Type: application/json" \\\n  -d "$BODY"`,
@@ -138,10 +138,10 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       php: `<?php\n$payload = json_encode(["afa_full_name" => "Kwame Mensah", "afa_ghana_card" => "GHA-123456789-0", "customer_phone" => "0201234567", "amount" => 5.00, "request_id" => "afa_req_001"]);\n$ch = curl_init("${BASE_URL}/afa-registration");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => ["Authorization: Bearer ${K}", "Content-Type: application/json"],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
     results: {
-      curl: `curl -X POST "https://user.datahubgh.com/api/external/voucher-purchase" \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Key: \${K}" \\\n  -d '{\n    "VoucherType": "WASSCE",\n    "Recipient": "0201234567",\n    "Quantity": 1\n  }'`,
-      node: `const res = await fetch("https://user.datahubgh.com/api/external/voucher-purchase", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "X-API-Key": "\${K}"\n  },\n  body: JSON.stringify({\n    VoucherType: "WASSCE",\n    Recipient: "0201234567",\n    Quantity: 1\n  })\n});\nconst data = await res.json();`,
-      python: `import requests\n\nres = requests.post(\n    "https://user.datahubgh.com/api/external/voucher-purchase",\n    headers={\n        "Content-Type": "application/json",\n        "X-API-Key": "\${K}"\n    },\n    json={\n        "VoucherType": "WASSCE",\n        "Recipient": "0201234567",\n        "Quantity": 1\n    }\n)\nprint(res.json())`,
-      php: `<?php\n$payload = json_encode([\n    "VoucherType" => "WASSCE",\n    "Recipient"   => "0201234567",\n    "Quantity"    => 1\n]);\n$ch = curl_init("https://user.datahubgh.com/api/external/voucher-purchase");\ncurl_setopt_array($ch, [\n    CURLOPT_POST           => true,\n    CURLOPT_POSTFIELDS     => $payload,\n    CURLOPT_HTTPHEADER     => [\n        "Content-Type: application/json",\n        "X-API-Key: \${K}"\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+      curl: `curl -X POST "${BASE_URL}/results-checker" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "checker_type": "WASSCE",\n    "customer_phone": "0201234567",\n    "quantity": 1,\n    "amount": 17.00,\n    "request_id": "results_ref_001"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n  },\n  body: JSON.stringify({\n    checker_type: "WASSCE",\n    customer_phone: "0201234567",\n    quantity: 1,\n    amount: 17.00,\n    request_id: "results_ref_001",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/results-checker",\n    headers={"Authorization": "Bearer ${K}"},\n    json={\n        "checker_type": "WASSCE",\n        "customer_phone": "0201234567",\n        "quantity": 1,\n        "amount": 17.00,\n        "request_id": "results_ref_001",\n    },\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode([\n    "checker_type" => "WASSCE",\n    "customer_phone" => "0201234567",\n    "quantity" => 1,\n    "amount" => 17.00,\n    "request_id" => "results_ref_001",\n]);\n$ch = curl_init("${BASE_URL}/results-checker");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => [\n        "Authorization: Bearer ${K}",\n        "Content-Type: application/json",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
   };
 };
@@ -902,17 +902,19 @@ const APIDocumentation = () => {
             <SectionHeader icon={ShoppingCart} title="Voucher Purchase" />
             <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
               <MethodBadge method="POST" />
-              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/api/external/voucher-purchase</code>
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/results-checker</code>
             </div>
-            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Purchase WASSCE/BECE result checker vouchers using your API key. Supports bulk purchases up to 100 vouchers per request.</p>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Purchase WASSCE/BECE result checker vouchers using your API key.</p>
             <div className="ml-11 space-y-6">
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
                 </div>
-                <ParamRow name="VoucherType" type="string" required desc="WASSCE or BECE" />
-                <ParamRow name="Recipient"   type="string" required desc="Recipient phone number (10-digit, starting with 0)" />
-                <ParamRow name="Quantity"    type="number" required desc="Quantity of vouchers to purchase (1 to 100)" />
+                <ParamRow name="checker_type"   type="string" required desc="WASSCE or BECE" />
+                <ParamRow name="customer_phone" type="string" required desc="Recipient phone number (e.g. 0241234567)" />
+                <ParamRow name="quantity"       type="number" required desc="Quantity of vouchers to purchase (1 to 100)" />
+                <ParamRow name="amount"         type="number" required desc="Total GHS cost amount" />
+                <ParamRow name="request_id"     type="string" required={false} desc="Unique tracking reference ID" />
               </div>
               <div className="space-y-4">
                 <p className="text-xs font-bold uppercase tracking-widest text-sky-400 mb-2">Request Example</p>
@@ -1078,16 +1080,15 @@ const APIDocumentation = () => {
             <SectionHeader icon={Activity} title="Check Order Status" />
             <div className="ml-11 flex flex-wrap items-center gap-3 mb-6">
               <MethodBadge method="GET" />
-              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/api/external/order-status</code>
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/status</code>
             </div>
-            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Retrieve the status of any order using the order number or reference.</p>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">Retrieve the status of any order using its unique order UUID reference.</p>
             <div className="ml-11 space-y-6">
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Query Parameters</span>
                 </div>
-                <ParamRow name="orderNumber" type="string" required={false} desc="The numeric order number" />
-                <ParamRow name="reference"   type="string" required={false} desc="The order reference UUID (either reference or orderNumber is required)" />
+                <ParamRow name="order_id" type="string" required desc="The order's unique UUID reference (also accepts query via 'reference' or 'orderNumber' UUID)" />
               </div>
               <div className="space-y-4">
                 <p className="text-xs font-bold uppercase tracking-widest text-sky-400 mb-2">Request Example</p>
