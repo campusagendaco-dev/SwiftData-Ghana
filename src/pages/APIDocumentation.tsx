@@ -591,14 +591,14 @@ const APIDocumentation = () => {
                 { method: "GET",  path: "/service-status",        desc: "Get live ISP gateway statuses" },
                 { method: "POST", path: "/buy",                   desc: "Purchase airtime or data bundle" },
                 { method: "POST", path: "/afa-registration",      desc: "Register AFA SIM card" },
-                { method: "POST", path: "/api/external/voucher-purchase", desc: "Buy WASSCE/BECE results checker vouchers" },
+                { method: "POST", path: "/results-checker",       desc: "Buy WASSCE/BECE results checker vouchers" },
                 { method: "POST", path: "/payment/bills/validate",desc: "Validate TV bill account" },
                 { method: "POST", path: "/payment/bills/pay",     desc: "Pay TV bill" },
                 { method: "POST", path: "/payment/ecg/lookup",    desc: "Validate ECG meter" },
                 { method: "POST", path: "/payment/ecg",           desc: "Pay ECG bill" },
                 { method: "POST", path: "/sms",                   desc: "Send transactional SMS" },
                 { method: "GET",  path: "/orders",                desc: "Paginated order history with filters" },
-                { method: "GET",  path: "/api/external/order-status", desc: "Check single order status" },
+                { method: "GET",  path: "/status",                desc: "Check single order status" },
               ].map(({ method, path, desc }) => (
                 <div key={path} className="flex flex-col sm:grid sm:grid-cols-12 sm:gap-2 px-4 py-3 text-xs border-b border-white/5 last:border-0 hover:bg-white/[0.02] gap-1">
                   <div className="sm:col-span-1">
@@ -888,6 +888,10 @@ const APIDocumentation = () => {
                 <ParamRow name="customer_phone"   type="string" required desc="Customer phone number" />
                 <ParamRow name="amount"           type="number" required desc="Amount to register (GHS)" />
                 <ParamRow name="request_id"       type="string" required={false} desc="Unique tracking ID" />
+                <ParamRow name="afa_occupation"   type="string" required={false} desc="Customer occupation (e.g. Teacher)" />
+                <ParamRow name="afa_email"        type="string" required={false} desc="Customer email address" />
+                <ParamRow name="afa_residence"    type="string" required={false} desc="Customer residential address" />
+                <ParamRow name="afa_date_of_birth" type="string" required={false} desc="Customer date of birth (YYYY-MM-DD)" />
               </div>
               <div className="grid lg:grid-cols-2 gap-6">
                 <CodeBlock code={snippets.afa[activeLang]} label="Request" />
