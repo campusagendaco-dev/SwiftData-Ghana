@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, CheckCircle2, Clock } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -432,6 +432,10 @@ const BuyData = () => {
           <p className="text-white/60 text-sm md:text-base max-w-lg">
             Pick a network, tap a bundle &amp; pay instantly with card or mobile money.
           </p>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 text-[11px] font-black uppercase tracking-wider mt-3.5 backdrop-blur-md">
+            <Clock className="w-3.5 h-3.5 text-rose-400" />
+            <span>Est. delivery: Less than 10 mins.</span>
+          </div>
           <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 text-xs text-white/45">
             <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-green-400" /> Secured by Paystack</span>
             <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-amber-400" /> Instant delivery</span>
