@@ -153,7 +153,7 @@ const RESPONSES: Record<string, string> = {
   wallets_ok: `{\n  "success": true,\n  "wallets": {\n    "main": { "balance": 250.00, "currency": "GHS" },\n    "api":  { "balance": 100.00, "currency": "GHS" }\n  }\n}`,
   transfer_ok: `{\n  "success": true,\n  "message": "Transfer successful",\n  "from_balance": 150.00,\n  "to_balance":   200.00\n}`,
   account: `{\n  "success": true,\n  "name": "John Doe",\n  "balance": 250.00,\n  "apiKey": "sbp_live_abc123",\n  "active": true\n}`,
-  plans: `{\n  "success": true,\n  "plans": [\n    {\n      "package_id": "yellow_5gb",\n      "network": "YELLO",\n      "package_size": "5GB",\n      "api_price": 22.00,\n      "is_unavailable": false\n    },\n    {\n      "package_id": "red_6gb",\n      "network": "RED",\n      "package_size": "6GB",\n      "api_price": 20.00,\n      "is_unavailable": false\n    }\n  ]\n}`,
+  plans: `{\n  "success": true,\n  "plans": [\n    {\n      "package_id": "yellow_5gb",\n      "network": "YELLO",\n      "package_size": "5GB",\n      "api_price": 22.00,\n      "is_unavailable": false\n    },\n    {\n      "package_id": "mashup_1.2gb+50mins",\n      "network": "MTN Mash Up",\n      "package_size": "1.2GB + 50 Mins",\n      "api_price": 7.00,\n      "is_unavailable": false\n    },\n    {\n      "package_id": "red_6gb",\n      "network": "RED",\n      "package_size": "6GB",\n      "api_price": 20.00,\n      "is_unavailable": false\n    }\n  ]\n}`,
   buy_ok: `{\n  "success": true,\n  "order_id": "a3f2b1c0-d4e5-6789-ab01-cd2345ef6789",\n  "status": "fulfilled",\n  "balance": 228.00\n}`,
   validate_ok: `{\n  "success": true,\n  "customerName": "JOHN DOE",\n  "validatedAmount": 41.00\n}`,
   bill_ok: `{\n  "success": true,\n  "transaction_id": "JBG_BILL_1234567890",\n  "cost": 41.00,\n  "balance": 209.00\n}`,
@@ -834,7 +834,7 @@ const APIDocumentation = () => {
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
                 </div>
-                <ParamRow name="package_id"   type="string" required      desc="Smart bundle ID from /plans (e.g. yellow_5gb)" />
+                <ParamRow name="package_id"   type="string" required      desc="Smart bundle ID from /plans (e.g. yellow_5gb, mashup_1.2gb+50mins)" />
                 <ParamRow name="phone"        type="string" required      desc="Recipient phone number (e.g. 0241234567)" />
                 <ParamRow name="request_id"   type="string" required={false} desc="Your custom tracking reference. Mapped to client_reference in webhook notifications." />
                 <ParamRow name="allow_duplicate" type="boolean" required={false} desc="Set to true to bypass the 60-second duplicate safety block for identical rapid-fire orders." />
@@ -1058,7 +1058,7 @@ const APIDocumentation = () => {
                 <ParamRow name="limit"   type="number"  required={false} desc="Max orders to return (default: 20, max: 100)" />
                 <ParamRow name="offset"  type="number"  required={false} desc="Number of orders to skip — use for pagination (default: 0)" />
                 <ParamRow name="status"  type="string"  required={false} desc="Filter: pending · paid · processing · fulfilled · fulfillment_failed" />
-                <ParamRow name="network" type="string"  required={false} desc="Filter: MTN · TELECEL · AT · GLO" />
+                <ParamRow name="network" type="string"  required={false} desc="Filter: MTN · TELECEL · AT · GLO · MTN Mash Up" />
               </div>
 
               {/* Basic example */}
