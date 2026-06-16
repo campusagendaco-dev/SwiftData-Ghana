@@ -19,7 +19,7 @@ BEGIN
      -- 2. Pull configured SMS Credentials directly from settings
      SELECT txtconnect_api_key, txtconnect_sender_id 
      INTO v_sms_api_key, v_sms_sender_id 
-     FROM public.system_settings 
+     FROM public.v_system_settings_with_secrets 
      WHERE id = 1;
 
      -- 3. Proceed only if requirements met
