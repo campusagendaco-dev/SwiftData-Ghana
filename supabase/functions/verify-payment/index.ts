@@ -116,7 +116,7 @@ function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string 
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult") {
     return [clean];
   }
 
@@ -268,6 +268,40 @@ async function callProviderApi(
   const apiKey = provider.api_key;
   
   let payload = { ...data };
+  if (handlerType === "qhowmenzconsult" && endpoint === "purchase") {
+    let packageId = String(data.plan || data.package_size || "");
+    try {
+      const { data: pkgMapping } = await supabaseAdmin
+        .from("provider_packages")
+        .select("external_id")
+        .eq("provider_id", provider.id)
+        .eq("network", data.networkRaw || data.network || "")
+        .eq("package_name", data.package_size || data.plan || "")
+        .maybeSingle();
+      if (pkgMapping?.external_id) {
+        packageId = pkgMapping.external_id;
+      }
+    } catch (e) {
+      console.error("[qhowmenzconsult-payload-resolve] Error:", e);
+    }
+
+    const network = String(data.networkRaw || data.network || "").toUpperCase();
+    let netKey = network;
+    if (network.includes("MTN") || network === "YELLO") netKey = "MTN";
+    else if (network.includes("TELECEL") || network.includes("VODA")) netKey = "Telecel";
+    else if (network.includes("AIRTEL") || network.includes("TIGO") || network === "AT") netKey = "AirtelTigo";
+
+    payload = {
+      network: netKey,
+      recipient: String(data.recipient || data.phoneNumber || ""),
+      plan_id: packageId,
+      package_id: packageId,
+      product_id: packageId,
+      external_id: packageId,
+      amount: Number(data.amount || 0),
+      reference: String(data.reference || data.order_id || ""),
+    };
+  }
   if (handlerType === "superbdatafy") {
     if (endpoint !== "status") {
       const network = String(data.networkRaw || data.network || "").toLowerCase();
@@ -417,6 +451,13 @@ async function callProviderApi(
        } else {
           url = `${url}/payment/data`;
        }
+    } else if (handlerType === "qhowmenzconsult") {
+       if (endpoint === "purchase") {
+          url = `${url}/orders`;
+       } else if (endpoint === "status") {
+          const ref = String(data.transaction_id || data.reference || data.order_id || "");
+          url = `${url}/orders/${ref}`;
+       }
     }
 
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -438,12 +479,15 @@ async function callProviderApi(
         if (handlerType === "xcel") {
           headers["x-api-key"] = apiKey;
           headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
-        } else if (handlerType !== "datamart" && handlerType !== "spendless") {
+        } else if (handlerType !== "datamart" && handlerType !== "spendless" && handlerType !== "qhowmenzconsult") {
           headers["Authorization"] = `Bearer ${apiKey}`;
           headers["User-Agent"] = "SwiftDataGH/2.0";
         }
 
-        const isGet = (handlerType === "datamart" && endpoint === "status") || (handlerType === "superbdatafy" && endpoint === "status") || (handlerType === "xcel" && endpoint === "status");
+        const isGet = (handlerType === "datamart" && endpoint === "status") || 
+                      (handlerType === "superbdatafy" && endpoint === "status") || 
+                      (handlerType === "xcel" && endpoint === "status") ||
+                      (handlerType === "qhowmenzconsult" && endpoint === "status");
 
         const res = await fetch(url, {
           method: isGet ? "GET" : "POST",
@@ -1033,6 +1077,18 @@ serve(async (req) => {
            }
         }
         return { network: netKey, phone: recipient, amount: claimedOrder.amount, package_size: packageSize, request_id: targetReference, order_type: currentOrderType };
+      }
+      if (ht === "qhowmenzconsult") {
+        return {
+          networkRaw: network,
+          networkKey: netKey,
+          recipient,
+          package_size: packageSize,
+          plan: packageSize,
+          amount: claimedOrder.amount,
+          reference: targetReference,
+          order_id: targetReference,
+        };
       }
       
       // Pass override network to standard request body if provided

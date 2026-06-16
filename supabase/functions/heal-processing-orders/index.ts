@@ -16,11 +16,16 @@ function buildStatusUrl(baseUrl: string, handlerType: string): string {
   const clean = baseUrl.trim().replace(/\/+$/, "");
   if (handlerType === "datahub") return `${clean}/order-status`;
   if (handlerType === "datamart") return `${clean}/api/order-status`;
+  if (handlerType === "qhowmenzconsult") return `${clean}/orders`;
   return `${clean}/api/status`;
 }
 
 async function pollProviderStatus(provider: any, orderId: string, providerOrderId: string | null): Promise<{ ok: boolean; status?: string }> {
-  const url = buildStatusUrl(provider.base_url, provider.handler_type || "standard");
+  const handlerType = provider.handler_type || "standard";
+  const url = buildStatusUrl(provider.base_url, handlerType);
+  const isQHow = handlerType === "qhowmenzconsult";
+  const finalUrl = isQHow ? `${url}/${providerOrderId || orderId}` : url;
+
   const body = JSON.stringify({
     reference: orderId,
     order_id: providerOrderId || orderId,
@@ -29,15 +34,15 @@ async function pollProviderStatus(provider: any, orderId: string, providerOrderI
   });
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
+    const res = await fetch(finalUrl, {
+      method: isQHow ? "GET" : "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Authorization": `Bearer ${provider.api_key}`,
+        ...(isQHow ? {} : { "Authorization": `Bearer ${provider.api_key}` }),
         "X-API-Key": provider.api_key,
       },
-      body,
+      body: isQHow ? undefined : body,
       signal: AbortSignal.timeout(10000),
     });
 

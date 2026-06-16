@@ -1474,6 +1474,9 @@ export type Database = {
           support_channel_link: string
           telecel_markup_percentage: number | null
           traditional_background_enabled: boolean | null
+          background_brightness: number | null
+          background_contrast: number | null
+          background_blueness: number | null
           twilio_account_sid: string
           twilio_auth_token: string
           twilio_from_number: string
@@ -1540,6 +1543,9 @@ export type Database = {
           support_channel_link?: string
           telecel_markup_percentage?: number | null
           traditional_background_enabled?: boolean | null
+          background_brightness?: number | null
+          background_contrast?: number | null
+          background_blueness?: number | null
           twilio_account_sid?: string
           twilio_auth_token?: string
           twilio_from_number?: string
@@ -1606,6 +1612,9 @@ export type Database = {
           support_channel_link?: string
           telecel_markup_percentage?: number | null
           traditional_background_enabled?: boolean | null
+          background_brightness?: number | null
+          background_contrast?: number | null
+          background_blueness?: number | null
           twilio_account_sid?: string
           twilio_auth_token?: string
           twilio_from_number?: string
@@ -1887,90 +1896,6 @@ export type Database = {
           user_id: string | null
           whatsapp_group_link: string | null
           whatsapp_number: string
-          vendor_preferences: Json | null | null
-        }
-        Insert: {
-          agent_approved?: boolean | null
-          agent_prices?: Json | null
-          disabled_packages?: Json | null
-          email?: string | null
-          full_name?: string | null
-          is_agent?: boolean | null
-          is_sub_agent?: boolean | null
-          parent_agent_id?: string | null
-          slug?: string | null
-          store_logo_url?: string | null
-          store_name?: string | null
-          store_primary_color?: string | null
-          sub_agent_activation_markup?: number | null
-          sub_agent_approved?: boolean | null
-          sub_agent_prices?: Json | null
-          support_number?: string | null
-          user_id?: string | null
-          whatsapp_group_link?: string | null
-          whatsapp_number?: string
-          vendor_preferences?: Json | null | null
-        }
-        Update: {
-          agent_approved?: boolean | null
-          agent_prices?: Json | null
-          disabled_packages?: Json | null
-          email?: string | null
-          full_name?: string | null
-          is_agent?: boolean | null
-          is_sub_agent?: boolean | null
-          parent_agent_id?: string | null
-          slug?: string | null
-          store_logo_url?: string | null
-          store_name?: string | null
-          store_primary_color?: string | null
-          sub_agent_activation_markup?: number | null
-          sub_agent_approved?: boolean | null
-          sub_agent_prices?: Json | null
-          support_number?: string | null
-          user_id?: string | null
-          whatsapp_group_link?: string | null
-          whatsapp_number?: string
-          vendor_preferences?: Json | null | null
-        }
-        Relationships: []
-      }
-      public_system_settings: {
-        Row: {
-          agent_activation_fee: number | null
-          announcement_message: string | null
-          announcement_title: string | null
-          at_markup_percentage: number | null
-          auto_api_switch: boolean | null
-          background_custom_image_url: string | null
-          bece_price: number | null
-          customer_service_number: string | null
-          dark_mode_enabled: boolean | null
-          disable_ordering: boolean | null
-          enable_privacy_shield: boolean | null
-          free_data_claims_count: number | null
-          free_data_enabled: boolean | null
-          free_data_max_claims: number | null
-          free_data_network: string | null
-          free_data_package_size: string | null
-          holiday_message: string | null
-          holiday_mode_enabled: boolean | null
-          home_page_video_muted: boolean | null
-          home_page_video_url: string | null
-          id: number | null
-          mtn_markup_percentage: number | null
-          scrolling_ad_text: string | null
-          show_announcement: boolean | null
-          show_scrolling_ad: boolean | null
-          store_visitor_popup_enabled: boolean | null
-          support_channel_link: string | null
-          telecel_markup_percentage: number | null
-          traditional_background_enabled: boolean | null
-          wassce_price: number | null
-          tutorial_buy_video_url: string | null
-          tutorial_agent_video_url: string | null
-          tutorial_subagent_video_url: string | null
-        }
         Insert: {
           agent_activation_fee?: number | null
           announcement_message?: string | null

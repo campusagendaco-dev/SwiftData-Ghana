@@ -1554,7 +1554,7 @@ export default function DashboardMyStore() {
                     {Object.entries(basePackages).map(([network, pkgs]) => (
                       <div key={network} className="space-y-3">
                         <div className="flex items-center gap-2 pb-1.5 border-b border-white/6">
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: network === "MTN" ? "#fbbf24" : network === "Telecel" ? "#ef4444" : "#3b82f6" }} />
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: network === "MTN" ? "#fbbf24" : network === "MTN Mash Up" ? "#f59e0b" : network === "Telecel" ? "#ef4444" : "#3b82f6" }} />
                           <h4 className="font-black text-xs uppercase tracking-wider">{network} Packages</h4>
                         </div>
 

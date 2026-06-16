@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { basePackages, networks } from "@/lib/data";
@@ -14,11 +14,23 @@ type PackageBasePrices = Record<string, Record<string, number>>;
 
 const buildDefaultPrices = (packageBasePrices: PackageBasePrices): AgentPrices => {
   const defaults: AgentPrices = {};
-  for (const [network, pkgs] of Object.entries(basePackages)) {
+  const allNetworks = new Set([...Object.keys(basePackages), ...Object.keys(packageBasePrices)]);
+  
+  for (const network of allNetworks) {
     defaults[network] = {};
+    const pkgs = basePackages[network] || [];
     for (const pkg of pkgs) {
       const basePrice = packageBasePrices[network]?.[pkg.size] ?? pkg.price;
       defaults[network][pkg.size] = (basePrice + 2).toFixed(2);
+    }
+
+    const customPrices = packageBasePrices[network] || {};
+    const baseSizes = new Set(pkgs.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
+    for (const [size, basePrice] of Object.entries(customPrices)) {
+      const normSize = size.replace(/\s+/g, "").toUpperCase();
+      if (!baseSizes.has(normSize)) {
+        defaults[network][size] = (basePrice + 2).toFixed(2);
+      }
     }
   }
   return defaults;
@@ -117,17 +129,15 @@ const DashboardPricing = () => {
           const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, any>;
           const parentSellingPrices = (parentProfile.agent_prices || {}) as Record<string, any>;
 
-          for (const [network, pkgs] of Object.entries(basePackages)) {
-            for (const pkg of pkgs) {
-              // Priority 1: Specific sub-agent price set by parent
-              // Priority 2: Parent's own selling price
-              const assignedSubPrice = getProfileAssignedPrice(subPrices, network, pkg.size);
-              const parentSellingPrice = getProfileAssignedPrice(parentSellingPrices, network, pkg.size);
+          for (const network of Object.keys(nextBasePrices)) {
+            for (const size of Object.keys(nextBasePrices[network])) {
+              const assignedSubPrice = getProfileAssignedPrice(subPrices, network, size);
+              const parentSellingPrice = getProfileAssignedPrice(parentSellingPrices, network, size);
               
               const assignedPrice = assignedSubPrice || parentSellingPrice;
 
               if (assignedPrice && assignedPrice > 0) {
-                nextBasePrices[network][pkg.size] = applyPriceMultiplier(assignedPrice, pricingContext.multiplier);
+                nextBasePrices[network][size] = applyPriceMultiplier(assignedPrice, pricingContext.multiplier);
               }
             }
           }
@@ -145,11 +155,27 @@ const DashboardPricing = () => {
     const defaults = buildDefaultPrices(packageBasePrices);
     const savedPrices = (profile?.agent_prices || {}) as Record<string, any>;
 
-    for (const [network, pkgs] of Object.entries(basePackages)) {
+    const allNetworks = new Set([...Object.keys(basePackages), ...Object.keys(packageBasePrices)]);
+    for (const network of allNetworks) {
+      const pkgs = basePackages[network] || [];
       for (const pkg of pkgs) {
         const saved = savedPrices?.[network]?.[pkg.size];
         if (saved !== undefined && saved !== null && saved !== "") {
+          if (!defaults[network]) defaults[network] = {};
           defaults[network][pkg.size] = String(saved);
+        }
+      }
+
+      const customPrices = packageBasePrices[network] || {};
+      const baseSizes = new Set(pkgs.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
+      for (const size of Object.keys(customPrices)) {
+        const normSize = size.replace(/\s+/g, "").toUpperCase();
+        if (!baseSizes.has(normSize)) {
+          const saved = savedPrices?.[network]?.[size];
+          if (saved !== undefined && saved !== null && saved !== "") {
+            if (!defaults[network]) defaults[network] = {};
+            defaults[network][size] = String(saved);
+          }
         }
       }
     }
@@ -191,14 +217,14 @@ const DashboardPricing = () => {
   const handleSave = async () => {
     if (!user) return;
 
-    for (const [network, pkgs] of Object.entries(basePackages)) {
-      for (const pkg of pkgs) {
-        const numericPrice = Number(prices?.[network]?.[pkg.size]);
-        const basePrice = getBasePrice(network, pkg.size);
+    for (const network of Object.keys(prices)) {
+      for (const size of Object.keys(prices[network])) {
+        const numericPrice = Number(prices?.[network]?.[size]);
+        const basePrice = getBasePrice(network, size);
         if (!isAdmin && (!Number.isFinite(numericPrice) || numericPrice < basePrice)) {
           toast({
             title: "Price Too Low",
-            description: `${network} ${pkg.size}: Your selling price (GH₵ ${Number.isFinite(numericPrice) ? numericPrice.toFixed(2) : "0.00"}) is below your base cost (GH₵ ${basePrice.toFixed(2)}). Please increase it to save.`,
+            description: `${network} ${size}: Your selling price (GH₵ ${Number.isFinite(numericPrice) ? numericPrice.toFixed(2) : "0.00"}) is below your base cost (GH₵ ${basePrice.toFixed(2)}). Please increase it to save.`,
             variant: "destructive",
           });
           return;
@@ -228,6 +254,24 @@ const DashboardPricing = () => {
 
     setSaving(false);
   };
+
+  const networkPackages = useMemo(() => {
+    const list = [...(basePackages[selectedNetwork] || [])];
+    const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
+
+    const customPrices = packageBasePrices[selectedNetwork] || {};
+    for (const size of Object.keys(customPrices)) {
+      const normSize = size.replace(/\s+/g, "").toUpperCase();
+      if (!baseSizes.has(normSize)) {
+        list.push({
+          size: size,
+          price: customPrices[size],
+          validity: selectedNetwork.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry"
+        });
+      }
+    }
+    return list;
+  }, [basePackages, selectedNetwork, packageBasePrices]);
 
   return (
     <div className="p-6 md:p-8 max-w-4xl">
@@ -270,7 +314,7 @@ const DashboardPricing = () => {
             </tr>
           </thead>
           <tbody>
-            {basePackages[selectedNetwork]?.map((pkg) => {
+            {networkPackages.map((pkg) => {
               const basePrice = getBasePrice(selectedNetwork, pkg.size);
               const profit = getProfit(selectedNetwork, pkg.size);
               const disabled = isDisabled(selectedNetwork, pkg.size);

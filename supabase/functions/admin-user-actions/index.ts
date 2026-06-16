@@ -688,7 +688,7 @@ serve(async (req: Request) => {
 
         // Define expected types for known sensitive settings
         const BOOLEAN_KEYS = new Set(["disable_ordering", "maintenance_mode", "auto_failover_enabled", "holiday_mode_enabled", "show_scrolling_ad", "home_page_video_muted"]);
-        const NUMERIC_KEYS = new Set(["min_order_amount", "max_order_amount", "agent_activation_fee", "sub_agent_activation_fee", "wassce_price", "bece_price", "wassce_cost_price", "bece_cost_price"]);
+        const NUMERIC_KEYS = new Set(["min_order_amount", "max_order_amount", "agent_activation_fee", "sub_agent_activation_fee", "wassce_price", "bece_price", "wassce_cost_price", "bece_cost_price", "background_brightness", "background_contrast", "background_blueness"]);
         const STRING_KEYS = new Set(["holiday_message", "data_provider_base_url", "secondary_data_provider_base_url", "whatsapp_bot_prompt", "site_name", "scrolling_ad_text", "home_page_video_url"]);
 
         const filteredSettings: Record<string, any> = {};

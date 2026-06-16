@@ -15,10 +15,13 @@ const PAYSTACK_FEE_CAP = 100;
 // Mirrors src/lib/data.ts — used when global_package_settings has no row for a package
 const BASE_PACKAGE_PRICES: Record<string, Record<string, number>> = {
   MTN: {
-    "1GB": 4.45, "2GB": 8.9, "3GB": 13.1, "4GB": 17.3, "5GB": 21.2,
+    "1GB": 4.00, "2GB": 8.9, "3GB": 13.1, "4GB": 17.3, "5GB": 21.2,
     "6GB": 25.7, "7GB": 29.6, "8GB": 33.2, "10GB": 42.5, "15GB": 62.0,
     "20GB": 80.2, "25GB": 100.8, "30GB": 124.0, "40GB": 159.0,
     "50GB": 199.3, "100GB": 385.0,
+  },
+  "MTN Mash Up": {
+    "4GB": 17.00,
   },
   Telecel: {
     "5GB": 23.0, "10GB": 41.8, "12GB": 49.0, "15GB": 58.99, "18GB": 71.8,
@@ -53,6 +56,7 @@ function normalizeNetwork(network: string): string {
   if (normalized === "AT" || normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AirtelTigo";
   if (normalized === "VODAFONE") return "Telecel";
   if (normalized === "TELECEL") return "Telecel";
+  if (normalized === "MTN MASH UP" || normalized === "MTN_MASH_UP" || normalized === "MTN MASHUP" || normalized === "MTN MASH-UP" || normalized === "MASHUP" || normalized === "MASH UP") return "MTN Mash Up";
   return "MTN";
 }
 
@@ -246,7 +250,7 @@ serve(async (req: Request) => {
     const networkRawForMarkup = typeof metadata.network === "string" ? metadata.network : "";
     const normalizedNetForMarkup = normalizeNetwork(networkRawForMarkup);
     let networkMarkupPercent = 0;
-    if (normalizedNetForMarkup === "MTN") networkMarkupPercent = Number(settings?.mtn_markup_percentage || 0);
+    if (normalizedNetForMarkup === "MTN" || normalizedNetForMarkup === "MTN Mash Up") networkMarkupPercent = Number(settings?.mtn_markup_percentage || 0);
     if (normalizedNetForMarkup === "Telecel") networkMarkupPercent = Number(settings?.telecel_markup_percentage || 0);
     if (normalizedNetForMarkup === "AirtelTigo") networkMarkupPercent = Number(settings?.at_markup_percentage || 0);
 

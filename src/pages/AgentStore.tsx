@@ -36,16 +36,17 @@ interface PromoResult {
   error?: string;
 }
 
-type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
+type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type ServiceType = "data" | "airtime" | "utility";
-const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
+const NETWORKS: NetworkName[] = ["MTN", "MTN Mash Up", "Telecel", "AirtelTigo"];
 const PAYSTACK_FEE_RATE = 0.03;
 const calcFee = (amount: number) => Math.min(amount * PAYSTACK_FEE_RATE, 100);
 
 const NETWORK_CONFIG: Record<NetworkName, { color: string; bg: string; textClass: string; borderClass: string; light: string }> = {
-  MTN:        { color: "#FFCC00", bg: "bg-[#FFCC00]", textClass: "text-black", borderClass: "border-[#FFCC00]", light: "#FFCC0020" },
-  Telecel:    { color: "#E60000", bg: "bg-[#E60000]", textClass: "text-white", borderClass: "border-[#E60000]", light: "#E6000020" },
-  AirtelTigo: { color: "#00529B", bg: "bg-[#00529B]", textClass: "text-white", borderClass: "border-[#00529B]", light: "#00529B20" },
+  MTN:          { color: "#FFCC00", bg: "bg-[#FFCC00]", textClass: "text-black", borderClass: "border-[#FFCC00]", light: "#FFCC0020" },
+  "MTN Mash Up": { color: "#FFB300", bg: "bg-[#FFB300]", textClass: "text-black", borderClass: "border-[#FFB300]", light: "#FFB30020" },
+  Telecel:      { color: "#E60000", bg: "bg-[#E60000]", textClass: "text-white", borderClass: "border-[#E60000]", light: "#E6000020" },
+  AirtelTigo:   { color: "#00529B", bg: "bg-[#00529B]", textClass: "text-white", borderClass: "border-[#00529B]", light: "#00529B20" },
 };
 
 interface AgentProfile {
@@ -1045,8 +1046,8 @@ const AgentStore = () => {
         {(selectedService === "data" || selectedService === "airtime") && (
           <div className="flex gap-2.5 mb-6 relative z-10">
             {NETWORKS.map((n) => {
-              const nc = NETWORK_CONFIG[n];
               const active = selectedNetwork === n;
+              const nc = NETWORK_CONFIG[n];
               return (
                 <button
                   type="button"
@@ -1057,7 +1058,17 @@ const AgentStore = () => {
                   }`}
                   style={active ? { boxShadow: `0 8px 24px ${nc.color}40`, textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none" } : {}}
                 >
-                  {n}
+                  {n === "MTN Mash Up" ? (
+                    <span className="flex items-center justify-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 fill-current animate-pulse text-black" />
+                      <span>MTN Mash Up</span>
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                        active ? "bg-black/20 text-black" : "bg-white/10 text-white/50"
+                      }`}>4</span>
+                    </span>
+                  ) : (
+                    n
+                  )}
                 </button>
               );
             })}
@@ -1118,18 +1129,18 @@ const AgentStore = () => {
                                 <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                               </div>
                             )}
-                            <p className={`text-[10px] font-black uppercase tracking-[0.15em] mb-1.5 ${isSelected ? (selectedNetwork === "MTN" ? "text-black/60" : "text-white/60") : "text-white/40 group-hover:text-white/60"}`}>
+                            <p className={`text-[10px] font-black uppercase tracking-[0.15em] mb-1.5 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black/60" : "text-white/60") : "text-white/40 group-hover:text-white/60"}`}>
                               {selectedNetwork}
                             </p>
-                            <p className={`text-[32px] font-black tracking-tighter leading-none mb-4 ${isSelected ? (selectedNetwork === "MTN" ? "text-black" : "text-white") : "text-white"}`}>
+                            <p className={`text-[32px] font-black tracking-tighter leading-none mb-4 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black" : "text-white") : "text-white"}`}>
                               {pkg.size}
                             </p>
-                            <div className={`pt-4 border-t ${isSelected ? (selectedNetwork === "MTN" ? "border-black/20" : "border-white/20") : "border-white/10"}`}>
-                              <p className={`text-xl font-black tracking-tight ${isSelected ? (selectedNetwork === "MTN" ? "text-black" : "text-white") : "text-white/90"}`}>
+                            <div className={`pt-4 border-t ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "border-black/20" : "border-white/20") : "border-white/10"}`}>
+                              <p className={`text-xl font-black tracking-tight ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black" : "text-white") : "text-white/90"}`}>
                                 ₵{pkg.price.toFixed(2)}
                               </p>
-                              <p className={`text-[10px] font-bold mt-1 ${isSelected ? (selectedNetwork === "MTN" ? "text-black/50" : "text-white/50") : "text-white/30"}`}>
-                                NO EXPIRY
+                              <p className={`text-[10px] font-bold mt-1 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black/50" : "text-white/50") : "text-white/30"}`}>
+                                {(pkg.validity || "NO EXPIRY").toUpperCase()}
                               </p>
                             </div>
                           </button>

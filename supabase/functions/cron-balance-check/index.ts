@@ -14,7 +14,7 @@ serve(async (_req) => {
     .from("providers")
     .select("*")
     .eq("is_active", true)
-    .in("handler_type", ["datamart", "datahub", "spendless"]);
+    .in("handler_type", ["datamart", "datahub", "spendless", "qhowmenzconsult"]);
 
   if (error || !providers?.length) {
     console.log("[cron-balance-check] No active providers or error:", error?.message);
@@ -32,7 +32,7 @@ serve(async (_req) => {
 
     try {
       // Build balance URL based on handler type
-      const balanceUrls = provider.handler_type === "datahub"
+      const balanceUrls = provider.handler_type === "datahub" || provider.handler_type === "qhowmenzconsult"
         ? [`${baseUrl}/balance`]
         : [`${baseUrl}/balance`, `${baseUrl}/api/balance`];
 

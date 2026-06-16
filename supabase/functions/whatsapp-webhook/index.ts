@@ -53,10 +53,11 @@ function getPaymentProvider(phone: string): string {
   return "mtn";
 }
 
-function normalizeNetworkKey(network: string): "MTN" | "Telecel" | "AirtelTigo" {
+function normalizeNetworkKey(network: string): "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo" {
   const n = network.trim().toUpperCase();
   if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AirtelTigo";
   if (n === "VODAFONE" || n === "TELECEL") return "Telecel";
+  if (n === "MTN MASH UP" || n === "MTN_MASH_UP" || n === "MTN MASHUP" || n === "MTN MASH-UP" || n === "MASHUP" || n === "MASH UP") return "MTN Mash Up";
   return "MTN";
 }
 

@@ -11,6 +11,7 @@ import {
   TrendingUp, ShoppingCart, AlertTriangle, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
+  Zap
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
@@ -63,7 +64,7 @@ type FilterType = "all" | "agents" | "sub_agents";
 
 const PAGE_SIZE = 50;
 
-const AdminOrders = () => {
+const AdminMashUpOrders = () => {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
@@ -79,7 +80,6 @@ const AdminOrders = () => {
   const [healingProcessing, setHealingProcessing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [networkFilter, setNetworkFilter] = useState("all");
   const [orderTypeFilter, setOrderTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [providers, setProviders] = useState<any[]>([]);
@@ -98,7 +98,7 @@ const AdminOrders = () => {
   const allApisOff = providers.length === 0 || providers.every(p => !p.is_active);
 
   // Reset to page 1 when any filter changes
-  useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter, networkFilter, orderTypeFilter]);
+  useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter, orderTypeFilter]);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -109,6 +109,7 @@ const AdminOrders = () => {
     let q = supabase
       .from("orders")
       .select("*", { count: "estimated" })
+      .eq("network", "MTN Mash Up")
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -117,7 +118,6 @@ const AdminOrders = () => {
       if (isUuid) {
         q = q.or(`id.eq.${search.trim()},agent_id.eq.${search.trim()}`);
       } else {
-        // Resolve profile user_ids first to search by email/name/phone
         const { data: matchedProfiles } = await supabase
           .from("profiles")
           .select("user_id")
@@ -125,7 +125,7 @@ const AdminOrders = () => {
 
         const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
         
-        let orString = `customer_phone.ilike.%${search}%,customer_name.ilike.%${search}%,network.ilike.%${search}%,status.ilike.%${search}%`;
+        let orString = `customer_phone.ilike.%${search}%,customer_name.ilike.%${search}%,status.ilike.%${search}%`;
         if (matchedUserIds.length > 0) {
           matchedUserIds.forEach(id => {
             orString += `,agent_id.eq.${id}`;
@@ -136,11 +136,6 @@ const AdminOrders = () => {
     }
 
     if (statusFilter !== "all") q = q.eq("status", statusFilter);
-    if (networkFilter !== "all") {
-      q = q.eq("network", networkFilter);
-    } else {
-      q = q.neq("network", "MTN Mash Up");
-    }
     if (orderTypeFilter !== "all") q = q.eq("order_type", orderTypeFilter);
 
     const { data, count, error } = await q;
@@ -195,14 +190,14 @@ const AdminOrders = () => {
 
     setAllOrders(enriched);
     setLoading(false);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, toast]);
+  }, [page, search, statusFilter, orderTypeFilter, toast]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchOrders(), 300);
     return () => clearTimeout(timer);
   }, [fetchOrders]);
 
-  // Live updates — re-fetch current page whenever any order changes
+  // Live updates
   useRealtimeRefresh({ tables: ["orders"], onRefresh: fetchOrders });
 
   const handleRetry = async (orderId: string) => {
@@ -267,12 +262,11 @@ const AdminOrders = () => {
   const handleForceFulfillAllProcessing = async () => {
     setForcingFulfill(true);
     try {
-      // 1. Pre-flight Check: Count EVERYTHING across the entire database except Mash Up
       const { count, error: countErr } = await supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
         .eq("status", "processing")
-        .neq("network", "MTN Mash Up");
+        .eq("network", "MTN Mash Up");
 
       if (countErr) throw countErr;
       const totalCount = count || 0;
@@ -280,35 +274,34 @@ const AdminOrders = () => {
       if (totalCount === 0) {
         toast({ 
           title: "Verification Complete", 
-          description: "Checked the entire database. There are exactly 0 orders in processing (excluding Mash Up)." 
+          description: "Checked the database. There are exactly 0 Mash Up orders in processing." 
         });
         setForcingFulfill(false);
         return;
       }
 
-      if (!confirm(`WARNING: Found ${totalCount} processing orders (excluding Mash Up) across the WHOLE database. Force fulfill them ALL immediately?`)) {
+      if (!confirm(`WARNING: Found ${totalCount} processing MTN Mash Up orders. Force fulfill them ALL immediately?`)) {
         setForcingFulfill(false);
         return;
       }
 
-      toast({ title: "Executing database update…", description: `Transitioning ${totalCount} orders globally…` });
+      toast({ title: "Executing database update…", description: `Transitioning ${totalCount} Mash Up orders…` });
 
-      // 2. Execute unrestricted atomic update across whole orders table
       const { error } = await supabase
         .from("orders")
         .update({ 
           status: "fulfilled", 
-          failure_reason: "Forced global fulfillment via admin dashboard" 
+          failure_reason: "Forced global Mash Up fulfillment via admin dashboard" 
         })
         .eq("status", "processing")
-        .neq("network", "MTN Mash Up");
+        .eq("network", "MTN Mash Up");
 
       if (error) throw error;
       
-      toast({ title: "Task Success", description: `Successfully fulfilled ${totalCount} orders database-wide.` });
+      toast({ title: "Task Success", description: `Successfully fulfilled ${totalCount} Mash Up orders.` });
       
       if (currentUser) {
-        await logAudit(currentUser.id, "mass_fulfill_processing_global", { count: totalCount });
+        await logAudit(currentUser.id, "mass_fulfill_mashup_processing", { count: totalCount });
       }
     } catch (e: any) {
       toast({ title: "Execution Failed", description: e.message, variant: "destructive" });
@@ -432,45 +425,12 @@ const AdminOrders = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `orders_export_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `mashup_orders_export_${new Date().toISOString().split("T")[0]}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast({ title: "Export Complete", description: `Exported ${allOrders.length} orders to CSV.` });
-  };
-
-  const handleExportSimpleCSV = () => {
-    if (allOrders.length === 0) {
-      toast({ title: "No orders to export", variant: "destructive" });
-      return;
-    }
-    const headers = ["Recipient Phone", "Network", "Size/Details"];
-    const csvContent = [
-      headers.join(","),
-      ...allOrders.map(o => {
-        const rawSize = o.package_size || "";
-        const match = rawSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
-        const numericSize = match ? match[1] : "0";
-
-        return [
-          o.customer_phone || "N/A",
-          o.network || "N/A",
-          numericSize
-        ].map(val => JSON.stringify(val ?? "")).join(",");
-      })
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `simple_orders_export_${new Date().toISOString().split("T")[0]}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast({ title: "Simple Export Complete", description: `Exported ${allOrders.length} simple orders.` });
+    toast({ title: "Export Complete", description: `Exported ${allOrders.length} Mash Up orders to CSV.` });
   };
 
   // Client-side filtering
@@ -483,8 +443,6 @@ const AdminOrders = () => {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const safePage = page;
 
-  // Stats from ALL loaded orders (not just current page)
-  // Stats from ONLY fulfilled orders in the current view
   const fulfilledForStats = allOrders.filter(o => o.status === "fulfilled");
   const totalRevenue = fulfilledForStats.reduce((s, o) => s + Number(o.paystack_verified_amount ?? o.amount ?? 0), 0);
   const totalPaystackFees = fulfilledForStats.reduce((s, o) => s + Number(o.paystack_fee || 0), 0);
@@ -496,15 +454,12 @@ const AdminOrders = () => {
   
   const failed = allOrders.filter((o) => o.status === "fulfillment_failed").length;
   const pending = allOrders.filter((o) => o.status === "pending" || o.status === "paid").length;
-  const subAgentOrders = allOrders.filter((o) => o.is_sub_agent).length;
-  const verifiedCount = allOrders.filter((o) => o.paystack_verified_amount != null).length;
-  const uniqueNetworks = [...new Set(allOrders.map((o) => o.network).filter(Boolean))] as string[];
 
   if (loading && allOrders.length === 0) return (
     <div className="flex flex-col items-center justify-center py-24 gap-4">
       <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
       <div className="text-center">
-        <p className="text-muted-foreground text-sm font-medium">Loading orders…</p>
+        <p className="text-muted-foreground text-sm font-medium">Loading Mash Up orders…</p>
       </div>
     </div>
   );
@@ -513,31 +468,31 @@ const AdminOrders = () => {
     <div className="space-y-6 pb-10">
       {/* Phone tracker */}
       <PhoneOrderTracker
-        title="Track Customer Order by Phone"
-        subtitle="Admin quick lookup for live delivery status and bundle size."
+        title="Track MTN Mash Up Order by Phone"
+        subtitle="Admin quick lookup for live delivery status of Mash Up bundles."
       />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold">All Orders</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Full transaction history — {totalCount.toLocaleString()} total orders
-          </p>
+        <div className="flex items-center gap-2">
+          <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
+            <Zap className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-bold">MTN Mash Up Orders</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Strictly MTN Mash Up transactions — {totalCount.toLocaleString()} total orders
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 self-start">
           <Button variant="outline" size="sm" className="gap-2" onClick={fetchOrders}>
             <RefreshCw className="w-4 h-4" /> Refresh
           </Button>
           {allApisOff && (
-            <>
-              <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={handleExportCSV} disabled={allOrders.length === 0}>
-                <Download className="w-4 h-4" /> Export CSV
-              </Button>
-              <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10 text-amber-400 border-amber-500/20" onClick={handleExportSimpleCSV} disabled={allOrders.length === 0}>
-                <Download className="w-4 h-4" /> Export Simple
-              </Button>
-            </>
+            <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={handleExportCSV} disabled={allOrders.length === 0}>
+              <Download className="w-4 h-4" /> Export CSV
+            </Button>
           )}
           <Button
             size="sm"
@@ -565,7 +520,7 @@ const AdminOrders = () => {
             disabled={forcingFulfill}
           >
             {forcingFulfill ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            {forcingFulfill ? "Analyzing DB…" : "Force Fulfill ALL (Whole Database)"}
+            {forcingFulfill ? "Analyzing DB…" : "Force Fulfill ALL Mash Up"}
           </Button>
         </div>
       </div>
@@ -579,7 +534,6 @@ const AdminOrders = () => {
           { label: "Agent Profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}`, icon: TrendingUp, color: "text-purple-500" },
           { label: "Platform Costs", value: `GH₵${totalCosts.toFixed(2)}`, icon: TrendingUp, color: "text-orange-500" },
           { label: "Net Admin Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: TrendingUp, color: "text-sky-500 font-black" },
-          { label: "Paystack Verified", value: verifiedCount.toLocaleString(), icon: CheckCircle2, color: "text-green-500" },
           { label: "Pending / Processing / Failed", value: `${pending} / ${allOrders.filter(o => o.status === "processing").length} / ${failed}`, icon: failed > 0 ? AlertTriangle : Clock, color: failed > 0 ? "text-red-500" : "text-amber-500" },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label} className="bg-card border-border shadow-sm">
@@ -599,7 +553,7 @@ const AdminOrders = () => {
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search orders, agents, phones…"
+            placeholder="Search Mash Up orders, agents, phones…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 bg-secondary/50 border-input text-sm"
@@ -631,15 +585,6 @@ const AdminOrders = () => {
         </select>
 
         <select
-          value={networkFilter}
-          onChange={(e) => setNetworkFilter(e.target.value)}
-          className="text-xs bg-secondary/50 border border-input rounded-lg px-3 py-2 text-foreground outline-none"
-        >
-          <option value="all">All Networks</option>
-          {uniqueNetworks.map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-
-        <select
           value={orderTypeFilter}
           onChange={(e) => setOrderTypeFilter(e.target.value)}
           className="text-xs bg-secondary/50 border border-input rounded-lg px-3 py-2 text-foreground outline-none"
@@ -647,12 +592,6 @@ const AdminOrders = () => {
           <option value="all">All Order Types</option>
           <option value="data">Data Bundles</option>
           <option value="api">API Purchases</option>
-          <option value="airtime">Airtime</option>
-          <option value="utility">Utility Bills</option>
-          <option value="agent_activation">Agent Activation</option>
-          <option value="sub_agent_activation">Sub-Agent Activation</option>
-          <option value="afa">AFA Registration</option>
-          <option value="wallet_topup">Wallet Top-up</option>
         </select>
 
         <span className="text-xs text-muted-foreground ml-auto">
@@ -755,18 +694,7 @@ const AdminOrders = () => {
                   <td className="px-4 py-3">
                     <div className="flex flex-col items-start gap-1">
                       <span className="text-xs font-bold text-foreground/90">
-                        {order.order_type === "wallet_topup" ? "Wallet Top-up" :
-                         order.order_type === "afa" ? "AFA Registration" :
-                         order.order_type === "api" ? "API Purchase" :
-                         order.order_type === "airtime" ? "Airtime Purchase" :
-                         order.order_type === "utility" ? "Utility Bill" :
-                         order.order_type === "free_data_claim" ? "Free Promo Claim" :
-                         order.order_type === "sub_agent_activation" ? "Sub-Agent Activation" :
-                         order.order_type === "agent_activation" ? "Agent Activation" :
-                         order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
-                         order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
-                         order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
-                         "Data Purchase"}
+                        {order.order_type === "api" ? "API Purchase" : "Data Purchase"}
                       </span>
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${order.is_sub_agent ? "border-purple-500/30 text-purple-600 dark:text-purple-400 bg-purple-500/10" : "border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-500/10"}`}>
                         {order.is_sub_agent ? "Sub-Agent" : "Agent"}
@@ -797,18 +725,6 @@ const AdminOrders = () => {
                   <td className="px-4 py-3 text-xs text-foreground/70 hidden md:table-cell">{order.network || "—"}</td>
                   <td className="px-4 py-3 text-xs text-foreground/70 hidden md:table-cell">
                     <div>{order.package_size || "—"}</div>
-                    {order.network === "VOUCHER" && order.metadata?.vouchers?.length > 0 && (
-                      <div className="mt-1 flex flex-col gap-0.5 max-w-[140px]">
-                        {order.metadata.vouchers.slice(0, 2).map((v: any, idx: number) => (
-                          <div key={idx} className="text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-1 rounded font-mono whitespace-nowrap overflow-hidden text-ellipsis" title={`${v.serial} | ${v.pin}`}>
-                            {v.serial} | {v.pin}
-                          </div>
-                        ))}
-                        {order.metadata.vouchers.length > 2 && (
-                          <div className="text-[8px] text-muted-foreground italic px-1">+{order.metadata.vouchers.length - 2} more pins</div>
-                        )}
-                      </div>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-bold text-foreground">GH₵{Number(order.amount).toFixed(2)}</span>
@@ -860,7 +776,7 @@ const AdminOrders = () => {
                         disabled={retrying === order.id}
                         onClick={() => handleRetry(order.id)}
                       >
-                        {retrying === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                        {retrying === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
                         Retry
                       </Button>
                     )}
@@ -904,12 +820,7 @@ const AdminOrders = () => {
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Type</p>
                 <p className="text-xs text-foreground/80 font-bold">
-                  {order.order_type === "wallet_topup" ? "Top-up" :
-                   order.order_type === "api" ? "API" :
-                   order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
-                   order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
-                   order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
-                   "Data"}
+                  {order.order_type === "api" ? "API" : "Data"}
                 </p>
               </div>
               <div>
@@ -920,15 +831,6 @@ const AdminOrders = () => {
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Package</p>
                 <div className="space-y-1">
                   <p className="text-xs text-foreground/80 font-bold">{order.package_size || "—"}</p>
-                  {order.network === "VOUCHER" && order.metadata?.vouchers?.length > 0 && (
-                    <div className="flex flex-col gap-1">
-                      {order.metadata.vouchers.map((v: any, idx: number) => (
-                        <div key={idx} className="text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono">
-                          {v.serial} | {v.pin}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
               <div>
@@ -989,7 +891,6 @@ const AdminOrders = () => {
           </p>
 
           <div className="flex items-center gap-1">
-            {/* First */}
             <button
               onClick={() => setPage(1)}
               disabled={safePage === 1}
@@ -997,7 +898,6 @@ const AdminOrders = () => {
             >
               <ChevronsLeft className="w-4 h-4" />
             </button>
-            {/* Prev */}
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage === 1}
@@ -1006,7 +906,6 @@ const AdminOrders = () => {
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            {/* Page numbers */}
             {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
               let p: number;
               if (totalPages <= 7) {
@@ -1033,7 +932,6 @@ const AdminOrders = () => {
               );
             })}
 
-            {/* Next */}
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={safePage === totalPages}
@@ -1041,7 +939,6 @@ const AdminOrders = () => {
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            {/* Last */}
             <button
               onClick={() => setPage(totalPages)}
               disabled={safePage === totalPages}
@@ -1060,4 +957,4 @@ const AdminOrders = () => {
   );
 };
 
-export default AdminOrders;
+export default AdminMashUpOrders;

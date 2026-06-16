@@ -46,7 +46,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu" || handlerType === "superbdatafy") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "qhowmenzconsult") {
     return [clean];
   }
 
@@ -112,7 +112,8 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
 async function callProviderApi(
   provider: any,
   data: Record<string, unknown>,
-  endpoint: string = "purchase"
+  endpoint: string = "purchase",
+  supabaseAdmin: any = null
 ): Promise<{ ok: boolean; reason: string; id?: string; body: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
   let payload = { ...data };
@@ -151,6 +152,41 @@ async function callProviderApi(
     payload = {
       reference: String(data.reference || data.transaction_id || data.order_id || ""),
     };
+  } else if (handlerType === "qhowmenzconsult" && endpoint === "purchase") {
+    let packageId = String(data.plan || data.package_size || "");
+    if (supabaseAdmin) {
+      try {
+        const { data: pkgMapping } = await supabaseAdmin
+          .from("provider_packages")
+          .select("external_id")
+          .eq("provider_id", provider.id)
+          .eq("network", data.networkRaw || data.network || "")
+          .eq("package_name", data.package_size || data.plan || "")
+          .maybeSingle();
+        if (pkgMapping?.external_id) {
+          packageId = pkgMapping.external_id;
+        }
+      } catch (e) {
+        console.error("[qhowmenzconsult-payload-resolve] Error:", e);
+      }
+    }
+
+    const network = String(data.networkRaw || data.network || "").toUpperCase();
+    let netKey = network;
+    if (network.includes("MTN") || network === "YELLO") netKey = "MTN";
+    else if (network.includes("TELECEL") || network.includes("VODA")) netKey = "Telecel";
+    else if (network.includes("AIRTEL") || network.includes("TIGO") || network === "AT") netKey = "AirtelTigo";
+
+    payload = {
+      network: netKey,
+      recipient: String(data.recipient || data.phoneNumber || ""),
+      plan_id: packageId,
+      package_id: packageId,
+      product_id: packageId,
+      external_id: packageId,
+      amount: Number(data.amount || 0),
+      reference: String(data.reference || data.order_id || ""),
+    };
   }
 
   const urls = buildProviderUrls(provider.base_url, endpoint, handlerType);
@@ -168,11 +204,13 @@ async function callProviderApi(
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
         headers["X-API-Key"] = provider.api_key;
-        if (handlerType !== "datamart") headers["Authorization"] = `Bearer ${provider.api_key}`;
+        if (handlerType !== "datamart" && handlerType !== "qhowmenzconsult") headers["Authorization"] = `Bearer ${provider.api_key}`;
         headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
         headers["User-Agent"] = "SwiftDataGH/2.0";
 
-        const isGet = (handlerType === "datamart" && endpoint === "status") || (handlerType === "superbdatafy" && endpoint === "status");
+        const isGet = (handlerType === "datamart" && endpoint === "status") || 
+                      (handlerType === "superbdatafy" && endpoint === "status") ||
+                      (handlerType === "qhowmenzconsult" && endpoint === "status");
         
         let reqUrl = url;
         if (handlerType === "superbdatafy") {
@@ -181,6 +219,13 @@ async function callProviderApi(
              reqUrl = `${url}/transaction/${ref}`;
           } else {
              reqUrl = `${url}/buy-data`;
+          }
+        } else if (handlerType === "qhowmenzconsult") {
+          if (endpoint === "purchase") {
+             reqUrl = `${url}/orders`;
+          } else if (endpoint === "status") {
+             const ref = String(data.transaction_id || data.reference || data.order_id || "");
+             reqUrl = `${url}/orders/${ref}`;
           }
         }
 
@@ -551,6 +596,7 @@ serve(async (req: Request) => {
         const net = String(p.network).toLowerCase();
         
         if (net === "mtn") { prefix = "yellow_"; displayNet = "YELLO"; }
+        else if (net.includes("mash") || net.includes("mashup")) { prefix = "mashup_"; displayNet = "MTN Mash Up"; }
         else if (net === "at" || net === "airteltigo" || net === "at_premium") { prefix = "blue_"; displayNet = "BLUE"; }
         else if (net === "telecel" || net === "vodafone") { prefix = "red_"; displayNet = "RED"; }
         
@@ -577,6 +623,7 @@ serve(async (req: Request) => {
         if (netLower === "yello") network = "MTN";
         else if (netLower === "blue") network = "AT";
         else if (netLower === "red") network = "TELECEL";
+        else if (netLower === "mashup" || netLower === "mtn mash up" || netLower === "mtn_mash_up") network = "MTN Mash Up";
       }
 
       // Smart Package ID Resolution
@@ -587,6 +634,7 @@ serve(async (req: Request) => {
           let prefix = "pkg_";
           const net = String(p.network).toLowerCase();
           if (net === "mtn") prefix = "yellow_";
+          else if (net.includes("mash") || net.includes("mashup")) prefix = "mashup_";
           else if (net === "at" || net === "airteltigo" || net === "at_premium") prefix = "blue_";
           else if (net === "telecel" || net === "vodafone") prefix = "red_";
           const pId = `${prefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`;

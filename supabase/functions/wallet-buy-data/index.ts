@@ -11,10 +11,11 @@ import { sendPaymentSms } from "../_shared/sms.ts";
 import { log } from "../_shared/logger.ts";
 
 // --- HELPERS ---
-function normalizeNetworkForPricing(network: string): "MTN" | "Telecel" | "AirtelTigo" {
+function normalizeNetworkForPricing(network: string): "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo" {
   const n = (network || "").trim().toUpperCase();
   if (n === "AT" || n === "AIRTEL TIGO" || n === "AIRTELTIGO") return "AirtelTigo";
   if (n === "VODAFONE" || n === "TELECEL") return "Telecel";
+  if (n === "MTN MASH UP" || n === "MTN_MASH_UP" || n === "MTN MASHUP" || n === "MTN MASH-UP" || n === "MASHUP" || n === "MASH UP") return "MTN Mash Up";
   return "MTN";
 }
 

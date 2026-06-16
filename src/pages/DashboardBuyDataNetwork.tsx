@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -20,7 +20,7 @@ import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 
-type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
+type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
 
 interface PromoResult {
@@ -32,16 +32,18 @@ interface PromoResult {
   error?: string;
 }
 
-const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
+const NETWORKS: NetworkName[] = ["MTN", "MTN Mash Up", "Telecel", "AirtelTigo"];
 
 const networkRouteMap: Record<NetworkName, string> = {
   MTN: "mtn",
+  "MTN Mash Up": "mtn-mash-up",
   Telecel: "telecel",
   AirtelTigo: "airteltigo",
 };
 
 const networkTabStyles: Record<NetworkName, { active: string; idle: string }> = {
   MTN: { active: "bg-amber-400 text-black border-amber-400", idle: "border-border hover:border-amber-400/50" },
+  "MTN Mash Up": { active: "bg-amber-500 text-black border-amber-500", idle: "border-border hover:border-amber-500/50" },
   Telecel: { active: "bg-red-600 text-white border-red-600", idle: "border-border hover:border-red-400/50" },
   AirtelTigo: { active: "bg-blue-600 text-white border-blue-600", idle: "border-border hover:border-blue-400/50" },
 };
@@ -188,7 +190,23 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   }, [profile?.is_sub_agent, profile?.parent_agent_id, user]);
 
   const packages = useMemo(() => {
-    return (basePackages[network] || [])
+    const list = [...(basePackages[network] || [])];
+    const baseSizes = new Set(list.map(pkg => normalizePackageSize(pkg.size)));
+
+    globalSettings.forEach((gs) => {
+      if (gs.network === network) {
+        const normSize = normalizePackageSize(gs.package_size);
+        if (!baseSizes.has(normSize)) {
+          list.push({
+            size: gs.package_size,
+            price: gs.agent_price || gs.public_price || 0,
+            validity: network.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry"
+          });
+        }
+      }
+    });
+
+    return list
       .map((item) => {
         const setting = globalSettings.find(
           (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
@@ -232,7 +250,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         };
       })
       .filter((item) => !item.isUnavailable);
-  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile]);
+  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages]);
 
   const refreshBalance = async () => {
     if (!user) return;
@@ -573,17 +591,30 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
       {/* Network tabs */}
       <div className="flex gap-2 sm:gap-3">
-        {NETWORKS.map((n) => (
-          <button
-            key={n}
-            onClick={() => navigate(`/dashboard/buy-data/${networkRouteMap[n]}`)}
-            className={`flex-1 py-2.5 sm:py-3 rounded-xl border-2 text-sm font-bold transition-all ${
-              n === network ? networkTabStyles[n].active : networkTabStyles[n].idle
-            }`}
-          >
-            {n}
-          </button>
-        ))}
+        {NETWORKS.map((n) => {
+          const isActive = n === network;
+          return (
+            <button
+              key={n}
+              onClick={() => navigate(`/dashboard/buy-data/${networkRouteMap[n]}`)}
+              className={`flex-1 py-2.5 sm:py-3 rounded-xl border-2 text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
+                isActive ? networkTabStyles[n].active : networkTabStyles[n].idle
+              }`}
+            >
+              {n === "MTN Mash Up" ? (
+                <>
+                  <Zap className="w-4 h-4 fill-current" />
+                  <span>MTN Mash Up</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                    isActive ? "bg-black/20 text-black" : "bg-secondary text-secondary-foreground"
+                  }`}>4</span>
+                </>
+              ) : (
+                n
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* MTN Live Delivery Speed Widget */}
@@ -899,7 +930,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                     <span className={`${cardColors.size} text-3xl font-black leading-none tracking-tighter`}>{item.size}</span>
                     <div className="flex items-end justify-between mt-auto pt-1">
                       <span className={`${cardColors.size} text-base font-black`}>₵{item.price.toFixed(2)}</span>
-                      <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>No Expiry</span>
+                      <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>{item.validity || "No Expiry"}</span>
                     </div>
                   </button>
                 );

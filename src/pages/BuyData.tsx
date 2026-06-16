@@ -43,8 +43,8 @@ interface PromoResult {
   error?: string;
 }
 
-type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
-const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
+type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
+const NETWORKS: NetworkName[] = ["MTN", "MTN Mash Up", "Telecel", "AirtelTigo"];
 const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100;
 const calcFee = (amount: number) => Math.min(amount * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
@@ -58,6 +58,7 @@ interface GlobalPkgSetting {
 
 const networkTabStyles: Record<NetworkName, { active: string; idle: string }> = {
   MTN: { active: "bg-amber-400 text-black border-amber-400", idle: "border-border hover:border-amber-400/50" },
+  "MTN Mash Up": { active: "bg-amber-500 text-black border-amber-500", idle: "border-border hover:border-amber-500/50" },
   Telecel: { active: "bg-red-600 text-white border-red-600", idle: "border-border hover:border-red-400/50" },
   AirtelTigo: { active: "bg-blue-600 text-white border-blue-600", idle: "border-border hover:border-blue-400/50" },
 };
@@ -210,13 +211,30 @@ const BuyData = () => {
   }, [selectedNetwork, isPhoneValid, resolvedName, resolvingName, phoneDigits]);
 
   const packages = useMemo(() => {
-    return (basePackages[selectedNetwork] || [])
+    const list = [...(basePackages[selectedNetwork] || [])];
+    const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
+
+    Object.keys(globalSettings).forEach((key) => {
+      const gs = globalSettings[key];
+      if (gs && gs.network === selectedNetwork) {
+        const normSize = gs.package_size.replace(/\s+/g, "").toUpperCase();
+        if (!baseSizes.has(normSize)) {
+          list.push({
+            size: gs.package_size,
+            price: gs.public_price ?? 0,
+            validity: selectedNetwork.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry"
+          });
+        }
+      }
+    });
+
+    return list
       .map((pkg) => {
         const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
         const gs = globalSettings[`${selectedNetwork}-${normSize}`];
         if (gs?.is_unavailable) return null;
         const base = gs?.public_price ?? getPublicPrice(pkg.price);
-        const multiplier = priceMultipliers[selectedNetwork] || 1;
+        const multiplier = priceMultipliers[selectedNetwork] || (selectedNetwork.includes("MTN") ? priceMultipliers["MTN"] : 1) || 1;
         return { ...pkg, price: applyPriceMultiplier(base, multiplier) };
       })
       .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean }[];
@@ -310,7 +328,8 @@ const BuyData = () => {
     }
     
     // Active System Check for Network Status
-    const netKey = selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : selectedNetwork.toUpperCase();
+    let netKey = selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : selectedNetwork.toUpperCase();
+    if (selectedNetwork.toUpperCase().includes("MTN")) netKey = "MTN";
     if (networkStatusMap[netKey] === "down") {
       toast({ title: "Network Down", description: `${selectedNetwork} is currently unavailable. Please try another network.`, variant: "destructive" });
       return;
@@ -404,7 +423,7 @@ const BuyData = () => {
               </div>
               
               <div className="mt-auto pt-1">
-                <p className={`${colors.label} text-[9px] font-medium uppercase tracking-wider opacity-60`}>No Expiry</p>
+                <p className={`${colors.label} text-[9px] font-medium uppercase tracking-wider opacity-60`}>{pkg.validity || "No Expiry"}</p>
               </div>
             </button>
           );
@@ -503,11 +522,21 @@ const BuyData = () => {
                   />
                 )}
                 <span className="relative z-10 flex items-center justify-center gap-1.5">
-                  {n}
-                  {networkStatusMap[n.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : n.toUpperCase()] === "down" && (
+                  {n === "MTN Mash Up" ? (
+                    <>
+                      <Zap className="w-4 h-4 fill-current" />
+                      <span>MTN Mash Up</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        active ? "bg-black/20 text-black" : "bg-white/10 text-muted-foreground"
+                      }`}>4</span>
+                    </>
+                  ) : (
+                    n
+                  )}
+                  {networkStatusMap[n.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : (n.toUpperCase().includes("MTN") ? "MTN" : n.toUpperCase())] === "down" && (
                     <span className="w-2 h-2 rounded-full bg-red-500 border-2 border-white/30 shadow-[0_0_6px_rgba(239,68,68,0.8)]" title="Service Offline" />
                   )}
-                  {networkStatusMap[n.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : n.toUpperCase()] === "maintenance" && (
+                  {networkStatusMap[n.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : (n.toUpperCase().includes("MTN") ? "MTN" : n.toUpperCase())] === "maintenance" && (
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Service Maintenance" />
                   )}
                 </span>
@@ -517,7 +546,7 @@ const BuyData = () => {
         </div>
 
         {/* Active Service Barrier warning */}
-        {networkStatusMap[selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : selectedNetwork.toUpperCase()] === "down" ? (
+        {networkStatusMap[selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : (selectedNetwork.toUpperCase().includes("MTN") ? "MTN" : selectedNetwork.toUpperCase())] === "down" ? (
           <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-red-500/20 bg-red-500/[0.02] rounded-3xl transition-all">
             <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mb-4 border border-red-500/20 shadow-[0_10px_30px_rgba(239,68,68,0.1)]">
                <AlertTriangle className="w-8 h-8 text-red-500" />

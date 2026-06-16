@@ -73,6 +73,9 @@ interface SystemSettings {
   bece_cost_price: string;
   traditional_background_enabled: boolean;
   background_custom_image_url: string;
+  background_brightness: number;
+  background_contrast: number;
+  background_blueness: number;
   enable_privacy_shield: boolean;
   ai_recommender_enabled: boolean;
   tutorial_buy_video_url?: string;
@@ -155,6 +158,9 @@ const AdminSettings = () => {
     bece_cost_price: "14.00",
     traditional_background_enabled: true,
     background_custom_image_url: "",
+    background_brightness: 1.0,
+    background_contrast: 1.0,
+    background_blueness: 0.0,
     enable_privacy_shield: true,
     ai_recommender_enabled: true,
     withdrawal_auto_approve_enabled: false,
@@ -447,6 +453,9 @@ const AdminSettings = () => {
           bece_cost_price: String(d.bece_cost_price || "14.00"),
           traditional_background_enabled: d.traditional_background_enabled !== false,
           background_custom_image_url: String(d.background_custom_image_url || ""),
+          background_brightness: typeof d.background_brightness === 'number' ? d.background_brightness : 1.0,
+          background_contrast: typeof d.background_contrast === 'number' ? d.background_contrast : 1.0,
+          background_blueness: typeof d.background_blueness === 'number' ? d.background_blueness : 0.0,
           enable_privacy_shield: d.enable_privacy_shield !== false,
           ai_recommender_enabled: d.ai_recommender_enabled !== false,
           tutorial_buy_video_url: String(d.tutorial_buy_video_url || ""),
@@ -514,6 +523,9 @@ const AdminSettings = () => {
       bece_cost_price: parseFloat(settings.bece_cost_price) || 14.00,
       traditional_background_enabled: settings.traditional_background_enabled,
       background_custom_image_url: settings.background_custom_image_url,
+      background_brightness: Number(settings.background_brightness) || 1.0,
+      background_contrast: Number(settings.background_contrast) || 1.0,
+      background_blueness: Number(settings.background_blueness) || 0.0,
       enable_privacy_shield: settings.enable_privacy_shield,
       ai_recommender_enabled: settings.ai_recommender_enabled,
       tutorial_buy_video_url: (settings.tutorial_buy_video_url || "").trim(),
@@ -625,6 +637,40 @@ const AdminSettings = () => {
 
   const handleUpdateProvider = (id: string, updates: any) => {
     setProviders(providers.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    if (id.startsWith("new-")) {
+      setProviders(providers.filter(p => p.id !== id));
+      toast({ title: "Provider Removed", description: "Unsaved provider removed from list." });
+      return;
+    }
+
+    if (!confirm("Are you sure you want to permanently delete this provider? This will remove all associated packages.")) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("providers")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast({ title: "Provider Deleted", description: "Provider has been deleted successfully." });
+      setProviders(providers.filter(p => p.id !== id));
+    } catch (err: any) {
+      console.error("Error deleting provider:", err);
+      toast({ 
+        title: "Delete Failed", 
+        description: err.message || "Failed to delete provider from the database. It might have orders referencing it.", 
+        variant: "destructive" 
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveProviders = async () => {
@@ -1147,6 +1193,70 @@ const AdminSettings = () => {
                 <p className="text-xs text-muted-foreground">
                   Paste a link or upload directly. Providing an image will load a solid fixed background instead of drifting symbols.
                 </p>
+
+                {/* Background Filters */}
+                <div className="space-y-4 pt-4 border-t border-white/5">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    Background Image Style Filters
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    {/* Brightness */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-muted-foreground">Image Brightness</span>
+                        <span className="font-mono text-foreground">{Math.round((settings.background_brightness ?? 1.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.05"
+                        value={settings.background_brightness ?? 1.0}
+                        onChange={(e) => setSettings({ ...settings, background_brightness: parseFloat(e.target.value) })}
+                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Contrast */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-muted-foreground">Image Contrast</span>
+                        <span className="font-mono text-foreground">{Math.round((settings.background_contrast ?? 1.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.05"
+                        value={settings.background_contrast ?? 1.0}
+                        onChange={(e) => setSettings({ ...settings, background_contrast: parseFloat(e.target.value) })}
+                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Blueness / Blue Tint */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-muted-foreground">Blueness (Blue Tint overlay)</span>
+                        <span className="font-mono text-foreground">{Math.round((settings.background_blueness ?? 0.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="1.0"
+                        step="0.05"
+                        value={settings.background_blueness ?? 0.0}
+                        onChange={(e) => setSettings({ ...settings, background_blueness: parseFloat(e.target.value) })}
+                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Adjust visual filter effects. Applied globally to active preset patterns and custom background image uploads.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -2367,6 +2477,16 @@ const AdminSettings = () => {
                             checked={provider.is_active} 
                             onCheckedChange={(c) => handleUpdateProvider(provider.id, { is_active: c })}
                           />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-red-500/10"
+                            onClick={() => handleDeleteProvider(provider.id)}
+                            title="Delete Provider"
+                            disabled={saving}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
                       
@@ -2417,6 +2537,7 @@ const AdminSettings = () => {
                             <option value="datahub">DataHub Ghana</option>
                             <option value="superbdatafy">SuperbDatafy</option>
                             <option value="xcel">XCEL Payment API</option>
+                            <option value="qhowmenzconsult">QHowMenzConsult</option>
                           </select>
                         </div>
                         <div className="space-y-1">

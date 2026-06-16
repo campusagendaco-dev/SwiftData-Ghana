@@ -60,12 +60,11 @@ async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: stri
   return { apiKey, baseUrl: (baseUrl || "").replace(/\/+$/, "") };
 }
 
-// Maps network names to the keys the data provider API expects (must match wallet-buy-data)
 function mapDataNetworkKey(network: string): string {
   const n = (network || "").trim().toUpperCase();
   if (n === "AIRTELTIGO" || n === "AIRTEL TIGO" || n === "AIRTEL-TIGO" || n === "AT") return "AT_PREMIUM";
   if (n === "TELECEL" || n === "VODAFONE" || n === "VOD") return "TELECEL";
-  if (n === "MTN" || n === "YELLO") return "YELLO";
+  if (n === "MTN" || n === "YELLO" || n === "MTN MASH UP" || n === "MTN_MASH_UP" || n === "MTN MASHUP" || n === "MTN MASH-UP" || n === "MASHUP" || n === "MASH UP") return "YELLO";
   return n;
 }
 
@@ -111,8 +110,13 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   if (!clean) return [];
 
   const urls = new Set<string>();
+
+  if (clean.includes("superbdatafy") || clean.includes("qhowmenzconsult")) {
+    return [clean];
+  }
+
   const isDatamart = clean.includes("/api/developer") || clean.includes("datamartgh");
-  const endpointAliases = isDatamart || clean.includes("superbdatafy")
+  const endpointAliases = isDatamart
     ? (endpoint === "status" ? ["order-status"] : (endpoint === "purchase" ? ["purchase"] : [endpoint]))
     : (endpoint === "purchase" ? ["purchase", "order", "airtime", "buy", "data-purchase"] : [endpoint]);
 
@@ -388,19 +392,26 @@ async function callProviderApi(
         } else {
            reqUrl = `${url}/buy-data`;
         }
+      } else if (baseUrl.includes("qhowmenzconsult.com")) {
+        if (endpoint === "status") {
+           const ref = String(body.transaction_id || body.reference || body.order_id || "");
+           reqUrl = `${url}/orders/${ref}`;
+        } else {
+           reqUrl = `${url}/orders`;
+        }
       }
 
       try {
         const response = await fetch(reqUrl, {
-          method: (baseUrl.includes("superbdatafy.com") && endpoint === "status") ? "GET" : "POST",
+          method: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com")) && endpoint === "status") ? "GET" : "POST",
           headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Key": apiKey,
-            "Authorization": `Bearer ${apiKey}`,
+            ...(!baseUrl.includes("qhowmenzconsult.com") ? { "Authorization": `Bearer ${apiKey}` } : {}),
             "User-Agent": "DataHiveGH/1.0",
           },
-          body: (baseUrl.includes("superbdatafy.com") && endpoint === "status") ? undefined : JSON.stringify(baseRequestBody),
+          body: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com")) && endpoint === "status") ? undefined : JSON.stringify(baseRequestBody),
           signal: controller.signal,
         });
 
@@ -1549,8 +1560,33 @@ serve(async (req) => {
       });
     }
 
-    const baseUrlToLower = DATA_PROVIDER_BASE_URL.toLowerCase();
-    const handlerType = baseUrlToLower.includes("datamart") ? "datamart" : baseUrlToLower.includes("datahub") ? "datahub" : "standard";
+    // Resolve QHowMenzConsult package mapping if relevant
+    let resolvedPackageId = packageSize;
+    if (baseUrlToLower.includes("qhowmenzconsult")) {
+      try {
+        const { data: pkgMapping } = await supabaseAdmin
+          .from("provider_packages")
+          .select("external_id")
+          .eq("provider_id", primaryProvider.id)
+          .eq("network", network)
+          .eq("package_name", packageSize)
+          .maybeSingle();
+        if (pkgMapping?.external_id) {
+          resolvedPackageId = pkgMapping.external_id;
+        }
+      } catch (e) {
+        console.error("[qhowmenzconsult-webhook-resolve] Error:", e);
+      }
+    }
+
+    const handlerType = baseUrlToLower.includes("datamart") 
+      ? "datamart" 
+      : baseUrlToLower.includes("datahub") 
+      ? "datahub" 
+      : baseUrlToLower.includes("qhowmenzconsult")
+      ? "qhowmenzconsult"
+      : "standard";
+
     const networkKey = handlerType === "datamart" 
       ? (network.toUpperCase() === "MTN" ? "YELLO" : (network.toUpperCase() === "TELECEL" ? "TELECEL" : "AT_PREMIUM"))
       : mapDataNetworkKey(network);
@@ -1572,6 +1608,19 @@ serve(async (req) => {
           networkKey,
           recipient: normalizeRecipient(customerPhone),
           capacity: String(parseCapacity(packageSize)),
+          reference: orderId,
+        }
+      : handlerType === "qhowmenzconsult"
+      ? {
+          network: networkKey === "YELLO" || networkKey.includes("MTN") 
+            ? "MTN" 
+            : (networkKey === "TELECEL" ? "Telecel" : "AirtelTigo"),
+          recipient: normalizeRecipient(customerPhone),
+          plan_id: resolvedPackageId,
+          package_id: resolvedPackageId,
+          product_id: resolvedPackageId,
+          external_id: resolvedPackageId,
+          amount: Number(existingOrder?.amount || verifiedAmount),
           reference: orderId,
         }
       : {

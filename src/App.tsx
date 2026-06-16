@@ -67,6 +67,7 @@ const DashboardLeaderboard = lazy(() => import("./pages/DashboardLeaderboard"));
 const AdminOverview = lazy(() => import("./pages/AdminOverview"));
 const AdminAgents = lazy(() => import("./pages/AdminAgents"));
 const AdminOrders = lazy(() => import("./pages/AdminOrders"));
+const AdminMashUpOrders = lazy(() => import("./pages/AdminMashUpOrders"));
 const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const AdminWithdrawals = lazy(() => import("./pages/AdminWithdrawals"));
 const AdminNotificationsPage = lazy(() => import("./pages/AdminNotificationsPage"));
@@ -401,6 +402,7 @@ const AppContent = () => {
           <Route path="notifications" element={<DashboardNotifications />} />
           <Route path="buy-data" element={<Navigate to="/dashboard/buy-data/mtn" replace />} />
           <Route path="buy-data/mtn" element={<DashboardBuyDataNetwork network="MTN" />} />
+          <Route path="buy-data/mtn-mash-up" element={<DashboardBuyDataNetwork network="MTN Mash Up" />} />
           <Route path="buy-data/telecel" element={<DashboardBuyDataNetwork network="Telecel" />} />
           <Route path="buy-data/airteltigo" element={<DashboardBuyDataNetwork network="AirtelTigo" />} />
           <Route path="buy-airtime" element={<DashboardBuyAirtime />} />
@@ -447,6 +449,7 @@ const AppContent = () => {
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />
           <Route path="orders" element={<AdminOrders />} />
+          <Route path="mashup-orders" element={<AdminMashUpOrders />} />
           <Route path="api-orders" element={<AdminAPIOrders />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="reconciliation" element={<AdminReconciliation />} />

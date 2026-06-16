@@ -17,6 +17,9 @@ export const basePackages: Record<string, { size: string; price: number; validit
     { size: "50GB", price: 199.3, validity: "Non-expiry" },
     { size: "100GB", price: 385.0, validity: "Non-expiry" },
   ],
+  "MTN Mash Up": [
+    { size: "4GB", price: 17.00, validity: "MTN Mash Up", popular: true },
+  ],
   Telecel: [
     { size: "5GB", price: 23.0, validity: "Non-expiry" },
     { size: "10GB", price: 41.8, validity: "Non-expiry", popular: true },
@@ -52,6 +55,7 @@ export function getPublicPrice(basePrice: number): number {
 
 export const networks = [
   { name: "MTN", color: "#FFCC00" },
+  { name: "MTN Mash Up", color: "#FFB300" },
   { name: "Telecel", color: "#E60000" },
   { name: "AirtelTigo", color: "#2196F3" },
 ];

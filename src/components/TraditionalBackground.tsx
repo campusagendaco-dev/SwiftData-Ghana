@@ -29,6 +29,9 @@ const SLIDESHOW_BACKGROUNDS = [
 export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opacity-[0.15] dark:opacity-[0.25]" }: { className?: string }) => {
   const [enabled, setEnabled] = useState(true);
   const [customBgUrl, setCustomBgUrl] = useState<string | null>(null);
+  const [brightness, setBrightness] = useState(1.0);
+  const [contrast, setContrast] = useState(1.0);
+  const [blueness, setBlueness] = useState(0.0);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -36,12 +39,15 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
       try {
         const { data } = await supabase
           .from("public_system_settings")
-          .select("traditional_background_enabled, background_custom_image_url")
+          .select("*")
           .maybeSingle();
         
         if (data) {
           setEnabled(data.traditional_background_enabled !== false);
           setCustomBgUrl(data.background_custom_image_url || null);
+          setBrightness(typeof data.background_brightness === 'number' ? data.background_brightness : 1.0);
+          setContrast(typeof data.background_contrast === 'number' ? data.background_contrast : 1.0);
+          setBlueness(typeof data.background_blueness === 'number' ? data.background_blueness : 0.0);
         }
       } catch (e) {
         console.error("Failed to load dynamic background settings:", e);
@@ -65,6 +71,15 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
             }
             if ("background_custom_image_url" in updated) {
               setCustomBgUrl(updated.background_custom_image_url || null);
+            }
+            if ("background_brightness" in updated) {
+              setBrightness(typeof updated.background_brightness === 'number' ? updated.background_brightness : 1.0);
+            }
+            if ("background_contrast" in updated) {
+              setContrast(typeof updated.background_contrast === 'number' ? updated.background_contrast : 1.0);
+            }
+            if ("background_blueness" in updated) {
+              setBlueness(typeof updated.background_blueness === 'number' ? updated.background_blueness : 0.0);
             }
           }
         }
@@ -132,7 +147,12 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
       .replace(/dark:opacity-\d+/g, "") + " opacity-[0.6] dark:opacity-[0.8]";
 
     return (
-      <div className={`${cleanClassName} ${baseClasses}`}>
+      <div 
+        className={`${cleanClassName} ${baseClasses}`}
+        style={{
+          filter: `brightness(${brightness}) contrast(${contrast})`
+        }}
+      >
         {isSlideshow ? (
           SLIDESHOW_BACKGROUNDS.map((bg, idx) => {
             const isActive = idx === bgIndex;
@@ -154,6 +174,12 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
             style={{ backgroundImage: `url(${customBgUrl})` }} 
           />
         )}
+
+        {/* Blue Tint Overlay */}
+        <div 
+          className="absolute inset-0 bg-blue-600 pointer-events-none transition-opacity duration-300"
+          style={{ mixBlendMode: "color", opacity: blueness, zIndex: 2 }}
+        />
       </div>
     );
   }

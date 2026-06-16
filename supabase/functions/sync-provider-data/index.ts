@@ -469,6 +469,93 @@ serve(async (req) => {
       }
 
       balance = provider.balance || 0;
+    } else if (handlerType === "qhowmenzconsult") {
+      console.log(`Syncing QHowMenzConsult provider: ${provider.name}`);
+
+      const cleanBase = baseUrl.trim().replace(/\/+$/, "");
+
+      // 1. Sync Packages
+      const productsUrl = `${cleanBase}/products`;
+      console.log(`[sync:qhowmenzconsult] Fetching products from: ${productsUrl}`);
+      const res = await fetch(productsUrl, {
+        headers: { "X-API-Key": apiKey, "Accept": "application/json" }
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        const rawData = result.products || result.data || result;
+        if (rawData && (Array.isArray(rawData) || typeof rawData === "object")) {
+          const allPackages = [];
+          const items = Array.isArray(rawData) ? rawData : Object.values(rawData).flat();
+
+          const parseCapacity = (packageSize: string): number => {
+            if (!packageSize) return 0;
+            const match = packageSize.toString().replace(/\s+/g, "").toLowerCase().match(/(\d+(?:\.\d+)?)\s*(gb|mb)/);
+            if (match) {
+              const val = parseFloat(match[1]);
+              const unit = match[2];
+              return unit === "gb" ? val : val / 1024;
+            }
+            const fallbackMatch = packageSize.toString().replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+            return fallbackMatch ? parseFloat(fallbackMatch[1]) : 0;
+          };
+
+          for (const pkg of items) {
+            if (!pkg) continue;
+
+            const rawNet = String(pkg.network || pkg.networkKey || pkg.provider || "MTN").toUpperCase();
+            let dbNetwork = "MTN";
+            if (rawNet.includes("MTN") || rawNet === "YELLO") dbNetwork = "MTN";
+            else if (rawNet.includes("TELECEL") || rawNet.includes("VODA")) dbNetwork = "Telecel";
+            else if (rawNet.includes("AIRTEL") || rawNet.includes("TIGO") || rawNet === "AT") dbNetwork = "AirtelTigo";
+            else dbNetwork = pkg.network || "MTN";
+
+            const capacityStr = pkg.name || pkg.package_name || pkg.capacity || "";
+            const capacityGb = Number(pkg.capacity_gb || pkg.size || parseCapacity(capacityStr));
+
+            allPackages.push({
+              provider_id: provider.id,
+              network: dbNetwork,
+              package_name: capacityStr || `${capacityGb}GB`,
+              capacity_gb: capacityGb,
+              cost_price: Number(pkg.price || pkg.amount || pkg.cost || 0),
+              external_id: String(pkg.id || pkg.product_id || pkg.package_id || pkg.external_id),
+              raw_data: pkg,
+              is_active: true
+            });
+          }
+
+          if (allPackages.length > 0) {
+            const { error: upsertError } = await supabaseAdmin
+              .from("provider_packages")
+              .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
+            if (upsertError) console.error("[sync:qhowmenzconsult] Package upsert error:", upsertError);
+            packagesSynced = allPackages.length;
+            console.log(`[sync:qhowmenzconsult] Synced ${packagesSynced} packages`);
+          }
+        }
+      } else {
+        const errorText = await res.text().catch(() => "");
+        console.error(`[sync:qhowmenzconsult] Failed to fetch products (HTTP ${res.status}):`, errorText);
+      }
+
+      // 2. Sync Balance
+      const balanceUrl = `${cleanBase}/balance`;
+      console.log(`[sync:qhowmenzconsult] Fetching balance from: ${balanceUrl}`);
+      const balanceRes = await fetch(balanceUrl, {
+        headers: { "X-API-Key": apiKey, "Accept": "application/json" }
+      });
+
+      if (balanceRes.ok) {
+        const bResult = await balanceRes.json();
+        const rawBal = bResult.balance ?? bResult.data?.balance ?? bResult.wallet_balance;
+        if (rawBal !== undefined) {
+          balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
+          console.log(`[sync:qhowmenzconsult] Balance: GHS ${balance}`);
+        }
+      } else {
+        console.warn(`[sync:qhowmenzconsult] Balance fetch failed: ${balanceRes.status}`);
+      }
     } else {
       throw new Error(`Sync not implemented for handler type: ${handlerType}`);
     }

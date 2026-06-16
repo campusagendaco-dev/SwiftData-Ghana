@@ -549,7 +549,7 @@ const DashboardWallet = () => {
                       <SelectValue placeholder="Select Network" />
                     </SelectTrigger>
                     <SelectContent className="bg-background border-border text-foreground">
-                      {networks.map((n) => (<SelectItem key={n.name} value={n.name}>{n.name}</SelectItem>))}
+                       {networks.map((n) => (<SelectItem key={n.name} value={n.name}>{n.name}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
