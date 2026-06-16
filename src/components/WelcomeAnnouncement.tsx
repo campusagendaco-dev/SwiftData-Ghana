@@ -80,7 +80,7 @@ const WelcomeAnnouncement = () => {
           <div className="relative z-10 p-8 md:p-10 flex flex-col items-center text-center">
             {/* Icon Header */}
             <div className="mb-6 relative">
-              <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center animate-bounce duration-[3000ms]">
+              <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center animate-bounce [animation-duration:3000ms]">
                 <Gift className="w-10 h-10 text-emerald-400" />
               </div>
               <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center shadow-lg border-2 border-[#0A0A0F]">

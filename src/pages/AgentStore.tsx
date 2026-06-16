@@ -885,15 +885,15 @@ const AgentStore = () => {
       {/* Dynamic Mesh Gradients */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-70">
         <div
-          className="absolute -top-[20%] -left-[10%] w-[70vw] h-[70vw] rounded-full mix-blend-screen blur-[120px] opacity-40 transition-colors duration-[1500ms]"
+          className="absolute -top-[20%] -left-[10%] w-[70vw] h-[70vw] rounded-full mix-blend-screen blur-[120px] opacity-40 transition-colors duration-1500"
           style={{ backgroundColor: accentColor }}
         />
         <div
-          className="absolute top-[30%] -right-[20%] w-[60vw] h-[60vw] rounded-full mix-blend-screen blur-[100px] opacity-30 transition-colors duration-[1500ms]"
+          className="absolute top-[30%] -right-[20%] w-[60vw] h-[60vw] rounded-full mix-blend-screen blur-[100px] opacity-30 transition-colors duration-1500"
           style={{ backgroundColor: netConf.color }}
         />
         <div
-          className="absolute -bottom-[10%] left-[20%] w-[80vw] h-[50vw] rounded-full mix-blend-screen blur-[120px] opacity-20 transition-colors duration-[1500ms]"
+          className="absolute -bottom-[10%] left-[20%] w-[80vw] h-[50vw] rounded-full mix-blend-screen blur-[120px] opacity-20 transition-colors duration-1500"
           style={{ backgroundColor: accentColor }}
         />
       </div>

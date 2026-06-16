@@ -159,7 +159,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
             return (
               <div
                 key={bg}
-                className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-[2000ms] ease-in-out"
+                className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-2000 ease-in-out"
                 style={{
                   backgroundImage: `url(${bg})`,
                   opacity: isActive ? 1 : 0,

@@ -127,6 +127,10 @@ export default {
         "spin-slow": "spin-slow 12s linear infinite",
         "badge-pop": "badge-pop 0.5s cubic-bezier(0.34,1.56,0.64,1) both",
       },
+      transitionDuration: {
+        '1500': '1500ms',
+        '2000': '2000ms',
+      },
     },
   },
   plugins: [tailwindcssAnimate],

@@ -310,9 +310,9 @@ const AdminLayout = () => {
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Deep Ambient Background Mesh */}
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-80">
-          <div className={`absolute top-0 right-0 w-[600px] h-[600px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-[2000ms] ${isDark ? "bg-indigo-500/10" : "bg-blue-400/5"}`} />
-          <div className={`absolute bottom-0 left-1/4 w-[500px] h-[500px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-[2000ms] ${isDark ? "bg-amber-500/10" : "bg-amber-400/5"}`} />
-          <div className={`absolute -top-1/4 left-1/3 w-[800px] h-[400px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-[2000ms] ${isDark ? "bg-emerald-500/5" : "bg-emerald-400/5"}`} />
+          <div className={`absolute top-0 right-0 w-[600px] h-[600px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-2000 ${isDark ? "bg-indigo-500/10" : "bg-blue-400/5"}`} />
+          <div className={`absolute bottom-0 left-1/4 w-[500px] h-[500px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-2000 ${isDark ? "bg-amber-500/10" : "bg-amber-400/5"}`} />
+          <div className={`absolute -top-1/4 left-1/3 w-[800px] h-[400px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-2000 ${isDark ? "bg-emerald-500/5" : "bg-emerald-400/5"}`} />
         </div>
 
         {/* Top bar - FLOATING ISLAND */}
