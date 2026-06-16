@@ -40,7 +40,7 @@ interface DisplayStatus {
   spinning?: boolean;
 }
 
-function getDisplayStatus(status: string, orderType?: string): DisplayStatus {
+function getDisplayStatus(status: string, orderType?: string, network?: string | null): DisplayStatus {
   switch (status) {
     case "fulfilled":
       return {
@@ -75,6 +75,27 @@ function getDisplayStatus(status: string, orderType?: string): DisplayStatus {
         spinning: true,
       };
     case "pending":
+      if (network === "MTN Mash Up") {
+        return {
+          label: "Paid & Processing",
+          shortLabel: "Processing",
+          icon: Loader2,
+          dot: "bg-blue-500",
+          badge: "bg-blue-500/10 border-blue-500/25 text-blue-600 dark:text-blue-400",
+          text: "text-blue-600 dark:text-blue-400",
+          spinning: true,
+        };
+      }
+      return {
+        label: "Awaiting Checkout",
+        shortLabel: "Verifying...",
+        icon: Loader2,
+        dot: "bg-amber-400",
+        badge: "bg-amber-400/10 border-amber-400/25 text-amber-600 dark:text-amber-400",
+        text: "text-amber-600 dark:text-amber-400",
+        spinning: true,
+      };
+    case "awaiting_payment":
       return {
         label: "Awaiting Checkout",
         shortLabel: "Verifying...",
@@ -140,7 +161,7 @@ const DashboardOrders = () => {
       .from("orders")
       .select("*", { count: "exact" })
       .in("agent_id", candidateAgentIds)
-      .in("status", ["pending", "paid", "processing", "fulfilled", "fulfillment_failed"])
+      .in("status", ["pending", "paid", "processing", "fulfilled", "fulfillment_failed", "awaiting_payment"])
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -484,7 +505,7 @@ const DashboardOrders = () => {
         ) : (
           <div className="p-5 space-y-2.5">
               {orders.map((order) => {
-                const ds = getDisplayStatus(order.status, order.order_type);
+                const ds = getDisplayStatus(order.status, order.order_type, order.network);
                 const nc = networkColors[order.network || ""] || { bg: "bg-secondary", text: "text-foreground" };
                 const { date, time } = fmt(order.created_at);
                 const isWalletTopup = order.order_type === "wallet_topup";
@@ -510,7 +531,9 @@ const DashboardOrders = () => {
                   },
                 ];
 
-              const isStuck = ["pending", "paid", "processing", "fulfillment_failed"].includes(order.status);
+              const isStuck = (order.status === "pending" && order.network === "MTN Mash Up") 
+                ? false 
+                : ["pending", "paid", "processing", "fulfillment_failed", "awaiting_payment"].includes(order.status);
               const isRetrying = retryingIds.has(order.id);
               const retryCount = retryCountRef.current[order.id] ?? 0;
 

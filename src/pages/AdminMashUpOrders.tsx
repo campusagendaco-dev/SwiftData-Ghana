@@ -53,6 +53,7 @@ interface AgentProfile {
 }
 
 const STATUS_COLORS: Record<string, string> = {
+  awaiting_payment: "bg-yellow-500/10 text-yellow-500/80 border-yellow-500/20",
   pending: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   paid: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   processing: "bg-sky-500/20 text-sky-400 border-sky-500/30",
@@ -392,45 +393,76 @@ const AdminMashUpOrders = () => {
     }
   };
 
-  const handleExportCSV = () => {
-    if (allOrders.length === 0) {
-      toast({ title: "No orders to export", variant: "destructive" });
-      return;
-    }
-    const headers = [
-      "Order ID", "Date", "Type", "Network", "Size/Details", 
-      "Recipient Phone", "Customer Name", "Agent Name", "Agent Email",
-      "Amount (GHS)", "Profit", "Status", "Failure Reason"
-    ];
-    const csvContent = [
-      headers.join(","),
-      ...allOrders.map(o => [
-        o.id,
-        new Date(o.created_at).toLocaleString(),
-        o.order_type,
-        o.network || "N/A",
-        o.package_size || "N/A",
-        o.customer_phone || "N/A",
-        o.customer_name || "Guest",
-        o.agent_name || "N/A",
-        o.agent_email || "N/A",
-        o.amount,
-        o.profit,
-        o.status,
-        o.failure_reason || "None"
-      ].map(val => JSON.stringify(val ?? "")).join(","))
-    ].join("\n");
+  const handleExportCSV = async () => {
+    try {
+      const { data: pendingOrders, error: fetchErr } = await supabase
+        .from("orders")
+        .select("id, customer_phone, package_size")
+        .eq("network", "MTN Mash Up")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `mashup_orders_export_${new Date().toISOString().split("T")[0]}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast({ title: "Export Complete", description: `Exported ${allOrders.length} Mash Up orders to CSV.` });
+      if (fetchErr) throw fetchErr;
+
+      if (!pendingOrders || pendingOrders.length === 0) {
+        toast({ 
+          title: "No orders to export", 
+          description: "There are no MTN Mash Up orders with 'pending' status to export.", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      const headers = ["Recipient Phone", "Size"];
+      const csvContent = [
+        headers.join(","),
+        ...pendingOrders.map(o => [
+          o.customer_phone || "N/A",
+          o.package_size || "N/A"
+        ].map(val => JSON.stringify(val ?? "")).join(","))
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `mashup_orders_export_${new Date().toISOString().split("T")[0]}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      const exportedIds = pendingOrders.map((o: any) => o.id);
+      const { error: updateErr } = await supabase
+        .from("orders")
+        .update({ 
+          status: "processing",
+          updated_at: new Date().toISOString()
+        })
+        .in("id", exportedIds);
+
+      if (updateErr) {
+        console.error("Failed to update exported orders status:", updateErr);
+        toast({ 
+          title: "Export completed with errors", 
+          description: "Orders were exported, but failed to update status to 'processing' in database.", 
+          variant: "destructive" 
+        });
+      } else {
+        toast({ 
+          title: "Export Complete", 
+          description: `Exported ${pendingOrders.length} MTN Mash Up orders to CSV and updated status to processing.` 
+        });
+      }
+
+      await fetchOrders();
+    } catch (e: any) {
+      toast({ 
+        title: "Export failed", 
+        description: e.message || "An error occurred during export.", 
+        variant: "destructive" 
+      });
+    }
   };
 
   // Client-side filtering
@@ -489,11 +521,9 @@ const AdminMashUpOrders = () => {
           <Button variant="outline" size="sm" className="gap-2" onClick={fetchOrders}>
             <RefreshCw className="w-4 h-4" /> Refresh
           </Button>
-          {allApisOff && (
-            <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={handleExportCSV} disabled={allOrders.length === 0}>
-              <Download className="w-4 h-4" /> Export CSV
-            </Button>
-          )}
+          <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={handleExportCSV}>
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
           <Button
             size="sm"
             className="gap-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20"
@@ -578,10 +608,11 @@ const AdminMashUpOrders = () => {
           className="text-xs bg-secondary/50 border border-input rounded-lg px-3 py-2 text-foreground outline-none"
         >
           <option value="all">All Statuses</option>
+          <option value="awaiting_payment">Awaiting Payment</option>
+          <option value="pending">Pending Export</option>
+          <option value="processing">Processing</option>
           <option value="fulfilled">Fulfilled</option>
-          <option value="paid">Paid (pending)</option>
           <option value="fulfillment_failed">Failed</option>
-          <option value="pending">Pending</option>
         </select>
 
         <select
@@ -760,7 +791,9 @@ const AdminMashUpOrders = () => {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <Badge className={`text-[10px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"}`}>
-                      {order.status === "pending" ? "Awaiting Checkout" : order.status.replace(/_/g, " ")}
+                      {order.status === "awaiting_payment" ? "Awaiting Payment" : 
+                       order.status === "pending" ? "Pending Export" : 
+                       order.status.replace(/_/g, " ")}
                     </Badge>
                     {order.failure_reason && (
                       <p className="text-[10px] text-red-400 mt-0.5 max-w-[120px] truncate mx-auto" title={order.failure_reason}>
@@ -797,7 +830,9 @@ const AdminMashUpOrders = () => {
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-bold text-muted-foreground">{new Date(order.created_at).toLocaleDateString()}</span>
                   <Badge className={`text-[9px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"}`}>
-                    {order.status.replace(/_/g, " ")}
+                    {order.status === "awaiting_payment" ? "Awaiting Payment" : 
+                     order.status === "pending" ? "Pending Export" : 
+                     order.status.replace(/_/g, " ")}
                   </Badge>
                 </div>
                 <p className="font-bold text-foreground text-sm">{order.agent_name}</p>

@@ -1076,11 +1076,12 @@ serve(async (req) => {
       });
     }
 
-    const claimableStatuses = ["pending", "paid", "fulfillment_failed"];
+    const targetStatus = (existingOrder?.network === "MTN Mash Up") ? "pending" : "processing";
+    const claimableStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment"];
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({
-        status: "processing",
+        status: targetStatus,
         failure_reason: null,
         paystack_verified_amount: verifiedAmount,
         paystack_fee: paystackFeeOnVerified,
@@ -1095,7 +1096,7 @@ serve(async (req) => {
     }
 
     if (claimedOrder) {
-      await notifyApiClient(supabaseAdmin, orderId, "processing");
+      await notifyApiClient(supabaseAdmin, orderId, claimedOrder.status);
     }
 
     if (!claimedOrder) {
@@ -1369,6 +1370,14 @@ serve(async (req) => {
       });
     }
 
+    if (existingOrder?.network === "MTN Mash Up") {
+      console.log(`[Webhook] MTN Mash Up order ${orderId} received. Set status to 'pending' for manual export by admin.`);
+      return new Response(JSON.stringify({ received: true, fulfilled: false, status: "pending", message: "MTN Mash Up order queued for manual processing" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Spendless override for AFA orders
     let isSpendlessAfaResolved = false;
     if (orderType === "afa") {
@@ -1430,6 +1439,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const baseUrlToLower = DATA_PROVIDER_BASE_URL.toLowerCase();
 
     if (orderType === "afa") {
       const customerPhone = typeof existingOrder?.customer_phone === "string"

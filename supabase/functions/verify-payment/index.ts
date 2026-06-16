@@ -902,17 +902,17 @@ serve(async (req) => {
     const now = Date.now();
     const oneMinuteAgo = new Date(now - 60000).toISOString();
     
-    // Attempt to claim the order for processing
+    const targetStatus = (existingOrder?.network === "MTN Mash Up") ? "pending" : "processing";
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({ 
-        status: "processing", 
+        status: targetStatus, 
         paystack_verified_amount: verifiedAmount,
         paystack_fee: paystackFeeOnVerified,
         updated_at: new Date().toISOString()
       })
       .eq("id", targetReference)
-      .in("status", ["pending", "paid", "fulfillment_failed", "processing"])
+      .in("status", ["pending", "paid", "fulfillment_failed", "processing", "awaiting_payment"])
       .select("*")
       .maybeSingle();
 
@@ -932,6 +932,14 @@ serve(async (req) => {
         status: refreshed?.status || "processing",
         message: "Order is being handled",
         provider_order_id: refreshed?.provider_order_id
+      }), { headers: corsHeaders });
+    }
+
+    if (claimedOrder?.network === "MTN Mash Up") {
+      console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. Set status as 'pending' for manual export.`);
+      return new Response(JSON.stringify({
+        status: "pending",
+        message: "MTN Mash Up order queued for manual processing"
       }), { headers: corsHeaders });
     }
 

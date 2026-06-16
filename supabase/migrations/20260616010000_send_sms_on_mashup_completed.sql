@@ -8,8 +8,10 @@ DECLARE
   v_message TEXT;
   v_payload JSONB;
 BEGIN
-  -- Trigger ONLY when status changes to 'completed' and network is 'MTN Mash Up'
-  IF NEW.status = 'completed' AND COALESCE(OLD.status, 'none') <> 'completed' AND NEW.network = 'MTN Mash Up' THEN
+  -- Trigger when status changes to 'completed' or 'fulfilled' and network is 'MTN Mash Up'
+  IF (NEW.status = 'completed' OR NEW.status = 'fulfilled') 
+     AND (COALESCE(OLD.status, 'none') NOT IN ('completed', 'fulfilled')) 
+     AND NEW.network = 'MTN Mash Up' THEN
      
      -- 1. Normalize recipient phone
      v_normalized_phone := public.normalize_phone_sql(NEW.customer_phone);

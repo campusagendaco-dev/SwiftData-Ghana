@@ -737,7 +737,7 @@ serve(async (req: Request) => {
         cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
         profit: normalizedProfit,
         parent_profit: normalizedParentProfit,
-        status: "pending",
+        status: (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending",
         metadata: enrichedMetadata,
       };
       if (resolvedParentAgentId) orderRow.parent_agent_id = resolvedParentAgentId;
@@ -807,6 +807,8 @@ serve(async (req: Request) => {
           patch.profit = parseFloat(metadataProfit.toFixed(2));
         }
       }
+
+      patch.status = (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending";
 
       if (Object.keys(patch).length > 0) {
         await supabaseAdmin.from("orders").update(patch).eq("id", reference);

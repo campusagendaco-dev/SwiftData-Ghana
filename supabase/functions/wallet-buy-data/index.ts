@@ -348,7 +348,7 @@ serve(async (req: Request) => {
       profit: agentProfit,
       parent_agent_id: parentAgentId,
       parent_profit: parentProfit,
-      status: "paid"
+      status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid"
     });
 
     if (insertError) {
@@ -393,7 +393,7 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ 
       success: true, 
       order_id: orderId, 
-      status: "paid" 
+      status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid"
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

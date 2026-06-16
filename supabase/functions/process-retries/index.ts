@@ -161,6 +161,7 @@ serve(async (req: Request) => {
       .from("orders")
       .select("*")
       .eq("status", "pending")
+      .neq("network", "MTN Mash Up")
       .gte("created_at", yesterday)
       .limit(10);
 
@@ -182,6 +183,7 @@ serve(async (req: Request) => {
       .from("orders")
       .select("*")
       .in("status", ["paid", "processing"])
+      .neq("network", "MTN Mash Up")
       .gte("created_at", yesterday)
       .lt("retry_count", 3)
       .or(`last_retry_at.is.null,last_retry_at.lt.${twoMinutesAgo}`)
