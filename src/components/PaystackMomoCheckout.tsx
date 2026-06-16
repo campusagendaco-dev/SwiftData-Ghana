@@ -4,6 +4,7 @@ import { X, Loader2, KeyRound, AlertTriangle, ShieldCheck, RefreshCw, CheckCircl
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 interface PaystackMomoCheckoutProps {
   isOpen: boolean;
@@ -67,9 +68,14 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       setIsVerifyingName(true);
       try {
         let bankCode = "";
-        if (paymentNetwork === "MTN") bankCode = "MTN";
+        if (paymentNetwork === "MTN" || paymentNetwork === "MTN Mash Up") bankCode = "MTN";
         else if (paymentNetwork === "Telecel") bankCode = "VOD";
         else if (paymentNetwork === "AirtelTigo") bankCode = "ATL";
+
+        if (!bankCode) {
+          setIsVerifyingName(false);
+          return;
+        }
 
         let formattedPhone = resolvePhone;
         if (formattedPhone.startsWith("233") && formattedPhone.length === 12) {
@@ -227,7 +233,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     try {
       // 1. Verify the MoMo number via Paystack
       let bankCode = "";
-      if (paymentNetwork === "MTN") bankCode = "MTN";
+      if (paymentNetwork === "MTN" || paymentNetwork === "MTN Mash Up") bankCode = "MTN";
       else if (paymentNetwork === "Telecel") bankCode = "VOD";
       else if (paymentNetwork === "AirtelTigo") bankCode = "ATL";
 
@@ -292,7 +298,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       }
     } catch (err: any) {
       console.error("Direct payment initiation error:", err);
-      const msg = err.message || "Failed to trigger direct MoMo prompt";
+      const msg = await getFunctionErrorMessage(err, "Failed to trigger direct MoMo prompt");
       setErrorMessage(msg);
       setStep('payment_number');
       onFailure(msg);
