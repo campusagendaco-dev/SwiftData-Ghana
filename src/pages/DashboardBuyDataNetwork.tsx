@@ -137,17 +137,20 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   // Auto-detect network and switch tabs
   useEffect(() => {
     const detected = detectNetwork(phone);
-    if (detected && detected !== network) {
-      const route = networkRouteMap[detected];
-      navigate(`/dashboard/buy-data/${route}`, { 
-        replace: true, 
-        state: { phone } 
-      });
-      toast({ 
-        title: `Switched to ${detected}`, 
-        description: `We detected an ${detected} number and updated the bundles for you.`,
-        duration: 2000
-      });
+    if (detected) {
+      const isMtnMashupCompatible = detected === "MTN" && network === "MTN Mash Up";
+      if (detected !== network && !isMtnMashupCompatible) {
+        const route = networkRouteMap[detected];
+        navigate(`/dashboard/buy-data/${route}`, { 
+          replace: true, 
+          state: { phone } 
+        });
+        toast({ 
+          title: `Switched to ${detected}`, 
+          description: `We detected an ${detected} number and updated the bundles for you.`,
+          duration: 2000
+        });
+      }
     }
   }, [phone, network, navigate, toast]);
 
