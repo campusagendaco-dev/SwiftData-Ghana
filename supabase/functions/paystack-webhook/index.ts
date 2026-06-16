@@ -1011,6 +1011,26 @@ serve(async (req) => {
       await sendPaymentSms(supabaseAdmin, smsPhone, "payment_success", {}, existingOrder?.agent_id);
     }
 
+    if (existingOrder?.network === "MTN Mash Up" && existingOrder?.agent_id) {
+      try {
+        const { data: agentProfile } = await supabaseAdmin
+          .from("profiles")
+          .select("phone")
+          .eq("user_id", existingOrder.agent_id)
+          .maybeSingle();
+
+        if (agentProfile?.phone) {
+          const smsConfig = await getSmsConfig(supabaseAdmin, existingOrder.agent_id);
+          if (smsConfig.apiKey) {
+            const agentMsg = `Your MTN Mash Up order has been received and processed. Please note that this package might take up to 1 hour or might be instant.`;
+            await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, agentProfile.phone, agentMsg, "mashup_agent_alert", existingOrder.agent_id);
+          }
+        }
+      } catch (err) {
+        console.error("Error sending Mash Up agent notification in paystack-webhook:", err);
+      }
+    }
+
     // Declare orderType BEFORE first use to avoid temporal dead zone crash
     const orderType = (existingOrder?.order_type || orderTypeFromMetadata || "data") as string;
     const existingAmount = Number(existingOrder?.amount || 0);

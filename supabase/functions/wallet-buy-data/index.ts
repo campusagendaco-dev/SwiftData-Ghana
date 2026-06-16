@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
 };
 
-import { sendPaymentSms } from "../_shared/sms.ts";
+import { sendPaymentSms, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
 import { log } from "../_shared/logger.ts";
 
 // --- HELPERS ---
@@ -93,7 +93,7 @@ serve(async (req: Request) => {
 
     // Fetch agent profile and package info in parallel for profit calculation
     const [profileResult, pkgResult] = await Promise.all([
-      supabaseAdmin.from("profiles").select("is_sub_agent, parent_agent_id, credit_enabled, credit_limit, credit_used").eq("user_id", user.id).maybeSingle(),
+      supabaseAdmin.from("profiles").select("phone, is_sub_agent, parent_agent_id, credit_enabled, credit_limit, credit_used").eq("user_id", user.id).maybeSingle(),
       supabaseAdmin.from("global_package_settings").select("package_size, agent_price, cost_price, is_unavailable").eq("network", normalizedNet),
     ]);
 
@@ -369,6 +369,15 @@ serve(async (req: Request) => {
       package: package_size || "Data Bundle",
       amount: amountNum
     }, user.id).catch(e => console.error("[SMS-ERROR]", e));
+
+    if (normalizedNet === "MTN Mash Up" && agentProfile?.phone) {
+      getSmsConfig(supabaseAdmin, user.id).then(async (smsConfig) => {
+        if (smsConfig.apiKey) {
+          const agentMsg = `Your MTN Mash Up order has been received and processed. Please note that this package might take up to 1 hour or might be instant.`;
+          await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, agentProfile.phone, agentMsg, "mashup_agent_alert", user.id);
+        }
+      }).catch(e => console.error("[MASHUP-AGENT-SMS-ERROR]", e));
+    }
 
     // 4. AUTO-BRIDGE CHECK (NON-BLOCKING)
     if (agentProfile?.is_sub_agent) {
