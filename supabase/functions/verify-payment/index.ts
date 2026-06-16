@@ -709,6 +709,9 @@ serve(async (req) => {
 
     // --- 1.2. AGE CHECK FALLBACK ---
     if (existingOrder && existingOrder.status === "processing") {
+      if (existingOrder.network === "MTN Mash Up") {
+        return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
+      }
       const isQueuedError = /queued/i.test(String(existingOrder.failure_reason || ""));
       const orderCreatedAt = new Date(existingOrder.created_at).getTime();
       const ageInMinutes = (Date.now() - orderCreatedAt) / 60000;

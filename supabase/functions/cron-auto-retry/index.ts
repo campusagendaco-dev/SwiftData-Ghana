@@ -15,6 +15,7 @@ serve(async (_req) => {
     .from("orders")
     .select("id, network, package_size, customer_phone, amount, order_type")
     .eq("status", "processing")
+    .neq("network", "MTN Mash Up")
     .is("provider_order_id", null)
     .lt("updated_at", fifteenMinutesAgo)
     .in("order_type", ["data", "airtime"])

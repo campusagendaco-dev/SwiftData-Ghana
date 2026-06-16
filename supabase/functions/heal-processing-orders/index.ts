@@ -78,6 +78,7 @@ serve(async (req) => {
       .from("orders")
       .select("id, network, package_size, customer_phone, amount, agent_id, profit, parent_profit, provider_order_id, order_type, created_at")
       .eq("status", "processing")
+      .neq("network", "MTN Mash Up")
       .in("order_type", ["data", "airtime"])
       .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
       .order("created_at", { ascending: true })
