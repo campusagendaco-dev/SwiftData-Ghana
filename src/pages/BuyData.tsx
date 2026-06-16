@@ -228,7 +228,7 @@ const BuyData = () => {
       }
     });
 
-    return list
+    const mapped = list
       .map((pkg) => {
         const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
         const gs = globalSettings[`${selectedNetwork}-${normSize}`];
@@ -238,6 +238,9 @@ const BuyData = () => {
         return { ...pkg, price: applyPriceMultiplier(base, multiplier) };
       })
       .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean }[];
+
+    mapped.sort((a, b) => a.price - b.price);
+    return mapped;
   }, [basePackages, selectedNetwork, globalSettings, priceMultipliers]);
 
   // Apply promo discount to price

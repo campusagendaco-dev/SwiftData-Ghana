@@ -270,6 +270,7 @@ const DashboardPricing = () => {
         });
       }
     }
+    list.sort((a, b) => a.price - b.price);
     return list;
   }, [basePackages, selectedNetwork, packageBasePrices]);
 

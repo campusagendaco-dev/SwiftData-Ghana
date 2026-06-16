@@ -1034,6 +1034,14 @@ const AdminPackages = () => {
                       }
                     });
 
+                    baseList.sort((a, b) => {
+                      const sA = getSetting(n.name, a.size);
+                      const sB = getSetting(n.name, b.size);
+                      const priceA = sA.cost_price ?? a.price;
+                      const priceB = sB.cost_price ?? b.price;
+                      return priceA - priceB;
+                    });
+
                     return baseList.map((pkg) => {
                       const s = getSetting(n.name, pkg.size);
                       const isCustom = !baseSizes.has(pkg.size.replace(/\s+/g, "").toUpperCase());

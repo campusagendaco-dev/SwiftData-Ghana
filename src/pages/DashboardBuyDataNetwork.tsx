@@ -206,7 +206,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       }
     });
 
-    return list
+    const mapped = list
       .map((item) => {
         const setting = globalSettings.find(
           (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
@@ -250,6 +250,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         };
       })
       .filter((item) => !item.isUnavailable);
+
+    mapped.sort((a, b) => a.price - b.price);
+    return mapped;
   }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages]);
 
   const refreshBalance = async () => {
