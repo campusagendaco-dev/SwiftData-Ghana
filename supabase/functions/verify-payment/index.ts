@@ -116,7 +116,7 @@ function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string 
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult" || handlerType === "skdataplug") {
     return [clean];
   }
 
@@ -302,6 +302,33 @@ async function callProviderApi(
       reference: String(data.reference || data.order_id || ""),
     };
   }
+  if (handlerType === "skdataplug" && endpoint === "purchase") {
+    let providerNetwork = "MTN";
+    let gbSize = String(parseCapacity(String(data.package_size || data.plan || "")));
+
+    try {
+      const { data: pkgMapping } = await supabaseAdmin
+        .from("provider_packages")
+        .select("raw_data")
+        .eq("provider_id", provider.id)
+        .eq("network", data.networkRaw || data.network || "")
+        .eq("package_name", data.package_size || data.plan || "")
+        .maybeSingle();
+
+      if (pkgMapping?.raw_data) {
+        providerNetwork = pkgMapping.raw_data.network || providerNetwork;
+        gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
+      }
+    } catch (e) {
+      console.error("[skdataplug-payload-resolve] Error:", e);
+    }
+
+    payload = {
+      recipient: String(data.recipient || data.phoneNumber || ""),
+      network: providerNetwork,
+      gb_size: gbSize
+    };
+  }
   if (handlerType === "superbdatafy") {
     if (endpoint !== "status") {
       const network = String(data.networkRaw || data.network || "").toLowerCase();
@@ -419,6 +446,13 @@ async function callProviderApi(
     if (handlerType === "datamart" && endpoint === "status") {
       const ref = String(data.transaction_id || data.reference || "");
       url = `${url}/${ref}`;
+    } else if (handlerType === "skdataplug") {
+      if (endpoint === "status") {
+         const ref = String(data.transaction_id || data.reference || data.order_id || "");
+         url = `${url}/status/${ref}/`;
+      } else {
+         url = `${url}/order/`;
+      }
     } else if (handlerType === "superbdatafy") {
       if (endpoint === "status") {
          const ref = String(data.transaction_id || data.reference || data.order_id || "");
@@ -479,6 +513,8 @@ async function callProviderApi(
         if (handlerType === "xcel") {
           headers["x-api-key"] = apiKey;
           headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
+        } else if (handlerType === "skdataplug") {
+          headers["Authorization"] = `Bearer ${apiKey}`;
         } else if (handlerType !== "datamart" && handlerType !== "spendless" && handlerType !== "qhowmenzconsult") {
           headers["Authorization"] = `Bearer ${apiKey}`;
           headers["User-Agent"] = "SwiftDataGH/2.0";
@@ -487,7 +523,8 @@ async function callProviderApi(
         const isGet = (handlerType === "datamart" && endpoint === "status") || 
                       (handlerType === "superbdatafy" && endpoint === "status") || 
                       (handlerType === "xcel" && endpoint === "status") ||
-                      (handlerType === "qhowmenzconsult" && endpoint === "status");
+                      (handlerType === "qhowmenzconsult" && endpoint === "status") ||
+                      (handlerType === "skdataplug" && endpoint === "status");
 
         const res = await fetch(url, {
           method: isGet ? "GET" : "POST",
@@ -1155,6 +1192,18 @@ serve(async (req) => {
         return { network: netKey, phone: recipient, amount: claimedOrder.amount, package_size: packageSize, request_id: targetReference, order_type: currentOrderType };
       }
       if (ht === "qhowmenzconsult") {
+        return {
+          networkRaw: network,
+          networkKey: netKey,
+          recipient,
+          package_size: packageSize,
+          plan: packageSize,
+          amount: claimedOrder.amount,
+          reference: targetReference,
+          order_id: targetReference,
+        };
+      }
+      if (ht === "skdataplug") {
         return {
           networkRaw: network,
           networkKey: netKey,

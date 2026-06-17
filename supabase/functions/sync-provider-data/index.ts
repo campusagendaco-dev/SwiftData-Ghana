@@ -556,6 +556,67 @@ serve(async (req) => {
       } else {
         console.warn(`[sync:qhowmenzconsult] Balance fetch failed: ${balanceRes.status}`);
       }
+    } else if (handlerType === "skdataplug") {
+      console.log(`Syncing SKPlug provider: ${provider.name}`);
+
+      const bundlesUrl = `${baseUrl}/bundles/`;
+      console.log(`[sync:skdataplug] Fetching bundles from: ${bundlesUrl}`);
+      const bundlesRes = await fetch(bundlesUrl, {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Accept": "application/json"
+        }
+      });
+
+      if (bundlesRes.ok) {
+        const bundles = await bundlesRes.json();
+        const allPackages = [];
+
+        const networkMap: Record<string, string> = {
+          MTN: "MTN",
+          TELECEL: "Telecel",
+          AT_EXPIRY: "AirtelTigo",
+          AT_NOEXPIRY: "AirtelTigo"
+        };
+
+        for (const bundle of bundles) {
+          if (!bundle) continue;
+          
+          const rawNet = String(bundle.network).toUpperCase();
+          const dbNetwork = networkMap[rawNet] || rawNet;
+          
+          let pkgName = `${bundle.gb_size}GB`;
+          if (rawNet === "AT_EXPIRY") {
+            pkgName = `${bundle.gb_size}GB Expiry`;
+          }
+
+          allPackages.push({
+            provider_id: provider.id,
+            network: dbNetwork,
+            package_name: pkgName,
+            capacity_gb: Number(bundle.gb_size),
+            cost_price: 0,
+            external_id: String(bundle.id),
+            raw_data: bundle,
+            is_active: true
+          });
+        }
+
+        if (allPackages.length > 0) {
+          const { error: upsertError } = await supabaseAdmin
+            .from("provider_packages")
+            .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
+          if (upsertError) console.error("[sync:skdataplug] Package upsert error:", upsertError);
+          packagesSynced = allPackages.length;
+          console.log(`[sync:skdataplug] Synced ${packagesSynced} packages`);
+        }
+      } else {
+        const errText = await bundlesRes.text().catch(() => "");
+        console.error(`[sync:skdataplug] Bundles fetch failed (HTTP ${bundlesRes.status}):`, errText);
+        throw new Error(`SKPlug bundles fetch failed: HTTP ${bundlesRes.status}`);
+      }
+
+      balance = provider.balance || 0;
     } else {
       throw new Error(`Sync not implemented for handler type: ${handlerType}`);
     }

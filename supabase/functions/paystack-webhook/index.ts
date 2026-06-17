@@ -111,7 +111,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
 
   const urls = new Set<string>();
 
-  if (clean.includes("superbdatafy") || clean.includes("qhowmenzconsult")) {
+  if (clean.includes("superbdatafy") || clean.includes("qhowmenzconsult") || clean.includes("skdataplug")) {
     return [clean];
   }
 
@@ -385,7 +385,14 @@ async function callProviderApi(
       const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       let reqUrl = url;
-      if (baseUrl.includes("superbdatafy.com")) {
+      if (baseUrl.includes("skdataplug.com")) {
+        if (endpoint === "status") {
+           const ref = String(body.transaction_id || body.reference || body.order_id || "");
+           reqUrl = `${url}/status/${ref}/`;
+        } else {
+           reqUrl = `${url}/order/`;
+        }
+      } else if (baseUrl.includes("superbdatafy.com")) {
         if (endpoint === "status") {
            const ref = String(body.transaction_id || body.reference || body.order_id || "");
            reqUrl = `${url}/transaction/${ref}`;
@@ -403,7 +410,7 @@ async function callProviderApi(
 
       try {
         const response = await fetch(reqUrl, {
-          method: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com")) && endpoint === "status") ? "GET" : "POST",
+          method: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com") || baseUrl.includes("skdataplug.com")) && endpoint === "status") ? "GET" : "POST",
           headers: {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -411,7 +418,7 @@ async function callProviderApi(
             ...(!baseUrl.includes("qhowmenzconsult.com") ? { "Authorization": `Bearer ${apiKey}` } : {}),
             "User-Agent": "DataHiveGH/1.0",
           },
-          body: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com")) && endpoint === "status") ? undefined : JSON.stringify(baseRequestBody),
+          body: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com") || baseUrl.includes("skdataplug.com")) && endpoint === "status") ? undefined : JSON.stringify(baseRequestBody),
           signal: controller.signal,
         });
 
@@ -1610,12 +1617,35 @@ serve(async (req) => {
       }
     }
 
+    // Resolve SKPlug package mapping if relevant
+    let skPlugNetwork = "MTN";
+    let skPlugGbSize = String(parseCapacity(packageSize));
+    if (baseUrlToLower.includes("skdataplug")) {
+      try {
+        const { data: pkgMapping } = await supabaseAdmin
+          .from("provider_packages")
+          .select("raw_data")
+          .eq("provider_id", primaryProvider.id)
+          .eq("network", network)
+          .eq("package_name", packageSize)
+          .maybeSingle();
+        if (pkgMapping?.raw_data) {
+          skPlugNetwork = pkgMapping.raw_data.network || skPlugNetwork;
+          skPlugGbSize = String(pkgMapping.raw_data.gb_size || skPlugGbSize);
+        }
+      } catch (e) {
+        console.error("[skdataplug-webhook-resolve] Error:", e);
+      }
+    }
+
     const handlerType = baseUrlToLower.includes("datamart") 
       ? "datamart" 
       : baseUrlToLower.includes("datahub") 
       ? "datahub" 
       : baseUrlToLower.includes("qhowmenzconsult")
       ? "qhowmenzconsult"
+      : baseUrlToLower.includes("skdataplug")
+      ? "skdataplug"
       : "standard";
 
     const networkKey = handlerType === "datamart" 
@@ -1652,6 +1682,13 @@ serve(async (req) => {
           product_id: resolvedPackageId,
           external_id: resolvedPackageId,
           amount: Number(existingOrder?.amount || verifiedAmount),
+          reference: orderId,
+        }
+      : handlerType === "skdataplug"
+      ? {
+          recipient: normalizeRecipient(customerPhone),
+          network: skPlugNetwork,
+          gb_size: skPlugGbSize,
           reference: orderId,
         }
       : {

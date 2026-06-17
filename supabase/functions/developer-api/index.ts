@@ -46,7 +46,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "qhowmenzconsult") {
+  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "qhowmenzconsult" || handlerType === "skdataplug") {
     return [clean];
   }
 
@@ -117,6 +117,35 @@ async function callProviderApi(
 ): Promise<{ ok: boolean; reason: string; id?: string; body: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
   let payload = { ...data };
+  if (handlerType === "skdataplug" && endpoint === "purchase") {
+    let providerNetwork = "MTN";
+    let gbSize = String(parseCapacity(String(data.package_size || data.plan || "")));
+
+    if (supabaseAdmin) {
+      try {
+        const { data: pkgMapping } = await supabaseAdmin
+          .from("provider_packages")
+          .select("raw_data")
+          .eq("provider_id", provider.id)
+          .eq("network", data.networkRaw || data.network || "")
+          .eq("package_name", data.package_size || data.plan || "")
+          .maybeSingle();
+
+        if (pkgMapping?.raw_data) {
+          providerNetwork = pkgMapping.raw_data.network || providerNetwork;
+          gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
+        }
+      } catch (e) {
+        console.error("[skdataplug-payload-resolve] Error:", e);
+      }
+    }
+
+    payload = {
+      recipient: String(data.recipient || data.phoneNumber || ""),
+      network: providerNetwork,
+      gb_size: gbSize
+    };
+  }
   if (handlerType === "superbdatafy") {
     if (endpoint !== "status") {
       const network = String(data.networkRaw || data.network || "").toLowerCase();
@@ -210,10 +239,18 @@ async function callProviderApi(
 
         const isGet = (handlerType === "datamart" && endpoint === "status") || 
                       (handlerType === "superbdatafy" && endpoint === "status") ||
-                      (handlerType === "qhowmenzconsult" && endpoint === "status");
+                      (handlerType === "qhowmenzconsult" && endpoint === "status") ||
+                      (handlerType === "skdataplug" && endpoint === "status");
         
         let reqUrl = url;
-        if (handlerType === "superbdatafy") {
+        if (handlerType === "skdataplug") {
+          if (endpoint === "status") {
+             const ref = String(data.transaction_id || data.reference || data.order_id || "");
+             reqUrl = `${url}/status/${ref}/`;
+          } else {
+             reqUrl = `${url}/order/`;
+          }
+        } else if (handlerType === "superbdatafy") {
           if (endpoint === "status") {
              const ref = String(data.transaction_id || data.reference || data.order_id || "");
              reqUrl = `${url}/transaction/${ref}`;
