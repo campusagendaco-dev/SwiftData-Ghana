@@ -161,3 +161,7 @@ verify_jwt = false
 
 [functions.system-payout-v1]
 verify_jwt = false
+
+[functions.sync-football-matches]
+verify_jwt = false
+
