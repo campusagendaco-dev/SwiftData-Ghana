@@ -938,6 +938,71 @@ serve(async (req) => {
       }), { headers: corsHeaders });
     }
 
+    // Reverse any auto-refunds if the order was previously failed and refunded
+    if (claimedOrder.auto_refunded === true) {
+      console.log(`[verify-payment] Reversing auto-refund for order ${targetReference} to re-charge agent ${claimedOrder.agent_id}`);
+      
+      const { data: wallet, error: walletErr } = await supabaseAdmin
+        .from("wallets")
+        .select("balance, api_balance")
+        .eq("agent_id", claimedOrder.agent_id)
+        .maybeSingle();
+
+      if (walletErr) {
+        console.error("[verify-payment] Failed to fetch wallet for reversal:", walletErr);
+      } else {
+        if (claimedOrder.order_type === "api") {
+          const currentApi = Number(wallet?.api_balance || 0);
+          await supabaseAdmin
+            .from("wallets")
+            .update({
+              api_balance: currentApi - Number(claimedOrder.amount),
+              updated_at: new Date().toISOString()
+            })
+            .eq("agent_id", claimedOrder.agent_id);
+        } else {
+          const currentBal = Number(wallet?.balance || 0);
+          await supabaseAdmin
+            .from("wallets")
+            .update({
+              balance: currentBal - Number(claimedOrder.amount),
+              updated_at: new Date().toISOString()
+            })
+            .eq("agent_id", claimedOrder.agent_id);
+        }
+
+        // Clear the refund columns in orders table
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            auto_refunded: false,
+            refund_amount: 0,
+            refunded_at: null,
+            refund_reason: 'Refund reversed: order manually retried by admin.',
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", targetReference);
+
+        // Log the reversal
+        await supabaseAdmin
+          .from("system_logs")
+          .insert({
+            level: "info",
+            source: "system",
+            event: "wallet.deduction_reversal",
+            message: `Manually reversed refund and re-charged GHS ${claimedOrder.amount} for retried order`,
+            order_id: targetReference,
+            agent_id: claimedOrder.agent_id,
+            data: {
+              amount: claimedOrder.amount,
+              network: claimedOrder.network,
+              package_size: claimedOrder.package_size,
+              reason: "manual_retry_reversal"
+            }
+          });
+      }
+    }
+
     if (claimedOrder?.network === "MTN Mash Up") {
       console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. Set status as 'pending' for manual export.`);
       return new Response(JSON.stringify({
