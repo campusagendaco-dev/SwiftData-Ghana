@@ -40,17 +40,7 @@ const PromoCarousel = () => {
         if (error) throw error;
         
         const dbBanners = (data as unknown as PromoBanner[]) || [];
-        const localWcBanner: PromoBanner = {
-          id: "wc_promo_banner_static",
-          banner_type: "image",
-          image_url: "/assets/world_cup_promo.png",
-          content: "Predict outcomes and win SwiftPoints!",
-          background_color: "#061f10",
-          text_color: "#fbbf24",
-          target_url: "/dashboard",
-          title: "WORLD CUP PREDICTORS: Predict & Win SwiftPoints! 🏆"
-        };
-        setBanners([localWcBanner, ...dbBanners]);
+        setBanners(dbBanners);
       } catch (err) {
         console.error("Error fetching banners:", err);
       } finally {
