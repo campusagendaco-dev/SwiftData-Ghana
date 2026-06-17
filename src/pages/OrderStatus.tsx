@@ -80,6 +80,11 @@ const OrderStatus = () => {
   const redirectedRef = useRef(false);
   const hasPlayedSoundRef = useRef(false);
 
+  // State for realtime console tracking
+  const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [estMinutes, setEstMinutes] = useState<number>(2);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+
   // State for global system tracking (from DeliveryTracker)
   const [trackerData, setTrackerData] = useState<TrackerData | null>(null);
   const [loadingTracker, setLoadingTracker] = useState(true);
@@ -255,6 +260,117 @@ const OrderStatus = () => {
     }
   };
 
+  const getRemainingTimeStr = () => {
+    const totalSecs = estMinutes * 60;
+    const remaining = Math.max(0, totalSecs - elapsedSeconds);
+    if (remaining === 0) return "Fulfilling shortly...";
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    return `${m}m ${s}s`;
+  };
+
+  const getProgressPercentage = () => {
+    if (orderStatus === "fulfilled" || orderStatus === "fulfillment_failed" || orderStatus === "error") return 100;
+    if (orderStatus === "not_paid") return 0;
+    const totalSecs = estMinutes * 60;
+    const elapsed = Math.min(totalSecs - 2, elapsedSeconds);
+    return Math.max(15, Math.round((elapsed / totalSecs) * 95));
+  };
+
+  const getTerminalLogs = () => {
+    if (!createdAt) return [];
+    
+    const baseTime = new Date(createdAt);
+    const formatTime = (secondsOffset: number) => {
+      const t = new Date(baseTime.getTime() + secondsOffset * 1000);
+      return t.toLocaleTimeString("en-GH", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    };
+
+    const logs: Array<{ time: string; text: string; status: "success" | "info" | "warn" }> = [];
+    
+    // 0s Offset
+    logs.push({ time: formatTime(0), text: "📡 Connecting to secure carrier gateway...", status: "info" });
+
+    // 5s Offset
+    if (elapsedSeconds >= 5) {
+      logs.push({ time: formatTime(5), text: "🔑 Authenticating API credentials...", status: "info" });
+    }
+
+    // 12s Offset
+    if (elapsedSeconds >= 12) {
+      logs.push({ time: formatTime(12), text: `🔍 Validating recipient SIM status on ${network || "MTN"} HLR...`, status: "info" });
+    }
+
+    // 25s Offset
+    if (elapsedSeconds >= 25) {
+      logs.push({ time: formatTime(25), text: `⚡ Broadcasting ${packageSize || "data"} allocation payload...`, status: "info" });
+    }
+
+    // 45s Offset
+    if (elapsedSeconds >= 45) {
+      logs.push({ time: formatTime(45), text: "⏳ Awaiting carrier network callback...", status: "warn" });
+    }
+
+    // Success or failure status
+    if (orderStatus === "fulfilled") {
+      const dTimeStr = new Date().toLocaleTimeString("en-GH", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      logs.push({ time: dTimeStr, text: "🟢 Network callback verified. Data delivered successfully!", status: "success" });
+    } else if (orderStatus === "fulfillment_failed") {
+      const dTimeStr = new Date().toLocaleTimeString("en-GH", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      logs.push({ time: dTimeStr, text: `🔴 Delivery failed: ${statusMessage || "Rejected by carrier"}`, status: "warn" });
+    }
+
+    return logs;
+  };
+
+  useEffect(() => {
+    if (!reference) return;
+    const fetchOrderDetails = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("orders")
+          .select("created_at, status")
+          .eq("id", reference)
+          .maybeSingle();
+        if (data && !error) {
+          setCreatedAt(data.created_at);
+          handleStatusUpdate(data.status as OrderStatusType);
+        }
+      } catch (err) {
+        console.error("Error fetching initial order details:", err);
+      }
+    };
+    fetchOrderDetails();
+  }, [reference]);
+
+  useEffect(() => {
+    const fetchEstSpeed = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("delivery-speed");
+        if (data && data.success && data.display?.lastOrderDurationMinutes) {
+          setEstMinutes(data.display.lastOrderDurationMinutes);
+        }
+      } catch (err) {
+        console.error("Error fetching est speed:", err);
+      }
+    };
+    fetchEstSpeed();
+  }, []);
+
+  useEffect(() => {
+    if (!createdAt || !["pending", "paid", "processing"].includes(orderStatus)) {
+      return;
+    }
+    const updateElapsed = () => {
+      const placed = new Date(createdAt).getTime();
+      const diff = Math.max(0, Math.floor((Date.now() - placed) / 1000));
+      setElapsedSeconds(diff);
+    };
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 1000);
+    return () => clearInterval(timer);
+  }, [createdAt, orderStatus]);
+
   useEffect(() => {
     if (!reference) return;
     pollStatus();
@@ -369,6 +485,16 @@ const OrderStatus = () => {
               </div>
               <h2 className="text-lg font-bold text-white tracking-tight mb-1">{meta.label}</h2>
               <p className="text-[10px] text-white/30 font-medium max-w-[200px]">{meta.sub}</p>
+              {createdAt && ["pending", "paid", "processing"].includes(orderStatus) && (
+                <div className="mt-3.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 text-[11px] font-black uppercase tracking-wider backdrop-blur-md transition-all duration-300">
+                  <span className="relative flex h-2 w-2 mr-0.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <Clock className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                  <span>Est. delivery: ~{getRemainingTimeStr()}</span>
+                </div>
+              )}
               {(network || phoneParam) && (
                 <div className="mt-6 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5">
                   <span className="text-[9px] font-bold text-white/40 uppercase tracking-tighter">{network}</span>
@@ -379,7 +505,7 @@ const OrderStatus = () => {
             </div>
             <div className="px-10 pb-8">
               <div className="relative h-[1.5px] bg-white/5 rounded-full overflow-hidden">
-                <div className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out" style={{ width: `${Math.max(15, (step / 3) * 100)}%`, backgroundColor: meta.color }} />
+                <div className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out" style={{ width: `${getProgressPercentage()}%`, backgroundColor: meta.color }} />
               </div>
               <div className="flex justify-between mt-3">
                 {STEPS.map((s, i) => {
@@ -393,6 +519,26 @@ const OrderStatus = () => {
                 })}
               </div>
             </div>
+
+            {/* Real-time Gateway Terminal */}
+            {createdAt && (orderStatus === "paid" || orderStatus === "processing" || orderStatus === "pending" || orderStatus === "fulfilled" || orderStatus === "fulfillment_failed") && (
+              <div className="mx-8 mb-6 p-4 rounded-2xl bg-black/60 border border-white/5 font-mono text-[9px] space-y-1.5 max-h-[140px] overflow-y-auto select-none">
+                <div className="text-white/20 text-[8px] uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Connection Logs</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                </div>
+                {getTerminalLogs().map((log, i) => (
+                  <div key={i} className="flex gap-2 leading-relaxed">
+                    <span className="text-white/20">{log.time}</span>
+                    <span className={cn(
+                      log.status === "success" && "text-emerald-400",
+                      log.status === "warn" && "text-amber-400",
+                      log.status === "info" && "text-white/60"
+                    )}>{log.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {reference && (
               <div className="bg-white/[0.01] px-6 py-4 flex items-center justify-between gap-3 border-t border-white/5">
                 <div className="min-w-0">

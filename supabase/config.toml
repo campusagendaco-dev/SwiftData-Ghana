@@ -33,6 +33,9 @@ verify_jwt = false
 [functions.maintenance-mode]
 verify_jwt = false
 
+[functions.delivery-speed]
+verify_jwt = false
+
 [functions.developer-api]
 verify_jwt = false
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Clock } from "lucide-react";
 import { differenceInMinutes, parseISO } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
 
 interface LiveDeliveryBadgeProps {
   className?: string;
@@ -12,12 +13,11 @@ export default function LiveDeliveryBadge({ className = "mt-3.5" }: LiveDelivery
 
   const fetchSpeed = async () => {
     try {
-      const response = await fetch("https://user.datahubgh.com/api/widget/last-mtn-delivered?format=json");
-      if (!response.ok) throw new Error();
-      const json = await response.json();
-      if (json.success && json.order) {
-        const placed = parseISO(json.order.placedAt);
-        const delivered = parseISO(json.order.deliveredAt);
+      const { data, error } = await supabase.functions.invoke("delivery-speed");
+      if (error) throw error;
+      if (data && data.success && data.order) {
+        const placed = parseISO(data.order.placedAt);
+        const delivered = parseISO(data.order.deliveredAt);
         const diff = differenceInMinutes(delivered, placed);
         // Ensure we show a reasonable estimate
         setMinutes(diff > 0 ? diff : 10);

@@ -522,7 +522,7 @@ serve(async (req: Request) => {
     else if (p.endsWith("/buy") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
     else if (p.endsWith("/sms") || p.endsWith("/api/sms")) finalAction = "sms";
     else if (p.endsWith("/orders")) finalAction = "orders";
-    else if (p.endsWith("/status")) finalAction = "status";
+    else if (p.endsWith("/status") || p.endsWith("/order-status")) finalAction = "status";
     else if (p.endsWith("/wallets")) finalAction = "wallets";
     else if (p.endsWith("/wallet/transfer")) finalAction = "wallet_transfer";
     else if (p.endsWith("/afa-registration")) finalAction = "afa_registration";
@@ -1052,24 +1052,74 @@ serve(async (req: Request) => {
     }
 
     if (finalAction === "status") {
-      const orderId = url.searchParams.get("order_id") || 
-                      url.searchParams.get("id") || 
-                      url.searchParams.get("reference") || 
-                      url.searchParams.get("orderNumber");
-                      
+      let orderId = url.searchParams.get("order_id") || 
+                    url.searchParams.get("id") || 
+                    url.searchParams.get("reference") || 
+                    url.searchParams.get("orderNumber");
+
+      if (req.method === "POST") {
+        try {
+          const payload = await req.json().catch(() => null);
+          if (payload) {
+            orderId = orderId || payload.order_id || payload.id || payload.reference || payload.orderNumber;
+          }
+        } catch { /* ignore */ }
+      }
+
       if (!orderId) {
         return json({ success: false, error: "Either 'reference' or 'orderNumber' is required" }, 400);
       }
-      
+
+      let query = supabase
+        .from("orders")
+        .select("*")
+        .eq("agent_id", currentUserId);
+
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!UUID_RE.test(orderId)) {
-        return json({ success: false, error: `Order not found with order number/reference: ${orderId}` }, 404);
+      if (UUID_RE.test(orderId)) {
+        query = query.or(`id.eq.${orderId},metadata->>client_reference.eq.${orderId}`);
+      } else {
+        query = query.eq("metadata->>client_reference", orderId);
       }
-      
-      const { data: order, error } = await supabase.schema("api").from("v_orders").select("*").eq("agent_id", currentUserId).eq("id", orderId).maybeSingle();
-      if (error || !order) return json({ success: false, error: `Order not found with reference: ${orderId}` }, 404);
-      
-      return json({ success: true, order });
+
+      const { data: order, error } = await query.maybeSingle();
+
+      if (error || !order) {
+        return json({ success: false, error: `Order not found with reference: ${orderId}` }, 404);
+      }
+
+      // Map internal status to DataHub status format (PROCESSING, SUCCESS, FAILED)
+      let statusUpper = "PROCESSING";
+      const s = String(order.status || "").toLowerCase();
+      if (s === "fulfilled" || s === "completed" || s === "success") {
+        statusUpper = "SUCCESS";
+      } else if (s === "failed" || s === "failure" || s === "refunded") {
+        statusUpper = "FAILED";
+      }
+
+      // Build friendly status description
+      let statusDescription = "Order sent to network provider, awaiting completion";
+      if (statusUpper === "SUCCESS") {
+        statusDescription = "Order completed successfully";
+      } else if (statusUpper === "FAILED") {
+        statusDescription = order.failure_reason || "Order failed to deliver";
+      }
+
+      return json({
+        success: true,
+        message: "Order status retrieved successfully",
+        data: {
+          orderNumber: order.id,
+          reference: order.metadata?.client_reference || order.id,
+          status: statusUpper,
+          network: String(order.network || "").toUpperCase(),
+          recipient: order.customer_phone,
+          dataAmount: order.package_size,
+          amountPaid: Number(order.amount || 0),
+          orderDate: order.created_at,
+          statusDescription
+        }
+      });
     }
 
     if (finalAction === "index") {
