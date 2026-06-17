@@ -233,13 +233,13 @@ const WorldCupPredictor = () => {
       </div>
 
       {loading ? (
-        <div className="space-y-2.5">
-          {[1, 2].map(i => (
-            <div key={i} className="h-20 rounded-xl bg-card border border-border animate-pulse" />
+        <div className="flex gap-3 overflow-x-auto pb-1.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="w-[280px] sm:w-[310px] shrink-0 h-28 rounded-xl bg-card border border-border animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="space-y-2.5 relative z-10">
+        <div className="flex overflow-x-auto gap-3 pb-2.5 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] relative z-10">
           {matches.map((match) => {
             const pred = predictions[match.id];
             const isMatchStarted = new Date(match.kickoff) <= new Date();
@@ -248,7 +248,7 @@ const WorldCupPredictor = () => {
             return (
               <div
                 key={match.id}
-                className={`rounded-xl border p-2.5 sm:p-3 transition-all duration-300 ${
+                className={`w-[280px] sm:w-[310px] shrink-0 snap-start rounded-xl border p-2.5 sm:p-3 transition-all duration-300 ${
                   pred?.status === "correct"
                     ? "border-emerald-500/30 bg-emerald-500/5 shadow-[0_6px_16px_-6px_rgba(16,185,129,0.15)]"
                     : pred?.status === "incorrect"
@@ -302,7 +302,7 @@ const WorldCupPredictor = () => {
                         <span className="text-2xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
                       );
                     })()}
-                    <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground">{match.homeTeam}</span>
+                    <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground truncate max-w-[100px]">{match.homeTeam}</span>
                   </div>
                   <div className="col-span-1 flex flex-col items-center justify-center font-black text-[9px] text-muted-foreground/60 italic">
                     VS
@@ -320,7 +320,7 @@ const WorldCupPredictor = () => {
                         <span className="text-2xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
                       );
                     })()}
-                    <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground">{match.awayTeam}</span>
+                    <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground truncate max-w-[100px]">{match.awayTeam}</span>
                   </div>
                 </div>
 
@@ -340,7 +340,7 @@ const WorldCupPredictor = () => {
                         type="button"
                         disabled={isDisabled}
                         onClick={() => handlePredict(match.id, btn.key as any)}
-                        className={`h-7.5 rounded-lg text-[9px] font-black uppercase tracking-wide border transition-all active:scale-[0.97] ${
+                        className={`h-7.5 rounded-lg text-[9px] font-black uppercase tracking-wide border transition-all active:scale-[0.97] truncate px-1 ${
                           isSelected
                             ? pred.status === "correct"
                               ? "bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20"
