@@ -165,3 +165,6 @@ verify_jwt = false
 [functions.sync-football-matches]
 verify_jwt = false
 
+[functions.auto-export-mashup]
+verify_jwt = false
+

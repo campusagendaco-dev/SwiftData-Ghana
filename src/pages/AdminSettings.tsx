@@ -93,6 +93,9 @@ interface SystemSettings {
   notification_vibration_pattern: string;
   vendor_min_transaction: string;
   world_cup_predictor_enabled: boolean;
+  mashup_automation_enabled: boolean;
+  mashup_export_threshold: string;
+  mashup_whatsapp_number: string;
 }
 
 const AdminSettings = () => {
@@ -178,6 +181,9 @@ const AdminSettings = () => {
     notification_vibration_pattern: "200,100,200",
     vendor_min_transaction: "1.00",
     world_cup_predictor_enabled: true,
+    mashup_automation_enabled: false,
+    mashup_export_threshold: "10",
+    mashup_whatsapp_number: "",
   });
 
   const [currentIp, setCurrentIp] = useState("");
@@ -473,6 +479,9 @@ const AdminSettings = () => {
           notification_vibration_pattern: d.notification_vibration_pattern || "200,100,200",
           vendor_min_transaction: String(d.vendor_min_transaction || "1.00"),
           world_cup_predictor_enabled: d.world_cup_predictor_enabled !== false,
+          mashup_automation_enabled: d.mashup_automation_enabled || false,
+          mashup_export_threshold: String(d.mashup_export_threshold || "10"),
+          mashup_whatsapp_number: d.mashup_whatsapp_number || "",
         });
       }
       setLoading(false);
@@ -543,6 +552,9 @@ const AdminSettings = () => {
       notification_vibration_pattern: settings.notification_vibration_pattern,
       vendor_min_transaction: parseFloat(settings.vendor_min_transaction) || 1.00,
       world_cup_predictor_enabled: settings.world_cup_predictor_enabled,
+      mashup_automation_enabled: settings.mashup_automation_enabled,
+      mashup_export_threshold: parseInt(settings.mashup_export_threshold) || 10,
+      mashup_whatsapp_number: settings.mashup_whatsapp_number.trim(),
     };
 
     try {
@@ -857,6 +869,65 @@ const AdminSettings = () => {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-500/20 bg-emerald-500/5">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-emerald-500" />
+                MTN Mash Up Automation
+              </CardTitle>
+              <CardDescription>
+                Automatically export and send pending MTN Mash Up orders to a WhatsApp number when a threshold is met.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    Enable Auto-Export
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Automatically process and send pending Mash Up orders to WhatsApp.</p>
+                </div>
+                <Switch
+                  checked={settings.mashup_automation_enabled}
+                  onCheckedChange={(c) => setSettings({ ...settings, mashup_automation_enabled: c })}
+                  className="data-[state=checked]:bg-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="mashup-threshold">Export Threshold (Count)</Label>
+                  <Input
+                    id="mashup-threshold"
+                    type="number"
+                    min="1"
+                    value={settings.mashup_export_threshold}
+                    onChange={(e) => setSettings({ ...settings, mashup_export_threshold: e.target.value })}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Number of pending orders required to trigger auto-export.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mashup-whatsapp" className="flex items-center gap-1.5">
+                    <MessageCircle className="w-4 h-4 text-emerald-500" />
+                    WhatsApp Number
+                  </Label>
+                  <Input
+                    id="mashup-whatsapp"
+                    placeholder="e.g. 233240000000"
+                    value={settings.mashup_whatsapp_number}
+                    onChange={(e) => setSettings({ ...settings, mashup_whatsapp_number: e.target.value })}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Include country code without the '+' sign.
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
