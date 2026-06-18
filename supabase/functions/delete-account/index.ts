@@ -46,11 +46,73 @@ serve(async (req: Request) => {
 
     console.log(`User ${user.id} requested account deletion`);
 
-    // 2. Perform any cleanup if necessary (profiles table usually has ON DELETE CASCADE)
-    // We might want to check for active orders or balance, but user said "add a delete account" 
-    // which usually means immediate.
+    // SECURITY: Block deletion if user has a non-zero wallet balance
+    const { data: wallet } = await supabaseAdmin
+      .from("wallets")
+      .select("balance, api_balance")
+      .eq("agent_id", user.id)
+      .maybeSingle();
 
-    // 3. Delete the user from Auth (this will trigger CASCADE on profiles)
+    const mainBalance = Number(wallet?.balance ?? 0);
+    const apiBalance = Number(wallet?.api_balance ?? 0);
+
+    if (mainBalance > 0.01) {
+      return new Response(JSON.stringify({ 
+        error: `Cannot delete account with remaining wallet balance of GHS ${mainBalance.toFixed(2)}. Please withdraw your funds first.`,
+        code: "balance_remaining"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (apiBalance > 0.01) {
+      return new Response(JSON.stringify({ 
+        error: `Cannot delete account with remaining API wallet balance of GHS ${apiBalance.toFixed(2)}. Please withdraw your API funds first.`,
+        code: "api_balance_remaining"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // SECURITY: Block deletion if user has active/pending orders that may need refunds
+    const { data: activeOrders } = await supabaseAdmin
+      .from("orders")
+      .select("id, status, amount")
+      .eq("agent_id", user.id)
+      .in("status", ["paid", "processing", "pending"])
+      .limit(1);
+
+    if (activeOrders && activeOrders.length > 0) {
+      return new Response(JSON.stringify({ 
+        error: "Cannot delete account with active orders in progress. Please wait for all orders to complete first.",
+        code: "active_orders"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // SECURITY: Block deletion if user has pending withdrawal requests
+    const { data: pendingWithdrawals } = await supabaseAdmin
+      .from("withdrawals")
+      .select("id, amount")
+      .eq("agent_id", user.id)
+      .eq("status", "pending")
+      .limit(1);
+
+    if (pendingWithdrawals && pendingWithdrawals.length > 0) {
+      return new Response(JSON.stringify({ 
+        error: "Cannot delete account with a pending withdrawal request.",
+        code: "pending_withdrawal"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 2. Delete the user from Auth (this will trigger CASCADE on profiles)
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
 
     if (deleteError) {
@@ -61,6 +123,7 @@ serve(async (req: Request) => {
       });
     }
 
+    console.log(`User ${user.id} account successfully deleted`);
     return new Response(JSON.stringify({ success: true, message: "Account deleted successfully" }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

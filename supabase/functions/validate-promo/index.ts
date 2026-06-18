@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
 
+declare const Deno: any;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -20,6 +22,25 @@ serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+  // SECURITY: Rate limit promo validation to prevent brute-force enumeration
+  const clientIp = req.headers.get("cf-connecting-ip")
+    || req.headers.get("x-real-ip")
+    || (req.headers.get("x-forwarded-for") || "").split(",")[0].trim()
+    || "anon";
+
+  const { data: withinLimit } = await supabase.rpc("check_generic_rate_limit", {
+    p_key: `promo_validate:${clientIp}`,
+    p_rate_limit: 5 // max 5 promo validations per minute per IP
+  });
+
+  if (withinLimit === false) {
+    // SECURITY: Return a generic error to prevent timing-based enumeration
+    return new Response(JSON.stringify({ valid: false, error: "Too many attempts. Please wait." }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const payload = await req.json().catch(() => null);
     const rawCode = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : "";
@@ -28,6 +49,15 @@ serve(async (req) => {
     if (!rawCode) {
       return new Response(JSON.stringify({ valid: false, error: "Promo code is required" }), {
         status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // SECURITY: Validate code format before DB query (max 20 chars, alphanumeric)
+    if (!/^[A-Z0-9_-]{2,20}$/.test(rawCode)) {
+      // Always return same response regardless — don't reveal format expectations
+      return new Response(JSON.stringify({ valid: false, error: "Invalid promo code" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -92,7 +122,8 @@ serve(async (req) => {
       code: promo.code,
       discount_percentage: discountPct,
       is_free: isFree,
-      uses_remaining: promo.max_uses - promo.current_uses,
+      // SECURITY: Don't expose uses_remaining — prevents enumeration to find
+      // high-value codes with many uses left. Removed: uses_remaining
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

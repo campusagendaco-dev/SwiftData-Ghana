@@ -75,6 +75,33 @@ serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+  // SECURITY: Require admin or service-role key (cron job uses service role)
+  const authHeader = req.headers.get("Authorization");
+  const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+
+  if (!token) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+  if (!isServiceRole) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: role } = await supabase
+      .from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
+    if (!role) {
+      return new Response(JSON.stringify({ success: false, error: "Forbidden: admin only" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   try {
     let apiMatches: any[] = [];
     let apiFetched = false;
@@ -229,7 +256,7 @@ serve(async (req) => {
           },
           {
             home_team: "England",
-            home_flag: "🏴\u{e0067}\u{e0062}\u{e0065}\u{e006en}\u{e0067}\u{e007f}",
+            home_flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
             away_team: "Croatia",
             away_flag: "🇭🇷",
             kickoff: new Date(Date.now() + 4.5 * 60 * 60 * 1000).toISOString(), // 4.5 hours in future
