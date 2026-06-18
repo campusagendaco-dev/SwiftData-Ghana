@@ -15,6 +15,8 @@ export interface Match {
   awayTeam: string;
   awayFlag: string;
   kickoff: string; // ISO string
+  status?: 'pending' | 'settled';
+  result?: 'home' | 'draw' | 'away';
 }
 
 // Configured default matches (fallback)
@@ -290,36 +292,50 @@ const WorldCupPredictor = () => {
                 {/* Team display */}
                 <div className="grid grid-cols-5 items-center justify-items-center mb-2">
                   <div className="col-span-2 flex flex-col items-center gap-1.5 text-center">
-                    {(() => {
-                      const flagUrl = getFlagUrl(match.homeFlag) || getFlagUrl(match.homeTeam);
-                      return flagUrl ? (
-                        <img 
-                          src={flagUrl} 
-                          alt={match.homeTeam} 
-                          className="w-10 h-7 object-cover rounded shadow-sm border border-white/10"
-                        />
-                      ) : (
-                        <span className="text-2xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
-                      );
-                    })()}
+                    <div className="relative">
+                      {(() => {
+                        const flagUrl = getFlagUrl(match.homeFlag) || getFlagUrl(match.homeTeam);
+                        return flagUrl ? (
+                          <img 
+                            src={flagUrl} 
+                            alt={match.homeTeam} 
+                            className="w-10 h-7 object-cover rounded shadow-sm border border-white/10"
+                          />
+                        ) : (
+                          <span className="text-2xl select-none" role="img" aria-label={match.homeTeam}>{match.homeFlag}</span>
+                        );
+                      })()}
+                      {match.status === 'settled' && match.result === 'home' && (
+                        <span className="absolute -top-1.5 -right-1.5 text-xs animate-bounce" role="img" aria-label="winner">🏆</span>
+                      )}
+                    </div>
                     <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground truncate max-w-[100px]">{match.homeTeam}</span>
                   </div>
                   <div className="col-span-1 flex flex-col items-center justify-center font-black text-[9px] text-muted-foreground/60 italic">
-                    VS
+                    {match.status === 'settled' && match.result === 'draw' ? (
+                      <span className="text-xs not-italic" role="img" aria-label="draw">🤝</span>
+                    ) : (
+                      "VS"
+                    )}
                   </div>
                   <div className="col-span-2 flex flex-col items-center gap-1.5 text-center">
-                    {(() => {
-                      const flagUrl = getFlagUrl(match.awayFlag) || getFlagUrl(match.awayTeam);
-                      return flagUrl ? (
-                        <img 
-                          src={flagUrl} 
-                          alt={match.awayTeam} 
-                          className="w-10 h-7 object-cover rounded shadow-sm border border-white/10"
-                        />
-                      ) : (
-                        <span className="text-2xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
-                      );
-                    })()}
+                    <div className="relative">
+                      {(() => {
+                        const flagUrl = getFlagUrl(match.awayFlag) || getFlagUrl(match.awayTeam);
+                        return flagUrl ? (
+                          <img 
+                            src={flagUrl} 
+                            alt={match.awayTeam} 
+                            className="w-10 h-7 object-cover rounded shadow-sm border border-white/10"
+                          />
+                        ) : (
+                          <span className="text-2xl select-none" role="img" aria-label={match.awayTeam}>{match.awayFlag}</span>
+                        );
+                      })()}
+                      {match.status === 'settled' && match.result === 'away' && (
+                        <span className="absolute -top-1.5 -right-1.5 text-xs animate-bounce" role="img" aria-label="winner">🏆</span>
+                      )}
+                    </div>
                     <span className="text-[10px] sm:text-xs font-black tracking-tight text-foreground truncate max-w-[100px]">{match.awayTeam}</span>
                   </div>
                 </div>
@@ -332,6 +348,7 @@ const WorldCupPredictor = () => {
                     { key: "away", label: `${match.awayTeam}` }
                   ].map((btn) => {
                     const isSelected = pred?.prediction === btn.key;
+                    const isWinner = match.status === 'settled' && match.result === btn.key;
                     const isDisabled = isMatchStarted || submitting !== null || pred?.status !== undefined;
                     
                     return (
@@ -347,8 +364,10 @@ const WorldCupPredictor = () => {
                               : pred.status === "incorrect"
                                 ? "bg-red-500/80 border-red-500 text-white"
                                 : "bg-primary border-primary/20 text-primary-foreground shadow-lg shadow-primary/20"
-                            : "bg-background border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
-                        } disabled:opacity-40 disabled:pointer-events-none`}
+                            : isWinner
+                              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
+                              : "bg-background border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                        } ${isDisabled && !isWinner ? "disabled:opacity-40" : ""} disabled:pointer-events-none`}
                         style={isSelected && pred?.status === "pending" ? { background: `hsl(${theme.primary})`, color: "#000" } : {}}
                       >
                         {submitting === match.id && isSelected ? "..." : btn.label}
