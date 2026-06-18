@@ -522,13 +522,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               >
                 <div className="relative">
                   <div className="absolute inset-0 bg-amber-500/10 rounded-full blur-xl animate-pulse" />
-                  <motion.span
-                    className="text-4xl select-none inline-block relative z-10"
+                  <motion.img
+                    src="/assets/world_cup_ball_2026.png"
+                    alt="2026 World Cup Ball"
+                    className="w-12 h-12 object-contain select-none inline-block relative z-10"
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  >
-                    ⚽
-                  </motion.span>
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                  />
                 </div>
                 <div className="space-y-1 px-4">
                   <h4 className="text-sm font-black text-foreground uppercase tracking-wider animate-pulse">Contacting Operator</h4>
@@ -626,13 +626,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               >
                 <div className="relative">
                   <div className="absolute inset-0 bg-primary/10 rounded-full blur-xl animate-pulse" />
-                  <motion.span
-                    className="text-4xl select-none inline-block relative z-10"
+                  <motion.img
+                    src="/assets/world_cup_ball_2026.png"
+                    alt="2026 World Cup Ball"
+                    className="w-12 h-12 object-contain select-none inline-block relative z-10"
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  >
-                    ⚽
-                  </motion.span>
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                  />
                 </div>
                 <div className="space-y-1 px-4">
                   <h4 className="text-sm font-black text-foreground uppercase tracking-wider animate-pulse">Securing Verification</h4>
@@ -651,13 +651,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               >
                 <div className="relative">
                   <div className="absolute inset-0 rounded-full blur-2xl opacity-30 animate-pulse bg-emerald-500" />
-                  <motion.span
-                    className="text-5xl select-none inline-block relative z-10"
+                  <motion.img
+                    src="/assets/world_cup_ball_2026.png"
+                    alt="2026 World Cup Ball"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10"
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  >
-                    ⚽
-                  </motion.span>
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                  />
                 </div>
                 <div className="space-y-2">
                   <h4 className="text-xl font-black text-foreground uppercase tracking-tight">Authorize Payment</h4>
@@ -674,15 +674,15 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     animate={{ width: "100%" }}
                     transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                   />
-                  <motion.div 
-                    className="absolute -top-1.5 w-5 h-5 text-base flex items-center justify-center select-none"
+                  <motion.img 
+                    src="/assets/world_cup_ball_2026.png"
+                    alt="2026 World Cup Ball"
+                    className="absolute -top-1.5 w-5 h-5 object-contain select-none"
                     initial={{ left: "0%", rotate: 0 }}
                     animate={{ left: "100%", rotate: 360 }}
                     style={{ transform: "translateX(-50%)" }}
                     transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                  >
-                    ⚽
-                  </motion.div>
+                  />
                 </div>
                 <p className="text-xs font-bold text-emerald-400/80 uppercase tracking-widest animate-pulse mt-2 mb-1">Waiting for approval...</p>
                 
