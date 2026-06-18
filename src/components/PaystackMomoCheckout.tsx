@@ -525,7 +525,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <motion.img
                     src="/assets/world_cup_ball_2026.png"
                     alt="2026 World Cup Ball"
-                    className="w-12 h-12 object-contain select-none inline-block relative z-10"
+                    className="w-12 h-12 object-contain select-none inline-block relative z-10 rounded-full"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
                   />
@@ -629,7 +629,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <motion.img
                     src="/assets/world_cup_ball_2026.png"
                     alt="2026 World Cup Ball"
-                    className="w-12 h-12 object-contain select-none inline-block relative z-10"
+                    className="w-12 h-12 object-contain select-none inline-block relative z-10 rounded-full"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
                   />
@@ -654,7 +654,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <motion.img
                     src="/assets/world_cup_ball_2026.png"
                     alt="2026 World Cup Ball"
-                    className="w-14 h-14 object-contain select-none inline-block relative z-10"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
                   />
@@ -677,7 +677,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <motion.img 
                     src="/assets/world_cup_ball_2026.png"
                     alt="2026 World Cup Ball"
-                    className="absolute -top-1.5 w-5 h-5 object-contain select-none"
+                    className="absolute -top-1.5 w-5 h-5 object-contain select-none rounded-full"
                     initial={{ left: "0%", rotate: 0 }}
                     animate={{ left: "100%", rotate: 360 }}
                     style={{ transform: "translateX(-50%)" }}
