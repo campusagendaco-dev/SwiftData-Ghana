@@ -19,22 +19,55 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "logo.png"],
       manifest: {
-        name: "SwiftData Ghana",
+        name: "SwiftData Ghana — Cheapest Data Bundles",
         short_name: "SwiftData GH",
-        description: "Cheapest Data Bundles in Ghana",
+        description: "Buy cheap non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana. Instant delivery, 24/7.",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        orientation: "portrait-primary",
+        background_color: "#0d0d0d",
         theme_color: "#f59e0b",
+        categories: ["shopping", "finance", "utilities"],
+        lang: "en-GH",
+        dir: "ltr",
         icons: [
           {
             src: "logo.png",
             sizes: "192x192",
             type: "image/png",
+            purpose: "any"
           },
           {
             src: "logo.png",
             sizes: "512x512",
             type: "image/png",
-          },
+            purpose: "any"
+          }
         ],
+        shortcuts: [
+          {
+            name: "Buy MTN Data",
+            short_name: "MTN Data",
+            description: "Buy cheap MTN data bundles in Ghana",
+            url: "/buy-data",
+            icons: [{ src: "logo.png", sizes: "96x96", type: "image/png" }]
+          },
+          {
+            name: "Track My Order",
+            short_name: "Track Order",
+            description: "Check the status of your data delivery",
+            url: "/order-status",
+            icons: [{ src: "logo.png", sizes: "96x96", type: "image/png" }]
+          },
+          {
+            name: "Become an Agent",
+            short_name: "Agent",
+            description: "Join the SwiftData Ghana agent programme",
+            url: "/agent-program",
+            icons: [{ src: "logo.png", sizes: "96x96", type: "image/png" }]
+          }
+        ]
       },
       workbox: {
         importScripts: ["push-sw.js"],
