@@ -63,7 +63,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim() ?? "";
   const FOOTBALL_DATA_API_KEY = Deno.env.get("FOOTBALL_DATA_API_KEY")?.trim();
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -85,7 +85,28 @@ serve(async (req) => {
     });
   }
 
-  const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+  let isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+  if (!isServiceRole) {
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(base64));
+        if (payload.role === 'service_role') {
+          // Verify JWT signature by making a lightweight DB query
+          const tempClient = createClient(SUPABASE_URL, token);
+          const { error: verifyErr } = await tempClient.from("world_cup_matches").select("id").limit(1);
+          if (!verifyErr) {
+            isServiceRole = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to verify service_role JWT:", err);
+    }
+  }
+
   if (!isServiceRole) {
     const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
     if (userErr || !user) {
