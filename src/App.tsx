@@ -316,6 +316,7 @@ const AppContent = () => {
   }, []);
 
   const activeDomain = getActiveStoreDomain();
+  const isAdminSubdomain = window.location.hostname.startsWith("admin.");
   const isDashboard = location.pathname.startsWith("/dashboard");
   const isAdmin = location.pathname.startsWith("/admin");
   const isAgentStore = location.pathname.startsWith("/store/") || (!!activeDomain && !isDashboard && !isAdmin);
@@ -347,7 +348,7 @@ const AppContent = () => {
         <Suspense fallback={<LoadingScreen />}>
       <Routes>
         {/* Public pages */}
-        <Route path="/" element={activeDomain ? <AgentStore /> : <Index />} />
+        <Route path="/" element={isAdminSubdomain ? <Navigate to="/admin" replace /> : (activeDomain ? <AgentStore /> : <Index />)} />
         <Route path="/agent-program" element={<AgentProgram />} />
         <Route path="/store/:slug" element={<AgentStore />} />
         <Route path="/store/:slug/order-status" element={<OrderStatus />} />
