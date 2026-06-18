@@ -393,6 +393,20 @@ const BuyData = () => {
   const colors = getNetworkCardColors(selectedNetwork);
   
   const memoizedGrid = useMemo(() => {
+    if (packages.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-amber-500/20 bg-amber-500/[0.02] rounded-3xl animate-pulse">
+          <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-4 border border-amber-500/20 shadow-[0_10px_30px_rgba(245,158,11,0.05)]">
+            <Clock className="w-7 h-7 text-amber-500" />
+          </div>
+          <h3 className="text-lg font-black text-foreground mb-2 uppercase tracking-wide">{selectedNetwork} On Hold</h3>
+          <p className="text-sm text-muted-foreground max-w-md">
+            All {selectedNetwork} packages are temporarily placed on hold. Ordering will resume shortly. Thank you for your patience!
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
         {packages.map((pkg) => {

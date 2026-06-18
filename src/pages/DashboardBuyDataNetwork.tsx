@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, Clock } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -906,10 +906,23 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {settingsLoading
-            ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)
-            : packages.map((item) => {
+        {settingsLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)}
+          </div>
+        ) : packages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-dashed border-amber-500/20 bg-amber-500/[0.02] rounded-3xl animate-pulse">
+            <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-4 border border-amber-500/20 shadow-[0_10px_30px_rgba(245,158,11,0.05)]">
+              <Clock className="w-7 h-7 text-amber-500" />
+            </div>
+            <h3 className="text-lg font-black text-foreground mb-2 uppercase tracking-wide">{network} On Hold</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              All {network} packages are temporarily placed on hold. Ordering will resume shortly. Thank you for your patience!
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {packages.map((item) => {
                 const isSelected = selectedSize === item.size;
                 return (
                   <button
@@ -941,7 +954,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                   </button>
                 );
               })}
-        </div>
+          </div>
+        )}
       </div>
 
 

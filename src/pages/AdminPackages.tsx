@@ -532,11 +532,26 @@ const AdminPackages = () => {
         await logAudit(currentUser.id, targetHold ? "suspend_all_mashup_packages" : "resume_all_mashup_packages", { count: updatedPackages.length });
       }
 
+      const smsMessage = targetHold
+        ? "Dear customer, MTN Mash Up bundles are temporarily ON HOLD. We will notify you once they are resumed. Thank you!"
+        : "Dear customer, MTN Mash Up bundles have been RESUMED and are now active! You can place your orders now. Thank you!";
+
+      supabase.functions.invoke("admin-send-sms", {
+        body: {
+          target_type: "all",
+          title: targetHold ? "MTN Mash Up On Hold ⏸️" : "MTN Mash Up Active ⚡",
+          message: smsMessage
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      }).catch(err => {
+        console.error("SMS notification failed to send:", err);
+      });
+
       toast({ 
         title: "Success", 
         description: targetHold 
-          ? "All MTN Mash Up packages are now ON HOLD." 
-          : "All MTN Mash Up packages have been RESUMED." 
+          ? "All MTN Mash Up packages are now ON HOLD. SMS broadcast has been sent." 
+          : "All MTN Mash Up packages have been RESUMED. SMS broadcast has been sent." 
       });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
