@@ -316,7 +316,7 @@ const AppContent = () => {
   }, []);
 
   const activeDomain = getActiveStoreDomain();
-  const isAdminSubdomain = window.location.hostname.startsWith("admin.");
+  const isAdminSubdomain = window.location.hostname.startsWith("senyo.");
   const isDashboard = location.pathname.startsWith("/dashboard");
   const isAdmin = location.pathname.startsWith("/admin");
   const isAgentStore = location.pathname.startsWith("/store/") || (!!activeDomain && !isDashboard && !isAdmin);
