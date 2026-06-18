@@ -1077,6 +1077,29 @@ const AgentStore = () => {
 
         {/* ── Data packages grid ── */}
         {selectedService === "data" && (() => {
+          if (packages.length === 0) {
+            return (
+              <div 
+                className="flex flex-col items-center justify-center py-16 px-4 text-center border border-dashed rounded-3xl"
+                style={{ borderColor: `${accentColor}25`, backgroundColor: `${accentColor}03` }}
+              >
+                <div className="relative flex items-center justify-center mb-4">
+                  <span className="absolute inline-flex h-16 w-16 rounded-full animate-ping" style={{ backgroundColor: `${accentColor}25` }} />
+                  <div 
+                    className="relative w-14 h-14 rounded-2xl flex items-center justify-center border shadow-inner"
+                    style={{ backgroundColor: `${accentColor}10`, borderColor: `${accentColor}25` }}
+                  >
+                    <Clock className="w-7 h-7 animate-spin-slow" style={{ color: accentColor }} />
+                  </div>
+                </div>
+                <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">{selectedNetwork} On Hold</h3>
+                <p className="text-sm text-white/40 max-w-md">
+                  All {selectedNetwork} packages are temporarily placed on hold. Ordering will resume shortly. Thank you for your patience!
+                </p>
+              </div>
+            );
+          }
+
           // Group packages into rows of 2 so we can inject the panel after the correct row
           const rows: typeof packages[] = [];
           for (let i = 0; i < packages.length; i += 2) rows.push(packages.slice(i, i + 2));

@@ -395,9 +395,12 @@ const BuyData = () => {
   const memoizedGrid = useMemo(() => {
     if (packages.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-amber-500/20 bg-amber-500/[0.02] rounded-3xl animate-pulse">
-          <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-4 border border-amber-500/20 shadow-[0_10px_30px_rgba(245,158,11,0.05)]">
-            <Clock className="w-7 h-7 text-amber-500" />
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-amber-500/20 bg-amber-500/[0.02] rounded-3xl">
+          <div className="relative flex items-center justify-center mb-4">
+            <span className="absolute inline-flex h-16 w-16 rounded-full bg-amber-500/20 animate-ping" />
+            <div className="relative w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center border border-amber-500/20 shadow-[0_10px_30px_rgba(245,158,11,0.05)]">
+              <Clock className="w-7 h-7 text-amber-500 animate-spin-slow" />
+            </div>
           </div>
           <h3 className="text-lg font-black text-foreground mb-2 uppercase tracking-wide">{selectedNetwork} On Hold</h3>
           <p className="text-sm text-muted-foreground max-w-md">
