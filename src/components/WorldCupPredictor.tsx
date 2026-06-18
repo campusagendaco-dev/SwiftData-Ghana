@@ -69,7 +69,14 @@ const WorldCupPredictor = () => {
             status: m.status,
             result: m.result
           }));
-          setMatches(formattedMatches);
+          
+          // Filter to today's matches only (local timezone)
+          const todayStr = new Date().toDateString();
+          const todayMatches = formattedMatches.filter((m: any) => {
+            return new Date(m.kickoff).toDateString() === todayStr;
+          });
+          
+          setMatches(todayMatches);
         }
 
         // 2. Fetch predictions
@@ -216,8 +223,15 @@ const WorldCupPredictor = () => {
           ))}
         </div>
       ) : (
-        <div className="flex overflow-x-auto gap-3 pb-2.5 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] relative z-10">
-          {matches.map((match) => {
+        <div className="flex overflow-x-auto gap-3 pb-2.5 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] relative z-10 w-full">
+          {matches.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 px-4 w-full border border-dashed border-emerald-500/20 rounded-xl bg-emerald-500/5">
+              <Clock className="w-8 h-8 text-amber-500 mb-2 animate-pulse" />
+              <p className="text-xs font-bold text-center text-foreground">No matches scheduled for today</p>
+              <p className="text-[10px] text-center text-muted-foreground mt-0.5 font-medium">Check back tomorrow for the next round! ⚽</p>
+            </div>
+          ) : (
+            matches.map((match) => {
             const pred = predictions[match.id];
             const isMatchStarted = new Date(match.kickoff) <= new Date();
             const kickoffDate = new Date(match.kickoff);
@@ -352,8 +366,9 @@ const WorldCupPredictor = () => {
                 </div>
               </div>
             );
-          })}
-        </div>
+          })
+        )}
+      </div>
       )}
       {dbNeedsSync && (
         <div className="mt-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-bold leading-normal flex items-start gap-2">
