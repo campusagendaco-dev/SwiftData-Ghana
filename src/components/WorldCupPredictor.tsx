@@ -20,32 +20,7 @@ export interface Match {
 }
 
 // Configured default matches (fallback)
-export const DEFAULT_WORLD_CUP_MATCHES: Match[] = [
-  {
-    id: "wc_match_1",
-    homeTeam: "Ghana",
-    homeFlag: "🇬🇭",
-    awayTeam: "Uruguay",
-    awayFlag: "🇺🇾",
-    kickoff: "2026-06-12T15:00:00Z"
-  },
-  {
-    id: "wc_match_2",
-    homeTeam: "Brazil",
-    homeFlag: "🇧🇷",
-    awayTeam: "France",
-    awayFlag: "🇫🇷",
-    kickoff: "2026-06-12T19:00:00Z"
-  },
-  {
-    id: "wc_match_3",
-    homeTeam: "England",
-    homeFlag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-    awayTeam: "Senegal",
-    awayFlag: "🇸🇳",
-    kickoff: "2026-06-13T16:00:00Z"
-  }
-];
+export const DEFAULT_WORLD_CUP_MATCHES: Match[] = [];
 
 // Re-export as WORLD_CUP_MATCHES for external compatibility
 export const WORLD_CUP_MATCHES = DEFAULT_WORLD_CUP_MATCHES;
