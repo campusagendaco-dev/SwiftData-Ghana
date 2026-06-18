@@ -23,27 +23,18 @@ serve(async (req) => {
     });
   }
 
-  // SECURITY: Require valid user authentication to look up order history
-  // Unauthenticated phone lookup allows any attacker to enumerate orders for any number
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Unauthorized: authentication required" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Verify the user session
-  const token = authHeader.slice(7).trim();
-  const { data: { user }, error: userErr } = await supabaseAdmin.auth.getUser(token);
-  if (userErr || !user) {
-    return new Response(JSON.stringify({ error: "Unauthorized: invalid session" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  let user = null;
+  const authHeader = req.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    // Non-fatal if anon key or invalid token is passed; just fallback to guest
+    const { data } = await supabaseAdmin.auth.getUser(token);
+    user = data?.user || null;
   }
+  
+  const isGuest = !user;
 
   try {
     let phone = "";
@@ -66,10 +57,14 @@ serve(async (req) => {
       });
     }
 
-    // SECURITY: Rate limit per user (prevents scraping multiple phone numbers)
+    const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+    const rateLimitKey = isGuest ? `list_orders_ip:${clientIp}` : `list_orders_user:${user.id}`;
+    const rateLimit = isGuest ? 5 : 20; // guests get strict limits
+
+    // SECURITY: Rate limit (prevents scraping multiple phone numbers)
     const { data: withinLimit } = await supabaseAdmin.rpc("check_generic_rate_limit", {
-      p_key: `list_orders:${user.id}`,
-      p_rate_limit: 20 // 20 lookups per minute per user
+      p_key: rateLimitKey,
+      p_rate_limit: rateLimit
     });
 
     if (withinLimit === false) {
@@ -90,25 +85,33 @@ serve(async (req) => {
 
     // SECURITY: Scope to the authenticated user's orders only
     // Admin users can look up any phone; regular users only their own agent orders
-    const { data: roles } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-
-    const isAdmin = Boolean(roles);
+    let isAdmin = false;
+    if (user) {
+      const { data: roles } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      isAdmin = Boolean(roles);
+    }
 
     let query = supabaseAdmin
       .from("orders")
       .select("id, customer_phone, network, package_size, amount, status, created_at, order_type")
       .in("customer_phone", searchPhones)
-      .order("created_at", { ascending: false })
-      .limit(20);
+      .order("created_at", { ascending: false });
 
-    // Non-admin users can only see orders they placed
-    if (!isAdmin) {
-      query = query.eq("agent_id", user.id);
+    if (isGuest) {
+      // Guests can only see recent orders (last 7 days) and max 5 results to prevent data scraping
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      query = query.gte("created_at", sevenDaysAgo.toISOString()).limit(5);
+    } else if (!isAdmin) {
+      // Non-admin agents can see all their own orders
+      query = query.eq("agent_id", user.id).limit(20);
+    } else {
+      query = query.limit(20);
     }
 
     const { data: orders, error } = await query;
