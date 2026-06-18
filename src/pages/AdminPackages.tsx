@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, DatabaseZap, Plus, FileDown, Edit, Trash2 } from "lucide-react";
+import { Loader2, Save, DatabaseZap, Plus, FileDown, Edit, Trash2, Pause, Play } from "lucide-react";
 import { fetchApiPricingContext } from "@/lib/api-source-pricing";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
@@ -48,6 +48,10 @@ const AdminPackages = () => {
   const [saving, setSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [userDiscountPercent, setUserDiscountPercent] = useState("");
+  const [updatingMashupHold, setUpdatingMashupHold] = useState(false);
+
+  const mashupKeys = Object.keys(settings).filter(k => k.startsWith("MTN Mash Up-"));
+  const allMashupOnHold = mashupKeys.length > 0 && mashupKeys.every(k => settings[k]?.is_unavailable === true);
 
   // States for adding custom package
   const [providers, setProviders] = useState<{ id: string; name: string }[]>([]);
@@ -470,6 +474,74 @@ const AdminPackages = () => {
       toast({ title: "Success", description: "MTN Mash Up packages exported successfully!" });
     } catch (e: any) {
       toast({ title: "Export Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const toggleAllMashupHold = async () => {
+    const targetHold = !allMashupOnHold;
+    const confirmMsg = targetHold 
+      ? "Are you sure you want to put ALL MTN Mash Up packages ON HOLD? This will make them unavailable for users to order."
+      : "Are you sure you want to RESUME ALL MTN Mash Up packages? This will make them available for users to order.";
+      
+    if (!window.confirm(confirmMsg)) return;
+
+    setUpdatingMashupHold(true);
+    
+    const updatedPackages = mashupKeys.map(key => {
+      const pkg = settings[key];
+      return {
+        network: pkg.network,
+        package_size: pkg.package_size,
+        cost_price: pkg.cost_price,
+        agent_price: pkg.agent_price,
+        sub_agent_price: pkg.sub_agent_price,
+        public_price: pkg.public_price,
+        api_price: pkg.api_price,
+        is_unavailable: targetHold
+      };
+    });
+
+    const session = await getValidSession();
+    if (!session) {
+      toast({ title: "Session expired", description: "Please sign in again.", variant: "destructive" });
+      setUpdatingMashupHold(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "save_package_settings", packages: updatedPackages },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (error || data?.error) {
+        toast({ title: "Operation failed", description: data?.error || error?.message, variant: "destructive" });
+        setUpdatingMashupHold(false);
+        return;
+      }
+
+      setSettings(prev => {
+        const next = { ...prev };
+        mashupKeys.forEach(key => {
+          next[key] = { ...next[key], is_unavailable: targetHold };
+        });
+        return next;
+      });
+
+      if (currentUser) {
+        await logAudit(currentUser.id, targetHold ? "suspend_all_mashup_packages" : "resume_all_mashup_packages", { count: updatedPackages.length });
+      }
+
+      toast({ 
+        title: "Success", 
+        description: targetHold 
+          ? "All MTN Mash Up packages are now ON HOLD." 
+          : "All MTN Mash Up packages have been RESUMED." 
+      });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setUpdatingMashupHold(false);
     }
   };
 
@@ -947,6 +1019,27 @@ const AdminPackages = () => {
             <FileDown className="w-4 h-4" />
             Export Mash Up
           </Button>
+          {mashupKeys.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={toggleAllMashupHold}
+              disabled={updatingMashupHold || saving || seeding}
+              className={`gap-2 ${
+                allMashupOnHold
+                  ? "border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20"
+                  : "border-red-500/20 text-red-600 hover:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+              }`}
+            >
+              {updatingMashupHold ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : allMashupOnHold ? (
+                <Play className="w-4 h-4" />
+              ) : (
+                <Pause className="w-4 h-4" />
+              )}
+              {allMashupOnHold ? "Resume Mash Up" : "Hold Mash Up"}
+            </Button>
+          )}
           <Button variant="outline" onClick={seedDefaultPrices} disabled={seeding || saving} className="gap-2">
             {seeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <DatabaseZap className="w-4 h-4" />}
             Seed Default Prices
