@@ -76,7 +76,27 @@ const WorldCupPredictor = () => {
             return new Date(m.kickoff).toDateString() === todayStr;
           });
           
-          setMatches(todayMatches);
+          // Sort by team popularity to ensure top matches are prioritized
+          const popularTeams = [
+            'brazil', 'argentina', 'france', 'germany', 'spain', 'england', 
+            'portugal', 'netherlands', 'belgium', 'italy', 'uruguay', 
+            'croatia', 'usa', 'united states', 'mexico', 'ghana', 
+            'south korea', 'switzerland', 'canada'
+          ];
+          
+          const getPopularityScore = (match: any) => {
+            let score = 0;
+            const home = match.homeTeam.toLowerCase();
+            const away = match.awayTeam.toLowerCase();
+            if (popularTeams.some(t => home.includes(t))) score += 10;
+            if (popularTeams.some(t => away.includes(t))) score += 10;
+            return score;
+          };
+          
+          todayMatches.sort((a: any, b: any) => getPopularityScore(b) - getPopularityScore(a));
+          
+          // Show only top 4 popular matches
+          setMatches(todayMatches.slice(0, 4));
         }
 
         // 2. Fetch predictions
