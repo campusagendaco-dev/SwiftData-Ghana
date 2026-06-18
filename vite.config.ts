@@ -13,6 +13,13 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  build: {
+    sourcemap: false, // Ensures source code cannot be reconstructed from the bundle
+    minify: "esbuild",
+  },
+  esbuild: {
+    drop: ["console", "debugger"], // Removes all console.logs to prevent leaking sensitive info
+  },
   plugins: [
     react(),
     VitePWA({
