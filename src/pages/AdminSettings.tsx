@@ -96,6 +96,7 @@ interface SystemSettings {
   mashup_automation_enabled: boolean;
   mashup_export_threshold: string;
   mashup_whatsapp_number: string;
+  mashup_delivery_delay_mins: string;
 }
 
 const AdminSettings = () => {
@@ -184,6 +185,7 @@ const AdminSettings = () => {
     mashup_automation_enabled: false,
     mashup_export_threshold: "10",
     mashup_whatsapp_number: "",
+    mashup_delivery_delay_mins: "15",
   });
 
   const [currentIp, setCurrentIp] = useState("");
@@ -482,6 +484,7 @@ const AdminSettings = () => {
           mashup_automation_enabled: d.mashup_automation_enabled || false,
           mashup_export_threshold: String(d.mashup_export_threshold || "10"),
           mashup_whatsapp_number: d.mashup_whatsapp_number || "",
+          mashup_delivery_delay_mins: String(d.mashup_delivery_delay_mins || "15"),
         });
       }
       setLoading(false);
@@ -555,6 +558,7 @@ const AdminSettings = () => {
       mashup_automation_enabled: settings.mashup_automation_enabled,
       mashup_export_threshold: parseInt(settings.mashup_export_threshold) || 10,
       mashup_whatsapp_number: settings.mashup_whatsapp_number.trim(),
+      mashup_delivery_delay_mins: parseInt(settings.mashup_delivery_delay_mins) || 15,
     };
 
     try {
@@ -897,7 +901,7 @@ const AdminSettings = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="mashup-threshold">Export Threshold (Count)</Label>
                   <Input
@@ -909,6 +913,20 @@ const AdminSettings = () => {
                   />
                   <p className="text-[10px] text-muted-foreground">
                     Number of pending orders required to trigger auto-export.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mashup-delay">Auto-Delivery Delay (Mins)</Label>
+                  <Input
+                    id="mashup-delay"
+                    type="number"
+                    min="1"
+                    value={settings.mashup_delivery_delay_mins}
+                    onChange={(e) => setSettings({ ...settings, mashup_delivery_delay_mins: e.target.value })}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Time in minutes before processing status transitions to delivered.
                   </p>
                 </div>
 
