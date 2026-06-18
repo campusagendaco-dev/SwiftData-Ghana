@@ -445,7 +445,7 @@ const AppContent = () => {
         </Route>
 
         {/* Admin dashboard */}
-        <Route path="/admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
+        <Route path="/admin" element={isAdminSubdomain ? <AdminGuard><AdminLayout /></AdminGuard> : <Navigate to="/" replace />}>
           <Route index element={<AdminOverview />} />
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />
