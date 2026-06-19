@@ -310,6 +310,21 @@ const AdminPromotions = () => {
     fetchPromos();
   };
 
+  const handleResetPromoUses = async (id: string, code: string) => {
+    if (!confirm(`Are you sure you want to reset all claims for ${code}? This will set uses back to 0 and allow people who already claimed it to claim it again.`)) return;
+    
+    const { error } = await supabase.rpc("reset_promo_claims", { p_promo_id: id });
+    if (error) {
+      toast({ title: "Failed to reset claims", description: error.message, variant: "destructive" });
+    } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "reset_promo_claims", { promo_id: id, code });
+      }
+      toast({ title: `Claims reset for ${code}!` });
+      fetchPromos();
+    }
+  };
+
   return (
     <div className="space-y-8 pb-10">
       <div className="border-b border-white/5 pb-6">
@@ -609,6 +624,12 @@ const AdminPromotions = () => {
                               onClick={() => handleToggleActive(promo.id, promo.is_active)}
                               className="text-xs border-white/10 text-white/60 hover:text-white rounded-xl">
                               {promo.is_active ? "Disable" : "Enable"}
+                            </Button>
+                            <Button size="sm" variant="outline"
+                              onClick={() => handleResetPromoUses(promo.id, promo.code)}
+                              className="text-xs border-amber-500/20 bg-amber-500/5 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-xl"
+                              title="Reset all claims and uses to 0">
+                              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Reset
                             </Button>
                             <Button size="sm" variant="ghost"
                               onClick={() => handleDelete(promo.id)}
