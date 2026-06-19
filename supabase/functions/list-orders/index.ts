@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
@@ -87,13 +88,8 @@ serve(async (req) => {
     // Admin users can look up any phone; regular users only their own agent orders
     let isAdmin = false;
     if (user) {
-      const { data: roles } = await supabaseAdmin
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      isAdmin = Boolean(roles);
+      const authResult = await verifyAdmin(req, supabaseAdmin);
+      isAdmin = authResult.success;
     }
 
     let query = supabaseAdmin

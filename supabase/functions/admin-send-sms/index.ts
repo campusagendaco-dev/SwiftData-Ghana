@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 type TargetType = "all" | "agents" | "sub_agents" | "parent_agents" | "users" | "pending_orders" | "all_order_phones";
 
@@ -224,9 +225,6 @@ serve(async (req: Request) => {
   }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const supabaseUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
 
   const { apiKey: txtApiKey, senderId: txtSenderId } = await getSmsConfig(supabaseAdmin);
   if (!txtApiKey || !txtSenderId) {
@@ -236,20 +234,14 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { data: { user: actor }, error: actorError } = await supabaseUser.auth.getUser();
-    if (actorError || !actor) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const authResult = await verifyAdmin(req, supabaseAdmin);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error }), {
+        status: authResult.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const { data: roles } = await supabaseAdmin
-      .from("user_roles").select("role").eq("user_id", actor.id).eq("role", "admin").limit(1);
-    if (!roles || roles.length === 0) {
-      return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const actor = authResult.user;
 
     const payload = await req.json();
     const target_type = (payload?.target_type || "all") as TargetType | "test";

@@ -810,21 +810,26 @@ serve(async (req) => {
 
     // Special validation for free data claims to prevent spamming
     if (orderType.toLowerCase() === "free_data_claim") {
+      const failOrder = async (reason: string) => {
+        await supabaseAdmin.from("orders").update({ status: "fulfillment_failed", failure_reason: reason }).eq("id", targetReference);
+        return new Response(JSON.stringify({ status: "fulfillment_failed", error: reason }), { status: 200, headers: corsHeaders });
+      };
+
       const { data: settings } = await supabaseAdmin
         .from("v_system_settings_with_secrets").select("free_data_enabled, free_data_max_claims, free_data_claims_count")
         .eq("id", 1)
         .maybeSingle();
 
       if (!settings?.free_data_enabled) {
-        return new Response(JSON.stringify({ status: "fulfillment_failed", error: "Free data campaign is not active" }), { status: 200, headers: corsHeaders });
+        return await failOrder("Free data campaign is not active");
       }
 
       if ((settings.free_data_claims_count || 0) >= (settings.free_data_max_claims || 0)) {
-        return new Response(JSON.stringify({ status: "fulfillment_failed", error: "Free data claim limit reached" }), { status: 200, headers: corsHeaders });
+        return await failOrder("Free data claim limit reached");
       }
 
       // Check if this specific agent already has a fulfilled claim (excluding the current order if we are retrying it)
-      if (existingOrder?.agent_id) {
+      if (existingOrder?.agent_id && existingOrder.agent_id !== '00000000-0000-0000-0000-000000000000') {
         const { count: agentClaimCount } = await supabaseAdmin
           .from("orders")
           .select("id", { count: "exact", head: true })
@@ -835,7 +840,7 @@ serve(async (req) => {
         
         if ((agentClaimCount || 0) > 0) {
           console.warn(`[SECURITY] Blocked duplicate free data claim for agent ${existingOrder.agent_id}.`);
-          return new Response(JSON.stringify({ status: "fulfillment_failed", error: "You have already claimed your free data" }), { status: 200, headers: corsHeaders });
+          return await failOrder("You have already claimed your free data");
         }
       }
 
@@ -851,7 +856,7 @@ serve(async (req) => {
 
         if ((phoneClaimCount || 0) > 0) {
           console.warn(`[SECURITY] Blocked duplicate free data claim for recipient phone ${existingOrder.customer_phone}.`);
-          return new Response(JSON.stringify({ status: "fulfillment_failed", error: "This phone number has already received free data" }), { status: 200, headers: corsHeaders });
+          return await failOrder("This phone number has already received free data");
         }
       }
     }
@@ -1154,6 +1159,7 @@ serve(async (req) => {
     const customerPhone = claimedOrder.customer_phone || metadata?.customer_phone || "";
     const packageSize = claimedOrder.package_size || metadata?.package_size || "";
     const recipient = normalizeRecipient(customerPhone);
+    const effectiveOrderType = currentOrderType === "free_data_claim" ? "data" : currentOrderType;
 
     const requestBody = {
       networkRaw: network,
@@ -1166,7 +1172,7 @@ serve(async (req) => {
       bundle: packageSize,       // Alias
       package_size: packageSize, // Alias
       amount: claimedOrder.amount,
-      order_type: currentOrderType,
+      order_type: effectiveOrderType,
       orderReference: targetReference,
       reference: targetReference,      // Alias
     };
@@ -1189,7 +1195,7 @@ serve(async (req) => {
               return { customerNumber: metadata?.utility_account_number || recipient, billType: metadata?.utility_provider, amount: claimedOrder.amount, senderName: metadata?.utility_account_name || "CUSTOMER", order_type: "utility" };
            }
         }
-        return { network: netKey, phone: recipient, amount: claimedOrder.amount, package_size: packageSize, request_id: targetReference, order_type: currentOrderType };
+        return { network: netKey, phone: recipient, amount: claimedOrder.amount, package_size: packageSize, request_id: targetReference, order_type: effectiveOrderType };
       }
       if (ht === "qhowmenzconsult") {
         return {

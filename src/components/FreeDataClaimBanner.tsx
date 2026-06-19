@@ -71,8 +71,8 @@ const FreeDataClaimBanner = () => {
 
     setClaiming(true);
 
-    // Create a free_data_claim order — admin fulfills manually
-    const { error } = await supabase.from("orders").insert({
+    // Create a free_data_claim order — system will auto-fulfill
+    const { data: orderData, error } = await supabase.from("orders").insert({
       agent_id: user.id,
       order_type: "free_data_claim" as any,
       network: campaign.network,
@@ -81,11 +81,16 @@ const FreeDataClaimBanner = () => {
       amount: 0,
       profit: 0,
       status: "pending",
-    } as any);
+    } as any).select("id").single();
 
     if (error) {
       toast({ title: "Claim failed", description: error.message, variant: "destructive" });
     } else {
+      // Trigger automatic fulfillment in background
+      supabase.functions.invoke("verify-payment", {
+        body: { reference: orderData.id }
+      }).catch(err => console.error("Auto-fulfill error:", err));
+      
       setClaimed(true);
       setAlreadyClaimed(true);
       toast({

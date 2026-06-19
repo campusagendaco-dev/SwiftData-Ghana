@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
@@ -145,34 +146,14 @@ serve(async (req: Request) => {
     return json({ error: "Server misconfigured" }, 500);
   }
 
-  const authHeader = req.headers.get("Authorization");
-  const userToken = req.headers.get("x-user-access-token");
-  const token = userToken || authHeader?.replace(/^Bearer\s+/i, "").trim();
-
-  if (!token) {
-    return json({ error: "Unauthorized" }, 401);
+  const authResult = await verifyAdmin(req, supabaseAdmin);
+  if (!authResult.success) {
+    return new Response(JSON.stringify({ error: authResult.error }), {
+      status: authResult.status,
+      headers: JSON_HEADERS,
+    });
   }
-
-  try {
-    const {
-      data: { user: actor },
-      error: actorError,
-    } = await supabaseAdmin.auth.getUser(token);
-
-    if (actorError || !actor) {
-      return json({ error: "Unauthorized" }, 401);
-    }
-
-    const { data: roles } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", actor.id)
-      .eq("role", "admin")
-      .limit(1);
-
-    if (!roles || roles.length === 0) {
-      return json({ error: "Forbidden: admin only" }, 403);
-    }
+  const actor = authResult.user;
 
     const body = await req.json();
     const { action: rawAction, user_id, email, redirect_path, new_password } = body;

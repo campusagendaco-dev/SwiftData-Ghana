@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -34,27 +35,11 @@ serve(async (req) => {
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // 1. Authenticate Request
-  const authHeader = req.headers.get("Authorization") || "";
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-
-  if (!token) return json({ error: "Unauthorized" }, 401);
-
-  try {
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
-
-    // Validate Admin Role
-    const { data: roles } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .limit(1);
-
-    if (!roles || roles.length === 0) {
-      return json({ error: "Forbidden: Admin access required" }, 403);
-    }
+  const authResult = await verifyAdmin(req, supabaseAdmin);
+  if (!authResult.success) {
+    return json({ error: authResult.error }, authResult.status);
+  }
+  const user = authResult.user;
 
     const body = await req.json().catch(() => ({}));
     const { action, format = "text", limit = 100, order_ids } = body;

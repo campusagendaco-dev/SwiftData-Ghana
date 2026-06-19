@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,17 +109,10 @@ serve(async (req) => {
   }
 
   if (!isServiceRole) {
-    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const { data: role } = await supabase
-      .from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
-    if (!role) {
-      return new Response(JSON.stringify({ success: false, error: "Forbidden: admin only" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const authResult = await verifyAdmin(req, supabase);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ success: false, error: authResult.error }), {
+        status: authResult.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
   }

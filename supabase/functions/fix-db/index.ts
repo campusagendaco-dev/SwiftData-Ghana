@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 // SECURITY: This function is DISABLED and locked down.
 // Raw SQL execution via unauthenticated endpoint is a critical vulnerability.
@@ -31,40 +32,17 @@ serve(async (req) => {
 
   // SECURITY: Verify the caller is authenticated and is an admin
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const token = authHeader.slice(7).trim();
+  const token = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
 
   // Service role key bypass (only for internal server-to-server calls)
   const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
 
   if (!isServiceRole) {
-    // Validate as admin user
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
-
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: role } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-
-    if (!role) {
-      return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
-        status: 403,
+    const authResult = await verifyAdmin(req, supabase);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error }), {
+        status: authResult.status,
         headers: { "Content-Type": "application/json" },
       });
     }
