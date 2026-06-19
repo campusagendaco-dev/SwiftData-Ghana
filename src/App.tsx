@@ -317,6 +317,7 @@ const AppContent = () => {
 
   const activeDomain = getActiveStoreDomain();
   const isAdminSubdomain = window.location.hostname.startsWith("senyo.");
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
   const isDashboard = location.pathname.startsWith("/dashboard");
   const isAdmin = location.pathname.startsWith("/admin");
   const isAgentStore = location.pathname.startsWith("/store/") || (!!activeDomain && !isDashboard && !isAdmin);
@@ -445,7 +446,7 @@ const AppContent = () => {
         </Route>
 
         {/* Admin dashboard */}
-        <Route path="/admin" element={isAdminSubdomain ? <AdminGuard><AdminLayout /></AdminGuard> : <Navigate to="/" replace />}>
+        <Route path="/admin" element={(isAdminSubdomain || isLocal) ? <AdminGuard><AdminLayout /></AdminGuard> : <Navigate to="/" replace />}>
           <Route index element={<AdminOverview />} />
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />

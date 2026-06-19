@@ -167,6 +167,27 @@ const AdminPromotions = () => {
     setSavingFreeData(false);
   };
 
+  const handleResetFreeDataClaims = async () => {
+    if (!confirm("Are you absolutely sure you want to reset the Free Data Campaign claims to 0? This will archive existing claims.")) return;
+    
+    setSavingFreeData(true);
+    const { error } = await supabase
+      .from("orders")
+      .update({ order_type: "free_data_claim_archived" } as any)
+      .eq("order_type" as any, "free_data_claim");
+
+    if (error) {
+      toast({ title: "Failed to reset claims", description: error.message, variant: "destructive" });
+    } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "reset_free_data_claims", {});
+      }
+      setClaimCount(0);
+      toast({ title: "Free Data Campaign claims reset to 0!" });
+    }
+    setSavingFreeData(false);
+  };
+
   const handleSaveFreeAgentPromo = async () => {
     setSavingFreeAgentPromo(true);
     const { error } = await supabase
@@ -450,8 +471,15 @@ const AdminPromotions = () => {
               {savingFreeData ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : freeData.free_data_enabled ? <ToggleRight className="w-4 h-4 mr-2" /> : <ToggleLeft className="w-4 h-4 mr-2" />}
               {freeData.free_data_enabled ? "Campaign is LIVE — Save Changes" : "Save (Campaign is OFF)"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={fetchFreeDataSettings} className="text-white/40 hover:text-white">
-              <RefreshCw className="w-3.5 h-3.5" />
+            <Button variant="ghost" size="sm" onClick={fetchFreeDataSettings} className="text-white/40 hover:text-white" title="Refresh count">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handleResetFreeDataClaims}
+              className="border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 text-amber-400 font-bold rounded-xl h-10 gap-2 ml-auto"
+            >
+              <RefreshCw className="w-4 h-4" /> Reset Claims to 0
             </Button>
           </div>
         </div>
