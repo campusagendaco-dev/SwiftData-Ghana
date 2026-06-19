@@ -243,18 +243,7 @@ const AdminPromotions = () => {
       return;
     }
     
-    const headers = ["Code", "Discount Percentage", "Current Uses", "Max Uses", "Status", "Created At"];
-    const csvContent = [
-      headers.join(","),
-      ...promos.map(p => [
-        p.code,
-        p.discount_percentage,
-        p.current_uses,
-        p.max_uses,
-        p.is_active ? "Active" : "Disabled",
-        new Date(p.created_at).toLocaleString().replace(/,/g, "")
-      ].join(","))
-    ].join("\n");
+    const csvContent = promos.map(p => p.code).join("\n");
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -291,7 +280,7 @@ const AdminPromotions = () => {
         // Generate random 5-char alphanumeric suffix
         const suffix = Math.random().toString(36).substring(2, 7).toUpperCase();
         codesToCreate.push({
-          code: `${prefix}-${suffix}`,
+          code: `${prefix}${suffix}`,
           discount_percentage: pct,
           max_uses: max,
           is_active: true,
