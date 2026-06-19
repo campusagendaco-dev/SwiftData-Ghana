@@ -71,6 +71,7 @@ const AdminPromotions = () => {
   const [freeDataMissing, setFreeDataMissing] = useState(false);
   const [savingFreeData, setSavingFreeData] = useState(false);
   const [claimCount, setClaimCount] = useState(0);
+  const [totalFreeDataCost, setTotalFreeDataCost] = useState(0);
 
   const fetchPromos = useCallback(async () => {
     setPromoLoading(true);
@@ -131,6 +132,14 @@ const AdminPromotions = () => {
       .select("id", { count: "exact", head: true })
       .eq("order_type" as any, "free_data_claim");
     setClaimCount(count || 0);
+
+    const { data: sumData } = await supabase
+      .from("orders")
+      .select("discount_amount")
+      .eq("order_type" as any, "free_data_claim");
+    
+    const cost = sumData ? sumData.reduce((acc, row) => acc + (Number(row.discount_amount) || 0), 0) : 0;
+    setTotalFreeDataCost(cost);
   }, []);
 
   useEffect(() => {
@@ -184,6 +193,7 @@ const AdminPromotions = () => {
       }
       setClaimCount(0);
       toast({ title: "Free Data Campaign claims reset to 0!" });
+      setTotalFreeDataCost(0);
     }
     setSavingFreeData(false);
   };
@@ -253,6 +263,16 @@ const AdminPromotions = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDeleteAllCodes = async () => {
+    if (!confirm("Are you ABSOLUTELY sure you want to delete EVERY SINGLE promo code? This cannot be undone.")) return;
+    await (supabase as any).from("promo_codes").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (currentUser) {
+      await logAudit(currentUser.id, "delete_all_promo_codes", {});
+    }
+    fetchPromos();
+    toast({ title: "All promo codes deleted!" });
   };
 
   const handleGenerate = async () => {
@@ -389,7 +409,7 @@ const AdminPromotions = () => {
           )}
 
           {/* Stats row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <div className="rounded-xl bg-white/5 border border-white/5 p-3 text-center">
               <p className="text-xs text-white/40 mb-1">Claims</p>
               <p className="font-black text-xl text-white">{claimCount}</p>
@@ -407,6 +427,10 @@ const AdminPromotions = () => {
             <div className="rounded-xl bg-white/5 border border-white/5 p-3 text-center">
               <p className="text-xs text-white/40 mb-1">Bundle</p>
               <p className="font-black text-xl text-green-400">{freeData.free_data_package_size}</p>
+            </div>
+            <div className="rounded-xl bg-white/5 border border-white/5 p-3 text-center">
+              <p className="text-xs text-white/40 mb-1">Total Cost</p>
+              <p className="font-black text-xl text-red-400">GH₵{totalFreeDataCost.toFixed(2)}</p>
             </div>
           </div>
 
@@ -601,9 +625,14 @@ const AdminPromotions = () => {
                     <h3 className="font-bold text-white">Active Codes</h3>
                     <p className="text-xs text-white/40 mt-0.5">Click a code to disable or delete it.</p>
                   </div>
-                  <Button size="sm" variant="outline" onClick={handleExportCSV} disabled={promos.length === 0} className="text-xs border-white/10 text-white/60 hover:text-white rounded-xl">
-                    <Download className="w-4 h-4 mr-2" /> Export CSV
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={handleExportCSV} disabled={promos.length === 0} className="text-xs border-white/10 text-white/60 hover:text-white rounded-xl">
+                      <Download className="w-4 h-4 mr-2" /> Export CSV
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleDeleteAllCodes} disabled={promos.length === 0} className="text-xs border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl">
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete All
+                    </Button>
+                  </div>
                 </div>
                 <div className="p-4">
                   {promoLoading ? (
@@ -668,7 +697,15 @@ const AdminPromotions = () => {
                   <Plus className="w-4 h-4 text-amber-400" /> New Code
                 </h3>
                 <div>
-                  <Label className="text-xs text-white/50 mb-1.5 block">Code (or Prefix)</Label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <Label className="text-xs text-white/50 block">Code (or Prefix)</Label>
+                    <button 
+                      onClick={() => setCode(Math.random().toString(36).substring(2, 10).toUpperCase())}
+                      className="text-[10px] text-amber-400 hover:text-amber-300 font-bold bg-amber-400/10 px-2 py-0.5 rounded flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Regenerate Random
+                    </button>
+                  </div>
                   <Input placeholder="e.g. FLASH20" className="uppercase font-mono bg-white/5 border-white/10 text-white rounded-xl focus:border-amber-400/40"
                     value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
                 </div>
