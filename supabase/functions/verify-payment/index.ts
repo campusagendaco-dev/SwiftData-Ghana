@@ -1310,8 +1310,8 @@ serve(async (req) => {
     }
 
     if (result.ok) {
-      // User requested fix: Treat ALL successful API pushes as fulfilled immediately to bypass unreliable status checks
-      const targetStatus = "fulfilled";
+      // successful API pushes remain at 'processing' state to be auto-delivered after delay
+      const targetStatus = "processing";
       const patch: any = { provider_id: successfulProviderId, provider_order_id: result.id, status: targetStatus, failure_reason: null };
       await supabaseAdmin.from("orders").update(patch).eq("id", targetReference);
 
@@ -1334,7 +1334,7 @@ serve(async (req) => {
           console.error("[verify-payment] Profit credit or notification failed:", e);
         }
       }
-      log(supabaseAdmin, { level: "info", source: "verify-payment", event: "order.fulfilled", message: `Order fulfilled — provider_order_id: ${result.id}`, order_id: targetReference, agent_id: claimedOrder.agent_id, provider_id: successfulProviderId, data: { provider_order_id: result.id, network, package_size: packageSize, amount: claimedOrder.amount } });
+      log(supabaseAdmin, { level: "info", source: "verify-payment", event: "order.processing", message: `Order successfully bought - set as processing — provider_order_id: ${result.id}`, order_id: targetReference, agent_id: claimedOrder.agent_id, provider_id: successfulProviderId, data: { provider_order_id: result.id, network, package_size: packageSize, amount: claimedOrder.amount } });
       return new Response(JSON.stringify({ status: targetStatus, provider_order_id: result.id }), { headers: corsHeaders });
     } else {
       // User requested fix: Automatically queue up failed API connections for retry processing loop
