@@ -995,6 +995,7 @@ const BuyData = () => {
                   <AnimatePresence>
                     {resolvedName && (
                       <motion.div 
+                        key="identity-confirmed"
                         initial={{ opacity: 0, height: 0, scale: 0.9 }}
                         animate={{ opacity: 1, height: "auto", scale: 1 }}
                         transition={{ type: "spring", bounce: 0.4 }}
@@ -1017,6 +1018,7 @@ const BuyData = () => {
 
                     {phone.length > 0 && !isPhoneValid && (
                       <motion.p 
+                        key="invalid-phone-alert"
                         initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
                         className="text-[10px] text-red-400/90 font-bold px-2 flex items-center gap-1.5"
                       >
@@ -1037,6 +1039,7 @@ const BuyData = () => {
                   <AnimatePresence>
                     {isPhoneValid && !isFreePromo && (
                       <motion.div 
+                        key="email-collapse"
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
