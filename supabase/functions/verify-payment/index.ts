@@ -979,6 +979,31 @@ serve(async (req) => {
       return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
     }
 
+    if (currentOrderType === "store_wallet_topup") {
+      const customerId = claimedOrder.customer_id || metadata?.customer_id;
+      const agentId = claimedOrder.agent_id;
+      const creditAmount = Number(claimedOrder.amount);
+
+      if (customerId && agentId && creditAmount > 0) {
+        const { data: creditRes, error: creditErr } = await supabaseAdmin.rpc("fulfill_store_wallet_topup", {
+          p_order_id: targetReference,
+          p_customer_id: customerId,
+          p_agent_id: agentId,
+          p_amount: creditAmount
+        });
+
+        if (creditErr || !creditRes?.success) {
+          console.error("Store topup automation failed in verify-payment:", creditErr || creditRes?.error);
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            failure_reason: creditRes?.error || "Automatic credit failed."
+          }).eq("id", targetReference);
+          return new Response(JSON.stringify({ status: "error", error: creditRes?.error || "Automatic credit failed" }), { headers: corsHeaders });
+        }
+      }
+      return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
+    }
+
     if (currentOrderType === "agent_activation") {
       const agentId = claimedOrder.agent_id || metadata?.agent_id;
       if (agentId) {
