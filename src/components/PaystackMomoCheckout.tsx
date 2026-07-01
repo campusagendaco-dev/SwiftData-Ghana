@@ -557,7 +557,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           <AnimatePresence mode="wait">
             
             {/* STEP 1: payment_number selection */}
-            {selectedMethod === 'momo' && activeGateway !== "korba" && step === 'payment_number' && (
+            {selectedMethod === 'momo' && step === 'payment_number' && (
               <motion.div
                 key="payment_number"
                 initial={{ opacity: 0, x: -20 }}
@@ -668,48 +668,6 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               </motion.div>
             )}
 
-            {/* KORBA XCHECKOUT INTERFACE */}
-            {selectedMethod === 'momo' && activeGateway === "korba" && step === "payment_number" && (
-              <motion.div
-                key="korba_checkout"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="space-y-6 text-center py-2"
-              >
-                <div className="space-y-2">
-                  <div className="mx-auto w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 font-black text-lg">
-                    ₵
-                  </div>
-                  <h4 className="text-sm font-black text-foreground uppercase tracking-wide">Korba Secure Checkout</h4>
-                  <p className="text-xs text-muted-foreground leading-relaxed px-2">
-                    You will be redirected to the secure, hosted Korba checkout page to finish your payment.
-                  </p>
-                </div>
-
-                <div className="space-y-3 pt-3">
-                  <button
-                    type="button"
-                    onClick={initiateKorbaXCheckout}
-                    className="w-full h-12 bg-amber-500 hover:bg-amber-600 text-black font-black rounded-xl transition-all shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2"
-                  >
-                    Proceed to Pay (₵{amount.toFixed(2)})
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                  
-                  {errorMessage && (
-                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal text-left animate-in fade-in duration-200">
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>{errorMessage}</span>
-                    </div>
-                  )}
-
-                  <p className="text-[10px] text-muted-foreground opacity-60">
-                    Safe and encrypted. Powered by Korba Xchange.
-                  </p>
-                </div>
-              </motion.div>
-            )}
 
             {selectedMethod === 'card' && step === 'payment_number' && (
               <motion.div
