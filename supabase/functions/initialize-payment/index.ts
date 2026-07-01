@@ -852,6 +852,12 @@ serve(async (req: Request) => {
       patch.status = (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending";
       patch.payment_method = activeGateway;
 
+      const { data: currentOrder } = await supabaseAdmin.from("orders").select("metadata").eq("id", reference).maybeSingle();
+      patch.metadata = {
+        ...(currentOrder?.metadata || {}),
+        ...(enrichedMetadata || {})
+      };
+
       if (Object.keys(patch).length > 0) {
         await supabaseAdmin.from("orders").update(patch).eq("id", reference);
       }

@@ -279,7 +279,9 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           metadata: {
             ...metadata,
             order_id: orderId,
-            use_xcheckout: true
+            use_xcheckout: true,
+            payment_phone: paymentPhone,
+            payment_network: paymentNetwork,
           },
         },
       });
@@ -327,6 +329,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           metadata: {
             ...metadata,
             order_id: orderId,
+            payment_phone: paymentPhone,
+            payment_network: paymentNetwork,
           },
         },
       });
