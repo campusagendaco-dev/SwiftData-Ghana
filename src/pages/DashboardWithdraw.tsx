@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ const DashboardWithdraw = () => {
   const [maxWithdrawal, setMaxWithdrawal] = useState(5000);
   const [systemEnabled, setSystemEnabled] = useState(true);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [completedOrderCount, setCompletedOrderCount] = useState(0);
 
   const { isSupported, credentials, authenticate } = useWebAuthn();
   const hasBiometric = isSupported && credentials.length > 0;
@@ -70,11 +72,12 @@ const DashboardWithdraw = () => {
   const fetchData = useCallback(async () => {
     if (!user) return;
 
-    const [ordersRes, parentRes, withdrawalsRes, walletRes] = await Promise.all([
+    const [ordersRes, parentRes, withdrawalsRes, walletRes, countRes] = await Promise.all([
       supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("withdrawals").select("*").eq("agent_id", user.id).order("created_at", { ascending: false }),
       supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle(),
+      supabase.from("orders").select("id", { count: "exact", head: true }).eq("agent_id", user.id).in("status", ["fulfilled", "completed"]),
     ]);
 
     // Fetch settings separately — columns may not exist in older deployments; default gracefully
@@ -108,6 +111,7 @@ const DashboardWithdraw = () => {
     setCompletedWithdrawals(completed);
     setPendingWithdrawals(pending);
     setWalletBalance(Number(walletRes.data?.balance || 0));
+    setCompletedOrderCount(countRes?.count || 0);
 
     if (settingsRes.data) {
       setMinWithdrawal(Number(settingsRes.data.min_withdrawal_amount) || 25);
@@ -234,6 +238,54 @@ const DashboardWithdraw = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Commission Level Card */}
+      <Card className="overflow-hidden border-amber-500/10 bg-amber-500/[0.02] relative group">
+        <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-orange-500 via-yellow-500 to-amber-500" />
+        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          <div className="space-y-2 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Active Agent Tier</span>
+              <Badge className={cn("text-[9px] font-black px-2 uppercase border border-amber-500/20", 
+                completedOrderCount >= 100 
+                  ? "bg-amber-500/10 text-amber-500" 
+                  : "bg-orange-500/10 text-orange-500"
+              )}>
+                {completedOrderCount >= 100 ? "Pro Partner (Gold)" : "Bronze Partner"}
+              </Badge>
+            </div>
+            
+            <h3 className="text-lg font-black tracking-tight text-foreground">
+              {completedOrderCount >= 100 ? "0.7% Airtime & Korba Data Commission" : "0.5% Airtime & Korba Data Commission"}
+            </h3>
+            
+            <p className="text-xs text-muted-foreground leading-normal max-w-xl">
+              You are currently earning <strong className="text-foreground">{completedOrderCount >= 100 ? "0.7%" : "0.5%"}</strong> commission on all Airtime and Korba Data sales, and <strong className="text-foreground">0.1%</strong> flat commission on ECG utility recharges.
+            </p>
+
+            {completedOrderCount < 100 && (
+              <div className="space-y-1.5 pt-1 max-w-md">
+                <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Pro Rank Progress</span>
+                  <span>{completedOrderCount} / 100 Orders</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden border border-border/10 p-[1px]">
+                  <div 
+                    className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.min(100, (completedOrderCount / 100) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="text-right sm:border-l border-border/60 pl-0 sm:pl-6 space-y-1 shrink-0">
+            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Completed Orders</p>
+            <p className="text-3xl font-black text-foreground">{completedOrderCount}</p>
+            <p className="text-[9px] text-muted-foreground">Qualifies your current commission tier</p>
+          </div>
+        </CardContent>
+      </Card>
 
       {profile && (
         <Card className="overflow-hidden border-indigo-500/10">
