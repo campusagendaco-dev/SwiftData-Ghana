@@ -245,7 +245,6 @@ serve(async (req: Request) => {
     const amount = Number(payload?.amount);
     const reference = typeof payload?.reference === "string" ? payload.reference.trim() : "";
     const callback_url = payload?.callback_url;
-    const metadata = payload?.metadata || {};
 
     if (!email || !reference) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), {
