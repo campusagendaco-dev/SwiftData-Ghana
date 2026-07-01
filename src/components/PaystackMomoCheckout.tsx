@@ -36,6 +36,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const [paymentNetwork, setPaymentNetwork] = useState<string>("MTN");
   const [step, setStep] = useState<'payment_number' | 'initiating' | 'otp_entry' | 'otp_verifying' | 'success'>('payment_number');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<'momo' | 'card'>('momo');
   
   // Real-time verification state
   const [verifiedName, setVerifiedName] = useState<string | null>(null);
@@ -56,6 +57,41 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       setPaymentNetwork(recipientNetwork);
     }
   }, [recipientNetwork]);
+
+  const [activeGateway, setActiveGateway] = useState<string>("paystack");
+
+  useEffect(() => {
+    const fetchGateway = async () => {
+      try {
+        const { data } = await supabase
+          .from("system_settings")
+          .select("active_payment_gateway, auto_gateway_switch_by_package")
+          .eq("id", 1)
+          .maybeSingle();
+
+        if (data) {
+          if (data.auto_gateway_switch_by_package && metadata?.is_korba) {
+            setActiveGateway("korba");
+          } else if (data.active_payment_gateway) {
+            setActiveGateway(data.active_payment_gateway);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load active gateway inside checkout modal", e);
+      }
+    };
+    fetchGateway();
+  }, [metadata]);
+
+  useEffect(() => {
+    if (!document.getElementById("korba-xcheckout-script")) {
+      const script = document.createElement("script");
+      script.id = "korba-xcheckout-script";
+      script.src = "https://paywithkorba.s3-eu-west-1.amazonaws.com/checkout.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
 
   // Real-time verification effect
   useEffect(() => {
@@ -218,6 +254,86 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to launch Paystack checkout.");
       setStep('payment_number');
+    }
+  };
+
+  const initiateKorbaXCheckout = async () => {
+    setStep('initiating');
+    setErrorMessage(null);
+    const orderId = metadata.order_id || crypto.randomUUID();
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("initialize-payment", {
+        body: {
+          email: email.trim() || `${paymentPhone || 'customer'}@swiftdata.gh`,
+          amount,
+          reference: orderId,
+          callback_url: metadata.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
+          metadata: {
+            ...metadata,
+            order_id: orderId,
+            use_xcheckout: true
+          },
+        },
+      });
+
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || "Failed to initialize Korba checkout session.");
+      }
+
+      const XCheckout = (window as any).XCheckout;
+      if (!XCheckout) {
+        throw new Error("Korba payment script not loaded. Please wait a moment or reload.");
+      }
+
+      XCheckout.configure({
+        merchantID: String(data.merchant_id),
+        orderID: data.reference,
+        description: metadata.order_type === "wallet_topup" ? "Wallet Topup" : "Service Payment",
+        amount: amount,
+        redirectURL: `${window.location.origin}/order-status?reference=${data.reference}`
+      });
+
+      XCheckout.pay();
+    } catch (err: any) {
+      console.error("Korba XCheckout launch error:", err);
+      setErrorMessage(err.message || "Failed to trigger Korba checkout screen.");
+      setStep('payment_number');
+      onFailure(err.message || "Korba Checkout error");
+    }
+  };
+
+  const initiateKorbaCardPay = async () => {
+    setStep('initiating');
+    setErrorMessage(null);
+    const orderId = metadata.order_id || crypto.randomUUID();
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("initialize-payment", {
+        body: {
+          email: email.trim() || `${paymentPhone || 'customer'}@swiftdata.gh`,
+          amount,
+          reference: orderId,
+          network_code: "CRD",
+          payment_method: "card",
+          callback_url: metadata.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
+          metadata: {
+            ...metadata,
+            order_id: orderId,
+          },
+        },
+      });
+
+      if (error || !data?.authorization_url) {
+        throw new Error(data?.error || error?.message || "Failed to initialize Card checkout session.");
+      }
+
+      window.location.href = data.authorization_url;
+    } catch (err: any) {
+      console.error("Korba Card launch error:", err);
+      setErrorMessage(err.message || "Failed to trigger Card payment screen.");
+      setStep('payment_number');
+      onFailure(err.message || "Card Checkout error");
     }
   };
 
@@ -391,17 +507,46 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           </button>
 
           <div className="relative z-10 flex flex-col items-center px-5">
-            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-500 mb-1">MoMo Direct Pay</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-500 mb-1">
+              {activeGateway === "korba" ? "Secure Checkout" : "MoMo Direct Pay"}
+            </span>
             <h3 className="text-3xl font-black tracking-tight text-foreground drop-shadow-sm">GH₵{amount.toFixed(2)}</h3>
           </div>
         </div>
 
         {/* Modal content viewport */}
         <div className="p-6 space-y-5 relative bg-card">
+          {step === 'payment_number' && (
+            <div className="grid grid-cols-2 gap-2 bg-muted/60 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setSelectedMethod('momo')}
+                className={`py-2 text-xs font-black uppercase rounded-lg transition-all ${
+                  selectedMethod === 'momo'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Mobile Money
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedMethod('card')}
+                className={`py-2 text-xs font-black uppercase rounded-lg transition-all ${
+                  selectedMethod === 'card'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Card Payment
+              </button>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             
             {/* STEP 1: payment_number selection */}
-            {step === 'payment_number' && (
+            {selectedMethod === 'momo' && activeGateway !== "korba" && step === 'payment_number' && (
               <motion.div
                 key="payment_number"
                 initial={{ opacity: 0, x: -20 }}
@@ -508,6 +653,115 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       <ShieldCheck className="w-3.5 h-3.5" /> Pay with Card / Standard
                     </button>
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* KORBA XCHECKOUT INTERFACE */}
+            {selectedMethod === 'momo' && activeGateway === "korba" && step === "payment_number" && (
+              <motion.div
+                key="korba_checkout"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="space-y-6 text-center py-2"
+              >
+                <div className="space-y-2">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500 font-black text-lg">
+                    ₵
+                  </div>
+                  <h4 className="text-sm font-black text-foreground uppercase tracking-wide">Korba Secure Checkout</h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed px-2">
+                    You will be redirected to the secure, hosted Korba checkout page to finish your payment.
+                  </p>
+                </div>
+
+                <div className="space-y-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={initiateKorbaXCheckout}
+                    className="w-full h-12 bg-amber-500 hover:bg-amber-600 text-black font-black rounded-xl transition-all shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2"
+                  >
+                    Proceed to Pay (₵{amount.toFixed(2)})
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  
+                  {errorMessage && (
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal text-left animate-in fade-in duration-200">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-muted-foreground opacity-60">
+                    Safe and encrypted. Powered by Korba Xchange.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {selectedMethod === 'card' && step === 'payment_number' && (
+              <motion.div
+                key="card_checkout"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-5 py-2 animate-in fade-in slide-in-from-right-4 duration-300"
+              >
+                <div className="space-y-1 text-center">
+                  <h4 className="text-sm font-black text-foreground uppercase tracking-wide">Pay with Credit/Debit Card</h4>
+                  <p className="text-xs text-muted-foreground">Secure international and local card processing powered by Korba Collections.</p>
+                </div>
+
+                {/* Styled Mock Credit Card Graphic */}
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-amber-600 p-5 text-white shadow-xl shadow-orange-500/15 border border-white/10 select-none">
+                  {/* Subtle grid lines background overlay */}
+                  <div className="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px] opacity-10 pointer-events-none" />
+                  
+                  <div className="flex items-start justify-between relative z-10 mb-8">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] opacity-80">Partner Wallet</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider">SwiftData Collections</h4>
+                    </div>
+                    {/* Mock Chip */}
+                    <div className="w-8 h-6 bg-yellow-200/80 rounded-md border border-yellow-300 shadow-sm" />
+                  </div>
+
+                  <div className="space-y-3 relative z-10">
+                    <p className="font-mono text-lg tracking-[0.25em] font-semibold">•••• •••• •••• ••••</p>
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-[7px] font-black uppercase tracking-widest opacity-60">Card Holder</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider">{email ? email.split('@')[0] : "CUSTOMER"}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[7px] font-black uppercase tracking-widest opacity-60">Expires</p>
+                        <p className="text-[10px] font-bold font-mono">12/29</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={initiateKorbaCardPay}
+                    className="w-full h-12 bg-amber-500 hover:bg-amber-600 text-black font-black rounded-xl transition-all shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2"
+                  >
+                    Proceed with Card Pay (₵{amount.toFixed(2)})
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  {errorMessage && (
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal text-left">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{errorMessage}</span>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-muted-foreground opacity-60 text-center">
+                    You will be redirected to the secure hosted card authorization page.
+                  </p>
                 </div>
               </motion.div>
             )}

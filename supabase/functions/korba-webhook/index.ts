@@ -51,6 +51,32 @@ async function sendWalletTopupSms(supabaseAdmin: any, userId: string, amount: nu
   }
 }
 
+async function verifyKorbaSignature(
+  secretKey: string,
+  transactionId: string,
+  status: string,
+  message: string,
+  receivedSignature: string
+): Promise<boolean> {
+  const messageToSign = `${transactionId}:${status}:${message}`;
+  
+  const keyData = new TextEncoder().encode(secretKey);
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const messageData = new TextEncoder().encode(messageToSign);
+  const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+  const computedSignature = Array.from(new Uint8Array(signatureBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+    
+  return computedSignature.toLowerCase() === receivedSignature.toLowerCase();
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });
@@ -77,27 +103,70 @@ serve(async (req) => {
     if (expectedToken) {
       const receivedToken = req.headers.get("x-callback-token") || req.headers.get("X-Callback-Token");
       if (receivedToken !== expectedToken) {
-        console.error(`[korba-webhook] Unauthorized callback: expected ${expectedToken}, got ${receivedToken}`);
-        return json({ error: "Unauthorized" }, 401);
+        console.error(`[korba-webhook] Forbidden callback: expected ${expectedToken}, got ${receivedToken}`);
+        return json({ error: "Forbidden" }, 403);
       }
     }
   } catch (err) {
     console.error("[korba-webhook] Callback token verification error:", err);
   }
 
-  // Parse GET query parameters
+  // Parse parameters from query string or request body
   const url = new URL(req.url);
-  const transactionId = url.searchParams.get("transaction_id") || "";
-  const status = (url.searchParams.get("status") || "").toUpperCase();
-  const message = url.searchParams.get("message") || "";
+  let transactionId = url.searchParams.get("transaction_id") || "";
+  let status = (url.searchParams.get("status") || "").toUpperCase();
+  let message = url.searchParams.get("message") || "";
+  let prepaidToken = url.searchParams.get("prepaid_token") || "";
+  let signature = url.searchParams.get("signature") || "";
 
-  console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}`);
-
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!transactionId || !UUID_RE.test(transactionId)) {
-      console.warn(`[korba-webhook] Invalid or malformed transaction_id: ${transactionId}`);
-      return json({ error: "Invalid transaction_id parameter" }, 400);
+  if (req.method === "POST") {
+    try {
+      const contentType = req.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const body = await req.json();
+        if (body.transaction_id) transactionId = body.transaction_id;
+        if (body.status) status = String(body.status).toUpperCase();
+        if (body.message) message = body.message;
+        if (body.prepaid_token) prepaidToken = body.prepaid_token;
+        if (body.signature) signature = body.signature;
+      } else {
+        const bodyText = await req.text();
+        const params = new URLSearchParams(bodyText);
+        if (params.get("transaction_id")) transactionId = params.get("transaction_id") || "";
+        if (params.get("status")) status = (params.get("status") || "").toUpperCase();
+        if (params.get("message")) message = params.get("message") || "";
+        if (params.get("prepaid_token")) prepaidToken = params.get("prepaid_token") || "";
+        if (params.get("signature")) signature = params.get("signature") || "";
+      }
+    } catch (e) {
+      console.error("[korba-webhook] Error parsing POST body:", e);
     }
+  }
+
+  // Verify HMAC signature to protect from fake callbacks
+  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+  if (KORBA_SECRET_KEY) {
+    if (!signature) {
+      console.error("[korba-webhook] Unauthorized callback: Missing signature parameter.");
+      return json({ error: "Unauthorized: Missing signature" }, 401);
+    }
+    const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
+    if (!isSignatureValid) {
+      console.error(`[korba-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
+      return json({ error: "Unauthorized: Signature mismatch" }, 401);
+    }
+    console.log("[korba-webhook] Signature verified successfully.");
+  } else {
+    console.warn("[korba-webhook] KORBA_SECRET_KEY is not configured in env. Skipping signature verification.");
+  }
+
+  console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}, token=${prepaidToken}`);
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!transactionId || !UUID_RE.test(transactionId)) {
+    console.warn(`[korba-webhook] Invalid or malformed transaction_id: ${transactionId}`);
+    return json({ error: "Invalid transaction_id parameter" }, 400);
+  }
 
   try {
     // 1. Fetch order
@@ -120,11 +189,15 @@ serve(async (req) => {
     // Handle fulfillment success callbacks for orders already submitted for processing/failed retry
     if ((existingOrder.status === "processing" || existingOrder.status === "fulfillment_failed") && status === "SUCCESS") {
       console.log(`[korba-webhook] Fulfillment callback success for order ${transactionId}. Marking as fulfilled.`);
-      await supabaseAdmin.from("orders").update({
+      const patch: any = {
         status: "fulfilled",
-        failure_reason: null,
+        failure_reason: prepaidToken ? `Token: ${prepaidToken}` : null,
         updated_at: new Date().toISOString()
-      }).eq("id", transactionId);
+      };
+      if (prepaidToken) {
+        patch.metadata = { ...(existingOrder.metadata || {}), prepaid_token: prepaidToken };
+      }
+      await supabaseAdmin.from("orders").update(patch).eq("id", transactionId);
 
       try {
         await supabaseAdmin.rpc("credit_order_profits", { p_order_id: transactionId });
@@ -145,6 +218,30 @@ serve(async (req) => {
       }
 
       await notifyApiClient(supabaseAdmin, transactionId, "fulfilled");
+
+      // Trigger SMS for Customer
+      if (existingOrder.customer_phone) {
+        try {
+          const smsType = existingOrder.order_type === "utility" ? "utility_paid" : "payment_success";
+          const smsVars = {
+            phone: existingOrder.customer_phone,
+            package: existingOrder.package_size || "",
+            utility_type: existingOrder.network || "",
+            account: existingOrder.customer_phone,
+            amount: String(existingOrder.amount || 0),
+            token: prepaidToken || ""
+          };
+          if (existingOrder.order_type === "utility" && prepaidToken) {
+            const customMsg = `ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nThank you for using SwiftData!`;
+            await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom" as any, { message: customMsg }, existingOrder.agent_id);
+          } else {
+            await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, smsType, smsVars, existingOrder.agent_id);
+          }
+        } catch (smsErr) {
+          console.error("[korba-webhook] Success SMS dispatch failed:", smsErr);
+        }
+      }
+
       return json({ received: true, fulfilled: true });
     }
 

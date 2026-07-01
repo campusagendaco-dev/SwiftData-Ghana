@@ -27,10 +27,27 @@ export const AirtelTigoLogo = ({ size = 40 }: { size?: number }) => (
 );
 
 export const ECGLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="9" fill="#003882"/>
-    {/* Lightning bolt */}
-    <path d="M22 8L14 22H20L18 32L26 18H20L22 8Z" fill="#FFCB00"/>
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Outer Blue Ring */}
+    <circle cx="50" cy="50" r="48" fill="#092d90" stroke="#061f65" strokeWidth="2"/>
+    {/* Yellow Ring */}
+    <circle cx="50" cy="50" r="40" fill="#fecb00" stroke="#092d90" strokeWidth="6"/>
+    {/* Inner Blue Circle */}
+    <circle cx="50" cy="50" r="28" fill="#0d3cb1"/>
+    
+    {/* Three Red Propeller/Arrows */}
+    <g transform="translate(50, 50)">
+      {/* Top Arrow */}
+      <path d="M-8,-6 L0,-38 L8,-6 L14,-10 L0,12 L-14,-10 Z" fill="#e31e24" stroke="#ffeb00" strokeWidth="1.5" strokeLinejoin="round"/>
+      {/* Right Arrow (rotated 120 deg) */}
+      <g transform="rotate(120)">
+        <path d="M-8,-6 L0,-38 L8,-6 L14,-10 L0,12 L-14,-10 Z" fill="#e31e24" stroke="#ffeb00" strokeWidth="1.5" strokeLinejoin="round"/>
+      </g>
+      {/* Left Arrow (rotated 240 deg) */}
+      <g transform="rotate(240)">
+        <path d="M-8,-6 L0,-38 L8,-6 L14,-10 L0,12 L-14,-10 Z" fill="#e31e24" stroke="#ffeb00" strokeWidth="1.5" strokeLinejoin="round"/>
+      </g>
+    </g>
   </svg>
 );
 
@@ -55,33 +72,54 @@ export const GhanaWaterLogo = ({ size = 40 }: { size?: number }) => (
 );
 
 export const DSTVLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="9" fill="#003087"/>
-    {/* Satellite dish */}
-    <path d="M10 28C10 20 14 14 20 12" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-    <path d="M13 31C13 21 17.5 15 22 13" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.55"/>
-    <path d="M16 32C16 22 20 17 24 15" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.3"/>
-    {/* Dish circle */}
-    <circle cx="26" cy="15" r="5" fill="none" stroke="#00A0DC" strokeWidth="2.5"/>
-    <circle cx="26" cy="15" r="2" fill="#00A0DC"/>
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="22" fill="url(#dstvGradBg)"/>
+    <text x="50" y="60" textAnchor="middle" fill="#FFFFFF" fontSize="28" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" letterSpacing="-1">DStv</text>
+    <defs>
+      <linearGradient id="dstvGradBg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stopColor="#0b246a"/>
+        <stop offset="100%" stopColor="#0080ff"/>
+      </linearGradient>
+    </defs>
   </svg>
 );
 
 export const GOTVLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="9" fill="#00873D"/>
-    {/* Bold "G" */}
-    <path d="M26 15.5C24.4 13.5 22.4 12.5 20 12.5C15.8 12.5 12.5 15.8 12.5 20C12.5 24.2 15.8 27.5 20 27.5C22.8 27.5 25.2 26 26.5 23.5H19.5V20H28C28 24.9 24.4 31 20 31C13.9 31 9 26.1 9 20C9 13.9 13.9 9 20 9C23.1 9 25.9 10.2 28 12.2L26 15.5Z" fill="white"/>
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="22" fill="#FFFFFF" stroke="#EAEAEA" strokeWidth="2"/>
+    <text x="50" y="48" textAnchor="middle" fontFamily="Arial Black, sans-serif" fontWeight="900" fontSize="30">
+      <tspan fill="#E31E24">GO</tspan>
+      <tspan fill="#008A3B">tv</tspan>
+    </text>
+    <text x="50" y="72" textAnchor="middle" fill="#222222" fontSize="9" fontFamily="Arial, sans-serif" fontWeight="bold" letterSpacing="0.2">Live it. Love it.</text>
   </svg>
 );
 
 export const StarTimesLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="9" fill="#D0021B"/>
-    {/* Star shape */}
-    <polygon
-      points="20,8 22.9,16.8 32,16.8 24.5,22.1 27.6,31 20,25.6 12.4,31 15.5,22.1 8,16.8 17.1,16.8"
-      fill="white"
-    />
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="22" fill="#F89C1E"/>
+    <circle cx="50" cy="50" r="28" fill="#FFFFFF"/>
+    <path d="M50 50 L50 25 A25 25 0 0 1 75 50 Z" fill="#F58220"/>
+    <path d="M50 50 L75 50 A25 25 0 0 1 50 75 Z" fill="#00A0E9"/>
+    <path d="M50 50 L50 75 A25 25 0 0 1 25 50 Z" fill="#E4007F"/>
+    <path d="M50 50 L25 50 A25 25 0 0 1 50 25 Z" fill="#FFF100"/>
+    <path d="M50 36 L53.5 45.5 L63.5 49 L53.5 52.5 L50 62 L46.5 52.5 L36.5 49 L46.5 45.5 Z" fill="#FFFFFF"/>
+  </svg>
+);
+
+export const KweseTVLogo = ({ size = 40 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="22" fill="#F5F5F7" stroke="#E5E5E7" strokeWidth="2"/>
+    <text x="50" y="46" textAnchor="middle" fill="#4B2C82" fontSize="20" fontFamily="Arial Black, Impact, sans-serif" fontWeight="900">KWESÉ</text>
+    <text x="50" y="74" textAnchor="middle" fill="#D80073" fontSize="24" fontFamily="Arial Black, sans-serif" fontWeight="900">TV</text>
+  </svg>
+);
+
+export const GBCTVLogo = ({ size = 40 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="48" fill="#5E35B1" stroke="#4527A0" strokeWidth="2"/>
+    <rect x="25" y="24" width="50" height="24" rx="8" fill="#FFFFFF"/>
+    <text x="50" y="41" textAnchor="middle" fill="#5E35B1" fontSize="14" fontFamily="Arial Black, sans-serif" fontWeight="900">GBC</text>
+    <text x="50" y="80" textAnchor="middle" fill="#FFFFFF" fontSize="30" fontFamily="Arial, Helvetica, sans-serif" fontWeight="900" letterSpacing="1">TV</text>
   </svg>
 );

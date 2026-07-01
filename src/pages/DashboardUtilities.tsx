@@ -1,16 +1,18 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Zap, Droplets, Tv, Loader2, ShieldCheck,
   CreditCard, Wallet, ChevronRight, RotateCcw,
-  CheckCircle2, AlertCircle,
+  CheckCircle2, AlertCircle, Info, Plus, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ECGLogo, NEDCOLogo, GhanaWaterLogo, DSTVLogo, GOTVLogo, StarTimesLogo } from "@/components/BrandLogos";
+import { ECGLogo, NEDCOLogo, GhanaWaterLogo, DSTVLogo, GOTVLogo, StarTimesLogo, KweseTVLogo, GBCTVLogo } from "@/components/BrandLogos";
 import { useConnectivity } from "@/hooks/useConnectivity";
 import { WifiOff } from "lucide-react";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 
 type UtilityType = "electricity" | "water" | "tv";
@@ -64,6 +66,8 @@ const PROVIDERS: Record<UtilityType, ProviderEntry[]> = {
     { name: "DSTV",      Logo: DSTVLogo },
     { name: "GOtv",      Logo: GOTVLogo },
     { name: "StarTimes", Logo: StarTimesLogo },
+    { name: "KWESETV",   Logo: KweseTVLogo },
+    { name: "GBCTV",     Logo: GBCTVLogo },
   ],
 };
 
@@ -95,8 +99,51 @@ const DashboardUtilities = () => {
   const [verifying, setVerifying] = useState(false);
   const [accountName, setAccountName] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [lookupTxId, setLookupTxId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [meters, setMeters] = useState<any[] | null>(null);
+  const [selectedMeter, setSelectedMeter] = useState<any | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  
+  const navigate = useNavigate();
   const { isOnline } = useConnectivity();
+  
+  const [savedMeters, setSavedMeters] = useState<any[]>([]);
+  const [showRegisterDialog, setShowRegisterDialog] = useState(false);
+  const [regAlias, setRegAlias] = useState("");
+  const [regMeterNumber, setRegMeterNumber] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regCategory, setRegCategory] = useState("PREPAID");
+  const [regAccountNumber, setRegAccountNumber] = useState("");
+  const [registering, setRegistering] = useState(false);
+
+  // Load saved meters from local storage
+  React.useEffect(() => {
+    const stored = localStorage.getItem("swift_saved_meters");
+    if (stored) {
+      try {
+        setSavedMeters(JSON.parse(stored));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const saveMeter = (meterNum: string, name: string, prov: string, type: string) => {
+    if (!meterNum) return;
+    const newItem = { meterNumber: meterNum, name, provider: prov, type, id: crypto.randomUUID() };
+    const filtered = savedMeters.filter(m => m.meterNumber !== meterNum);
+    const updated = [newItem, ...filtered].slice(0, 10);
+    setSavedMeters(updated);
+    localStorage.setItem("swift_saved_meters", JSON.stringify(updated));
+  };
+
+  const removeSavedMeter = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = savedMeters.filter(m => m.id !== id);
+    setSavedMeters(updated);
+    localStorage.setItem("swift_saved_meters", JSON.stringify(updated));
+  };
 
 
   const activeStyle = TABS.find((t) => t.id === activeTab)!;
@@ -108,6 +155,9 @@ const DashboardUtilities = () => {
     setAmount("");
     setAccountName(null);
     setVerifyError(null);
+    setLookupTxId(null);
+    setMeters(null);
+    setSelectedMeter(null);
   };
 
   const handleTabChange = (id: UtilityType) => {
@@ -136,8 +186,26 @@ const DashboardUtilities = () => {
 
       if (error || !data?.success) {
         setVerifyError(data?.error || error?.message || "Account verification failed.");
-      } else if (data.customer_name || data.accountName) {
-        setAccountName(data.customer_name || data.accountName);
+      } else if (data.customer_name || data.accountName || (data.meters && data.meters.length > 0)) {
+        const resolvedName = data.customer_name || data.accountName || (data.meters?.[0]?.customerName || data.meters?.[0]?.alias);
+        setAccountName(resolvedName);
+        const txId = data.raw?.data?.transaction_id || data.raw?.transaction_id || data.raw?.transactionId;
+        if (txId) {
+          setLookupTxId(txId);
+        }
+        
+        if (data.meters && Array.isArray(data.meters) && data.meters.length > 0) {
+          setMeters(data.meters);
+          setSelectedMeter(data.meters[0]);
+          const mName = data.meters[0].customerName || data.meters[0].alias || resolvedName;
+          setAccountName(mName);
+          saveMeter(data.meters[0].meterNumber, mName, provider, activeTab);
+        } else {
+          setMeters(null);
+          setSelectedMeter(null);
+          saveMeter(accountNumber.trim() || phoneNumber.trim(), resolvedName, provider, activeTab);
+        }
+        
         toast({ title: "Account Verified" });
       } else {
         setVerifyError("Could not verify account name.");
@@ -149,17 +217,57 @@ const DashboardUtilities = () => {
     }
   };
 
+  const handleRegisterMeter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regAlias || !regMeterNumber || !regPhone) {
+      toast({ title: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setRegistering(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("utility-lookup", {
+        body: {
+          action: "add_meter",
+          utility_type: "electricity",
+          provider: "ECG Prepaid",
+          alias: regAlias.trim(),
+          meter_number: regMeterNumber.trim(),
+          phone_number: regPhone.trim(),
+          meter_category: regCategory,
+          account_number: regAccountNumber.trim() || undefined
+        }
+      });
+
+      if (error || !data?.success) {
+        toast({ title: "Registration failed", description: data?.error || "Could not register meter.", variant: "destructive" });
+      } else {
+        toast({ title: "Meter Registered Successfully!", description: `Meter ${regMeterNumber} is now registered.` });
+        setShowRegisterDialog(false);
+        setRegAlias("");
+        setRegMeterNumber("");
+        setRegPhone("");
+        setRegAccountNumber("");
+        
+        // Auto fill and trigger verification lookup for the new registered phone number
+        setAccountNumber(regPhone.trim());
+        setTimeout(() => {
+          handleVerify();
+        }, 100);
+      }
+    } catch (err: any) {
+      toast({ title: "Network error", description: "Please try again later.", variant: "destructive" });
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   const handlePay = async () => {
     if (!accountName || !amount || !provider) {
       toast({ title: "Please verify account and enter amount", variant: "destructive" });
       return;
     }
 
-    // Specific ECG validation
-    if (provider.includes("ECG") && accountNumber.length < 11) {
-      toast({ title: "Invalid Meter Number", description: "ECG Meter numbers are typically 11 digits or more.", variant: "destructive" });
-      return;
-    }
+
 
     setLoading(true);
     const numAmount = Number(amount);
@@ -169,9 +277,16 @@ const DashboardUtilities = () => {
         body: {
           utility_type: activeTab,
           utility_provider: provider,
-          utility_account_number: accountNumber,
-          utility_account_name: accountName,
+          utility_account_number: selectedMeter ? selectedMeter.meterNumber : accountNumber.trim(),
+          utility_account_name: selectedMeter ? (selectedMeter.customerName || selectedMeter.alias) : accountName,
           amount: numAmount,
+          lookup_transaction_id: lookupTxId,
+          metadata: selectedMeter ? {
+            meter_id: selectedMeter.id,
+            meter_number: selectedMeter.meterNumber,
+            meter_category: selectedMeter.meterCategory,
+            account_number: selectedMeter.accountNumber
+          } : undefined
         },
       });
       if (error || data?.error) {
@@ -179,35 +294,16 @@ const DashboardUtilities = () => {
         setLoading(false);
         return;
       }
-      toast({ title: "Payment Successful!", description: "Your bill has been paid from your wallet." });
+      toast({ title: "Payment Successful!", description: "Your bill payment order has been initiated." });
       setLoading(false);
+      if (data.order_id) {
+        navigate(`/order-status?reference=${data.order_id}`);
+      }
       reset();
       return;
     }
 
-    const reference = crypto.randomUUID();
-    const { data, error } = await supabase.functions.invoke("initialize-payment", {
-      body: {
-        email: user?.email || "customer@swiftdata.gh",
-        amount: numAmount,
-        reference,
-        callback_url: `${window.location.origin}/dashboard/utilities?ref=${reference}`,
-        metadata: {
-          order_type: "utility",
-          utility_type: activeTab,
-          utility_provider: provider,
-          utility_account_number: accountNumber,
-          utility_account_name: accountName,
-          agent_id: user?.id,
-        },
-      },
-    });
-    if (error || !data?.authorization_url) {
-      toast({ title: "Payment initialization failed", description: error?.message || "Please try again.", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-    window.location.href = data.authorization_url;
+    setCheckoutOpen(true);
   };
 
   const numAmount = Number(amount);
@@ -278,13 +374,76 @@ const DashboardUtilities = () => {
             </div>
           </div>
 
+          {/* Saved Meters */}
+          {savedMeters && savedMeters.length > 0 && (
+            <div className="space-y-2 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Saved & Recent Meters</span>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin">
+                {savedMeters.map((m) => (
+                  <div
+                    key={m.id}
+                    onClick={() => {
+                      setProvider(m.provider);
+                      setActiveTab(m.type);
+                      setAccountNumber(m.meterNumber);
+                      setAccountName(m.name);
+                      setMeters(null);
+                      setSelectedMeter(null);
+                      toast({ title: "Loaded Meter Details", description: `${m.name} (${m.meterNumber})` });
+                    }}
+                    className={cn(
+                      "flex items-center gap-2.5 shrink-0 px-3.5 py-2.5 rounded-xl border text-left cursor-pointer transition-all",
+                      accountNumber === m.meterNumber
+                        ? "bg-primary/8 border-primary/45 text-foreground shadow-sm shadow-primary/5"
+                        : "bg-card/45 border-border hover:bg-card/85 text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-foreground/80 truncate max-w-[120px]">{m.name}</span>
+                      <span className="text-[9px] font-mono opacity-50">{m.meterNumber}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => removeSavedMeter(m.id, e)}
+                      className="p-1 hover:bg-foreground/10 rounded text-muted-foreground/65 hover:text-foreground transition-all ml-1"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Step 2 — Account number + verify */}
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground/60 mb-3">
               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">2</span>
-              {FIELD_LABELS[activeTab]}
+              {activeTab === "electricity" && provider === "ECG Prepaid" ? "PowerApp Phone / Account Number" : FIELD_LABELS[activeTab]}
             </p>
-            {provider.includes("ECG") && (
+            {activeTab === "electricity" && provider === "ECG Prepaid" && (
+              <div className="mb-4 flex items-start justify-between p-4 rounded-2xl bg-amber-500/8 border border-amber-500/20 text-amber-500 text-xs leading-relaxed animate-in slide-in-from-top-2 duration-200">
+                <div className="flex gap-3">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold mb-0.5">ECG Prepaid Verification Info</p>
+                    <p className="text-muted-foreground">
+                      For prepaid lookup, enter the **phone number** registered on your ECG PowerApp account.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterDialog(true)}
+                  className="shrink-0 h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-black font-black text-[10px] uppercase tracking-wider transition-colors ml-3 mt-1"
+                >
+                  Register
+                </button>
+              </div>
+            )}
+            {provider.includes("ECG") && provider !== "ECG Prepaid" && (
               <div className="mb-2">
                 <input
                   type="text"
@@ -300,7 +459,13 @@ const DashboardUtilities = () => {
                 type="text"
                 value={accountNumber}
                 onChange={(e) => { setAccountNumber(e.target.value); setAccountName(null); setVerifyError(null); }}
-                placeholder={FIELD_PLACEHOLDERS[activeTab]}
+                placeholder={
+                  activeTab === "electricity"
+                    ? provider === "ECG Prepaid"
+                      ? "Enter Phone Number linked to ECG PowerApp (e.g. 024XXXXXXX)"
+                      : "Enter Postpaid Meter Number (no letters, e.g. 181198568)"
+                    : FIELD_PLACEHOLDERS[activeTab]
+                }
                 className="flex-1 h-12 px-4 bg-secondary/60 border border-border rounded-2xl text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
               />
               <button
@@ -321,6 +486,45 @@ const DashboardUtilities = () => {
                   <p className="text-foreground font-black text-sm">{accountName}</p>
                 </div>
                 <ShieldCheck className="w-6 h-6 text-emerald-500 shrink-0" />
+              </div>
+            )}
+
+            {meters && meters.length > 0 && (
+              <div className="mt-4 space-y-2.5 animate-in slide-in-from-top-3 duration-300">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Select Your Meter</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {meters.map((m) => {
+                    const isSelected = selectedMeter?.id === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedMeter(m);
+                          setAccountName(m.customerName || m.alias);
+                        }}
+                        className={cn(
+                          "flex flex-col text-left p-4 rounded-2xl border transition-all relative overflow-hidden",
+                          isSelected
+                            ? "bg-primary/10 border-primary/40 shadow-lg shadow-primary/5"
+                            : "bg-card/45 border-border hover:border-border/80 hover:bg-card/80"
+                        )}
+                      >
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-primary-foreground animate-in zoom-in-50 duration-200">
+                            ✓
+                          </div>
+                        )}
+                        <span className="text-[10px] font-black uppercase tracking-wide opacity-50">{m.meterCategory || "Meter"}</span>
+                        <span className="text-sm font-bold text-foreground truncate max-w-[200px] mt-0.5">{m.customerName || m.alias}</span>
+                        <span className="text-xs font-mono text-muted-foreground mt-1">{m.meterNumber}</span>
+                        {m.balance !== null && m.balance !== undefined && (
+                          <span className="text-[10px] font-black text-amber-500 mt-1">Balance: ₵{m.balance}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -490,6 +694,115 @@ const DashboardUtilities = () => {
           </button>
         </div>
       </div>
+
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={numAmount}
+        email={user?.email || "customer@swiftdata.gh"}
+        recipientPhone={selectedMeter ? selectedMeter.meterNumber : accountNumber.trim()}
+        recipientNetwork={""}
+        metadata={{
+          order_type: "utility",
+          utility_type: activeTab,
+          utility_provider: provider,
+          utility_account_number: selectedMeter ? selectedMeter.meterNumber : accountNumber.trim(),
+          utility_account_name: selectedMeter ? (selectedMeter.customerName || selectedMeter.alias) : accountName,
+          agent_id: user?.id,
+          lookup_transaction_id: lookupTxId,
+          meter_id: selectedMeter?.id,
+          meter_number: selectedMeter?.meterNumber,
+          meter_category: selectedMeter?.meterCategory,
+          account_number: selectedMeter?.accountNumber
+        }}
+        onSuccess={(reference) => {
+          setCheckoutOpen(false);
+          navigate(`/order-status?reference=${reference}`);
+          reset();
+        }}
+        onFailure={(error) => {
+          console.error("Payment failed:", error);
+        }}
+      />
+
+      {/* Add Meter Dialog */}
+      {showRegisterDialog && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowRegisterDialog(false)} />
+          <div className="relative max-w-md w-full bg-card border border-border rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-foreground text-sm uppercase tracking-wider">Register ECG Meter</h3>
+              <button onClick={() => setShowRegisterDialog(false)} className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleRegisterMeter} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Meter Alias / Name</label>
+                <input
+                  type="text" required
+                  placeholder="e.g. Home Meter or John Doe"
+                  value={regAlias} onChange={(e) => setRegAlias(e.target.value)}
+                  className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Physical Meter Number</label>
+                  <input
+                    type="text" required
+                    placeholder="e.g. P191177631"
+                    value={regMeterNumber} onChange={(e) => setRegMeterNumber(e.target.value)}
+                    className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">ECG Phone Number</label>
+                  <input
+                    type="tel" required
+                    placeholder="e.g. 024XXXXXXX"
+                    value={regPhone} onChange={(e) => setRegPhone(e.target.value)}
+                    className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Meter Category</label>
+                  <select
+                    value={regCategory} onChange={(e) => setRegCategory(e.target.value)}
+                    className="w-full h-11 px-3 bg-secondary/50 border border-border rounded-xl text-sm font-black focus:outline-none focus:border-primary/50 transition-colors"
+                  >
+                    <option value="PREPAID">PREPAID</option>
+                    <option value="POSTPAID">POSTPAID</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">ECG Account Number (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 700252531"
+                    value={regAccountNumber} onChange={(e) => setRegAccountNumber(e.target.value)}
+                    className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={registering}
+                className="w-full h-11 mt-2 bg-amber-500 hover:bg-amber-600 text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/10"
+              >
+                {registering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Register Meter
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

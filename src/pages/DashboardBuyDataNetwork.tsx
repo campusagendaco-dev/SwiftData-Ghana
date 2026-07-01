@@ -19,6 +19,7 @@ import { OfflineQueueWidget } from "@/components/OfflineQueueWidget";
 import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
+import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 
 type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -32,7 +33,7 @@ interface PromoResult {
   error?: string;
 }
 
-const NETWORKS: NetworkName[] = ["MTN", "MTN Mash Up", "Telecel", "AirtelTigo"];
+const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
 
 const networkRouteMap: Record<NetworkName, string> = {
   MTN: "mtn",
@@ -87,6 +88,31 @@ interface DashboardBuyDataNetworkProps {
   network: NetworkName;
 }
 
+const formatPackageDisplay = (size: string) => {
+  // Pattern 1: GHS X (Y MB/GB)
+  let match = size.match(/GHS\s*[\d.]+\s*\(([^)]+)\)/i);
+  if (match) {
+    return {
+      main: match[1].trim(),
+      sub: size.replace(/\([^)]+\)/, "").trim()
+    };
+  }
+
+  // Pattern 2: X mins and Y MB @ Z GHC
+  match = size.match(/(.*)\s+@\s*(.*)/i);
+  if (match) {
+    return {
+      main: match[1].trim(),
+      sub: match[2].trim()
+    };
+  }
+
+  return {
+    main: size,
+    sub: ""
+  };
+};
+
 const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -100,6 +126,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
+  const [korbaMappings, setKorbaMappings] = useState<{ package_name: string; network: string; raw_data: any }[]>([]);
+  const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>("affordable");
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
   const [activeGateway, setActiveGateway] = useState<string>("paystack");
@@ -157,13 +185,24 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   }, [phone, network, navigate, toast]);
 
   useEffect(() => {
+    setSelectedSize("");
+    setPhone("");
+    setResolvedName(null);
+    setSelectedTypeOrCategory("affordable");
+  }, [network]);
+
+  useEffect(() => {
     const loadPricing = async () => {
-      const [settingsRes, pricingContext] = await Promise.all([
+      const [settingsRes, pricingContext, mappingsRes] = await Promise.all([
         supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, api_price, is_unavailable"),
         fetchApiPricingContext(),
+        supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
       ]);
       setGlobalSettings((settingsRes.data || []) as GlobalPackageSetting[]);
       setPriceMultiplier(pricingContext.multipliers[network] || 1);
+      if (mappingsRes.data) {
+        setKorbaMappings(mappingsRes.data);
+      }
       setSettingsLoading(false);
 
       if (profile?.is_sub_agent && profile?.parent_agent_id) {
@@ -197,31 +236,54 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       });
   }, [profile?.is_sub_agent, profile?.parent_agent_id, user]);
 
-  const packages = useMemo(() => {
-    const list: { size: string; price: number; validity: string; popular?: boolean }[] = [];
+  // Get packages for current network and purchase type
+  const displayPackages = useMemo(() => {
+    const list: { size: string; price: number; validity: string; popular?: boolean; isInstant?: boolean; category?: string }[] = [];
     const dbNetwork = network;
 
-    list.push(...(basePackages[network] || []));
+    // 1. Get standard base packages (which are Affordable by default)
+    const baseList = basePackages[network] || [];
+    baseList.forEach(pkg => {
+      list.push({
+        size: pkg.size,
+        price: pkg.price,
+        validity: pkg.validity,
+        popular: pkg.popular,
+        isInstant: false,
+        category: "Affordable SME"
+      });
+    });
 
-    const baseSizes = new Set(list.map(pkg => normalizePackageSize(pkg.size)));
+    // 2. Add packages from global settings
+    const addedSizes = new Set(baseList.map(p => normalizePackageSize(p.size)));
 
     globalSettings.forEach((gs) => {
-      if (gs.network === dbNetwork) {
+      // Note: we group 'MTN Mash Up' under MTN's page
+      if (gs.network === dbNetwork || (dbNetwork === "MTN" && gs.network === "MTN Mash Up")) {
         const normSize = normalizePackageSize(gs.package_size);
-        if (!baseSizes.has(normSize)) {
+        if (!addedSizes.has(normSize)) {
+          // Check if this package is mapped to Korba
+          const mapping = korbaMappings.find(
+            m => m.package_name === gs.package_size && 
+                 (m.network === gs.network)
+          );
+          
           list.push({
             size: gs.package_size,
             price: gs.agent_price || gs.public_price || 0,
-            validity: network.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry"
+            validity: gs.network.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry",
+            isInstant: !!mapping,
+            category: mapping?.raw_data?.category || (gs.network === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles")
           });
         }
       }
     });
 
-    const mapped = list
+    // 3. Process prices, unavailable states, and disabled packages
+    const processed = list
       .map((item) => {
         const setting = globalSettings.find(
-          (s) => s.network === dbNetwork && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
+          (s) => (s.network === dbNetwork || (dbNetwork === "MTN" && s.network === "MTN Mash Up")) && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
         );
         const assignedFromParent = getAssignedSubAgentPrice(parentAssignedPrices, dbNetwork, item.size);
         const assignedFromProfile = getAssignedSubAgentPrice(
@@ -270,17 +332,78 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           return item.price;
         })();
 
+        // Re-check mapping for isInstant (needed if the package was from basePackages but later mapped to Korba)
+        const mapping = korbaMappings.find(
+          m => m.package_name === item.size && 
+               (m.network === dbNetwork || (dbNetwork === "MTN" && m.network === "MTN Mash Up"))
+        );
+        const isInstant = !!mapping;
+        const category = mapping?.raw_data?.category || (item.validity === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles");
+
         return {
           ...item,
           isUnavailable: Boolean(setting?.is_unavailable),
           price: applyPriceMultiplier(resolvedBasePrice, priceMultiplier),
+          isInstant,
+          category
         };
       })
-      .filter((item) => !item.isUnavailable);
+      .filter((item) => !item.isUnavailable) as { size: string; price: number; validity: string; popular?: boolean; isInstant: boolean; category: string }[];
 
-    mapped.sort((a, b) => a.price - b.price);
-    return mapped;
-  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages, activeGateway]);
+    processed.sort((a, b) => a.price - b.price);
+    return processed;
+  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages, activeGateway, korbaMappings]);
+
+  // Get all available dropdown options for the current network
+  const dropdownOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [
+      { value: "affordable", label: "Affordable SME Bundles" }
+    ];
+
+    // Find all unique categories of Instant packages for the selected network
+    const instantPkgs = displayPackages.filter(p => p.isInstant && p.validity !== "MTN Mash Up" && p.category !== "Mash Up Bundles");
+    const categories = Array.from(new Set(instantPkgs.map(p => p.category).filter(Boolean))) as string[];
+
+    categories.sort().forEach((cat) => {
+      options.push({
+        value: cat,
+        label: `Instant: ${cat}`
+      });
+    });
+
+    if (network === "MTN") {
+      options.push({ value: "mashup", label: "MTN Mash Up" });
+    }
+
+    return options;
+  }, [displayPackages, network]);
+
+  // Filter based on selectedTypeOrCategory dropdown option
+  const filteredPackages = useMemo(() => {
+    if (selectedTypeOrCategory === "affordable") {
+      return displayPackages.filter(
+        p => !p.isInstant && 
+             p.validity !== "MTN Mash Up" && 
+             p.category !== "Mash Up Bundles"
+      );
+    }
+    
+    if (selectedTypeOrCategory === "mashup") {
+      return displayPackages.filter(
+        p => p.validity === "MTN Mash Up" || p.category === "Mash Up Bundles"
+      );
+    }
+    
+    // Otherwise, filter by specific Instant category
+    return displayPackages.filter(
+      p => p.isInstant && 
+           p.category === selectedTypeOrCategory && 
+           p.validity !== "MTN Mash Up" && 
+           p.category !== "Mash Up Bundles"
+    );
+  }, [displayPackages, selectedTypeOrCategory]);
+
+  const packages = filteredPackages;
 
   const refreshBalance = async () => {
     if (!user) return;
@@ -415,7 +538,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       body: {
         promo_code: promoCode.trim(),
         phone: normalizedPhone,
-        network,
+        network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network,
         package_size: selectedPackage!.size,
       },
     });
@@ -428,7 +551,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     
     if (data.success) {
       toast({ title: "Free data sent!", description: "The data bundle is on its way." });
-      setLastOrder({ id: data.order_id, network, packageSize: selectedPackage!.size, phone, status: "fulfilled" });
+      setLastOrder({ id: data.order_id, network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network, packageSize: selectedPackage!.size, phone, status: "fulfilled" });
       setSelectedSize(""); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false);
     } else {
       toast({ title: "Claim failed", description: data.error || "Delivery failed.", variant: "destructive" });
@@ -447,7 +570,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     try {
       const { data, error } = await invokePublicFunctionAsUser("wallet-buy-data", {
         body: {
-          network,
+          network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network,
           package_size: selectedPackage!.size,
           customer_phone: phone,
           amount: selectedPackage!.price,
@@ -486,7 +609,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         if (data?.order_id) {
           setLastOrder({ 
             id: data.order_id, 
-            network, 
+            network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network, 
             packageSize: selectedPackage!.size, 
             phone, 
             status: data?.status || "processing" 
@@ -517,9 +640,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     if (!validate()) return;
 
     const orderId = crypto.randomUUID();
+    const orderNetwork = selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network;
     const callbackParams = new URLSearchParams({
       reference: orderId,
-      network,
+      network: orderNetwork,
       package: selectedPackage!.size,
       phone: normalizedPhone,
     });
@@ -527,11 +651,12 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     const meta = {
       order_id: orderId,
       order_type: "data",
-      network,
+      network: orderNetwork,
       package_size: selectedPackage!.size,
       customer_phone: normalizedPhone,
       fee: paystackFee,
       agent_id: user?.id,
+      is_korba: korbaMappings.some((m: any) => m.network === network && m.package_name === selectedPackage!.size),
       callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? {
         promo_code: promoCode.trim(),
@@ -554,7 +679,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     
     const callbackParams = new URLSearchParams({
       reference: ref,
-      network,
+      network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network,
       package: selectedPackage?.size || "",
       phone: normalizedPhone,
     });
@@ -624,7 +749,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       )}
 
       <div className="flex gap-2 sm:gap-3">
-        {NETWORKS.filter(n => !(activeGateway === "korba" && n === "MTN Mash Up")).map((n) => {
+        {NETWORKS.map((n) => {
           const isActive = n === network;
           return (
             <button
@@ -634,21 +759,57 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 isActive ? networkTabStyles[n].active : networkTabStyles[n].idle
               }`}
             >
-              {n === "MTN Mash Up" ? (
-                <>
-                  <Zap className="w-4 h-4 fill-current" />
-                  <span>MTN Mash Up</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                    isActive ? "bg-black/20 text-black" : "bg-secondary text-secondary-foreground"
-                  }`}>4</span>
-                </>
-              ) : (
-                n
-              )}
+              {n}
             </button>
           );
         })}
       </div>
+
+      {/* Dropdown Selector for Package Type / Category */}
+      <div className="mb-6 animate-fade-in relative z-50">
+        <BundleSelectorDropdown
+          options={dropdownOptions}
+          value={selectedTypeOrCategory}
+          onChange={(val) => {
+            setSelectedTypeOrCategory(val);
+            setSelectedSize("");
+          }}
+          accentColor={network === "MTN" ? "#FFCC00" : network === "Telecel" ? "#E60000" : "#00529B"}
+          isDark={document.documentElement.classList.contains("dark")}
+        />
+      </div>
+
+      {/* Dedicated Instant View Header */}
+      {selectedTypeOrCategory !== "affordable" && selectedTypeOrCategory !== "mashup" && (
+        <div className="mb-6 p-5 rounded-2xl border border-primary/10 bg-primary/[0.02] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in">
+          <div>
+            <h2 className="text-sm font-black text-foreground mb-0.5 uppercase tracking-wide">
+              {network} Instant: {selectedTypeOrCategory}
+            </h2>
+            <p className="text-[11px] text-muted-foreground max-w-lg">
+              Direct official retail bundles routed instantly via carrier gateways.
+            </p>
+          </div>
+          <div className="px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-[9px] font-black uppercase tracking-wider">
+            Official API
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Mash Up View Header */}
+      {selectedTypeOrCategory === "mashup" && (
+        <div className="mb-6 p-5 rounded-2xl border border-amber-500/10 bg-amber-500/[0.02] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in">
+          <div>
+            <h2 className="text-sm font-black text-foreground mb-0.5 uppercase tracking-wide">MTN Mash Up Bundles</h2>
+            <p className="text-[11px] text-muted-foreground max-w-lg">
+              Popular hybrid voice and data packages from MTN. Fully supported and routed instantly.
+            </p>
+          </div>
+          <div className="px-2.5 py-1 bg-amber-500/10 text-amber-500 rounded-full text-[9px] font-black uppercase tracking-wider">
+            Mash Up Active
+          </div>
+        </div>
+      )}
 
       {/* MTN Live Delivery Speed Widget */}
       {network === "MTN" && (
@@ -976,7 +1137,21 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       </span>
                     )}
                     <span className={`${cardColors.label} text-[10px] font-black uppercase tracking-widest opacity-60`}>{network}</span>
-                    <span className={`${cardColors.size} text-3xl font-black leading-none tracking-tighter`}>{item.size}</span>
+                    {(() => {
+                      const display = formatPackageDisplay(item.size);
+                      return (
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`${cardColors.size} text-lg sm:text-xl font-black leading-tight tracking-tight break-words`}>
+                            {display.main}
+                          </span>
+                          {display.sub && (
+                            <span className={`${cardColors.label} text-[9px] font-bold opacity-75 uppercase tracking-wide`}>
+                              Official: {display.sub}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="flex items-end justify-between mt-auto pt-1">
                       <span className={`${cardColors.size} text-base font-black`}>₵{item.price.toFixed(2)}</span>
                       <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>{item.validity || "No Expiry"}</span>

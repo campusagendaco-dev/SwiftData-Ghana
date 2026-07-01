@@ -29,6 +29,7 @@ interface KorbaBundle {
   amount: string;
   validity: string;
   network: string;
+  category?: string;
 }
 
 interface ImportedPackage {
@@ -143,10 +144,39 @@ const AdminKorbaPackages = () => {
       });
       if (error) throw error;
       if (data?.success) {
-        setFetchedBundles(data.bundles || []);
+        const rawBundles = data.bundles || [];
+        const flattened: KorbaBundle[] = [];
+        
+        rawBundles.forEach((item: any) => {
+          if (item.bundles && Array.isArray(item.bundles)) {
+            // This is an MTN category group!
+            item.bundles.forEach((subBundle: any) => {
+              flattened.push({
+                name: subBundle.name,
+                product_id: subBundle.product_id,
+                amount: subBundle.amount,
+                validity: subBundle.validity || "Non-expiry",
+                network: item.network || "MTN",
+                category: item.name || "Data Bundles"
+              });
+            });
+          } else {
+            // This is a Telecel or AirtelTigo flat bundle!
+            flattened.push({
+              name: item.name,
+              product_id: item.product_id || item.bundle_id,
+              amount: item.amount,
+              validity: item.validity || "Non-expiry",
+              network: item.network,
+              category: item.category || "General"
+            });
+          }
+        });
+
+        setFetchedBundles(flattened);
         toast({
           title: "Fetched Bundles",
-          description: `Successfully fetched ${data.bundles?.length || 0} packages from Korba API.`
+          description: `Successfully fetched and flattened ${flattened.length} packages from Korba API.`
         });
       } else {
         throw new Error(data?.error || "Failed to fetch bundles");
@@ -176,15 +206,21 @@ const AdminKorbaPackages = () => {
     setApiPrice(base.toFixed(2));
 
     // Find options for target package sizes in current network
-    const networkPkgs = importedPkgs.filter(p => p.network === activeTab || (activeTab === "MTN" && p.network === "MTN Mash Up"));
-    if (networkPkgs.length > 0) {
-      setTargetPackageSize(networkPkgs[0].package_size);
-      setIsNewPackageSize(false);
-    } else {
+    if (bundle.category === "Airtime") {
       setIsNewPackageSize(true);
+      setNewSizeName(bundle.name);
       setTargetPackageSize("");
+    } else {
+      const networkPkgs = importedPkgs.filter(p => p.network === activeTab || (activeTab === "MTN" && p.network === "MTN Mash Up"));
+      if (networkPkgs.length > 0) {
+        setTargetPackageSize(networkPkgs[0].package_size);
+        setIsNewPackageSize(false);
+      } else {
+        setIsNewPackageSize(true);
+        setTargetPackageSize("");
+      }
+      setNewSizeName("");
     }
-    setNewSizeName("");
     
     setShowImportDialog(true);
   };
@@ -265,7 +301,14 @@ const AdminKorbaPackages = () => {
           cost_price: costVal,
           external_id: selectedBundle.product_id,
           capacity_gb: parseCapacityGb(standardSize),
-          is_active: true
+          is_active: true,
+          raw_data: {
+            category: (selectedBundle as any).category || "General",
+            validity: selectedBundle.validity,
+            amount: selectedBundle.amount,
+            product_id: selectedBundle.product_id,
+            name: selectedBundle.name
+          }
         }, { onConflict: "provider_id,network,package_name" });
 
       if (mappingErr) throw mappingErr;
@@ -556,7 +599,7 @@ const AdminKorbaPackages = () => {
     );
 
     const matchesSearch = b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          b.product_id.toLowerCase().includes(searchQuery.toLowerCase());
+                          (b.product_id || "").toLowerCase().includes(searchQuery.toLowerCase());
 
     return isMatch && !isAlreadyMapped && matchesSearch;
   });

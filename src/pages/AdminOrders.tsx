@@ -146,7 +146,11 @@ const AdminOrders = () => {
     } else {
       q = q.neq("network", "MTN Mash Up");
     }
-    if (orderTypeFilter !== "all") q = q.eq("order_type", orderTypeFilter);
+    if (orderTypeFilter !== "all") {
+      q = q.eq("order_type", orderTypeFilter);
+    } else {
+      q = q.neq("order_type", "airtime");
+    }
 
     const { data, count, error } = await q;
     
@@ -851,6 +855,14 @@ const AdminOrders = () => {
                         )}
                       </div>
                     )}
+                    {order.metadata?.prepaid_token && (
+                      <div className="mt-1.5 flex flex-col gap-0.5 max-w-[160px]">
+                        <span className="text-[9px] font-black uppercase text-amber-500 dark:text-amber-400 tracking-wider">ECG Token:</span>
+                        <div className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded font-mono font-bold select-all whitespace-nowrap overflow-hidden text-ellipsis" title={order.metadata.prepaid_token}>
+                          {order.metadata.prepaid_token}
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-bold text-foreground">GH₵{Number(order.amount).toFixed(2)}</span>
@@ -995,6 +1007,14 @@ const AdminOrders = () => {
                           {v.serial} | {v.pin}
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {order.metadata?.prepaid_token && (
+                    <div className="flex flex-col gap-1 mt-1">
+                      <span className="text-[9px] font-black uppercase text-amber-500 tracking-wider">ECG Token:</span>
+                      <div className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono font-bold select-all">
+                        {order.metadata.prepaid_token}
+                      </div>
                     </div>
                   )}
                 </div>

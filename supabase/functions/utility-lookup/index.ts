@@ -7,25 +7,125 @@ export const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function formatTo233(phone: string): string {
+  const digits = (phone || "").replace(/\D+/g, "");
+  if (digits.startsWith("0") && digits.length === 10) return `233${digits.slice(1)}`;
+  if (digits.startsWith("233") && digits.length === 12) return digits;
+  if (digits.length === 9) return `233${digits}`;
+  return "233240000000"; // fallback
+}
+
+function findName(obj: any): string | null {
+  if (!obj) return null;
+  if (typeof obj === "string") return obj;
+  
+  const keys = ["customer_name", "customerName", "name", "client_name", "customer_number_name", "customer_name_name", "display_name", "fullName", "full_name", "Display", "display", "alias"];
+  for (const k of keys) {
+    if (obj[k] && typeof obj[k] === "string") return obj[k];
+  }
+  
+  for (const k of Object.keys(obj)) {
+    if (obj[k] && typeof obj[k] === "object") {
+      const nested = findName(obj[k]);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Create an admin client to fetch providers regardless of user token expiration
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { utility_type, provider, account_number, phone_number } = await req.json();
+    const body = await req.json();
+    const { action, utility_type, provider, account_number, phone_number } = body;
+
+    if (action === "add_meter") {
+      const { alias, meter_number, phone_number: regPhone, meter_category, account_number: regAccount } = body;
+      if (!alias || !meter_number || !regPhone || !meter_category) {
+        return new Response(JSON.stringify({ success: false, error: "Missing required fields for Add Meter" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+
+      if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+        return new Response(JSON.stringify({ success: false, error: "Korba credentials not configured" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const payload = {
+        client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+        alias: alias.trim(),
+        meter_number: meter_number.trim(),
+        phone_number: formatTo233(regPhone),
+        meter_category: meter_category.toUpperCase(),
+        account_number: regAccount ? regAccount.trim() : undefined
+      };
+
+      // Generate HMAC signature
+      const sortedKeys = Object.keys(payload).sort();
+      const messageParts = [];
+      for (const key of sortedKeys) {
+        if ((payload as any)[key] !== undefined) {
+          messageParts.push(`${key}=${(payload as any)[key]}`);
+        }
+      }
+      const message = messageParts.join("&");
+      
+      const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const messageData = new TextEncoder().encode(message);
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+      const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      console.log("Sending Add Meter Request:", payload);
+      const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/ecg_direct_add_meter/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+        },
+        body: JSON.stringify(payload),
+        disableFallback: true,
+      });
+
+      const responseText = await response.text();
+      console.log("Add Meter response text:", responseText);
+
+      let jsonResponse;
+      try {
+        jsonResponse = JSON.parse(responseText);
+      } catch {
+        return new Response(JSON.stringify({ success: false, error: "Invalid response from Korba" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      if (jsonResponse.success) {
+        return new Response(JSON.stringify({ success: true, results: jsonResponse.results }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } else {
+        return new Response(JSON.stringify({ success: false, error: jsonResponse.error_message || jsonResponse.message || "Failed to add meter." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
 
     if (!utility_type || !provider || (!account_number && !phone_number)) {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Fetch provider settings using admin client to bypass RLS
     const { data: activeProviders, error: providerError } = await supabaseAdmin
       .from("providers")
       .select("*")
@@ -37,7 +137,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: false, error: "No active utility providers available" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Find the right provider
     const activeProvider = activeProviders.find((p) => p.name === "Korba") || activeProviders[0];
 
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "PLACEHOLDER_CLIENT_ID";
@@ -48,16 +147,51 @@ serve(async (req) => {
     let payload: any = {};
     let isKorba = false;
 
-    // Use Korba API for ECG Lookups
-    if (provider === "ECG" || provider.includes("ECG")) {
-      lookupUrl = "https://xchange.korba365.com/api/v1.0/ecg_meter_lookup/";
+    const provUpper = String(provider).toUpperCase();
+    if (provUpper.includes("ECG")) {
+      lookupUrl = "https://xchange.korba365.com/api/v1.0/ecg_direct_meter_detail/";
+      let phoneVal = "";
+      let accountVal = "";
+      
+      const digits = account_number.replace(/\D+/g, "");
+      if ((digits.startsWith("0") && digits.length === 10) || (digits.length === 9) || (digits.startsWith("233") && digits.length === 12)) {
+        phoneVal = formatTo233(account_number);
+      } else {
+        accountVal = account_number;
+      }
+      
       payload = {
-        client_id: parseInt(KORBA_CLIENT_ID) || 1, // Fallback integer if not set
-        meter_code: account_number || phone_number
+        client_id: parseInt(KORBA_CLIENT_ID) || 2419
+      };
+      if (phoneVal) {
+        payload.phone_number = phoneVal;
+      } else {
+        payload.account_number = accountVal;
+      }
+      isKorba = true;
+    } else if (provUpper.includes("WATER") || provUpper.includes("GWCL")) {
+      lookupUrl = "https://xchange.korba365.com/api/v1.0/gwcl_customer_lookup/";
+      payload = {
+        client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+        account_number: account_number
+      };
+      isKorba = true;
+    } else if (provUpper.includes("DSTV") || provUpper.includes("GOTV") || provUpper.includes("STARTIMES") || provUpper.includes("KWESE") || provUpper.includes("GBC")) {
+      lookupUrl = "https://xchange.korba365.com/api/v1.0/utilities_validate_user/";
+      let billType = "DSTV";
+      if (provUpper.includes("GOTV")) billType = "GOTV";
+      else if (provUpper.includes("STARTIMES")) billType = "STARTIMES";
+      else if (provUpper.includes("KWESE")) billType = "KWESETV";
+      else if (provUpper.includes("GBC")) billType = "GBCTV";
+
+      payload = {
+        customer_number: account_number,
+        bill_type: billType,
+        transaction_id: crypto.randomUUID(),
+        client_id: parseInt(KORBA_CLIENT_ID) || 2419
       };
       isKorba = true;
     } else {
-      // Fallback to active provider for other bill types
       lookupUrl = `${activeProvider.base_url}/api/payment/bills/lookup`;
       payload = {
         customerNumber: account_number,
@@ -70,32 +204,28 @@ serve(async (req) => {
     };
 
     if (isKorba) {
-      // 1. Sort payload keys alphabetically
       const sortedKeys = Object.keys(payload).sort();
-      
-      // 2. Create message string
       const messageParts = [];
       for (const key of sortedKeys) {
-          messageParts.push(`${key}=${payload[key]}`);
+        messageParts.push(`${key}=${payload[key]}`);
       }
       const message = messageParts.join("&");
       
-      // 3. Generate HMAC-SHA256 signature
       const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
       const cryptoKey = await crypto.subtle.importKey(
-          'raw',
-          keyData,
-          { name: 'HMAC', hash: 'SHA-256' },
-          false,
-          ['sign']
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
       );
       
       const messageData = new TextEncoder().encode(message);
       const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
       
       const signatureHex = Array.from(new Uint8Array(signatureBuffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
 
       headers["Authorization"] = `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`;
     } else {
@@ -118,7 +248,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: false, error: "Provider returned invalid response" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Handle missing Korba credentials gracefully for dev testing
     if (isKorba && response.status === 401 && KORBA_CLIENT_ID === "PLACEHOLDER_CLIENT_ID") {
       return new Response(JSON.stringify({ 
         success: true, 
@@ -128,34 +257,32 @@ serve(async (req) => {
     }
 
     if (!response.ok || !jsonResponse.success) {
-       const apiError = jsonResponse.error_message || jsonResponse.error || jsonResponse.message || (typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse));
-       console.error("Korba API Error:", responseText);
-       return new Response(JSON.stringify({ success: false, error: apiError }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      let apiError = jsonResponse.error_message || jsonResponse.error || jsonResponse.message || (typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse));
+      
+      if (provUpper.includes("ECG") && String(apiError).includes("phone_number")) {
+        apiError = "Account lookup failed. Please enter a valid phone number or account number.";
+      } else if (provUpper.includes("ECG") && String(apiError).includes("Could not process your request")) {
+        apiError = "Account lookup failed. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp account (e.g. 233208795528).";
+      }
+
+      console.error("Korba API Error:", responseText);
+      return new Response(JSON.stringify({ success: false, error: apiError }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    let customerName = null;
-    
-    if (isKorba) {
-      // Korba response format: { success: true, data: "John Doe" }
-      customerName = jsonResponse.data;
-    } else {
-      // Fallback response format
-      if (jsonResponse.meters && jsonResponse.meters.length > 0) {
-        customerName = jsonResponse.meters[0].customerName;
-      } else if (jsonResponse.customerName) {
-        customerName = jsonResponse.customerName;
-      } else if (jsonResponse.data && jsonResponse.data.customerName) {
-        customerName = jsonResponse.data.customerName;
-      }
+    if (provUpper.includes("ECG") && (!jsonResponse.results?.data || (Array.isArray(jsonResponse.results.data) && jsonResponse.results.data.length === 0))) {
+      return new Response(JSON.stringify({ success: false, error: "No meters found for the provided account/phone number. Please check the value and try again." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    const customerName = findName(jsonResponse.data) || findName(jsonResponse);
 
     if (!customerName) {
-       return new Response(JSON.stringify({ success: false, error: jsonResponse.error_message || jsonResponse.error || "Could not find customer name in response" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ success: false, error: jsonResponse.error_message || jsonResponse.error || "Could not find customer name in response" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     return new Response(JSON.stringify({ 
       success: true, 
       accountName: customerName,
+      meters: jsonResponse.results?.data || null,
       raw: jsonResponse 
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

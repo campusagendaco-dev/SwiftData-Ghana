@@ -7,6 +7,7 @@ export class KorbaAdapter implements ProviderAdapter {
     const rawNet = (rawNetwork || "").toUpperCase();
     if (rawNet.includes("TELECEL") || rawNet.includes("VODA")) return "VOD";
     if (rawNet.includes("AIRTEL") || rawNet.includes("TIGO") || rawNet.includes("AT")) return "AIR";
+    if (rawNet.includes("GLO")) return "GLO";
     return "MTN";
   }
 
@@ -42,7 +43,80 @@ export class KorbaAdapter implements ProviderAdapter {
         client_id: parseInt(KORBA_CLIENT_ID) || 2419,
         network_code: this.mapNetwork(rawNet),
         callback_url: callbackUrl,
+        description: `Airtime purchase for ${recipient}`,
       };
+    } else if (orderType === "utility") {
+      const prov = String(data.utility_provider || "").toUpperCase();
+      if (prov.includes("ECG")) {
+        const metadata = data.metadata || {};
+        const meterId = metadata.meter_id || data.meter_id;
+        const meterNumber = metadata.meter_number || data.meter_number || data.utility_account_number;
+
+        if (prov.includes("PREPAID")) {
+          if (meterId) {
+            targetUrl = `${baseUrl}/ecg_direct_pay_bill/`;
+            korbaPayload = {
+              client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+              transaction_id: transactionId,
+              amount: Number(data.amount || 0),
+              meter_id: meterId,
+              meter_number: meterNumber,
+              callback_url: callbackUrl,
+              description: "ECG direct prepaid payment"
+            };
+          } else {
+            targetUrl = `${baseUrl}/ecg_prepaid_initiate_request/`;
+            korbaPayload = {
+              client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+              transaction_id: transactionId,
+              meter_code: data.utility_account_number,
+              meter_owner: data.utility_account_name || "CUSTOMER",
+              amount: Number(data.amount || 0),
+              callback_url: callbackUrl,
+            };
+          }
+        } else {
+          targetUrl = `${baseUrl}/ecg_pay_bill/`;
+          korbaPayload = {
+            client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+            customer_number: data.utility_account_number,
+            amount: Number(data.amount || 0),
+            transaction_id: transactionId,
+            callback_url: callbackUrl,
+            description: "ECG postpaid payment"
+          };
+        }
+      } else if (prov.includes("WATER") || prov.includes("GWCL")) {
+        targetUrl = `${baseUrl}/gwcl_pay_bill/`;
+        korbaPayload = {
+          client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+          account_number: data.utility_account_number,
+          amount: Number(data.amount || 0),
+          transaction_id: transactionId,
+          callback_url: callbackUrl,
+          customer_number: recipient || data.customer_phone || "0244000000"
+        };
+      } else if (prov.includes("DSTV") || prov.includes("GOTV") || prov.includes("STARTIMES") || prov.includes("KWESE") || prov.includes("GBC")) {
+        targetUrl = `${baseUrl}/utilities_pay_bill/`;
+        let billType = "DSTV";
+        if (prov.includes("GOTV")) billType = "GOTV";
+        else if (prov.includes("STARTIMES")) billType = "STARTIMES";
+        else if (prov.includes("KWESE")) billType = "KWESETV";
+        else if (prov.includes("GBC")) billType = "GBCTV";
+
+        korbaPayload = {
+          customer_number: data.utility_account_number,
+          bill_type: billType,
+          amount: Number(data.amount || 0),
+          transaction_id: transactionId,
+          client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+          sender_name: data.utility_account_name || "Customer",
+          address: "Accra",
+          callback_url: callbackUrl,
+        };
+      } else {
+        return { ok: false, reason: `Unsupported utility provider: ${data.utility_provider}` };
+      }
     } else {
       // Data Topup
       let targetPath = "mtn_data_topup/";
@@ -123,7 +197,9 @@ export class KorbaAdapter implements ProviderAdapter {
     const sortedKeys = Object.keys(payload).sort();
     const messageParts = [];
     for (const key of sortedKeys) {
-      messageParts.push(`${key}=${payload[key]}`);
+      if (payload[key] !== undefined) {
+        messageParts.push(`${key}=${payload[key]}`);
+      }
     }
     const message = messageParts.join("&");
     
@@ -211,7 +287,21 @@ export class KorbaAdapter implements ProviderAdapter {
 
     if (success) {
       const semantic = parseProviderResponse(resText, contentType);
-      if (semantic.ok) return { ok: true, reason: "", id: semantic.id, status: semantic.status };
+      if (semantic.ok) {
+        let token: string | null = null;
+        try {
+          const parsed = JSON.parse(resText);
+          token = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || (parsed.results?.prepaid_token) || null;
+        } catch { /* ignore */ }
+        
+        return { 
+          ok: true, 
+          reason: "", 
+          id: semantic.id, 
+          status: semantic.status,
+          raw: token ? { prepaid_token: token } : undefined
+        };
+      }
       return { ok: false, reason: semantic.reason || "Korba rejected this order." };
     }
 

@@ -864,7 +864,9 @@ serve(async (req: Request) => {
     ? getMomoProviderCode(String(enrichedMetadata.payment_network)) 
     : (enrichedMetadata.network ? getMomoProviderCode(String(enrichedMetadata.network)) : "");
 
-  if (activeGateway === "korba") {
+  const isCardPayment = payload?.network_code === "CRD" || payload?.payment_method === "card";
+
+  if (activeGateway === "korba" || isCardPayment) {
     // ── KORBA GATEWAY ROUTING ───────────────────────────────────────────────
     const KORBA_CLIENT_ID = (Deno as any).env.get("KORBA_CLIENT_ID") || "2419";
     const KORBA_CLIENT_KEY = (Deno as any).env.get("KORBA_CLIENT_KEY") || "";
@@ -874,6 +876,19 @@ serve(async (req: Request) => {
       console.error("Korba gateway credentials are not configured");
       return new Response(JSON.stringify({ error: "Korba gateway not configured" }), {
         status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!isCardPayment && (enrichedMetadata.use_xcheckout || metadata.use_xcheckout)) {
+      console.log("XCheckout request detected. Returning session configuration directly.");
+      return new Response(JSON.stringify({
+        success: true,
+        reference: reference,
+        merchant_id: KORBA_CLIENT_ID,
+        message: "XCheckout session initialized successfully."
+      }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -888,21 +903,29 @@ serve(async (req: Request) => {
       return "MTN";
     }
 
-    const korbaPayload = {
-      customer_number: paystackPhone,
+    const selectedNetworkCode = isCardPayment ? "CRD" : getKorbaNetworkCode(paystackProvider);
+
+    const korbaPayload: Record<string, any> = {
+      customer_number: paystackPhone || "0240000000",
       amount: parseFloat(resolvedAmount.toFixed(2)),
       transaction_id: reference,
-      network_code: getKorbaNetworkCode(paystackProvider),
+      network_code: selectedNetworkCode,
       callback_url: korbaCallbackUrl,
       client_id: parseInt(KORBA_CLIENT_ID) || 2419,
       description: `Order ${reference}`,
     };
 
+    if (selectedNetworkCode === "CRD") {
+      korbaPayload.redirect_url = callback_url || `${SUPABASE_URL}/functions/v1/korba-webhook`;
+    }
+
     // Helper: Sort request keys in ascending order and form signature message
     const sortedKeys = Object.keys(korbaPayload).sort();
     const messageParts = [];
     for (const key of sortedKeys) {
-      messageParts.push(`${key}=${(korbaPayload as any)[key]}`);
+      if (korbaPayload[key] !== undefined) {
+        messageParts.push(`${key}=${korbaPayload[key]}`);
+      }
     }
     const message = messageParts.join("&");
     

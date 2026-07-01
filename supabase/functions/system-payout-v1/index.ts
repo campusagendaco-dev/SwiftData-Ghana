@@ -139,7 +139,8 @@ type AdminUserAction =
   | "get_admins"
   | "grant_admin_role"
   | "revoke_admin_role"
-  | "verify_paystack_transfer";
+  | "verify_paystack_transfer"
+  | "get_korba_transactions";
 
 async function queryKorbaApi(
   supabaseAdmin: any,
@@ -1758,6 +1759,42 @@ serve(async (req: Request) => {
         }
       }
 
+      case "get_korba_transactions": {
+        const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+        const txPayload = {
+          client_id: KORBA_CLIENT_ID,
+        };
+
+        const result = await queryKorbaApi(
+          supabaseAdmin,
+          "https://xchange.korba365.com/api/v1.0/client_transactions/",
+          txPayload
+        );
+
+        if (result.success && result.data) {
+          return new Response(JSON.stringify({
+            success: true,
+            count: result.data.count ?? 0,
+            next: result.data.next ?? null,
+            previous: result.data.previous ?? null,
+            results: result.data.results ?? [],
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } else {
+          const errMsg = result.data?.detail || result.data?.message || result.data?.error || result.error || "Failed to fetch Korba transactions";
+          return new Response(JSON.stringify({
+            success: false,
+            error: errMsg,
+            message: errMsg,
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
       case "get_korba_packages": {
         const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
         const balancePayload = {
@@ -1803,7 +1840,34 @@ serve(async (req: Request) => {
             console.error("[get_korba_packages] Failed to fetch AirtelTigo bundles:", err.message || err);
           }
 
-          const allBundles = [...mtnBundles, ...telecelBundles, ...airtelTigoBundles];
+          const airtimePackages = [
+            {
+              name: "MTN Airtime",
+              product_id: "MTN_AIRTIME",
+              amount: "0",
+              validity: "Non-expiry",
+              network: "MTN",
+              category: "Airtime"
+            },
+            {
+              name: "Telecel Airtime",
+              product_id: "TELECEL_AIRTIME",
+              amount: "0",
+              validity: "Non-expiry",
+              network: "Vodafone/Telecel",
+              category: "Airtime"
+            },
+            {
+              name: "AirtelTigo Airtime",
+              product_id: "AIRTELTIGO_AIRTIME",
+              amount: "0",
+              validity: "Non-expiry",
+              network: "AirtelTigo",
+              category: "Airtime"
+            }
+          ];
+
+          const allBundles = [...mtnBundles, ...telecelBundles, ...airtelTigoBundles, ...airtimePackages];
           if (allBundles.length === 0) {
             throw new Error("Failed to fetch packages from all Korba API networks due to timeouts or errors.");
           }

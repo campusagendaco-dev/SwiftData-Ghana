@@ -73,6 +73,7 @@ const OrderStatus = () => {
   const [orderNetwork, setOrderNetwork] = useState<string>("");
   const [orderPackageSize, setOrderPackageSize] = useState<string>("");
   const [orderPhone, setOrderPhone] = useState<string>("");
+  const [orderType, setOrderType] = useState<string>("");
 
   const network = searchParams.get("network") || orderNetwork || "";
   const packageSize = searchParams.get("package") || orderPackageSize || "";
@@ -338,7 +339,7 @@ const OrderStatus = () => {
       try {
         let query = supabase
           .from("orders")
-          .select("id, created_at, status, network, package_size, customer_phone");
+          .select("id, created_at, status, network, package_size, customer_phone, order_type, failure_reason");
         
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
         if (isUuid) {
@@ -354,7 +355,8 @@ const OrderStatus = () => {
           if (data.network) setOrderNetwork(data.network);
           if (data.package_size) setOrderPackageSize(data.package_size);
           if (data.customer_phone) setOrderPhone(data.customer_phone);
-          handleStatusUpdate(data.status as OrderStatusType);
+          if (data.order_type) setOrderType(data.order_type);
+          handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
         }
       } catch (err) {
         console.error("Error fetching initial order details:", err);
@@ -552,6 +554,28 @@ const OrderStatus = () => {
               </div>
             </div>
 
+            {/* Prepaid Token Display */}
+            {orderStatus === "fulfilled" && statusMessage && statusMessage.startsWith("Token:") && (
+              <div className="mx-8 mb-6 p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-center space-y-2.5 animate-in zoom-in-95 duration-300">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60">Your Prepaid Token</p>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-xl font-black tracking-wider text-white font-mono">
+                    {statusMessage.replace("Token:", "").trim()}
+                  </span>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(statusMessage.replace("Token:", "").trim());
+                      toast.success("Token copied!");
+                    }}
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 active:scale-95 transition-all"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-[8px] text-white/30 font-medium">Input this token into your prepaid meter to credit it.</p>
+              </div>
+            )}
+
             {/* Real-time Gateway Terminal */}
             {createdAt && (orderStatus === "paid" || orderStatus === "processing" || orderStatus === "pending" || orderStatus === "fulfilled" || orderStatus === "fulfillment_failed") && (
               <div className="mx-8 mb-6 p-4 rounded-2xl bg-black/60 border border-white/5 font-mono text-[9px] space-y-1.5 max-h-[140px] overflow-y-auto select-none">
@@ -645,7 +669,7 @@ const OrderStatus = () => {
                         </div>
                         <div className="flex justify-between text-[11px]">
                           <span className="text-white/20 uppercase">Service</span>
-                          <span className="text-white/60">Data Bundle</span>
+                          <span className="text-white/60">{orderType === "utility" ? "Bill Payment" : "Data Bundle"}</span>
                         </div>
                         <div className="flex justify-between text-[11px]">
                           <span className="text-white/20 uppercase">Network</span>
@@ -659,6 +683,12 @@ const OrderStatus = () => {
                           <span className="text-white/20 uppercase">Recipient</span>
                           <span className="text-white/60">{phoneParam || "—"}</span>
                         </div>
+                        {statusMessage && statusMessage.startsWith("Token:") && (
+                          <div className="flex justify-between text-[11px] pt-2 border-t border-white/5">
+                            <span className="text-emerald-500/70 uppercase">Token</span>
+                            <span className="text-emerald-400 font-bold font-mono">{statusMessage.replace("Token:", "").trim()}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="pt-4 border-t border-dashed border-white/10 flex justify-between items-center">

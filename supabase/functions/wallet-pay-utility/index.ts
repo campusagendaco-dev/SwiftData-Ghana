@@ -30,7 +30,7 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
     if (userError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 200, headers: corsHeaders });
 
-    const { utility_type, utility_provider, utility_account_number, utility_account_name, amount } = payload;
+    const { utility_type, utility_provider, utility_account_number, utility_account_name, amount, lookup_transaction_id } = payload;
 
     if (!utility_type || !utility_provider || !utility_account_number || !amount) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 200, headers: corsHeaders });
@@ -65,7 +65,8 @@ serve(async (req) => {
       utility_account_name,
       amount: payAmount,
       status: "paid",
-      failure_reason: "Awaiting manual fulfillment / Token generation"
+      failure_reason: "Awaiting manual fulfillment / Token generation",
+      metadata: { lookup_transaction_id, ...(payload.metadata || {}) }
     });
     
     // Send notification

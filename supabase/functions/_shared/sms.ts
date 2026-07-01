@@ -31,6 +31,10 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
     .eq("id", 1)
     .maybeSingle();
 
+  const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY");
+  const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY");
+  const hasKorba = !!(korbaClientKey && korbaSecretKey);
+
   const defaultSenderId = settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh";
   let finalSenderId = defaultSenderId;
 
@@ -53,7 +57,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
   }
 
   return {
-    apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY"),
+    apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY") || (hasKorba ? "korba" : null),
     senderId: finalSenderId,
     templates: {
       payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} has been processed. Join for more giveaways & updates: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
@@ -101,6 +105,96 @@ async function logSmsToDb(
   }
 }
 
+export async function sendSmsViaKorba(
+  clientId: string,
+  clientKey: string,
+  secretKey: string,
+  to: string,
+  body: string,
+  type = "broadcast",
+  agentId?: string
+) {
+  if (!clientId || !clientKey || !secretKey || !to) return;
+
+  const endpoint = "https://xchange.korba365.com/api/v1.0/send_sms/";
+
+  // Ensure to starts with country code (e.g. +233...)
+  let formattedPhone = to;
+  if (!formattedPhone.startsWith("+")) {
+    if (formattedPhone.startsWith("233")) {
+      formattedPhone = "+" + formattedPhone;
+    } else if (formattedPhone.startsWith("0")) {
+      formattedPhone = "+233" + formattedPhone.slice(1);
+    } else {
+      formattedPhone = "+233" + formattedPhone;
+    }
+  }
+
+  const payload = {
+    client_id: clientId,
+    phone_number: formattedPhone,
+    sms_message: body,
+  };
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+
+    // Generate Signature
+    const sortedKeys = Object.keys(payload).sort();
+    const messageParts = [];
+    for (const key of sortedKeys) {
+      if (payload[key] !== undefined) {
+        messageParts.push(`${key}=${payload[key]}`);
+      }
+    }
+    const message = messageParts.join("&");
+
+    const keyData = new TextEncoder().encode(secretKey);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const messageData = new TextEncoder().encode(message);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const response = await fetchViaDb(supabaseAdmin, endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `HMAC ${clientKey}:${signatureHex}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      throw new Error(`Korba SMS returned non-JSON: ${responseText.substring(0, 200)}`);
+    }
+
+    if (!response.ok || data.response_code !== "00") {
+      throw new Error(`Korba SMS Error: ${data.message || "Failed to send SMS"}`);
+    }
+
+    await logSmsToDb(to, "KorbaSMS", body, type, "success", undefined, agentId).catch(console.error);
+    return data;
+  } catch (error: any) {
+    console.error(`Failed to send SMS via Korba to ${to}:`, error);
+    await logSmsToDb(to, "KorbaSMS", body, type, "failed", error instanceof Error ? error.message : String(error), agentId).catch(console.error);
+    throw error;
+  }
+}
+
 export async function sendSmsViaTxtConnect(
   apiKey: string,
   from: string,
@@ -110,6 +204,14 @@ export async function sendSmsViaTxtConnect(
   agentId?: string
 ) {
   if (!apiKey || !to) return;
+
+  if (apiKey === "korba") {
+    const korbaClientId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+    const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
+    const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+    return await sendSmsViaKorba(korbaClientId, korbaClientKey, korbaSecretKey, to, body, type, agentId);
+  }
+
   const effectiveKey = apiKey;
 
   const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
@@ -166,6 +268,23 @@ export async function sendBulkSmsViaTxtConnect(
   type = "broadcast",
   agentId?: string
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
+  if (apiKey === "korba") {
+    const korbaClientId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+    const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
+    const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+    let sent = 0;
+    const failures: Array<{ phone: string; reason: string }> = [];
+    for (const r of recipients) {
+      try {
+        await sendSmsViaKorba(korbaClientId, korbaClientKey, korbaSecretKey, r, body, type, agentId);
+        sent++;
+      } catch (err: any) {
+        failures.push({ phone: r, reason: err.message || "Failed" });
+      }
+    }
+    return { sent, failures };
+  }
+
   const effectiveKey = apiKey;
   const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
   const BULK_BATCH = 100;

@@ -571,6 +571,52 @@ const AdminPackages = () => {
     setSettings((prev) => ({ ...prev, [key]: { ...current, [field]: value } }));
   };
 
+  const handleToggleUnavailable = async (network: string, size: string, isUnavailable: boolean) => {
+    updateSetting(network, size, "is_unavailable", isUnavailable);
+
+    const session = await getValidSession();
+    if (!session) {
+      toast({ title: "Session expired", description: "Please sign in again.", variant: "destructive" });
+      updateSetting(network, size, "is_unavailable", !isUnavailable);
+      return;
+    }
+
+    const current = getSetting(network, size);
+    const updatedPkg = {
+      network,
+      package_size: size,
+      cost_price: current.cost_price,
+      agent_price: current.agent_price,
+      sub_agent_price: current.sub_agent_price,
+      public_price: current.public_price,
+      api_price: current.api_price,
+      is_unavailable: isUnavailable
+    };
+
+    try {
+      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "save_package_settings", packages: [updatedPkg] },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (error || data?.error) {
+        toast({ title: "Failed to update status", description: data?.error || error?.message, variant: "destructive" });
+        updateSetting(network, size, "is_unavailable", !isUnavailable);
+      } else {
+        toast({ 
+          title: isUnavailable ? "Package Out of Stock ⏸️" : "Package In Stock ⚡", 
+          description: `${network} ${size} has been updated successfully.` 
+        });
+        if (currentUser) {
+          await logAudit(currentUser.id, isUnavailable ? "suspend_package" : "resume_package", { network, size });
+        }
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      updateSetting(network, size, "is_unavailable", !isUnavailable);
+    }
+  };
+
   const seedDefaultPrices = async () => {
     setSeeding(true);
     const session = await getValidSession();
@@ -1167,7 +1213,7 @@ const AdminPackages = () => {
                             <span className="text-[10px] text-muted-foreground">Active</span>
                             <Switch
                               checked={!s.is_unavailable}
-                              onCheckedChange={(checked) => updateSetting(n.name, pkg.size, "is_unavailable", !checked)}
+                              onCheckedChange={(checked) => handleToggleUnavailable(n.name, pkg.size, !checked)}
                               className="scale-75 data-[state=checked]:bg-amber-500"
                             />
                           </div>
@@ -1252,7 +1298,7 @@ const AdminPackages = () => {
                         <div className="hidden md:flex col-span-1 justify-center items-center">
                           <Switch
                             checked={!s.is_unavailable}
-                            onCheckedChange={(checked) => updateSetting(n.name, pkg.size, "is_unavailable", !checked)}
+                            onCheckedChange={(checked) => handleToggleUnavailable(n.name, pkg.size, !checked)}
                             className="scale-75 data-[state=checked]:bg-amber-400"
                           />
                         </div>
@@ -1331,7 +1377,7 @@ const AdminPackages = () => {
                             <span className="text-[10px] text-muted-foreground">Active</span>
                             <Switch
                               checked={!s.is_unavailable}
-                              onCheckedChange={(checked) => updateSetting("AFA", "BUNDLE", "is_unavailable", !checked)}
+                              onCheckedChange={(checked) => handleToggleUnavailable("AFA", "BUNDLE", !checked)}
                               className="scale-75 data-[state=checked]:bg-amber-500"
                             />
                           </div>
@@ -1416,7 +1462,7 @@ const AdminPackages = () => {
                         <div className="hidden md:flex col-span-1 justify-center items-center">
                           <Switch
                             checked={!s.is_unavailable}
-                            onCheckedChange={(checked) => updateSetting("AFA", "BUNDLE", "is_unavailable", !checked)}
+                            onCheckedChange={(checked) => handleToggleUnavailable("AFA", "BUNDLE", !checked)}
                             className="scale-75 data-[state=checked]:bg-amber-400"
                           />
                         </div>

@@ -74,6 +74,34 @@ const AdminKorbaHub = () => {
   const [orderStatusFilter, setOrderStatusFilter] = useState("all");
   const [verifyingOrderId, setVerifyingOrderId] = useState<string | null>(null);
 
+  // Gateway Logs State
+  const [gatewayLogs, setGatewayLogs] = useState<any[]>([]);
+  const [loadingGatewayLogs, setLoadingGatewayLogs] = useState(false);
+
+  const fetchGatewayLogs = useCallback(async (silent = false) => {
+    if (!silent) setLoadingGatewayLogs(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "get_korba_transactions" }
+      });
+      if (error) throw error;
+      if (data?.success) {
+        setGatewayLogs(data.results || []);
+      } else {
+        throw new Error(data?.error || "Failed to fetch gateway logs");
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        title: "Gateway Logs Fetch Failed",
+        description: e.message || "Failed to retrieve transactions from Korba API.",
+        variant: "destructive"
+      });
+    } finally {
+      if (!silent) setLoadingGatewayLogs(false);
+    }
+  }, [toast]);
+
   // Fetch OVA Balance
   const fetchBalance = useCallback(async (silent = false) => {
     if (!silent) setLoadingBalance(true);
@@ -251,7 +279,8 @@ const AdminKorbaHub = () => {
     fetchPackages(true);
     fetchOrders();
     checkProxyHealth(true);
-  }, [fetchBalance, fetchPackages, fetchOrders, checkProxyHealth]);
+    fetchGatewayLogs(true);
+  }, [fetchBalance, fetchPackages, fetchOrders, checkProxyHealth, fetchGatewayLogs]);
 
   // Filter packages
   const filteredBundles = bundles.filter(b => {
@@ -299,11 +328,12 @@ const AdminKorbaHub = () => {
               fetchPackages();
               fetchOrders();
               checkProxyHealth(true);
+              fetchGatewayLogs();
             }}
-            disabled={loadingBalance || loadingPackages || loadingOrders || checkingHealth}
+            disabled={loadingBalance || loadingPackages || loadingOrders || checkingHealth || loadingGatewayLogs}
             className="flex items-center gap-2 rounded-xl transition-all font-bold text-xs"
           >
-            <RefreshCw className={cn("w-3.5 h-3.5", (loadingBalance || loadingPackages || loadingOrders || checkingHealth) && "animate-spin")} />
+            <RefreshCw className={cn("w-3.5 h-3.5", (loadingBalance || loadingPackages || loadingOrders || checkingHealth || loadingGatewayLogs) && "animate-spin")} />
             Sync Everything
           </Button>
         </div>
@@ -448,6 +478,7 @@ const AdminKorbaHub = () => {
         <TabsList className="bg-muted p-1 rounded-xl">
           <TabsTrigger value="packages" className="rounded-lg font-bold text-xs">Fetched Korba Packages ({filteredBundles.length})</TabsTrigger>
           <TabsTrigger value="payments" className="rounded-lg font-bold text-xs">Korba Payments ({filteredOrders.length})</TabsTrigger>
+          <TabsTrigger value="gateway-logs" className="rounded-lg font-bold text-xs">Gateway Logs ({gatewayLogs.length})</TabsTrigger>
         </TabsList>
 
         {/* Tab 1: Korba Packages */}
@@ -687,6 +718,79 @@ const AdminKorbaHub = () => {
                           </tr>
                         );
                       })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="gateway-logs" className="space-y-4">
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div>
+                <CardTitle className="text-base font-black uppercase tracking-wider text-foreground">Korba Gateway Transactions</CardTitle>
+                <CardDescription className="text-xs">Live paginated history fetched directly from Korba API endpoint (`client_transactions/`)</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchGatewayLogs()}
+                disabled={loadingGatewayLogs}
+                className="h-8 text-xs font-bold rounded-lg"
+              >
+                <RefreshCw className={cn("w-3.5 h-3.5 mr-2", loadingGatewayLogs && "animate-spin")} />
+                Refresh API Logs
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {loadingGatewayLogs ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+                  <span className="text-sm text-muted-foreground font-medium">Fetching logs from Korba Gateway...</span>
+                </div>
+              ) : gatewayLogs.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground text-sm font-medium">
+                  No gateway transactions returned or Korba credentials not active.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-border/60 text-muted-foreground font-black uppercase tracking-wider bg-muted/30">
+                        <th className="py-3 px-4">Korba ID</th>
+                        <th className="py-3 px-4">Client Ref</th>
+                        <th className="py-3 px-4">Recipient</th>
+                        <th className="py-3 px-4">Debit (GHS)</th>
+                        <th className="py-3 px-4">Credit (GHS)</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Message</th>
+                        <th className="py-3 px-4">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40 font-medium">
+                      {gatewayLogs.map((tx: any) => (
+                        <tr key={tx.korba_transaction_id} className="hover:bg-muted/10 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-foreground">{tx.korba_transaction_id}</td>
+                          <td className="py-3 px-4 font-mono text-muted-foreground">{tx.client_transaction_id}</td>
+                          <td className="py-3 px-4 font-mono">{tx.customer_number || "-"}</td>
+                          <td className="py-3 px-4 font-mono text-red-500 font-bold">{Number(tx.debit_amt || 0).toFixed(2)}</td>
+                          <td className="py-3 px-4 font-mono text-emerald-500 font-bold">{Number(tx.credit_amt || 0).toFixed(2)}</td>
+                          <td className="py-3 px-4">
+                            <Badge className={cn(
+                              "text-[10px] font-black uppercase rounded-lg border",
+                              tx.transaction_status === "success" 
+                                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" 
+                                : "bg-red-500/10 text-red-500 border-red-500/20"
+                            )}>
+                              {tx.transaction_status}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4 max-w-[200px] truncate text-muted-foreground" title={tx.exchange_message}>{tx.exchange_message || "-"}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{new Date(tx.time_created).toLocaleString()}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>

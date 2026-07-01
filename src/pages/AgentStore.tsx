@@ -26,6 +26,7 @@ import StoreManagementOverlay from "@/components/StoreManagementOverlay";
 import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
+import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 
 interface PromoResult {
   valid: boolean;
@@ -38,7 +39,7 @@ interface PromoResult {
 
 type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type ServiceType = "data" | "airtime" | "utility";
-const NETWORKS: NetworkName[] = ["MTN", "MTN Mash Up", "Telecel", "AirtelTigo"];
+const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
 const PAYSTACK_FEE_RATE = 0.03;
 const calcFee = (amount: number) => Math.min(amount * PAYSTACK_FEE_RATE, 100);
 
@@ -77,6 +78,31 @@ interface GlobalPkgSetting {
   is_unavailable: boolean;
 }
 
+const formatPackageDisplay = (size: string) => {
+  // Pattern 1: GHS X (Y MB/GB)
+  let match = size.match(/GHS\s*[\d.]+\s*\(([^)]+)\)/i);
+  if (match) {
+    return {
+      main: match[1].trim(),
+      sub: size.replace(/\([^)]+\)/, "").trim()
+    };
+  }
+
+  // Pattern 2: X mins and Y MB @ Z GHC
+  match = size.match(/(.*)\s+@\s*(.*)/i);
+  if (match) {
+    return {
+      main: match[1].trim(),
+      sub: match[2].trim()
+    };
+  }
+
+  return {
+    main: size,
+    sub: ""
+  };
+};
+
 const AgentStore = () => {
   const { slug } = useParams<{ slug: string }>();
   const { toast } = useToast();
@@ -87,6 +113,8 @@ const AgentStore = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [greeting, setGreeting] = useState("Welcome");
+  const [korbaMappings, setKorbaMappings] = useState<{ package_name: string; network: string; raw_data: any }[]>([]);
+  const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>("affordable");
 
   useEffect(() => {
     const hrs = new Date().getHours();
@@ -290,17 +318,20 @@ const AgentStore = () => {
         let agentRes;
         let pkgRes;
         let pricingCtx;
+        let mappingsRes;
 
         try {
-          const [res, pkgResData, pricingCtxData, sysRes] = await Promise.all([
+          const [res, pkgResData, pricingCtxData, sysRes, mappingsData] = await Promise.all([
             storeQuery.maybeSingle(),
             supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
             supabase.from("system_settings").select("active_payment_gateway").eq("id", 1).maybeSingle(),
+            supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
           ]);
           
           pkgRes = pkgResData;
           pricingCtx = pricingCtxData;
+          mappingsRes = mappingsData;
 
           if (res.error) {
             const errMsg = res.error.message || "";
@@ -345,6 +376,9 @@ const AgentStore = () => {
           gsMap[`${r.network}-${normSize}`] = r; 
         });
         setGlobalSettings(gsMap);
+        if (mappingsRes?.data) {
+          setKorbaMappings(mappingsRes.data);
+        }
         setPriceMultipliers(pricingCtx.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
         if (sysRes?.data?.active_payment_gateway) {
           setActiveGateway(sysRes.data.active_payment_gateway);
@@ -447,41 +481,140 @@ const AgentStore = () => {
     return applyPriceMultiplier(fallbackPrice, multiplier);
   }, [agent, globalSettings, parentAssignedPrices, priceMultipliers, profile]);
 
-  const packages = useMemo(() => {
-    const list: { size: string; price: number; validity: string; popular?: boolean }[] = [];
+  // Get packages for current network and purchase type
+  const displayPackages = useMemo(() => {
+    const list: { size: string; price: number; validity: string; popular?: boolean; isInstant?: boolean; category?: string }[] = [];
     const dbNetwork = selectedNetwork;
 
-    list.push(...(basePackages[selectedNetwork] || []));
+    // 1. Get standard base packages (which are Affordable by default)
+    const baseList = basePackages[dbNetwork] || [];
+    baseList.forEach(pkg => {
+      list.push({
+        size: pkg.size,
+        price: pkg.price,
+        validity: pkg.validity,
+        popular: pkg.popular,
+        isInstant: false,
+        category: "Affordable SME"
+      });
+    });
 
-    const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
+    // 2. Add packages from global settings
+    const addedSizes = new Set(baseList.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
 
     Object.keys(globalSettings).forEach((key) => {
       const gs = globalSettings[key];
-      if (gs && gs.network === dbNetwork) {
+      // Note: we group 'MTN Mash Up' under MTN's Instant page
+      if (gs && (gs.network === dbNetwork || (dbNetwork === "MTN" && gs.network === "MTN Mash Up"))) {
         const normSize = gs.package_size.replace(/\s+/g, "").toUpperCase();
-        if (!baseSizes.has(normSize)) {
+        if (!addedSizes.has(normSize)) {
+          // Check if this package is mapped to Korba
+          const mapping = korbaMappings.find(
+            m => m.package_name === gs.package_size && 
+                 (m.network === gs.network)
+          );
+          
           list.push({
             size: gs.package_size,
             price: gs.public_price ?? 0,
-            validity: selectedNetwork.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry"
+            validity: gs.network.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry",
+            isInstant: !!mapping,
+            category: mapping?.raw_data?.category || (gs.network === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles")
           });
         }
       }
     });
 
-    return list
+    // 3. Process prices, unavailable states, and disabled packages
+    const processed = list
       .map((pkg) => {
         const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
-        const gs = globalSettings[`${dbNetwork}-${normSize}`];
+        
+        let gs = globalSettings[`${dbNetwork}-${normSize}`];
+        if (!gs && dbNetwork === "MTN") {
+          gs = globalSettings[`MTN Mash Up-${normSize}`];
+        }
+
         if (gs?.is_unavailable) return null;
         if (agent?.disabled_packages?.[dbNetwork]?.includes(pkg.size)) return null;
+        
+        const price = resolveDisplayPrice(dbNetwork, pkg.size, pkg.price);
+
+        // Re-check mapping for isInstant (needed if the package was from basePackages but later mapped to Korba)
+        const mapping = korbaMappings.find(
+          m => m.package_name === pkg.size && 
+               (m.network === dbNetwork || (dbNetwork === "MTN" && m.network === "MTN Mash Up"))
+        );
+        const isInstant = !!mapping;
+        const category = mapping?.raw_data?.category || (pkg.validity === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles");
+
         return {
           ...pkg,
-          price: resolveDisplayPrice(dbNetwork, pkg.size, pkg.price)
+          price,
+          isInstant,
+          category
         };
       })
-      .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean }[];
-  }, [basePackages, selectedNetwork, globalSettings, activeGateway, agent, resolveDisplayPrice]);
+      .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean; isInstant: boolean; category: string }[];
+
+    return processed;
+  }, [basePackages, selectedNetwork, globalSettings, korbaMappings, agent, resolveDisplayPrice]);
+
+  // Get all available dropdown options for the current network
+  const dropdownOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [
+      { value: "affordable", label: "Affordable SME Bundles" }
+    ];
+
+    // Find all unique categories of Instant packages for the selected network
+    const instantPkgs = displayPackages.filter(p => p.isInstant && p.validity !== "MTN Mash Up" && p.category !== "Mash Up Bundles");
+    const categories = Array.from(new Set(instantPkgs.map(p => p.category).filter(Boolean))) as string[];
+
+    categories.sort().forEach((cat) => {
+      options.push({
+        value: cat,
+        label: `Instant: ${cat}`
+      });
+    });
+
+    if (selectedNetwork === "MTN") {
+      options.push({ value: "mashup", label: "MTN Mash Up" });
+    }
+
+    return options;
+  }, [displayPackages, selectedNetwork]);
+
+  // Filter based on selectedTypeOrCategory dropdown option
+  const filteredPackages = useMemo(() => {
+    if (selectedTypeOrCategory === "affordable") {
+      return displayPackages.filter(
+        p => !p.isInstant && 
+             p.validity !== "MTN Mash Up" && 
+             p.category !== "Mash Up Bundles"
+      );
+    }
+    
+    if (selectedTypeOrCategory === "mashup") {
+      return displayPackages.filter(
+        p => p.validity === "MTN Mash Up" || p.category === "Mash Up Bundles"
+      );
+    }
+    
+    // Otherwise, filter by specific Instant category
+    return displayPackages.filter(
+      p => p.isInstant && 
+           p.category === selectedTypeOrCategory && 
+           p.validity !== "MTN Mash Up" && 
+           p.category !== "Mash Up Bundles"
+    );
+  }, [displayPackages, selectedTypeOrCategory]);
+
+  // If there are any instant packages mapped, we show the option to switch
+  const hasInstantPackages = useMemo(() => {
+    return displayPackages.some(p => p.isInstant && p.validity !== "MTN Mash Up" && p.category !== "Mash Up Bundles");
+  }, [displayPackages]);
+
+  const packages = filteredPackages;
 
   const validPromo = promoResult?.valid ? promoResult : null;
   const discountPct = validPromo?.discount_percentage ?? 0;
@@ -543,7 +676,7 @@ const AgentStore = () => {
     }
     setClaiming(true);
     const { data, error } = await invokePublicFunction("claim-free-data", {
-      body: { promo_code: promoCode.trim(), phone: phoneDigits, network: selectedNetwork, package_size: selectedPkg.size },
+      body: { promo_code: promoCode.trim(), phone: phoneDigits, network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork, package_size: selectedPkg.size },
     });
     setClaiming(false);
     if (error || !data) {
@@ -584,23 +717,25 @@ const AgentStore = () => {
       return;
     }
 
+    const orderNetwork = selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork;
     const orderId = crypto.randomUUID();
     const orderType = selectedService === "utility" ? "utility" : selectedService === "airtime" ? "airtime" : "data";
     const packageSize = selectedService === "data" ? selectedPkg?.size : selectedService === "airtime" ? `${airtimeAmount} GHS Airtime` : `${utilityType} Bill`;
     const callbackParams = new URLSearchParams({
-      reference: orderId, network: selectedNetwork, package: packageSize || "", phone: phoneDigits,
+      reference: orderId, network: orderNetwork, package: packageSize || "", phone: phoneDigits,
       ...(slug ? { slug } : {}),
     });
 
     const meta = {
       order_id: orderId,
       order_type: orderType,
-      network: selectedNetwork,
+      network: orderNetwork,
       package_size: packageSize,
       customer_phone: phoneDigits,
       fee,
       agent_id: agent.user_id,
       payment_source: "agent_store",
+      is_korba: selectedService === "utility" || (selectedService === "data" && korbaMappings.some((m: any) => m.network === selectedNetwork && m.package_name === selectedPkg?.size)),
       callback_url: slug
         ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`
         : `${window.location.origin}/order-status?${callbackParams.toString()}`,
@@ -627,7 +762,7 @@ const AgentStore = () => {
     
     const callbackParams = new URLSearchParams({
       reference: ref,
-      network: selectedNetwork,
+      network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork,
       package: packageSize || "",
       phone: phoneDigits,
       ...(slug ? { slug } : {}),
@@ -1077,33 +1212,83 @@ const AgentStore = () => {
         {/* ── Network tabs (Data & Airtime) ── */}
         {(selectedService === "data" || selectedService === "airtime") && (
           <div className="flex gap-2.5 mb-6 relative z-10">
-            {NETWORKS.filter(n => !(activeGateway === "korba" && n === "MTN Mash Up")).map((n) => {
+            {NETWORKS.map((n) => {
               const active = selectedNetwork === n;
               const nc = NETWORK_CONFIG[n];
               return (
                 <button
                   type="button"
                   key={n}
-                  onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); }}
+                  onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); setSelectedTypeOrCategory("affordable"); }}
                   className={`flex-1 py-3.5 rounded-[18px] text-[11px] font-black uppercase tracking-widest border transition-all active:scale-[0.96] ${
                     active ? `${nc.bg} ${nc.textClass} border-transparent shadow-xl` : "bg-white/[0.03] border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80 backdrop-blur-md shadow-inner"
                   }`}
                   style={active ? { boxShadow: `0 8px 24px ${nc.color}40`, textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none" } : {}}
                 >
-                  {n === "MTN Mash Up" ? (
-                    <span className="flex items-center justify-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 fill-current animate-pulse text-black" />
-                      <span>MTN Mash Up</span>
-                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-                        active ? "bg-black/20 text-black" : "bg-white/10 text-white/50"
-                      }`}>4</span>
-                    </span>
-                  ) : (
-                    n
-                  )}
+                  {n}
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {/* Dropdown Selector for Package Type / Category */}
+        {(selectedService === "data" || selectedService === "airtime") && (
+          <div className="mb-6 animate-fade-in relative z-50">
+            <BundleSelectorDropdown
+              options={dropdownOptions}
+              value={selectedTypeOrCategory}
+              onChange={(val) => {
+                setSelectedTypeOrCategory(val);
+                setSelectedPkg(null);
+              }}
+              accentColor={accentColor}
+              isDark={true}
+            />
+          </div>
+        )}
+
+        {/* Dedicated Instant View Header */}
+        {selectedService === "data" && selectedTypeOrCategory !== "affordable" && selectedTypeOrCategory !== "mashup" && (
+          <div 
+            className="mb-6 p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in relative z-10"
+            style={{ borderColor: `${accentColor}20`, background: `${accentColor}06` }}
+          >
+            <div>
+              <h2 className="text-sm font-black text-white mb-0.5 uppercase tracking-wide">
+                {selectedNetwork} Instant: {selectedTypeOrCategory}
+              </h2>
+              <p className="text-[11px] text-white/50 max-w-lg leading-relaxed">
+                Direct official retail bundles routed instantly via carrier gateways.
+              </p>
+            </div>
+            <div 
+              className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-inner"
+              style={{ backgroundColor: `${accentColor}20`, color: accentColor }}
+            >
+              Official API
+            </div>
+          </div>
+        )}
+
+        {/* Dedicated Mash Up View Header */}
+        {selectedService === "data" && selectedTypeOrCategory === "mashup" && (
+          <div 
+            className="mb-6 p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in relative z-10"
+            style={{ borderColor: `${accentColor}20`, background: `${accentColor}06` }}
+          >
+            <div>
+              <h2 className="text-sm font-black text-white mb-0.5 uppercase tracking-wide">MTN Mash Up Bundles</h2>
+              <p className="text-[11px] text-white/50 max-w-lg leading-relaxed">
+                Popular hybrid voice and data packages from MTN. Fully supported and routed instantly.
+              </p>
+            </div>
+            <div 
+              className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-inner"
+              style={{ backgroundColor: `${accentColor}20`, color: accentColor }}
+            >
+              Mash Up Active
+            </div>
           </div>
         )}
 
@@ -1187,9 +1372,22 @@ const AgentStore = () => {
                             <p className={`text-[10px] font-black uppercase tracking-[0.15em] mb-1.5 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black/60" : "text-white/60") : "text-white/40 group-hover:text-white/60"}`}>
                               {selectedNetwork}
                             </p>
-                            <p className={`text-[32px] font-black tracking-tighter leading-none mb-4 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black" : "text-white") : "text-white"}`}>
-                              {pkg.size}
-                            </p>
+                            {(() => {
+                              const display = formatPackageDisplay(pkg.size);
+                              return (
+                                <>
+                                  <p className={`text-lg sm:text-xl font-black tracking-tighter leading-none mb-1.5 break-words ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black" : "text-white") : "text-white"}`}>
+                                    {display.main}
+                                  </p>
+                                  {display.sub && (
+                                    <p className={`text-[9px] font-bold uppercase tracking-wider mb-4 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black/60" : "text-white/60") : "text-white/40"}`}>
+                                      Official: {display.sub}
+                                    </p>
+                                  )}
+                                  {!display.sub && <div className="h-4 mb-4" />}
+                                </>
+                              );
+                            })()}
                             <div className={`pt-4 border-t ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "border-black/20" : "border-white/20") : "border-white/10"}`}>
                               <p className={`text-xl font-black tracking-tight ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black" : "text-white") : "text-white/90"}`}>
                                 ₵{pkg.price.toFixed(2)}

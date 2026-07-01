@@ -1,6 +1,7 @@
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
+import { sendPaymentSms } from "../_shared/sms.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, x-user-access-token, x-supabase-auth-token, x-api-key, api-key",
@@ -152,7 +153,35 @@ async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise
   }
   
   const providerCategory = orderType === "airtime" ? "airtime" : (orderType === "utility" ? "utility" : "data");
-  return await getActiveProviders(supabaseAdmin, providerCategory);
+  let activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
+
+  if (orderType === "airtime" && activeProviders.length === 0) {
+    console.log(`[verify-payment] No explicit airtime providers found. Searching provider_packages for mapped Airtime packages for network: ${network}`);
+    // Find provider mappings for this network's Airtime package
+    const { data: mappings } = await supabaseAdmin
+      .from("provider_packages")
+      .select("provider_id")
+      .eq("network", network)
+      .ilike("package_name", "%Airtime%")
+      .eq("is_active", true);
+
+    if (mappings && mappings.length > 0) {
+      const providerIds = mappings.map((m: any) => m.provider_id);
+      const { data: mappedProviders } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .in("id", providerIds)
+        .eq("is_active", true)
+        .order("priority", { ascending: true });
+
+      if (mappedProviders && mappedProviders.length > 0) {
+        console.log(`[verify-payment] Mapped ${mappedProviders.length} providers for airtime via package mappings:`, mappedProviders.map(p => p.name));
+        activeProviders = mappedProviders;
+      }
+    }
+  }
+
+  return activeProviders;
 }
 
 async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: string; title: string; body: string; url?: string; icon?: string }) {
@@ -172,6 +201,75 @@ async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: s
     }
   } catch (e) {
     console.error("[Push] Trigger error:", e);
+  }
+}
+
+async function fulfillOrder(
+  supabaseAdmin: any,
+  orderId: string,
+  providerId: string | null,
+  providerOrderId: string | null,
+  token?: string | null,
+  failureReason?: string | null
+) {
+  // Fetch current order details
+  const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", orderId).maybeSingle();
+  if (!order) return;
+
+  const patch: any = {
+    status: "fulfilled",
+    provider_id: providerId,
+    provider_order_id: providerOrderId,
+    failure_reason: token ? `Token: ${token}` : (failureReason || null),
+    updated_at: new Date().toISOString()
+  };
+  if (token) {
+    patch.metadata = { ...(order.metadata || {}), prepaid_token: token };
+  }
+
+  await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+
+  try {
+    // Credit profits
+    await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
+
+    // Trigger Push Notification for Agent
+    if (order.agent_id && order.agent_id !== '00000000-0000-0000-0000-000000000000') {
+      const profit = Number(order.profit || 0).toFixed(2);
+      const isUtility = order.order_type === "utility";
+      await triggerPushNotification(supabaseAdmin, {
+        user_id: order.agent_id,
+        title: isUtility ? "🎉 Utility Bill Payment Completed" : "🎉 New payment for Data selling",
+        body: isUtility ? `Your utility order has been processed. Prepaid Token: ${token || ''}` : `You just received GHS ${profit} from your recent data sale.`,
+        url: "/dashboard/orders",
+        icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
+      });
+    }
+  } catch (e) {
+    console.error("[verify-payment] Profit credit or notification failed:", e);
+  }
+
+  // Trigger SMS for Customer
+  if (order.customer_phone) {
+    try {
+      const smsType = order.order_type === "utility" ? "utility_paid" : "payment_success";
+      const smsVars = {
+        phone: order.customer_phone,
+        package: order.package_size || "",
+        utility_type: order.network || "",
+        account: order.customer_phone,
+        amount: String(order.amount || 0),
+        token: token || ""
+      };
+      if (order.order_type === "utility" && token) {
+        const customMsg = `ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nThank you for using SwiftData!`;
+        await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom" as any, { message: customMsg }, order.agent_id);
+      } else {
+        await sendPaymentSms(supabaseAdmin, order.customer_phone, smsType, smsVars, order.agent_id);
+      }
+    } catch (smsErr) {
+      console.error("[verify-payment] Success SMS dispatch failed:", smsErr);
+    }
   }
 }
 
@@ -385,7 +483,7 @@ serve(async (req) => {
     if (existingOrder?.status === "fulfilled" || existingOrder?.status === "completed") {
       return new Response(JSON.stringify({ 
         status: "fulfilled", 
-        message: "Already processed",
+        message: existingOrder.failure_reason || "Already processed",
         provider_order_id: existingOrder?.provider_order_id 
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -403,7 +501,7 @@ serve(async (req) => {
       }
     }
     const isQueuedError = /queued/i.test(String(existingOrder?.failure_reason || ""));
-    const isProviderOrder = !["agent_activation", "sub_agent_activation", "wallet_topup", "free_data_claim", "utility"].includes(orderType.toLowerCase());
+    const isProviderOrder = !["agent_activation", "sub_agent_activation", "wallet_topup", "free_data_claim"].includes(orderType.toLowerCase());
 
     // --- 1. STATUS CHECK (For orders already being processed) ---
     // Skip for non-data/airtime order types — they don't involve a data provider.
@@ -427,10 +525,9 @@ serve(async (req) => {
             await supabaseAdmin.from("orders").update({ status: "processing", failure_reason: "Provider reported failure during status check" }).eq("id", targetReference);
             break; 
           } else {
-            // User fix: Assume ALL recognized provider orders are fulfilled, destroying execution traps
-            await supabaseAdmin.from("orders").update({ status: "fulfilled", provider_id: provider.id }).eq("id", targetReference);
-            await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
-            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id }), { headers: corsHeaders });
+            const token = checkResult.raw?.prepaid_token;
+            await fulfillOrder(supabaseAdmin, targetReference, provider.id, existingOrder.provider_order_id, token || null);
+            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
           }
         }
       }
@@ -473,13 +570,8 @@ serve(async (req) => {
           
           if (isDelivered) {
             console.log(`[verify-payment] Found fulfilled order ${targetReference} at ${provider.name} during pre-check.`);
-            await supabaseAdmin.from("orders").update({ 
-              status: "fulfilled", 
-              provider_id: provider.id,
-              provider_order_id: checkResult.id || existingOrder.provider_order_id || null,
-              failure_reason: null
-            }).eq("id", targetReference);
-            await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
+            const token = checkResult.raw?.prepaid_token;
+            await fulfillOrder(supabaseAdmin, targetReference, provider.id, checkResult.id || existingOrder.provider_order_id || null, token || null);
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
           } else if (isProcessing) {
             console.log(`[verify-payment] Found processing/pending order ${targetReference} at ${provider.name} during pre-check.`);
@@ -1231,6 +1323,22 @@ serve(async (req) => {
           },
           "afa-registration"
         );
+      } else if (currentOrderType === "utility") {
+        result = await callProviderApi(
+          supabaseAdmin,
+          provider,
+          {
+            order_type: "utility",
+            utility_type: claimedOrder.utility_type,
+            utility_provider: claimedOrder.utility_provider,
+            utility_account_number: claimedOrder.utility_account_number,
+            utility_account_name: claimedOrder.utility_account_name,
+            amount: claimedOrder.amount,
+            reference: targetReference,
+            lookup_transaction_id: claimedOrder.metadata?.lookup_transaction_id
+          },
+          "purchase"
+        );
       } else {
         result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider), "purchase");
       }
@@ -1291,30 +1399,24 @@ serve(async (req) => {
 
     if (result.ok) {
       // successful API pushes remain at 'processing' state to be auto-delivered after delay
-      const targetStatus = "processing";
-      const patch: any = { provider_id: successfulProviderId, provider_order_id: result.id, status: targetStatus, failure_reason: null };
-      await supabaseAdmin.from("orders").update(patch).eq("id", targetReference);
-
+      const token = result.raw?.prepaid_token;
+      const isSyncUtilityFulfill = currentOrderType === "utility" && token;
+      
+      const targetStatus = isSyncUtilityFulfill ? "fulfilled" : "processing";
+      
       if (targetStatus === "fulfilled") {
-        try {
-          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
-          
-          // Trigger Push Notification for Agent
-          if (claimedOrder.agent_id && claimedOrder.agent_id !== '00000000-0000-0000-0000-000000000000') {
-            const profit = Number(claimedOrder.profit || 0).toFixed(2);
-            await triggerPushNotification(supabaseAdmin, {
-              user_id: claimedOrder.agent_id,
-              title: "🎉 New payment for Data selling",
-              body: `You just received GHS ${profit} from your recent data sale.`,
-              url: "/dashboard/orders",
-              icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
-            });
-          }
-        } catch (e) {
-          console.error("[verify-payment] Profit credit or notification failed:", e);
-        }
+        await fulfillOrder(supabaseAdmin, targetReference, successfulProviderId, result.id || null, token || null);
+      } else {
+        const patch: any = { 
+          provider_id: successfulProviderId, 
+          provider_order_id: result.id, 
+          status: targetStatus, 
+          failure_reason: null
+        };
+        await supabaseAdmin.from("orders").update(patch).eq("id", targetReference);
       }
-      log(supabaseAdmin, { level: "info", source: "verify-payment", event: "order.processing", message: `Order successfully bought - set as processing — provider_order_id: ${result.id}`, order_id: targetReference, agent_id: claimedOrder.agent_id, provider_id: successfulProviderId, data: { provider_order_id: result.id, network, package_size: packageSize, amount: claimedOrder.amount } });
+      
+      log(supabaseAdmin, { level: "info", source: "verify-payment", event: "order.processing", message: `Order successfully bought - set as ${targetStatus} — provider_order_id: ${result.id}`, order_id: targetReference, agent_id: claimedOrder.agent_id, provider_id: successfulProviderId, data: { provider_order_id: result.id, network, package_size: packageSize, amount: claimedOrder.amount } });
       return new Response(JSON.stringify({ status: targetStatus, provider_order_id: result.id }), { headers: corsHeaders });
     } else {
       // Purchase failed - check if it is a transient timeout/network error

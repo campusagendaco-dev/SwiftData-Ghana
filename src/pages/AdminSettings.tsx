@@ -22,6 +22,7 @@ interface SystemSettings {
   preferred_provider: "hubtel" | "paystack" | "flutterwave";
   backup_provider: "hubtel" | "paystack" | "flutterwave";
   active_payment_gateway?: string;
+  auto_gateway_switch_by_package?: boolean;
   holiday_mode_enabled: boolean;
   holiday_message: string;
   disable_ordering: boolean;
@@ -113,6 +114,7 @@ const AdminSettings = () => {
     preferred_provider: "paystack",
     backup_provider: "hubtel",
     active_payment_gateway: "paystack",
+    auto_gateway_switch_by_package: false,
     holiday_mode_enabled: false,
     holiday_message: "",
     disable_ordering: false,
@@ -416,6 +418,7 @@ const AdminSettings = () => {
           preferred_provider: (d.preferred_provider as any) || "paystack",
           backup_provider: (d.backup_provider as any) || "hubtel",
           active_payment_gateway: d.active_payment_gateway || "paystack",
+          auto_gateway_switch_by_package: d.auto_gateway_switch_by_package || false,
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
           disable_ordering: d.disable_ordering || false,
@@ -2718,6 +2721,21 @@ const AdminSettings = () => {
                 <p className="text-xs text-muted-foreground">
                   The system will automatically route customer mobile money prompts and payment flows to the active gateway.
                 </p>
+              </div>
+
+              <div className="flex items-center justify-between border-t pt-4">
+                <div className="space-y-0.5">
+                  <Label>Auto Switch Gateway by Package</Label>
+                  <p className="text-[11px] text-muted-foreground leading-normal">
+                    When active, purchasing Korba-synced packages will automatically route through Korba XCheckout, while cheap SME packages fallback to the default gateway.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.auto_gateway_switch_by_package || false}
+                  onChange={(e) => setSettings({ ...settings, auto_gateway_switch_by_package: e.target.checked })}
+                  className="w-4 h-4 accent-amber-500 cursor-pointer"
+                />
               </div>
 
               {settings.active_payment_gateway === "paystack" ? (
