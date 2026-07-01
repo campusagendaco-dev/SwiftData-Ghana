@@ -41,6 +41,7 @@ serve(async (req) => {
   }
   const user = authResult.user;
 
+  try {
     const body = await req.json().catch(() => ({}));
     const { action, format = "text", limit = 100, order_ids } = body;
 

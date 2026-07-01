@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { basePackages } from "@/lib/data";
@@ -250,6 +250,7 @@ const AgentStore = () => {
 
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>({});
+  const [activeGateway, setActiveGateway] = useState<string>("paystack");
   const [subAgentBaseFee, setSubAgentBaseFee] = useState<number | null>(null);
   const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>({ MTN: 1, Telecel: 1, AirtelTigo: 1 });
 
@@ -291,10 +292,11 @@ const AgentStore = () => {
         let pricingCtx;
 
         try {
-          const [res, pkgResData, pricingCtxData] = await Promise.all([
+          const [res, pkgResData, pricingCtxData, sysRes] = await Promise.all([
             storeQuery.maybeSingle(),
             supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
+            supabase.from("system_settings").select("active_payment_gateway").eq("id", 1).maybeSingle(),
           ]);
           
           pkgRes = pkgResData;
@@ -344,6 +346,9 @@ const AgentStore = () => {
         });
         setGlobalSettings(gsMap);
         setPriceMultipliers(pricingCtx.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
+        if (sysRes?.data?.active_payment_gateway) {
+          setActiveGateway(sysRes.data.active_payment_gateway);
+        }
 
         if (!agentRes.data) { setNotFound(true); setLoading(false); return; }
 
@@ -408,7 +413,8 @@ const AgentStore = () => {
 
   const resolveDisplayPrice = useCallback((network: string, size: string, fallbackPrice: number): number => {
     if (!agent) return fallbackPrice;
-    const multiplier = priceMultipliers[network] || 1;
+    const multiplierKey = network;
+    const multiplier = priceMultipliers[multiplierKey] || 1;
     const parentAssigned = Number(parentAssignedPrices?.[network]?.[size]);
     
     const agentGuestPrice = Number(agent.agent_prices?.[network]?.[size]);
@@ -441,15 +447,41 @@ const AgentStore = () => {
     return applyPriceMultiplier(fallbackPrice, multiplier);
   }, [agent, globalSettings, parentAssignedPrices, priceMultipliers, profile]);
 
-  const packages = (basePackages[selectedNetwork] || [])
-    .map((pkg) => {
-      const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
-      const gs = globalSettings[`${selectedNetwork}-${normSize}`];
-      if (gs?.is_unavailable) return null;
-      if (agent?.disabled_packages?.[selectedNetwork]?.includes(pkg.size)) return null;
-      return { ...pkg, price: resolveDisplayPrice(selectedNetwork, pkg.size, pkg.price) };
-    })
-    .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean }[];
+  const packages = useMemo(() => {
+    const list: { size: string; price: number; validity: string; popular?: boolean }[] = [];
+    const dbNetwork = selectedNetwork;
+
+    list.push(...(basePackages[selectedNetwork] || []));
+
+    const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
+
+    Object.keys(globalSettings).forEach((key) => {
+      const gs = globalSettings[key];
+      if (gs && gs.network === dbNetwork) {
+        const normSize = gs.package_size.replace(/\s+/g, "").toUpperCase();
+        if (!baseSizes.has(normSize)) {
+          list.push({
+            size: gs.package_size,
+            price: gs.public_price ?? 0,
+            validity: selectedNetwork.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry"
+          });
+        }
+      }
+    });
+
+    return list
+      .map((pkg) => {
+        const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
+        const gs = globalSettings[`${dbNetwork}-${normSize}`];
+        if (gs?.is_unavailable) return null;
+        if (agent?.disabled_packages?.[dbNetwork]?.includes(pkg.size)) return null;
+        return {
+          ...pkg,
+          price: resolveDisplayPrice(dbNetwork, pkg.size, pkg.price)
+        };
+      })
+      .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean }[];
+  }, [basePackages, selectedNetwork, globalSettings, activeGateway, agent, resolveDisplayPrice]);
 
   const validPromo = promoResult?.valid ? promoResult : null;
   const discountPct = validPromo?.discount_percentage ?? 0;
@@ -1045,7 +1077,7 @@ const AgentStore = () => {
         {/* ── Network tabs (Data & Airtime) ── */}
         {(selectedService === "data" || selectedService === "airtime") && (
           <div className="flex gap-2.5 mb-6 relative z-10">
-            {NETWORKS.map((n) => {
+            {NETWORKS.filter(n => !(activeGateway === "korba" && n === "MTN Mash Up")).map((n) => {
               const active = selectedNetwork === n;
               const nc = NETWORK_CONFIG[n];
               return (

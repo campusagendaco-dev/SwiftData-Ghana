@@ -373,7 +373,7 @@ const DashboardOrders = () => {
     ${!isWalletTopup ? `<div class="row"><span class="row-label">Recipient</span><span class="row-value">${order.customer_phone || "—"}</span></div>` : ""}
     <div class="row"><span class="row-label">Date</span><span class="row-value">${date}</span></div>
     <div class="row"><span class="row-label">Time</span><span class="row-value">${time}</span></div>
-    ${Number(order.profit) > 0 ? `<div class="row"><span class="row-label">Your Profit</span><span class="row-value" style="color:#16a34a">+GH₵ ${Number(order.profit).toFixed(2)}</span></div>` : ""}
+    ${order.order_type !== "api" && Number(order.profit) > 0 ? `<div class="row"><span class="row-label">Your Profit</span><span class="row-value" style="color:#16a34a">+GH₵ ${Number(order.profit).toFixed(2)}</span></div>` : ""}
   </div>
   <div class="footer">Powered by <strong>SwiftData Ghana</strong> · swiftdatagh.shop · Secured by Paystack</div>
 
@@ -396,7 +396,7 @@ const DashboardOrders = () => {
         acc.totalSales += Number(o.amount);
       }
       // Only count profit on delivered orders; parent_profit is the upstream commission, not this agent's income
-      if (o.status === "fulfilled") {
+      if (o.status === "fulfilled" && o.order_type !== "api") {
         acc.totalProfit += Number(o.profit);
       }
       
@@ -649,11 +649,11 @@ const DashboardOrders = () => {
                     <div className="text-right shrink-0 flex items-center gap-2">
                       <div>
                         <p className={cn("font-bold text-sm", isDark ? "text-white" : "text-gray-900")}>GH₵ {Number(order.amount).toFixed(2)}</p>
-                        {(Number(order.profit) > 0 || Number(order.parent_profit) > 0) && (
+                        {((order.order_type === "api" ? 0 : Number(order.profit)) > 0 || Number(order.parent_profit) > 0) && (
                           <div className="flex items-center justify-end gap-1 mt-0.5">
                             <span className={`w-1.5 h-1.5 rounded-full ${ds.dot} ${ds.spinning ? "animate-pulse" : ""}`} />
                             <span className="text-[11px] text-primary font-semibold">
-                              +GH₵ {(Number(order.profit) + Number(order.parent_profit || 0)).toFixed(2)}
+                              +GH₵ {((order.order_type === "api" ? 0 : Number(order.profit)) + Number(order.parent_profit || 0)).toFixed(2)}
                             </span>
                           </div>
                         )}

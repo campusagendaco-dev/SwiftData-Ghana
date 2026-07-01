@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchViaDb } from "../_shared/db_proxy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,7 +53,10 @@ function calculatePaystackFee(amount: number): number {
 }
 
 function normalizeNetwork(network: string): string {
-  const normalized = network.trim().toUpperCase();
+  let normalized = network.trim().toUpperCase();
+  if (normalized.startsWith("KORBA")) {
+    normalized = normalized.replace("KORBA", "").trim();
+  }
   if (normalized === "AT" || normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AirtelTigo";
   if (normalized === "VODAFONE") return "Telecel";
   if (normalized === "TELECEL") return "Telecel";
@@ -124,30 +128,35 @@ serve(async (req: Request) => {
 
   try {
     const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key")
+      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway")
       .eq("id", 1)
       .maybeSingle();
 
-    let PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
-    if (!PAYSTACK_SECRET_KEY) {
-      PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
-    }
+    const activeGateway = settings?.active_payment_gateway || "paystack";
+    let PAYSTACK_SECRET_KEY = "";
 
-    if (!PAYSTACK_SECRET_KEY) {
-      console.error("PAYSTACK_SECRET_KEY is not configured");
-      return new Response(JSON.stringify({ error: "Paystack not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (activeGateway === "paystack") {
+      PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+      if (!PAYSTACK_SECRET_KEY) {
+        PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
+      }
 
-    // Validate key type — must be a secret key
-    if (PAYSTACK_SECRET_KEY.startsWith("pk_")) {
-      console.error("PAYSTACK_SECRET_KEY contains a public key instead of secret key");
-      return new Response(JSON.stringify({ error: "Invalid Paystack key configuration" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (!PAYSTACK_SECRET_KEY) {
+        console.error("PAYSTACK_SECRET_KEY is not configured");
+        return new Response(JSON.stringify({ error: "Paystack not configured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate key type — must be a secret key
+      if (PAYSTACK_SECRET_KEY.startsWith("pk_")) {
+        console.error("PAYSTACK_SECRET_KEY contains a public key instead of secret key");
+        return new Response(JSON.stringify({ error: "Invalid Paystack key configuration" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     if (settings?.paystack_deposit_fee_percent !== undefined) {
@@ -250,9 +259,9 @@ serve(async (req: Request) => {
     const networkRawForMarkup = typeof metadata.network === "string" ? metadata.network : "";
     const normalizedNetForMarkup = normalizeNetwork(networkRawForMarkup);
     let networkMarkupPercent = 0;
-    if (normalizedNetForMarkup === "MTN" || normalizedNetForMarkup === "MTN Mash Up") networkMarkupPercent = Number(settings?.mtn_markup_percentage || 0);
-    if (normalizedNetForMarkup === "Telecel") networkMarkupPercent = Number(settings?.telecel_markup_percentage || 0);
-    if (normalizedNetForMarkup === "AirtelTigo") networkMarkupPercent = Number(settings?.at_markup_percentage || 0);
+    if (normalizedNetForMarkup.includes("MTN") || normalizedNetForMarkup.includes("MTN Mash Up")) networkMarkupPercent = Number(settings?.mtn_markup_percentage || 0);
+    if (normalizedNetForMarkup.includes("Telecel")) networkMarkupPercent = Number(settings?.telecel_markup_percentage || 0);
+    if (normalizedNetForMarkup.includes("AirtelTigo")) networkMarkupPercent = Number(settings?.at_markup_percentage || 0);
 
     const priceMultiplier = 1 + (networkMarkupPercent / 100);
     let resolvedAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
@@ -710,6 +719,37 @@ serve(async (req: Request) => {
       }
     }
 
+    // ── Anti-Duplicate Protection (60 Minutes to prevent double checkouts for identical details) ──
+    if (orderType === "data") {
+      const customerPhone = (metadata.customer_phone || "").trim();
+      const network = (metadata.network || "").trim();
+      const packageSize = (metadata.package_size || "").trim();
+      if (customerPhone && network && packageSize) {
+        const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { data: existingDuplicate } = await supabaseAdmin
+          .from("orders")
+          .select("id, status")
+          .eq("customer_phone", customerPhone)
+          .eq("network", network)
+          .eq("package_size", packageSize)
+          .eq("amount", resolvedAmount)
+          .in("status", ["paid", "processing", "fulfilled", "completed"])
+          .gte("created_at", sixtyMinutesAgo)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingDuplicate) {
+          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone}`);
+          return new Response(JSON.stringify({ 
+            error: "An order with identical details was recently placed. Please wait 60 minutes before trying again." 
+          }), {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+    }
+
     // Check if order already exists (idempotency)
     const { data: existingOrder } = await supabaseAdmin
       .from("orders")
@@ -738,6 +778,7 @@ serve(async (req: Request) => {
         profit: normalizedProfit,
         parent_profit: normalizedParentProfit,
         status: (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending",
+        payment_method: activeGateway,
         metadata: enrichedMetadata,
       };
       if (resolvedParentAgentId) orderRow.parent_agent_id = resolvedParentAgentId;
@@ -809,14 +850,12 @@ serve(async (req: Request) => {
       }
 
       patch.status = (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending";
+      patch.payment_method = activeGateway;
 
       if (Object.keys(patch).length > 0) {
         await supabaseAdmin.from("orders").update(patch).eq("id", reference);
       }
     }
-
-  const amountInPesewas = Math.round(resolvedAmount * 100);
-  console.log("Initializing payment:", { email, amount: resolvedAmount, amountInPesewas, reference });
 
   const paystackPhone = enrichedMetadata.payment_phone 
     ? normalizePhoneForPaystack(String(enrichedMetadata.payment_phone)) 
@@ -824,6 +863,129 @@ serve(async (req: Request) => {
   const paystackProvider = enrichedMetadata.payment_network 
     ? getMomoProviderCode(String(enrichedMetadata.payment_network)) 
     : (enrichedMetadata.network ? getMomoProviderCode(String(enrichedMetadata.network)) : "");
+
+  if (activeGateway === "korba") {
+    // ── KORBA GATEWAY ROUTING ───────────────────────────────────────────────
+    const KORBA_CLIENT_ID = (Deno as any).env.get("KORBA_CLIENT_ID") || "2419";
+    const KORBA_CLIENT_KEY = (Deno as any).env.get("KORBA_CLIENT_KEY") || "";
+    const KORBA_SECRET_KEY = (Deno as any).env.get("KORBA_SECRET_KEY") || "";
+
+    if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+      console.error("Korba gateway credentials are not configured");
+      return new Response(JSON.stringify({ error: "Korba gateway not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const korbaCallbackUrl = `${SUPABASE_URL}/functions/v1/korba-webhook`;
+
+    function getKorbaNetworkCode(providerCode: string): string {
+      const code = providerCode.toLowerCase();
+      if (code === "mtn") return "MTN";
+      if (code === "vod") return "VOD";
+      if (code === "atl" || code === "airteltigo") return "AIR";
+      return "MTN";
+    }
+
+    const korbaPayload = {
+      customer_number: paystackPhone,
+      amount: parseFloat(resolvedAmount.toFixed(2)),
+      transaction_id: reference,
+      network_code: getKorbaNetworkCode(paystackProvider),
+      callback_url: korbaCallbackUrl,
+      client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+      description: `Order ${reference}`,
+    };
+
+    // Helper: Sort request keys in ascending order and form signature message
+    const sortedKeys = Object.keys(korbaPayload).sort();
+    const messageParts = [];
+    for (const key of sortedKeys) {
+      messageParts.push(`${key}=${(korbaPayload as any)[key]}`);
+    }
+    const message = messageParts.join("&");
+    
+    // Generate HMAC-SHA256 signature
+    const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const messageData = new TextEncoder().encode(message);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    console.log("Sending Korba Collection Request via DB Proxy:", korbaPayload);
+    const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/collect/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+      },
+      body: JSON.stringify(korbaPayload),
+      disableFallback: true,
+    });
+
+    const responseText = await response.text();
+    console.log("Korba collections response text:", responseText);
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      return new Response(JSON.stringify({ error: "Korba gateway returned an invalid response" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const isTimeout = !response.ok && (
+      response.status === 504 || 
+      response.status === 502 ||
+      responseText.includes("Timeout") ||
+      responseText.includes("Proxy failed") ||
+      responseText.includes("statement timeout")
+    );
+
+    if (isTimeout) {
+      console.warn(`[initialize-payment] Korba collection request timed out. Treating as initialized and waiting for callback.`);
+      return new Response(JSON.stringify({
+        authorization_url: callback_url,
+        reference: reference,
+        message: "Payment request sent. Please approve the MoMo prompt on your phone. We are waiting for status confirmation."
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!response.ok || !data.success) {
+      console.error("Korba collection failed:", data);
+      return new Response(JSON.stringify({ error: data.error_message || data.results || data.error || "Payment operation failed" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      authorization_url: callback_url,
+      reference: reference,
+      message: data.results || "Payment prompt sent to your phone."
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // ── PAYSTACK GATEWAY ROUTING ─────────────────────────────────────────────
+  const amountInPesewas = Math.round(resolvedAmount * 100);
+  console.log("Initializing payment:", { email, amount: resolvedAmount, amountInPesewas, reference });
 
   let paystackUrl = "https://api.paystack.co/transaction/initialize";
   let requestBody: Record<string, any> = {

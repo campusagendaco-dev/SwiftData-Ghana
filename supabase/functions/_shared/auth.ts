@@ -50,15 +50,19 @@ export async function verifyAdmin(
   }
 
   try {
-    // 2. Validate token and get user profile
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    if (userError || !user) {
-      return { success: false, error: "Unauthorized: Invalid session token", status: 401 };
-    }
-
-    // 3. Decode JWT and check claims
     const claims = getJwtClaims(token);
     const isServiceRole = claims && claims.role === "service_role";
+
+    let user;
+    if (isServiceRole) {
+      user = { id: "00000000-0000-0000-0000-000000000000", email: "service-role@supabase.local" };
+    } else {
+      const { data: { user: authUser }, error: userError } = await supabaseAdmin.auth.getUser(token);
+      if (userError || !authUser) {
+        return { success: false, error: "Unauthorized: Invalid session token", status: 401 };
+      }
+      user = authUser;
+    }
 
     // 4. Validate Admin role (unless bypass via service role)
     if (!isServiceRole) {

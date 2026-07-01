@@ -6,6 +6,8 @@ import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sen
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
 import { getActiveProviders } from "../_shared/providers.ts";
+import { log } from "../_shared/logger.ts";
+import { getProviderAdapter } from "../_shared/providers/registry.ts";
 
 
 function getFirstEnvValue(keys: string[]): string {
@@ -323,7 +325,6 @@ type ProviderResult = {
   reason: string;
   url: string | null;
   id?: string;
-  deliveryStatus?: string;
 };
 
 async function callProviderApi(
@@ -333,153 +334,77 @@ async function callProviderApi(
   body: Record<string, unknown>,
   providerWebhookUrl = "",
 ): Promise<ProviderResult> {
-  const urls = buildProviderUrls(baseUrl, endpoint);
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  let baseRequestBody: Record<string, unknown> = body;
-  
-  // SuperbDatafy specific mapping
-  if (baseUrl.includes("superbdatafy.com") && endpoint === "purchase") {
-    const network = String(body.networkRaw || body.network || "").toLowerCase();
-    let sbNetwork = network;
-    if (network === "yello") sbNetwork = "mtn";
-    if (network === "vod" || network === "vodafone") sbNetwork = "telecel";
-    if (network === "airteltigo" || network === "at_premium") sbNetwork = "at";
-    
-    const pkgSize = String(body.package_size || body.plan || body.package_key || "").replace(/\s+/g, "").toLowerCase();
-    const phone = String(body.recipient || body.phoneNumber || body.recipient_phone || "");
+  const baseUrlToLower = baseUrl.toLowerCase();
+  let handlerType = "standard";
 
-    try {
-      const bundleRes = await fetch(`${baseUrl}/bundles?network=${sbNetwork}`, {
-        headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" }
-      });
-      if (bundleRes.ok) {
-         const bData = await bundleRes.json();
-         const bundles = bData?.bundles || [];
-         const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgSize);
-         if (match) {
-           baseRequestBody = { bundle_id: match.id, phone_number: phone };
-         } else {
-           return { ok: false, status: 400, body: "", reason: `SuperbDatafy: Bundle ${pkgSize} not found for ${sbNetwork}`, url: null };
-         }
-      } else {
-         return { ok: false, status: 502, body: "", reason: `SuperbDatafy: Failed to fetch bundles (HTTP ${bundleRes.status})`, url: null };
-      }
-    } catch (e: any) {
-       return { ok: false, status: 502, body: "", reason: `SuperbDatafy: Network error fetching bundles - ${e.message}`, url: null };
-    }
-  } else if (endpoint === "purchase" && providerWebhookUrl && !Object.prototype.hasOwnProperty.call(body, "webhook_url")) {
-    baseRequestBody = { ...body, webhook_url: providerWebhookUrl };
+  if (baseUrlToLower.includes("korba365.com")) {
+    handlerType = "korba";
+  } else if (baseUrlToLower.includes("skdataplug")) {
+    handlerType = "skdataplug";
+  } else if (baseUrlToLower.includes("spendless")) {
+    handlerType = "spendless";
+  } else if (baseUrlToLower.includes("superbdatafy")) {
+    handlerType = "superbdatafy";
+  } else if (baseUrlToLower.includes("datahub")) {
+    handlerType = "datahub";
+  } else if (baseUrlToLower.includes("datamart")) {
+    handlerType = "datamart";
+  } else if (baseUrlToLower.includes("qhowmenzconsult")) {
+    handlerType = "qhowmenzconsult";
+  } else if (baseUrlToLower.includes("xcel")) {
+    handlerType = "xcel";
   }
 
-  let lastFailure: ProviderResult = {
-    ok: false,
-    status: 502,
-    body: "",
-    reason: "Provider request failed",
-    url: null,
+  const { data: matchedProvider } = await supabaseAdmin
+    .from("providers")
+    .select("*")
+    .eq("handler_type", handlerType)
+    .maybeSingle();
+
+  const provider = matchedProvider || {
+    id: "00000000-0000-0000-0000-000000000000",
+    name: "Provider",
+    base_url: baseUrl,
+    api_key: apiKey,
+    handler_type: handlerType,
+    settings: {}
   };
 
-  for (const url of urls) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const adapter = getProviderAdapter(handlerType);
 
-      let reqUrl = url;
-      if (baseUrl.includes("skdataplug.com")) {
-        if (endpoint === "status") {
-           const ref = String(body.transaction_id || body.reference || body.order_id || "");
-           reqUrl = `${url}/status/${ref}/`;
-        } else {
-           reqUrl = `${url}/order/`;
-        }
-      } else if (baseUrl.includes("superbdatafy.com")) {
-        if (endpoint === "status") {
-           const ref = String(body.transaction_id || body.reference || body.order_id || "");
-           reqUrl = `${url}/transaction/${ref}`;
-        } else {
-           reqUrl = `${url}/buy-data`;
-        }
-      } else if (baseUrl.includes("qhowmenzconsult.com")) {
-        if (endpoint === "status") {
-           const ref = String(body.transaction_id || body.reference || body.order_id || "");
-           reqUrl = `${url}/orders/${ref}`;
-        } else {
-           reqUrl = `${url}/orders`;
-        }
-      }
-
-      try {
-        const response = await fetch(reqUrl, {
-          method: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com") || baseUrl.includes("skdataplug.com")) && endpoint === "status") ? "GET" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Key": apiKey,
-            ...(!baseUrl.includes("qhowmenzconsult.com") ? { "Authorization": `Bearer ${apiKey}` } : {}),
-            "User-Agent": "DataHiveGH/1.0",
-          },
-          body: ((baseUrl.includes("superbdatafy.com") || baseUrl.includes("qhowmenzconsult.com") || baseUrl.includes("skdataplug.com")) && endpoint === "status") ? undefined : JSON.stringify(baseRequestBody),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-        const contentType = response.headers.get("content-type");
-        const text = await response.text();
-
-        if (response.ok) {
-          const semantic = parseProviderResponse(text, contentType);
-          if (semantic.ok) {
-            return { ok: true, status: response.status, body: text, reason: "", url, id: semantic.id, deliveryStatus: semantic.status };
-          }
-
-          const reason = semantic.reason || "Provider rejected this order.";
-          const isAlreadyPlaced = /already placed/i.test(reason) || /currently being processed/i.test(reason);
-          if (isAlreadyPlaced) {
-            return { ok: true, status: 200, body: text, reason: "", url, deliveryStatus: "processing" };
-          }
-
-          lastFailure = { ok: false, status: response.status, body: text, reason, url, id: semantic.id, deliveryStatus: semantic.status };
-          return lastFailure;
-        }
-
-        const reason = getProviderFailureReason(response.status, text, contentType);
-        const isAlreadyPlaced = /already placed/i.test(reason) || /currently being processed/i.test(reason);
-        if (isAlreadyPlaced) {
-          return { ok: true, status: 200, body: text, reason: "", url, deliveryStatus: "processing" };
-        }
-        lastFailure = { ok: false, status: response.status, body: text, reason, url };
-
-        const retryable = response.status >= 500 || response.status === 429;
-        const tryNextUrl =
-          response.status === 404 ||
-          (isHtmlResponse(contentType, text) && response.status !== 401 && response.status !== 403);
-
-        if (retryable && attempt < 3) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-          continue;
-        }
-
-        if (tryNextUrl) break;
-        return lastFailure;
-      } catch (error) {
-        clearTimeout(timeoutId);
-        lastFailure = {
-          ok: false,
-          status: 502,
-          body: "",
-          reason: error instanceof Error ? `Provider request failed: ${error.message}` : "Provider request failed",
-          url,
-        };
-
-        if (attempt < 3) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-          continue;
-        }
-      }
-    }
+  let result;
+  if (endpoint === "status") {
+    const providerOrderId = String(body.transaction_id || body.reference || body.order_id || "");
+    const reference = String(body.reference || "");
+    result = await adapter.checkStatus(supabaseAdmin, provider, providerOrderId, reference);
+  } else {
+    const purchaseData = {
+      recipient: String(body.recipient || body.phoneNumber || body.customer_phone || body.customerNumber || ""),
+      amount: Number(body.amount || 0),
+      reference: String(body.reference || body.orderReference || body.order_id || ""),
+      networkRaw: String(body.networkRaw || body.network || ""),
+      networkKey: String(body.networkKey || body.networkCode || ""),
+      package_size: String(body.package_size || body.plan || ""),
+      plan: String(body.plan || ""),
+      callback_url: providerWebhookUrl,
+      ...body
+    };
+    result = await adapter.purchase(supabaseAdmin, provider, purchaseData);
   }
 
-  return lastFailure;
+  return {
+    ok: result.ok,
+    status: result.ok ? 200 : 502,
+    body: JSON.stringify(result),
+    reason: result.reason || "",
+    url: baseUrl,
+    id: result.id,
+    deliveryStatus: result.status
+  };
 }
 
 function buildAfaPayload(metadata: Record<string, unknown>, recipient: string) {
@@ -509,15 +434,15 @@ async function notifyFailureAndRefund(
   packageLabel: string,
   reference: string,
   paystackKey: string,
+  agentId?: string,
 ): Promise<void> {
-  // No refunds — orders are queued for automatic retry
   if (phone) {
     try {
-      const { apiKey, senderId } = await getSmsConfig(supabaseAdmin);
+      const { apiKey, senderId } = await getSmsConfig(supabaseAdmin, agentId);
       const recipient = normalizePhone(phone);
       if (apiKey && recipient) {
-        const msg = `SwiftData: Your ${packageLabel} order is queued and will be retried automatically. No action needed. Ref: ${reference.slice(0, 8)}`;
-        await sendSmsViaTxtConnect(apiKey, senderId, recipient, msg);
+        const msg = `SwiftData: Your ${packageLabel} order for ${phone} failed. GHS ${amountGhs.toFixed(2)} has been refunded to your wallet. Ref: ${reference.slice(0, 8)}`;
+        await sendSmsViaTxtConnect(apiKey, senderId, recipient, msg, "order_failed", agentId);
       }
     } catch (e) {
       console.error("[Failure SMS] Error:", e);
@@ -742,18 +667,14 @@ serve(async (req) => {
     const { reference, metadata: webhookMetadata = {} } = body.data;
     console.log("Webhook: Payment successful for reference:", reference);
 
-    const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, Accept: "application/json" },
-    });
-
-    const verifyData = await verifyRes.json();
-    if (!verifyData.status || verifyData.data.status !== "success") {
-      console.error("Payment verification failed:", verifyData);
-      return new Response(JSON.stringify({ error: "Payment verification failed" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // We already verified the cryptographic signature of the payload from Paystack.
+    // To make payment verification extremely fast and avoid external API latency,
+    // we use the payload data directly without making an outbound HTTP request.
+    console.log(`[paystack-webhook] Signature verified successfully. Bypassing outbound verification fetch.`);
+    const verifyData = {
+      status: true,
+      data: body.data,
+    };
 
     // Capture Customer and Authorization for Saved Cards
     const paystackCustomerCode = verifyData?.data?.customer?.customer_code;
@@ -823,7 +744,7 @@ serve(async (req) => {
 
     let { data: existingOrder } = await supabaseAdmin
       .from("orders")
-      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit")
+      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, paystack_fee")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -980,6 +901,25 @@ serve(async (req) => {
         smsPhone = String(recreatedOrder.customer_phone || metadata?.customer_phone || "");
       }
     } else {
+      // Verify payment currency and amount to prevent tampering
+      if (verifyData?.data?.currency !== "GHS") {
+        console.warn(`[Webhook Security] Currency mismatch: Paid in ${verifyData?.data?.currency}, Expected GHS for order: ${orderId}`);
+        return new Response(JSON.stringify({ received: true, error: "Currency mismatch" }), { status: 200, headers: corsHeaders });
+      }
+
+      const expectedAmount = Number(existingOrder.amount) + 
+        ((existingOrder.order_type === "wallet_topup" || existingOrder.order_type === "store_wallet_topup") ? Number(existingOrder.paystack_fee || 0) : 0);
+      
+      const amountDiff = Math.abs(verifiedAmount - expectedAmount);
+      if (amountDiff > 0.05) {
+        console.warn(`[Webhook Security] Amount mismatch: Paid ${verifiedAmount} GHS, Expected ${expectedAmount} GHS for order: ${orderId}`);
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: `Amount mismatch: Paid GHS ${verifiedAmount}, expected GHS ${expectedAmount}`
+        }).eq("id", orderId);
+        return new Response(JSON.stringify({ received: true, error: "Amount mismatch" }), { status: 200, headers: corsHeaders });
+      }
+
       shouldSendDataPaymentSms = existingOrder.status === "pending" && (existingOrder.order_type || "") === "data";
       smsPhone = String(existingOrder.customer_phone || metadata?.customer_phone || "");
       const patch: Record<string, unknown> = { failure_reason: null };
@@ -1006,11 +946,18 @@ serve(async (req) => {
         patch.customer_name = metadata.customer_name;
       }
 
-      if (existingOrder.status === "pending" || existingOrder.status === "fulfillment_failed") {
+      if (existingOrder.status === "pending" || existingOrder.status === "awaiting_payment" || existingOrder.status === "fulfillment_failed") {
         patch.status = "paid";
       }
 
-      await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+      let updateQuery = supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+      if (patch.status) {
+        updateQuery = updateQuery.in("status", ["pending", "awaiting_payment", "fulfillment_failed"]);
+      }
+      const { error: updateErr } = await updateQuery;
+      if (updateErr) {
+        console.error("Webhook failed to update order to paid status:", updateErr);
+      }
       existingOrder = { ...existingOrder, ...patch };
     }
 
@@ -1052,7 +999,7 @@ serve(async (req) => {
         failure_reason: `Payment amount mismatch. Expected GHS ${existingAmount.toFixed(2)}, received GHS ${verifiedAmount.toFixed(2)}.`,
       }).eq("id", orderId);
       const mismatchPhone = String(existingOrder?.customer_phone || "");
-      await notifyFailureAndRefund(supabaseAdmin, mismatchPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY);
+      await notifyFailureAndRefund(supabaseAdmin, mismatchPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Payment amount mismatch" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1436,11 +1383,11 @@ serve(async (req) => {
     if (!DATA_PROVIDER_API_KEY || !DATA_PROVIDER_BASE_URL) {
       console.error("Data provider not configured for fulfillment");
       await supabaseAdmin.from("orders").update({
-        status: "processing",
+        status: "fulfillment_failed",
         failure_reason: "Data provider not configured",
       }).eq("id", orderId);
       const unconfiguredPhone = String(existingOrder?.customer_phone || "");
-      await notifyFailureAndRefund(supabaseAdmin, unconfiguredPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY);
+      await notifyFailureAndRefund(supabaseAdmin, unconfiguredPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
       return new Response(JSON.stringify({ received: true, fulfilled: false }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1485,9 +1432,7 @@ serve(async (req) => {
         });
       }
 
-      await supabaseAdmin.from("orders").update({ status: "processing", failure_reason: result.reason }).eq("id", orderId);
-      const afaPhone = String(existingOrder?.customer_phone || "");
-      await notifyFailureAndRefund(supabaseAdmin, afaPhone, verifiedAmount, "AFA Registration", reference, PAYSTACK_SECRET_KEY);
+      await supabaseAdmin.from("orders").update({ status: "processing", provider_order_id: "failed_api_call", failure_reason: result.reason }).eq("id", orderId);
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: result.reason }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1519,7 +1464,7 @@ serve(async (req) => {
           status: "fulfillment_failed",
           failure_reason: "Missing network, amount, or phone for airtime fulfillment.",
         }).eq("id", orderId);
-        await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, "Airtime", reference, PAYSTACK_SECRET_KEY);
+        await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, "Airtime", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
         return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing airtime order details." }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1578,8 +1523,7 @@ serve(async (req) => {
         });
       }
 
-      await supabaseAdmin.from("orders").update({ status: "processing", failure_reason: airtimeResult.reason }).eq("id", orderId);
-      await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, `${network} Airtime`, reference, PAYSTACK_SECRET_KEY);
+      await supabaseAdmin.from("orders").update({ status: "processing", provider_order_id: "failed_api_call", failure_reason: airtimeResult.reason }).eq("id", orderId);
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: airtimeResult.reason }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1588,10 +1532,10 @@ serve(async (req) => {
 
     if (!network || !packageSize || !customerPhone) {
       await supabaseAdmin.from("orders").update({
-        status: "processing",
+        status: "fulfillment_failed",
         failure_reason: `Could not parse package size from '${packageSize}'`,
       }).eq("id", orderId);
-      await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, packageSize || "your order", reference, PAYSTACK_SECRET_KEY);
+      await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, packageSize || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing order details for fulfillment." }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1701,6 +1645,27 @@ serve(async (req) => {
           description: `Data: ${packageSize} for ${customerPhone}`
         };
 
+    let chosenProvider = null;
+    try {
+      if (orderType === "afa") {
+        const { data } = await supabaseAdmin
+          .from("providers")
+          .select("*")
+          .eq("handler_type", "spendless")
+          .maybeSingle();
+        chosenProvider = data;
+      } else {
+        const activeProviders = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
+        chosenProvider = activeProviders?.[0];
+      }
+    } catch (e) {
+      console.error("Failed to resolve provider for logging:", e);
+    }
+
+    const providerId = chosenProvider?.id || null;
+    const providerName = chosenProvider?.name || "Provider";
+
+    const providerCallStart = Date.now();
     const result = await callProviderApi(
       DATA_PROVIDER_BASE_URL,
       DATA_PROVIDER_API_KEY,
@@ -1708,6 +1673,7 @@ serve(async (req) => {
       dataPayload,
       DATA_PROVIDER_WEBHOOK_URL,
     );
+    const providerDuration = Date.now() - providerCallStart;
 
     console.log("Webhook fulfillment response:", {
       orderId,
@@ -1718,40 +1684,131 @@ serve(async (req) => {
 
     if (result.ok) {
       const providerOrderId = result.id;
-      const deliveryStatus = result.deliveryStatus;
       
-      // User explicitly requested immediate complete fulfillment to eliminate processing stalls
-      const isActuallyDelivered = true; 
-      
-      const patch: Record<string, any> = { failure_reason: null, status: "fulfilled" };
-      if (providerOrderId) patch.provider_order_id = providerOrderId;
+      const patch: Record<string, any> = { 
+        provider_id: providerId,
+        provider_order_id: providerOrderId || null, 
+        status: "processing", 
+        failure_reason: null 
+      };
 
       await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
       
-      if (isActuallyDelivered) {
-        // Credit profits
-        if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
-          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
-        }
-
-        if (customerPhone) {
-          await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success", {}, existingOrder?.agent_id);
-        }
-
-        if (metadata.channel === "whatsapp" && metadata.wa_from) {
-          await sendWhatsAppFulfillmentNotification(String(metadata.wa_from), orderType, network, packageSize, customerPhone);
-        }
+      if (chosenProvider) {
+        await supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", chosenProvider.id);
       }
 
-      return new Response(JSON.stringify({ received: true, fulfilled: isActuallyDelivered, status: patch.status }), {
+      log(supabaseAdmin, { 
+        level: "info", 
+        source: "paystack-webhook", 
+        event: "provider.called", 
+        message: `${providerName} accepted order`, 
+        order_id: orderId, 
+        provider_id: providerId, 
+        duration_ms: providerDuration, 
+        data: { provider: providerName, handler_type: chosenProvider?.handler_type, provider_order_id: providerOrderId, network, package_size: packageSize, recipient: normalizeRecipient(customerPhone) } 
+      });
+
+      log(supabaseAdmin, { 
+        level: "info", 
+        source: "paystack-webhook", 
+        event: "order.processing", 
+        message: `Order successfully bought - set as processing — provider_order_id: ${providerOrderId}`, 
+        order_id: orderId, 
+        agent_id: existingOrder?.agent_id, 
+        provider_id: providerId, 
+        data: { provider_order_id: providerOrderId, network, package_size: packageSize, amount: existingOrder?.amount } 
+      });
+
+      return new Response(JSON.stringify({ received: true, fulfilled: false, status: "processing" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    await supabaseAdmin.from("orders").update({ status: "processing", failure_reason: result.reason }).eq("id", orderId);
-    await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, packageSize || "Data", reference, PAYSTACK_SECRET_KEY);
-    return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: result.reason }), {
+    // Provider call failed
+    const reasonStr = String(result.reason || "").toLowerCase();
+    const isTimeoutOrNetworkError = 
+      reasonStr.includes("timeout") || 
+      reasonStr.includes("504") || 
+      reasonStr.includes("502") || 
+      reasonStr.includes("proxy failed") || 
+      reasonStr.includes("connection") || 
+      reasonStr.includes("network error") ||
+      reasonStr.includes("abort");
+
+    if (chosenProvider) {
+      const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
+      const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
+      await supabaseAdmin.from("providers").update({ consecutive_failures: newFailures }).eq("id", chosenProvider.id);
+    }
+
+    if (isTimeoutOrNetworkError) {
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        provider_order_id: "timeout",
+        failure_reason: `Provider request timed out: ${result.reason || "Awaiting webhook/status check"}`
+      }).eq("id", orderId);
+
+      log(supabaseAdmin, { 
+        level: "warn", 
+        source: "paystack-webhook", 
+        event: "order.timeout_processing", 
+        message: `Order timed out during provider purchase. Left in processing: ${result.reason}`, 
+        order_id: orderId, 
+        agent_id: existingOrder?.agent_id, 
+        data: { reason: result.reason, network, package_size: packageSize } 
+      });
+
+      return new Response(JSON.stringify({
+        received: true,
+        fulfilled: false,
+        status: "processing",
+        reason: `Provider connection timed out. Awaiting webhook/status check.`,
+        provider_order_id: "timeout"
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Definitive failures
+    const targetStatus = "processing";
+    const targetProviderOrderId = "failed_api_call";
+
+    await supabaseAdmin.from("orders").update({ 
+      status: targetStatus, 
+      provider_order_id: targetProviderOrderId,
+      failure_reason: result.reason || "Provider rejected the request" 
+    }).eq("id", orderId);
+
+    log(supabaseAdmin, { 
+      level: "error", 
+      source: "paystack-webhook", 
+      event: "provider.rejected", 
+      message: `${providerName} rejected: ${result.reason}`, 
+      order_id: orderId, 
+      provider_id: providerId, 
+      duration_ms: providerDuration, 
+      data: { provider: providerName, reason: result.reason } 
+    });
+
+    log(supabaseAdmin, { 
+      level: "warn", 
+      source: "paystack-webhook", 
+      event: "order.processing_failed", 
+      message: `Order provider call rejected. Sticking to processing: ${result.reason}`, 
+      order_id: orderId, 
+      agent_id: existingOrder?.agent_id, 
+      data: { reason: result.reason, network, package_size: packageSize } 
+    });
+    
+    return new Response(JSON.stringify({ 
+      received: true, 
+      fulfilled: false, 
+      status: targetStatus,
+      failure_reason: result.reason 
+    }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

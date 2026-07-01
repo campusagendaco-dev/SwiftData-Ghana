@@ -90,8 +90,12 @@ const DashboardProfile = () => {
     }
   };
 
-  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
-  const accountType = isPaidAgent ? (profile?.is_sub_agent ? "Sub-Agent" : "Direct Agent") : "Regular Customer";
+  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved || profile?.api_access_enabled);
+  const accountType = profile?.api_access_enabled
+    ? "API Partner"
+    : isPaidAgent 
+      ? (profile?.is_sub_agent ? "Sub-Agent" : "Direct Agent") 
+      : "Regular Customer";
   
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -123,7 +127,9 @@ const DashboardProfile = () => {
                     </AvatarFallback>
                   </Avatar>
                   {isPaidAgent && (
-                    <div className="absolute bottom-1 right-1 bg-blue-500 text-white p-1.5 rounded-full border-4 border-card shadow-lg">
+                    <div className={`absolute bottom-1 right-1 p-1.5 rounded-full border-4 border-card shadow-lg ${
+                      profile?.api_access_enabled ? "bg-cyan-500 text-white" : "bg-blue-500 text-white"
+                    }`}>
                       <BadgeCheck className="w-4 h-4" />
                     </div>
                   )}
@@ -135,7 +141,11 @@ const DashboardProfile = () => {
                 </div>
 
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
-                  <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary px-3 py-1 text-[10px] uppercase tracking-wider font-bold">
+                  <Badge variant="outline" className={`${
+                    profile?.api_access_enabled 
+                      ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-500" 
+                      : "bg-primary/5 border-primary/20 text-primary"
+                  } px-3 py-1 text-[10px] uppercase tracking-wider font-bold`}>
                     {accountType}
                   </Badge>
                   {profile?.onboarding_complete && (

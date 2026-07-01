@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ interface AgentRow {
   total_sales_volume?: number;
   total_own_profit?: number;
   total_commissions_paid?: number;
+  api_access_enabled?: boolean;
 }
 
 interface StuckActivation {
@@ -68,6 +70,7 @@ const AdminAgents = () => {
   const [forcingEmail, setForcingEmail] = useState(false);
   const [pendingSenderIds, setPendingSenderIds] = useState<any[]>([]);
   const [updatingSenderId, setUpdatingSenderId] = useState<string | null>(null);
+  const [togglingApi, setTogglingApi] = useState<string | null>(null);
   const PAGE_SIZE = 50;
   const { toast } = useToast();
   const { user: currentUser, session } = useAuth();
@@ -365,6 +368,24 @@ const AdminAgents = () => {
       toast({ title: "Failed", description: error.message, variant: "destructive" });
     }
     setUpdatingSenderId(null);
+  };
+
+  const handleToggleApi = async (userId: string, currentVal: boolean) => {
+    setTogglingApi(userId);
+    const newVal = !currentVal;
+    const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+      body: { action: "toggle_api_access", user_id: userId, enabled: newVal },
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+
+    if (error || data?.error) {
+      toast({ title: "Failed to toggle API access", description: data?.error || error?.message, variant: "destructive" });
+    } else {
+      toast({ title: newVal ? "Developer API Access Enabled" : "Developer API Access Revoked" });
+      setAgents(prev => prev.map(a => a.user_id === userId ? { ...a, api_access_enabled: newVal } : a));
+      if (currentUser) await logAudit(currentUser.id, newVal ? "enable_api_access" : "revoke_api_access", { target_agent_id: userId });
+    }
+    setTogglingApi(null);
   };
 
   const toggleExpand = async (agentId: string) => {
@@ -816,6 +837,51 @@ const AdminAgents = () => {
                       <p className="text-sm text-foreground font-medium">{agent.momo_network} — {agent.momo_number}</p>
                     </div>
                   )}
+
+                  {/* Developer API Access */}
+                  <div className="pt-4 border-t border-border flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-0.5">Developer API Access</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Allow this agent to authenticate and purchase data via developer API key.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {agent.api_access_enabled ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-bold">Active</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground border-border font-bold">Inactive</Badge>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleToggleApi(agent.user_id, !!agent.api_access_enabled)}
+                        disabled={togglingApi === agent.user_id}
+                        className={cn(
+                          "h-8 text-xs font-bold rounded-xl",
+                          agent.api_access_enabled 
+                            ? "border-red-500/20 text-red-500 hover:bg-red-500/10" 
+                            : "border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10"
+                        )}
+                      >
+                        {togglingApi === agent.user_id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : agent.api_access_enabled ? (
+                          "Disable API"
+                        ) : (
+                          "Upgrade to API User"
+                        )}
+                      </Button>
+                      {agent.api_access_enabled && (
+                        <Link
+                          to={`/admin/api-users?search=${encodeURIComponent(agent.email || "")}`}
+                          className="h-8 px-3 rounded-xl border border-input text-xs font-bold bg-secondary hover:bg-secondary/80 flex items-center justify-center shadow-sm"
+                        >
+                          Configure API
+                        </Link>
+                      )}
+                    </div>
+                  </div>
 
                   {/* Sub-agents */}
                   <div>

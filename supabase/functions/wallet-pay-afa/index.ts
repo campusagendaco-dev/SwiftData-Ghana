@@ -87,17 +87,35 @@ serve(async (req) => {
 
     // Anti-Duplicate check
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
-    const { data: duplicateOrder } = await supabaseAdmin
+    let duplicateOrder = null;
+
+    const { data: recentOrders } = await supabaseAdmin
       .from("orders")
-      .select("id")
+      .select("id, status, network, package_size, created_at")
       .eq("agent_id", user.id)
       .eq("customer_phone", normalizedPhone)
-      .eq("network", "AFA")
-      .eq("package_size", "BUNDLE")
-      .in("status", ["paid", "processing", "fulfilled", "completed"])
-      .gte("created_at", oneMinuteAgo)
-      .limit(1)
-      .maybeSingle();
+      .gte("created_at", oneMinuteAgo);
+
+    if (recentOrders && recentOrders.length > 0) {
+      const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
+      const match = recentOrders.find(o => {
+        if (!statusesToCheck.includes(o.status)) return false;
+
+        // Compare network case-insensitively
+        const n1 = String(o.network || "").trim().toUpperCase();
+        if (n1 !== "AFA") return false;
+
+        // Compare package size
+        const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
+        if (p1 !== "BUNDLE") return false;
+
+        return true;
+      });
+
+      if (match) {
+        duplicateOrder = match;
+      }
+    }
 
     if (duplicateOrder) {
       return new Response(JSON.stringify({ error: "Duplicate order detected. Please wait 60 seconds before retrying." }), {

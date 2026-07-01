@@ -133,6 +133,7 @@ serve(async (req: Request) => {
   }
   const actor = authResult.user;
 
+  try {
     const body = await req.json();
     const { action: rawAction, user_id, email, redirect_path, new_password } = body;
     const action = (rawAction as string)?.trim();
@@ -150,7 +151,7 @@ serve(async (req: Request) => {
         const { data: newData, error: newError } = await supabaseAdmin
           .from("profiles")
           .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_secret_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
-          .or("api_key_prefix.not.is.null,api_key_hash.not.is.null")
+          .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true")
           .order("full_name");
 
         if (newError) {
@@ -159,7 +160,7 @@ serve(async (req: Request) => {
           const { data: legacyData, error: legacyError } = await supabaseAdmin
             .from("profiles")
             .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
-            .or("api_key_prefix.not.is.null,api_key_hash.not.is.null")
+            .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true")
             .order("full_name");
           
           users = legacyData;
@@ -668,7 +669,7 @@ serve(async (req: Request) => {
         const validKeys = existing ? Object.keys(existing) : [];
 
         // Define expected types for known sensitive settings
-        const BOOLEAN_KEYS = new Set(["disable_ordering", "maintenance_mode", "auto_failover_enabled", "holiday_mode_enabled", "show_scrolling_ad", "home_page_video_muted"]);
+        const BOOLEAN_KEYS = new Set(["disable_ordering", "maintenance_mode", "auto_failover_enabled", "holiday_mode_enabled", "show_scrolling_ad", "home_page_video_muted", "auto_refund_enabled"]);
         const NUMERIC_KEYS = new Set(["min_order_amount", "max_order_amount", "agent_activation_fee", "sub_agent_activation_fee", "wassce_price", "bece_price", "wassce_cost_price", "bece_cost_price", "background_brightness", "background_contrast", "background_blueness"]);
         const STRING_KEYS = new Set(["holiday_message", "data_provider_base_url", "secondary_data_provider_base_url", "whatsapp_bot_prompt", "site_name", "scrolling_ad_text", "home_page_video_url"]);
 

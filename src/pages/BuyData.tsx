@@ -78,6 +78,7 @@ const BuyData = () => {
   const [orderingDisabled, setOrderingDisabled] = useState(false);
   const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>({ MTN: 1, Telecel: 1, AirtelTigo: 1 });
   const [networkStatusMap, setNetworkStatusMap] = useState<Record<string, string>>({});
+  const [activeGateway, setActiveGateway] = useState<string>("paystack");
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const promoInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,6 +152,9 @@ const BuyData = () => {
         setHolidayMode(Boolean(sys.holiday_mode_enabled));
         setHolidayMessage(String(sys.holiday_message || "Holiday mode active. Orders will resume soon."));
         setOrderingDisabled(Boolean(sys.disable_ordering));
+        if (sys.active_payment_gateway) {
+          setActiveGateway(sys.active_payment_gateway);
+        }
       }
       setPriceMultipliers(pricingCtx.multipliers);
       setPkgLoading(false);
@@ -211,12 +215,16 @@ const BuyData = () => {
   }, [selectedNetwork, isPhoneValid, resolvedName, resolvingName, phoneDigits]);
 
   const packages = useMemo(() => {
-    const list = [...(basePackages[selectedNetwork] || [])];
+    const list: { size: string; price: number; validity: string; popular?: boolean }[] = [];
+    const dbNetwork = selectedNetwork;
+
+    list.push(...(basePackages[selectedNetwork] || []));
+
     const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
 
     Object.keys(globalSettings).forEach((key) => {
       const gs = globalSettings[key];
-      if (gs && gs.network === selectedNetwork) {
+      if (gs && gs.network === dbNetwork) {
         const normSize = gs.package_size.replace(/\s+/g, "").toUpperCase();
         if (!baseSizes.has(normSize)) {
           list.push({
@@ -231,7 +239,7 @@ const BuyData = () => {
     const mapped = list
       .map((pkg) => {
         const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
-        const gs = globalSettings[`${selectedNetwork}-${normSize}`];
+        const gs = globalSettings[`${dbNetwork}-${normSize}`];
         if (gs?.is_unavailable) return null;
         const base = gs?.public_price ?? getPublicPrice(pkg.price);
         const multiplier = priceMultipliers[selectedNetwork] || (selectedNetwork.includes("MTN") ? priceMultipliers["MTN"] : 1) || 1;
@@ -241,7 +249,7 @@ const BuyData = () => {
 
     mapped.sort((a, b) => a.price - b.price);
     return mapped;
-  }, [basePackages, selectedNetwork, globalSettings, priceMultipliers]);
+  }, [basePackages, selectedNetwork, globalSettings, priceMultipliers, activeGateway]);
 
   // Apply promo discount to price
   const validPromo = promoResult?.valid ? promoResult : null;
@@ -513,7 +521,7 @@ const BuyData = () => {
               : "0 2px 16px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
           }}
         >
-          {NETWORKS.map((n) => {
+          {NETWORKS.filter(n => !(activeGateway === "korba" && n === "MTN Mash Up")).map((n) => {
             const active = selectedNetwork === n;
             return (
               <button

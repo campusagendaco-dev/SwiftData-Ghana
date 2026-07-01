@@ -40,7 +40,7 @@ interface TrackerData {
   }
 }
 
-function getStatusMeta(status: OrderStatusType, failed: boolean, message?: string) {
+function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string) {
   if (failed || status === "fulfillment_failed") {
     return { color: "#EF4444", glow: "rgba(239,68,68,0.15)", label: "Delivery Failed", sub: message || "Something went wrong with your order", badge: "Failed" };
   }
@@ -59,6 +59,9 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, message?: strin
   if (status === "error") {
     return { color: "#EF4444", glow: "rgba(239,68,68,0.10)", label: "Payment Failed", sub: message || "There was a problem verifying your payment.", badge: "Error" };
   }
+  if (status === "pending" && (network === "MTN Mash Up" || network?.toLowerCase()?.includes("mash"))) {
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Paid & Processing", sub: message || "Your payment is confirmed. MTN Mash Up bundle is queued for manual processing.", badge: "Queued" };
+  }
   return { color: "#D97706", glow: "rgba(217,119,6,0.10)", label: "Awaiting Payment", sub: message || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
 }
 
@@ -66,9 +69,14 @@ const OrderStatus = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const reference = searchParams.get("reference") || searchParams.get("trxref") || "";
-  const network = searchParams.get("network") || "";
-  const packageSize = searchParams.get("package") || "";
-  const phoneParam = searchParams.get("phone") || "";
+  
+  const [orderNetwork, setOrderNetwork] = useState<string>("");
+  const [orderPackageSize, setOrderPackageSize] = useState<string>("");
+  const [orderPhone, setOrderPhone] = useState<string>("");
+
+  const network = searchParams.get("network") || orderNetwork || "";
+  const packageSize = searchParams.get("package") || orderPackageSize || "";
+  const phoneParam = searchParams.get("phone") || orderPhone || "";
 
   // State for single order tracking
   const [orderStatus, setOrderStatus] = useState<OrderStatusType>("pending");
@@ -79,6 +87,7 @@ const OrderStatus = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const redirectedRef = useRef(false);
   const hasPlayedSoundRef = useRef(false);
+  const [resolvedOrderId, setResolvedOrderId] = useState<string | null>(null);
 
   // State for realtime console tracking
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -163,21 +172,21 @@ const OrderStatus = () => {
   const brandColor = isStoreRoute ? (storeInfo?.color || "#f59e0b") : "#f59e0b";
   const brandDomain = isStoreRoute ? (activeDomain || (storeInfo?.custom_domain) || window.location.host) : "swiftdatagh.shop";
 
-  const meta = getStatusMeta(orderStatus, failed, statusMessage);
+  const meta = getStatusMeta(orderStatus, failed, network, statusMessage);
 
   // --- SINGLE ORDER LOGIC ---
-  const pollStatus = async () => {
+  const pollStatus = async (force = false) => {
     if (!reference || redirectedRef.current) return;
     setIsRefreshing(true);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
-        body: { reference },
+        body: { reference: resolvedOrderId || reference, force },
       });
       if (error || !data) throw error || new Error("Failed to fetch status");
       handleStatusUpdate(data.status, data.message || data.error);
       
       // Stop polling if we reached a terminal state
-      if (data.status === "fulfilled" || data.status === "fulfillment_failed") {
+      if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
         redirectedRef.current = true; // reuse this ref as a 'stop polling' flag
       }
     } catch (err) {
@@ -327,13 +336,24 @@ const OrderStatus = () => {
     if (!reference) return;
     const fetchOrderDetails = async () => {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from("orders")
-          .select("created_at, status")
-          .eq("id", reference)
-          .maybeSingle();
+          .select("id, created_at, status, network, package_size, customer_phone");
+        
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+        if (isUuid) {
+          query = query.or(`id.eq.${reference},metadata->>client_reference.eq.${reference}`);
+        } else {
+          query = query.eq("metadata->>client_reference", reference);
+        }
+
+        const { data, error } = await query.maybeSingle();
         if (data && !error) {
+          setResolvedOrderId(data.id);
           setCreatedAt(data.created_at);
+          if (data.network) setOrderNetwork(data.network);
+          if (data.package_size) setOrderPackageSize(data.package_size);
+          if (data.customer_phone) setOrderPhone(data.customer_phone);
           handleStatusUpdate(data.status as OrderStatusType);
         }
       } catch (err) {
@@ -373,14 +393,26 @@ const OrderStatus = () => {
 
   useEffect(() => {
     if (!reference) return;
-    pollStatus();
-    const channel = supabase.channel(`order_status_${reference}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${reference}` }, (payload) => {
-        if (payload.new.status) handleStatusUpdate(payload.new.status as OrderStatusType, payload.new.message || payload.new.failure_reason);
-      }).subscribe();
-    const interval = setInterval(pollStatus, 5000);
-    return () => { supabase.removeChannel(channel); clearInterval(interval); };
-  }, [reference]);
+    
+    const activeRef = resolvedOrderId || reference;
+    pollStatus(true);
+    
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRef);
+    let channel: any = null;
+    
+    if (isUuid) {
+      channel = supabase.channel(`order_status_${activeRef}`)
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${activeRef}` }, (payload) => {
+          if (payload.new.status) handleStatusUpdate(payload.new.status as OrderStatusType, payload.new.message || payload.new.failure_reason);
+        }).subscribe();
+    }
+    
+    const interval = setInterval(() => pollStatus(false), 5000);
+    return () => { 
+      if (channel) supabase.removeChannel(channel); 
+      clearInterval(interval); 
+    };
+  }, [reference, resolvedOrderId]);
 
   // --- GLOBAL TRACKER LOGIC ---
   const fetchTrackerData = async () => {
@@ -562,7 +594,7 @@ const OrderStatus = () => {
               <ReceiptText className="w-4 h-4" />
               View Receipt
             </button>
-            <button onClick={pollStatus} disabled={isRefreshing || orderStatus === "fulfilled"} className="w-12 h-12 rounded-[1.2rem] bg-white/5 border border-white/5 flex items-center justify-center transition-all active:scale-95 disabled:opacity-20">
+            <button onClick={() => pollStatus(true)} disabled={isRefreshing || orderStatus === "fulfilled"} className="w-12 h-12 rounded-[1.2rem] bg-white/5 border border-white/5 flex items-center justify-center transition-all active:scale-95 disabled:opacity-20">
               <RefreshCw className={cn("w-3.5 h-3.5 text-white/20", isRefreshing && "animate-spin")} />
             </button>
             <button onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')} className="w-12 h-12 rounded-[1.2rem] bg-white/5 border border-white/5 flex items-center justify-center">

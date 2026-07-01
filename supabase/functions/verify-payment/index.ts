@@ -1,5 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchViaDb } from "../_shared/db_proxy.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, x-user-access-token, x-supabase-auth-token, x-api-key, api-key",
@@ -7,6 +8,8 @@ const corsHeaders = {
 };
 import { getActiveProviders, logProviderError } from "../_shared/providers.ts";
 import { log } from "../_shared/logger.ts";
+import { notifyApiClient } from "../_shared/webhooks.ts";
+import { getProviderAdapter } from "../_shared/providers/registry.ts";
 
 // --- Utilities ---
 
@@ -39,8 +42,27 @@ function mapAirtimeNetworkKey(network: string): string {
 
 function parseCapacity(packageSize: string | null | undefined): number {
   if (!packageSize) return 0;
-  const match = packageSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
-  return match ? parseFloat(match[1]) : 0;
+  const cleaned = packageSize.replace(/\s+/g, "").toUpperCase();
+  
+  // Handle specific Korba Product IDs
+  if (cleaned === "MTNDLY20MB" || cleaned === "AIRDLY20MB" || cleaned.includes("20MB") || cleaned.includes("20 MB")) {
+    return 20 / 1024;
+  }
+  if (cleaned === "MTNMIDNIGHT" || cleaned === "MTNMIDNGT3G" || cleaned === "AIRMIDNGT3G" || cleaned === "AIRMIDNIGHT") {
+    return 2.6; // MTN midnight is 2.6GB or 3GB
+  }
+  if (cleaned === "MTNMTH200GB" || cleaned === "AIRMTH200GB") {
+    return 200;
+  }
+  
+  // Normal parsing with MB/GB detection
+  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const num = parseFloat(match[1]);
+  if (cleaned.includes("MB") && !cleaned.includes("GB")) {
+    return num / 1024;
+  }
+  return num;
 }
 
 function normalizeRecipient(phone: string | null | undefined): string {
@@ -89,6 +111,49 @@ async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: stri
   
   return { apiKey, baseUrl: (baseUrl || "").replace(/\/+$/, "") };
 }
+async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise<any[]> {
+  let orderType = (order?.order_type || "data") as string;
+  if (orderType.toLowerCase() === "api") {
+    if (String(order?.package_size).toUpperCase() === "AIRTIME") {
+      orderType = "airtime";
+    } else {
+      orderType = "data";
+    }
+  }
+  const network = (order?.network || "") as string;
+  const isKorbaNetwork = network && String(network).toUpperCase().startsWith("KORBA");
+  
+  if (isKorbaNetwork) {
+    const { data: korbaProvider } = await supabaseAdmin
+      .from("providers")
+      .select("*")
+      .eq("name", "Korba")
+      .maybeSingle();
+    if (korbaProvider) {
+      console.log(`[verify-payment] Resolved Korba provider for order ${order.id}`);
+      return [korbaProvider];
+    } else {
+      console.warn(`[verify-payment] Korba provider not found in DB. Falling back to active data providers.`);
+    }
+  }
+  
+  if (orderType.toLowerCase() === "afa") {
+    const { data: spendless } = await supabaseAdmin
+      .from("providers")
+      .select("*")
+      .eq("handler_type", "spendless")
+      .maybeSingle();
+    if (spendless) {
+      console.log(`[verify-payment] Resolved Spendless provider for AFA order ${order.id}`);
+      return [spendless];
+    } else {
+      console.warn(`[verify-payment] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
+    }
+  }
+  
+  const providerCategory = orderType === "airtime" ? "airtime" : (orderType === "utility" ? "utility" : "data");
+  return await getActiveProviders(supabaseAdmin, providerCategory);
+}
 
 async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: string; title: string; body: string; url?: string; icon?: string }) {
   try {
@@ -110,153 +175,6 @@ async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: s
   }
 }
 
-function buildProviderUrls(baseUrl: string | null | undefined, endpoint: string = "purchase", handlerType?: string): string[] {
-  const clean = (baseUrl || "").trim().replace(/\/+$/, "");
-  if (!clean) return [];
-
-  const urls = new Set<string>();
-  
-  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult" || handlerType === "skdataplug") {
-    return [clean];
-  }
-
-  let aliases: string[] = [];
-  const isDatamart = handlerType === "datamart" || clean.includes("/api/developer") || clean.includes("datamartgh");
-
-  if (isDatamart) {
-    if (endpoint === "status") aliases = ["order-status"];
-    else if (endpoint === "purchase") aliases = ["purchase"];
-    else aliases = [endpoint];
-    
-    for (const alias of aliases) {
-      urls.add(`${clean}/${alias}`);
-    }
-    return Array.from(urls);
-  }
-
-  if (handlerType === "datahub") {
-    // DataHub has a fixed URL structure — always just append the alias directly
-    const alias = endpoint === "purchase" ? "data-purchase" : (endpoint === "status" ? "order-status" : endpoint);
-    return [`${clean}/${alias}`];
-  } else if (handlerType === "spendless") {
-    const alias = endpoint === "purchase" ? "purchase" : (endpoint === "status" ? "order-status" : endpoint);
-    return [`${clean}/${alias}`];
-  } else if (handlerType === "justbuy") {
-    return [`${clean}`]; // We will append the correct path dynamically in callProviderApi
-  }
-
-  aliases = endpoint === "purchase"
-    ? ["purchase", "order", "airtime", "buy", "topup", "recharge"]
-    : (endpoint === "status" ? ["status", "query", "check", "query-order"] : [endpoint]);
-
-  let rootUrl = "";
-  try {
-    rootUrl = new URL(clean).origin;
-  } catch { /* ignore */ }
-
-  // If the configured URL already ends with an alias, use it directly
-  for (const alias of aliases) {
-    if (clean.endsWith(`/${alias}`) || clean.endsWith(`/api/${alias}`)) {
-      urls.add(clean);
-    }
-  }
-
-  // Build /api/<alias> and /<alias> variants from the configured base
-  for (const alias of aliases) {
-    if (clean.endsWith("/api")) {
-      urls.add(`${clean}/${alias}`);
-      urls.add(`${clean.replace(/\/api$/, "")}/api/${alias}`);
-    } else {
-      urls.add(`${clean}/api/${alias}`);
-      urls.add(`${clean}/${alias}`);
-    }
-  }
-
-  // Also try from the root origin in case the base URL has an extra path segment
-  if (rootUrl) {
-    for (const alias of aliases) {
-      urls.add(`${rootUrl}/api/${alias}`);
-      urls.add(`${rootUrl}/${alias}`);
-      urls.add(`${rootUrl}/functions/v1/developer-api/${alias}`);
-    }
-  }
-
-  return Array.from(urls);
-}
-
-function mapFulfillmentStatus(providerStatus: string | null | undefined): "fulfilled" | "processing" | "fulfillment_failed" {
-  const s = String(providerStatus || "").trim().toLowerCase();
-  if (s === "fulfilled" || s === "delivered" || s === "successful" || s === "success" || s === "completed" || s === "true" || s === "1") {
-    return "fulfilled";
-  }
-  if (s === "failed" || s === "failure" || s === "error" || s === "cancelled" || s === "rejected") {
-    return "fulfillment_failed";
-  }
-  return "processing";
-}
-
-function isHtmlResponse(contentType: string | null, body: string): boolean {
-  const preview = body.trim().slice(0, 200).toLowerCase();
-  return Boolean(
-    preview.startsWith("<!doctype html") ||
-    preview.startsWith("<html") ||
-    preview.includes("<title>"),
-  );
-}
-
-function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string; id?: string; status?: string } {
-  try {
-    const parsed = JSON.parse(body);
-    const technicalStatus = String(parsed?.status ?? parsed?.success ?? "").toLowerCase();
-    const data = parsed?.data || {};
-    const deliveryStatus = String(parsed?.transaction?.status ?? data?.status ?? data?.orderStatus ?? parsed?.delivery_status ?? parsed?.status_message ?? "").toLowerCase();
-    const effectiveStatus = deliveryStatus || technicalStatus;
-    const message = typeof parsed?.message === "string" ? parsed.message : undefined;
-    
-    // DataMart uses purchaseId or orderReference. XCEL uses transactionId.
-    const orderId = String(
-      parsed?.transaction?.reference ?? 
-      data?.orderNumber ?? 
-      data?.reference ?? 
-      data?.purchaseId ?? 
-      data?.orderReference ?? 
-      data?.transactionId ?? 
-      data?.transaction_id ?? 
-      parsed?.transaction_id ?? 
-      parsed?.order_id ?? 
-      parsed?.id ?? 
-      parsed?.reference ?? 
-      ""
-    );
-
-    const ok = technicalStatus === "success" || technicalStatus === "true" || technicalStatus === "1" || technicalStatus === "completed" || technicalStatus === "pending" || parsed?.success === true || parsed?.ok === true;
-
-    if (ok) {
-      return { ok: true, id: orderId, status: effectiveStatus };
-    }
-    
-    const isFailed = technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";
-    if (isFailed) {
-      return { ok: false, reason: message || "Provider rejected this order." };
-    }
-
-    const statusCode = Number(parsed?.statusCode);
-    if (Number.isFinite(statusCode) && statusCode >= 400) {
-      return { ok: false, reason: message || "Provider rejected this order." };
-    }
-    
-    // If it has an ID, it's likely a successful initiation
-    if (orderId && orderId !== "undefined" && orderId !== "") return { ok: true, id: orderId, status: effectiveStatus };
-
-  } catch { /* non-JSON */ }
-
-  if (isHtmlResponse(contentType, body)) {
-    return { ok: false, reason: "Provider returned an HTML response. Check API URL configuration." };
-  }
-
-  return { ok: true };
-}
-
 async function callProviderApi(
   supabaseAdmin: any,
   provider: any,
@@ -264,312 +182,26 @@ async function callProviderApi(
   endpoint: string = "purchase"
 ): Promise<{ ok: boolean; reason: string; id?: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
-  const baseUrl = provider.base_url;
-  const apiKey = provider.api_key;
-  
-  let payload = { ...data };
-  if (handlerType === "qhowmenzconsult" && endpoint === "purchase") {
-    let packageId = String(data.plan || data.package_size || "");
-    try {
-      const { data: pkgMapping } = await supabaseAdmin
-        .from("provider_packages")
-        .select("external_id")
-        .eq("provider_id", provider.id)
-        .eq("network", data.networkRaw || data.network || "")
-        .eq("package_name", data.package_size || data.plan || "")
-        .maybeSingle();
-      if (pkgMapping?.external_id) {
-        packageId = pkgMapping.external_id;
-      }
-    } catch (e) {
-      console.error("[qhowmenzconsult-payload-resolve] Error:", e);
-    }
+  const adapter = getProviderAdapter(handlerType);
 
-    const network = String(data.networkRaw || data.network || "").toUpperCase();
-    let netKey = network;
-    if (network.includes("MTN") || network === "YELLO") netKey = "MTN";
-    else if (network.includes("TELECEL") || network.includes("VODA")) netKey = "Telecel";
-    else if (network.includes("AIRTEL") || network.includes("TIGO") || network === "AT") netKey = "AirtelTigo";
-
-    payload = {
-      network: netKey,
-      recipient: String(data.recipient || data.phoneNumber || ""),
-      plan_id: packageId,
-      package_id: packageId,
-      product_id: packageId,
-      external_id: packageId,
+  if (endpoint === "status") {
+    const providerOrderId = String(data.transaction_id || data.reference || data.order_id || "");
+    const reference = String(data.reference || "");
+    return adapter.checkStatus(supabaseAdmin, provider, providerOrderId, reference);
+  } else {
+    const purchaseData = {
+      recipient: String(data.recipient || data.phoneNumber || data.customer_phone || ""),
       amount: Number(data.amount || 0),
-      reference: String(data.reference || data.order_id || ""),
+      reference: String(data.reference || data.orderReference || data.order_id || ""),
+      networkRaw: String(data.networkRaw || data.network || ""),
+      networkKey: String(data.networkKey || ""),
+      package_size: String(data.package_size || data.plan || ""),
+      plan: String(data.plan || ""),
+      order_type: String(data.order_type || "data"),
+      ...data
     };
+    return adapter.purchase(supabaseAdmin, provider, purchaseData);
   }
-  if (handlerType === "skdataplug" && endpoint === "purchase") {
-    let providerNetwork = "MTN";
-    let gbSize = String(parseCapacity(String(data.package_size || data.plan || "")));
-
-    try {
-      const { data: pkgMapping } = await supabaseAdmin
-        .from("provider_packages")
-        .select("raw_data")
-        .eq("provider_id", provider.id)
-        .eq("network", data.networkRaw || data.network || "")
-        .eq("package_name", data.package_size || data.plan || "")
-        .maybeSingle();
-
-      if (pkgMapping?.raw_data) {
-        providerNetwork = pkgMapping.raw_data.network || providerNetwork;
-        gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
-      }
-    } catch (e) {
-      console.error("[skdataplug-payload-resolve] Error:", e);
-    }
-
-    payload = {
-      recipient: String(data.recipient || data.phoneNumber || ""),
-      network: providerNetwork,
-      gb_size: gbSize
-    };
-  }
-  if (handlerType === "superbdatafy") {
-    if (endpoint !== "status") {
-      const network = String(data.networkRaw || data.network || "").toLowerCase();
-      let sbNetwork = network;
-      if (network === "yello") sbNetwork = "mtn";
-      if (network === "vod" || network === "vodafone") sbNetwork = "telecel";
-      if (network === "airteltigo" || network === "at_premium") sbNetwork = "at";
-      
-      const pkgSize = String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase();
-      const phone = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
-
-      try {
-        const bundleRes = await fetch(`${baseUrl}/bundles?network=${sbNetwork}`, {
-          headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" }
-        });
-        if (bundleRes.ok) {
-           const bData = await bundleRes.json();
-           const bundles = bData?.bundles || [];
-           const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgSize);
-           if (match) {
-             payload = { bundle_id: match.id, phone_number: phone };
-           } else {
-             return { ok: false, reason: `SuperbDatafy: Bundle ${pkgSize} not found for ${sbNetwork}` };
-           }
-        } else {
-           return { ok: false, reason: `SuperbDatafy: Failed to fetch bundles (HTTP ${bundleRes.status})` };
-        }
-      } catch (e: any) {
-         return { ok: false, reason: `SuperbDatafy: Network error fetching bundles - ${e.message}` };
-      }
-    }
-  } else if (handlerType === "datahub" && endpoint === "status") {
-    payload = {
-      reference: String(data.reference || data.transaction_id || data.order_id || ""),
-    };
-  } else if (handlerType === "xcel") {
-    if (endpoint !== "status") {
-      const orderType = String(data.order_type || "data").toLowerCase();
-      const recipient = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
-      const amount = String(Number(data.amount || 0).toFixed(2));
-      const extRef = String(data.orderReference || data.reference || "");
-      const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/provider-webhook`);
-      
-      let productId = String(data.plan || data.package_size || data.productId || "");
-      
-      if (orderType === "utility") {
-        const utilityProvider = String(data.utility_provider || "").toUpperCase();
-        if (utilityProvider.includes("ECG")) {
-          payload = {
-            productId: "ECG_PREPAID",
-            amount,
-            meterNumber: data.utility_account_number || recipient,
-            ext_transaction_id: extRef,
-            callback_url: callbackUrl
-          };
-        } else {
-          payload = {
-            productId: data.utility_provider || productId,
-            amount,
-            smartCardNumber: data.utility_account_number || recipient,
-            ext_transaction_id: extRef,
-            callback_url: callbackUrl
-          };
-        }
-      } else {
-        // Airtime / Data
-        if (orderType === "data") {
-          try {
-            const { data: pkgMapping } = await supabaseAdmin
-              .from("provider_packages")
-              .select("external_id")
-              .eq("provider_id", provider.id)
-              .eq("network", data.networkRaw || data.network || "")
-              .eq("package_name", data.package_size || data.plan || "")
-              .maybeSingle();
-            if (pkgMapping?.external_id) {
-              productId = pkgMapping.external_id;
-            }
-          } catch (e) {
-            console.error("[xcel-payload-resolve] Error:", e);
-          }
-        } else if (orderType === "airtime") {
-          try {
-            const { data: pkgMapping } = await supabaseAdmin
-              .from("provider_packages")
-              .select("external_id")
-              .eq("provider_id", provider.id)
-              .eq("network", data.networkRaw || data.network || "")
-              .ilike("package_name", "%Airtime%")
-              .limit(1)
-              .maybeSingle();
-            if (pkgMapping?.external_id) {
-              productId = pkgMapping.external_id;
-            }
-          } catch (e) {
-            console.error("[xcel-payload-resolve-airtime] Error:", e);
-          }
-        }
-        
-        payload = {
-          productId,
-          amount,
-          recipient,
-          ext_transaction_id: extRef,
-          callback_url: callbackUrl
-        };
-      }
-    }
-  }
-
-  const urls = buildProviderUrls(baseUrl, endpoint, handlerType);
-  let lastReason = "Provider error";
-
-  for (let url of urls) {
-    if (handlerType === "datamart" && endpoint === "status") {
-      const ref = String(data.transaction_id || data.reference || "");
-      url = `${url}/${ref}`;
-    } else if (handlerType === "skdataplug") {
-      if (endpoint === "status") {
-         const ref = String(data.transaction_id || data.reference || data.order_id || "");
-         url = `${url}/status/${ref}/`;
-      } else {
-         url = `${url}/order/`;
-      }
-    } else if (handlerType === "superbdatafy") {
-      if (endpoint === "status") {
-         const ref = String(data.transaction_id || data.reference || data.order_id || "");
-         url = `${url}/transaction/${ref}`;
-      } else {
-         url = `${url}/buy-data`;
-      }
-    } else if (handlerType === "xcel") {
-      if (endpoint === "status") {
-         const ref = String(data.transaction_id || data.reference || data.order_id || "");
-         url = `${url}/partners/momo/status/${ref}`;
-      } else {
-         const orderType = String(data.order_type || "data").toLowerCase();
-         if (orderType === "airtime") {
-            url = `${url}/partners/vas/airtime`;
-         } else if (orderType === "utility") {
-            const utilityProvider = String(data.utility_provider || "").toUpperCase();
-            if (utilityProvider.includes("ECG")) url = `${url}/partners/vas/ecg`;
-            else url = `${url}/partners/vas/tv`;
-         } else {
-            url = `${url}/partners/vas/data`;
-         }
-      }
-    } else if (handlerType === "justbuy") {
-       if (data.order_type === "airtime") {
-          url = `${url}/payment/airtime`;
-       } else if (data.order_type === "utility") {
-          if (data.utility_provider === "ECG") url = `${url}/api/payment/ecg`;
-          else url = `${url}/api/payment/bills`;
-       } else {
-          url = `${url}/payment/data`;
-       }
-    } else if (handlerType === "qhowmenzconsult") {
-       if (endpoint === "purchase") {
-          url = `${url}/orders`;
-       } else if (endpoint === "status") {
-          const ref = String(data.transaction_id || data.reference || data.order_id || "");
-          url = `${url}/orders/${ref}`;
-       }
-    }
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
-      try {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        };
-
-        headers["X-API-Key"] = apiKey;
-        // Global idempotency key to prevent double charging on provider retries
-        const idempotencyKey = String(data.orderReference || data.reference || data.order_id || "");
-        if (idempotencyKey) {
-          headers["X-Idempotency-Key"] = idempotencyKey;
-        }
-
-        if (handlerType === "xcel") {
-          headers["x-api-key"] = apiKey;
-          headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
-        } else if (handlerType === "skdataplug") {
-          headers["Authorization"] = `Bearer ${apiKey}`;
-        } else if (handlerType !== "datamart" && handlerType !== "spendless" && handlerType !== "qhowmenzconsult") {
-          headers["Authorization"] = `Bearer ${apiKey}`;
-          headers["User-Agent"] = "SwiftDataGH/2.0";
-        }
-
-        const isGet = (handlerType === "datamart" && endpoint === "status") || 
-                      (handlerType === "superbdatafy" && endpoint === "status") || 
-                      (handlerType === "xcel" && endpoint === "status") ||
-                      (handlerType === "qhowmenzconsult" && endpoint === "status") ||
-                      (handlerType === "skdataplug" && endpoint === "status");
-
-        const res = await fetch(url, {
-          method: isGet ? "GET" : "POST",
-          headers,
-          body: isGet ? undefined : JSON.stringify(payload),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const contentType = res.headers.get("content-type");
-        const text = await res.text();
-
-        if (res.ok) {
-          const semantic = parseProviderResponse(text, contentType);
-          if (semantic.ok) return { ok: true, reason: "", id: semantic.id, status: semantic.status };
-          return { ok: false, reason: semantic.reason || "Provider rejected this order." };
-        }
-
-        let parsedMsg = "";
-        try { parsedMsg = JSON.parse(text)?.message || JSON.parse(text)?.error || ""; } catch { /* ignore */ }
-        lastReason = parsedMsg || `Provider returned ${res.status}`;
-
-        const isAlreadyPlaced = /already placed/i.test(lastReason) || /currently being processed/i.test(lastReason);
-        if (isAlreadyPlaced) {
-          return { ok: true, reason: "", status: "processing" };
-        }
-
-        if (res.status === 401 || res.status === 403) return { ok: false, reason: lastReason };
-        if (res.status === 404 || isHtmlResponse(contentType, text)) break;
-
-        if (res.status >= 500 && attempt < 2) {
-          await new Promise((r) => setTimeout(r, 300));
-          continue;
-        }
-
-        break;
-      } catch (e: any) {
-        lastReason = e?.message || "Network error";
-        if (attempt < 2) await new Promise((r) => setTimeout(r, 300));
-      }
-    }
-  }
-
-  return { ok: false, reason: lastReason };
 }
 
 // --- Main Handler ---
@@ -617,7 +249,7 @@ serve(async (req) => {
       });
     }
 
-    const { reference, phone } = body;
+    const { reference, phone, force } = body;
 
     // Limit Target Phone-based requests to 4 per minute
     if (phone) {
@@ -645,6 +277,46 @@ serve(async (req) => {
     }
 
     let targetReference = reference;
+
+    // Resolve custom API references (non-UUID or custom)
+    if (reference) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+      if (isUuid) {
+        // Try direct ID lookup first
+        const { data: orderById } = await supabaseAdmin
+          .from("orders")
+          .select("id")
+          .eq("id", reference)
+          .maybeSingle();
+        if (orderById) {
+          targetReference = orderById.id;
+        } else {
+          // Fallback to client_reference search if not found by direct ID
+          const { data: orderByClientRef } = await supabaseAdmin
+            .from("orders")
+            .select("id")
+            .eq("metadata->>client_reference", reference)
+            .maybeSingle();
+          if (orderByClientRef) {
+            targetReference = orderByClientRef.id;
+          }
+        }
+      } else {
+        // Non-UUID: must be client custom reference
+        const { data: orderByClientRef } = await supabaseAdmin
+          .from("orders")
+          .select("id")
+          .eq("metadata->>client_reference", reference)
+          .maybeSingle();
+        if (orderByClientRef) {
+          targetReference = orderByClientRef.id;
+        } else {
+          return new Response(JSON.stringify({ error: "Order not found with reference: " + reference }), {
+            status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
 
     // --- SECURE GUEST LOOKUP BY PHONE ---
     if (!targetReference && phone) {
@@ -682,20 +354,33 @@ serve(async (req) => {
       });
     }
 
-    // UUID validation (Only if it's the raw reference from user)
-    // We only validate if targetReference was passed as 'reference' in the request
-    if (reference && targetReference === reference) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetReference);
-      if (!isUuid) {
-         return new Response(JSON.stringify({ error: "Invalid reference format" }), {
-           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-         });
-      }
+    // Since targetReference is resolved to the exact order UUID from DB, validate it's a UUID
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetReference);
+    if (!isUuid) {
+       return new Response(JSON.stringify({ error: "Invalid reference format" }), {
+         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+       });
     }
 
     // 1. Check if already processed
     const { data: existingOrder } = await supabaseAdmin
       .from("orders").select("*").eq("id", targetReference).maybeSingle();
+
+    const authHeader = req.headers.get("authorization") || "";
+    const isServiceRole = authHeader.includes(SUPABASE_SERVICE_ROLE_KEY || "nevermatch_placeholder");
+
+    // Client restriction: Leave the payment verification/fulfillment trigger to the webhook confirmation,
+    // but if the order is older than 8 seconds, allow client-side verification as a fallback in case webhooks are slow/delayed.
+    const orderAgeMs = Date.now() - new Date(existingOrder?.created_at || Date.now()).getTime();
+    if (!isServiceRole && !force && orderAgeMs < 8000 && (existingOrder?.status === "pending" || existingOrder?.status === "awaiting_payment")) {
+      console.log(`[verify-payment] Client request for pending order ${targetReference} under 8s age. Awaiting webhook confirmation.`);
+      return new Response(JSON.stringify({ 
+        status: "pending", 
+        message: "Awaiting payment confirmation webhook."
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (existingOrder?.status === "fulfilled" || existingOrder?.status === "completed") {
       return new Response(JSON.stringify({ 
@@ -709,14 +394,21 @@ serve(async (req) => {
 
     const credentials = await getProviderCredentials(supabaseAdmin);
     const paystackSecretKey = credentials.paystackSecretKey;
-    const orderType = (existingOrder?.order_type || "data") as string;
+    let orderType = (existingOrder?.order_type || "data") as string;
+    if (orderType.toLowerCase() === "api") {
+      if (String(existingOrder?.package_size).toUpperCase() === "AIRTIME") {
+        orderType = "airtime";
+      } else {
+        orderType = "data";
+      }
+    }
     const isQueuedError = /queued/i.test(String(existingOrder?.failure_reason || ""));
     const isProviderOrder = !["agent_activation", "sub_agent_activation", "wallet_topup", "free_data_claim", "utility"].includes(orderType.toLowerCase());
 
     // --- 1. STATUS CHECK (For orders already being processed) ---
     // Skip for non-data/airtime order types — they don't involve a data provider.
     if (existingOrder?.status === "processing" && !isQueuedError && isProviderOrder) {
-      const providers = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
+      const providers = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
       let foundOnProvider = false;
       for (const provider of providers) {
         console.log(`[verify-payment] Checking status for ${targetReference} at ${provider.name}`);
@@ -749,33 +441,26 @@ serve(async (req) => {
       if (existingOrder.network === "MTN Mash Up") {
         return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
       }
-      const isQueuedError = /queued/i.test(String(existingOrder.failure_reason || ""));
-      const orderCreatedAt = new Date(existingOrder.created_at).getTime();
-      const ageInMinutes = (Date.now() - orderCreatedAt) / 60000;
-
-      // If the order already has a provider_order_id, it was submitted to the provider
-      // and we must wait for the webhook callback — never re-submit.
-      if (existingOrder.provider_order_id) {
-        console.log(`[verify-payment] Order ${targetReference} already submitted to provider (${existingOrder.provider_order_id}). Waiting for webhook.`);
-        return new Response(JSON.stringify({ status: "processing", message: "Waiting for provider webhook" }), { headers: corsHeaders });
-      }
-
-      if (isQueuedError || ageInMinutes > 20) {
-        console.log(`[verify-payment] Order ${targetReference} stuck for ${ageInMinutes.toFixed(1)} mins with no provider ID. Re-submitting.`);
-        // Fall through to re-submit to the provider
-      } else {
-        // Normal processing lock: wait for webhook
-        return new Response(JSON.stringify({ status: "processing", message: "Still processing on provider" }), { headers: corsHeaders });
-      }
+      
+      // Safety: Never re-submit any processing order to the provider API.
+      // If it is stuck at processing, it has likely already entered/passed through the provider's API.
+      console.log(`[verify-payment] Order ${targetReference} is currently in processing state. Safety check: blocking re-submission to provider API.`);
+      return new Response(JSON.stringify({ 
+        status: "processing", 
+        message: "Order is in processing state. Re-submission blocked to prevent duplicate carrier charging." 
+      }), { headers: corsHeaders });
     }
 
     // --- 1.5. PRE-VERIFICATION PROVIDER CHECK ---
-    // If the order is pending, check if DataMart/Admin already has it
-    // (handles race conditions or manual bypasses)
+    // If the order is pending, paid, or fulfillment_failed, check if the provider already processed it
+    // (handles race conditions, retries, or manual bypasses)
     // Skip for non-data/airtime order types — they don't involve a data provider
-    if (existingOrder?.status === "pending" && isProviderOrder) {
-      const providers = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
+    // Optimization: Skip checking provider status for freshly paid/pending orders if they haven't been submitted yet (no provider_order_id).
+    // This avoids slow and redundant API status check calls to providers, saving 1-3 seconds.
+    if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed") && isProviderOrder && existingOrder?.provider_order_id) {
+      const providers = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
       for (const provider of providers) {
+        console.log(`[verify-payment] Pre-check status for ${targetReference} at ${provider.name}`);
         const checkResult = await callProviderApi(supabaseAdmin, provider, { 
           transaction_id: targetReference,
           reference: targetReference, 
@@ -784,11 +469,27 @@ serve(async (req) => {
         
         if (checkResult.ok) {
           const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
+          const isProcessing = checkResult.status === "processing" || checkResult.status === "pending" || checkResult.status === "queued" || checkResult.status === "ongoing";
+          
           if (isDelivered) {
             console.log(`[verify-payment] Found fulfilled order ${targetReference} at ${provider.name} during pre-check.`);
-            await supabaseAdmin.from("orders").update({ status: "fulfilled", provider_id: provider.id }).eq("id", targetReference);
+            await supabaseAdmin.from("orders").update({ 
+              status: "fulfilled", 
+              provider_id: provider.id,
+              provider_order_id: checkResult.id || existingOrder.provider_order_id || null,
+              failure_reason: null
+            }).eq("id", targetReference);
             await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
-            return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
+            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
+          } else if (isProcessing) {
+            console.log(`[verify-payment] Found processing/pending order ${targetReference} at ${provider.name} during pre-check.`);
+            await supabaseAdmin.from("orders").update({ 
+              status: "processing", 
+              provider_id: provider.id,
+              provider_order_id: checkResult.id || existingOrder.provider_order_id || null,
+              failure_reason: "Provider is processing the order"
+            }).eq("id", targetReference);
+            return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
           }
         }
       }
@@ -798,6 +499,13 @@ serve(async (req) => {
     let verifiedAmount = 0;
     let paystackFeeOnVerified = 0;
     let currentOrderType = (existingOrder?.order_type || "data") as string;
+    if (currentOrderType.toLowerCase() === "api") {
+      if (String(existingOrder?.package_size).toUpperCase() === "AIRTIME") {
+        currentOrderType = "airtime";
+      } else {
+        currentOrderType = "data";
+      }
+    }
     let metadata = existingOrder?.metadata || {};
 
     const status = (existingOrder?.status || "").toLowerCase();
@@ -805,8 +513,7 @@ serve(async (req) => {
 
     const isInternalPayment = 
       ["wallet", "promo", "balance", "api"].includes(paymentMethod) || 
-      (["paid", "processing", "fulfilled", "fulfillment_failed", "completed", "failed"].includes(status) && status !== "pending") ||
-      (orderType.toLowerCase() === "data" && !paymentMethod && ["processing", "fulfillment_failed"].includes(status));
+      (status === "processing" && !isQueuedError);
 
     // Special validation for free data claims to prevent spamming
     if (orderType.toLowerCase() === "free_data_claim") {
@@ -864,8 +571,95 @@ serve(async (req) => {
     if (isInternalPayment || orderType.toLowerCase() === "free_data_claim") {
       console.log(`[verify-payment] Internal/Free payment confirmed for ${targetReference}`);
       verifiedAmount = Number(existingOrder?.amount || 0);
+    } else if (paymentMethod === "korba") {
+      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+
+      if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+        return new Response(JSON.stringify({ error: "Korba gateway not configured" }), { status: 500, headers: corsHeaders });
+      }
+
+      const statusPayload = {
+        transaction_id: targetReference,
+        client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+      };
+
+      // Generate HMAC signature
+      const sortedKeys = Object.keys(statusPayload).sort();
+      const messageParts = [];
+      for (const key of sortedKeys) {
+        messageParts.push(`${key}=${(statusPayload as any)[key]}`);
+      }
+      const message = messageParts.join("&");
+      
+      const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const messageData = new TextEncoder().encode(message);
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+      const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      console.log(`[verify-payment] Querying Korba status for ${targetReference}`);
+      try {
+        const statusRes = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/transaction_status/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+          },
+          body: JSON.stringify(statusPayload),
+          allowMutationFallback: true,
+        });
+
+        const statusText = await statusRes.text();
+        console.log(`[verify-payment] Korba status response:`, statusText);
+        let statusData;
+        try {
+          statusData = JSON.parse(statusText);
+        } catch {
+          return new Response(JSON.stringify({ status: "error", error: "Payment gateway returned invalid response" }), { headers: corsHeaders });
+        }
+
+        if (!statusRes.ok || statusData.error) {
+          console.error(`[verify-payment] Korba status check failed via DB Proxy:`, statusText);
+          return new Response(JSON.stringify({
+            status: "error",
+            error: `Database HTTP Proxy error: ${statusData.error || statusText || "Unknown proxy error"}`
+          }), { headers: corsHeaders });
+        }
+
+        const korbaStatus = String(statusData?.status || "").toLowerCase();
+
+        if (korbaStatus === "success") {
+          verifiedAmount = Number(existingOrder?.amount || 0);
+          paystackFeeOnVerified = Number(existingOrder?.paystack_fee || 0);
+          metadata = existingOrder?.metadata || {};
+          currentOrderType = (existingOrder?.order_type || "data") as string;
+        } else if (korbaStatus === "failed" || korbaStatus === "failure") {
+          const failMsg = statusData.message || "Payment failed";
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            failure_reason: failMsg
+          }).eq("id", targetReference);
+          return new Response(JSON.stringify({ status: "error", error: failMsg }), { headers: corsHeaders });
+        } else {
+          console.log(`[verify-payment] Korba status is not success: ${korbaStatus}`);
+          return new Response(JSON.stringify({ status: "pending", message: "Awaiting mobile money approval." }), { headers: corsHeaders });
+        }
+      } catch (e) {
+        console.error(`[verify-payment] Korba status check network error:`, e);
+        return new Response(JSON.stringify({ status: "error", error: "Failed to connect to payment gateway" }), { headers: corsHeaders });
+      }
     } else {
-      const PAYSTACK_SECRET_KEY = getFirstEnv("PAYSTACK_SECRET_KEY") || paystackSecretKey;
+      const PAYSTACK_SECRET_KEY = paystackSecretKey || getFirstEnv("PAYSTACK_SECRET_KEY");
       if (!PAYSTACK_SECRET_KEY) {
         return new Response(JSON.stringify({ error: "Payment gateway not configured" }), { status: 500, headers: corsHeaders });
       }
@@ -892,6 +686,25 @@ serve(async (req) => {
 
         if (txStatus === "success") {
           verifiedAmount = verifyData.data.amount / 100;
+          
+          // Verify payment currency and amount to prevent tampering
+          if (verifyData.data.currency !== "GHS") {
+            console.error(`[verify-payment] Currency mismatch: Paid in ${verifyData.data.currency}, Expected GHS`);
+            return new Response(JSON.stringify({ status: "error", error: "Currency mismatch. Only payments in GHS are accepted." }), { headers: corsHeaders });
+          }
+
+          const expectedAmount = Number(existingOrder.amount) + 
+            ((existingOrder.order_type === "wallet_topup" || existingOrder.order_type === "store_wallet_topup") ? Number(existingOrder.paystack_fee || 0) : 0);
+          
+          const amountDiff = Math.abs(verifiedAmount - expectedAmount);
+          if (amountDiff > 0.05) {
+            console.error(`[verify-payment] Amount mismatch: Paid ${verifiedAmount} GHS, Expected ${expectedAmount} GHS`);
+            await supabaseAdmin.from("orders").update({
+              status: "fulfillment_failed",
+              failure_reason: `Amount mismatch: Paid GHS ${verifiedAmount}, expected GHS ${expectedAmount}`
+            }).eq("id", targetReference);
+            return new Response(JSON.stringify({ status: "error", error: `Amount mismatch. Paid ${verifiedAmount} GHS, Expected ${expectedAmount} GHS` }), { headers: corsHeaders });
+          }
         } else if (txStatus === "failed") {
           const failMsg = verifyData.data.gateway_response || verifyData.data.message || verifyData.message || "Payment failed";
           console.warn(`[verify-payment] Payment failed explicitly:`, failMsg);
@@ -947,17 +760,23 @@ serve(async (req) => {
     const now = Date.now();
     const oneMinuteAgo = new Date(now - 60000).toISOString();
     
-    const targetStatus = (existingOrder?.network === "MTN Mash Up") ? "pending" : "processing";
+    const orderCreatedAt = existingOrder ? new Date(existingOrder.created_at).getTime() : Date.now();
+    const ageInMinutes = (Date.now() - orderCreatedAt) / 60000;
+    const allowedStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment"];
+
+    const isMashUp = existingOrder?.network === "MTN Mash Up";
+    const targetStatus = isMashUp ? "pending" : "processing";
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({ 
         status: targetStatus, 
         paystack_verified_amount: verifiedAmount,
         paystack_fee: paystackFeeOnVerified,
+        failure_reason: null,
         updated_at: new Date().toISOString()
       })
       .eq("id", targetReference)
-      .in("status", ["pending", "paid", "fulfillment_failed", "processing", "awaiting_payment"])
+      .in("status", allowedStatuses)
       .select("*")
       .maybeSingle();
 
@@ -1130,36 +949,207 @@ serve(async (req) => {
     }
 
 
-    // Standard Data/Airtime/Utility/AFA Fulfillment
-    let providerCategory = "data";
-    if (currentOrderType === "airtime") providerCategory = "airtime";
-    else if (currentOrderType === "utility") providerCategory = "utility";
-    
-    let activeProviders = [];
-    if (currentOrderType === "afa") {
-      const { data: spendless } = await supabaseAdmin
-        .from("providers")
-        .select("*")
-        .eq("handler_type", "spendless")
-        .maybeSingle();
-      if (spendless) {
-        activeProviders = [spendless];
-        console.log(`[verify-payment] Routing AFA order ${targetReference} via Spendless API`);
-      } else {
-        console.warn(`[verify-payment] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
-        activeProviders = await getActiveProviders(supabaseAdmin, "data");
-      }
-    } else {
-      activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
-    }
-    const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch").eq("id", 1).maybeSingle();
-    const autoApiSwitch = sysSettings?.auto_api_switch !== false;
-
     const network = claimedOrder.network || metadata?.network || "";
     const customerPhone = claimedOrder.customer_phone || metadata?.customer_phone || "";
     const packageSize = claimedOrder.package_size || metadata?.package_size || "";
     const recipient = normalizeRecipient(customerPhone);
     const effectiveOrderType = currentOrderType === "free_data_claim" ? "data" : currentOrderType;
+
+    // Standard Data/Airtime/Utility/AFA Fulfillment
+    const activeProviders = await resolveProvidersForOrder(supabaseAdmin, claimedOrder);
+
+    // --- SIBLING DUPLICATE PROTECTION ---
+    // Look for any identical order submitted in the last 60 minutes for the same phone, network, package, and amount.
+    // We check if any sibling order was already successfully processed or is currently processing.
+    if (isProviderOrder && customerPhone && network && packageSize) {
+      const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: rawSiblings } = await supabaseAdmin
+        .from("orders")
+        .select("id, status, provider_order_id, provider_id, profit, parent_profit, parent_agent_id, created_at, network, package_size, amount")
+        .eq("customer_phone", customerPhone)
+        .neq("id", targetReference) // Exclude current order
+        .gte("created_at", sixtyMinutesAgo)
+        .order("created_at", { ascending: false });
+
+      const siblingOrders = (rawSiblings || []).filter(o => {
+        const n1 = String(o.network || "").trim().toUpperCase();
+        const n2 = String(network || "").trim().toUpperCase();
+        const networksMatch = n1 === n2 ||
+          ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
+          ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
+          ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
+        if (!networksMatch) return false;
+
+        const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
+        const p2 = String(packageSize || "").replace(/\s+/g, "").toUpperCase();
+        if (p1 !== p2) return false;
+
+        if (Math.abs(Number(o.amount) - Number(claimedOrder.amount)) > 0.01) return false;
+        return true;
+      });
+
+      if (siblingOrders && siblingOrders.length > 0) {
+        console.log(`[verify-payment] Found ${siblingOrders.length} sibling orders for duplicate protection.`);
+        
+        for (const sibling of siblingOrders) {
+          const siblingTime = new Date(sibling.created_at).getTime();
+          const currentTime = new Date(claimedOrder.created_at).getTime();
+          const isOlder = siblingTime < currentTime || (siblingTime === currentTime && sibling.id < targetReference);
+
+          // Case 1: Sibling is already fulfilled
+          if (sibling.status === "fulfilled" || sibling.status === "completed") {
+            console.log(`[verify-payment] Sibling order ${sibling.id} is already fulfilled. Marking current order ${targetReference} as fulfilled.`);
+            await supabaseAdmin.from("orders").update({
+              status: "fulfilled",
+              provider_id: sibling.provider_id || null,
+              provider_order_id: sibling.provider_order_id || null,
+              failure_reason: `Completed via duplicate sibling order ${sibling.id}`
+            }).eq("id", targetReference);
+            
+            await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
+            await notifyApiClient(supabaseAdmin, targetReference, "fulfilled");
+            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: sibling.provider_order_id }), { headers: corsHeaders });
+          }
+          
+          // Case 2: Sibling is active in our DB (processing, pending, paid)
+          if (sibling.status === "processing" || sibling.status === "pending" || sibling.status === "paid") {
+            if (!isOlder) {
+              console.log(`[verify-payment] Sibling order ${sibling.id} is active but newer than current order. Ignoring sibling.`);
+              continue;
+            }
+            console.log(`[verify-payment] Sibling order ${sibling.id} is active (${sibling.status}). Checking provider status.`);
+            
+            for (const provider of activeProviders) {
+              const checkResult = await callProviderApi(supabaseAdmin, provider, {
+                transaction_id: sibling.provider_order_id || sibling.id,
+                order_id: sibling.provider_order_id || sibling.id,
+                reference: sibling.id,
+              }, "status");
+              
+              if (checkResult.ok) {
+                const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
+                const isProcessing = checkResult.status === "processing" || checkResult.status === "pending" || checkResult.status === "queued" || checkResult.status === "ongoing";
+                
+                if (isDelivered) {
+                  console.log(`[verify-payment] Sibling order ${sibling.id} was actually fulfilled at provider. Marking current order ${targetReference} as fulfilled.`);
+                  await supabaseAdmin.from("orders").update({
+                    status: "fulfilled",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: null
+                  }).eq("id", sibling.id);
+                  
+                  await supabaseAdmin.from("orders").update({
+                    status: "fulfilled",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: `Completed via duplicate sibling order ${sibling.id}`
+                  }).eq("id", targetReference);
+
+                  await supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id });
+                  await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
+
+                  await notifyApiClient(supabaseAdmin, sibling.id, "fulfilled");
+                  await notifyApiClient(supabaseAdmin, targetReference, "fulfilled");
+                  
+                  return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
+                } else if (isProcessing) {
+                  console.log(`[verify-payment] Sibling order ${sibling.id} is confirmed processing at provider. Halting current purchase.`);
+                  await supabaseAdmin.from("orders").update({
+                    status: "processing",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: `Waiting for sibling order ${sibling.id} processing`
+                  }).eq("id", targetReference);
+                  
+                  return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
+                }
+              }
+            }
+            
+            // If provider status check failed or returned NOT_FOUND, but sibling status in our DB is STILL active:
+            // We MUST NOT proceed to submit this order. We halt and wait for the sibling.
+            console.log(`[verify-payment] Sibling order ${sibling.id} is active in DB but provider status check was inconclusive. Halting current purchase to prevent duplicates.`);
+            await supabaseAdmin.from("orders").update({
+              status: "processing",
+              failure_reason: `Waiting for sibling order ${sibling.id} processing`
+            }).eq("id", targetReference);
+            
+            return new Response(JSON.stringify({ status: "processing", message: `Waiting for sibling order ${sibling.id} processing` }), { headers: corsHeaders });
+          }
+
+          // Case 3: Sibling is failed / fulfillment_failed / refunded in our DB
+          if (sibling.status === "fulfillment_failed" || sibling.status === "failed" || sibling.status === "refunded") {
+            if (!isOlder) {
+              console.log(`[verify-payment] Sibling order ${sibling.id} is failed (${sibling.status}) but newer than current order. Ignoring sibling.`);
+              continue;
+            }
+            console.log(`[verify-payment] Sibling order ${sibling.id} is failed (${sibling.status}) in DB. Checking provider status to ensure it wasn't actually processed.`);
+            
+            for (const provider of activeProviders) {
+              const checkResult = await callProviderApi(supabaseAdmin, provider, {
+                transaction_id: sibling.provider_order_id || sibling.id,
+                order_id: sibling.provider_order_id || sibling.id,
+                reference: sibling.id,
+              }, "status");
+              
+              if (checkResult.ok) {
+                const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
+                const isProcessing = checkResult.status === "processing" || checkResult.status === "pending" || checkResult.status === "queued" || checkResult.status === "ongoing";
+                
+                if (isDelivered) {
+                  console.log(`[verify-payment] Sibling order ${sibling.id} was actually fulfilled at provider despite failure status. Marking both as fulfilled.`);
+                  await supabaseAdmin.from("orders").update({
+                    status: "fulfilled",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: null
+                  }).eq("id", sibling.id);
+                  
+                  await supabaseAdmin.from("orders").update({
+                    status: "fulfilled",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: `Completed via duplicate sibling order ${sibling.id}`
+                  }).eq("id", targetReference);
+
+                  await supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id });
+                  await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
+
+                  await notifyApiClient(supabaseAdmin, sibling.id, "fulfilled");
+                  await notifyApiClient(supabaseAdmin, targetReference, "fulfilled");
+                  
+                  return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
+                } else if (isProcessing) {
+                  console.log(`[verify-payment] Sibling order ${sibling.id} is processing at provider. Moving sibling back to processing and halting current purchase.`);
+                  await supabaseAdmin.from("orders").update({
+                    status: "processing",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: "Re-processing after status check"
+                  }).eq("id", sibling.id);
+                  
+                  await supabaseAdmin.from("orders").update({
+                    status: "processing",
+                    provider_id: provider.id,
+                    provider_order_id: checkResult.id || sibling.provider_order_id || null,
+                    failure_reason: `Waiting for sibling order ${sibling.id} processing`
+                  }).eq("id", targetReference);
+                  
+                  return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
+                }
+              }
+            }
+            
+            // If provider check confirmed it is not found / failed, we proceed and submit the current order
+            console.log(`[verify-payment] Sibling order ${sibling.id} is confirmed failed. Proceeding with current purchase.`);
+          }
+        }
+      }
+    }
+
+    const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch").eq("id", 1).maybeSingle();
+    const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
     const requestBody = {
       networkRaw: network,
@@ -1187,16 +1177,6 @@ serve(async (req) => {
       const netKey = overrideNetKey || defaultNetKey;
       if (ht === "datamart") return { phoneNumber: recipient, network: netKey, planId: packageSize, plan: packageSize, bundle: packageSize, capacity: String(parseCapacity(packageSize)), orderReference: targetReference, gateway: "wallet", reference: targetReference };
       if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference };
-      if (ht === "justbuy") {
-        if (currentOrderType === "utility") {
-           if (metadata?.utility_provider === "ECG") {
-              return { phoneNumber: recipient, accountNumber: metadata?.utility_account_number || recipient, amount: claimedOrder.amount, order_type: "utility", utility_provider: "ECG" };
-           } else {
-              return { customerNumber: metadata?.utility_account_number || recipient, billType: metadata?.utility_provider, amount: claimedOrder.amount, senderName: metadata?.utility_account_name || "CUSTOMER", order_type: "utility" };
-           }
-        }
-        return { network: netKey, phone: recipient, amount: claimedOrder.amount, package_size: packageSize, request_id: targetReference, order_type: effectiveOrderType };
-      }
       if (ht === "qhowmenzconsult") {
         return {
           networkRaw: network,
@@ -1337,16 +1317,76 @@ serve(async (req) => {
       log(supabaseAdmin, { level: "info", source: "verify-payment", event: "order.processing", message: `Order successfully bought - set as processing — provider_order_id: ${result.id}`, order_id: targetReference, agent_id: claimedOrder.agent_id, provider_id: successfulProviderId, data: { provider_order_id: result.id, network, package_size: packageSize, amount: claimedOrder.amount } });
       return new Response(JSON.stringify({ status: targetStatus, provider_order_id: result.id }), { headers: corsHeaders });
     } else {
-      // User requested fix: Automatically queue up failed API connections for retry processing loop
+      // Purchase failed - check if it is a transient timeout/network error
+      const reasonStr = String(result.reason || "").toLowerCase();
+      const isTimeoutOrNetworkError = 
+        reasonStr.includes("timeout") || 
+        reasonStr.includes("504") || 
+        reasonStr.includes("502") || 
+        reasonStr.includes("proxy failed") || 
+        reasonStr.includes("connection") || 
+        reasonStr.includes("network error") ||
+        reasonStr.includes("abort");
+
+      if (isTimeoutOrNetworkError) {
+        // Mark as processing (with provider_order_id = "timeout" to prevent cron-auto-retry from retrying it)
+        // This keeps it in processing state so webhook can fulfill it when it arrives,
+        // and prevents the auto-refund trigger from firing immediately.
+        const updatedMetadata = {
+          ...(claimedOrder.metadata || {}),
+          provider_timeout_reason: result.reason || "Connection timeout"
+        };
+        await supabaseAdmin.from("orders").update({
+          status: "processing",
+          provider_order_id: "timeout",
+          failure_reason: null,
+          metadata: updatedMetadata
+        }).eq("id", targetReference);
+
+        log(supabaseAdmin, { 
+          level: "warn", 
+          source: "verify-payment", 
+          event: "order.timeout_processing", 
+          message: `Order timed out during provider purchase. Left in processing: ${result.reason}`, 
+          order_id: targetReference, 
+          agent_id: claimedOrder.agent_id, 
+          data: { reason: result.reason, network, package_size: packageSize } 
+        });
+
+        return new Response(JSON.stringify({
+          status: "processing",
+          reason: `Provider connection timed out. We are verifying the transaction status. Please wait.`,
+          provider_order_id: "timeout"
+        }), { headers: corsHeaders });
+      }
+
+      // Otherwise, it's a definitive failure/rejection (e.g. Insufficient Balance, Invalid Number, etc.)
+      const targetStatus = "processing";
+      const targetProviderOrderId = "failed_api_call";
+      const targetFailureReason = result.reason || "Provider rejected the request";
+
       await supabaseAdmin.from("orders").update({
-        status: "processing",
-        failure_reason: result.reason || "Provider connection refused"
+        status: targetStatus,
+        provider_order_id: targetProviderOrderId,
+        failure_reason: targetFailureReason
       }).eq("id", targetReference);
 
-      log(supabaseAdmin, { level: "warn", source: "verify-payment", event: "order.queued", message: `Order queued for retry: ${result.reason}`, order_id: targetReference, agent_id: claimedOrder.agent_id, data: { reason: result.reason, network, package_size: packageSize } });
+      log(supabaseAdmin, { 
+        level: isApiOrder ? "warn" : "error", 
+        source: "verify-payment", 
+        event: isApiOrder ? "order.processing_failed_api" : "order.failed", 
+        message: isApiOrder 
+          ? `Order provider call rejected. Sticking to processing: ${targetFailureReason}` 
+          : `Order fulfillment failed: ${targetFailureReason}`, 
+        order_id: targetReference, 
+        agent_id: claimedOrder.agent_id, 
+        data: { reason: targetFailureReason, network, package_size: packageSize } 
+      });
+
       return new Response(JSON.stringify({
-        status: "processing",
-        reason: result.reason || "Queued for processing recovery"
+        status: targetStatus,
+        reason: targetFailureReason,
+        provider_order_id: targetProviderOrderId
       }), { headers: corsHeaders });
     }
   } catch (error: any) {

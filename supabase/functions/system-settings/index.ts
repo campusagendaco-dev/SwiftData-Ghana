@@ -144,9 +144,9 @@ serve(async (req) => {
 
   const readSettings = async () => {
     const fullSelect =
-      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message";
+      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message, active_payment_gateway";
     const legacySelect =
-      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link";
+      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_payment_gateway";
 
     const { data: fullData, error: fullError } = await supabaseAdmin
       .from("v_system_settings_with_secrets").select(fullSelect)
@@ -180,9 +180,9 @@ serve(async (req) => {
       disable_ordering: Boolean(data?.disable_ordering),
       dark_mode_enabled: Boolean(data?.dark_mode_enabled),
       customer_service_number:
-        coerceText(data?.customer_service_number) || DEFAULT_SETTINGS.customer_service_number,
+          coerceText(data?.customer_service_number) || DEFAULT_SETTINGS.customer_service_number,
       support_channel_link:
-        coerceText(data?.support_channel_link) || DEFAULT_SETTINGS.support_channel_link,
+          coerceText(data?.support_channel_link) || DEFAULT_SETTINGS.support_channel_link,
       sub_agent_base_fee: Number(data?.sub_agent_base_fee ?? DEFAULT_SETTINGS.sub_agent_base_fee),
       agent_activation_fee: Number(data?.agent_activation_fee ?? DEFAULT_SETTINGS.agent_activation_fee),
       traditional_background_enabled: data?.traditional_background_enabled !== false,
@@ -191,6 +191,7 @@ serve(async (req) => {
       ai_recommender_enabled: data?.ai_recommender_enabled !== false,
       scheduled_success_sms_message: data?.scheduled_success_sms_message || DEFAULT_SETTINGS.scheduled_success_sms_message,
       scheduled_failed_sms_message: data?.scheduled_failed_sms_message || DEFAULT_SETTINGS.scheduled_failed_sms_message,
+      active_payment_gateway: data?.active_payment_gateway || "paystack",
       table_ready: true,
       warning: null,
     };
@@ -266,6 +267,7 @@ serve(async (req) => {
       ai_recommender_enabled: payload?.ai_recommender_enabled !== false,
       scheduled_success_sms_message: coerceText(payload?.scheduled_success_sms_message) || DEFAULT_SETTINGS.scheduled_success_sms_message,
       scheduled_failed_sms_message: coerceText(payload?.scheduled_failed_sms_message) || DEFAULT_SETTINGS.scheduled_failed_sms_message,
+      active_payment_gateway: payload?.active_payment_gateway || "paystack",
       updated_at: new Date().toISOString(),
       updated_by: user.id,
     };

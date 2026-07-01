@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // removed node:crypto
 import { corsHeaders } from "../_shared/cors.ts";
@@ -74,7 +74,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "No reference found" }), { status: 400 });
     }
 
-    const isSuccess = ["completed", "success", "delivered", "fulfilled"].includes(status);
+    const isSuccess = ["completed", "success", "successful", "delivered", "fulfilled"].includes(status);
     const isFailed = ["failed", "rejected", "refunded"].includes(status);
 
     if (isSuccess) {

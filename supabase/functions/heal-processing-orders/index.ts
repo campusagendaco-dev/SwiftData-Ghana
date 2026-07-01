@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getActiveProviders } from "../_shared/providers.ts";
@@ -153,14 +153,13 @@ serve(async (req) => {
           result.reason = `Provider status: ${statusResult.status}`;
         }
       } else {
-        // Provider has no record — reset to paid for a fresh attempt
+        // Provider has no record — mark as failed to trigger auto-refund (no retries)
         await supabaseAdmin.from("orders").update({
-          status: "paid",
-          retry_count: 0,
-          failure_reason: "Re-queued: provider had no record",
+          status: "fulfillment_failed",
+          failure_reason: "Fulfillment failed: Provider has no record of transaction",
         }).eq("id", order.id);
-        result.action = "requeued";
-        result.reason = "Provider had no record — reset to paid for fresh fulfillment";
+        result.action = "failed";
+        result.reason = "Provider had no record — marked as failed to trigger wallet refund";
       }
 
       results.push(result);

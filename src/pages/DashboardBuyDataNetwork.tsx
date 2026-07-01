@@ -58,6 +58,7 @@ interface GlobalPackageSetting {
   public_price: number | null;
   agent_price: number | null;
   sub_agent_price: number | null;
+  api_price: number | null;
   is_unavailable: boolean;
 }
 
@@ -101,6 +102,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
+  const [activeGateway, setActiveGateway] = useState<string>("paystack");
   const [lastOrder, setLastOrder] = useState<{
     id: string; network: string; packageSize: string; phone: string; status: string;
   } | null>(null);
@@ -157,7 +159,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   useEffect(() => {
     const loadPricing = async () => {
       const [settingsRes, pricingContext] = await Promise.all([
-        supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, is_unavailable"),
+        supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, api_price, is_unavailable"),
         fetchApiPricingContext(),
       ]);
       setGlobalSettings((settingsRes.data || []) as GlobalPackageSetting[]);
@@ -182,22 +184,29 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     supabase
       .from("system_settings")
-      .select("agent_activation_fee")
+      .select("agent_activation_fee, active_payment_gateway")
       .eq("id", 1)
       .maybeSingle()
       .then(({ data }) => {
         if (data?.agent_activation_fee) {
           setActivationFee(Number(data.agent_activation_fee));
         }
+        if (data?.active_payment_gateway) {
+          setActiveGateway(data.active_payment_gateway);
+        }
       });
   }, [profile?.is_sub_agent, profile?.parent_agent_id, user]);
 
   const packages = useMemo(() => {
-    const list = [...(basePackages[network] || [])];
+    const list: { size: string; price: number; validity: string; popular?: boolean }[] = [];
+    const dbNetwork = network;
+
+    list.push(...(basePackages[network] || []));
+
     const baseSizes = new Set(list.map(pkg => normalizePackageSize(pkg.size)));
 
     globalSettings.forEach((gs) => {
-      if (gs.network === network) {
+      if (gs.network === dbNetwork) {
         const normSize = normalizePackageSize(gs.package_size);
         if (!baseSizes.has(normSize)) {
           list.push({
@@ -212,12 +221,12 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     const mapped = list
       .map((item) => {
         const setting = globalSettings.find(
-          (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
+          (s) => s.network === dbNetwork && normalizePackageSize(s.package_size) === normalizePackageSize(item.size),
         );
-        const assignedFromParent = getAssignedSubAgentPrice(parentAssignedPrices, network, item.size);
+        const assignedFromParent = getAssignedSubAgentPrice(parentAssignedPrices, dbNetwork, item.size);
         const assignedFromProfile = getAssignedSubAgentPrice(
           profile?.agent_prices as Record<string, Record<string, string | number>> | undefined,
-          network,
+          dbNetwork,
           item.size,
         );
         const assignedPrice = assignedFromParent || assignedFromProfile;
@@ -225,6 +234,21 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         const baseAgent = Number(setting?.agent_price);
 
         const resolvedBasePrice = (() => {
+          // If they are an API user, use API price (custom or global)
+          if (profile?.api_access_enabled) {
+            const customApiPrice = getAssignedSubAgentPrice(
+              profile?.api_custom_prices as Record<string, Record<string, string | number>> | undefined,
+              dbNetwork,
+              item.size
+            );
+            if (customApiPrice && customApiPrice > 0) return customApiPrice;
+
+            const baseApi = Number(setting?.api_price);
+            if (Number.isFinite(baseApi) && baseApi > 0) return baseApi;
+            if (Number.isFinite(baseAgent) && baseAgent > 0) return baseAgent;
+            return item.price;
+          }
+
           // If NOT approved, always use public price
           if (!isPaidAgent) {
             if (Number.isFinite(basePublic) && basePublic > 0) return basePublic;
@@ -256,7 +280,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     mapped.sort((a, b) => a.price - b.price);
     return mapped;
-  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages]);
+  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages, activeGateway]);
 
   const refreshBalance = async () => {
     if (!user) return;
@@ -549,7 +573,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         <div>
           <h1 className="font-display text-2xl font-bold">Buy Data</h1>
           <p className="text-sm text-muted-foreground">
-            {isPaidAgent ? "Agent prices applied." : "Sign up as an agent for agent prices."}
+            {profile?.api_access_enabled 
+              ? "API Developer prices applied." 
+              : isPaidAgent 
+                ? "Agent prices applied." 
+                : "Sign up as an agent for agent prices."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -595,9 +623,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         </div>
       )}
 
-      {/* Network tabs */}
       <div className="flex gap-2 sm:gap-3">
-        {NETWORKS.map((n) => {
+        {NETWORKS.filter(n => !(activeGateway === "korba" && n === "MTN Mash Up")).map((n) => {
           const isActive = n === network;
           return (
             <button

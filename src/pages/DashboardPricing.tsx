@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
+import { Terminal } from "lucide-react";
 
 type AgentPrices = Record<string, Record<string, string>>;
 type DisabledPackages = Record<string, string[]>;
@@ -72,6 +73,7 @@ const DashboardPricing = () => {
   const [globallyUnavailable, setGloballyUnavailable] = useState<Record<string, string[]>>({});
   const [saving, setSaving] = useState(false);
   const [selectedNetwork, setSelectedNetwork] = useState("MTN");
+  const [activeGateway, setActiveGateway] = useState<string>("paystack");
 
   useEffect(() => {
     const loadBasePrices = async () => {
@@ -85,9 +87,20 @@ const DashboardPricing = () => {
         }
       }
 
-      const { data } = await supabase
-        .from("global_package_settings")
-        .select("network, package_size, agent_price, sub_agent_price, cost_price, is_unavailable");
+      const [{ data }, { data: sysSettings }] = await Promise.all([
+        supabase
+          .from("global_package_settings")
+          .select("network, package_size, agent_price, sub_agent_price, cost_price, api_price, is_unavailable"),
+        supabase
+          .from("system_settings")
+          .select("active_payment_gateway")
+          .eq("id", 1)
+          .maybeSingle(),
+      ]);
+
+      if (sysSettings?.active_payment_gateway) {
+        setActiveGateway(sysSettings.active_payment_gateway);
+      }
 
       const nextUnavailable: Record<string, string[]> = {};
       (data || []).forEach((row: any) => {
@@ -98,15 +111,30 @@ const DashboardPricing = () => {
         const numericAgentPrice = Number(row?.agent_price);
         const numericSubAgentPrice = Number(row?.sub_agent_price);
         const numericCostPrice = Number(row?.cost_price);
+        const numericApiPrice = Number(row?.api_price);
         
         // For admins, the base price is the cost_price
+        // For API users, the base price is the api_price if set, falling back to agent_price
         // For sub-agents, we default to the sub_agent_price if available
         // For normal agents, we use agent_price
-        const priceToUse = isAdmin && Number.isFinite(numericCostPrice) && numericCostPrice > 0
+        let priceToUse = isAdmin && Number.isFinite(numericCostPrice) && numericCostPrice > 0
           ? numericCostPrice
-          : (profile?.is_sub_agent && Number.isFinite(numericSubAgentPrice) && numericSubAgentPrice > 0)
-            ? numericSubAgentPrice
-            : numericAgentPrice;
+          : profile?.api_access_enabled
+            ? (Number.isFinite(numericApiPrice) && numericApiPrice > 0 ? numericApiPrice : numericAgentPrice)
+            : (profile?.is_sub_agent && Number.isFinite(numericSubAgentPrice) && numericSubAgentPrice > 0)
+              ? numericSubAgentPrice
+              : numericAgentPrice;
+
+        if (profile?.api_access_enabled) {
+          const customApiPrice = getProfileAssignedPrice(
+            profile?.api_custom_prices as Record<string, any> | undefined,
+            row.network,
+            row.package_size
+          );
+          if (customApiPrice && customApiPrice > 0) {
+            priceToUse = customApiPrice;
+          }
+        }
 
         if (!Number.isFinite(priceToUse) || priceToUse <= 0) return;
         if (!nextBasePrices[row.network]) nextBasePrices[row.network] = {};
@@ -246,9 +274,11 @@ const DashboardPricing = () => {
     } else {
       await refreshProfile();
       toast({
-        title: isSubAgent
-          ? "Prices saved! Your sub-agent store prices are updated."
-          : "Prices saved! Your store has been updated.",
+        title: profile?.api_access_enabled
+          ? "Prices saved! Your API partner selling prices are updated."
+          : isSubAgent
+            ? "Prices saved! Your sub-agent store prices are updated."
+            : "Prices saved! Your store has been updated.",
       });
     }
 
@@ -256,10 +286,17 @@ const DashboardPricing = () => {
   };
 
   const networkPackages = useMemo(() => {
-    const list = [...(basePackages[selectedNetwork] || [])];
+    const isKorba = activeGateway === "korba";
+    const dbNetwork = isKorba ? `Korba ${selectedNetwork}` : selectedNetwork;
+    const list: { size: string; price: number; validity: string }[] = [];
+
+    if (!isKorba) {
+      list.push(...(basePackages[selectedNetwork] || []));
+    }
+
     const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
 
-    const customPrices = packageBasePrices[selectedNetwork] || {};
+    const customPrices = packageBasePrices[dbNetwork] || {};
     for (const size of Object.keys(customPrices)) {
       const normSize = size.replace(/\s+/g, "").toUpperCase();
       if (!baseSizes.has(normSize)) {
@@ -272,23 +309,41 @@ const DashboardPricing = () => {
     }
     list.sort((a, b) => a.price - b.price);
     return list;
-  }, [basePackages, selectedNetwork, packageBasePrices]);
+  }, [basePackages, selectedNetwork, packageBasePrices, activeGateway]);
 
   return (
     <div className="p-6 md:p-8 max-w-4xl">
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Store Pricing</h1>
-        <p className="text-muted-foreground">Set your selling price for each package. Toggle packages on/off for availability.</p>
+        <h1 className="font-display text-3xl font-bold">
+          {profile?.api_access_enabled ? "API Pricing" : "Store Pricing"}
+        </h1>
+        <p className="text-muted-foreground">
+          {profile?.api_access_enabled
+            ? "Set your custom selling price for each package. These prices will be active on your account above your wholesale API cost."
+            : "Set your selling price for each package. Toggle packages on/off for availability."}
+        </p>
       </div>
 
-      {isSubAgent && (
+      {profile?.api_access_enabled && (
+        <div className="mb-6 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-sm text-cyan-400 flex items-start gap-3 shadow-[0_0_15px_rgba(6,182,212,0.05)]">
+          <Terminal className="w-5 h-5 mt-0.5 text-cyan-400 flex-shrink-0" />
+          <div className="flex-1">
+            <h4 className="font-bold mb-1 text-cyan-300">API Partner Mode Active</h4>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Your base rates are configured using wholesale developer API pricing. Setting selling prices here adjusts your margin limits above these base rates for manual portal purchases.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isSubAgent && !profile?.api_access_enabled && (
         <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           Your parent agent sets your base prices. You can add your own profit above that base.
         </div>
       )}
 
       <div className="flex gap-2 mb-6">
-        {networks.map((n) => (
+        {networks.filter(n => !(activeGateway === "korba" && n.name === "MTN Mash Up")).map((n) => (
           <button
             key={n.name}
             onClick={() => setSelectedNetwork(n.name)}
@@ -308,7 +363,9 @@ const DashboardPricing = () => {
           <thead>
             <tr className="border-b border-border bg-secondary/50">
               <th className="text-left py-3 px-4 font-medium text-muted-foreground">Package</th>
-              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Base Price</th>
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">
+                {profile?.api_access_enabled ? "Your API Cost" : "Base Price"}
+              </th>
               <th className="text-left py-3 px-4 font-medium text-muted-foreground">Your Price</th>
               <th className="text-left py-3 px-4 font-medium text-muted-foreground">Profit</th>
               <th className="text-center py-3 px-4 font-medium text-muted-foreground">Available</th>
@@ -316,10 +373,11 @@ const DashboardPricing = () => {
           </thead>
           <tbody>
             {networkPackages.map((pkg) => {
-              const basePrice = getBasePrice(selectedNetwork, pkg.size);
-              const profit = getProfit(selectedNetwork, pkg.size);
-              const disabled = isDisabled(selectedNetwork, pkg.size);
-              const isGloballyOffline = globallyUnavailable[selectedNetwork]?.includes(pkg.size) || false;
+              const currentNetworkKey = activeGateway === "korba" ? `Korba ${selectedNetwork}` : selectedNetwork;
+              const basePrice = getBasePrice(currentNetworkKey, pkg.size);
+              const profit = getProfit(currentNetworkKey, pkg.size);
+              const disabled = isDisabled(currentNetworkKey, pkg.size);
+              const isGloballyOffline = globallyUnavailable[currentNetworkKey]?.includes(pkg.size) || false;
               return (
                 <tr key={pkg.size} className={`border-b border-border/50 ${(disabled || isGloballyOffline) ? "opacity-50" : ""}`}>
                   <td className="py-3 px-4">
@@ -338,8 +396,8 @@ const DashboardPricing = () => {
                     <div className="flex items-center gap-1">
                       <span className="text-muted-foreground text-xs">GHS</span>
                       <Input
-                        value={getPrice(selectedNetwork, pkg.size)}
-                        onChange={(e) => setPrice(selectedNetwork, pkg.size, e.target.value)}
+                        value={getPrice(currentNetworkKey, pkg.size)}
+                        onChange={(e) => setPrice(currentNetworkKey, pkg.size, e.target.value)}
                         className="w-24 h-8 text-center bg-secondary text-sm"
                         type="number"
                         step="0.50"
@@ -356,7 +414,7 @@ const DashboardPricing = () => {
                   <td className="py-3 px-4 text-center">
                     <Switch
                       checked={!disabled && !isGloballyOffline}
-                      onCheckedChange={() => toggleDisabled(selectedNetwork, pkg.size)}
+                      onCheckedChange={() => toggleDisabled(currentNetworkKey, pkg.size)}
                       disabled={isGloballyOffline}
                     />
                   </td>

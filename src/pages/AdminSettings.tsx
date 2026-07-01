@@ -17,9 +17,11 @@ import { WORLD_CUP_MATCHES } from "@/components/WorldCupPredictor";
 import { getFlagUrl } from "@/lib/utils";
 
 interface SystemSettings {
+  auto_refund_enabled: boolean;
   auto_api_switch: boolean;
   preferred_provider: "hubtel" | "paystack" | "flutterwave";
   backup_provider: "hubtel" | "paystack" | "flutterwave";
+  active_payment_gateway?: string;
   holiday_mode_enabled: boolean;
   holiday_message: string;
   disable_ordering: boolean;
@@ -106,9 +108,11 @@ const AdminSettings = () => {
   const [saving, setSaving] = useState(false);
   const [restoringWallets, setRestoringWallets] = useState(false);
   const [settings, setSettings] = useState<SystemSettings>({
+    auto_refund_enabled: false,
     auto_api_switch: false,
     preferred_provider: "paystack",
     backup_provider: "hubtel",
+    active_payment_gateway: "paystack",
     holiday_mode_enabled: false,
     holiday_message: "",
     disable_ordering: false,
@@ -407,9 +411,11 @@ const AdminSettings = () => {
 
         const d = data as any;
         setSettings({
+          auto_refund_enabled: d.auto_refund_enabled || false,
           auto_api_switch: d.auto_api_switch || false,
           preferred_provider: (d.preferred_provider as any) || "paystack",
           backup_provider: (d.backup_provider as any) || "hubtel",
+          active_payment_gateway: d.active_payment_gateway || "paystack",
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
           disable_ordering: d.disable_ordering || false,
@@ -499,6 +505,7 @@ const AdminSettings = () => {
     
     const payload = {
       ...settings,
+      active_payment_gateway: settings.active_payment_gateway || "paystack",
       customer_service_number: settings.customer_service_number.trim(),
       support_channel_link: settings.support_channel_link.trim(),
       sub_agent_base_fee: parseFloat(settings.sub_agent_base_fee) || 5.0,
@@ -769,6 +776,19 @@ const AdminSettings = () => {
                 <Switch
                   checked={settings.dark_mode_enabled}
                   onCheckedChange={(c) => setSettings({ ...settings, dark_mode_enabled: c })}
+                />
+              </div>
+
+              <div className="flex items-start justify-between border-t border-white/5 pt-4">
+                <div className="space-y-0.5">
+                  <Label>Automated Failed Orders Refund</Label>
+                  <p className="text-xs text-muted-foreground text-amber-500/80">
+                    Automatically refund failed orders. If disabled, failed orders remain failed and must be manually refunded by the admin to prevent losses from delayed webhooks.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.auto_refund_enabled}
+                  onCheckedChange={(c) => setSettings({ ...settings, auto_refund_enabled: c })}
                 />
               </div>
 
@@ -2681,22 +2701,50 @@ const AdminSettings = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Payment Gateway (Paystack)</CardTitle>
-              <CardDescription>Securely manage your Paystack credentials for customer payments.</CardDescription>
+              <CardTitle className="text-lg">Payment Gateway Configuration</CardTitle>
+              <CardDescription>Toggle between active payment gateways and manage credentials.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Paystack Secret Key</Label>
-                <Input 
-                  type="password" 
-                  value={settings.paystack_secret_key || ""} 
-                  onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} 
-                  placeholder="sk_live_..." 
-                />
-                <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">
-                  Securely managed via Supabase Secrets
+                <Label>Active Payment Gateway</Label>
+                <select
+                  value={settings.active_payment_gateway || "paystack"}
+                  onChange={(e) => setSettings({ ...settings, active_payment_gateway: e.target.value })}
+                  className="w-full p-2 rounded-md border border-input bg-background text-foreground"
+                >
+                  <option value="paystack">Paystack</option>
+                  <option value="korba">Korba Collections</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  The system will automatically route customer mobile money prompts and payment flows to the active gateway.
                 </p>
               </div>
+
+              {settings.active_payment_gateway === "paystack" ? (
+                <div className="space-y-2 pt-2 border-t">
+                  <Label>Paystack Secret Key</Label>
+                  <Input 
+                    type="password" 
+                    value={settings.paystack_secret_key || ""} 
+                    onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} 
+                    placeholder="sk_live_..." 
+                  />
+                  <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">
+                    Securely managed via Supabase Secrets
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2 pt-2 border-t">
+                  <p className="text-sm font-semibold">Korba Credentials Status</p>
+                  <p className="text-xs text-muted-foreground">
+                    Korba credentials (<code className="bg-muted px-1 py-0.5 rounded">KORBA_CLIENT_ID</code>, <code className="bg-muted px-1 py-0.5 rounded">KORBA_CLIENT_KEY</code>, <code className="bg-muted px-1 py-0.5 rounded">KORBA_SECRET_KEY</code>) are set via Supabase environment variables for static IP routing.
+                  </p>
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-500 text-xs flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Korba API endpoints will be accessed via Static IP database proxy automatically.
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
           <Card className="border-red-500/20 bg-red-500/5">

@@ -83,6 +83,7 @@ export default function AdminAPIOrders() {
   const [loading, setLoading] = useState<boolean>(true);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [refunding, setRefunding] = useState<string | null>(null);
 
   // Developer specific User IDs mapped on load
   const [devProfileMap, setDevProfileMap] = useState<Record<string, DeveloperProfile>>({});
@@ -378,6 +379,31 @@ export default function AdminAPIOrders() {
     }
   };
 
+  const handleRefund = async (orderId: string, amount: number) => {
+    if (!confirm(`Are you sure you want to manually refund GH₵ ${amount.toFixed(2)} for order ${orderId}?`)) {
+      return;
+    }
+    setRefunding(orderId);
+    try {
+      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: orderId });
+      if (error) throw error;
+      if (data) {
+        if (currentUser) {
+          await logAudit(currentUser.id, "manual_api_order_refund", { order_id: orderId, amount });
+        }
+        toast({ title: "Order refunded successfully!" });
+      } else {
+        toast({ title: "Refund failed", description: "This order might already be refunded or not eligible.", variant: "destructive" });
+      }
+      await fetchOrders();
+      await fetchStats();
+    } catch (e: any) {
+      toast({ title: "Refund failed", description: e.message || "Could not execute refund.", variant: "destructive" });
+    } finally {
+      setRefunding(null);
+    }
+  };
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast({ title: "Copied", description: `${label} copied to clipboard.` });
@@ -664,7 +690,7 @@ export default function AdminAPIOrders() {
                           </Badge>
                           {o.auto_refunded && (
                             <Badge className="bg-red-500/10 border-red-500/20 text-red-400 text-[8px] font-extrabold flex items-center gap-0.5 uppercase tracking-wide">
-                              <ShieldAlert className="w-2 h-2 shrink-0" /> Auto-Refunded
+                              <ShieldAlert className="w-2 h-2 shrink-0" /> Refunded
                             </Badge>
                           )}
                         </div>
@@ -684,11 +710,30 @@ export default function AdminAPIOrders() {
                               className="h-7 px-2.5 border-amber-500/20 text-amber-400 hover:bg-amber-500/10 text-[10px] font-bold gap-1 shrink-0"
                             >
                               {retrying === o.id ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
                                 <RotateCcw className="w-3 h-3" />
                               )}
                               Retry
+                            </Button>
+                          )}
+
+                          {/* Refund */}
+                          {(o.status === "fulfillment_failed" || o.status === "failed") && !o.auto_refunded && (
+                            <Button
+                              type="button"
+                              onClick={() => handleRefund(o.id, o.amount)}
+                              disabled={refunding === o.id}
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 border-red-500/20 text-red-400 hover:bg-red-500/10 text-[10px] font-bold gap-1 shrink-0 bg-red-500/5 hover:border-red-400/30"
+                            >
+                              {refunding === o.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Coins className="w-3 h-3" />
+                              )}
+                              Refund
                             </Button>
                           )}
 

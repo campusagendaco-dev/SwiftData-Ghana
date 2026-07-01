@@ -130,12 +130,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           
           if (!isPolling) return;
           
-          if (data?.status === "fulfilled" || data?.status === "paid") {
+          if (data?.status === "fulfilled" || data?.status === "paid" || data?.status === "processing") {
             toast({ title: "Payment Verified", description: "Your transaction was successful!" });
             onSuccess(reference);
-          } else if (data?.status === "failed") {
-            toast({ title: "Payment Failed", description: "The transaction was unsuccessful.", variant: "destructive" });
-            setErrorMessage("Payment failed. Please try again.");
+          } else if (data?.status === "failed" || data?.status === "error" || data?.status === "fulfillment_failed") {
+            const failMsg = data.error || data.reason || "The transaction was unsuccessful.";
+            toast({ title: "Payment Failed", description: failMsg, variant: "destructive" });
+            setErrorMessage(failMsg);
             setStep('payment_number');
           } else {
             // Still pending, poll again after 3 seconds

@@ -105,7 +105,7 @@ const AdminProfits = () => {
 
   // Platform totals
   const totalRevenue = useMemo(() => filteredOrders.reduce((s, o) => s + Number(o.amount), 0), [filteredOrders]);
-  const totalAgentProfit = useMemo(() => filteredOrders.reduce((s, o) => s + Number(o.profit || 0), 0), [filteredOrders]);
+  const totalAgentProfit = useMemo(() => filteredOrders.reduce((s, o) => s + (o.order_type === "api" ? 0 : Number(o.profit || 0)), 0), [filteredOrders]);
   const totalParentProfit = useMemo(() => filteredOrders.reduce((s, o) => s + Number(o.parent_profit || 0), 0), [filteredOrders]);
   const totalAllAgentProfits = totalAgentProfit + totalParentProfit;
 
@@ -115,7 +115,9 @@ const AdminProfits = () => {
     filteredOrders
       .filter(o => Number(o.cost_price) > 0)
       .reduce((s, o) => s + Math.max(0,
-        Number(o.amount) - Number(o.cost_price || 0) - Number(o.profit || 0) - Number(o.parent_profit || 0)
+        o.order_type === "api"
+          ? Number(o.profit || 0)
+          : Number(o.amount) - Number(o.cost_price || 0) - Number(o.profit || 0) - Number(o.parent_profit || 0)
       ), 0),
   [filteredOrders]);
 
@@ -135,7 +137,7 @@ const AdminProfits = () => {
       // Direct agent profit
       if (o.agent_id && !profileMap[o.agent_id]?.is_sub_agent) {
         if (!map[o.agent_id]) map[o.agent_id] = { directProfit: 0, subAgentProfit: 0, orderCount: 0, subAgentOrderCount: 0 };
-        map[o.agent_id].directProfit += Number(o.profit || 0);
+        map[o.agent_id].directProfit += o.order_type === "api" ? 0 : Number(o.profit || 0);
         map[o.agent_id].orderCount++;
       }
       // Parent agent profit from sub-agent orders
@@ -162,8 +164,9 @@ const AdminProfits = () => {
     const map: Record<string, { profit: number; orderCount: number; parentId: string | null }> = {};
     filteredOrders.forEach(o => {
       if (o.agent_id && profileMap[o.agent_id]?.is_sub_agent) {
-        if (!map[o.agent_id]) map[o.agent_id] = { profit: Number(o.profit || 0), orderCount: 0, parentId: profileMap[o.agent_id]?.parent_agent_id ?? null };
-        else map[o.agent_id].profit += Number(o.profit || 0);
+        const p = o.order_type === "api" ? 0 : Number(o.profit || 0);
+        if (!map[o.agent_id]) map[o.agent_id] = { profit: p, orderCount: 0, parentId: profileMap[o.agent_id]?.parent_agent_id ?? null };
+        else map[o.agent_id].profit += p;
         map[o.agent_id].orderCount++;
       }
     });
@@ -189,11 +192,13 @@ const AdminProfits = () => {
     filteredOrders.forEach(o => {
       const key = o.created_at.slice(0, 10);
       if (!days[key]) return;
-      days[key]["Agent Profits"] += Number(o.profit || 0);
+      days[key]["Agent Profits"] += o.order_type === "api" ? 0 : Number(o.profit || 0);
       days[key]["Sub-Agent Profits"] += Number(o.parent_profit || 0);
       if (Number(o.cost_price) > 0) {
         days[key]["Platform Margin"] += Math.max(0,
-          Number(o.amount) - Number(o.cost_price || 0) - Number(o.profit || 0) - Number(o.parent_profit || 0)
+          o.order_type === "api"
+            ? Number(o.profit || 0)
+            : Number(o.amount) - Number(o.cost_price || 0) - Number(o.profit || 0) - Number(o.parent_profit || 0)
         );
       }
     });

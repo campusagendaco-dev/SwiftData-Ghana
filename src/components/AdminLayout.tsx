@@ -100,6 +100,8 @@ const NAV_SECTIONS = [
       { label: "Orders",       icon: ShoppingCart, path: "/admin/orders" },
       { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders" },
       { label: "Packages",     icon: Package,      path: "/admin/packages" },
+      { label: "Korba Hub",    icon: Activity,     path: "/admin/korba" },
+      { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages" },
       { label: "Promo Codes",  icon: Ticket,       path: "/admin/promotions" },
       { label: "Wallet Top-Up",icon: CreditCard,   path: "/admin/wallet-topup" },
       { label: "Withdrawals",  icon: Wallet,        path: "/admin/withdrawals" },

@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
@@ -94,8 +94,30 @@ serve(async (req) => {
 
     log(supabaseAdmin, { level: "info", source: "datahub-webhook", event: "webhook.received", message: `Webhook received: ${event} — status: ${data.status}`, data: { event, reference: data.reference, orderNumber: data.orderNumber, status: data.status } });
 
-    const datahubReference = data.reference;   // e.g. "ORDER_123456_..."
-    const datahubOrderNumber = String(data.orderNumber || "");
+    const rawRef = data.reference;
+    const rawOrderNumber = String(data.orderNumber || "");
+
+    const refStr = typeof rawRef === "string" ? rawRef.trim() : "";
+    const orderNoStr = rawOrderNumber.trim();
+
+    if (refStr && !/^[a-zA-Z0-9\-_]{1,64}$/.test(refStr)) {
+      console.warn("[datahub-webhook] Blocked webhook request with invalid reference format:", refStr);
+      return new Response(JSON.stringify({ error: "Invalid reference format" }), { 
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    if (orderNoStr && !/^[a-zA-Z0-9\-_]{1,64}$/.test(orderNoStr)) {
+      console.warn("[datahub-webhook] Blocked webhook request with invalid orderNumber format:", orderNoStr);
+      return new Response(JSON.stringify({ error: "Invalid orderNumber format" }), { 
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const datahubReference = refStr;
+    const datahubOrderNumber = orderNoStr;
     const datahubStatus = data.status || "";
     const systemStatus = mapDatahubStatus(datahubStatus);
 
@@ -122,9 +144,9 @@ serve(async (req) => {
 
     if (fetchError || !order) {
       console.warn("[datahub-webhook] Order not found for reference:", datahubReference, "orderNumber:", datahubOrderNumber);
-      log(supabaseAdmin, { level: "warn", source: "datahub-webhook", event: "order.not_found", message: `Order not found — ref: ${datahubReference}, orderNo: ${datahubOrderNumber}`, data: { datahubReference, datahubOrderNumber, datahubStatus } });
-      return new Response(JSON.stringify({ error: "Order not found" }), {
-        status: 404,
+      log(supabaseAdmin, { level: "warn", source: "datahub-webhook", event: "order.not_found", message: `Order not found (possibly test webhook) — ref: ${datahubReference}, orderNo: ${datahubOrderNumber}`, data: { datahubReference, datahubOrderNumber, datahubStatus } });
+      return new Response(JSON.stringify({ received: true, warning: "Order not found" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -169,9 +191,8 @@ serve(async (req) => {
       log(supabaseAdmin, { level: "info", source: "datahub-webhook", event: "order.fulfilled", message: `Order fulfilled via DataHub webhook`, order_id: order.id, data: { datahubStatus, datahubReference, profit: order.profit, parent_profit: order.parent_profit } });
     } else if (systemStatus === "fulfillment_failed") {
       await notifyApiClient(supabaseAdmin, order.id, "fulfillment_failed");
-      // Auto-refund wallet orders — trigger fires via DB trigger, but call explicitly for immediate effect
-      await supabaseAdmin.rpc("refund_failed_order", { p_order_id: order.id });
-      log(supabaseAdmin, { level: "warn", source: "datahub-webhook", event: "order.failed", message: `Order marked failed by DataHub: ${datahubStatus}`, order_id: order.id, data: { datahubStatus, datahubReference } });
+      // Auto-refund has been disabled per admin requirements (manual refunds only)
+      log(supabaseAdmin, { level: "warn", source: "datahub-webhook", event: "order.failed", message: `Order marked failed by DataHub: ${datahubStatus}. Manual refund required.`, order_id: order.id, data: { datahubStatus, datahubReference } });
     } else {
       log(supabaseAdmin, { level: "info", source: "datahub-webhook", event: "order.updated", message: `Order status → ${systemStatus}`, order_id: order.id, data: { datahubStatus, systemStatus } });
     }

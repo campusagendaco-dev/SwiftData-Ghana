@@ -82,19 +82,39 @@ serve(async (req) => {
     // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
     const normalizedPhone = normalizeRecipient(customer_phone);
+    let duplicateOrder = null;
 
-    const { data: duplicateOrder } = await supabaseAdmin
+    const { data: recentOrders } = await supabaseAdmin
       .from("orders")
-      .select("id, created_at")
+      .select("id, status, network, amount, created_at")
       .eq("agent_id", user.id)
       .eq("customer_phone", normalizedPhone)
-      .eq("network", network)
-      .eq("amount", requestedAmount)
-      .in("status", ["paid", "processing", "fulfilled", "completed"])
-      .gte("created_at", oneMinuteAgo)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .gte("created_at", oneMinuteAgo);
+
+    if (recentOrders && recentOrders.length > 0) {
+      const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
+      const match = recentOrders.find(o => {
+        if (!statusesToCheck.includes(o.status)) return false;
+
+        // Compare network case-insensitively with alias support
+        const n1 = String(o.network || "").trim().toUpperCase();
+        const n2 = String(network || "").trim().toUpperCase();
+        const networksMatch = n1 === n2 ||
+          ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
+          ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
+          ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
+        if (!networksMatch) return false;
+
+        // Compare amount
+        if (Math.abs(Number(o.amount) - Number(requestedAmount)) > 0.01) return false;
+
+        return true;
+      });
+
+      if (match) {
+        duplicateOrder = match;
+      }
+    }
 
     if (duplicateOrder) {
       console.warn(`[DUPLICATE-AIRTIME] Rejected duplicate order for ${normalizedPhone} within 1 minute`);

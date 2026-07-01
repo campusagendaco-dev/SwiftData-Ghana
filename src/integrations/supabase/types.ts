@@ -2121,12 +2121,10 @@ export type Database = {
         Args: { p_action: string; p_metadata?: Json; p_user_id: string }
         Returns: undefined
       }
-      log_user_activity:
-        | { Args: { p_ip: string; p_user_id: string }; Returns: undefined }
-        | {
-            Args: { p_ip: string; p_location?: string; p_user_id: string }
-            Returns: undefined
-          }
+      log_user_activity: {
+        Args: { p_ip: string; p_location?: string; p_user_id: string }
+        Returns: undefined
+      }
       normalize_phone_sql: { Args: { p_phone: string }; Returns: string }
       purge_test_accounts: { Args: never; Returns: Json }
       refresh_admin_sales_stats: { Args: never; Returns: undefined }

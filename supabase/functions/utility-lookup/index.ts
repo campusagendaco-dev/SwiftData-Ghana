@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { fetchViaDb } from "../_shared/db_proxy.ts";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,7 +38,7 @@ serve(async (req) => {
     }
 
     // Find the right provider
-    const activeProvider = activeProviders.find((p) => p.name === "Korba" || p.handler_type === "justbuy") || activeProviders[0];
+    const activeProvider = activeProviders.find((p) => p.name === "Korba") || activeProviders[0];
 
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "PLACEHOLDER_CLIENT_ID";
     const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "PLACEHOLDER_CLIENT_KEY";
@@ -56,7 +57,7 @@ serve(async (req) => {
       };
       isKorba = true;
     } else {
-      // Fallback to active provider (JustBuy/other) for other bill types
+      // Fallback to active provider for other bill types
       lookupUrl = `${activeProvider.base_url}/api/payment/bills/lookup`;
       payload = {
         customerNumber: account_number,
@@ -102,19 +103,11 @@ serve(async (req) => {
       headers["X-API-Key"] = activeProvider.api_key;
     }
 
-    const proxyUrl = Deno.env.get("FIXIE_URL") || Deno.env.get("QUOTAGUARDSTATIC_URL");
-    const fetchOptions: any = {
+    const response = await fetchViaDb(supabaseAdmin, lookupUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(payload)
-    };
-
-    if (proxyUrl) {
-      const client = Deno.createHttpClient({ proxy: { url: proxyUrl } });
-      fetchOptions.client = client;
-    }
-
-    const response = await fetch(lookupUrl, fetchOptions);
+      body: JSON.stringify(payload),
+    });
 
     const responseText = await response.text();
     let jsonResponse;
@@ -146,7 +139,7 @@ serve(async (req) => {
       // Korba response format: { success: true, data: "John Doe" }
       customerName = jsonResponse.data;
     } else {
-      // Legacy JustBuy response format
+      // Fallback response format
       if (jsonResponse.meters && jsonResponse.meters.length > 0) {
         customerName = jsonResponse.meters[0].customerName;
       } else if (jsonResponse.customerName) {

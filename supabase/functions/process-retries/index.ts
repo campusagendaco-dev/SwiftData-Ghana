@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
@@ -31,7 +32,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
   return Array.from(urls);
 }
 
-async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string, data: any, webhookUrl?: string) {
+async function callProviderApi(supabaseAdmin: any, baseUrl: string, apiKey: string, endpoint: string, data: any, webhookUrl?: string) {
   const urls = buildProviderUrls(baseUrl, endpoint);
   const payload = { ...data };
   if (webhookUrl) payload.webhook_url = webhookUrl;
@@ -40,7 +41,7 @@ async function callProviderApi(baseUrl: string, apiKey: string, endpoint: string
 
   for (const url of urls) {
     try {
-      const response = await fetch(url, {
+      const response = await fetchViaDb(supabaseAdmin, url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -92,7 +93,7 @@ async function verifyPaystack(supabaseAdmin: any, reference: string) {
 
   if (!paystackKey) return { ok: false, reason: "Missing Paystack Key" };
   try {
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+    const response = await fetchViaDb(supabaseAdmin, `https://api.paystack.co/transaction/verify/${reference}`, {
       headers: { Authorization: `Bearer ${paystackKey}`, Accept: "application/json" },
     });
     const data = await response.json();
@@ -171,81 +172,14 @@ serve(async (req: Request) => {
 
       if (verification.ok) {
         console.log(`[retry-orders] Payment confirmed for ${order.id}. Marking as PAID.`);
-        await supabaseAdmin.from("orders").update({ status: "paid" }).eq("id", order.id);
+        await supabaseAdmin.from("orders").update({ status: "paid" }).eq("id", order.id).eq("status", "pending");
         // We'll let Phase 2 pick it up in this same run or next
         order.status = "paid";
       }
     }
 
-    // ── PHASE 2: FULFILL PAID/FAILED ORDERS ───────────────────────────────────
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    const { data: ordersToRetry, error: fetchError } = await supabaseAdmin
-      .from("orders")
-      .select("*")
-      .in("status", ["paid", "processing"])
-      .neq("network", "MTN Mash Up")
-      .gte("created_at", yesterday)
-      .lt("retry_count", 3)
-      .or(`last_retry_at.is.null,last_retry_at.lt.${twoMinutesAgo}`)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (fetchError) throw fetchError;
-
-    for (const order of ordersToRetry || []) {
-      console.log(`[retry-orders] Delegating order ${order.id} (Retry ${order.retry_count + 1}/3) to verify-payment...`);
-      
-      // Increment retry count immediately to avoid double-processing
-      await supabaseAdmin.from("orders").update({
-        retry_count: (order.retry_count || 0) + 1,
-        last_retry_at: new Date().toISOString()
-      }).eq("id", order.id);
-
-      try {
-        const fulfillRes = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify({ reference: order.id }),
-        });
-
-        const fulfillData = await fulfillRes.json();
-        if (fulfillData.status === "fulfilled") {
-          results.push({ id: order.id, status: "fulfilled" });
-        } else {
-          // If this was the final retry and it didn't succeed, mark as permanently failed to trigger auto-refund!
-          const newRetryCount = (order.retry_count || 0) + 1;
-          if (newRetryCount >= 3) {
-            console.log(`[retry-orders] Max retries reached for ${order.id}. Marking as fulfillment_failed to trigger refund.`);
-            await supabaseAdmin.from("orders").update({
-              status: "fulfillment_failed",
-              failure_reason: fulfillData.reason || fulfillData.error || "Max retries reached"
-            }).eq("id", order.id);
-            results.push({ id: order.id, status: "fulfillment_failed", reason: "Max retries reached" });
-          } else {
-            results.push({ id: order.id, status: fulfillData.status || "failed", reason: fulfillData.reason || fulfillData.error });
-          }
-        }
-      } catch (e) {
-        console.error(`[retry-orders] Error processing ${order.id}:`, e);
-        
-        // Failsafe for crash on final retry
-        const newRetryCount = (order.retry_count || 0) + 1;
-        if (newRetryCount >= 3) {
-           await supabaseAdmin.from("orders").update({
-             status: "fulfillment_failed",
-             failure_reason: "Max retries reached with internal crash"
-           }).eq("id", order.id);
-        }
-        
-        results.push({ id: order.id, status: "error", reason: e instanceof Error ? e.message : "Unknown error" });
-      }
-
-      // Small delay between calls
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    // ── PHASE 2: FULFILL PAID/FAILED ORDERS (DISABLED) ───────────────────────
+    console.log("[retry-orders] Phase 2: Fulfill retries is disabled. Relying on webhook/status check.");
 
     return new Response(JSON.stringify({ processed: results.length, results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

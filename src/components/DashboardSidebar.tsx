@@ -93,7 +93,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const { profile, signOut, user: authUser } = useAuth();
   const { theme, isDark } = useAppTheme();
   const { isOnline, quality } = useConnectivity();
-  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
+  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved || profile?.api_access_enabled);
   const [time, setTime] = useState(new Date());
   const [parentStore, setParentStore] = useState<{
     store_name: string | null;
@@ -226,9 +226,13 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
             <div className="mt-4 flex items-center justify-between relative z-10">
               <Badge className={cn(
                 "h-5 text-[9px] font-black uppercase tracking-widest border-none",
-                isPaidAgent ? "bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.3)]" : "bg-white/10 text-white/50"
+                profile?.api_access_enabled
+                  ? "bg-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                  : isPaidAgent 
+                    ? "bg-amber-400 text-black shadow-[0_0_10px_rgba(251,191,36,0.3)]" 
+                    : "bg-white/10 text-white/50"
               )}>
-                {isPaidAgent ? "Pro Agent" : "Regular"}
+                {profile?.api_access_enabled ? "API Partner" : isPaidAgent ? "Pro Agent" : "Regular"}
               </Badge>
               
               <div className="flex items-center gap-2">
@@ -379,7 +383,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                                     ? "text-amber-400" 
                                     : (isDark ? "text-white/30 group-hover:text-white/60" : "text-gray-400 group-hover:text-gray-900")
                                 )} />
-                                {item.label}
+                                {item.to === "/dashboard/agent-prices" && profile?.api_access_enabled ? "API Prices" : item.label}
                               </div>
                               {["/dashboard/swift-vendor", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/afa"].includes(item.to) && (
                                 <Badge className="text-[8px] h-4 bg-emerald-500 text-white border-none uppercase font-black px-1.5 shadow-[0_0_10px_rgba(16,185,129,0.4)] animate-pulse relative z-10">

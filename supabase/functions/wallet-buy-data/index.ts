@@ -12,7 +12,10 @@ import { log } from "../_shared/logger.ts";
 
 // --- HELPERS ---
 function normalizeNetworkForPricing(network: string): "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo" {
-  const n = (network || "").trim().toUpperCase();
+  let n = (network || "").trim().toUpperCase();
+  if (n.startsWith("KORBA")) {
+    n = n.replace("KORBA", "").trim();
+  }
   if (n === "AT" || n === "AIRTEL TIGO" || n === "AIRTELTIGO") return "AirtelTigo";
   if (n === "VODAFONE" || n === "TELECEL") return "Telecel";
   if (n === "MTN MASH UP" || n === "MTN_MASH_UP" || n === "MTN MASHUP" || n === "MTN MASH-UP" || n === "MASHUP" || n === "MASH UP") return "MTN Mash Up";
@@ -71,16 +74,18 @@ serve(async (req: Request) => {
     console.log(`[USER] ${user.id} (${user.email})`);
 
     const normalizedPhone = normalizeRecipient(customer_phone);
-    const normalizedNet = normalizeNetworkForPricing(networkRaw);
 
-    // Maintenance mode check
+    // Maintenance mode check and active payment gateway fetch
     const { data: sysSettings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("maintenance_mode, maintenance_message").eq("id", 1).maybeSingle();
+      .from("v_system_settings_with_secrets").select("maintenance_mode, maintenance_message, active_payment_gateway").eq("id", 1).maybeSingle();
     if (sysSettings?.maintenance_mode) {
       return new Response(JSON.stringify({
         error: sysSettings.maintenance_message || "System is under maintenance. Please try again shortly."
       }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    const activeGateway = sysSettings?.active_payment_gateway || "paystack";
+    const normalizedNet = normalizeNetworkForPricing(networkRaw);
 
     // Fraud / velocity check
     const { data: velocityFlag } = await supabaseAdmin.rpc("check_order_velocity", {
@@ -93,8 +98,8 @@ serve(async (req: Request) => {
 
     // Fetch agent profile and package info in parallel for profit calculation
     const [profileResult, pkgResult] = await Promise.all([
-      supabaseAdmin.from("profiles").select("phone, is_sub_agent, parent_agent_id, credit_enabled, credit_limit, credit_used").eq("user_id", user.id).maybeSingle(),
-      supabaseAdmin.from("global_package_settings").select("package_size, agent_price, cost_price, is_unavailable").eq("network", normalizedNet),
+      supabaseAdmin.from("profiles").select("phone, is_sub_agent, parent_agent_id, credit_enabled, credit_limit, credit_used, api_access_enabled, api_custom_prices").eq("user_id", user.id).maybeSingle(),
+      supabaseAdmin.from("global_package_settings").select("package_size, agent_price, api_price, cost_price, is_unavailable").eq("network", normalizedNet),
     ]);
 
     const agentProfile = profileResult.data;
@@ -103,6 +108,21 @@ serve(async (req: Request) => {
     const pkgRow = (pkgResult.data || []).find(
       (row: any) => normalizeSize(row.package_size) === normalizeSize(package_size)
     );
+
+    const netCandidates = [normalizedNet, networkRaw, networkRaw.replace(/\s+/g, "")];
+    const pkgCandidates = [normalizeSize(package_size), package_size];
+    
+    const searchMap = (map: Record<string, Record<string, string | number>> | undefined | null) => {
+      if (!map || typeof map !== "object") return 0;
+      for (const n of netCandidates) {
+        if (!map[n]) continue;
+        for (const p of pkgCandidates) {
+          const val = Number(map[n][p]);
+          if (Number.isFinite(val) && val > 0) return val;
+        }
+      }
+      return 0;
+    };
 
     // Check if the package is globally marked as unavailable/offline
     if (pkgRow?.is_unavailable) {
@@ -220,6 +240,26 @@ serve(async (req: Request) => {
 
         resolvedChargeAmount = chargeBase;
       }
+    } else if (agentProfile?.api_access_enabled) {
+      // API User pricing resolution
+      const customApiPrice = searchMap((agentProfile?.api_custom_prices || {}) as Record<string, Record<string, string | number>>);
+      if (customApiPrice > 0) {
+        resolvedChargeAmount = customApiPrice;
+      } else {
+        const baseApi = Number(pkgRow?.api_price);
+        if (Number.isFinite(baseApi) && baseApi > 0) {
+          resolvedChargeAmount = baseApi;
+        } else {
+          resolvedChargeAmount = adminBase;
+        }
+      }
+      agentProfit = 0;
+      
+      // If the API user is a sub-agent, keep parent profit margins
+      if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id) {
+        parentAgentId = agentProfile.parent_agent_id;
+        parentProfit = Math.max(0, parseFloat((resolvedChargeAmount - adminBase).toFixed(2)));
+      }
     } else if (agentProfile?.is_sub_agent && agentProfile?.parent_agent_id) {
       // Find parent's assigned price for this sub-agent
       const { data: parentProfile } = await supabaseAdmin
@@ -233,19 +273,6 @@ serve(async (req: Request) => {
         const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
         
         let parentAssignedBase = 0;
-        const netCandidates = [normalizedNet, networkRaw, networkRaw.replace(/\s+/g, "")];
-        const pkgCandidates = [normalizeSize(package_size), package_size];
-        
-        const searchMap = (map: Record<string, Record<string, string | number>>) => {
-          for (const n of netCandidates) {
-            if (!map[n]) continue;
-            for (const p of pkgCandidates) {
-              const val = Number(map[n][p]);
-              if (Number.isFinite(val) && val > 0) return val;
-            }
-          }
-          return 0;
-        };
 
         if (Object.keys(subPrices).length > 0) {
           parentAssignedBase = searchMap(subPrices);
@@ -279,26 +306,48 @@ serve(async (req: Request) => {
 
     const amountNum = resolvedChargeAmount;
 
-    // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
-    const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
+    // Anti-Duplicate Protection (60 Minutes to prevent double purchases, strictly scoped to this agent)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    let duplicateOrder = null;
 
-    const { data: duplicateOrder } = await supabaseAdmin
+    const { data: recentOrders } = await supabaseAdmin
       .from("orders")
-      .select("id, created_at")
+      .select("id, status, network, package_size, amount, created_at")
       .eq("agent_id", user.id)
       .eq("customer_phone", normalizedPhone)
-      .eq("network", normalizedNet)
-      .eq("package_size", package_size)
-      .in("status", ["paid", "processing", "fulfilled", "completed"])
-      .gte("created_at", oneMinuteAgo)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .gte("created_at", oneHourAgo);
+
+    if (recentOrders && recentOrders.length > 0) {
+      const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
+      const match = recentOrders.find(o => {
+        if (!statusesToCheck.includes(o.status)) return false;
+
+        // Compare network case-insensitively with alias support
+        const n1 = String(o.network || "").trim().toUpperCase();
+        const n2 = String(normalizedNet || "").trim().toUpperCase();
+        const networksMatch = n1 === n2 ||
+          ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
+          ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
+          ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
+        if (!networksMatch) return false;
+
+        // Compare package size (whitespace & case insensitive)
+        const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
+        const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
+        if (p1 !== p2) return false;
+
+        return true;
+      });
+
+      if (match) {
+        duplicateOrder = match;
+      }
+    }
 
     if (duplicateOrder) {
-      console.warn(`[DUPLICATE] Rejected duplicate order for ${normalizedPhone} within 1 minute`);
+      console.warn(`[DUPLICATE] Rejected duplicate order for ${normalizedPhone} within 60 minutes`);
       return new Response(JSON.stringify({ 
-        error: "Duplicate order detected. Please wait 60 seconds before placing the same order again." 
+        error: "Duplicate order detected. Please wait 60 minutes before placing the same order again." 
       }), {
         status: 409,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -22,9 +22,29 @@ function mapNetworkKey(network: string): string {
   return n;
 }
 
-function parseCapacity(pkg: string): number {
-  const m = pkg.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
-  return m ? parseFloat(m[1]) : 0;
+function parseCapacity(pkg: string | null | undefined): number {
+  if (!pkg) return 0;
+  const cleaned = pkg.replace(/\s+/g, "").toUpperCase();
+  
+  // Handle specific Korba Product IDs
+  if (cleaned === "MTNDLY20MB" || cleaned === "AIRDLY20MB" || cleaned.includes("20MB") || cleaned.includes("20 MB")) {
+    return 20 / 1024;
+  }
+  if (cleaned === "MTNMIDNIGHT" || cleaned === "MTNMIDNGT3G" || cleaned === "AIRMIDNGT3G" || cleaned === "AIRMIDNIGHT") {
+    return 2.6; // MTN midnight is 2.6GB or 3GB
+  }
+  if (cleaned === "MTNMTH200GB" || cleaned === "AIRMTH200GB") {
+    return 200;
+  }
+  
+  // Normal parsing with MB/GB detection
+  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const num = parseFloat(match[1]);
+  if (cleaned.includes("MB") && !cleaned.includes("GB")) {
+    return num / 1024;
+  }
+  return num;
 }
 
 function normalizeRecipient(phone: string): string {
@@ -519,7 +539,7 @@ serve(async (req: Request) => {
     if (p.endsWith("/balance")) finalAction = "balance";
     else if (p.endsWith("/account")) finalAction = "account";
     else if (p.endsWith("/plans")) finalAction = "plans";
-    else if (p.endsWith("/buy") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
+    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
     else if (p.endsWith("/sms") || p.endsWith("/api/sms")) finalAction = "sms";
     else if (p.endsWith("/orders")) finalAction = "orders";
     else if (p.endsWith("/status") || p.endsWith("/order-status")) finalAction = "status";
@@ -651,8 +671,16 @@ serve(async (req: Request) => {
       const payload = await req.json().catch(() => null);
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
 
-      const { phone, amount, package_id, request_id } = payload;
+      let { phone, amount, package_id, request_id } = payload;
       let { network, package_size } = payload;
+
+      // Map parameters from Agent API docs compatibility
+      if (payload.package && !package_size && !package_id) {
+        package_size = payload.package;
+      }
+      if (payload.reference && !request_id) {
+        request_id = payload.reference;
+      }
 
       // Map smart network names back to DB names if they are using the legacy network + package_size method
       if (network) {
@@ -712,35 +740,53 @@ serve(async (req: Request) => {
            duplicateOrder = data?.find(o => o.metadata?.client_reference === clientRef);
         }
 
-        // 2. Fallback Time-Window Check (60 Seconds for exact same parameters)
+        // 2. Fallback Time-Window Check (60 Minutes for exact same parameters)
         if (!duplicateOrder) {
-          const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
-          let query = supabase
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          const { data: recentOrders } = await supabase
             .from("orders")
-            .select("id, created_at")
-            .eq("agent_id", currentUserId) // MUST scope to the specific API user
+            .select("id, status, network, package_size, amount, created_at")
+            .eq("agent_id", currentUserId)
             .eq("customer_phone", normalizedPhone)
-            .eq("network", network)
-            .in("status", ["paid", "processing", "pending", "fulfilled", "completed"])
-            .gte("created_at", oneMinuteAgo)
-            .order("created_at", { ascending: false })
-            .limit(1);
-            
-          if (package_size) {
-            query = query.eq("package_size", package_size);
-          } else {
-            query = query.eq("amount", amount);
-          }
+            .gte("created_at", oneHourAgo);
 
-          const { data } = await query.maybeSingle();
-          duplicateOrder = data;
+          if (recentOrders && recentOrders.length > 0) {
+            const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
+            const match = recentOrders.find(o => {
+              if (!statusesToCheck.includes(o.status)) return false;
+
+              // Compare network case-insensitively with alias support
+              const n1 = String(o.network || "").trim().toUpperCase();
+              const n2 = String(network || "").trim().toUpperCase();
+              const networksMatch = n1 === n2 ||
+                ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
+                ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
+                ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
+              if (!networksMatch) return false;
+
+              // Compare package_size or amount
+              if (package_size) {
+                const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
+                const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
+                if (p1 !== p2) return false;
+              } else {
+                if (Math.abs(Number(o.amount) - Number(amount)) > 0.01) return false;
+              }
+
+              return true;
+            });
+
+            if (match) {
+              duplicateOrder = match;
+            }
+          }
         }
 
         if (duplicateOrder) {
           console.warn(`[DUPLICATE] Rejected developer duplicate order for ${normalizedPhone} by ${currentUserId}`);
           return json({ 
             success: false, 
-            error: "Duplicate request detected. An identical order or reference was processed recently. Please wait 60 seconds or provide a unique 'request_id'." 
+            error: "Duplicate request detected. An identical order or reference was processed recently. Please wait 60 minutes or provide a unique 'request_id'." 
           }, 409);
         }
       }
@@ -1088,9 +1134,36 @@ serve(async (req: Request) => {
         return json({ success: false, error: `Order not found with reference: ${orderId}` }, 404);
       }
 
+      let latestOrder = order;
+      if (order.status === "processing") {
+        try {
+          console.log(`[developer-api/status] Order ${order.id} is processing. Fetching live status via verify-payment...`);
+          const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+            },
+            body: JSON.stringify({ reference: order.id })
+          });
+          if (verifyRes.ok) {
+            const { data: refreshed } = await supabase
+              .from("orders")
+              .select("*")
+              .eq("id", order.id)
+              .maybeSingle();
+            if (refreshed) {
+              latestOrder = refreshed;
+            }
+          }
+        } catch (e) {
+          console.error("[developer-api/status] Error fetching live status:", e);
+        }
+      }
+
       // Map internal status to DataHub status format (PROCESSING, SUCCESS, FAILED)
       let statusUpper = "PROCESSING";
-      const s = String(order.status || "").toLowerCase();
+      const s = String(latestOrder.status || "").toLowerCase();
       if (s === "fulfilled" || s === "completed" || s === "success") {
         statusUpper = "SUCCESS";
       } else if (s === "failed" || s === "failure" || s === "refunded") {
@@ -1102,21 +1175,21 @@ serve(async (req: Request) => {
       if (statusUpper === "SUCCESS") {
         statusDescription = "Order completed successfully";
       } else if (statusUpper === "FAILED") {
-        statusDescription = order.failure_reason || "Order failed to deliver";
+        statusDescription = latestOrder.failure_reason || "Order failed to deliver";
       }
 
       return json({
         success: true,
         message: "Order status retrieved successfully",
         data: {
-          orderNumber: order.id,
-          reference: order.metadata?.client_reference || order.id,
+          orderNumber: latestOrder.id,
+          reference: latestOrder.metadata?.client_reference || latestOrder.id,
           status: statusUpper,
-          network: String(order.network || "").toUpperCase(),
-          recipient: order.customer_phone,
-          dataAmount: order.package_size,
-          amountPaid: Number(order.amount || 0),
-          orderDate: order.created_at,
+          network: String(latestOrder.network || "").toUpperCase(),
+          recipient: latestOrder.customer_phone,
+          dataAmount: latestOrder.package_size,
+          amountPaid: Number(latestOrder.amount || 0),
+          orderDate: latestOrder.created_at,
           statusDescription
         }
       });

@@ -72,6 +72,8 @@ const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const AdminWithdrawals = lazy(() => import("./pages/AdminWithdrawals"));
 const AdminNotificationsPage = lazy(() => import("./pages/AdminNotificationsPage"));
 const AdminPackages = lazy(() => import("./pages/AdminPackages"));
+const AdminKorbaHub = lazy(() => import("./pages/AdminKorbaHub"));
+const AdminKorbaPackages = lazy(() => import("./pages/AdminKorbaPackages"));
 const AdminWalletTopup = lazy(() => import("./pages/AdminWalletTopup"));
 const AdminSystemHealth = lazy(() => import("./pages/AdminSystemHealth"));
 const AdminSettings = lazy(() => import("./pages/AdminSettings"));
@@ -458,6 +460,8 @@ const AppContent = () => {
           <Route path="withdrawals" element={<AdminWithdrawals />} />
           <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="packages" element={<AdminPackages />} />
+          <Route path="korba" element={<AdminKorbaHub />} />
+          <Route path="korba/packages" element={<AdminKorbaPackages />} />
           <Route path="wallet-topup" element={<AdminWalletTopup />} />
           <Route path="system-health" element={<AdminSystemHealth />} />
           <Route path="settings" element={<AdminSettings />} />

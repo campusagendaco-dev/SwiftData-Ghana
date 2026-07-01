@@ -219,7 +219,11 @@ const AdminOverview = () => {
       const parentProf = Number(o.parent_profit) || 0;
       const cost = Number(o.cost_price) || 0;
 
-      if (["data", "airtime", "utility", "afa", "api"].includes(o.order_type)) {
+      if (isApiOrder) {
+        return s + agentProf;
+      }
+
+      if (["data", "airtime", "utility", "afa"].includes(o.order_type)) {
         return s + (amt - fee - agentProf - parentProf - cost);
       }
 

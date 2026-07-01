@@ -11,6 +11,7 @@ import {
   TrendingUp, ShoppingCart, AlertTriangle, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
+  Coins, ShieldAlert,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
@@ -41,6 +42,9 @@ interface OrderRow {
   agent_email?: string;
   is_sub_agent?: boolean;
   metadata?: any;
+  auto_refunded?: boolean;
+  refund_amount?: number;
+  refund_reason?: string;
 }
 
 interface AgentProfile {
@@ -74,6 +78,7 @@ const AdminOrders = () => {
   const initialSearch = searchParams.get("agent") || "";
   const [search, setSearch] = useState(initialSearch);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [refunding, setRefunding] = useState<string | null>(null);
   const [retryingAll, setRetryingAll] = useState(false);
   const [forcingFulfill, setForcingFulfill] = useState(false);
   const [healingProcessing, setHealingProcessing] = useState(false);
@@ -231,6 +236,30 @@ const AdminOrders = () => {
       toast({ title: "Retry error", description: "Could not retry order.", variant: "destructive" });
     }
     setRetrying(null);
+  };
+
+  const handleRefund = async (orderId: string, amount: number) => {
+    if (!confirm(`Are you sure you want to manually refund GH₵ ${amount.toFixed(2)} for order ${orderId}?`)) {
+      return;
+    }
+    setRefunding(orderId);
+    try {
+      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: orderId });
+      if (error) throw error;
+      if (data) {
+        if (currentUser) {
+          await logAudit(currentUser.id, "manual_order_refund", { order_id: orderId, amount });
+        }
+        toast({ title: "Order refunded successfully!" });
+      } else {
+        toast({ title: "Refund failed", description: "This order might already be refunded or not eligible.", variant: "destructive" });
+      }
+      await fetchOrders();
+    } catch (e: any) {
+      toast({ title: "Refund failed", description: e.message || "Could not execute refund.", variant: "destructive" });
+    } finally {
+      setRefunding(null);
+    }
   };
 
   const handleRetryAll = async () => {
@@ -489,10 +518,21 @@ const AdminOrders = () => {
   const totalRevenue = fulfilledForStats.reduce((s, o) => s + Number(o.paystack_verified_amount ?? o.amount ?? 0), 0);
   const totalPaystackFees = fulfilledForStats.reduce((s, o) => s + Number(o.paystack_fee || 0), 0);
   const totalNetRevenue = totalRevenue - totalPaystackFees;
-  const totalAgentProfits = fulfilledForStats.reduce((s, o) => s + Number(o.profit || 0), 0);
+  const totalAgentProfits = fulfilledForStats.reduce((s, o) => s + (o.order_type === "api" ? 0 : Number(o.profit || 0)), 0);
   const totalParentProfits = fulfilledForStats.reduce((s, o) => s + Number(o.parent_profit || 0), 0);
   const totalCosts = fulfilledForStats.reduce((s, o) => s + Number(o.cost_price || 0), 0);
-  const totalAdminNetProfit = totalNetRevenue - totalAgentProfits - totalParentProfits - totalCosts;
+  const totalAdminNetProfit = fulfilledForStats.reduce((s, o) => {
+    if (o.status !== "fulfilled") return s;
+    if (o.order_type === "api") {
+      return s + Number(o.profit || 0);
+    }
+    const amt = Number(o.paystack_verified_amount ?? o.amount ?? 0);
+    const fee = Number(o.paystack_fee || 0);
+    const profit = Number(o.profit || 0);
+    const parentProfit = Number(o.parent_profit || 0);
+    const cost = Number(o.cost_price || 0);
+    return s + (amt - fee - profit - parentProfit - cost);
+  }, 0);
   
   const failed = allOrders.filter((o) => o.status === "fulfillment_failed").length;
   const pending = allOrders.filter((o) => o.status === "pending" || o.status === "paid").length;
@@ -652,7 +692,8 @@ const AdminOrders = () => {
           <option value="agent_activation">Agent Activation</option>
           <option value="sub_agent_activation">Sub-Agent Activation</option>
           <option value="afa">AFA Registration</option>
-          <option value="wallet_topup">Wallet Top-up</option>
+          <option value="wallet_topup">Agent Wallet Top-up</option>
+          <option value="store_wallet_topup">Storefront Wallet Top-up</option>
         </select>
 
         <span className="text-xs text-muted-foreground ml-auto">
@@ -756,6 +797,7 @@ const AdminOrders = () => {
                     <div className="flex flex-col items-start gap-1">
                       <span className="text-xs font-bold text-foreground/90">
                         {order.order_type === "wallet_topup" ? "Wallet Top-up" :
+                         order.order_type === "store_wallet_topup" ? "Storefront Deposit" :
                          order.order_type === "afa" ? "AFA Registration" :
                          order.order_type === "api" ? "API Purchase" :
                          order.order_type === "airtime" ? "Airtime Purchase" :
@@ -821,21 +863,26 @@ const AdminOrders = () => {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right hidden lg:table-cell">
-                    {Number(order.profit) + Number(order.parent_profit) > 0 ? (
-                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+GH₵{(Number(order.profit) + Number(order.parent_profit)).toFixed(2)}</span>
+                    {(order.order_type === "api" ? Number(order.parent_profit) : (Number(order.profit) + Number(order.parent_profit))) > 0 ? (
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                        +GH₵{(order.order_type === "api" ? Number(order.parent_profit) : (Number(order.profit) + Number(order.parent_profit))).toFixed(2)}
+                      </span>
                     ) : (
                       <span className="text-xs text-muted-foreground/40">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right hidden lg:table-cell">
-                    {order.status === "fulfilled" && order.cost_price != null ? (
+                    {order.status === "fulfilled" && (order.order_type === "api" || order.cost_price != null) ? (
                       <span className="text-xs font-black text-sky-600 dark:text-sky-400">
-                        GH₵{(
-                          Number(order.paystack_verified_amount ?? order.amount) - 
-                          Number(order.paystack_fee || 0) - 
-                          Number(order.profit || 0) - 
-                          Number(order.parent_profit || 0) - 
-                          Number(order.cost_price)
+                        GH₵{(order.order_type === "api"
+                          ? Number(order.profit || 0)
+                          : (
+                            Number(order.paystack_verified_amount ?? order.amount) - 
+                            Number(order.paystack_fee || 0) - 
+                            Number(order.profit || 0) - 
+                            Number(order.parent_profit || 0) - 
+                            Number(order.cost_price)
+                          )
                         ).toFixed(2)}
                       </span>
                     ) : (
@@ -843,9 +890,16 @@ const AdminOrders = () => {
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <Badge className={`text-[10px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"}`}>
-                      {order.status === "pending" ? "Awaiting Checkout" : order.status.replace(/_/g, " ")}
-                    </Badge>
+                    <div className="flex flex-col items-center gap-1">
+                      <Badge className={`text-[10px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"}`}>
+                        {order.status === "pending" ? "Awaiting Checkout" : order.status.replace(/_/g, " ")}
+                      </Badge>
+                      {order.auto_refunded && (
+                        <Badge className="bg-red-500/10 border-red-500/20 text-red-400 text-[8px] font-extrabold flex items-center gap-0.5 uppercase tracking-wide">
+                          <ShieldAlert className="w-2.5 h-2.5 shrink-0" /> Refunded
+                        </Badge>
+                      )}
+                    </div>
                     {order.failure_reason && (
                       <p className="text-[10px] text-red-400 mt-0.5 max-w-[120px] truncate mx-auto" title={order.failure_reason}>
                         {order.failure_reason}
@@ -853,17 +907,30 @@ const AdminOrders = () => {
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
-                      <Button
-                        size="sm" variant="outline"
-                        className="text-xs gap-1 h-7 px-2 border-white/10 hover:border-amber-400/30"
-                        disabled={retrying === order.id}
-                        onClick={() => handleRetry(order.id)}
-                      >
-                        {retrying === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                        Retry
-                      </Button>
-                    )}
+                    <div className="flex items-center justify-center gap-1.5">
+                      {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
+                        <Button
+                          size="sm" variant="outline"
+                          className="text-xs gap-1 h-7 px-2 border-white/10 hover:border-amber-400/30"
+                          disabled={retrying === order.id}
+                          onClick={() => handleRetry(order.id)}
+                        >
+                          {retrying === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                          Retry
+                        </Button>
+                      )}
+                      {order.status === "fulfillment_failed" && !order.auto_refunded && (
+                        <Button
+                          size="sm" variant="destructive"
+                          className="text-xs gap-1 h-7 px-2 border-red-500/20 hover:border-red-400/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                          disabled={refunding === order.id}
+                          onClick={() => handleRefund(order.id, order.amount)}
+                        >
+                          {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
+                          Refund
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -905,6 +972,7 @@ const AdminOrders = () => {
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">Type</p>
                 <p className="text-xs text-foreground/80 font-bold">
                   {order.order_type === "wallet_topup" ? "Top-up" :
+                   order.order_type === "store_wallet_topup" ? "Store Deposit" :
                    order.order_type === "api" ? "API" :
                    order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
                    order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
