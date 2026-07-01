@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu, X, LogOut, LayoutDashboard, ShieldCheck,
   TrendingUp, Home, HelpCircle, ChevronRight,
-  User, Settings, Wallet, ClipboardList, Store, Sun, Moon, Zap, Palette,
+  User, Settings, Wallet, ClipboardList, Store, Sun, Moon, Zap, Palette, Droplets,
 } from "lucide-react";
 import { THEMES } from "@/lib/themes";
 import { useState, useEffect, useRef } from "react";
@@ -103,6 +103,7 @@ const Navbar = () => {
     { to: "/", label: "Home", icon: Home },
     { to: "/buy-data", label: "Buy Data", icon: Zap },
     { to: "/buy-airtime", label: "Buy Airtime", icon: Wallet },
+    { to: "/buy-utility", label: "Buy Utility", icon: Droplets },
     { to: "/order-status", label: "Track Order", icon: LayoutDashboard },
     ...(!user || !agentApproved ? [{ to: "/agent-program", label: "Agent", icon: TrendingUp }] : []),
   ];

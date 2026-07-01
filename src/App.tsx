@@ -54,6 +54,7 @@ const DashboardSubAgentPricing = lazy(() => import("./pages/DashboardSubAgentPri
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const BuyData = lazy(() => import("./pages/BuyData"));
 const BuyAirtime = lazy(() => import("./pages/BuyAirtime"));
+const BuyUtility = lazy(() => import("./pages/BuyUtility"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const VerifyOtp = lazy(() => import("./pages/VerifyOtp"));
@@ -393,6 +394,7 @@ const AppContent = () => {
         {/* Public buy page — no login required */}
         <Route path="/buy-data" element={<BuyData />} />
         <Route path="/buy-airtime" element={<BuyAirtime />} />
+        <Route path="/buy-utility" element={<BuyUtility />} />
 
         {/* Sub agent routes */}
         <Route path="/store/:slug/sub-agent" element={<SubAgentSignup />} />
