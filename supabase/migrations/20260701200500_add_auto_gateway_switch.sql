@@ -66,6 +66,10 @@ CREATE VIEW public.public_system_settings WITH (security_invoker = true) AS
     system_settings.mashup_whatsapp_number,
     system_settings.mashup_delivery_delay_mins,
     system_settings.auto_gateway_switch_by_package,
+    system_settings.welcome_promo_enabled,
+    system_settings.active_payment_gateway,
+    system_settings.auto_refund_enabled,
+    system_settings.vendor_min_transaction,
     system_settings.updated_at
    FROM public.system_settings;
 
