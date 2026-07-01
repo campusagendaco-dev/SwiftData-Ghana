@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,9 +9,11 @@ import {
 } from "lucide-react";
 import { cn, detectNetwork } from "@/lib/utils";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
-import { getFunctionErrorMessage } from "@/lib/function-errors";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { getAppBaseUrl } from "@/lib/app-base-url";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
+import { motion, AnimatePresence } from "framer-motion";
 
 type PayMethod = "wallet" | "paystack";
 
@@ -46,9 +48,10 @@ const NETWORKS = [
 ];
 
 const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100];
+const calcFee = (amount: number) => Math.min(amount * 0.03, 100);
 
 const DashboardBuyAirtime = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isDark } = useAppTheme();
   const { toast } = useToast();
 
@@ -61,6 +64,20 @@ const DashboardBuyAirtime = () => {
   const [lastOrder, setLastOrder] = useState<any>(null);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
 
+  // Name Resolution State
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
+  const [resolvingName, setResolvingName] = useState(false);
+  const lastAttemptRef = useRef<string | null>(null);
+
+  // Paystack Momo Checkout State
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
+
+  const phoneDigits = phone.replace(/\D+/g, "");
+  const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
+  const numAmount = Number(amount);
+  const canPay = isPhoneValid && numAmount >= 1 && resolvedName;
+
   useEffect(() => {
     const fetchBalance = async () => {
       if (!user) return;
@@ -69,7 +86,7 @@ const DashboardBuyAirtime = () => {
         .select("balance")
         .eq("agent_id", user.id)
         .maybeSingle();
-      if (data) setWalletBalance(data.balance);
+      if (data) setWalletBalance(Number(data.balance));
     };
     fetchBalance();
   }, [user]);
@@ -79,6 +96,7 @@ const DashboardBuyAirtime = () => {
     const detected = detectNetwork(phone);
     if (detected && detected !== network) {
       setNetwork(detected);
+      setResolvedName(null);
       toast({ 
         title: `Network set to ${detected}`, 
         description: `We detected an ${detected} number.`,
@@ -87,15 +105,141 @@ const DashboardBuyAirtime = () => {
     }
   }, [phone, network, toast]);
 
-  const numAmount = Number(amount);
-  const canPay = !!phone.trim() && phone.length >= 10 && numAmount >= 1;
+  // Name resolution effect
+  useEffect(() => {
+    setResolvedName(null);
+    const attemptKey = `${network}-${phoneDigits}`;
+    if (!isPhoneValid || resolvingName || lastAttemptRef.current === attemptKey) return;
+
+    const timer = setTimeout(async () => {
+      setResolvingName(true);
+      try {
+        let bankCode = "MTN";
+        const net = network.toUpperCase();
+        if (net.includes("VODA") || net.includes("TELECEL")) bankCode = "VOD";
+        if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) bankCode = "ATL";
+
+        const { data, error } = await supabase.functions.invoke("paystack-resolve", {
+          body: { account_number: phoneDigits, bank_code: bankCode }
+        });
+        lastAttemptRef.current = attemptKey;
+        if (!error && data?.success) {
+          setResolvedName(data.account_name);
+        } else {
+          setResolvedName("Unknown Recipient");
+        }
+      } catch (e) {
+        console.error("Auto-resolution failed:", e);
+        lastAttemptRef.current = attemptKey;
+        setResolvedName("Recipient");
+      } finally {
+        setResolvingName(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [network, isPhoneValid, phoneDigits]);
+
   const activeNet = NETWORKS.find((n) => n.name === network)!;
   const ActiveLogo = activeNet.Logo;
 
   const handlePay = async () => {
+    if (!canPay) return;
+
+    if (payMethod === "wallet") {
+      if (walletBalance === null || walletBalance < numAmount) {
+        toast({
+          title: "Insufficient Balance",
+          description: "Your wallet balance is too low for this transaction.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("wallet-pay-airtime", {
+          body: {
+            network,
+            customer_phone: phoneDigits,
+            amount: numAmount
+          }
+        });
+
+        if (error) throw error;
+
+        if (data && data.success) {
+          toast({
+            title: "Success",
+            description: "Airtime purchased successfully.",
+          });
+          setWalletBalance(prev => prev !== null ? prev - numAmount : null);
+          setShowSuccessOverlay(true);
+          setPhone("");
+          setAmount("");
+        } else {
+          throw new Error(data?.error || "Airtime purchase failed.");
+        }
+      } catch (e: any) {
+        toast({
+          title: "Wallet Payment Failed",
+          description: e.message || "Failed to process wallet payment.",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Paystack checkout
+      setLoading(true);
+      const orderId = crypto.randomUUID();
+      const callbackParams = new URLSearchParams({
+        reference: orderId,
+        network,
+        package: "AIRTIME",
+        phone: phoneDigits,
+      });
+
+      const meta = {
+        order_id: orderId,
+        order_type: "airtime",
+        network,
+        package_size: "AIRTIME",
+        customer_phone: phoneDigits,
+        customer_name: resolvedName,
+        fee: calcFee(numAmount),
+        payment_source: "direct",
+        is_korba: true,
+        callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
+      };
+
+      setCheckoutMetadata(meta);
+      setCheckoutOpen(true);
+      setLoading(false);
+    }
+  };
+
+  const handleCheckoutSuccess = (ref: string) => {
+    setCheckoutOpen(false);
+    setPhone("");
+    setAmount("");
+    
+    const callbackParams = new URLSearchParams({
+      reference: ref,
+      network,
+      package: "AIRTIME",
+      phone: phoneDigits,
+    });
+    
+    window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
+  };
+
+  const handleCheckoutFailure = (error: string) => {
+    setLoading(false);
     toast({
-      title: "Coming Soon",
-      description: "Airtime services for agents are being optimized. Expect activation within 24 hours.",
+      title: "Checkout Failed",
+      description: error || "Payment session failed.",
+      variant: "destructive"
     });
   };
 
@@ -118,9 +262,9 @@ const DashboardBuyAirtime = () => {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Instant Delivery
             </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-500/20 animate-bounce">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-500/20">
               <Sparkles className="w-3 h-3" />
-              Flash Sale Live
+              Agent Rates Active
             </span>
             <span className={cn(
               "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border",
@@ -202,7 +346,7 @@ const DashboardBuyAirtime = () => {
           return (
             <button
               key={n.name}
-              onClick={() => setNetwork(n.name)}
+              onClick={() => { setNetwork(n.name); setResolvedName(null); }}
               className="relative flex flex-col items-center gap-2.5 py-5 px-3 rounded-3xl overflow-hidden transition-all duration-500"
               style={
                 isActive
@@ -222,7 +366,6 @@ const DashboardBuyAirtime = () => {
                     }
               }
             >
-              {/* Inner radial glow when active */}
               {isActive && (
                 <div
                   className="absolute inset-0 pointer-events-none"
@@ -232,7 +375,6 @@ const DashboardBuyAirtime = () => {
                 />
               )}
 
-              {/* Active check badge */}
               {isActive && (
                 <div
                   className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center z-10 animate-in zoom-in duration-300"
@@ -288,39 +430,62 @@ const DashboardBuyAirtime = () => {
             </div>
 
             <div className="relative">
-            <div className={cn("absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none", isDark ? "text-white/20" : "text-gray-300")}>
-              <Phone className="w-5 h-5" />
-            </div>
+              <div className={cn("absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none", isDark ? "text-white/20" : "text-gray-300")}>
+                <Phone className="w-5 h-5" />
+              </div>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="024 000 0000"
-                className={cn("w-full h-16 pl-14 pr-14 rounded-2xl text-xl font-bold placeholder:text-opacity-20 focus:outline-none transition-all duration-300", isDark ? "text-white placeholder:text-white" : "text-gray-900 placeholder:text-gray-400")}
+                className={cn("w-full h-16 pl-14 pr-14 rounded-2xl text-xl font-bold placeholder:text-opacity-20 focus:outline-none transition-all duration-300 bg-background border")}
                 style={
-                  phone.length >= 10
+                  isPhoneValid
                     ? {
                         background: `${activeNet.color}09`,
-                        border: `1.5px solid ${activeNet.color}45`,
+                        borderColor: activeNet.color,
                       }
                     : {
                         background: "rgba(255,255,255,0.025)",
-                        border: "1.5px solid rgba(255,255,255,0.08)",
+                        borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
                       }
                 }
               />
-              {phone.length >= 10 && (
-                <div
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center animate-in zoom-in duration-300"
-                  style={{
-                    background: `${activeNet.color}20`,
-                    border: `1px solid ${activeNet.color}40`,
-                  }}
-                >
-                  <CheckCircle2 className="w-4 h-4" style={{ color: activeNet.color }} />
-                </div>
-              )}
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                {resolvingName && <Loader2 className="w-4 h-4 animate-spin text-amber-500" />}
+                {isPhoneValid && resolvedName && (
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center animate-in zoom-in duration-300"
+                    style={{
+                      background: `${activeNet.color}20`,
+                      border: `1px solid ${activeNet.color}40`,
+                    }}
+                  >
+                    <CheckCircle2 className="w-4 h-4" style={{ color: activeNet.color }} />
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Name Resolution Display */}
+            <AnimatePresence>
+              {isPhoneValid && resolvedName && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3"
+                >
+                  <div className="w-6 h-6 rounded bg-emerald-500/20 flex items-center justify-center text-emerald-600 font-bold text-xs">
+                    {resolvedName.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase text-emerald-500 leading-none mb-0.5">Recipient Identity</p>
+                    <p className="text-xs font-black text-emerald-700 dark:text-emerald-300 uppercase leading-none">{resolvedName}</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Step 2: Amount */}
@@ -380,16 +545,16 @@ const DashboardBuyAirtime = () => {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className={cn("w-full h-24 pl-16 pr-6 rounded-3xl text-5xl font-black placeholder:text-opacity-20 focus:outline-none transition-all duration-300", isDark ? "text-white placeholder:text-white" : "text-gray-900 placeholder:text-gray-400")}
+                className={cn("w-full h-24 pl-16 pr-6 rounded-3xl text-5xl font-black placeholder:text-opacity-20 focus:outline-none transition-all duration-300 bg-background border")}
                 style={
                   numAmount > 0
                     ? {
                         background: `${activeNet.color}07`,
-                        border: `1.5px solid ${activeNet.color}35`,
+                        borderColor: activeNet.color,
                       }
                     : {
                         background: "rgba(255,255,255,0.02)",
-                        border: "1.5px solid rgba(255,255,255,0.06)",
+                        borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
                       }
                 }
               />
@@ -402,12 +567,12 @@ const DashboardBuyAirtime = () => {
 
           {/* Receipt/summary card */}
           <div
-            className="rounded-3xl overflow-hidden transition-all duration-700"
+            className="rounded-3xl overflow-hidden transition-all duration-700 bg-card border"
             style={{
-              border: isDark ? `1.5px solid ${canPay ? activeNet.color + "35" : "rgba(255,255,255,0.07)"}` : `1.5px solid ${canPay ? activeNet.color + "30" : "rgba(0,0,0,0.08)"}`,
+              borderColor: isDark ? (canPay ? activeNet.color + "35" : "rgba(255,255,255,0.07)") : (canPay ? activeNet.color + "30" : "rgba(0,0,0,0.08)"),
               background: canPay
                 ? (isDark ? `linear-gradient(160deg, ${activeNet.color}0D 0%, rgba(10,10,14,0.97) 100%)` : `linear-gradient(160deg, ${activeNet.color}08 0%, #fff 100%)`)
-                : (isDark ? "rgba(255,255,255,0.018)" : "#fff"),
+                : "transparent",
               boxShadow: canPay ? (isDark ? `0 24px 80px ${activeNet.glow}` : `0 24px 60px ${activeNet.color}15`) : "none",
             }}
           >
@@ -545,7 +710,7 @@ const DashboardBuyAirtime = () => {
 
               <div className={cn("flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.15em]", isDark ? "text-white/20" : "text-gray-400")}>
                 <ShieldCheck className="w-3 h-3" />
-                256-bit encrypted · Powered by Paystack
+                Secured by Paystack / Wallet API
               </div>
             </div>
           </div>
@@ -565,13 +730,23 @@ const DashboardBuyAirtime = () => {
               </span>
             </div>
             <p className={cn("text-[11px] leading-relaxed", isDark ? "text-white/35" : "text-gray-600")}>
-              Earn up to{" "}
-              <span className="text-amber-400 font-bold">2.5% cashback</span> on every
-              airtime purchase as a registered agent.
+              Earn cashback on every airtime purchase as a registered agent.
             </p>
           </div>
         </div>
       </div>
+
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={numAmount + calcFee(numAmount)} // Include processing fee for paystack payments
+        email={profile?.email || ""}
+        recipientPhone={phoneDigits}
+        recipientNetwork={network}
+        metadata={checkoutMetadata}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
 
       <style>{`
         @keyframes shimmer {
@@ -580,40 +755,27 @@ const DashboardBuyAirtime = () => {
         }
         .animate-shimmer { animation: shimmer 2.5s infinite; }
       `}</style>
+
       {/* ── Success Overlay ── */}
       {showSuccessOverlay && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" />
           <div className="relative max-w-sm w-full bg-[#0A0A0C] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 animate-in zoom-in-95 duration-300 shadow-3xl">
-            {/* SVG Illustration */}
             <div className="relative mx-auto w-36 h-36">
               <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
               <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Phone Body */}
                 <rect x="55" y="25" width="90" height="150" rx="16" fill="url(#phoneGradOverlay)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
-                {/* Phone Screen */}
                 <rect x="62" y="32" width="76" height="136" rx="10" fill="#0A0A0C"/>
-                {/* Phone Notch */}
                 <rect x="90" y="35" width="20" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
-                
-                {/* Decorative Data Waves/Grid */}
                 <path d="M 65 100 Q 100 85 135 100" stroke="rgba(16,185,129,0.3)" strokeWidth="2" fill="none"/>
                 <path d="M 65 120 Q 100 105 135 120" stroke="rgba(16,185,129,0.15)" strokeWidth="2" fill="none"/>
-                
-                {/* Success Badge */}
                 <circle cx="100" cy="90" r="32" fill="url(#badgeGradOverlay)" />
                 <circle cx="100" cy="90" r="26" fill="#0A0A0C"/>
-                
-                {/* Success Checkmark */}
                 <path d="M 90 90 L 97 97 L 112 82" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-                
-                {/* Sparkles/Stars */}
                 <path d="M 45 60 L 48 65 L 53 66 L 49 70 L 50 75 L 45 72 L 40 75 L 41 70 L 37 66 L 42 65 Z" fill="#ffd43b" opacity="0.8"/>
                 <path d="M 155 120 L 157 123 L 161 124 L 158 127 L 159 131 L 155 129 L 151 131 L 152 127 L 149 124 L 153 123 Z" fill="#ff9f1c" opacity="0.8"/>
                 <circle cx="145" cy="55" r="4" fill="#0ea5e9"/>
                 <circle cx="50" cy="130" r="3" fill="#10B981"/>
-                
-                {/* Gradients */}
                 <defs>
                   <linearGradient id="phoneGradOverlay" x1="55" y1="25" x2="145" y2="175" gradientUnits="userSpaceOnUse">
                     <stop stopColor="rgba(255,255,255,0.08)"/>
