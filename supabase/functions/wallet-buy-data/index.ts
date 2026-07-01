@@ -50,7 +50,7 @@ serve(async (req: Request) => {
     const payload = await req.json().catch(() => ({}));
     console.log("[PAYLOAD]", JSON.stringify(payload));
 
-    const { network: networkRaw, package_size, customer_phone, amount: requestedAmount, reference, agent_id } = payload;
+    const { network: networkRaw, package_size, customer_phone, amount: requestedAmount, reference, agent_id, is_korba, metadata: customMetadata } = payload;
     
     // Auth
     const authHeader = req.headers.get("Authorization");
@@ -382,6 +382,21 @@ serve(async (req: Request) => {
 
     const orderId = reference || crypto.randomUUID();
 
+    let finalIsKorba = is_korba === true || is_korba === "true";
+    if (!finalIsKorba) {
+      const { data: mapping } = await supabaseAdmin
+        .from("provider_packages")
+        .select("id")
+        .eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
+        .eq("network", normalizeNetworkForPricing(networkRaw))
+        .eq("package_name", package_size)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (mapping) {
+        finalIsKorba = true;
+      }
+    }
+
     // 2. INSERT ORDER (FOREGROUND)
     console.log(`[INSERT] Creating order ${orderId}...`);
     const { error: insertError } = await supabaseAdmin.from("orders").insert({
@@ -397,7 +412,11 @@ serve(async (req: Request) => {
       profit: agentProfit,
       parent_agent_id: parentAgentId,
       parent_profit: parentProfit,
-      status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid"
+      status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid",
+      metadata: {
+        is_korba: finalIsKorba,
+        ...(customMetadata || {})
+      }
     });
 
     if (insertError) {

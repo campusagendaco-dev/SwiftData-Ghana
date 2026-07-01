@@ -122,7 +122,9 @@ async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise
     }
   }
   const network = (order?.network || "") as string;
-  const isKorbaNetwork = network && String(network).toUpperCase().startsWith("KORBA");
+  const isKorbaNetwork = (network && String(network).toUpperCase().startsWith("KORBA")) || 
+                         order?.metadata?.is_korba === true || 
+                         order?.metadata?.is_korba === "true";
   
   if (isKorbaNetwork) {
     const { data: korbaProvider } = await supabaseAdmin

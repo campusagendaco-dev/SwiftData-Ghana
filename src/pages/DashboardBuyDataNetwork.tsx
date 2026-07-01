@@ -575,6 +575,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           customer_phone: phone,
           amount: selectedPackage!.price,
           reference: orderId,
+          is_korba: korbaMappings.some((m: any) => m.network === network && m.package_name === selectedPackage!.size)
         },
       });
 
