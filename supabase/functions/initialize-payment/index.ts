@@ -127,12 +127,22 @@ serve(async (req: Request) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
+    const payload = await req.json().catch(() => ({}));
+    const metadata = payload?.metadata || {};
+    const isKorba = metadata?.is_korba === true || metadata?.is_korba === "true";
+
     const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway")
+      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package")
       .eq("id", 1)
       .maybeSingle();
 
-    const activeGateway = settings?.active_payment_gateway || "paystack";
+    let activeGateway = settings?.active_payment_gateway || "paystack";
+    const autoSwitch = settings?.auto_gateway_switch_by_package ?? false;
+
+    if (autoSwitch && isKorba) {
+      activeGateway = "korba";
+    }
+
     let PAYSTACK_SECRET_KEY = "";
 
     if (activeGateway === "paystack") {
@@ -164,12 +174,8 @@ serve(async (req: Request) => {
     }
 
     if (settings?.disable_ordering) {
-      // Read order type from body to decide whether to bypass — parse body early
-      let earlyOrderType = "data";
-      try {
-        const earlyBody = await req.clone().json();
-        earlyOrderType = earlyBody?.metadata?.order_type || "data";
-      } catch { /* ignore */ }
+      // Read order type from body to decide whether to bypass
+      const earlyOrderType = metadata?.order_type || "data";
       const bypassTypes = ["agent_activation", "sub_agent_activation", "vendor_activation", "wallet_topup", "store_wallet_topup", "utility"];
       if (!bypassTypes.includes(earlyOrderType)) {
         return new Response(JSON.stringify({
@@ -180,8 +186,6 @@ serve(async (req: Request) => {
         });
       }
     }
-
-    const payload = await req.json();
 
     if (payload?.action === "submit_otp") {
       const otp = typeof payload?.otp === "string" ? payload.otp.trim() : "";
