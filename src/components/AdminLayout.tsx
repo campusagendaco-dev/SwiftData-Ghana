@@ -9,7 +9,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Command, Zap, Phone
+  ShieldAlert, Search, Command, Zap, Phone, Lightbulb
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -100,6 +100,8 @@ const NAV_SECTIONS = [
       { label: "Orders",       icon: ShoppingCart, path: "/admin/orders" },
       { label: "Airtime Orders", icon: Phone,        path: "/admin/airtime-orders" },
       { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders" },
+      { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders" },
+      { label: "Standard Orders", icon: Package,     path: "/admin/standard-orders" },
       { label: "Packages",     icon: Package,      path: "/admin/packages" },
       { label: "Korba Hub",    icon: Activity,     path: "/admin/korba" },
       { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages" },
