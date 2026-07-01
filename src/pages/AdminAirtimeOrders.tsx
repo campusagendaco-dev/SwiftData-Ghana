@@ -198,7 +198,7 @@ const AdminAirtimeOrders = () => {
     fetchOrders();
   }, [fetchOrders]);
 
-  useRealtimeRefresh("orders", fetchOrders);
+  useRealtimeRefresh({ tables: ["orders"], onRefresh: fetchOrders });
 
   const handleRetryOrder = async (orderId: string) => {
     if (!window.confirm("Are you sure you want to retry this order manually?")) return;
