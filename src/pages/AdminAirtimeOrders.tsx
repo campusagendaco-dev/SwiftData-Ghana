@@ -542,6 +542,12 @@ const AdminAirtimeOrders = () => {
         </div>
       </div>
 
+      {/* Phone tracker */}
+      <PhoneOrderTracker
+        title="Track Airtime Order by Phone"
+        subtitle="Admin quick lookup for live delivery status of Airtime orders."
+      />
+
       {allApisOff && (
         <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 flex items-start gap-3">
           <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
@@ -752,10 +758,7 @@ const AdminAirtimeOrders = () => {
                         </div>
                       </td>
                       <td className="p-2.5 font-semibold">
-                        <div className="flex flex-col text-[11px]">
-                          <span>{o.customer_phone}</span>
-                          <PhoneOrderTracker phoneNumber={o.customer_phone || ""} />
-                        </div>
+                        <span className="text-[11px]">{o.customer_phone}</span>
                       </td>
                       <td className="p-2.5 text-right font-black text-foreground text-[11px]">
                         ₵{o.amount.toFixed(2)}
