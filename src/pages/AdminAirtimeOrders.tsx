@@ -11,8 +11,14 @@ import {
   TrendingUp, ShoppingCart, AlertTriangle, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
-  Phone, Coins, ShieldAlert,
+  Phone, Coins, ShieldAlert, MoreHorizontal,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
@@ -665,8 +671,8 @@ const AdminAirtimeOrders = () => {
         <div className="overflow-x-auto min-h-[400px]">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-border bg-secondary/10 text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                <th className="p-3 w-10 text-center">
+              <tr className="border-b border-border bg-secondary/10 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                <th className="p-2 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={displayedOrders.length > 0 && selectedIds.size === displayedOrders.length}
@@ -674,15 +680,15 @@ const AdminAirtimeOrders = () => {
                     className="rounded border-gray-300"
                   />
                 </th>
-                <th className="p-3">Order Details</th>
-                <th className="p-3">Recipient</th>
-                <th className="p-3 text-right">Amount</th>
-                <th className="p-3">User &amp; Wallet</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-center">Actions</th>
+                <th className="p-2">Order Details</th>
+                <th className="p-2">Recipient</th>
+                <th className="p-2 text-right">Amount</th>
+                <th className="p-2">User &amp; Wallet</th>
+                <th className="p-2">Status</th>
+                <th className="p-2 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border text-sm">
+            <tbody className="divide-y divide-border text-xs">
               {loading ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-muted-foreground">
@@ -704,9 +710,9 @@ const AdminAirtimeOrders = () => {
                   return (
                     <tr
                       key={o.id}
-                      className={`hover:bg-muted/10 transition-colors ${isChecked ? "bg-primary/5" : ""}`}
+                      className={`hover:bg-muted/5 transition-colors ${isChecked ? "bg-primary/5" : ""}`}
                     >
-                      <td className="p-3 text-center">
+                      <td className="p-2 text-center">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -714,97 +720,89 @@ const AdminAirtimeOrders = () => {
                           className="rounded border-gray-300"
                         />
                       </td>
-                      <td className="p-3 space-y-1">
-                        <div className="font-bold font-mono text-[11px] truncate w-28 uppercase text-muted-foreground" title={o.id}>
-                          #{o.id.slice(0, 8)}...
+                      <td className="p-2 space-y-0.5">
+                        <div className="font-bold font-mono text-[10px] truncate w-24 uppercase text-muted-foreground" title={o.id}>
+                          #{o.id.slice(0, 8)}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider ${
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className={`text-[8px] px-1 py-0.5 rounded font-black uppercase tracking-wider ${
                             o.network === "MTN" ? "bg-amber-500/10 text-amber-500" : o.network === "Telecel" ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"
                           }`}>
                             {o.network}
                           </span>
-                          <span className="text-[10px] text-muted-foreground font-medium">
-                            {new Date(o.created_at).toLocaleString()}
+                          <span className="text-[9px] text-muted-foreground font-medium">
+                            {new Date(o.created_at).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" })}{" "}
+                            {new Date(o.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
                           </span>
                         </div>
                       </td>
-                      <td className="p-3 font-semibold">
-                        <div className="flex flex-col">
+                      <td className="p-2 font-semibold">
+                        <div className="flex flex-col text-[11px]">
                           <span>{o.customer_phone}</span>
                           <PhoneOrderTracker phoneNumber={o.customer_phone || ""} />
                         </div>
                       </td>
-                      <td className="p-3 text-right font-black text-foreground">
+                      <td className="p-2 text-right font-black text-foreground text-[11px]">
                         ₵{o.amount.toFixed(2)}
                       </td>
-                      <td className="p-3">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-foreground">{o.agent_name}</span>
-                          <span className="text-[10px] text-muted-foreground truncate w-40">{o.agent_email}</span>
+                      <td className="p-2">
+                        <div className="flex flex-col text-[11px]">
+                          <span className="font-bold text-foreground truncate max-w-[120px]" title={o.agent_name}>{o.agent_name}</span>
+                          <span className="text-[9px] text-muted-foreground truncate max-w-[120px]" title={o.agent_email}>{o.agent_email}</span>
                           {o.metadata?.wallet_balance !== undefined && (
-                            <span className="text-[10px] text-amber-600 font-semibold mt-0.5">
-                              Wallet: ₵{o.metadata.wallet_balance.toFixed(2)}
+                            <span className="text-[9px] text-amber-600 font-semibold mt-0.5">
+                              Bal: ₵{o.metadata.wallet_balance.toFixed(2)}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="p-3">
-                        <div className="space-y-1">
-                          <Badge variant="outline" className={`font-black uppercase tracking-wider text-[9px] ${STATUS_COLORS[o.status] || "bg-secondary text-secondary-foreground"}`}>
+                      <td className="p-2">
+                        <div className="space-y-0.5">
+                          <Badge variant="outline" className={`font-black uppercase tracking-wider text-[8px] px-1.5 py-0.5 ${STATUS_COLORS[o.status] || "bg-secondary text-secondary-foreground"}`}>
                             {o.status.replace("_", " ")}
                           </Badge>
                           {o.failure_reason && (
-                            <p className="text-[10px] text-red-500 font-medium max-w-xs leading-normal">
+                            <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate leading-normal" title={o.failure_reason}>
                               Reason: {o.failure_reason}
                             </p>
                           )}
                         </div>
                       </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {(o.status === "fulfillment_failed" || o.status === "paid" || o.status === "processing") && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRetryOrder(o.id)}
-                              disabled={retrying === o.id || forcingFulfill}
-                              className="h-8 text-xs font-bold border-amber-500/20 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
-                            >
-                              {retrying === o.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                "Retry API"
-                              )}
-                            </Button>
-                          )}
-                          
-                          {(o.status === "paid" || o.status === "processing" || o.status === "fulfillment_failed") && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleForceFulfill(o.id)}
-                              disabled={retrying === o.id || forcingFulfill}
-                              className="h-8 text-xs font-bold border-green-500/20 text-green-600 hover:bg-green-500/10 dark:text-green-400"
-                            >
-                              Force Complete
-                            </Button>
-                          )}
-
-                          {(o.status === "paid" || o.status === "processing" || o.status === "fulfillment_failed") && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRefundOrder(o.id)}
-                              disabled={refunding === o.id || forcingFulfill}
-                              className="h-8 text-xs font-bold border-red-500/20 text-red-600 hover:bg-red-500/10 dark:text-red-400"
-                            >
-                              {refunding === o.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                "Refund Wallet"
-                              )}
-                            </Button>
+                      <td className="p-2 text-center">
+                        <div className="flex items-center justify-center">
+                          {(o.status === "fulfillment_failed" || o.status === "paid" || o.status === "processing") ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-7 w-7 p-0 hover:bg-muted">
+                                  <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem 
+                                  onClick={() => handleRetryOrder(o.id)}
+                                  disabled={retrying === o.id || forcingFulfill}
+                                  className="text-[11px] font-semibold cursor-pointer"
+                                >
+                                  {retrying === o.id ? "Retrying..." : "Retry API"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => handleForceFulfill(o.id)}
+                                  disabled={retrying === o.id || forcingFulfill}
+                                  className="text-[11px] font-semibold text-green-600 dark:text-green-400 cursor-pointer"
+                                >
+                                  Force Complete
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  onClick={() => handleRefundOrder(o.id)}
+                                  disabled={refunding === o.id || forcingFulfill}
+                                  className="text-[11px] font-semibold text-red-600 dark:text-red-400 cursor-pointer"
+                                >
+                                  {refunding === o.id ? "Refunding..." : "Refund Wallet"}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground font-semibold">—</span>
                           )}
                         </div>
                       </td>
