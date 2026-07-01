@@ -52,6 +52,7 @@ const userNavItems = [
   { to: "/dashboard/account-settings", label: "Account & Security", icon: UserCog },
   { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
   { to: "/dashboard/schedule", label: "Auto-Renewal", icon: CalendarClock },
+  { to: "/dashboard/direct-debit", label: "MTN Direct Debit", icon: CreditCard },
   { to: "/dashboard/transactions", label: "Transactions", icon: ClipboardList },
   { to: "/dashboard/notifications", label: "Inbox Notifications", icon: Bell },
   { to: "/dashboard/buy-data/mtn", label: "Buy Data", icon: ShoppingCart },

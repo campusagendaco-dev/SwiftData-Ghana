@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { fetchViaDb } from "../_shared/db_proxy.ts";
 
 serve(async (req) => {
   // 1. Handle CORS preflight
@@ -639,6 +640,194 @@ serve(async (req) => {
       }
 
       balance = provider.balance || 0;
+    } else if (handlerType === "korba") {
+      console.log(`Syncing Korba provider: ${provider.name}`);
+
+      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+
+      if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
+        throw new Error("Korba credentials not configured in edge functions.");
+      }
+
+      // Helper to query Korba API via DB proxy
+      const queryKorba = async (endpoint: string, payload: any) => {
+        const sortedKeys = Object.keys(payload).sort();
+        const messageParts = [];
+        for (const key of sortedKeys) {
+          messageParts.push(`${key}=${payload[key]}`);
+        }
+        const message = messageParts.join("&");
+        
+        const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw',
+          keyData,
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const messageData = new TextEncoder().encode(message);
+        const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+        const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        const targetUrl = `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
+        console.log(`[sync:korba] Calling: ${targetUrl}`);
+
+        const res = await fetchViaDb(supabaseAdmin, targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+          },
+          body: JSON.stringify(payload),
+          disableFallback: true,
+        }, 25);
+
+        const resText = await res.text();
+        if (!res.ok || resText.includes("Gateway Timeout") || resText.includes("canceling statement")) {
+          throw new Error(`Korba API request failed: ${resText || `HTTP ${res.status}`}`);
+        }
+
+        try {
+          return JSON.parse(resText);
+        } catch {
+          throw new Error(`Korba API returned non-JSON: ${resText}`);
+        }
+      };
+
+      // 1. Sync Balance
+      try {
+        const balancePayload = { client_id: parseInt(KORBA_CLIENT_ID) || 2419 };
+        const balanceData = await queryKorba("get_ova_balance/", balancePayload);
+        if (balanceData && balanceData.ova_balance !== undefined) {
+          balance = Number(balanceData.ova_balance);
+          console.log(`[sync:korba] Synced Balance: GHS ${balance}`);
+        } else {
+          console.error("[sync:korba] Balance response missing ova_balance:", balanceData);
+        }
+      } catch (err: any) {
+        console.error("[sync:korba] Balance sync failed:", err.message || err);
+      }
+
+      // 2. Sync Packages (MTN, Telecel, AirtelTigo)
+      const allPackages = [];
+      const packageEndpoints = [
+        { path: "get_mtndata_product_id/", network: "MTN" },
+        { path: "get_vodafonedata_product_id/", network: "Telecel" },
+        { path: "get_airteltigodata_product_id/", network: "AirtelTigo" }
+      ];
+
+      const parseCapacity = (packageSize: string): number => {
+        if (!packageSize) return 0;
+        const match = packageSize.toString().replace(/\s+/g, "").toLowerCase().match(/(\d+(?:\.\d+)?)\s*(gb|mb)/);
+        if (match) {
+          const val = parseFloat(match[1]);
+          const unit = match[2];
+          return unit === "gb" ? val : val / 1024;
+        }
+        const fallbackMatch = packageSize.toString().replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
+        return fallbackMatch ? parseFloat(fallbackMatch[1]) : 0;
+      };
+
+      for (const endpoint of packageEndpoints) {
+        try {
+          const payload = { client_id: parseInt(KORBA_CLIENT_ID) || 2419 };
+          const responseData = await queryKorba(endpoint.path, payload);
+          if (responseData && (responseData.success || responseData.error_code === null)) {
+            const bundles = responseData.bundles || [];
+            for (const item of bundles) {
+              if (item.bundles && Array.isArray(item.bundles)) {
+                // MTN categories
+                for (const subBundle of item.bundles) {
+                  const capacityGb = parseCapacity(subBundle.name || subBundle.bundle_size || "");
+                  allPackages.push({
+                    provider_id: provider.id,
+                    network: endpoint.network,
+                    package_name: subBundle.name || subBundle.bundle_size || `${capacityGb}GB`,
+                    capacity_gb: capacityGb,
+                    cost_price: Number(subBundle.amount || 0),
+                    external_id: String(subBundle.product_id || subBundle.bundle_id),
+                    raw_data: { ...subBundle, category: item.name },
+                    is_active: true
+                  });
+                }
+              } else {
+                // Telecel or AirtelTigo flat bundles
+                const name = item.name || item.bundle_size || "";
+                const capacityGb = parseCapacity(name);
+                allPackages.push({
+                  provider_id: provider.id,
+                  network: endpoint.network,
+                  package_name: name || `${capacityGb}GB`,
+                  capacity_gb: capacityGb,
+                  cost_price: Number(item.amount || 0),
+                  external_id: String(item.product_id || item.bundle_id),
+                  raw_data: item,
+                  is_active: true
+                });
+              }
+            }
+          } else {
+            console.error(`[sync:korba] Failed response for ${endpoint.network}:`, responseData);
+          }
+        } catch (err: any) {
+          console.error(`[sync:korba] Error syncing packages for ${endpoint.network}:`, err.message || err);
+        }
+      }
+
+      // Add Airtime fallback packages if needed (like in system-payout-v1)
+      const airtimePackages = [
+        {
+          provider_id: provider.id,
+          network: "MTN",
+          package_name: "MTN Airtime",
+          capacity_gb: 0,
+          cost_price: 0,
+          external_id: "MTN_AIRTIME",
+          raw_data: { category: "Airtime" },
+          is_active: true
+        },
+        {
+          provider_id: provider.id,
+          network: "Telecel",
+          package_name: "Telecel Airtime",
+          capacity_gb: 0,
+          cost_price: 0,
+          external_id: "TELECEL_AIRTIME",
+          raw_data: { category: "Airtime" },
+          is_active: true
+        },
+        {
+          provider_id: provider.id,
+          network: "AirtelTigo",
+          package_name: "AirtelTigo Airtime",
+          capacity_gb: 0,
+          cost_price: 0,
+          external_id: "AIRTELTIGO_AIRTIME",
+          raw_data: { category: "Airtime" },
+          is_active: true
+        }
+      ];
+
+      allPackages.push(...airtimePackages);
+
+      if (allPackages.length > airtimePackages.length) {
+        const { error: upsertError } = await supabaseAdmin
+          .from("provider_packages")
+          .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
+        if (upsertError) {
+          console.error("[sync:korba] Package upsert error:", upsertError);
+          throw upsertError;
+        }
+        packagesSynced = allPackages.length;
+        console.log(`[sync:korba] Synced ${packagesSynced} packages`);
+      } else {
+        console.warn("[sync:korba] No packages fetched from Korba API (only added airtime fallback packages).");
+      }
     } else {
       throw new Error(`Sync not implemented for handler type: ${handlerType}`);
     }

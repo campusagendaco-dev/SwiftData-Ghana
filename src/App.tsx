@@ -46,6 +46,7 @@ const DashboardResultCheckers = lazy(() => import("./pages/DashboardResultChecke
 const DashboardBuyDataNetwork = lazy(() => import("./pages/DashboardBuyDataNetwork"));
 const DashboardBuyAirtime = lazy(() => import("./pages/DashboardBuyAirtime"));
 const DashboardMyStore = lazy(() => import("./pages/DashboardMyStore"));
+const DashboardDirectDebit = lazy(() => import("./pages/DashboardDirectDebit"));
 const DashboardReportIssue = lazy(() => import("./pages/DashboardReportIssue"));
 const DashboardAccountSettings = lazy(() => import("./pages/DashboardAccountSettings"));
 const DashboardProfile = lazy(() => import("./pages/DashboardProfile"));
@@ -415,6 +416,7 @@ const AppContent = () => {
           <Route path="afa" element={<DashboardAfa />} />
           <Route path="airtime-to-cash" element={<DashboardAirtimeCash />} />
           <Route path="my-store" element={<DashboardMyStore />} />
+          <Route path="direct-debit" element={<DashboardDirectDebit />} />
           <Route path="report-issue" element={<DashboardReportIssue />} />
           <Route path="account-settings" element={<DashboardAccountSettings />} />
           <Route path="profile" element={<DashboardProfile />} />
