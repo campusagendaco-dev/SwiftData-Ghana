@@ -51,12 +51,19 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countdownTimer = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize network once, but do NOT auto-fill the phone number
+  // Initialize network and pre-fill the payment phone number from the recipient if available
   useEffect(() => {
     if (recipientNetwork) {
       setPaymentNetwork(recipientNetwork);
     }
-  }, [recipientNetwork]);
+    if (recipientPhone) {
+      let displayPhone = recipientPhone;
+      if (recipientPhone.startsWith("233") && recipientPhone.length === 12) {
+        displayPhone = "0" + recipientPhone.slice(3);
+      }
+      setPaymentPhone(displayPhone);
+    }
+  }, [recipientNetwork, recipientPhone]);
 
   const [activeGateway, setActiveGateway] = useState<string>("paystack");
 
