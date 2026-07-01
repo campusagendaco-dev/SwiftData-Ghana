@@ -40,6 +40,7 @@ interface OrderRow {
   agent_id: string;
   agent_name?: string;
   agent_email?: string;
+  agent_phone?: string;
   is_sub_agent?: boolean;
   metadata?: any;
   auto_refunded?: boolean;
@@ -51,6 +52,7 @@ interface AgentProfile {
   user_id: string;
   full_name: string;
   email: string;
+  phone?: string;
   is_sub_agent: boolean;
   wallet_balance?: number;
 }
@@ -170,7 +172,7 @@ const AdminOrders = () => {
       const [profRes, walletRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("user_id, full_name, email, is_sub_agent")
+          .select("user_id, full_name, email, phone, is_sub_agent")
           .in("user_id", agentIds),
         supabase
           .from("wallets")
@@ -197,6 +199,7 @@ const AdminOrders = () => {
         ...o,
         agent_name: profile?.full_name || (isPlaceholder ? (o.customer_name || "Guest (Direct Purchase)") : "Unknown Agent"),
         agent_email: profile?.email || "",
+        agent_phone: profile?.phone || "",
         is_sub_agent: profile?.is_sub_agent ?? false,
         metadata: { ...o.metadata, wallet_balance: profile?.wallet_balance }
       };
@@ -790,6 +793,9 @@ const AdminOrders = () => {
                     <p className="text-xs font-semibold text-foreground truncate max-w-[120px]">{order.agent_name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <p className="text-[10px] text-muted-foreground truncate max-w-[80px]">{order.agent_email}</p>
+                      {order.agent_phone && (
+                        <span className="text-[10px] font-mono text-amber-500 font-bold bg-amber-500/5 px-1 rounded">{order.agent_phone}</span>
+                      )}
                       {order.metadata?.wallet_balance !== undefined && (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 whitespace-nowrap">
                           ₵{Number(order.metadata.wallet_balance).toFixed(2)}

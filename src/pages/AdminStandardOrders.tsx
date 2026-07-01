@@ -40,6 +40,7 @@ interface OrderRow {
   agent_id: string;
   agent_name?: string;
   agent_email?: string;
+  agent_phone?: string;
   is_sub_agent?: boolean;
   metadata?: any;
 }
@@ -48,6 +49,7 @@ interface AgentProfile {
   user_id: string;
   full_name: string;
   email: string;
+  phone?: string;
   is_sub_agent: boolean;
   wallet_balance?: number;
 }
@@ -139,7 +141,7 @@ const AdminStandardOrders = () => {
       const [profRes, walletRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("user_id, full_name, email, is_sub_agent")
+          .select("user_id, full_name, email, phone, is_sub_agent")
           .in("user_id", agentIds),
         supabase
           .from("wallets")
@@ -166,6 +168,7 @@ const AdminStandardOrders = () => {
         ...o,
         agent_name: profile?.full_name || (isPlaceholder ? (o.customer_name || "Guest (Direct Purchase)") : "Unknown Agent"),
         agent_email: profile?.email || "",
+        agent_phone: profile?.phone || "",
         is_sub_agent: profile?.is_sub_agent ?? false,
         metadata: { ...o.metadata, wallet_balance: profile?.wallet_balance }
       };
@@ -552,6 +555,9 @@ const AdminStandardOrders = () => {
                         <div className="flex flex-col text-[11px]">
                           <span className="font-bold text-foreground truncate max-w-[120px]" title={o.agent_name}>{o.agent_name}</span>
                           <span className="text-[9px] text-muted-foreground truncate max-w-[120px]" title={o.agent_email}>{o.agent_email}</span>
+                          {o.agent_phone && (
+                            <span className="text-[9px] font-mono text-amber-500 font-bold bg-amber-500/5 px-1 rounded w-fit">{o.agent_phone}</span>
+                          )}
                           {o.metadata?.wallet_balance !== undefined && (
                             <span className="text-[9px] text-amber-600 font-semibold mt-0.5">
                               Bal: ₵{o.metadata.wallet_balance.toFixed(2)}
