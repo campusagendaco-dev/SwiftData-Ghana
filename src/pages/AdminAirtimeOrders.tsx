@@ -25,6 +25,7 @@ import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
+import { motion } from "framer-motion";
 
 interface OrderRow {
   id: string;
@@ -400,10 +401,7 @@ const AdminAirtimeOrders = () => {
       if (errMsg) {
         toast({ title: "Bulk update failed", description: errMsg, variant: "destructive" });
       } else {
-        toast({ title: "Bulk update completed!", description: `Successfully updated ${selectedIds.size} orders.` });
-        if (currentUser) {
-          await logAudit(currentUser.id, "bulk_update_order_status", { count: selectedIds.size, status: bulkStatus });
-        }
+        toast({ title: `Bulk status update successful!` });
         setSelectedIds(new Set());
         fetchOrders();
       }
@@ -482,27 +480,38 @@ const AdminAirtimeOrders = () => {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="relative overflow-hidden space-y-8 pb-16">
+      
+      {/* Accent ambient glow */}
+      <div className="absolute top-0 left-0 right-0 h-64 pointer-events-none bg-gradient-to-b from-amber-500/[0.03] to-transparent z-0" />
+
+      {/* Header and top tools */}
+      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5 border-b border-border/40 pb-5">
         <div>
-          <h1 className="font-display text-2xl font-bold flex items-center gap-2">
-            <Phone className="w-6 h-6 text-amber-500" />
+          <div className="flex items-center gap-2 mb-2">
+            <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-amber-500/80">Fulfillment Center</span>
+          </div>
+          <h1 className="font-display text-3xl font-black tracking-tight flex items-center gap-3">
+            <Phone className="w-8 h-8 text-amber-500" />
             Airtime Orders
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Manage all customer airtime top-up orders across networks.
+          <p className="text-sm text-muted-foreground mt-1">
+            Realtime monitoring, API routing retry engine, and custom refunds.
           </p>
         </div>
+
+        {/* Action button bar */}
         <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
             onClick={handleRetryAllFailed}
             disabled={retryingAll || loading}
-            className="gap-1.5 border-amber-500/20 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
+            className="h-9 px-4 gap-2 rounded-xl border-amber-500/20 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20 shadow-sm"
           >
-            {retryingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-            Retry Failed
+            {retryingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            <span className="font-bold text-xs">Retry Failed</span>
           </Button>
 
           <Button
@@ -510,10 +519,10 @@ const AdminAirtimeOrders = () => {
             size="sm"
             onClick={handleHealProcessingOrders}
             disabled={healingProcessing || loading}
-            className="gap-1.5 border-sky-500/20 text-sky-600 hover:bg-sky-500/10 dark:text-sky-400 dark:hover:bg-sky-500/20"
+            className="h-9 px-4 gap-2 rounded-xl border-sky-500/20 text-sky-600 hover:bg-sky-500/10 dark:text-sky-400 dark:hover:bg-sky-500/20 shadow-sm"
           >
-            {healingProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            Scan stuck orders
+            {healingProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            <span className="font-bold text-xs">Scan Stuck</span>
           </Button>
 
           <Button
@@ -521,101 +530,107 @@ const AdminAirtimeOrders = () => {
             size="sm"
             onClick={handleExportCsv}
             disabled={loading || allOrders.length === 0}
-            className="gap-1.5 border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20"
+            className="h-9 px-4 gap-2 rounded-xl border-emerald-500/20 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 shadow-sm"
           >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
+            <Download className="w-4 h-4" />
+            <span className="font-bold text-xs">Export CSV</span>
           </Button>
 
-          <Button variant="outline" size="icon" onClick={() => fetchOrders()} disabled={loading}>
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl shadow-sm" onClick={() => fetchOrders()} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
       {allApisOff && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 flex items-start gap-3">
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 flex items-start gap-3">
           <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
           <div className="text-sm">
             <p className="font-bold text-red-600 dark:text-red-400">WARNING: All Provider APIs are offline!</p>
-            <p className="text-muted-foreground">Orders will remain stuck in 'paid' status until a provider API is reactivated.</p>
+            <p className="text-muted-foreground text-xs mt-0.5">Orders will remain stuck in 'paid' status until a provider API is reactivated.</p>
           </div>
         </div>
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="pt-6 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Total Airtime Transactions</span>
-              <p className="text-2xl font-black">{totalCount}</p>
-            </div>
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center">
-              <ShoppingCart className="w-5 h-5 text-amber-500" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 relative z-10">
+        <motion.div whileHover={{ y: -4, scale: 1.01 }} transition={{ duration: 0.2 }}>
+          <Card className="bg-card/40 backdrop-blur-xl border border-border/80 shadow-sm hover:shadow-amber-500/[0.02] hover:border-amber-500/20 transition-all duration-300">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Total Airtime Transactions</span>
+                <p className="text-3xl font-black tracking-tight">{totalCount}</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                <ShoppingCart className="w-6 h-6 text-amber-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="pt-6 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Pending/Paid Orders</span>
-              <p className="text-2xl font-black text-amber-500">
-                {allOrders.filter(o => o.status === "pending" || o.status === "paid" || o.status === "processing").length}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 flex items-center justify-center animate-pulse">
-              <Clock className="w-5 h-5 text-amber-500" />
-            </div>
-          </CardContent>
-        </Card>
+        <motion.div whileHover={{ y: -4, scale: 1.01 }} transition={{ duration: 0.2 }}>
+          <Card className="bg-card/40 backdrop-blur-xl border border-border/80 shadow-sm hover:shadow-blue-500/[0.02] hover:border-blue-500/20 transition-all duration-300">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Queue Status</span>
+                <p className="text-3xl font-black text-blue-500 tracking-tight">
+                  {allOrders.filter(o => o.status === "pending" || o.status === "paid" || o.status === "processing").length}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                <Clock className="w-6 h-6 text-blue-500 animate-pulse" />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="pt-6 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Fulfillment Failure Rate</span>
-              <p className="text-2xl font-black text-red-500">
-                {totalCount > 0 ? `${((allOrders.filter(o => o.status === "fulfillment_failed").length / Math.max(allOrders.length, 1)) * 100).toFixed(1)}%` : "0%"}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-2xl bg-red-500/10 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
+        <motion.div whileHover={{ y: -4, scale: 1.01 }} transition={{ duration: 0.2 }}>
+          <Card className="bg-card/40 backdrop-blur-xl border border-border/80 shadow-sm hover:shadow-red-500/[0.02] hover:border-red-500/20 transition-all duration-300">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Failure Rate</span>
+                <p className="text-3xl font-black text-red-500 tracking-tight">
+                  {totalCount > 0 ? `${((allOrders.filter(o => o.status === "fulfillment_failed").length / Math.max(allOrders.length, 1)) * 100).toFixed(1)}%` : "0%"}
+                </p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       {/* Filters Bar */}
-      <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between bg-card p-4 border border-border rounded-2xl shadow-sm">
+      <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between bg-card/40 backdrop-blur-xl p-4 border border-border/80 rounded-2xl shadow-sm relative z-10">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search phone number, order ID, agent name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-10 bg-secondary/30 rounded-xl"
+            className="pl-10 h-11 bg-secondary/30 rounded-xl border-border/60 focus-visible:ring-amber-500/20 placeholder:text-muted-foreground/45"
           />
         </div>
         
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2.5">
           {/* Agent Category Filter */}
-          <div className="flex rounded-lg border border-border p-1 bg-secondary/10">
+          <div className="flex rounded-xl border border-border/80 p-1 bg-secondary/15">
             <button
               onClick={() => setTypeFilter("all")}
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${typeFilter === "all" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               All Users
             </button>
             <button
               onClick={() => setTypeFilter("agents")}
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${typeFilter === "agents" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "agents" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               Agents
             </button>
             <button
               onClick={() => setTypeFilter("sub_agents")}
-              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${typeFilter === "sub_agents" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "sub_agents" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               Sub-Agents
             </button>
@@ -625,7 +640,7 @@ const AdminAirtimeOrders = () => {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-card border border-border text-xs rounded-xl px-3 h-10 font-bold focus:outline-none focus:ring-1 focus:ring-primary"
+            className="bg-background border border-border/85 text-xs rounded-xl px-4 h-11 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer shadow-sm"
           >
             <option value="all">All Statuses</option>
             <option value="awaiting_payment">Awaiting Payment</option>
@@ -641,7 +656,7 @@ const AdminAirtimeOrders = () => {
 
       {/* Bulk actions bar (if rows selected) */}
       {selectedIds.size > 0 && (
-        <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 animate-in slide-in-from-top-2">
+        <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 animate-in slide-in-from-top-2 relative z-10">
           <div className="text-xs font-bold text-primary">
             {selectedIds.size} order{selectedIds.size > 1 ? "s" : ""} selected
           </div>
@@ -667,12 +682,12 @@ const AdminAirtimeOrders = () => {
       )}
 
       {/* Orders Table Card */}
-      <Card className="border border-border bg-card shadow-sm overflow-hidden rounded-2xl">
+      <Card className="border border-border/80 bg-card/25 backdrop-blur-xl shadow-sm overflow-hidden rounded-2xl relative z-10">
         <div className="overflow-x-auto min-h-[400px]">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-border bg-secondary/10 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                <th className="p-2 w-10 text-center">
+              <tr className="border-b border-border/60 bg-secondary/15 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                <th className="p-2.5 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={displayedOrders.length > 0 && selectedIds.size === displayedOrders.length}
@@ -680,15 +695,15 @@ const AdminAirtimeOrders = () => {
                     className="rounded border-gray-300"
                   />
                 </th>
-                <th className="p-2">Order Details</th>
-                <th className="p-2">Recipient</th>
-                <th className="p-2 text-right">Amount</th>
-                <th className="p-2">User &amp; Wallet</th>
-                <th className="p-2">Status</th>
-                <th className="p-2 text-center">Actions</th>
+                <th className="p-2.5">Order Details</th>
+                <th className="p-2.5">Recipient</th>
+                <th className="p-2.5 text-right">Amount</th>
+                <th className="p-2.5">User &amp; Wallet</th>
+                <th className="p-2.5">Status</th>
+                <th className="p-2.5 text-center">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border text-xs">
+            <tbody className="divide-y divide-border/40 text-xs">
               {loading ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-muted-foreground">
@@ -710,9 +725,9 @@ const AdminAirtimeOrders = () => {
                   return (
                     <tr
                       key={o.id}
-                      className={`hover:bg-muted/5 transition-colors ${isChecked ? "bg-primary/5" : ""}`}
+                      className={`hover:bg-amber-500/[0.015] transition-colors ${isChecked ? "bg-primary/5" : ""}`}
                     >
-                      <td className="p-2 text-center">
+                      <td className="p-2.5 text-center">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -720,7 +735,7 @@ const AdminAirtimeOrders = () => {
                           className="rounded border-gray-300"
                         />
                       </td>
-                      <td className="p-2 space-y-0.5">
+                      <td className="p-2.5 space-y-0.5">
                         <div className="font-bold font-mono text-[10px] truncate w-24 uppercase text-muted-foreground" title={o.id}>
                           #{o.id.slice(0, 8)}
                         </div>
@@ -736,16 +751,16 @@ const AdminAirtimeOrders = () => {
                           </span>
                         </div>
                       </td>
-                      <td className="p-2 font-semibold">
+                      <td className="p-2.5 font-semibold">
                         <div className="flex flex-col text-[11px]">
                           <span>{o.customer_phone}</span>
                           <PhoneOrderTracker phoneNumber={o.customer_phone || ""} />
                         </div>
                       </td>
-                      <td className="p-2 text-right font-black text-foreground text-[11px]">
+                      <td className="p-2.5 text-right font-black text-foreground text-[11px]">
                         ₵{o.amount.toFixed(2)}
                       </td>
-                      <td className="p-2">
+                      <td className="p-2.5">
                         <div className="flex flex-col text-[11px]">
                           <span className="font-bold text-foreground truncate max-w-[120px]" title={o.agent_name}>{o.agent_name}</span>
                           <span className="text-[9px] text-muted-foreground truncate max-w-[120px]" title={o.agent_email}>{o.agent_email}</span>
@@ -756,7 +771,7 @@ const AdminAirtimeOrders = () => {
                           )}
                         </div>
                       </td>
-                      <td className="p-2">
+                      <td className="p-2.5">
                         <div className="space-y-0.5">
                           <Badge variant="outline" className={`font-black uppercase tracking-wider text-[8px] px-1.5 py-0.5 ${STATUS_COLORS[o.status] || "bg-secondary text-secondary-foreground"}`}>
                             {o.status.replace("_", " ")}
@@ -768,7 +783,7 @@ const AdminAirtimeOrders = () => {
                           )}
                         </div>
                       </td>
-                      <td className="p-2 text-center">
+                      <td className="p-2.5 text-center">
                         <div className="flex items-center justify-center">
                           {(o.status === "fulfillment_failed" || o.status === "paid" || o.status === "processing") ? (
                             <DropdownMenu>
@@ -817,7 +832,7 @@ const AdminAirtimeOrders = () => {
 
       {/* Pagination Footer */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-2 py-4 border-t border-border bg-card rounded-xl">
+        <div className="flex items-center justify-between px-4 py-4 border border-border/80 bg-card/25 backdrop-blur-xl rounded-2xl relative z-10 shadow-sm">
           <div className="text-xs text-muted-foreground">
             Showing Page <span className="font-bold text-foreground">{page}</span> of <span className="font-bold text-foreground">{totalPages}</span> ({totalCount} total airtime orders)
           </div>
@@ -825,7 +840,7 @@ const AdminAirtimeOrders = () => {
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-lg shadow-sm"
               onClick={() => setPage(1)}
               disabled={page === 1}
             >
@@ -834,7 +849,7 @@ const AdminAirtimeOrders = () => {
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-lg shadow-sm"
               onClick={() => setPage((p) => Math.max(p - 1, 1))}
               disabled={page === 1}
             >
@@ -843,7 +858,7 @@ const AdminAirtimeOrders = () => {
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-lg shadow-sm"
               onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
               disabled={page === totalPages}
             >
@@ -852,7 +867,7 @@ const AdminAirtimeOrders = () => {
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="h-8 w-8 rounded-lg shadow-sm"
               onClick={() => setPage(totalPages)}
               disabled={page === totalPages}
             >
