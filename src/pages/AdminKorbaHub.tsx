@@ -273,6 +273,75 @@ const AdminKorbaHub = () => {
     }
   };
 
+  // Reconcile Korba Gateway Order with database
+  const reconcileGatewayOrder = async (clientTxId: string, gatewayStatus: string) => {
+    if (!clientTxId) {
+      toast({
+        title: "Reconciliation Failed",
+        description: "No client transaction ID available for reconciliation.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to reconcile this transaction? This will find the matching local order, mark it as fulfilled, and credit any agent commission.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      // 1. Find the matching local order
+      const { data: order, error: findError } = await supabase
+        .from("orders")
+        .select("id, status")
+        .eq("id", clientTxId)
+        .maybeSingle();
+
+      if (findError) throw findError;
+      if (!order) {
+        throw new Error(`No local order found matching client reference ID: ${clientTxId}`);
+      }
+
+      if (order.status === "fulfilled" || order.status === "completed") {
+        toast({
+          title: "Already Processed",
+          description: "This order is already marked as fulfilled in the database.",
+        });
+        return;
+      }
+
+      // 2. Call the force-fulfill endpoint
+      const sessionRes = await supabase.auth.getSession();
+      const session = sessionRes.data.session;
+      if (!session) {
+        throw new Error("Unauthorized session. Please log in again.");
+      }
+
+      const { data: fulfillRes, error: fulfillError } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "force_fulfill_order", orderId: order.id },
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      });
+
+      if (fulfillError || fulfillRes?.error) {
+        throw new Error(fulfillRes?.error || "Fulfillment endpoint returned an error");
+      }
+
+      toast({
+        title: "Reconciliation Successful",
+        description: `Order ${order.id.slice(0, 8)}... has been successfully marked as fulfilled and agent commissions have been credited.`,
+      });
+
+      // Refresh data
+      fetchOrders(true);
+      fetchGatewayLogs(true);
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        title: "Reconciliation Failed",
+        description: e.message || "Failed to reconcile the transaction.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Initial load
   useEffect(() => {
     fetchBalance(true);
@@ -767,6 +836,7 @@ const AdminKorbaHub = () => {
                         <th className="py-3 px-4">Status</th>
                         <th className="py-3 px-4">Message</th>
                         <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/40 font-medium">
@@ -789,6 +859,18 @@ const AdminKorbaHub = () => {
                           </td>
                           <td className="py-3 px-4 max-w-[200px] truncate text-muted-foreground" title={tx.exchange_message}>{tx.exchange_message || "-"}</td>
                           <td className="py-3 px-4 text-muted-foreground">{new Date(tx.time_created).toLocaleString()}</td>
+                          <td className="py-3 px-4 text-right">
+                             {tx.transaction_status === "success" && (
+                               <Button
+                                 size="sm"
+                                 variant="outline"
+                                 onClick={() => reconcileGatewayOrder(tx.client_transaction_id, tx.transaction_status)}
+                                 className="h-7 text-[10px] font-black rounded bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20 text-amber-600 dark:text-amber-500 transition-all px-2"
+                               >
+                                 Reconcile
+                               </Button>
+                             )}
+                           </td>
                         </tr>
                       ))}
                     </tbody>
