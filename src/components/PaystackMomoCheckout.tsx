@@ -77,7 +77,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           .maybeSingle();
 
         if (data) {
-          if (data.auto_gateway_switch_by_package && metadata?.is_korba) {
+          if (data.auto_gateway_switch_by_package && (metadata?.is_korba === true || metadata?.is_korba === "true")) {
             setActiveGateway("korba");
           } else if (data.active_payment_gateway) {
             setActiveGateway(data.active_payment_gateway);
