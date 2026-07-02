@@ -165,7 +165,11 @@ export class KorbaAdapter implements ProviderAdapter {
       }
     }
 
-    return this.executeRequest(supabaseAdmin, targetUrl, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, korbaPayload, false);
+    const result = await this.executeRequest(supabaseAdmin, targetUrl, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, korbaPayload, false);
+    if (result.ok && !result.id) {
+      result.id = transactionId;
+    }
+    return result;
   }
 
   async checkStatus(
@@ -311,14 +315,15 @@ export class KorbaAdapter implements ProviderAdapter {
           reason: "", 
           id: semantic.id, 
           status: semantic.status,
-          raw: token ? { prepaid_token: token } : undefined
+          raw: token ? { prepaid_token: token } : undefined,
+          rawBody: resText
         };
       }
-      return { ok: false, reason: semantic.reason || "Korba rejected this order." };
+      return { ok: false, reason: semantic.reason || "Korba rejected this order.", rawBody: resText };
     }
 
     let parsedMsg = "";
     try { parsedMsg = JSON.parse(resText)?.message || JSON.parse(resText)?.error || ""; } catch { /* ignore */ }
-    return { ok: false, reason: parsedMsg || `Korba returned status ${status}: ${resText.slice(0, 100)}` };
+    return { ok: false, reason: parsedMsg || `Korba returned status ${status}: ${resText.slice(0, 100)}`, rawBody: resText };
   }
 }

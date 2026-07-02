@@ -3,6 +3,8 @@ export interface ProviderResponse {
   reason?: string;
   id?: string;
   status?: string;
+  rawBody?: string;
+  raw?: any;
 }
 
 export interface PurchaseData {
