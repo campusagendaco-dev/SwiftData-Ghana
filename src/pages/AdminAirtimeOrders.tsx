@@ -217,7 +217,7 @@ const AdminAirtimeOrders = () => {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
         body: { action: "retry_order", orderId },
       });
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not retry this order.") : null;
       if (errMsg) {
         toast({ title: "Retry failed", description: errMsg, variant: "destructive" });
       } else {
@@ -249,7 +249,7 @@ const AdminAirtimeOrders = () => {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not force fulfill this order.") : null;
       if (errMsg) {
         toast({ title: "Action failed", description: errMsg, variant: "destructive" });
       } else {
@@ -288,7 +288,7 @@ const AdminAirtimeOrders = () => {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not refund this order.") : null;
       if (errMsg) {
         toast({ title: "Refund failed", description: errMsg, variant: "destructive" });
       } else {
@@ -357,7 +357,7 @@ const AdminAirtimeOrders = () => {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not scan stuck orders.") : null;
       if (errMsg) {
         toast({ title: "Scan failed", description: errMsg, variant: "destructive" });
       } else {
@@ -400,7 +400,7 @@ const AdminAirtimeOrders = () => {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not complete bulk update.") : null;
       if (errMsg) {
         toast({ title: "Bulk update failed", description: errMsg, variant: "destructive" });
       } else {

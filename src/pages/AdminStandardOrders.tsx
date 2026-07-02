@@ -191,7 +191,7 @@ const AdminStandardOrders = () => {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
         body: { action: "retry_order", orderId },
       });
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not retry this order.") : null;
       if (errMsg) {
         toast({ title: "Retry failed", description: errMsg, variant: "destructive" });
       } else {
@@ -252,7 +252,7 @@ const AdminStandardOrders = () => {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
-      const errMsg = getFunctionErrorMessage(data, error);
+      const errMsg = (error || data?.error) ? await getFunctionErrorMessage(error || data?.error, "Could not refund this order.") : null;
       if (errMsg) {
         toast({ title: "Refund failed", description: errMsg, variant: "destructive" });
       } else {
