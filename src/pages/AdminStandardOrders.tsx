@@ -487,6 +487,7 @@ const AdminStandardOrders = () => {
                 <th className="p-2.5">Order Details</th>
                 <th className="p-2.5">Recipient</th>
                 <th className="p-2.5">Package Details</th>
+                <th className="p-2.5">Gateway</th>
                 <th className="p-2.5 text-right">Amount</th>
                 <th className="p-2.5">User &amp; Wallet</th>
                 <th className="p-2.5">Status</th>
@@ -496,7 +497,7 @@ const AdminStandardOrders = () => {
             <tbody className="divide-y divide-border/40 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="p-8 text-center text-muted-foreground">
                     <div className="flex items-center justify-center gap-2 py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-primary" />
                       Loading standard orders...
@@ -505,7 +506,7 @@ const AdminStandardOrders = () => {
                 </tr>
               ) : displayedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="p-8 text-center text-muted-foreground">
                     No standard orders found matching the filter criteria.
                   </td>
                 </tr>
@@ -547,6 +548,15 @@ const AdminStandardOrders = () => {
                           </span>
                           <span className="font-bold text-foreground text-[10px]">{o.package_size}</span>
                         </div>
+                      </td>
+                      <td className="p-2.5">
+                        {(() => {
+                          const isApi = o.metadata?.client_reference || o.metadata?.wallet_type === "api";
+                          const isWallet = o.payment_method === "wallet" && !isApi;
+                          if (isApi) return <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">API</Badge>;
+                          if (isWallet) return <Badge className="bg-sky-500/10 text-sky-400 border-sky-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Wallet</Badge>;
+                          return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Direct MoMo</Badge>;
+                        })()}
                       </td>
                       <td className="p-2.5 text-right font-black text-foreground text-[11px]">
                         ₵{o.amount.toFixed(2)}

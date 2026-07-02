@@ -706,6 +706,7 @@ const AdminAirtimeOrders = () => {
                 </th>
                 <th className="p-2.5">Order Details</th>
                 <th className="p-2.5">Recipient</th>
+                <th className="p-2.5">Gateway</th>
                 <th className="p-2.5 text-right">Amount</th>
                 <th className="p-2.5">User &amp; Wallet</th>
                 <th className="p-2.5">Status</th>
@@ -715,7 +716,7 @@ const AdminAirtimeOrders = () => {
             <tbody className="divide-y divide-border/40 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
                     <div className="flex items-center justify-center gap-2 py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-primary" />
                       Loading airtime orders...
@@ -724,7 +725,7 @@ const AdminAirtimeOrders = () => {
                 </tr>
               ) : displayedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
                     No airtime orders found matching the filter criteria.
                   </td>
                 </tr>
@@ -762,6 +763,15 @@ const AdminAirtimeOrders = () => {
                       </td>
                       <td className="p-2.5 font-semibold">
                         <span className="text-[11px]">{o.customer_phone}</span>
+                      </td>
+                      <td className="p-2.5">
+                        {(() => {
+                          const isApi = o.metadata?.client_reference || o.metadata?.wallet_type === "api";
+                          const isWallet = o.payment_method === "wallet" && !isApi;
+                          if (isApi) return <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">API</Badge>;
+                          if (isWallet) return <Badge className="bg-sky-500/10 text-sky-400 border-sky-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Wallet</Badge>;
+                          return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Direct MoMo</Badge>;
+                        })()}
                       </td>
                       <td className="p-2.5 text-right font-black text-foreground text-[11px]">
                         ₵{o.amount.toFixed(2)}
