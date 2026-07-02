@@ -73,6 +73,18 @@ verify_jwt = false
 [functions.datahub-webhook]
 verify_jwt = false
 
+[functions.korba-webhook]
+verify_jwt = false
+
+[functions.datamart-webhook]
+verify_jwt = false
+
+[functions.direct-debit-webhook]
+verify_jwt = false
+
+[functions.provider-webhook]
+verify_jwt = false
+
 [functions.dump-processing-orders]
 verify_jwt = false
 
