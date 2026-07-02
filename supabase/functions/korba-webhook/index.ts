@@ -164,8 +164,11 @@ serve(async (req) => {
 
   console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}, token=${prepaidToken}`);
 
+  const isDisbursementCallback = transactionId.endsWith("_disb");
+  const cleanedTransactionId = isDisbursementCallback ? transactionId.replace("_disb", "") : transactionId;
+
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!transactionId || !UUID_RE.test(transactionId)) {
+  if (!cleanedTransactionId || !UUID_RE.test(cleanedTransactionId)) {
     console.warn(`[korba-webhook] Invalid or malformed transaction_id: ${transactionId}`);
     return json({ error: "Invalid transaction_id parameter" }, 400);
   }
@@ -175,85 +178,95 @@ serve(async (req) => {
     const { data: existingOrder } = await supabaseAdmin
       .from("orders")
       .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, metadata, customer_id")
-      .eq("id", transactionId)
+      .eq("id", cleanedTransactionId)
       .maybeSingle();
 
     if (!existingOrder) {
-      console.error(`[korba-webhook] Order ${transactionId} not found in DB`);
+      console.error(`[korba-webhook] Order ${cleanedTransactionId} not found in DB`);
       return json({ error: "Order not found" }, 404);
     }
 
     if (existingOrder.status === "fulfilled" || existingOrder.status === "completed") {
-      console.log(`[korba-webhook] Order ${transactionId} is already completed/fulfilled`);
+      console.log(`[korba-webhook] Order ${cleanedTransactionId} is already completed/fulfilled`);
       return json({ received: true, already_processed: true });
     }
 
-    // Handle fulfillment success callbacks for orders already submitted for processing/failed retry
-    if ((existingOrder.status === "processing" || existingOrder.status === "fulfillment_failed") && status === "SUCCESS") {
-      console.log(`[korba-webhook] Fulfillment callback success for order ${transactionId}. Marking as fulfilled.`);
-      const patch: any = {
-        status: "fulfilled",
-        failure_reason: prepaidToken ? `Token: ${prepaidToken}` : null,
-        updated_at: new Date().toISOString()
-      };
-      if (prepaidToken) {
-        patch.metadata = { ...(existingOrder.metadata || {}), prepaid_token: prepaidToken };
-      }
-      await supabaseAdmin.from("orders").update(patch).eq("id", transactionId);
-
-      try {
-        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: transactionId });
-        
-        // Trigger Push Notification for Agent
-        if (existingOrder.agent_id && existingOrder.agent_id !== '00000000-0000-0000-0000-000000000000') {
-          const profit = Number(existingOrder.profit || 0).toFixed(2);
-          await triggerPushNotification(supabaseAdmin, {
-            user_id: existingOrder.agent_id,
-            title: "🎉 New payment for Data selling",
-            body: `You just received GHS ${profit} from your recent data sale.`,
-            url: "/dashboard/orders",
-            icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
-          });
+    // Handle fulfillment callbacks
+    if (isDisbursementCallback) {
+      if (status === "SUCCESS") {
+        console.log(`[korba-webhook] Fulfillment callback success for order ${cleanedTransactionId}. Marking as fulfilled.`);
+        const patch: any = {
+          status: "fulfilled",
+          failure_reason: prepaidToken ? `Token: ${prepaidToken}` : null,
+          updated_at: new Date().toISOString()
+        };
+        if (prepaidToken) {
+          patch.metadata = { ...(existingOrder.metadata || {}), prepaid_token: prepaidToken };
         }
-      } catch (e) {
-        console.error("[korba-webhook] Profit credit or notification failed:", e);
-      }
+        await supabaseAdmin.from("orders").update(patch).eq("id", cleanedTransactionId);
 
-      await notifyApiClient(supabaseAdmin, transactionId, "fulfilled");
-
-      // Trigger SMS for Customer
-      if (existingOrder.customer_phone) {
         try {
-          const isUtility = existingOrder.order_type === "utility";
-          const networkName = existingOrder.network || "";
-          const packageName = existingOrder.package_size || "";
-          const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: cleanedTransactionId });
           
-          let displayPackage = `${networkName} ${packageName}`;
-          if (isAirtime) {
-            // Base price is preferred for display if it exists in metadata, fallback to order amount
-            const basePrice = existingOrder.metadata?.base_price || existingOrder.amount;
-            displayPackage = `${networkName} GHS ${Number(basePrice).toFixed(2)} Airtime`;
+          // Trigger Push Notification for Agent
+          if (existingOrder.agent_id && existingOrder.agent_id !== '00000000-0000-0000-0000-000000000000') {
+            const profit = Number(existingOrder.profit || 0).toFixed(2);
+            await triggerPushNotification(supabaseAdmin, {
+              user_id: existingOrder.agent_id,
+              title: "🎉 New payment for Data selling",
+              body: `You just received GHS ${profit} from your recent data sale.`,
+              url: "/dashboard/orders",
+              icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
+            });
           }
-
-          let customMsg = "";
-          if (isUtility) {
-            if (prepaidToken) {
-              customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
-            } else {
-              customMsg = `Payment received! Your ${networkName} payment for account ${existingOrder.customer_phone} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
-            }
-          } else {
-            customMsg = `Success! Your order for ${displayPackage} to ${existingOrder.customer_phone} has been processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
-          }
-
-          await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: customMsg }, existingOrder.agent_id);
-        } catch (smsErr) {
-          console.error("[korba-webhook] Success SMS dispatch failed:", smsErr);
+        } catch (e) {
+          console.error("[korba-webhook] Profit credit or notification failed:", e);
         }
-      }
 
-      return json({ received: true, fulfilled: true });
+        await notifyApiClient(supabaseAdmin, cleanedTransactionId, "fulfilled");
+
+        // Trigger SMS for Customer
+        if (existingOrder.customer_phone) {
+          try {
+            const isUtility = existingOrder.order_type === "utility";
+            const networkName = existingOrder.network || "";
+            const packageName = existingOrder.package_size || "";
+            const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+            
+            let displayPackage = `${networkName} ${packageName}`;
+            if (isAirtime) {
+              // Base price is preferred for display if it exists in metadata, fallback to order amount
+              const basePrice = existingOrder.metadata?.base_price || existingOrder.amount;
+              displayPackage = `${networkName} GHS ${Number(basePrice).toFixed(2)} Airtime`;
+            }
+
+            let customMsg = "";
+            if (isUtility) {
+              if (prepaidToken) {
+                customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+              } else {
+                customMsg = `Payment received! Your ${networkName} payment for account ${existingOrder.customer_phone} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+              }
+            } else {
+              customMsg = `Success! Your order for ${displayPackage} to ${existingOrder.customer_phone} has been processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+            }
+
+            await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: customMsg }, existingOrder.agent_id);
+          } catch (smsErr) {
+            console.error("[korba-webhook] Success SMS dispatch failed:", smsErr);
+          }
+        }
+
+        return json({ received: true, fulfilled: true });
+      } else {
+        console.warn(`[korba-webhook] Fulfillment callback failed for order ${cleanedTransactionId}: ${message}`);
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: message || "Disbursement failed via Korba"
+        }).eq("id", cleanedTransactionId);
+
+        return json({ received: true, status: "failed" });
+      }
     }
 
     // Handle payment failures
@@ -262,7 +275,7 @@ serve(async (req) => {
       await supabaseAdmin.from("orders").update({
         status: "fulfillment_failed",
         failure_reason: message || "Payment failed via Korba"
-      }).eq("id", transactionId);
+      }).eq("id", cleanedTransactionId);
 
       return json({ received: true, status: "failed" });
     }
@@ -275,7 +288,7 @@ serve(async (req) => {
       payment_method: "korba",
       paystack_verified_amount: verifiedAmount,
       failure_reason: null
-    }).eq("id", transactionId);
+    }).eq("id", cleanedTransactionId);
 
     // 2. Fulfill based on order type
     if (orderType === "wallet_topup") {
@@ -286,7 +299,7 @@ serve(async (req) => {
         await supabaseAdmin.rpc("repay_credit", { p_agent_id: existingOrder.agent_id, p_amount: verifiedAmount });
       }
       
-      await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", transactionId);
+      await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", cleanedTransactionId);
       
       // Notify API client and SMS
       await notifyWalletCredit(supabaseAdmin, existingOrder.agent_id, verifiedAmount, walletType);
@@ -311,7 +324,7 @@ serve(async (req) => {
 
       if (customerId && agentId && creditAmount > 0) {
         const { data: creditRes, error: creditErr } = await supabaseAdmin.rpc("fulfill_store_wallet_topup", {
-          p_order_id: transactionId,
+          p_order_id: cleanedTransactionId,
           p_customer_id: customerId,
           p_agent_id: agentId,
           p_amount: creditAmount
@@ -322,7 +335,7 @@ serve(async (req) => {
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
             failure_reason: creditRes?.error || "Automatic credit failed."
-          }).eq("id", transactionId);
+          }).eq("id", cleanedTransactionId);
           
           return json({ received: true, fulfilled: false, error: creditRes?.error || "Automatic credit failed" });
         }
@@ -349,7 +362,7 @@ serve(async (req) => {
         await supabaseAdmin.from("orders").update({
           status: "fulfillment_failed",
           failure_reason: "Missing customer_id or agent_id for store wallet top-up."
-        }).eq("id", transactionId);
+        }).eq("id", cleanedTransactionId);
       }
 
       return json({ received: true, processed: true });
@@ -366,7 +379,7 @@ serve(async (req) => {
           parent_agent_id: null
         }).eq("user_id", agentId);
         
-        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", transactionId);
+        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", cleanedTransactionId);
         console.log("Agent activated via Korba webhook:", agentId);
       }
       return json({ received: true, fulfilled: true });
@@ -412,10 +425,10 @@ serve(async (req) => {
             parent_profit: agentProfit,
             parent_agent_id: parentAgentId || null,
           })
-          .eq("id", transactionId);
+          .eq("id", cleanedTransactionId);
 
         if (parentAgentId && agentProfit > 0) {
-          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: transactionId });
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: cleanedTransactionId });
         }
         console.log("Sub agent activated via Korba webhook:", subAgentId, "parent:", parentAgentId);
       }
@@ -429,7 +442,7 @@ serve(async (req) => {
       .update({
         status: "paid"
       })
-      .eq("id", transactionId);
+      .eq("id", cleanedTransactionId);
 
     // Send SMS alert that payment was successful (similar to paystack-webhook)
     if (existingOrder.customer_phone) {
@@ -437,7 +450,7 @@ serve(async (req) => {
     }
 
     // Call verify-payment Edge Function synchronously to perform immediate delivery
-    console.log(`[korba-webhook] Triggering verify-payment synchronously for order: ${transactionId}`);
+    console.log(`[korba-webhook] Triggering verify-payment synchronously for order: ${cleanedTransactionId}`);
     const verifyUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;
     const verifyRes = await fetch(verifyUrl, {
       method: "POST",
@@ -445,7 +458,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       },
-      body: JSON.stringify({ reference: transactionId }),
+      body: JSON.stringify({ reference: cleanedTransactionId }),
     });
 
     const verifyData = await verifyRes.json();

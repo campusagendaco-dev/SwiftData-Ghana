@@ -26,7 +26,7 @@ export class KorbaAdapter implements ProviderAdapter {
 
     const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
     const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || ""));
-    const transactionId = String(data.reference || data.order_id || "");
+    const transactionId = `${data.reference || data.order_id || ""}_disb`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/korba-webhook`);
     const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
 
@@ -176,7 +176,10 @@ export class KorbaAdapter implements ProviderAdapter {
     const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
     const targetUrl = `${baseUrl}/transaction_status/`;
 
-    const activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;
+    let activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;
+    if (activeProviderOrderId === reference) {
+      activeProviderOrderId = `${reference}_disb`;
+    }
     const korbaPayload = {
       transaction_id: String(activeProviderOrderId),
       client_id: parseInt(KORBA_CLIENT_ID) || 2419,
