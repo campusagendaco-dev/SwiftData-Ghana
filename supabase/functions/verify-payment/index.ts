@@ -1517,6 +1517,8 @@ serve(async (req) => {
         failure_reason: targetFailureReason
       }).eq("id", targetReference);
 
+      const isApiOrder = (claimedOrder?.order_type || "").toLowerCase() === "api";
+
       log(supabaseAdmin, { 
         level: isApiOrder ? "warn" : "error", 
         source: "verify-payment", 
