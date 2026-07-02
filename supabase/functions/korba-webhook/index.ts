@@ -92,12 +92,14 @@ serve(async (req) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   // Verify callback token if configured in database
+  let korbaProvider: any = null;
   try {
-    const { data: korbaProvider } = await supabaseAdmin
+    const { data } = await supabaseAdmin
       .from("providers")
-      .select("settings")
+      .select("settings, api_secret")
       .eq("handler_type", "korba")
       .maybeSingle();
+    korbaProvider = data;
 
     const expectedToken = korbaProvider?.settings?.callback_token;
     if (expectedToken) {
@@ -144,7 +146,7 @@ serve(async (req) => {
   }
 
   // Verify HMAC signature to protect from fake callbacks
-  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+  const KORBA_SECRET_KEY = korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || Deno.env.get("KORBA_SECRET_KEY") || "";
   if (KORBA_SECRET_KEY) {
     if (!signature) {
       console.error("[korba-webhook] Unauthorized callback: Missing signature parameter.");
