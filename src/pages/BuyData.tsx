@@ -95,26 +95,60 @@ const getPackageDetails = (pkg: any): string => {
   const rawData = pkg.rawData || {};
   const productId = rawData.product_id || rawData.bundle_id || "";
 
-  if (productId.includes("Kokrokoo")) {
+  // 1. Kokrokoo
+  if (productId.includes("Kokrokoo") || category.toLowerCase().includes("kokrokoo")) {
     return "400MB + 20 Mins Call (5am - 8am)";
   }
   
-  if (category.toLowerCase().includes("midnight") || String(rawData.category).toLowerCase().includes("midnight") || String(rawData.category).toLowerCase().includes("night")) {
-    return rawData.validity || "Midnight Bundle (12am - 5am)";
+  // 2. Midnight / Night
+  if (category.toLowerCase().includes("midnight") || 
+      String(rawData.category).toLowerCase().includes("midnight") || 
+      String(rawData.category).toLowerCase().includes("night")) {
+    const val = rawData.validity || "Midnight (12am - 5am)";
+    return `Midnight Bundle (${val})`;
   }
 
+  // 3. Social Media
   if (category.toLowerCase().includes("social") || String(rawData.category).toLowerCase().includes("social")) {
     return "Social Media (WhatsApp, FB, etc.)";
   }
 
+  // 4. Video Streaming
   if (category.toLowerCase().includes("video") || String(rawData.category).toLowerCase().includes("video")) {
     return "Video Bundle (YouTube, TikTok, etc.)";
   }
 
-  if (pkg.validity === "MTN Mash Up") {
-    return "MTN Mash Up voice + data";
+  // 5. AirtelTigo Sika Kokoo
+  if (category.toLowerCase().includes("sika kokoo") || String(rawData.category).toLowerCase().includes("sika kokoo")) {
+    const val = rawData.validity || pkg.validity || "";
+    return val ? `Sika Kokoo (${val})` : "Sika Kokoo Bundle";
   }
 
+  // 6. AirtelTigo Fuse (Voice & Data)
+  if (category.toLowerCase().includes("fuse") || String(rawData.category).toLowerCase().includes("fuse")) {
+    const match = size.match(/(\d+mins?)\s+and\s+([\d.\w]+)/i);
+    if (match) {
+      return `${match[1]} + ${match[2]} Voice & Data`;
+    }
+    return "Fuse Voice & Data";
+  }
+
+  // 7. AirtelTigo BigTime Data
+  if (category.toLowerCase().includes("bigtime") || String(rawData.category).toLowerCase().includes("bigtime")) {
+    return "BigTime Data (No Expiry)";
+  }
+
+  // 8. IDD Bundles
+  if (category.toLowerCase().includes("idd") || String(rawData.category).toLowerCase().includes("idd")) {
+    return "International (IDD) Bundle";
+  }
+
+  // 9. Mash Up
+  if (pkg.validity === "MTN Mash Up") {
+    return "MTN Mash Up (Voice + Data)";
+  }
+
+  // 10. General Validity
   if (rawData.validity) {
     return rawData.validity;
   }
