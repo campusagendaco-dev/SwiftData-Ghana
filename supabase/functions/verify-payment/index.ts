@@ -122,21 +122,37 @@ async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise
     }
   }
   const network = (order?.network || "") as string;
-  const isKorbaNetwork = (network && String(network).toUpperCase().startsWith("KORBA")) || 
-                         order?.metadata?.is_korba === true || 
-                         order?.metadata?.is_korba === "true";
   
-  if (isKorbaNetwork) {
-    const { data: korbaProvider } = await supabaseAdmin
-      .from("providers")
-      .select("*")
-      .eq("name", "Korba")
-      .maybeSingle();
-    if (korbaProvider) {
-      console.log(`[verify-payment] Resolved Korba provider for order ${order.id}`);
+  const { data: korbaProvider } = await supabaseAdmin
+    .from("providers")
+    .select("*")
+    .eq("name", "Korba")
+    .maybeSingle();
+
+  if (korbaProvider) {
+    const isAirtime = orderType.toLowerCase() === "airtime";
+    const isUtility = orderType.toLowerCase() === "utility";
+    const isKorbaFlag = (network && String(network).toUpperCase().startsWith("KORBA")) || 
+                        order?.metadata?.is_korba === true || 
+                        order?.metadata?.is_korba === "true";
+    
+    let isMappedToKorba = false;
+    if (orderType.toLowerCase() === "data") {
+      const { data: korbaMapping } = await supabaseAdmin
+        .from("provider_packages")
+        .select("id")
+        .eq("provider_id", korbaProvider.id)
+        .eq("network", network)
+        .eq("package_name", order.package_size)
+        .maybeSingle();
+      if (korbaMapping) {
+        isMappedToKorba = true;
+      }
+    }
+
+    if (isAirtime || isUtility || isKorbaFlag || isMappedToKorba) {
+      console.log(`[verify-payment] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag}, Mapped=${isMappedToKorba})`);
       return [korbaProvider];
-    } else {
-      console.warn(`[verify-payment] Korba provider not found in DB. Falling back to active data providers.`);
     }
   }
   
