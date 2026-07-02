@@ -1,9 +1,9 @@
--- Upgrade credit_order_profits function to support dynamic agent commissions and ranks
+-- Upgrade and fix credit_order_profits function to support explicit UUID casting
 CREATE OR REPLACE FUNCTION public.credit_order_profits(p_order_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
-AS $$
+ AS $$
 DECLARE
     v_agent_id UUID;
     v_parent_agent_id UUID;

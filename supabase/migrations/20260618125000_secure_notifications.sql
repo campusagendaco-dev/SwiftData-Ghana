@@ -16,8 +16,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Create a precise policy: Users can only see global notifications 
--- or notifications specifically addressed to their user_id.
+DROP POLICY IF EXISTS "Users view own notifications" ON public.notifications;
 CREATE POLICY "Users view own notifications" ON public.notifications
   FOR SELECT TO authenticated
   USING (
