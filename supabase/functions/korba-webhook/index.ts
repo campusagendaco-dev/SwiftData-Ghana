@@ -222,21 +222,30 @@ serve(async (req) => {
       // Trigger SMS for Customer
       if (existingOrder.customer_phone) {
         try {
-          const smsType = existingOrder.order_type === "utility" ? "utility_paid" : "payment_success";
-          const smsVars = {
-            phone: existingOrder.customer_phone,
-            package: existingOrder.package_size || "",
-            utility_type: existingOrder.network || "",
-            account: existingOrder.customer_phone,
-            amount: String(existingOrder.amount || 0),
-            token: prepaidToken || ""
-          };
-          if (existingOrder.order_type === "utility" && prepaidToken) {
-            const customMsg = `ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nThank you for using SwiftData!`;
-            await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom" as any, { message: customMsg }, existingOrder.agent_id);
-          } else {
-            await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, smsType, smsVars, existingOrder.agent_id);
+          const isUtility = existingOrder.order_type === "utility";
+          const networkName = existingOrder.network || "";
+          const packageName = existingOrder.package_size || "";
+          const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+          
+          let displayPackage = `${networkName} ${packageName}`;
+          if (isAirtime) {
+            // Base price is preferred for display if it exists in metadata, fallback to order amount
+            const basePrice = existingOrder.metadata?.base_price || existingOrder.amount;
+            displayPackage = `${networkName} GHS ${Number(basePrice).toFixed(2)} Airtime`;
           }
+
+          let customMsg = "";
+          if (isUtility) {
+            if (prepaidToken) {
+              customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+            } else {
+              customMsg = `Payment received! Your ${networkName} payment for account ${existingOrder.customer_phone} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+            }
+          } else {
+            customMsg = `Success! Your order for ${displayPackage} to ${existingOrder.customer_phone} has been processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+          }
+
+          await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: customMsg }, existingOrder.agent_id);
         } catch (smsErr) {
           console.error("[korba-webhook] Success SMS dispatch failed:", smsErr);
         }

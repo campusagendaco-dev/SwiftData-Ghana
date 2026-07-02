@@ -340,7 +340,7 @@ export function formatTemplate(template: string, vars: Record<string, string | n
 export async function sendPaymentSms(
   supabaseAdmin: any,
   customerPhone: string,
-  type: "payment_success" | "order_failed" | "wallet_topup" | "withdrawal_request" | "withdrawal_completed" | "manual_credit" | "utility_paid" = "payment_success",
+  type: "payment_success" | "order_failed" | "wallet_topup" | "withdrawal_request" | "withdrawal_completed" | "manual_credit" | "utility_paid" | "custom" = "payment_success",
   vars: Record<string, string | number> = {},
   agentId?: string
 ) {
@@ -353,8 +353,9 @@ export async function sendPaymentSms(
       return;
     }
 
-    const template = templates[type] || templates.payment_success;
-    const message = formatTemplate(template, vars);
+    const message = type === "custom" && vars.message
+      ? String(vars.message)
+      : formatTemplate(templates[type as any] || templates.payment_success, vars);
 
     console.log(`[SMS] Sending ${type} to ${recipient}...`);
     return await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);

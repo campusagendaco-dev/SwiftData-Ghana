@@ -254,21 +254,30 @@ async function fulfillOrder(
   // Trigger SMS for Customer
   if (order.customer_phone) {
     try {
-      const smsType = order.order_type === "utility" ? "utility_paid" : "payment_success";
-      const smsVars = {
-        phone: order.customer_phone,
-        package: order.package_size || "",
-        utility_type: order.network || "",
-        account: order.customer_phone,
-        amount: String(order.amount || 0),
-        token: token || ""
-      };
-      if (order.order_type === "utility" && token) {
-        const customMsg = `ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nThank you for using SwiftData!`;
-        await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom" as any, { message: customMsg }, order.agent_id);
-      } else {
-        await sendPaymentSms(supabaseAdmin, order.customer_phone, smsType, smsVars, order.agent_id);
+      const isUtility = order.order_type === "utility";
+      const networkName = order.network || "";
+      const packageName = order.package_size || "";
+      const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+      
+      let displayPackage = `${networkName} ${packageName}`;
+      if (isAirtime) {
+        // Base price is preferred for display if it exists in metadata, fallback to order amount
+        const basePrice = order.metadata?.base_price || order.amount;
+        displayPackage = `${networkName} GHS ${Number(basePrice).toFixed(2)} Airtime`;
       }
+
+      let customMsg = "";
+      if (isUtility) {
+        if (token) {
+          customMsg = `Payment received! ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nTxID: ${order.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+        } else {
+          customMsg = `Payment received! Your ${networkName} payment for account ${order.customer_phone} of GHS ${Number(order.amount).toFixed(2)} is being processed.\nTxID: ${order.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+        }
+      } else {
+        customMsg = `Success! Your order for ${displayPackage} to ${order.customer_phone} has been processed.\nTxID: ${order.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+      }
+
+      await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom", { message: customMsg }, order.agent_id);
     } catch (smsErr) {
       console.error("[verify-payment] Success SMS dispatch failed:", smsErr);
     }
