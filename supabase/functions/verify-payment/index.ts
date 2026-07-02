@@ -1108,7 +1108,9 @@ serve(async (req) => {
     // --- SIBLING DUPLICATE PROTECTION ---
     // Look for any identical order submitted in the last 60 minutes for the same phone, network, package, and amount.
     // We check if any sibling order was already successfully processed or is currently processing.
-    if (isProviderOrder && customerPhone && network && packageSize) {
+    // Skip this check for Korba orders to allow duplicate back-to-back purchases.
+    const isKorbaPackage = activeProviders && activeProviders.some((p: any) => p?.name === "Korba" || p?.handler_type === "korba");
+    if (isProviderOrder && customerPhone && network && packageSize && !isKorbaPackage) {
       const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")
