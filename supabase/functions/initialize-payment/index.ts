@@ -881,43 +881,40 @@ serve(async (req: Request) => {
 
   const isCardPayment = payload?.network_code === "CRD" || payload?.payment_method === "card";
 
-  if (activeGateway === "korba" || isCardPayment) {
-    // ── KORBA GATEWAY ROUTING ───────────────────────────────────────────────
+  function getKorbaNetworkCode(providerCode: string): string {
+    const code = providerCode.toLowerCase();
+    if (code === "mtn") return "MTN";
+    if (code === "vod") return "VOD";
+    if (code === "atl" || code === "airteltigo") return "AIR";
+    return "MTN";
+  }
+
+  // Helper: Initialize via Korba
+  async function tryInitializeKorba(): Promise<{ success: boolean; response?: Response; error?: string }> {
     const KORBA_CLIENT_ID = (Deno as any).env.get("KORBA_CLIENT_ID") || "2419";
     const KORBA_CLIENT_KEY = (Deno as any).env.get("KORBA_CLIENT_KEY") || "";
     const KORBA_SECRET_KEY = (Deno as any).env.get("KORBA_SECRET_KEY") || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
-      console.error("Korba gateway credentials are not configured");
-      return new Response(JSON.stringify({ error: "Korba gateway not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return { success: false, error: "Korba gateway credentials not configured" };
     }
 
     if (!isCardPayment && (enrichedMetadata.use_xcheckout || metadata.use_xcheckout)) {
-      console.log("XCheckout request detected. Returning session configuration directly.");
-      return new Response(JSON.stringify({
+      return {
         success: true,
-        reference: reference,
-        merchant_id: KORBA_CLIENT_ID,
-        message: "XCheckout session initialized successfully."
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+        response: new Response(JSON.stringify({
+          success: true,
+          reference: reference,
+          merchant_id: KORBA_CLIENT_ID,
+          message: "XCheckout session initialized successfully."
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      };
     }
 
     const korbaCallbackUrl = `${SUPABASE_URL}/functions/v1/korba-webhook`;
-
-    function getKorbaNetworkCode(providerCode: string): string {
-      const code = providerCode.toLowerCase();
-      if (code === "mtn") return "MTN";
-      if (code === "vod") return "VOD";
-      if (code === "atl" || code === "airteltigo") return "AIR";
-      return "MTN";
-    }
-
     const selectedNetworkCode = isCardPayment ? "CRD" : getKorbaNetworkCode(paystackProvider);
 
     const korbaPayload: Record<string, any> = {
@@ -934,7 +931,6 @@ serve(async (req: Request) => {
       korbaPayload.redirect_url = callback_url || `${SUPABASE_URL}/functions/v1/korba-webhook`;
     }
 
-    // Helper: Sort request keys in ascending order and form signature message
     const sortedKeys = Object.keys(korbaPayload).sort();
     const messageParts = [];
     for (const key of sortedKeys) {
@@ -944,7 +940,6 @@ serve(async (req: Request) => {
     }
     const message = messageParts.join("&");
     
-    // Generate HMAC-SHA256 signature
     const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
     const cryptoKey = await crypto.subtle.importKey(
       'raw',
@@ -959,151 +954,191 @@ serve(async (req: Request) => {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    console.log("Sending Korba Collection Request via DB Proxy:", korbaPayload);
-    const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/collect/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
-      },
-      body: JSON.stringify(korbaPayload),
-      disableFallback: true,
-    });
-
-    const responseText = await response.text();
-    console.log("Korba collections response text:", responseText);
-
-    let data;
     try {
-      data = JSON.parse(responseText);
-    } catch {
-      return new Response(JSON.stringify({ error: "Korba gateway returned an invalid response" }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      console.log(`[initialize-payment] Directing request to Korba Collections:`, korbaPayload);
+      const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/collect/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+        },
+        body: JSON.stringify(korbaPayload),
+        disableFallback: true,
       });
+
+      const responseText = await response.text();
+      let resJson;
+      try {
+        resJson = JSON.parse(responseText);
+      } catch {
+        return { success: false, error: "Korba gateway returned an invalid non-JSON response" };
+      }
+
+      const isTimeout = !response.ok && (
+        response.status === 504 || 
+        response.status === 502 ||
+        responseText.includes("Timeout") ||
+        responseText.includes("Proxy failed") ||
+        responseText.includes("statement timeout")
+      );
+
+      if (isTimeout) {
+        console.warn(`[initialize-payment] Korba collection request timed out. Returning success fallback status.`);
+        return {
+          success: true,
+          response: new Response(JSON.stringify({
+            authorization_url: callback_url,
+            reference: reference,
+            message: "Payment request sent. Please approve the MoMo prompt on your phone."
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          })
+        };
+      }
+
+      if (!response.ok || !resJson.success) {
+        return { success: false, error: resJson.error_message || resJson.results || resJson.error || "Payment prompt initiation failed" };
+      }
+
+      return {
+        success: true,
+        response: new Response(JSON.stringify({
+          authorization_url: callback_url,
+          reference: reference,
+          message: resJson.results || "Payment prompt sent to your phone."
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Failed to contact Korba gateway API" };
     }
-
-    const isTimeout = !response.ok && (
-      response.status === 504 || 
-      response.status === 502 ||
-      responseText.includes("Timeout") ||
-      responseText.includes("Proxy failed") ||
-      responseText.includes("statement timeout")
-    );
-
-    if (isTimeout) {
-      console.warn(`[initialize-payment] Korba collection request timed out. Treating as initialized and waiting for callback.`);
-      return new Response(JSON.stringify({
-        authorization_url: callback_url,
-        reference: reference,
-        message: "Payment request sent. Please approve the MoMo prompt on your phone. We are waiting for status confirmation."
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!response.ok || !data.success) {
-      console.error("Korba collection failed:", data);
-      return new Response(JSON.stringify({ error: data.error_message || data.results || data.error || "Payment operation failed" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify({
-      authorization_url: callback_url,
-      reference: reference,
-      message: data.results || "Payment prompt sent to your phone."
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
   }
 
-  // ── PAYSTACK GATEWAY ROUTING ─────────────────────────────────────────────
-  const amountInPesewas = Math.round(resolvedAmount * 100);
-  console.log("Initializing payment:", { email, amount: resolvedAmount, amountInPesewas, reference });
+  // Helper: Initialize via Paystack
+  async function tryInitializePaystack(): Promise<{ success: boolean; response?: Response; error?: string }> {
+    let currentPaystackSecret = settings?.paystack_secret_key || "";
+    if (!currentPaystackSecret) {
+      currentPaystackSecret = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
+    }
 
-  let paystackUrl = "https://api.paystack.co/transaction/initialize";
-  let requestBody: Record<string, any> = {
-    email,
-    amount: amountInPesewas,
-    reference,
-    callback_url,
-    metadata: enrichedMetadata,
-    currency: "GHS",
-  };
+    if (!currentPaystackSecret) {
+      return { success: false, error: "Paystack credentials not configured" };
+    }
 
-  const isMomoCharge = paystackPhone && paystackProvider;
+    // Validate key type
+    if (currentPaystackSecret.startsWith("pk_")) {
+      return { success: false, error: "Paystack secret key is misconfigured with public key" };
+    }
 
-  if (isMomoCharge) {
-    paystackUrl = "https://api.paystack.co/charge";
-    requestBody = {
+    const amountInPesewas = Math.round(resolvedAmount * 100);
+    let paystackUrl = "https://api.paystack.co/transaction/initialize";
+    let requestBody: Record<string, any> = {
       email,
       amount: amountInPesewas,
       reference,
+      callback_url,
       metadata: enrichedMetadata,
       currency: "GHS",
-      mobile_money: {
-        phone: paystackPhone,
-        provider: paystackProvider,
-      },
     };
-    console.log("Using direct Mobile Money charge for:", { paystackPhone, paystackProvider });
+
+    const isMomoCharge = paystackPhone && paystackProvider;
+    if (isMomoCharge) {
+      paystackUrl = "https://api.paystack.co/charge";
+      requestBody = {
+        email,
+        amount: amountInPesewas,
+        reference,
+        metadata: enrichedMetadata,
+        currency: "GHS",
+        mobile_money: {
+          phone: paystackPhone,
+          provider: paystackProvider,
+        },
+      };
+    }
+
+    try {
+      console.log(`[initialize-payment] Directing request to Paystack:`, { email, amount: resolvedAmount, reference });
+      const response = await fetch(paystackUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${currentPaystackSecret}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        return { success: false, error: "Paystack returned an invalid non-JSON response" };
+      }
+
+      const resJson = await response.json();
+      if (!response.ok || !resJson.status) {
+        return { success: false, error: resJson.message || "Payment operation failed via Paystack" };
+      }
+
+      if (isMomoCharge && resJson.data?.status === "send_otp") {
+        return {
+          success: true,
+          response: new Response(JSON.stringify({
+            status: "send_otp",
+            message: resJson.data.otp_message || "Please enter the OTP sent to your phone",
+            reference: reference,
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          })
+        };
+      }
+
+      return {
+        success: true,
+        response: new Response(JSON.stringify({
+          authorization_url: isMomoCharge ? callback_url : resJson.data.authorization_url,
+          reference: isMomoCharge ? reference : resJson.data.reference,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || "Failed to contact Paystack API" };
+    }
   }
 
-  const response = await fetch(paystackUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  const contentType = response.headers.get("content-type");
-  if (!contentType?.includes("application/json")) {
-    const textResponse = await response.text();
-    console.error("Paystack returned non-JSON:", textResponse.substring(0, 500));
-    return new Response(JSON.stringify({ error: "Paystack returned an invalid response" }), {
-      status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  // --- Gateway Router with Intelligent Fallback ---
+  let initResult;
+  if (activeGateway === "korba" || isCardPayment) {
+    initResult = await tryInitializeKorba();
+    if (!initResult.success && !isCardPayment) {
+      console.warn(`[initialize-payment] Primary Korba init failed: ${initResult.error}. Switching to Paystack...`);
+      // Update DB order payment method
+      await supabaseAdmin.from("orders").update({ payment_method: "paystack" }).eq("id", reference);
+      initResult = await tryInitializePaystack();
+    }
+  } else {
+    initResult = await tryInitializePaystack();
+    if (!initResult.success) {
+      console.warn(`[initialize-payment] Primary Paystack init failed: ${initResult.error}. Switching to Korba...`);
+      // Update DB order payment method
+      await supabaseAdmin.from("orders").update({ payment_method: "korba" }).eq("id", reference);
+      initResult = await tryInitializeKorba();
+    }
   }
 
-  const data = await response.json();
-  console.log("Paystack response:", JSON.stringify(data));
-
-  if (!response.ok || !data.status) {
-    console.error("Paystack operation failed", {
-      status: response.status,
-      statusText: response.statusText,
-      paystackMessage: data?.message,
-    });
-    return new Response(JSON.stringify({ error: data.message || "Payment operation failed" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (initResult.success && initResult.response) {
+    return initResult.response;
   }
 
-  if (isMomoCharge && data.data?.status === "send_otp") {
-    return new Response(JSON.stringify({
-      status: "send_otp",
-      message: data.data.otp_message || "Please enter the OTP sent to your phone",
-      reference: reference,
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  return new Response(JSON.stringify({
-    authorization_url: isMomoCharge ? callback_url : data.data.authorization_url,
-    reference: isMomoCharge ? reference : data.data.reference,
-  }), {
-    status: 200,
+  // Both gateways failed
+  console.error(`[initialize-payment] Critical: Both Paystack and Korba gateway initializations failed.`);
+  return new Response(JSON.stringify({ error: initResult.error || "Both payment gateways are currently offline or misconfigured." }), {
+    status: 400,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
   } catch (error) {
