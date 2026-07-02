@@ -98,6 +98,15 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     // --- Purchase Payload Resolutions ---
+
+    if (handlerType === "datahub" || handlerType === "spendless") {
+      return {
+        networkKey: String(data.networkKey || data.networkRaw || ""),
+        recipient: String(data.recipient || data.phoneNumber || ""),
+        capacity: String(data.capacity || data.package_size || data.plan || ""),
+        reference: String(data.reference || data.order_id || ""),
+      };
+    }
     
     if (handlerType === "qhowmenzconsult") {
       let packageId = String(data.plan || data.package_size || "");
@@ -351,7 +360,8 @@ export class StandardAdapter implements ProviderAdapter {
             method: isGet ? "GET" : "POST",
             headers,
             body: isGet ? undefined : JSON.stringify(payload),
-            disableFallback: !isGet,
+            disableFallback: false,
+            allowMutationFallback: true,
           });
 
           const contentType = res.headers.get("content-type");
@@ -359,7 +369,10 @@ export class StandardAdapter implements ProviderAdapter {
 
           if (res.ok) {
             const semantic = parseProviderResponse(text, contentType);
-            if (semantic.ok) return { ok: true, reason: "", id: semantic.id, status: semantic.status };
+            if (semantic.ok) {
+              const returnedId = semantic.id || String(data.reference || data.orderReference || data.order_id || "");
+              return { ok: true, reason: "", id: returnedId, status: semantic.status };
+            }
             return { ok: false, reason: semantic.reason || "Provider rejected this order." };
           }
 
