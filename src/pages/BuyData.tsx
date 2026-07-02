@@ -89,6 +89,39 @@ const formatPackageDisplay = (size: string) => {
   };
 };
 
+const getPackageDetails = (pkg: any): string => {
+  const size = pkg.size || "";
+  const category = pkg.category || "";
+  const rawData = pkg.rawData || {};
+  const productId = rawData.product_id || rawData.bundle_id || "";
+
+  if (productId.includes("Kokrokoo")) {
+    return "400MB + 20 Mins Call (5am - 8am)";
+  }
+  
+  if (category.toLowerCase().includes("midnight") || String(rawData.category).toLowerCase().includes("midnight") || String(rawData.category).toLowerCase().includes("night")) {
+    return rawData.validity || "Midnight Bundle (12am - 5am)";
+  }
+
+  if (category.toLowerCase().includes("social") || String(rawData.category).toLowerCase().includes("social")) {
+    return "Social Media (WhatsApp, FB, etc.)";
+  }
+
+  if (category.toLowerCase().includes("video") || String(rawData.category).toLowerCase().includes("video")) {
+    return "Video Bundle (YouTube, TikTok, etc.)";
+  }
+
+  if (pkg.validity === "MTN Mash Up") {
+    return "MTN Mash Up voice + data";
+  }
+
+  if (rawData.validity) {
+    return rawData.validity;
+  }
+
+  return "";
+};
+
 const BuyData = () => {
   const { toast } = useToast();
   const { theme, isDark } = useAppTheme();
@@ -249,7 +282,7 @@ const BuyData = () => {
 
   // Get packages for current network and purchase type
   const displayPackages = useMemo(() => {
-    const list: { size: string; price: number; validity: string; popular?: boolean; isInstant?: boolean; category?: string }[] = [];
+    const list: { size: string; price: number; validity: string; popular?: boolean; isInstant?: boolean; category?: string; rawData?: any }[] = [];
     const dbNetwork = selectedNetwork;
 
     // 1. Get standard base packages (which are Affordable by default)
@@ -285,7 +318,8 @@ const BuyData = () => {
             price: gs.public_price ?? 0,
             validity: gs.network.includes("Mash Up") ? "MTN Mash Up" : "Non-expiry",
             isInstant: !!mapping,
-            category: mapping?.raw_data?.category || (gs.network === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles")
+            category: mapping?.raw_data?.category || (gs.network === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles"),
+            rawData: mapping?.raw_data
           });
         }
       }
@@ -315,15 +349,17 @@ const BuyData = () => {
         );
         const isInstant = !!mapping;
         const category = mapping?.raw_data?.category || (pkg.validity === "MTN Mash Up" ? "Mash Up Bundles" : "Data Bundles");
+        const rawData = mapping?.raw_data;
 
         return {
           ...pkg,
           price,
           isInstant,
-          category
+          category,
+          rawData
         };
       })
-      .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean; isInstant: boolean; category: string }[];
+      .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean; isInstant: boolean; category: string; rawData?: any }[];
 
     processed.sort((a, b) => a.price - b.price);
     return processed;
@@ -583,6 +619,7 @@ const BuyData = () => {
               
               {(() => {
                 const display = formatPackageDisplay(pkg.size);
+                const details = getPackageDetails(pkg);
                 return (
                   <div className="flex flex-col gap-0.5">
                     <p className={`${colors.size} text-lg sm:text-xl font-black leading-tight tracking-tight break-words`}>
@@ -591,6 +628,11 @@ const BuyData = () => {
                     {display.sub && (
                       <p className={`${colors.label} text-[9px] font-bold opacity-75 uppercase`}>
                         Official: {display.sub}
+                      </p>
+                    )}
+                    {details && (
+                      <p className="text-[10px] font-bold text-emerald-500 dark:text-emerald-400 mt-0.5 leading-snug uppercase">
+                        {details}
                       </p>
                     )}
                     <p className={`${colors.size} text-sm sm:text-base font-black opacity-90 mt-1`}>
