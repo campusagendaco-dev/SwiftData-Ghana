@@ -136,12 +136,12 @@ serve(async (req: Request) => {
       .eq("id", 1)
       .maybeSingle();
 
-    const orderType = String(metadata?.order_type || payload?.order_type || "").toLowerCase();
+    const detectedOrderType = String(metadata?.order_type || payload?.order_type || "").toLowerCase();
     const network = String(metadata?.network || payload?.network || "");
     const isKorbaPackage = 
       isKorba || 
-      orderType === "airtime" || 
-      orderType === "utility" ||
+      detectedOrderType === "airtime" || 
+      detectedOrderType === "utility" ||
       network.toUpperCase().startsWith("KORBA") ||
       metadata?.is_instant === true ||
       metadata?.is_instant === "true";
