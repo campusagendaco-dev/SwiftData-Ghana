@@ -5,7 +5,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
-import { getActiveProviders } from "../_shared/providers.ts";
+import { getActiveProviders, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 
@@ -1352,9 +1352,8 @@ serve(async (req) => {
 
     if (!isSpendlessAfaResolved) {
       // --- ACTIVE PROVIDER CHECK / PAUSE GATE ---
-      // Fetch active providers from the central 'providers' table database. 
-      // If all providers are toggled OFF by the admin, gracefully PAUSE automatic execution.
-      const activeProviders = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
+      // Fetch active providers using unified resolver.
+      const activeProviders = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
       
       if (!activeProviders || activeProviders.length === 0) {
         console.log(`[Webhook] ALL APIs OFF for type '${orderType}'. Halting auto-fulfillment for order ${orderId}. Queueing for manual processing.`);
@@ -1654,7 +1653,7 @@ serve(async (req) => {
           .maybeSingle();
         chosenProvider = data;
       } else {
-        const activeProviders = await getActiveProviders(supabaseAdmin, orderType === "airtime" ? "airtime" : "data");
+        const activeProviders = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
         chosenProvider = activeProviders?.[0];
       }
     } catch (e) {

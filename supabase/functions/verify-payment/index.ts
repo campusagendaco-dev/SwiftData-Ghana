@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, x-user-access-token, x-supabase-auth-token, x-api-key, api-key",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
 };
-import { getActiveProviders, logProviderError } from "../_shared/providers.ts";
+import { getActiveProviders, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
@@ -112,95 +112,7 @@ async function getAirtimeCredentials(supabaseAdmin: any): Promise<{ apiKey: stri
   
   return { apiKey, baseUrl: (baseUrl || "").replace(/\/+$/, "") };
 }
-async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise<any[]> {
-  let orderType = (order?.order_type || "data") as string;
-  if (orderType.toLowerCase() === "api") {
-    if (String(order?.package_size).toUpperCase() === "AIRTIME") {
-      orderType = "airtime";
-    } else {
-      orderType = "data";
-    }
-  }
-  const network = (order?.network || "") as string;
-  
-  const { data: korbaProvider } = await supabaseAdmin
-    .from("providers")
-    .select("*")
-    .eq("name", "Korba")
-    .maybeSingle();
 
-  if (korbaProvider) {
-    const isAirtime = orderType.toLowerCase() === "airtime";
-    const isUtility = orderType.toLowerCase() === "utility";
-    const isKorbaFlag = (network && String(network).toUpperCase().startsWith("KORBA")) || 
-                        order?.metadata?.is_korba === true || 
-                        order?.metadata?.is_korba === "true";
-    
-    let isMappedToKorba = false;
-    if (orderType.toLowerCase() === "data") {
-      const { data: korbaMapping } = await supabaseAdmin
-        .from("provider_packages")
-        .select("id")
-        .eq("provider_id", korbaProvider.id)
-        .eq("network", network)
-        .eq("package_name", order.package_size)
-        .maybeSingle();
-      if (korbaMapping) {
-        isMappedToKorba = true;
-      }
-    }
-
-    if (isAirtime || isUtility || isKorbaFlag || isMappedToKorba) {
-      console.log(`[verify-payment] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag}, Mapped=${isMappedToKorba})`);
-      return [korbaProvider];
-    }
-  }
-  
-  if (orderType.toLowerCase() === "afa") {
-    const { data: spendless } = await supabaseAdmin
-      .from("providers")
-      .select("*")
-      .eq("handler_type", "spendless")
-      .maybeSingle();
-    if (spendless) {
-      console.log(`[verify-payment] Resolved Spendless provider for AFA order ${order.id}`);
-      return [spendless];
-    } else {
-      console.warn(`[verify-payment] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
-    }
-  }
-  
-  const providerCategory = orderType === "airtime" ? "airtime" : (orderType === "utility" ? "utility" : "data");
-  let activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
-
-  if (orderType === "airtime" && activeProviders.length === 0) {
-    console.log(`[verify-payment] No explicit airtime providers found. Searching provider_packages for mapped Airtime packages for network: ${network}`);
-    // Find provider mappings for this network's Airtime package
-    const { data: mappings } = await supabaseAdmin
-      .from("provider_packages")
-      .select("provider_id")
-      .eq("network", network)
-      .ilike("package_name", "%Airtime%")
-      .eq("is_active", true);
-
-    if (mappings && mappings.length > 0) {
-      const providerIds = mappings.map((m: any) => m.provider_id);
-      const { data: mappedProviders } = await supabaseAdmin
-        .from("providers")
-        .select("*")
-        .in("id", providerIds)
-        .eq("is_active", true)
-        .order("priority", { ascending: true });
-
-      if (mappedProviders && mappedProviders.length > 0) {
-        console.log(`[verify-payment] Mapped ${mappedProviders.length} providers for airtime via package mappings:`, mappedProviders.map(p => p.name));
-        activeProviders = mappedProviders;
-      }
-    }
-  }
-
-  return activeProviders;
-}
 
 async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: string; title: string; body: string; url?: string; icon?: string }) {
   try {
