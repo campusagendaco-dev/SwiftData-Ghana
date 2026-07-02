@@ -152,6 +152,7 @@ serve(async (req) => {
       network: network,
       amount: requestedAmount,
       order_type: "airtime",
+      payment_method: "wallet",
       profit: 0,
       parent_agent_id: parentAgentId,
       parent_profit: 0,

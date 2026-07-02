@@ -65,9 +65,21 @@ serve(async (req) => {
       utility_account_name,
       amount: payAmount,
       status: "paid",
+      payment_method: "wallet",
       failure_reason: "Awaiting manual fulfillment / Token generation",
       metadata: { lookup_transaction_id, ...(payload.metadata || {}) }
     });
+
+    // Trigger verify-payment in the background to deliver the package
+    const verifyPaymentUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;
+    fetch(verifyPaymentUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ reference: orderId }),
+    }).catch(e => console.error("[VERIFY-TRIGGER-ERROR]", e));
     
     // Send notification
     const { data: profile } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", user.id).maybeSingle();

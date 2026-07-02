@@ -618,6 +618,7 @@ serve(async (req) => {
 
     const isInternalPayment = 
       ["wallet", "promo", "balance", "api"].includes(paymentMethod) || 
+      status === "paid" ||
       (status === "processing" && !isQueuedError);
 
     // Special validation for free data claims to prevent spamming
