@@ -165,7 +165,8 @@ serve(async (req) => {
   console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}, token=${prepaidToken}`);
 
   const isDisbursementCallback = transactionId.endsWith("_disb");
-  const cleanedTransactionId = isDisbursementCallback ? transactionId.replace("_disb", "") : transactionId;
+  const uuidMatch = transactionId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  const cleanedTransactionId = uuidMatch ? uuidMatch[0] : (isDisbursementCallback ? transactionId.replace("_disb", "") : transactionId);
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!cleanedTransactionId || !UUID_RE.test(cleanedTransactionId)) {
