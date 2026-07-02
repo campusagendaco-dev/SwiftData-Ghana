@@ -470,23 +470,21 @@ serve(async (req) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  let PAYSTACK_SECRET_KEY = "";
+  let PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
   let PAYSTACK_DEPOSIT_FEE_PERCENT = 0.03;
   try {
     const { data: settings } = await supabaseAdmin
       .from("v_system_settings_with_secrets").select("paystack_secret_key, paystack_deposit_fee_percent")
       .eq("id", 1)
       .maybeSingle();
-    PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+    if (!PAYSTACK_SECRET_KEY) {
+      PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+    }
     if (settings?.paystack_deposit_fee_percent !== undefined) {
       PAYSTACK_DEPOSIT_FEE_PERCENT = Number(settings.paystack_deposit_fee_percent);
     }
   } catch (dbErr) {
     console.error("Failed to fetch settings from DB in webhook:", dbErr);
-  }
-
-  if (!PAYSTACK_SECRET_KEY) {
-    PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
   }
 
   const DATA_PROVIDER_WEBHOOK_URL = getFirstEnvValue([
@@ -667,14 +665,43 @@ serve(async (req) => {
     const { reference, metadata: webhookMetadata = {} } = body.data;
     console.log("Webhook: Payment successful for reference:", reference);
 
-    // We already verified the cryptographic signature of the payload from Paystack.
-    // To make payment verification extremely fast and avoid external API latency,
-    // we use the payload data directly without making an outbound HTTP request.
-    console.log(`[paystack-webhook] Signature verified successfully. Bypassing outbound verification fetch.`);
-    const verifyData = {
-      status: true,
-      data: body.data,
-    };
+    // To ensure maximum security and prevent webhook payload tampering, we always perform an outbound API call to Paystack to verify the transaction.
+    console.log(`[paystack-webhook] Signature verified. Performing outbound verification request for reference: ${reference}...`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let verifyData;
+    try {
+      const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+        headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const verifyText = await verifyRes.text();
+      try {
+        verifyData = JSON.parse(verifyText);
+      } catch (e) {
+        console.error(`[paystack-webhook] Paystack non-JSON verification response:`, verifyText.slice(0, 100));
+        return new Response(JSON.stringify({ error: "Invalid payment verification response from gateway" }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error(`[paystack-webhook] Paystack verification connection error:`, err);
+      return new Response(JSON.stringify({ error: "Failed to verify payment with gateway" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!verifyData?.status || verifyData.data?.status !== "success") {
+      console.error(`[paystack-webhook] Paystack verification failed or status is not success:`, verifyData);
+      return new Response(JSON.stringify({ error: "Payment verification failed" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Capture Customer and Authorization for Saved Cards
     const paystackCustomerCode = verifyData?.data?.customer?.customer_code;
