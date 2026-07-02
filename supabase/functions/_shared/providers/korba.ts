@@ -146,15 +146,23 @@ export class KorbaAdapter implements ProviderAdapter {
         console.error("[korba-payload-resolve] Error:", e);
       }
 
+      const isVodafone = rawNet.includes("TELECEL") || rawNet.includes("VODA");
+      const isGlo = rawNet.includes("GLO");
+
       korbaPayload = {
         customer_number: recipient,
         client_id: parseInt(KORBA_CLIENT_ID) || 2419,
-        product_id: packageId,
         amount: Number(data.amount || 0),
         transaction_id: transactionId,
         callback_url: callbackUrl,
         description: `${rawNet} ${data.package_size || ""}`,
       };
+
+      if (isVodafone || isGlo) {
+        korbaPayload.bundle_id = packageId;
+      } else {
+        korbaPayload.product_id = packageId;
+      }
     }
 
     return this.executeRequest(supabaseAdmin, targetUrl, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, korbaPayload, false);
