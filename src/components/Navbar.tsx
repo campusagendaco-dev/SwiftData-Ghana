@@ -266,18 +266,27 @@ const Navbar = () => {
                 {mainLinks.map(({ to, label, icon }) => (
                   <Link
                     key={to} to={to}
-                    className={`flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-150 ${
-                      isActive(to) ? (isDark ? "text-white border" : "text-gray-900 border") : linkIdle
+                    className={`relative flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-200 ${
+                      isActive(to) ? (isDark ? "text-white" : "text-gray-900") : linkIdle
                     }`}
-                    style={isActive(to) ? linkActiveStyle : undefined}
                   >
-                    <NavIcon icon={icon} className={isActive(to) ? "text-amber-400" : ""} />
-                    {label}
-                    {to === "/buy-airtime" && (
-                      <span className="ml-1 text-[8px] font-black uppercase tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1 rounded">
-                        Soon
-                      </span>
+                    {isActive(to) && (
+                      <motion.div
+                        layoutId="active-nav-indicator"
+                        className="absolute inset-0 rounded-xl -z-10"
+                        style={isDark ? {
+                          background: "linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%)",
+                          boxShadow: "0 0 16px rgba(251,191,36,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
+                          border: "1px solid rgba(251,191,36,0.25)",
+                        } : {
+                          background: "linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.04) 100%)",
+                          border: "1px solid rgba(251,191,36,0.25)",
+                        }}
+                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      />
                     )}
+                    <NavIcon icon={icon} className={isActive(to) ? "text-amber-400" : ""} />
+                    <span className="relative z-10">{label}</span>
                   </Link>
                 ))}
 
@@ -368,18 +377,30 @@ const Navbar = () => {
                 {user && (
                   <Link
                     to={isAdmin ? "/admin" : "/dashboard"}
-                    className={`flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-150 ${
-                      isActive("/dashboard") || isActive("/admin")
-                        ? (isDark ? "text-white border" : "text-gray-900 border")
-                        : linkIdle
+                    className={`relative flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-200 ${
+                      isActive("/dashboard") || isActive("/admin") ? (isDark ? "text-white" : "text-gray-900") : linkIdle
                     }`}
-                    style={isActive("/dashboard") || isActive("/admin") ? linkActiveStyle : undefined}
                   >
+                    {(isActive("/dashboard") || isActive("/admin")) && (
+                      <motion.div
+                        layoutId="active-nav-indicator"
+                        className="absolute inset-0 rounded-xl -z-10"
+                        style={isDark ? {
+                          background: "linear-gradient(135deg, rgba(251,191,36,0.20) 0%, rgba(251,191,36,0.06) 100%)",
+                          boxShadow: "0 0 16px rgba(251,191,36,0.08), inset 0 1px 0 rgba(255,255,255,0.08)",
+                          border: "1px solid rgba(251,191,36,0.25)",
+                        } : {
+                          background: "linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(251,191,36,0.04) 100%)",
+                          border: "1px solid rgba(251,191,36,0.25)",
+                        }}
+                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      />
+                    )}
                     <NavIcon
                       icon={isAdmin ? ShieldCheck : LayoutDashboard}
                       className={isActive("/dashboard") || isActive("/admin") ? "text-amber-400" : ""}
                     />
-                    {isAdmin ? "Admin" : "Dashboard"}
+                    <span className="relative z-10">{isAdmin ? "Admin" : "Dashboard"}</span>
                   </Link>
                 )}
 
@@ -595,11 +616,6 @@ const Navbar = () => {
                       <NavIcon icon={icon} className={isActive(to) ? "text-amber-500" : isDark ? "text-white/42" : "text-gray-600"} />
                     </div>
                     {label}
-                    {to === "/buy-airtime" && (
-                      <span className="ml-2 text-[8px] font-black uppercase tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 px-1.5 py-0.5 rounded">
-                        Soon
-                      </span>
-                    )}
                     {isActive(to) && <ChevronRight className="w-4 h-4 ml-auto text-amber-400/55" />}
                   </Link>
                 ))}
