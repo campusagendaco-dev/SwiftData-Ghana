@@ -1271,7 +1271,7 @@ serve(async (req) => {
     const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
     // Retrieve the actual base price (excluding payment fees) to deliver to the provider API
-    const deliveryAmount = (currentOrderType === "airtime" || currentOrderType === "utility")
+    const deliveryAmount = (currentOrderType === "airtime" || currentOrderType === "utility" || currentOrderType === "data")
       ? Number(claimedOrder.metadata?.base_price || metadata?.base_price || claimedOrder.amount)
       : claimedOrder.amount;
 
