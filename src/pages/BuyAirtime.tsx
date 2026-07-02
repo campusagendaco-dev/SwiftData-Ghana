@@ -171,6 +171,7 @@ const BuyAirtime = () => {
       package_size: "AIRTIME",
       customer_phone: phoneDigits,
       customer_name: resolvedName,
+      base_price: numAmount,
       fee,
       payment_source: "direct",
       is_korba: true,

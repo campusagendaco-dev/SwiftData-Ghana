@@ -171,6 +171,8 @@ const BuyUtility = () => {
   const numAmount = Number(amount);
   const canVerify = !!provider && (!!accountNumber.trim() || !!phoneNumber.trim());
   const canPay = !!accountName && numAmount >= 5;
+  const fee = canPay ? parseFloat((numAmount * 0.03).toFixed(2)) : 0;
+  const total = canPay ? parseFloat((numAmount + fee).toFixed(2)) : 0;
   const activeStyle = TABS.find((t) => t.id === activeTab)!;
 
   return (
@@ -456,6 +458,12 @@ const BuyUtility = () => {
                 <SummaryRow label="Account" value={accountNumber || phoneNumber || "-"} />
                 <SummaryRow label="Verified Name" value={accountName || "-"} />
                 <SummaryRow label="Top Up Amount" value={amount ? `GH₵ ${Number(amount).toFixed(2)}` : "GH₵ 0.00"} />
+                {canPay && (
+                  <>
+                    <SummaryRow label="Service Fee (3%)" value={`GH₵ ${fee.toFixed(2)}`} />
+                    <SummaryRow label="Total to Pay" value={`GH₵ ${total.toFixed(2)}`} valueClass="text-amber-500 font-black" />
+                  </>
+                )}
               </div>
 
               <div className="pt-3 border-t border-border/60">
@@ -492,7 +500,7 @@ const BuyUtility = () => {
       <PaystackMomoCheckout
         isOpen={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
-        amount={numAmount}
+        amount={total}
         email={email.trim() || "customer@swiftdata.gh"}
         recipientPhone={accountNumber.trim() || phoneNumber.trim()}
         recipientNetwork={""}
@@ -503,6 +511,7 @@ const BuyUtility = () => {
           utility_account_number: accountNumber.trim() || phoneNumber.trim(),
           utility_account_name: accountName,
           lookup_transaction_id: lookupTxId,
+          base_price: numAmount,
         }}
         onSuccess={(reference) => {
           setCheckoutOpen(false);

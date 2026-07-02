@@ -676,7 +676,10 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const airtimeBase = Number(amount.toFixed(2));
+      // If client explicitly passed the base price (excluding fees), we use it.
+      // Otherwise, we default to the amount parameter.
+      const basePriceVal = payload?.base_price || metadata?.base_price;
+      const airtimeBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
       resolvedPaystackFee = parseFloat(calculatePaystackFee(airtimeBase).toFixed(2));
       resolvedAmount = parseFloat((airtimeBase + resolvedPaystackFee).toFixed(2));
       enrichedMetadata = { ...metadata, base_price: airtimeBase, profit: 0 };
@@ -695,7 +698,10 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const utilityBase = Number(amount.toFixed(2));
+      // If client explicitly passed the base price (excluding fees), we use it.
+      // Otherwise, we default to the amount parameter.
+      const basePriceVal = payload?.base_price || metadata?.base_price;
+      const utilityBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
       resolvedPaystackFee = parseFloat(calculatePaystackFee(utilityBase).toFixed(2));
       resolvedAmount = parseFloat((utilityBase + resolvedPaystackFee).toFixed(2));
       enrichedMetadata = { ...metadata, base_price: utilityBase, profit: 0 };

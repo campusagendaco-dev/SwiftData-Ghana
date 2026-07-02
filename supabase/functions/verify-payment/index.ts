@@ -1270,6 +1270,11 @@ serve(async (req) => {
     const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch").eq("id", 1).maybeSingle();
     const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
+    // Retrieve the actual base price (excluding payment fees) to deliver to the provider API
+    const deliveryAmount = (currentOrderType === "airtime" || currentOrderType === "utility")
+      ? Number(claimedOrder.metadata?.base_price || metadata?.base_price || claimedOrder.amount)
+      : claimedOrder.amount;
+
     const requestBody = {
       networkRaw: network,
       networkKey: mapDataNetworkKey(network),
@@ -1280,7 +1285,7 @@ serve(async (req) => {
       plan: packageSize,         // Required by standard providers
       bundle: packageSize,       // Alias
       package_size: packageSize, // Alias
-      amount: claimedOrder.amount,
+      amount: deliveryAmount,
       order_type: effectiveOrderType,
       orderReference: targetReference,
       reference: targetReference,      // Alias
@@ -1303,7 +1308,7 @@ serve(async (req) => {
           recipient,
           package_size: packageSize,
           plan: packageSize,
-          amount: claimedOrder.amount,
+          amount: deliveryAmount,
           reference: targetReference,
           order_id: targetReference,
         };
@@ -1315,7 +1320,7 @@ serve(async (req) => {
           recipient,
           package_size: packageSize,
           plan: packageSize,
-          amount: claimedOrder.amount,
+          amount: deliveryAmount,
           reference: targetReference,
           order_id: targetReference,
         };
@@ -1343,7 +1348,7 @@ serve(async (req) => {
             customer_phone: customerPhone,
             phone: customerPhone,
             recipient,
-            amount: claimedOrder.amount,
+            amount: deliveryAmount,
             reference: targetReference,
             networkKey: "AFA",
             capacity: "BUNDLE",
@@ -1360,7 +1365,7 @@ serve(async (req) => {
             utility_provider: claimedOrder.utility_provider,
             utility_account_number: claimedOrder.utility_account_number,
             utility_account_name: claimedOrder.utility_account_name,
-            amount: claimedOrder.amount,
+            amount: deliveryAmount,
             reference: targetReference,
             lookup_transaction_id: claimedOrder.metadata?.lookup_transaction_id
           },

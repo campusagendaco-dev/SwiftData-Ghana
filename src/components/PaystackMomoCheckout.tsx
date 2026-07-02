@@ -395,10 +395,12 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         body: {
           email: email.trim() || `${paymentPhone}@customer.swiftdata.gh`,
           amount,
+          base_price: metadata.base_price || amount,
           reference: orderId,
           callback_url: metadata.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
           metadata: {
             ...metadata,
+            base_price: metadata.base_price || amount,
             order_id: orderId,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
