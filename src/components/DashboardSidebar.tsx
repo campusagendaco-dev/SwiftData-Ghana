@@ -152,14 +152,14 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
       {/* Mobile Overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden transition-opacity duration-300"
+          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm md:hidden transition-opacity duration-300"
           onClick={onClose}
         />
       )}
 
       <aside
         className={cn(
-          "fixed md:sticky top-0 left-0 z-50 w-72 h-[100dvh] flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 border-r shadow-2xl",
+          "fixed md:sticky top-0 left-0 z-[1000] w-72 h-[100dvh] flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 border-r shadow-2xl",
           isDark ? "bg-[#0d140d]/95 backdrop-blur-xl border-white/5" : "bg-white border-gray-200",
           open ? "translate-x-0" : "-translate-x-full"
         )}
