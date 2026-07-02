@@ -136,10 +136,20 @@ serve(async (req: Request) => {
       .eq("id", 1)
       .maybeSingle();
 
-    let activeGateway = settings?.active_payment_gateway || "paystack";
-    const autoSwitch = settings?.auto_gateway_switch_by_package ?? false;
+    const orderType = String(metadata?.order_type || payload?.order_type || "").toLowerCase();
+    const network = String(metadata?.network || payload?.network || "");
+    const isKorbaPackage = 
+      isKorba || 
+      orderType === "airtime" || 
+      orderType === "utility" ||
+      network.toUpperCase().startsWith("KORBA") ||
+      metadata?.is_instant === true ||
+      metadata?.is_instant === "true";
 
-    if (autoSwitch && isKorba) {
+    let activeGateway = settings?.active_payment_gateway || "paystack";
+
+    if (isKorbaPackage) {
+      console.log(`[initialize-payment] Auto-routing to Korba gateway because it is a Korba/Instant/Airtime package`);
       activeGateway = "korba";
     }
 
