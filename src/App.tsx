@@ -544,6 +544,23 @@ const App = () => {
     },
   });
 
+  // Listen for controller changes (new service worker taking over) and reload
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      let refreshing = false;
+      const handleControllerChange = () => {
+        if (refreshing) return;
+        refreshing = true;
+        console.log("Service Worker controller changed. Reloading page to load latest version...");
+        window.location.reload();
+      };
+      navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
+      return () => {
+        navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+      };
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
