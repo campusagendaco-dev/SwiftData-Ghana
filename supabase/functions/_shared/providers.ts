@@ -12,11 +12,19 @@ export interface Provider {
 }
 
 export async function getActiveProviders(supabaseAdmin: any, type: string): Promise<Provider[]> {
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("providers")
     .select("*")
-    .eq("provider_type", type)
-    .eq("is_active", true)
+    .eq("is_active", true);
+
+  if (type === "data" || type === "airtime") {
+    // Include Korba dynamically for data/airtime since Korba handles all three types
+    query = query.or(`provider_type.eq.${type},handler_type.eq.korba`);
+  } else {
+    query = query.eq("provider_type", type);
+  }
+
+  const { data, error } = await query
     .order("priority", { ascending: true })
     .order("handler_type", { ascending: true }); // Prioritize 'datamart' (d) over 'standard' (s)
 
