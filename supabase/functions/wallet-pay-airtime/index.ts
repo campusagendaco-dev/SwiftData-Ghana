@@ -167,6 +167,17 @@ serve(async (req) => {
       });
     }
 
+    // Trigger verify-payment in the background to deliver the package
+    const verifyPaymentUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;
+    fetch(verifyPaymentUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ reference: orderId }),
+    }).catch(e => console.error("[VERIFY-TRIGGER-ERROR]", e));
+
     // 3. TRIGGER SMS (NON-BLOCKING)
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
