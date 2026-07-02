@@ -744,7 +744,7 @@ serve(async (req) => {
 
     let { data: existingOrder } = await supabaseAdmin
       .from("orders")
-      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, paystack_fee")
+      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, paystack_fee, metadata")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -1449,15 +1449,14 @@ serve(async (req) => {
       ? existingOrder.customer_phone
       : (typeof (metadata?.customer_phone || metadata?.phone) === "string" ? (metadata.customer_phone || metadata.phone) : "");
 
+    // Retrieve the actual base price (excluding payment fees) to deliver to the provider API
+    const deliveryAmount = (orderType === "airtime" || orderType === "utility" || orderType === "data")
+      ? Number(existingOrder?.metadata?.base_price || metadata?.base_price || existingOrder?.amount || verifiedAmount)
+      : (existingOrder?.amount || verifiedAmount);
+
     // Airtime orders have no package_size — they use amount instead.
     if (orderType === "airtime") {
-      const airtimeAmount: number =
-        Number(metadata?.base_price) || 
-        (typeof existingOrder?.amount === "number"
-          ? existingOrder.amount
-          : typeof metadata?.amount === "number"
-          ? metadata.amount
-          : 0);
+      const airtimeAmount: number = deliveryAmount;
 
       if (!network || !airtimeAmount || !customerPhone) {
         await supabaseAdmin.from("orders").update({
@@ -1625,7 +1624,7 @@ serve(async (req) => {
           package_id: resolvedPackageId,
           product_id: resolvedPackageId,
           external_id: resolvedPackageId,
-          amount: Number(existingOrder?.amount || verifiedAmount),
+          amount: deliveryAmount,
           reference: orderId,
         }
       : handlerType === "skdataplug"
@@ -1640,7 +1639,7 @@ serve(async (req) => {
           networkKey,
           recipient: normalizeRecipient(customerPhone),
           capacity: String(parseCapacity(packageSize)),
-          amount: existingOrder?.amount || verifiedAmount,
+          amount: deliveryAmount,
           order_type: "data",
           description: `Data: ${packageSize} for ${customerPhone}`
         };
@@ -1773,11 +1772,11 @@ serve(async (req) => {
     }
 
     // Definitive failures
-    const targetStatus = "processing";
+    const failureStatus = "processing";
     const targetProviderOrderId = "failed_api_call";
 
     await supabaseAdmin.from("orders").update({ 
-      status: targetStatus, 
+      status: failureStatus, 
       provider_order_id: targetProviderOrderId,
       failure_reason: result.reason || "Provider rejected the request" 
     }).eq("id", orderId);
@@ -1806,7 +1805,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       received: true, 
       fulfilled: false, 
-      status: targetStatus,
+      status: failureStatus,
       failure_reason: result.reason 
     }), {
       status: 200,
