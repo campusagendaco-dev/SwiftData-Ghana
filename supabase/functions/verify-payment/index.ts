@@ -462,8 +462,12 @@ serve(async (req) => {
           const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
           const isFailed = checkResult.status === "failed" || checkResult.status === "error" || checkResult.status === "refunded";
           if (isFailed) {
-            // User requested fix: Never yield into failed states. Retain processing queue so backend cron attempts to recover it.
-            await supabaseAdmin.from("orders").update({ status: "processing", failure_reason: "Provider reported failure during status check" }).eq("id", targetReference);
+            const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(existingOrder.payment_method?.toLowerCase() || "");
+            const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
+            await supabaseAdmin.from("orders").update({ 
+              status: targetStatus, 
+              failure_reason: checkResult.reason || "Provider reported failure during status check" 
+            }).eq("id", targetReference);
             break; 
           } else {
             const token = checkResult.raw?.prepaid_token;
@@ -1437,7 +1441,8 @@ serve(async (req) => {
       }
 
       // Otherwise, it's a definitive failure/rejection (e.g. Insufficient Balance, Invalid Number, etc.)
-      const targetStatus = "processing";
+      const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
+      const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
       const targetProviderOrderId = "failed_api_call";
       const targetFailureReason = result.reason || "Provider rejected the request";
 
@@ -1450,11 +1455,11 @@ serve(async (req) => {
       const isApiOrder = (claimedOrder?.order_type || "").toLowerCase() === "api";
 
       log(supabaseAdmin, { 
-        level: isApiOrder ? "warn" : "error", 
+        level: (isApiOrder || isWalletOrApiPayment) ? "warn" : "error", 
         source: "verify-payment", 
-        event: isApiOrder ? "order.processing_failed_api" : "order.failed", 
-        message: isApiOrder 
-          ? `Order provider call rejected. Sticking to processing: ${targetFailureReason}` 
+        event: (isApiOrder || isWalletOrApiPayment) ? "order.processing_failed_api" : "order.failed", 
+        message: (isApiOrder || isWalletOrApiPayment)
+          ? `Order provider call rejected. Status set to ${targetStatus}: ${targetFailureReason}` 
           : `Order fulfillment failed: ${targetFailureReason}`, 
         order_id: targetReference, 
         agent_id: claimedOrder.agent_id, 
