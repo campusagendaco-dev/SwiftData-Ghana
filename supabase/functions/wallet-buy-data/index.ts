@@ -431,16 +431,21 @@ serve(async (req: Request) => {
     console.log(`[INSERT_SUCCESS] Order ${orderId} created as PAID.`);
     log(supabaseAdmin, { level: "info", source: "wallet-buy-data", event: "order.created", message: `Order created — ${networkRaw} ${package_size} for ${customer_phone}`, order_id: orderId, agent_id: user.id, data: { network: networkRaw, package_size, amount: amountNum, profit: agentProfit, parent_profit: parentProfit, cost_price: resolvedCostPrice } });
 
-    // Trigger verify-payment in the background to deliver the package
+    // Trigger verify-payment to deliver the package (await to ensure it runs before Deno teardown)
     const verifyPaymentUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;
-    fetch(verifyPaymentUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({ reference: orderId }),
-    }).catch(e => console.error("[VERIFY-TRIGGER-ERROR]", e));
+    try {
+      await fetch(verifyPaymentUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({ reference: orderId }),
+      });
+      console.log(`[VERIFY-TRIGGER-SUCCESS] verify-payment triggered for order ${orderId}`);
+    } catch (e) {
+      console.error("[VERIFY-TRIGGER-ERROR]", e);
+    }
 
     // 3. TRIGGER SMS (NON-BLOCKING)
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
