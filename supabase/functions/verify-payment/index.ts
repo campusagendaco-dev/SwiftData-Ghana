@@ -358,7 +358,9 @@ serve(async (req) => {
       });
     }
 
-    const { reference, phone, force } = body;
+    const { reference, orderId, phone, force: forceInput, action } = body;
+    const force = forceInput || action === "retry_order";
+    const resolvedReference = reference || orderId;
 
     // Limit Target Phone-based requests to 4 per minute
     if (phone) {
@@ -378,24 +380,24 @@ serve(async (req) => {
       }
     }
 
-    if (!reference && !phone) {
+    if (!resolvedReference && !phone) {
       return new Response(JSON.stringify({ error: "Order reference or phone number is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let targetReference = reference;
+    let targetReference = resolvedReference;
 
     // Resolve custom API references (non-UUID or custom)
-    if (reference) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+    if (resolvedReference) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedReference);
       if (isUuid) {
         // Try direct ID lookup first
         const { data: orderById } = await supabaseAdmin
           .from("orders")
           .select("id")
-          .eq("id", reference)
+          .eq("id", resolvedReference)
           .maybeSingle();
         if (orderById) {
           targetReference = orderById.id;
@@ -404,7 +406,7 @@ serve(async (req) => {
           const { data: orderByClientRef } = await supabaseAdmin
             .from("orders")
             .select("id")
-            .eq("metadata->>client_reference", reference)
+            .eq("metadata->>client_reference", resolvedReference)
             .maybeSingle();
           if (orderByClientRef) {
             targetReference = orderByClientRef.id;
@@ -415,12 +417,12 @@ serve(async (req) => {
         const { data: orderByClientRef } = await supabaseAdmin
           .from("orders")
           .select("id")
-          .eq("metadata->>client_reference", reference)
+          .eq("metadata->>client_reference", resolvedReference)
           .maybeSingle();
         if (orderByClientRef) {
           targetReference = orderByClientRef.id;
         } else {
-          return new Response(JSON.stringify({ error: "Order not found with reference: " + reference }), {
+          return new Response(JSON.stringify({ error: "Order not found with reference: " + resolvedReference }), {
             status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -865,7 +867,7 @@ serve(async (req) => {
     
     const orderCreatedAt = existingOrder ? new Date(existingOrder.created_at).getTime() : Date.now();
     const ageInMinutes = (Date.now() - orderCreatedAt) / 60000;
-    const allowedStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment"];
+    const allowedStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
 
     const isMashUp = existingOrder?.network === "MTN Mash Up";
     const targetStatus = isMashUp ? "pending" : "processing";
