@@ -217,11 +217,7 @@ export async function sendSmsViaTxtConnect(
   const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
-
-    const response = await fetchViaDb(supabaseAdmin, endpoint, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
