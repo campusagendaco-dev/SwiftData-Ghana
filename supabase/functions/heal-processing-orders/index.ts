@@ -118,48 +118,34 @@ serve(async (req) => {
     const { data: stuckOrders, error } = await query;
     if (error) throw error;
 
-    const providers = await getActiveProviders(supabaseAdmin, "data");
     const results: any[] = [];
+    const verifyPaymentUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;
 
     for (const order of stuckOrders || []) {
       const result: any = { id: order.id, network: order.network, package_size: order.package_size, action: "none" };
 
-      // Poll each active provider until one responds
-      let statusResult: { ok: boolean; status?: string } = { ok: false };
-      for (const provider of providers) {
-        statusResult = await pollProviderStatus(provider, order.id, order.provider_order_id);
-        if (statusResult.ok) break;
-      }
+      try {
+        const verifyRes = await fetch(verifyPaymentUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({ orderId: order.id, force: true }),
+        });
 
-      if (statusResult.ok) {
-        const s = (statusResult.status || "").toLowerCase();
-        const isDelivered = ["delivered", "success", "successful", "fulfilled", "completed", "sent"].includes(s);
-        const isFailed = ["failed", "error", "refunded", "cancelled", "rejected"].includes(s);
-
-        if (isDelivered) {
-          await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", order.id);
-          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
-          result.action = "fulfilled";
-          result.reason = `Provider confirmed: ${statusResult.status}`;
-        } else if (isFailed) {
-          await supabaseAdmin.from("orders").update({
-            status: "fulfillment_failed",
-            failure_reason: `Provider confirmed failed: ${statusResult.status}`,
-          }).eq("id", order.id);
-          result.action = "failed";
-          result.reason = `Provider confirmed: ${statusResult.status}`;
+        if (verifyRes.ok) {
+          const resJson = await verifyRes.json();
+          result.action = resJson.status || "processed";
+          result.reason = resJson.message || `verify-payment status: ${resJson.status}`;
         } else {
-          result.action = "still_processing";
-          result.reason = `Provider status: ${statusResult.status}`;
+          const errText = await verifyRes.text();
+          result.action = "error";
+          result.reason = `verify-payment returned ${verifyRes.status}: ${errText}`;
         }
-      } else {
-        // Provider has no record — mark as failed to trigger auto-refund (no retries)
-        await supabaseAdmin.from("orders").update({
-          status: "fulfillment_failed",
-          failure_reason: "Fulfillment failed: Provider has no record of transaction",
-        }).eq("id", order.id);
-        result.action = "failed";
-        result.reason = "Provider had no record — marked as failed to trigger wallet refund";
+      } catch (e: any) {
+        result.action = "error";
+        result.reason = e.message || "Failed to call verify-payment";
       }
 
       results.push(result);
