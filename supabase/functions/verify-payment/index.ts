@@ -850,7 +850,8 @@ serve(async (req) => {
       if (walletErr) {
         console.error("[verify-payment] Failed to fetch wallet for reversal:", walletErr);
       } else {
-        if (claimedOrder.order_type === "api") {
+        const isApiOrder = claimedOrder.order_type === "api" || claimedOrder.metadata?.wallet_type === "api" || claimedOrder.metadata?.client_reference;
+        if (isApiOrder) {
           const currentApi = Number(wallet?.api_balance || 0);
           await supabaseAdmin
             .from("wallets")
