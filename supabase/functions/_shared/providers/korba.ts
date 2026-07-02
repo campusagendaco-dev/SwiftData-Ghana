@@ -16,9 +16,9 @@ export class KorbaAdapter implements ProviderAdapter {
     provider: any,
     data: PurchaseData
   ): Promise<ProviderResponse> {
-    const KORBA_CLIENT_ID = provider?.settings?.client_id || Deno.env.get("KORBA_CLIENT_ID") || "2419";
-    const KORBA_CLIENT_KEY = provider?.api_key || provider?.settings?.client_key || Deno.env.get("KORBA_CLIENT_KEY") || "";
-    const KORBA_SECRET_KEY = provider?.api_secret || provider?.settings?.secret_key || Deno.env.get("KORBA_SECRET_KEY") || "";
+    const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
       return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };
@@ -165,9 +165,9 @@ export class KorbaAdapter implements ProviderAdapter {
     providerOrderId: string,
     reference: string
   ): Promise<ProviderResponse> {
-    const KORBA_CLIENT_ID = provider?.settings?.client_id || Deno.env.get("KORBA_CLIENT_ID") || "2419";
-    const KORBA_CLIENT_KEY = provider?.api_key || provider?.settings?.client_key || Deno.env.get("KORBA_CLIENT_KEY") || "";
-    const KORBA_SECRET_KEY = provider?.api_secret || provider?.settings?.secret_key || Deno.env.get("KORBA_SECRET_KEY") || "";
+    const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
       return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };

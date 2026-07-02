@@ -146,7 +146,7 @@ serve(async (req) => {
   }
 
   // Verify HMAC signature to protect from fake callbacks
-  const KORBA_SECRET_KEY = korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || Deno.env.get("KORBA_SECRET_KEY") || "";
+  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || "";
   if (KORBA_SECRET_KEY) {
     if (!signature) {
       console.error("[korba-webhook] Unauthorized callback: Missing signature parameter.");
