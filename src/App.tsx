@@ -519,11 +519,24 @@ const App = () => {
   } = useRegisterSW({
     onRegistered(r) {
       console.log("SW Registered");
-      // Auto check for updates every 5 minutes even if user leaves app open
       if (r) {
+        // 1. Immediately check for updates on registration
+        r.update().catch(console.error);
+
+        // 2. Auto check for updates every 5 minutes even if user leaves app open
         setInterval(() => {
           r.update().catch(console.error);
         }, 5 * 60 * 1000);
+
+        // 3. Listen to window focus and visibility change to catch updates immediately (perfect for iPhone PWAs)
+        const checkUpdates = () => {
+          console.log("App focused or visible, checking for service worker updates...");
+          r.update().catch(console.error);
+        };
+        window.addEventListener("focus", checkUpdates);
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") checkUpdates();
+        });
       }
     },
     onRegisterError(error) {
