@@ -154,7 +154,12 @@ serve(async (req) => {
       let accountVal = "";
       
       const digits = account_number.replace(/\D+/g, "");
-      if ((digits.startsWith("0") && digits.length === 10) || (digits.length === 9) || (digits.startsWith("233") && digits.length === 12)) {
+      const isGhanaMobilePhone = 
+        ((digits.startsWith("02") || digits.startsWith("05")) && digits.length === 10) ||
+        ((digits.startsWith("2332") || digits.startsWith("2335")) && digits.length === 12) ||
+        ((digits.startsWith("2") || digits.startsWith("5")) && digits.length === 9);
+
+      if (isGhanaMobilePhone) {
         phoneVal = formatTo233(account_number);
       } else {
         accountVal = account_number;
