@@ -248,18 +248,26 @@ const DashboardPricing = () => {
   const handleSave = async () => {
     if (!user) return;
 
-    for (const network of Object.keys(prices)) {
-      for (const size of Object.keys(prices[network])) {
-        const numericPrice = Number(prices?.[network]?.[size]);
-        const basePrice = getBasePrice(network, size);
-        if (!isAdmin && (!Number.isFinite(numericPrice) || numericPrice < basePrice)) {
-          toast({
-            title: "Price Too Low",
-            description: `${network} ${size}: Your selling price (GH₵ ${Number.isFinite(numericPrice) ? numericPrice.toFixed(2) : "0.00"}) is below your base cost (GH₵ ${basePrice.toFixed(2)}). Please increase it to save.`,
-            variant: "destructive",
-          });
-          return;
-        }
+    const currentNetworkKey = activeGateway === "korba" ? `Korba ${selectedNetwork}` : selectedNetwork;
+    const networkPrices = prices[currentNetworkKey] || {};
+
+    for (const size of Object.keys(networkPrices)) {
+      const numericPrice = Number(networkPrices[size]);
+      const basePrice = getBasePrice(currentNetworkKey, size);
+      
+      const disabled = isDisabled(currentNetworkKey, size);
+      const isGloballyOffline = globallyUnavailable[currentNetworkKey]?.includes(size) || false;
+      
+      // Skip validation for disabled or offline packages
+      if (disabled || isGloballyOffline) continue;
+
+      if (!isAdmin && (!Number.isFinite(numericPrice) || numericPrice < basePrice)) {
+        toast({
+          title: "Price Too Low",
+          description: `${selectedNetwork} ${size}: Your selling price (GH₵ ${Number.isFinite(numericPrice) ? numericPrice.toFixed(2) : "0.00"}) is below your base cost (GH₵ ${basePrice.toFixed(2)}). Please increase it to save.`,
+          variant: "destructive",
+        });
+        return;
       }
     }
 
