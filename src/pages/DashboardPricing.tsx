@@ -312,7 +312,7 @@ const DashboardPricing = () => {
   }, [basePackages, selectedNetwork, packageBasePrices, activeGateway]);
 
   return (
-    <div className="p-6 md:p-8 max-w-4xl">
+    <div className="p-4 sm:p-6 md:p-8 max-w-4xl">
       <div className="mb-8">
         <h1 className="font-display text-3xl font-bold">
           {profile?.api_access_enabled ? "API Pricing" : "Store Pricing"}
@@ -342,12 +342,12 @@ const DashboardPricing = () => {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-none whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
         {networks.filter(n => !(activeGateway === "korba" && n.name === "MTN Mash Up")).map((n) => (
           <button
             key={n.name}
             onClick={() => setSelectedNetwork(n.name)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors shrink-0 ${
               selectedNetwork === n.name
                 ? "bg-primary/10 text-primary border border-primary/20"
                 : "bg-card border border-border text-muted-foreground hover:text-foreground"
@@ -358,8 +358,8 @@ const DashboardPricing = () => {
         ))}
       </div>
 
-      {/* Mobile Card Layout (visible on small screens) */}
-      <div className="md:hidden space-y-4 mb-6">
+      {/* Mobile Card Layout (visible on screens smaller than lg) */}
+      <div className="lg:hidden space-y-4 mb-6">
         {networkPackages.map((pkg) => {
           const currentNetworkKey = activeGateway === "korba" ? `Korba ${selectedNetwork}` : selectedNetwork;
           const basePrice = getBasePrice(currentNetworkKey, pkg.size);
@@ -438,9 +438,10 @@ const DashboardPricing = () => {
         })}
       </div>
 
-      {/* Desktop Table View (hidden on mobile) */}
-      <div className="hidden md:block bg-card border border-border rounded-xl overflow-hidden mb-6">
-        <table className="w-full text-sm">
+      {/* Desktop Table View (hidden on mobile and tablet) */}
+      <div className="hidden lg:block bg-card border border-border rounded-xl overflow-hidden mb-6">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-secondary/50">
               <th className="text-left py-3 px-4 font-medium text-muted-foreground">Package</th>
@@ -505,6 +506,7 @@ const DashboardPricing = () => {
           </tbody>
         </table>
       </div>
+    </div>
 
       <Button onClick={handleSave} disabled={saving}>
         {saving ? "Saving..." : "Save All Prices"}
