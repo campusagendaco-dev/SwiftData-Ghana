@@ -81,8 +81,8 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       }
     }
 
-    if (isAirtime || isUtility || isKorbaFlag || isMappedToKorba) {
-      console.log(`[resolveProvidersForOrder] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag}, Mapped=${isMappedToKorba})`);
+    if (isAirtime || isUtility || isKorbaFlag) {
+      console.log(`[resolveProvidersForOrder] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag})`);
       return [korbaProvider];
     }
   }
