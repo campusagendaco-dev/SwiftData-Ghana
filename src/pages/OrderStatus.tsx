@@ -337,18 +337,10 @@ const OrderStatus = () => {
     if (!reference) return;
     const fetchOrderDetails = async () => {
       try {
-        let query = supabase
-          .from("orders")
-          .select("id, created_at, status, network, package_size, customer_phone, order_type, failure_reason");
-        
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
-        if (isUuid) {
-          query = query.or(`id.eq.${reference},metadata->>client_reference.eq.${reference}`);
-        } else {
-          query = query.eq("metadata->>client_reference", reference);
-        }
+        const { data: rpcData, error } = await supabase.rpc("get_public_order_status", {
+          p_reference: reference
+        });
 
-        const { data, error } = await query.maybeSingle();
         if (error) {
           console.error("Error fetching order details:", error);
           if (error.status === 401 || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("token") || error.message?.toLowerCase().includes("unauthorized")) {
@@ -360,7 +352,8 @@ const OrderStatus = () => {
             }
             window.location.reload();
           }
-        } else if (data) {
+        } else if (rpcData && rpcData.length > 0) {
+          const data = rpcData[0];
           setResolvedOrderId(data.id);
           setCreatedAt(data.created_at);
           if (data.network) setOrderNetwork(data.network);
