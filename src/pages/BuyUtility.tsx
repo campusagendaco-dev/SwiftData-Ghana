@@ -102,6 +102,10 @@ const BuyUtility = () => {
   const [lookupTxId, setLookupTxId] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
+  const [meters, setMeters] = useState<any[]>([]);
+  const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
+  const [selectedMeterNumber, setSelectedMeterNumber] = useState<string | null>(null);
+
   const reset = () => {
     setProvider("");
     setAccountNumber("");
@@ -110,6 +114,9 @@ const BuyUtility = () => {
     setAccountName(null);
     setVerifyError(null);
     setLookupTxId(null);
+    setMeters([]);
+    setSelectedMeterId(null);
+    setSelectedMeterNumber(null);
   };
 
   const handleTabChange = (id: UtilityType) => {
@@ -142,14 +149,33 @@ const BuyUtility = () => {
       if (error || !data?.success) {
         setVerifyError(data?.error || error?.message || "Account verification failed.");
       } else if (data.customer_name || data.accountName || (data.meters && data.meters.length > 0)) {
-        const resolvedName = data.customer_name || data.accountName || (data.meters?.[0]?.customerName || data.meters?.[0]?.alias);
-        setAccountName(resolvedName);
+        const returnedMeters = data.meters || [];
+        setMeters(returnedMeters);
+        
+        if (returnedMeters.length > 0) {
+          const firstMeter = returnedMeters[0];
+          const resolvedName = firstMeter.customerName || firstMeter.alias || data.customer_name || data.accountName;
+          setAccountName(resolvedName);
+          setSelectedMeterId(firstMeter.id || firstMeter.meterId || null);
+          setSelectedMeterNumber(firstMeter.meterNumber || null);
+          
+          if (firstMeter.meterNumber && !accountNumber) {
+            setAccountNumber(firstMeter.meterNumber);
+          }
+        } else {
+          const resolvedName = data.customer_name || data.accountName;
+          setAccountName(resolvedName);
+          setSelectedMeterId(null);
+          setSelectedMeterNumber(null);
+        }
+
         const txId = data.raw?.data?.transaction_id || data.raw?.transaction_id || data.raw?.transactionId;
         if (txId) {
           setLookupTxId(txId);
         }
         
-        toast({ title: "Account Verified Successfully", description: `Owner: ${resolvedName}` });
+        const descName = data.customer_name || data.accountName || (returnedMeters[0]?.customerName || returnedMeters[0]?.alias);
+        toast({ title: "Account Verified Successfully", description: `Owner: ${descName}` });
       } else {
         setVerifyError("Could not verify account name.");
       }
@@ -350,22 +376,79 @@ const BuyUtility = () => {
                 {/* Account Name Display / Error feedback */}
                 <AnimatePresence mode="wait">
                   {accountName && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-2xl flex items-start gap-3"
-                    >
-                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                      <div className="space-y-0.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider block opacity-70">
-                          Verified Name
-                        </span>
-                        <span className="text-sm font-black uppercase tracking-wide">
-                          {accountName}
-                        </span>
-                      </div>
-                    </motion.div>
+                    <div className="space-y-3">
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-2xl flex items-start gap-3"
+                      >
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-black uppercase tracking-wider block opacity-70">
+                            Verified Name
+                          </span>
+                          <span className="text-sm font-black uppercase tracking-wide">
+                            {accountName}
+                          </span>
+                        </div>
+                      </motion.div>
+
+                      {meters && meters.length > 1 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="space-y-2"
+                        >
+                          <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">
+                            Multiple Meters Found — Select Meter to Pay:
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {meters.map((m: any) => {
+                              const isSelected = selectedMeterId === (m.id || m.meterId);
+                              return (
+                                <button
+                                  key={m.id || m.meterNumber}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedMeterId(m.id || m.meterId || null);
+                                    setSelectedMeterNumber(m.meterNumber || null);
+                                    setAccountName(m.customerName || m.alias || accountName);
+                                    if (m.meterNumber) setAccountNumber(m.meterNumber);
+                                  }}
+                                  className={cn(
+                                    "flex flex-col p-3.5 rounded-xl border text-left transition-all active:scale-[0.98]",
+                                    isSelected
+                                      ? "bg-amber-400/10 border-amber-400 text-foreground shadow-sm shadow-amber-400/5"
+                                      : "bg-background/40 border-border/80 text-muted-foreground hover:bg-background/80 hover:text-foreground"
+                                  )}
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <span className="text-xs font-bold text-foreground">
+                                      {m.alias || "Meter"}
+                                    </span>
+                                    {isSelected && (
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] font-mono mt-1">
+                                    No: {m.meterNumber}
+                                  </span>
+                                  <span className="text-[9px] mt-0.5 truncate opacity-80">
+                                    Owner: {m.customerName}
+                                  </span>
+                                  {m.district && (
+                                    <span className="text-[8px] opacity-60 mt-0.5">
+                                      Loc: {m.district} ({m.region})
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      )}
+                    </div>
                   )}
 
                   {verifyError && (
@@ -502,16 +585,18 @@ const BuyUtility = () => {
         onClose={() => setCheckoutOpen(false)}
         amount={total}
         email={email.trim() || "customer@swiftdata.gh"}
-        recipientPhone={accountNumber.trim() || phoneNumber.trim()}
+        recipientPhone={selectedMeterNumber || accountNumber.trim() || phoneNumber.trim()}
         recipientNetwork={""}
         metadata={{
           order_type: "utility",
           utility_type: activeTab,
           utility_provider: provider,
-          utility_account_number: accountNumber.trim() || phoneNumber.trim(),
+          utility_account_number: selectedMeterNumber || accountNumber.trim() || phoneNumber.trim(),
           utility_account_name: accountName,
           lookup_transaction_id: lookupTxId,
           base_price: numAmount,
+          meter_id: selectedMeterId || undefined,
+          meter_number: selectedMeterNumber || undefined,
         }}
         onSuccess={(reference) => {
           setCheckoutOpen(false);
