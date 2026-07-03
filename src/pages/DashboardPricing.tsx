@@ -358,7 +358,88 @@ const DashboardPricing = () => {
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+      {/* Mobile Card Layout (visible on small screens) */}
+      <div className="md:hidden space-y-4 mb-6">
+        {networkPackages.map((pkg) => {
+          const currentNetworkKey = activeGateway === "korba" ? `Korba ${selectedNetwork}` : selectedNetwork;
+          const basePrice = getBasePrice(currentNetworkKey, pkg.size);
+          const profit = getProfit(currentNetworkKey, pkg.size);
+          const disabled = isDisabled(currentNetworkKey, pkg.size);
+          const isGloballyOffline = globallyUnavailable[currentNetworkKey]?.includes(pkg.size) || false;
+
+          return (
+            <div
+              key={pkg.size}
+              className={`p-4 bg-card border border-border rounded-xl shadow-sm transition-all duration-200 ${
+                (disabled || isGloballyOffline) ? "opacity-60 bg-muted/20" : "hover:border-primary/20"
+              }`}
+            >
+              {/* Card Header */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-base text-foreground">{pkg.size}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-secondary text-muted-foreground font-medium">
+                    {pkg.validity}
+                  </span>
+                  {isGloballyOffline && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 font-bold uppercase tracking-wider animate-pulse">
+                      Offline
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Available</span>
+                  <Switch
+                    checked={!disabled && !isGloballyOffline}
+                    onCheckedChange={() => toggleDisabled(currentNetworkKey, pkg.size)}
+                    disabled={isGloballyOffline}
+                    className="scale-90"
+                  />
+                </div>
+              </div>
+
+              {/* Card Body - Grid */}
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50 text-sm">
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">
+                    {profile?.api_access_enabled ? "Your API Cost" : "Base Price"}
+                  </span>
+                  <span className="font-semibold text-foreground">
+                    GHS {basePrice.toFixed(2)}
+                  </span>
+                </div>
+                
+                <div>
+                  <span className="text-xs text-muted-foreground block mb-1">Profit Margin</span>
+                  <span className={`font-bold ${profit > 0 ? "text-primary" : profit < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                    {profit >= 0 ? "+" : ""}GHS {profit.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Input row */}
+              <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-4">
+                <span className="text-sm font-medium text-foreground">Your Selling Price</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground text-xs font-semibold">GHS</span>
+                  <Input
+                    value={getPrice(currentNetworkKey, pkg.size)}
+                    onChange={(e) => setPrice(currentNetworkKey, pkg.size, e.target.value)}
+                    className="w-28 h-9 text-center bg-secondary font-bold text-sm border-border focus-visible:ring-primary/20"
+                    type="number"
+                    step="0.50"
+                    min={isAdmin ? undefined : basePrice}
+                    disabled={isGloballyOffline}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop Table View (hidden on mobile) */}
+      <div className="hidden md:block bg-card border border-border rounded-xl overflow-hidden mb-6">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-secondary/50">
