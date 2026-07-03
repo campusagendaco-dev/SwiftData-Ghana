@@ -11,6 +11,9 @@ RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   r RECORD;
   v_service_key TEXT;
+  v_sms_api_key TEXT;
+  v_sms_sender_id TEXT;
+  v_phone_array JSONB;
 BEGIN
   -- Retrieve Supabase Service Role Key from Vault
   SELECT decrypted_secret INTO v_service_key 
@@ -49,19 +52,28 @@ BEGIN
     );
   END LOOP;
 
-  -- 3. Dispatch SMS broadcasts to all active agents via admin-send-sms Edge Function using pg_net
-  PERFORM net.http_post(
-    url := 'https://lsocdjpflecduumopijn.supabase.co/functions/v1/admin-send-sms',
-    headers := json_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || v_service_key
-    )::jsonb,
-    body := json_build_object(
-      'target_type', 'agents',
-      'title', p_title,
-      'message', p_body
-    )::jsonb
-  );
+  -- 3. Dispatch SMS broadcasts directly to TxtConnect API in a single bulk request (bypasses rate limits)
+  SELECT txtconnect_api_key, txtconnect_sender_id 
+  INTO v_sms_api_key, v_sms_sender_id 
+  FROM public.system_settings 
+  WHERE id = 1;
+
+  SELECT COALESCE(json_agg(public.normalize_phone_sql(phone))::jsonb, '[]'::jsonb) INTO v_phone_array
+  FROM public.profiles
+  WHERE (is_agent = true OR sub_agent_approved = true) AND phone IS NOT NULL AND phone != '';
+
+  IF v_phone_array IS NOT NULL AND jsonb_array_length(v_phone_array) > 0 AND v_sms_api_key IS NOT NULL AND v_sms_api_key != '' THEN
+    PERFORM net.http_post(
+      url     := 'https://api.txtconnect.net/dev/api/sms/send',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_sms_api_key),
+      body    := jsonb_build_object(
+        'to', v_phone_array,
+        'from', COALESCE(v_sms_sender_id, 'SwiftDataGh'),
+        'sms', p_title || E'\n' || p_body,
+        'unicode', '0'
+      )
+    );
+  END IF;
 END;
 $$;
 
