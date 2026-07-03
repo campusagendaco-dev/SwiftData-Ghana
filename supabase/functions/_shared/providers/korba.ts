@@ -120,13 +120,12 @@ export class KorbaAdapter implements ProviderAdapter {
       }
     } else {
       // Data Topup
-      const netUpper = rawNet.toUpperCase();
       let targetPath = "mtn_data_topup/";
-      if (netUpper.includes("TELECEL") || netUpper.includes("VODA")) {
+      if (rawNet.includes("TELECEL") || rawNet.includes("VODA")) {
         targetPath = "vodafone_data_topup/";
-      } else if (netUpper.includes("AIRTEL") || netUpper.includes("TIGO") || netUpper.includes("AT")) {
+      } else if (rawNet.includes("AIRTEL") || rawNet.includes("TIGO") || rawNet.includes("AT")) {
         targetPath = "airteltigo_data_topup/";
-      } else if (netUpper.includes("GLO")) {
+      } else if (rawNet.includes("GLO")) {
         targetPath = "new_glo_data_purchase/";
       }
       targetUrl = `${baseUrl}/${targetPath}`;
@@ -147,8 +146,8 @@ export class KorbaAdapter implements ProviderAdapter {
         console.error("[korba-payload-resolve] Error:", e);
       }
 
-      const isVodafone = netUpper.includes("TELECEL") || netUpper.includes("VODA");
-      const isGlo = netUpper.includes("GLO");
+      const isVodafone = rawNet.includes("TELECEL") || rawNet.includes("VODA");
+      const isGlo = rawNet.includes("GLO");
 
       korbaPayload = {
         customer_number: recipient,
