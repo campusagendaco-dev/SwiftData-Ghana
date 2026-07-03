@@ -19,9 +19,10 @@ const buildDefaultPrices = (packageBasePrices: PackageBasePrices): AgentPrices =
   
   for (const network of allNetworks) {
     defaults[network] = {};
-    const pkgs = basePackages[network] || [];
+    const cleanNetwork = network.replace("Korba ", "");
+    const pkgs = basePackages[cleanNetwork] || [];
     for (const pkg of pkgs) {
-      const basePrice = packageBasePrices[network]?.[pkg.size] ?? pkg.price;
+      const basePrice = packageBasePrices[network]?.[pkg.size] ?? packageBasePrices[cleanNetwork]?.[pkg.size] ?? pkg.price;
       defaults[network][pkg.size] = (basePrice + 2).toFixed(2);
     }
 
@@ -233,8 +234,10 @@ const DashboardPricing = () => {
     });
   };
 
-  const getBasePrice = (network: string, size: string) =>
-    packageBasePrices[network]?.[size] ?? basePackages[network]?.find((p) => p.size === size)?.price ?? 0;
+  const getBasePrice = (network: string, size: string) => {
+    const cleanNetwork = network.replace("Korba ", "");
+    return packageBasePrices[network]?.[size] ?? packageBasePrices[cleanNetwork]?.[size] ?? basePackages[cleanNetwork]?.find((p) => p.size === size)?.price ?? 0;
+  };
 
   const getProfit = (network: string, size: string) => {
     const basePrice = getBasePrice(network, size);
@@ -290,9 +293,7 @@ const DashboardPricing = () => {
     const dbNetwork = isKorba ? `Korba ${selectedNetwork}` : selectedNetwork;
     const list: { size: string; price: number; validity: string }[] = [];
 
-    if (!isKorba) {
-      list.push(...(basePackages[selectedNetwork] || []));
-    }
+    list.push(...(basePackages[selectedNetwork] || []));
 
     const baseSizes = new Set(list.map(pkg => pkg.size.replace(/\s+/g, "").toUpperCase()));
 
