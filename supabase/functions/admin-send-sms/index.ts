@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, sendBulkSmsViaTxtConnect } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 
 type TargetType = "all" | "agents" | "sub_agents" | "parent_agents" | "users" | "pending_orders" | "all_order_phones";
@@ -183,17 +183,21 @@ async function sendToRecipients(
   balanceMap: Map<string, number>,
   concurrency = 5,
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
+  const needsTokens = hasTokens(messageTemplate);
+
+  if (!needsTokens) {
+    const phones = recipients.map((r) => r.phone);
+    return await sendBulkSmsViaTxtConnect(apiKey, senderId, phones, messageTemplate);
+  }
+
   let sent = 0;
   const failures: Array<{ phone: string; reason: string }> = [];
-  const needsTokens = hasTokens(messageTemplate);
 
   for (let i = 0; i < recipients.length; i += concurrency) {
     const chunk = recipients.slice(i, i + concurrency);
     await Promise.all(chunk.map(async (r) => {
       try {
-        const body = needsTokens
-          ? personalizeMessage(messageTemplate, r, balanceMap.get(r.userId))
-          : messageTemplate;
+        const body = personalizeMessage(messageTemplate, r, balanceMap.get(r.userId));
         await sendSmsViaTxtConnect(apiKey, senderId, r.phone, body);
         sent++;
       } catch (e) {
