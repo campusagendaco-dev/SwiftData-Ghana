@@ -37,11 +37,17 @@ function parseCapacity(pkg: string | null | undefined): number {
     return 200;
   }
   
+  let parseTarget = cleaned;
+  const parenMatch = cleaned.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    parseTarget = parenMatch[1];
+  }
+  
   // Normal parsing with MB/GB detection
-  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  const match = parseTarget.match(/(\d+(?:\.\d+)?)/);
   if (!match) return 0;
   const num = parseFloat(match[1]);
-  if (cleaned.includes("MB") && !cleaned.includes("GB")) {
+  if (parseTarget.includes("MB") && !parseTarget.includes("GB")) {
     return num / 1024;
   }
   return num;

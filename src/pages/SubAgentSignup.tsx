@@ -133,36 +133,11 @@ const SubAgentSignup = () => {
     const swiftDataShare = parseFloat((baseFee - agentProfitShare).toFixed(2));
 
     if (totalWithFee > 0) {
-      const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
-        body: {
-          email: email.trim(),
-          amount: totalWithFee,
-          reference: orderId,
-          callback_url: `${getAppBaseUrl()}/sub-agent/pending?reference=${orderId}`,
-          metadata: {
-            order_id: orderId,
-            order_type: "sub_agent_activation",
-            sub_agent_id: userId,
-            agent_id: agent!.user_id,
-            parent_agent_id: agent!.user_id,
-            activation_fee: baseFee,
-            paystack_fee: paystackFee,
-            agent_profit: agentProfitShare,
-            swiftdata_share: swiftDataShare,
-          },
-        },
+      toast({ 
+        title: "Account created!", 
+        description: "Redirecting to activation payment page...",
       });
-
-      if (paymentError || !paymentData?.authorization_url) {
-        toast({ 
-          title: "Payment initialization failed", 
-          description: "Your account was created, but we couldn't start the payment. Please go to the pending page to pay.", 
-          variant: "destructive" 
-        });
-        navigate("/sub-agent/pending");
-      } else {
-        window.location.href = paymentData.authorization_url;
-      }
+      navigate("/sub-agent/pending");
     } else {
       toast({ title: "Activation Free!", description: "Activating your portal instantly..." });
       

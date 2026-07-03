@@ -69,20 +69,23 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     
     let isMappedToKorba = false;
     if (orderType.toLowerCase() === "data") {
-      const { data: korbaMapping } = await supabaseAdmin
+      const queryNetwork = network.startsWith("Korba ") ? network : `Korba ${network}`;
+      const { data: korbaMappings } = await supabaseAdmin
         .from("provider_packages")
-        .select("id")
+        .select("id, network")
         .eq("provider_id", korbaProvider.id)
-        .eq("network", network)
-        .eq("package_name", order.package_size)
-        .maybeSingle();
-      if (korbaMapping) {
+        .eq("package_name", order.package_size);
+      
+      const hasMapping = (korbaMappings || []).some(
+        m => m.network === network || m.network === queryNetwork
+      );
+      if (hasMapping) {
         isMappedToKorba = true;
       }
     }
 
-    if (isAirtime || isUtility || isKorbaFlag) {
-      console.log(`[resolveProvidersForOrder] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag})`);
+    if (isAirtime || isUtility || isKorbaFlag || isMappedToKorba) {
+      console.log(`[resolveProvidersForOrder] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag}, Mapped=${isMappedToKorba})`);
       return [korbaProvider];
     }
   }

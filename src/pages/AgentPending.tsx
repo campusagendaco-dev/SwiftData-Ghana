@@ -7,12 +7,15 @@ import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction, invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { supabase } from "@/integrations/supabase/client";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 const AgentPending = () => {
   const { user, profile, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [paying, setPaying] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutReference, setCheckoutReference] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [hasPaid, setHasPaid] = useState(false);
   const [activationFee, setActivationFee] = useState(50);
@@ -122,35 +125,21 @@ const AgentPending = () => {
 
   const handlePayActivation = async () => {
     if (!user || !profile) return;
-    setPaying(true);
-
     const orderId = crypto.randomUUID();
+    setCheckoutReference(orderId);
+    setCheckoutOpen(true);
+  };
 
-    // Order is created server-side by initialize-payment
+  const handleCheckoutSuccess = async (ref: string) => {
+    setCheckoutOpen(false);
+    toast({ title: "Payment successful!", description: "Your activation payment has been received." });
+    setHasPaid(true);
+    await refreshProfile();
+  };
 
-    const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
-      body: {
-        email: profile.email || `${user.id}@agent.swiftdata.gh`,
-        amount: activationTotal,
-        reference: orderId,
-        callback_url: `${getAppBaseUrl()}/agent/pending?reference=${orderId}`,
-        metadata: {
-          order_id: orderId,
-          order_type: "agent_activation",
-          agent_id: user.id,
-          base_amount: activationFee,
-          paystack_fee: paystackFee,
-        },
-      },
-    });
-
-    if (paymentError || !paymentData?.authorization_url) {
-      toast({ title: "Payment failed", description: paymentData?.error || "Could not initialize payment.", variant: "destructive" });
-      setPaying(false);
-      return;
-    }
-
-    window.location.href = paymentData.authorization_url;
+  const handleCheckoutFailure = (err: string) => {
+    setCheckoutOpen(false);
+    toast({ title: "Payment failed", description: err || "The payment could not be completed.", variant: "destructive" });
   };
 
   return (
@@ -256,6 +245,23 @@ const AgentPending = () => {
           </Button>
         </div>
       </div>
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={activationTotal}
+        email={profile?.email || user?.email || ""}
+        recipientPhone={""}
+        recipientNetwork={""}
+        metadata={{
+          order_id: checkoutReference,
+          order_type: "agent_activation",
+          agent_id: user?.id,
+          base_amount: activationFee,
+          paystack_fee: paystackFee,
+        }}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

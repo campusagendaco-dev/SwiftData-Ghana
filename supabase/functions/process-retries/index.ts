@@ -125,8 +125,20 @@ function normalizeRecipient(phone: string): string {
 }
 
 function parseCapacity(packageSize: string): number {
-  const match = (packageSize || "").replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/);
-  return match ? parseFloat(match[1]) : 0;
+  if (!packageSize) return 0;
+  const cleaned = packageSize.replace(/\s+/g, "").toUpperCase();
+  let parseTarget = cleaned;
+  const parenMatch = cleaned.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    parseTarget = parenMatch[1];
+  }
+  const match = parseTarget.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const num = parseFloat(match[1]);
+  if (parseTarget.includes("MB") && !parseTarget.includes("GB")) {
+    return num / 1024;
+  }
+  return num;
 }
 
 async function sendWhatsAppFulfillmentNotification(to: string, type: string, net: string, pkg: string, phone: string) {

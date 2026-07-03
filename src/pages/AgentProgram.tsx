@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction } from "@/lib/public-function-client";
 import SEO from "@/components/SEO";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 const benefits = (fee: number) => [
   { icon: TrendingUp, title: "Set Your Own Profit", desc: "Set your reseller prices above our wholesale base and keep the margin." },
@@ -32,6 +33,8 @@ const AgentProgram = () => {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [activationFee, setActivationFee] = useState(50);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutReference, setCheckoutReference] = useState("");
   const [promoEnabled, setPromoEnabled] = useState(false);
   const [promoLimit, setPromoLimit] = useState(10);
   const [promoClaimed, setPromoClaimed] = useState(0);
@@ -153,39 +156,28 @@ const AgentProgram = () => {
 
     await refreshProfile();
     
-    const PAYSTACK_FEE_RATE = 0.03;
-    const PAYSTACK_FEE_CAP = 100;
-    const paystackFee = Math.min(activationFee * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
-    const ACTIVATION_TOTAL = parseFloat((activationFee + paystackFee).toFixed(2));
     const orderId = crypto.randomUUID();
-
-    const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
-      body: {
-        email: profile.email || `${user.id}@agent.swiftdata.gh`,
-        amount: ACTIVATION_TOTAL,
-        reference: orderId,
-        callback_url: `${getAppBaseUrl()}/agent/pending?reference=${orderId}`,
-        metadata: {
-          order_id: orderId,
-          order_type: "agent_activation",
-          agent_id: user.id,
-          base_amount: activationFee,
-          paystack_fee: paystackFee,
-        },
-      },
-    });
-
-    if (paymentError || !paymentData?.authorization_url) {
-      toast({ 
-        title: "Payment initialization failed", 
-        description: "Your request was saved, but we couldn't start the payment. Please go to the pending page to pay.", 
-        variant: "destructive" 
-      });
-      navigate("/agent/pending");
-    } else {
-      window.location.href = paymentData.authorization_url;
-    }
+    setCheckoutReference(orderId);
+    setCheckoutOpen(true);
     setSubmitting(false);
+  };
+
+  const handleCheckoutSuccess = async (ref: string) => {
+    setCheckoutOpen(false);
+    toast({
+      title: "Payment successful!",
+      description: "Your activation payment has been received. Redirecting to pending page...",
+    });
+    navigate(`/agent/pending?reference=${ref}`);
+  };
+
+  const handleCheckoutFailure = (err: string) => {
+    setCheckoutOpen(false);
+    toast({
+      title: "Payment failed",
+      description: err || "The payment could not be completed.",
+      variant: "destructive",
+    });
   };
 
   return (
@@ -265,6 +257,23 @@ const AgentProgram = () => {
           </div>
         </div>
       </div>
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={parseFloat((activationFee + Math.min(activationFee * 0.03, 100)).toFixed(2))}
+        email={profile?.email || user?.email || ""}
+        recipientPhone={""}
+        recipientNetwork={""}
+        metadata={{
+          order_id: checkoutReference,
+          order_type: "agent_activation",
+          agent_id: user?.id,
+          base_amount: activationFee,
+          paystack_fee: Math.min(activationFee * 0.03, 100),
+        }}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

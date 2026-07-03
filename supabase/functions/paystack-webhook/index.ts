@@ -82,8 +82,20 @@ function mapAirtimeNetworkKey(network: string): string {
 
 
 function parseCapacity(packageSize: string): number {
-  const match = packageSize.replace(/\s+/g, "").match(/(\d+(?:\.\d+)?)/)
-  return match ? parseFloat(match[1]) : 0;
+  if (!packageSize) return 0;
+  const cleaned = packageSize.replace(/\s+/g, "").toUpperCase();
+  let parseTarget = cleaned;
+  const parenMatch = cleaned.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    parseTarget = parenMatch[1];
+  }
+  const match = parseTarget.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const num = parseFloat(match[1]);
+  if (parseTarget.includes("MB") && !parseTarget.includes("GB")) {
+    return num / 1024;
+  }
+  return num;
 }
 
 function normalizeRecipient(phone: string): string {
@@ -174,7 +186,7 @@ function parseProviderResponse(body: string, contentType: string | null): { ok: 
     const statusCode = Number(parsed?.statusCode);
     const message = typeof parsed?.message === "string" ? parsed.message : undefined;
     const orderId = parsed?.transaction?.reference || parsed?.data?.orderNumber || parsed?.data?.reference || parsed?.transaction_id || parsed?.order_id || parsed?.reference || parsed?.id;
-    const deliveryStatus = String(parsed?.transaction?.status || parsed?.data?.status || parsed?.data?.orderStatus || parsed?.delivery_status || parsed?.status_message || "").toLowerCase();
+    const deliveryStatus = String(parsed?.transaction?.status || parsed?.data?.status || parsed?.data?.orderStatus || parsed?.delivery_status || parsed?.status_message || parsed?.transaction_status || "").toLowerCase();
 
     // Determine if it's actually delivered
     const isActuallyDelivered = !deliveryStatus || deliveryStatus === "delivered" || deliveryStatus === "success" || deliveryStatus === "successful" || deliveryStatus === "completed" || deliveryStatus === "fulfilled" || deliveryStatus === "true" || deliveryStatus === "sent";

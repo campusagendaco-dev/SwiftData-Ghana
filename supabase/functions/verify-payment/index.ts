@@ -56,11 +56,17 @@ function parseCapacity(packageSize: string | null | undefined): number {
     return 200;
   }
   
+  let parseTarget = cleaned;
+  const parenMatch = cleaned.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    parseTarget = parenMatch[1];
+  }
+  
   // Normal parsing with MB/GB detection
-  const match = cleaned.match(/(\d+(?:\.\d+)?)/);
+  const match = parseTarget.match(/(\d+(?:\.\d+)?)/);
   if (!match) return 0;
   const num = parseFloat(match[1]);
-  if (cleaned.includes("MB") && !cleaned.includes("GB")) {
+  if (parseTarget.includes("MB") && !parseTarget.includes("GB")) {
     return num / 1024;
   }
   return num;
@@ -461,18 +467,25 @@ serve(async (req) => {
           foundOnProvider = true;
           const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
           const isFailed = checkResult.status === "failed" || checkResult.status === "error" || checkResult.status === "refunded";
-          if (isFailed) {
+          if (isDelivered) {
+            const token = checkResult.raw?.prepaid_token;
+            await fulfillOrder(supabaseAdmin, targetReference, provider.id, existingOrder.provider_order_id, token || null);
+            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
+          } else if (isFailed) {
             const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(existingOrder.payment_method?.toLowerCase() || "");
             const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
             await supabaseAdmin.from("orders").update({ 
               status: targetStatus, 
               failure_reason: checkResult.reason || "Provider reported failure during status check" 
             }).eq("id", targetReference);
-            break; 
+            return new Response(JSON.stringify({ 
+              status: targetStatus, 
+              provider_order_id: existingOrder.provider_order_id,
+              reason: checkResult.reason || "Provider reported failure during status check"
+            }), { headers: corsHeaders });
           } else {
-            const token = checkResult.raw?.prepaid_token;
-            await fulfillOrder(supabaseAdmin, targetReference, provider.id, existingOrder.provider_order_id, token || null);
-            return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
+            console.log(`[verify-payment] Order ${targetReference} is still processing at provider. Status: ${checkResult.status}`);
+            return new Response(JSON.stringify({ status: "processing", provider_order_id: existingOrder.provider_order_id }), { headers: corsHeaders });
           }
         }
       }

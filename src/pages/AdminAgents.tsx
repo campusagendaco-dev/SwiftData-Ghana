@@ -36,6 +36,9 @@ interface AgentRow {
   total_own_profit?: number;
   total_commissions_paid?: number;
   api_access_enabled?: boolean;
+  activation_amount?: number;
+  activation_fee?: number;
+  activation_gateway?: string;
 }
 
 interface StuckActivation {
@@ -47,6 +50,8 @@ interface StuckActivation {
   phone: string;
   paid_at: string;
   amount: number;
+  paystack_fee?: number;
+  payment_method?: string;
 }
 
 const AdminAgents = () => {
@@ -110,14 +115,16 @@ const AdminAgents = () => {
     // Fetch wallet balances for this batch only
     const ids = rows.map(r => r.user_id);
     if (ids.length > 0) {
-      const [walletsRes, subCountRes, salesRes] = await Promise.all([
+      const [walletsRes, subCountRes, salesRes, activationsRes] = await Promise.all([
         supabase.from("wallets").select("agent_id, balance, api_balance, credit_limit").in("agent_id", ids),
         supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent" as any, true).in("parent_agent_id" as any, ids),
         supabase.from("user_sales_stats").select("user_id, total_sales_volume, total_own_profit, total_commissions_paid").in("user_id", ids),
+        supabase.from("orders").select("agent_id, amount, paystack_fee, payment_method").in("agent_id", ids).in("order_type", ["agent_activation", "sub_agent_activation"]).in("status", ["paid", "fulfilled"]),
       ]);
 
       const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, { balance: w.balance, api_balance: w.api_balance, limit: w.credit_limit }]));
       const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s]));
+      const activationsMap = new Map((activationsRes.data || []).map((a: any) => [a.agent_id, { amount: a.amount, fee: a.paystack_fee, gateway: a.payment_method }]));
       const subCountMap: Record<string, number> = {};
       (subCountRes.data || []).forEach((sa: any) => {
         const pid = sa.parent_agent_id;
@@ -135,6 +142,11 @@ const AdminAgents = () => {
         r.total_sales_volume = stats?.total_sales_volume ?? 0;
         r.total_own_profit = stats?.total_own_profit ?? 0;
         r.total_commissions_paid = stats?.total_commissions_paid ?? 0;
+
+        const act = activationsMap.get(r.user_id) as any;
+        r.activation_amount = act?.amount;
+        r.activation_fee = act?.fee;
+        r.activation_gateway = act?.gateway;
       });
     }
 
@@ -145,7 +157,7 @@ const AdminAgents = () => {
     // Find agents who paid for activation but store is still not activated
     const { data: activationOrders } = await supabase
       .from("orders")
-      .select("id, agent_id, created_at, amount")
+      .select("id, agent_id, created_at, amount, paystack_fee, payment_method")
       .in('status', ['paid', 'pending', 'processing', 'fulfillment_failed'])
       .in('order_type', ['agent_activation', 'sub_agent_activation'])
       .order('created_at', { ascending: false });
@@ -174,6 +186,8 @@ const AdminAgents = () => {
               phone: p.phone || "",
               paid_at: o.created_at,
               amount: Number(o.amount || 0),
+              paystack_fee: o.paystack_fee ? Number(o.paystack_fee) : 0,
+              payment_method: o.payment_method || "",
             };
           });
         setStuckActivations(stuck);
@@ -577,9 +591,17 @@ const AdminAgents = () => {
                         <p className="font-bold text-sm text-foreground truncate">{s.full_name}</p>
                         <p className="text-[10px] text-muted-foreground font-medium">{s.email}</p>
                       </div>
-                      <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-black tracking-widest uppercase">
-                        GH₵{s.amount}
-                      </Badge>
+                      <div className="text-right">
+                        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-black tracking-widest uppercase">
+                          GH₵{s.amount}
+                        </Badge>
+                        {s.paystack_fee !== undefined && (
+                          <p className="text-[9px] text-muted-foreground mt-0.5 font-bold">
+                            Fee: GH₵{s.paystack_fee.toFixed(2)}
+                            {s.payment_method ? ` (${s.payment_method})` : ""}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between gap-3 pt-3 border-t border-border">
                       <div className="flex flex-col gap-0.5 min-w-0">
@@ -835,6 +857,39 @@ const AdminAgents = () => {
                     <div>
                       <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">MoMo Details</p>
                       <p className="text-sm text-foreground font-medium">{agent.momo_network} — {agent.momo_number}</p>
+                    </div>
+                  )}
+
+                  {/* Activation Payment Details */}
+                  {(agent.activation_amount !== undefined || agent.activation_fee !== undefined) && (
+                    <div className="pt-4 border-t border-border">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Activation Payment</p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {agent.activation_amount !== undefined && (
+                          <div className="p-2.5 rounded-xl bg-secondary/30 border border-border">
+                            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mb-0.5">Amount Charged</p>
+                            <p className="text-sm font-black text-foreground truncate">
+                              GH₵{agent.activation_amount.toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                        {agent.activation_fee !== undefined && (
+                          <div className="p-2.5 rounded-xl bg-secondary/30 border border-border">
+                            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mb-0.5">Payment Fee</p>
+                            <p className="text-sm font-black text-amber-600 dark:text-amber-400 truncate">
+                              GH₵{agent.activation_fee.toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                        {agent.activation_gateway && (
+                          <div className="p-2.5 rounded-xl bg-secondary/30 border border-border">
+                            <p className="text-[9px] text-muted-foreground font-black uppercase tracking-widest mb-0.5">Gateway Used</p>
+                            <p className="text-sm font-black text-blue-600 dark:text-blue-400 capitalize truncate">
+                              {agent.activation_gateway}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 

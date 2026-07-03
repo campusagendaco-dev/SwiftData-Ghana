@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
+import { PaystackMomoCheckout } from "./PaystackMomoCheckout";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ShieldAlert, UploadCloud, CheckCircle2, Loader2, ArrowRight, CreditCard, Wallet, AlertTriangle } from "lucide-react";
@@ -20,6 +21,8 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
   const { user } = useAuth();
   const [status, setStatus] = useState(initialStatus);
   const [loading, setLoading] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutReference, setCheckoutReference] = useState("");
   const [tin, setTin] = useState("");
   const [regNumber, setRegNumber] = useState("");
   const [nationalIdFile, setNationalIdFile] = useState<File | null>(null);
@@ -168,42 +171,19 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
   };
 
   const handlePayCheckout = async () => {
-    setLoading(true);
-    toast.loading("Generating payment link...", { id: "pay" });
-    try {
-      const callbackUrl = `${window.location.origin}/dashboard/swift-vendor`;
-      const { data, error } = await supabase.functions.invoke("initialize-payment", {
-        body: { 
-          email: user?.email || "support@swiftdata.net",
-          amount: 700, // Backend will auto-adjust for fee
-          reference: crypto.randomUUID(),
-          callback_url: callbackUrl,
-          metadata: {
-            order_type: "vendor_activation",
-            agent_id: user?.id,
-          }
-        }
-      });
+    setCheckoutReference(crypto.randomUUID());
+    setCheckoutOpen(true);
+  };
 
-      if (error) {
-        let msg = error.message;
-        try {
-          const errBody = await error.context.json();
-          msg = errBody.error || errBody.message || error.message;
-        } catch (_) { /* ignore */ }
-        throw new Error(msg);
-      }
-      if (data && data.authorization_url) {
-        toast.dismiss("pay");
-        window.location.href = data.authorization_url;
-      } else {
-        throw new Error(data?.error || "Failed to generate checkout");
-      }
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "Failed to initiate payment", { id: "pay" });
-      setLoading(false);
-    }
+  const handleCheckoutSuccess = async (ref: string) => {
+    setCheckoutOpen(false);
+    toast.success("Payment successful! Your terminal is now under review.");
+    setStatus("pending_approval");
+  };
+
+  const handleCheckoutFailure = (err: string) => {
+    setCheckoutOpen(false);
+    toast.error(err || "The payment could not be completed.");
   };
 
   return (
@@ -444,6 +424,23 @@ export const VendorOnboardingWizard = ({ initialStatus, rejectionReason, onCompl
 
         </CardContent>
       </Card>
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={parseFloat((700 + Math.min(700 * 0.03, 100)).toFixed(2))}
+        email={user?.email || "support@swiftdata.net"}
+        recipientPhone={""}
+        recipientNetwork={""}
+        metadata={{
+          order_id: checkoutReference,
+          order_type: "vendor_activation",
+          agent_id: user?.id,
+          base_amount: 700,
+          paystack_fee: Math.min(700 * 0.03, 100),
+        }}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

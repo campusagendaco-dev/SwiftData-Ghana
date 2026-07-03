@@ -35,6 +35,10 @@ const TEMPLATES = [
   { label: "Wallet Bonus",        title: "💰 2% Wallet Top-Up Bonus!", body: "Get a 2% cash bonus instantly in your wallet on all manual top-ups above GHS 200 today! Boost your selling capacity and earn more profit. 🚀" },
   { label: "Referral Bonus",      title: "🎁 Invite Friends & Earn Cash!", body: "Share your referral link with friends! Get GHS 5.00 cash bonus credited to your wallet immediately they complete their first purchase. Start sharing! 🔗" },
   { label: "AFA Update",          title: "AFA Registration Active 🛡️", body: "AFA Registration is now live on SwiftData! You can register yourself or customers for AFA at just GHS 15.00. Keep selling and earning commissions! 🚀" },
+  { label: "MTN Mash Up Promo",  title: "⚡ MTN Mash Up Bundles Live! 📲", body: "Sell MTN Mash Up bundles directly to clients! Purchase at agent wholesale rates and earn up to GHS 5.00 commission per transaction. Log in to https://swiftdatagh.shop to start selling now!" },
+  { label: "Telecel Promo",      title: "🔥 Telecel Cash & Data Active!", body: "Earn massive agent commissions on all Telecel packages. Fast delivery and high reliability. Check wholesale pricing at https://swiftdatagh.shop today!" },
+  { label: "AirtelTigo Promo",   title: "💰 AirtelTigo Big Time Data! 🚀", body: "Enjoy wholesale agent commissions on AirtelTigo packages. Fast, instant top-ups for your customers. Log in to https://swiftdatagh.shop to make a sale." },
+  { label: "MTN SME wholesale",  title: "📦 MTN SME Affordable Data! 💸", body: "Get cheap MTN SME bundles: buy 5GB at GHS 21.20, sell at GHS 23.74, and make GHS 2.54 commission instantly! Visit https://swiftdatagh.shop." },
   { label: "Custom",              title: "",                       body: "" },
 ];
 

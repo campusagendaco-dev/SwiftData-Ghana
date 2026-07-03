@@ -110,7 +110,11 @@ type AdminUserAction =
   | "reset_user_mfa"
   | "get_admins"
   | "grant_admin_role"
-  | "revoke_admin_role";
+  | "revoke_admin_role"
+  | "refund_order"
+  | "force_fulfill_order"
+  | "heal_stuck_orders"
+  | "bulk_update_order_status";
 
 
 
@@ -1569,6 +1573,180 @@ serve(async (req: Request) => {
         });
 
         return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "refund_order": {
+        const { orderId, reason } = body;
+        if (!isValidUuid(orderId)) throw new Error("Invalid or missing orderId");
+        
+        // 1. Fetch order details
+        const { data: order, error: fetchErr } = await supabaseAdmin
+          .from("orders")
+          .select("id, status, amount, agent_id, order_type, payment_method")
+          .eq("id", orderId)
+          .maybeSingle();
+
+        if (fetchErr || !order) {
+          throw new Error(fetchErr?.message || `Order ${orderId} not found.`);
+        }
+
+        if (order.status === "refunded") {
+          return new Response(JSON.stringify({ success: true, message: "Order is already refunded" }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // 2. Perform wallet/balance refund if there is a valid agent
+        if (order.agent_id && order.agent_id !== "00000000-0000-0000-0000-000000000000") {
+          if (order.order_type === "api") {
+            const { error: refundErr } = await supabaseAdmin
+              .schema("api")
+              .rpc("credit_api_wallet", { p_user_id: order.agent_id, p_amount: order.amount });
+            if (refundErr) throw refundErr;
+          } else {
+            const { error: refundErr } = await supabaseAdmin
+              .rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
+            if (refundErr) throw refundErr;
+          }
+        }
+
+        // 3. Mark the order as refunded in the database
+        const { error: updateErr } = await supabaseAdmin
+          .from("orders")
+          .update({
+            status: "refunded",
+            auto_refunded: true,
+            refund_amount: order.amount,
+            refunded_at: new Date().toISOString(),
+            refund_reason: reason || "Manual refund by admin",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", orderId);
+
+        if (updateErr) throw updateErr;
+
+        // Log the action to admin audit logs
+        await supabaseAdmin.from("admin_action_log").insert({
+          admin_email: actor.email || "system",
+          action: "refund_order",
+          target_email: order.agent_id,
+          metadata: { order_id: orderId, reason, amount: order.amount }
+        });
+
+        return new Response(JSON.stringify({ success: true, message: "Order refunded to wallet successfully!" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "force_fulfill_order": {
+        const { orderId } = body;
+        if (!isValidUuid(orderId)) throw new Error("Invalid or missing orderId");
+
+        // 1. Fetch order details
+        const { data: order, error: fetchErr } = await supabaseAdmin
+          .from("orders")
+          .select("id, status, agent_id, amount, order_type")
+          .eq("id", orderId)
+          .maybeSingle();
+
+        if (fetchErr || !order) {
+          throw new Error(fetchErr?.message || `Order ${orderId} not found.`);
+        }
+
+        if (order.status === "fulfilled" || order.status === "completed") {
+          return new Response(JSON.stringify({ success: true, message: "Order is already fulfilled" }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // 2. Mark order as fulfilled
+        const { error: updateErr } = await supabaseAdmin
+          .from("orders")
+          .update({
+            status: "fulfilled",
+            provider_order_id: "force_fulfilled_by_admin",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", orderId);
+
+        if (updateErr) throw updateErr;
+
+        // Log the action to admin audit logs
+        await supabaseAdmin.from("admin_action_log").insert({
+          admin_email: actor.email || "system",
+          action: "force_fulfill_order",
+          target_email: order.agent_id,
+          metadata: { order_id: orderId }
+        });
+
+        return new Response(JSON.stringify({ success: true, message: "Order force-fulfilled successfully!" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "heal_stuck_orders": {
+        // Forward/Invoke heal-processing-orders Edge Function
+        const { data, error } = await supabaseAdmin.functions.invoke("heal-processing-orders");
+        if (error) {
+          console.error("Failed to invoke heal-processing-orders:", error);
+          throw error;
+        }
+
+        // Log the action to admin audit logs
+        await supabaseAdmin.from("admin_action_log").insert({
+          admin_email: actor.email || "system",
+          action: "heal_stuck_orders",
+          target_email: actor.id,
+          metadata: { result: data }
+        });
+
+        return new Response(JSON.stringify(data), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "bulk_update_order_status": {
+        const { orderIds, status } = body;
+        if (!Array.isArray(orderIds) || orderIds.length === 0) {
+          throw new Error("Invalid or missing orderIds array");
+        }
+        if (!status) {
+          throw new Error("Missing target status");
+        }
+
+        // Clean and validate order IDs
+        const validIds = orderIds.filter(id => isValidUuid(id));
+        if (validIds.length === 0) {
+          throw new Error("No valid UUIDs found in orderIds");
+        }
+
+        const { error: updateErr } = await supabaseAdmin
+          .from("orders")
+          .update({
+            status,
+            updated_at: new Date().toISOString()
+          })
+          .in("id", validIds);
+
+        if (updateErr) throw updateErr;
+
+        // Log the action to admin audit logs
+        await supabaseAdmin.from("admin_action_log").insert({
+          admin_email: actor.email || "system",
+          action: "bulk_update_order_status",
+          target_email: actor.id,
+          metadata: { count: validIds.length, status, order_ids: validIds }
+        });
+
+        return new Response(JSON.stringify({ success: true, message: `Successfully updated ${validIds.length} orders to ${status}` }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

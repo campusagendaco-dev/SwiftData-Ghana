@@ -49,7 +49,7 @@ export function usePushNotifications() {
     }
   }, []);
 
-  const subscribeUser = async () => {
+  const subscribeUser = async (silent = false) => {
     if (!supported || !user) {
       console.warn("[Push] Notifications are not supported or user not logged in.");
       return false;
@@ -97,10 +97,12 @@ export function usePushNotifications() {
       if (error) throw error;
 
       console.log("[Push] Subscription complete & registered successfully.");
-      toast({
-        title: "Notifications enabled!",
-        description: "You'll receive real-time mobile alerts for your order updates.",
-      });
+      if (!silent) {
+        toast({
+          title: "Notifications enabled!",
+          description: "You'll receive real-time mobile alerts for your order updates.",
+        });
+      }
       setLoading(false);
       return true;
     } catch (err: any) {
@@ -109,6 +111,12 @@ export function usePushNotifications() {
       return false;
     }
   };
+
+  useEffect(() => {
+    if (supported && permissionState === "granted" && user) {
+      subscribeUser(true);
+    }
+  }, [supported, permissionState, user]);
 
   const unsubscribeUser = async () => {
     if (!supported || !user) return false;

@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { invokePublicFunction, invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { Loader2, CreditCard, Clock, Zap, ArrowLeft } from "lucide-react";
+import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 
 const SubAgentPending = () => {
   const { user, profile, refreshProfile } = useAuth();
@@ -16,6 +17,8 @@ const SubAgentPending = () => {
   const [parentId, setParentId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutReference, setCheckoutReference] = useState("");
   const [loadingData, setLoadingData] = useState(true);
   const [platformBaseFee, setPlatformBaseFee] = useState(50);
   const [parentStore, setParentStore] = useState<{
@@ -79,7 +82,7 @@ const SubAgentPending = () => {
       window.history.replaceState({}, "", window.location.pathname);
       setVerifying(false);
     }).catch(() => {
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.history.replaceState({}, "", window.location.pathname);
       setVerifying(false);
     });
   }, [refreshProfile, navigate, toast]);
@@ -94,39 +97,23 @@ const SubAgentPending = () => {
       toast({ title: "Activation fee not set", description: "This agent has not configured a valid sub-agent activation fee yet.", variant: "destructive" });
       return;
     }
-    setPaying(true);
-
     const orderId = crypto.randomUUID();
-    const agentProfitShare = Math.max(0, parseFloat((totalFee - platformBaseFee).toFixed(2)));
-    const swiftDataShare = parseFloat((totalFee - agentProfitShare).toFixed(2));
+    setCheckoutReference(orderId);
+    setCheckoutOpen(true);
+  };
 
-    const { data: paymentData, error: paymentError } = await invokePublicFunction("initialize-payment", {
-      body: {
-        email: profile.email || `${user.id}@subagent.swiftdata.gh`,
-        amount: totalDue,
-        reference: orderId,
-        callback_url: `${getAppBaseUrl()}/sub-agent/pending?reference=${orderId}`,
-        metadata: {
-          order_id: orderId,
-          order_type: "sub_agent_activation",
-          sub_agent_id: user.id,
-          agent_id: parentId || user.id,
-          parent_agent_id: parentId,
-          activation_fee: totalFee,
-          paystack_fee: 0,
-          agent_profit: agentProfitShare,
-          swiftdata_share: swiftDataShare,
-        },
-      },
-    });
+  const handleCheckoutSuccess = async (ref: string) => {
+    setCheckoutOpen(false);
+    toast({ title: "Payment successful!", description: "Welcome to the team!" });
+    await refreshProfile();
+    const { data: prof } = await supabase.from("profiles").select("slug").eq("user_id", user?.id).maybeSingle();
+    const targetSlug = prof?.slug || profile?.slug;
+    navigate(targetSlug ? `/store/${targetSlug}` : "/dashboard", { replace: true });
+  };
 
-    if (paymentError || !paymentData?.authorization_url) {
-      toast({ title: "Payment failed", description: paymentData?.error || "Could not initialize payment.", variant: "destructive" });
-      setPaying(false);
-      return;
-    }
-
-    window.location.href = paymentData.authorization_url;
+  const handleCheckoutFailure = (err: string) => {
+    setCheckoutOpen(false);
+    toast({ title: "Payment failed", description: err || "The payment could not be completed.", variant: "destructive" });
   };
 
   const handleCheckStatus = async () => {
@@ -264,6 +251,27 @@ const SubAgentPending = () => {
           </Link>
         </div>
       </div>
+      <PaystackMomoCheckout
+        isOpen={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        amount={totalDue}
+        email={profile?.email || user?.email || ""}
+        recipientPhone={""}
+        recipientNetwork={""}
+        metadata={{
+          order_id: checkoutReference,
+          order_type: "sub_agent_activation",
+          sub_agent_id: user?.id,
+          agent_id: parentId || user?.id,
+          parent_agent_id: parentId,
+          activation_fee: totalFee,
+          paystack_fee: 0,
+          agent_profit: Math.max(0, parseFloat((totalFee - platformBaseFee).toFixed(2))),
+          swiftdata_share: parseFloat((totalFee - Math.max(0, parseFloat((totalFee - platformBaseFee).toFixed(2)))).toFixed(2)),
+        }}
+        onSuccess={handleCheckoutSuccess}
+        onFailure={handleCheckoutFailure}
+      />
     </div>
   );
 };

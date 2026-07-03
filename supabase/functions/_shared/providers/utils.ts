@@ -27,10 +27,16 @@ export function parseCapacity(packageSize: string | null | undefined): number {
     return 3;
   }
   
-  const match = cleaned.match(/([\d.]+)/);
+  let parseTarget = cleaned;
+  const parenMatch = cleaned.match(/\(([^)]+)\)/);
+  if (parenMatch) {
+    parseTarget = parenMatch[1];
+  }
+  
+  const match = parseTarget.match(/([\d.]+)/);
   if (!match) return 0;
   const num = parseFloat(match[1]);
-  if (cleaned.includes("MB") && !cleaned.includes("GB")) {
+  if (parseTarget.includes("MB") && !parseTarget.includes("GB")) {
     return num / 1024;
   }
   return num;
@@ -67,7 +73,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
     const parsed = JSON.parse(body);
     const technicalStatus = String(parsed?.status ?? parsed?.success ?? "").toLowerCase();
     const data = parsed?.data || {};
-    const deliveryStatus = String(parsed?.transaction?.status ?? data?.status ?? data?.orderStatus ?? parsed?.delivery_status ?? parsed?.status_message ?? "").toLowerCase();
+    const deliveryStatus = String(parsed?.transaction?.status ?? data?.status ?? data?.orderStatus ?? parsed?.delivery_status ?? parsed?.status_message ?? parsed?.transaction_status ?? "").toLowerCase();
     const effectiveStatus = deliveryStatus || technicalStatus;
     const message = typeof parsed?.message === "string"
       ? parsed.message

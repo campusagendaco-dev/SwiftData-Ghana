@@ -132,15 +132,19 @@ export class KorbaAdapter implements ProviderAdapter {
 
       let packageId = String(data.plan || data.package_size || "");
       try {
-        const { data: pkgMapping } = await supabaseAdmin
+        const rawNetwork = data.networkRaw || data.network || "";
+        const queryNetwork = rawNetwork.startsWith("Korba ") ? rawNetwork : `Korba ${rawNetwork}`;
+        const { data: pkgMappings } = await supabaseAdmin
           .from("provider_packages")
-          .select("external_id")
+          .select("external_id, network")
           .eq("provider_id", provider.id)
-          .eq("network", data.networkRaw || data.network || "")
-          .eq("package_name", data.package_size || data.plan || "")
-          .maybeSingle();
-        if (pkgMapping?.external_id) {
-          packageId = pkgMapping.external_id;
+          .eq("package_name", data.package_size || data.plan || "");
+        
+        const mapping = (pkgMappings || []).find(
+          m => m.network === rawNetwork || m.network === queryNetwork
+        );
+        if (mapping?.external_id) {
+          packageId = mapping.external_id;
         }
       } catch (e) {
         console.error("[korba-payload-resolve] Error:", e);

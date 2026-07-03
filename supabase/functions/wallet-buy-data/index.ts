@@ -384,15 +384,19 @@ serve(async (req: Request) => {
 
     let finalIsKorba = is_korba === true || is_korba === "true";
     if (!finalIsKorba) {
-      const { data: mapping } = await supabaseAdmin
+      const dbNet = normalizeNetworkForPricing(networkRaw);
+      const queryNetwork = dbNet.startsWith("Korba ") ? dbNet : `Korba ${dbNet}`;
+      const { data: mappings } = await supabaseAdmin
         .from("provider_packages")
-        .select("id")
+        .select("id, network")
         .eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
-        .eq("network", normalizeNetworkForPricing(networkRaw))
         .eq("package_name", package_size)
-        .eq("is_active", true)
-        .maybeSingle();
-      if (mapping) {
+        .eq("is_active", true);
+      
+      const hasMapping = (mappings || []).some(
+        m => m.network === dbNet || m.network === queryNetwork
+      );
+      if (hasMapping) {
         finalIsKorba = true;
       }
     }
