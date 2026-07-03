@@ -68,6 +68,18 @@ export default function AdminBroadcast() {
   const [logs, setLogs] = useState<BroadcastLog[]>([]);
   const [logsLoaded, setLogsLoaded] = useState(false);
 
+  const [packages, setPackages] = useState<any[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from("global_package_settings")
+      .select("network, package_size, agent_price, public_price")
+      .order("network")
+      .then(({ data }) => {
+        if (data) setPackages(data);
+      });
+  }, []);
+
   const buildSegmentQuery = useCallback((q: any) => {
     switch (segment) {
       case "all_agents":     return q.or("is_agent.eq.true,sub_agent_approved.eq.true");
@@ -205,17 +217,51 @@ export default function AdminBroadcast() {
             </div>
 
             {/* Templates */}
-            <div>
-              <p className="text-white/40 text-xs font-bold uppercase tracking-widest mb-2">Template</p>
-              <div className="flex flex-wrap gap-2">
-                {TEMPLATES.map((t, i) => (
-                  <button type="button" key={i} onClick={() => handleTemplateSelect(i)}
-                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                      templateIdx === i ? "bg-primary/20 text-primary border-primary/30" : "bg-white/5 text-white/40 border-white/10 hover:text-white/70")}>
-                    {t.label}
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <div>
+                <p className="text-white/40 text-xs font-bold uppercase tracking-widest mb-2">Template Shortcuts</p>
+                <div className="flex flex-wrap gap-2">
+                  {TEMPLATES.map((t, i) => (
+                    <button type="button" key={i} onClick={() => handleTemplateSelect(i)}
+                      className={cn("px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
+                        templateIdx === i ? "bg-primary/20 text-primary border-primary/30" : "bg-white/5 text-white/40 border-white/10 hover:text-white/70")}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {packages.length > 0 && (
+                <div className="p-4 rounded-2xl border border-white/5 bg-white/[0.02] space-y-2">
+                  <p className="text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                    Package Marketing Generator (Dynamic Commissions)
+                  </p>
+                  <select
+                    onChange={(e) => {
+                      const idx = Number(e.target.value);
+                      if (isNaN(idx)) return;
+                      const pkg = packages[idx];
+                      if (!pkg) return;
+                      
+                      const wholesale = Number(pkg.agent_price || 0);
+                      const retail = Number(pkg.public_price || 0);
+                      const comm = (retail - wholesale).toFixed(2);
+                      
+                      setTemplateIdx(-1); // Deselect templates
+                      setTitle(`⚡ ${pkg.network} ${pkg.package_size} Data Package Live! 📲`);
+                      setBody(`Resellers, purchase ${pkg.network} ${pkg.package_size} data bundles at just GHS ${wholesale.toFixed(2)} wholesale price! Sell to your customers at GHS ${retail.toFixed(2)} and pocket GHS ${comm} commission profit instantly per sale! Visit https://swiftdatagh.shop to make a sale.`);
+                    }}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3 h-10 text-white text-xs focus:outline-none focus:border-primary/40 w-full"
+                  >
+                    <option value="" className="bg-[#1a1a1f]">-- Select any package to auto-generate marketing template with commission --</option>
+                    {packages.map((pkg, i) => (
+                      <option key={i} value={i} className="bg-[#1a1a1f]">
+                        {pkg.network} {pkg.package_size} (Wholesale: GHS {Number(pkg.agent_price).toFixed(2)} · Retail: GHS {Number(pkg.public_price).toFixed(2)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Title */}
