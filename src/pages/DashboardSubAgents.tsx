@@ -128,7 +128,7 @@ const DashboardSubAgents = () => {
 
   const getParentAgentBasePrice = useCallback((network: string, size: string): number | null => {
     const gs = globalSettings.find(
-      (s) => s.network === network && normalizePackageSize(s.package_size) === normalizePackageSize(size),
+      (s) => (s.network === network || s.network === `Korba ${network}`) && normalizePackageSize(s.package_size) === normalizePackageSize(size),
     );
     const adminSubAgentPrice = Number(gs?.sub_agent_price || 0);
     const adminAgentPrice = Number(gs?.agent_price || 0);

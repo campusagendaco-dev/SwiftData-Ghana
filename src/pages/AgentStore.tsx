@@ -447,12 +447,19 @@ const AgentStore = () => {
 
   const resolveDisplayPrice = useCallback((network: string, size: string, fallbackPrice: number): number => {
     if (!agent) return fallbackPrice;
-    const multiplierKey = network;
-    const multiplier = priceMultipliers[multiplierKey] || 1;
-    const parentAssigned = Number(parentAssignedPrices?.[network]?.[size]);
     
-    const agentGuestPrice = Number(agent.agent_prices?.[network]?.[size]);
-    const agentCustomerPrice = Number((agent as any).registered_user_prices?.[network]?.[size]);
+    // Normalize size for safe lookup in globalSettings map
+    const normSize = size.replace(/\s+/g, "").toUpperCase();
+    
+    // Strip "Korba " prefix for multiplier key (which should be "MTN", "Telecel", "AirtelTigo")
+    const multiplierKey = network.replace("Korba ", "");
+    const multiplier = priceMultipliers[multiplierKey] || 1;
+    
+    // Check both prefixed and non-prefixed network keys in agent/parent custom prices
+    const parentAssigned = Number(parentAssignedPrices?.[network]?.[size] || parentAssignedPrices?.[multiplierKey]?.[size]);
+    
+    const agentGuestPrice = Number(agent.agent_prices?.[network]?.[size] || agent.agent_prices?.[multiplierKey]?.[size]);
+    const agentCustomerPrice = Number((agent as any).registered_user_prices?.[network]?.[size] || (agent as any).registered_user_prices?.[multiplierKey]?.[size]);
     
     // Use customer pricing if the user is logged in (and is not the owner)
     const isCustomer = profile && profile.user_id !== agent.user_id;
@@ -471,7 +478,8 @@ const AgentStore = () => {
     } else {
       if (Number.isFinite(activePrice) && activePrice > 0) return applyPriceMultiplier(activePrice, multiplier);
     }
-    const gs = globalSettings[`${network}-${size}`];
+    
+    const gs = globalSettings[`${network}-${normSize}`] || globalSettings[`${multiplierKey}-${normSize}`];
     let gsBase = Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : Number(gs?.public_price);
     if (agent.is_sub_agent) {
       const gsSub = Number(gs?.sub_agent_price);
@@ -484,10 +492,10 @@ const AgentStore = () => {
   // Get packages for current network and purchase type
   const displayPackages = useMemo(() => {
     const list: { size: string; price: number; validity: string; popular?: boolean; isInstant?: boolean; category?: string }[] = [];
-    const dbNetwork = selectedNetwork;
+    const dbNetwork = activeGateway === "korba" ? `Korba ${selectedNetwork}` : selectedNetwork;
 
     // 1. Get standard base packages (which are Affordable by default)
-    const baseList = basePackages[dbNetwork] || [];
+    const baseList = basePackages[selectedNetwork] || [];
     baseList.forEach(pkg => {
       list.push({
         size: pkg.size,
@@ -558,7 +566,7 @@ const AgentStore = () => {
       .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean; isInstant: boolean; category: string }[];
 
     return processed;
-  }, [basePackages, selectedNetwork, globalSettings, korbaMappings, agent, resolveDisplayPrice]);
+  }, [basePackages, selectedNetwork, globalSettings, korbaMappings, agent, resolveDisplayPrice, activeGateway]);
 
   // Get all available dropdown options for the current network
   const dropdownOptions = useMemo(() => {
