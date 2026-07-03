@@ -175,6 +175,8 @@ async function fetchBalanceMap(supabaseAdmin: any, userIds: string[]): Promise<M
   return new Map((data || []).map((w: any) => [w.agent_id, Number(w.balance || 0)]));
 }
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function sendToRecipients(
   apiKey: string,
   senderId: string,
@@ -204,6 +206,10 @@ async function sendToRecipients(
         failures.push({ phone: r.phone, reason: e instanceof Error ? e.message : "Unknown" });
       }
     }));
+    
+    if (i + concurrency < recipients.length) {
+      await delay(350); // safety pacing delay to prevent API IP rate-limiting
+    }
   }
   return { sent, failures };
 }
