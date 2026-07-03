@@ -1314,7 +1314,10 @@ serve(async (req) => {
             utility_account_name: claimedOrder.utility_account_name,
             amount: deliveryAmount,
             reference: targetReference,
-            lookup_transaction_id: claimedOrder.metadata?.lookup_transaction_id
+            lookup_transaction_id: claimedOrder.metadata?.lookup_transaction_id,
+            metadata: claimedOrder.metadata,
+            meter_id: claimedOrder.metadata?.meter_id,
+            meter_number: claimedOrder.metadata?.meter_number
           },
           "purchase"
         );
