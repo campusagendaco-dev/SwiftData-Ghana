@@ -349,7 +349,18 @@ const OrderStatus = () => {
         }
 
         const { data, error } = await query.maybeSingle();
-        if (data && !error) {
+        if (error) {
+          console.error("Error fetching order details:", error);
+          if (error.status === 401 || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("token") || error.message?.toLowerCase().includes("unauthorized")) {
+            console.warn("[OrderStatus] Stale/invalid auth token detected (401). Clearing session to allow guest access.");
+            try {
+              await supabase.auth.signOut({ scope: "local" });
+            } catch (signOutErr) {
+              console.error("Local signout failed:", signOutErr);
+            }
+            window.location.reload();
+          }
+        } else if (data) {
           setResolvedOrderId(data.id);
           setCreatedAt(data.created_at);
           if (data.network) setOrderNetwork(data.network);

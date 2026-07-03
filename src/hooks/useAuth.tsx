@@ -187,19 +187,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         if (error) {
           console.warn("Initial Supabase session fetch encountered an error:", error.message);
-          // If the refresh token is invalid or missing, perform a local signout to clean up state
-          if (error.message?.toLowerCase().includes("refresh token")) {
-            try {
-              await supabase.auth.signOut({ scope: "local" });
-            } catch (signOutErr) {
-              console.error("Local signout failed during session error handling:", signOutErr);
-            }
-            setSession(null);
-            setUser(null);
-            setProfile(null);
-            setIsAdmin(false);
-            return;
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch (signOutErr) {
+            console.error("Local signout failed during session error handling:", signOutErr);
           }
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsAdmin(false);
+          return;
         }
 
         const session = data?.session ?? null;
