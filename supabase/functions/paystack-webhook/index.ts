@@ -1665,6 +1665,8 @@ serve(async (req) => {
           networkKey,
           recipient: normalizeRecipient(customerPhone),
           capacity: String(parseCapacity(packageSize)),
+          package_size: packageSize,
+          plan: packageSize,
           amount: deliveryAmount,
           order_type: "data",
           description: `Data: ${packageSize} for ${customerPhone}`
