@@ -153,16 +153,17 @@ serve(async (req) => {
       let phoneVal = "";
       let accountVal = "";
       
-      const digits = account_number.replace(/\D+/g, "");
+      const lookupInput = (account_number || "").trim() || (phone_number || "").trim();
+      const digits = lookupInput.replace(/\D+/g, "");
       const isGhanaMobilePhone = 
         ((digits.startsWith("02") || digits.startsWith("05")) && digits.length === 10) ||
         ((digits.startsWith("2332") || digits.startsWith("2335")) && digits.length === 12) ||
         ((digits.startsWith("2") || digits.startsWith("5")) && digits.length === 9);
 
       if (isGhanaMobilePhone) {
-        phoneVal = formatTo233(account_number);
+        phoneVal = formatTo233(lookupInput);
       } else {
-        accountVal = account_number;
+        accountVal = lookupInput;
       }
       
       payload = {
