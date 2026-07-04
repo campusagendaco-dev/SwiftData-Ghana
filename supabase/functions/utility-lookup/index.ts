@@ -265,10 +265,12 @@ serve(async (req) => {
     if (!response.ok || !jsonResponse.success) {
       let apiError = jsonResponse.error_message || jsonResponse.error || jsonResponse.message || (typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse));
       
-      if (provUpper.includes("ECG") && String(apiError).includes("phone_number")) {
-        apiError = "ECG verification failed. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card number.";
-      } else if (provUpper.includes("ECG") && String(apiError).includes("Could not process your request")) {
-        apiError = "ECG verification failed. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card number.";
+      const fullResponseStr = typeof jsonResponse === 'object' ? JSON.stringify(jsonResponse) : String(responseText);
+      const errorLower = fullResponseStr.toLowerCase();
+      const isNoMeters = errorLower.includes("no meters") || errorLower.includes("no_meters") || errorLower.includes("could not process") || errorLower.includes("phone_number");
+
+      if (provUpper.includes("ECG") && isNoMeters) {
+        apiError = "No ECG meters found. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card/meter number.";
       }
 
       console.error("Korba API Error:", responseText);
