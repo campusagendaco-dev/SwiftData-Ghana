@@ -294,17 +294,31 @@ const BuyUtility = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-4 pt-2 border-t border-border/60"
               >
+                {activeTab === "electricity" && provider === "ECG Prepaid" && (
+                  <div className="flex items-start justify-between p-4 rounded-2xl bg-amber-500/8 border border-amber-500/20 text-amber-500 text-xs leading-relaxed animate-in slide-in-from-top-2 duration-200">
+                    <div className="flex gap-3">
+                      <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold mb-0.5">ECG Prepaid Verification Info</p>
+                        <p className="text-muted-foreground/80">
+                          For ECG Prepaid lookup, please enter the **phone number** registered on your ECG PowerApp mobile account. Entering a physical card or meter number will result in verification failure.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Meter / Smartcard number input */}
                   {provider !== "NEDCO" && (
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                        2. {FIELD_LABELS[activeTab]}
+                        2. {activeTab === "electricity" && provider === "ECG Prepaid" ? "PowerApp Phone / Account Number" : FIELD_LABELS[activeTab]}
                       </label>
                       <div className="relative">
                         <input
                           type="text"
-                          placeholder={FIELD_PLACEHOLDERS[activeTab]}
+                          placeholder={activeTab === "electricity" && provider === "ECG Prepaid" ? "e.g. 0244123456" : FIELD_PLACEHOLDERS[activeTab]}
                           value={accountNumber}
                           onChange={(e) => {
                             setAccountNumber(e.target.value);
