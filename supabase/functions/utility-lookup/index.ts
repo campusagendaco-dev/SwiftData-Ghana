@@ -266,9 +266,9 @@ serve(async (req) => {
       let apiError = jsonResponse.error_message || jsonResponse.error || jsonResponse.message || (typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse));
       
       if (provUpper.includes("ECG") && String(apiError).includes("phone_number")) {
-        apiError = "Account lookup failed. Please enter a valid phone number or account number.";
+        apiError = "ECG verification failed. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card number.";
       } else if (provUpper.includes("ECG") && String(apiError).includes("Could not process your request")) {
-        apiError = "Account lookup failed. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp account (e.g. 233208795528).";
+        apiError = "ECG verification failed. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card number.";
       }
 
       console.error("Korba API Error:", responseText);
@@ -276,7 +276,7 @@ serve(async (req) => {
     }
 
     if (provUpper.includes("ECG") && (!jsonResponse.results?.data || (Array.isArray(jsonResponse.results.data) && jsonResponse.results.data.length === 0))) {
-      return new Response(JSON.stringify({ success: false, error: "No meters found for the provided account/phone number. Please check the value and try again." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ success: false, error: "No meters found. For ECG Prepaid, please enter the phone number linked to your ECG PowerApp mobile app (e.g. 054XXXXXXX), not the physical prepaid card/meter number." }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const customerName = findName(jsonResponse.data) || findName(jsonResponse);
