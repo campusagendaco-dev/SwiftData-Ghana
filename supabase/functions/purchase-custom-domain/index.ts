@@ -555,8 +555,15 @@ if (isSimulation) {
             const errText = await res.text();
             let parsedErr: any = {};
             try { parsedErr = JSON.parse(errText); } catch { /* ignore */ }
-            errMsg = parsedErr?.message || parsedErr?.fields?.[0]?.message || errText || "GoDaddy Registration Rejected";
-            console.error(`[GODADDY_PURCHASE_FAIL] Status: ${res.status}, Error:`, errText);
+            
+            console.error("[GODADDY_PURCHASE_FAIL] Status:", res.status, "Raw Error:", errText);
+            
+            if (parsedErr?.fields && Array.isArray(parsedErr.fields) && parsedErr.fields.length > 0) {
+              const details = parsedErr.fields.map((f: any) => `${f.path || f.field}: ${f.message}`).join(", ");
+              errMsg = `${parsedErr.message || "Validation failed"}. Details: [${details}]`;
+            } else {
+              errMsg = parsedErr?.message || errText || "GoDaddy Registration Rejected";
+            }
           }
         } catch (err: any) {
           errMsg = err.message || "Network connection failure to GoDaddy";
