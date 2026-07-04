@@ -990,6 +990,33 @@ const APIDocumentation = () => {
             </div>
           </section>
 
+          {/* ── ECG Lookup ────────────────────────────────────────── */}
+          <section>
+            <SectionAnchor id="ecg-lookup" />
+            <SectionHeader icon={Search} title="ECG Meter Lookup" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-4">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/ecg/lookup</code>
+            </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
+              Verify customer details and retrieve all prepaid meters linked to an account or phone number.
+              <br />
+              <strong className="text-amber-400 font-bold">⚠️ IMPORTANT:</strong> For ECG Prepaid, you must pass the **phone number registered on the customer's ECG PowerApp account** as the <code className="text-amber-400 font-mono">accountNumber</code>. Passing a physical meter or card number directly will result in a verification failure.
+            </p>
+            <div className="ml-11 space-y-6">
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="accountNumber" type="string" required desc="Registered ECG PowerApp Mobile Number (for ECG Prepaid) or Postpaid Account Number (for ECG Postpaid)." />
+              </div>
+              <div className="grid lg:grid-cols-2 gap-6">
+                <CodeBlock code={snippets.ecg_lookup[activeLang]} label="Request" />
+                <ResponseBlock code={RESPONSES.ecg_lookup_ok} label="Response · 200 OK" />
+              </div>
+            </div>
+          </section>
+
           {/* ── Pay ECG ────────────────────────────────────────── */}
           <section>
             <SectionAnchor id="ecg-pay" />
@@ -998,13 +1025,18 @@ const APIDocumentation = () => {
               <MethodBadge method="POST" />
               <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/payment/ecg</code>
             </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
+              Credit a verified ECG meter with prepaid or postpaid funds.
+              <br />
+              <strong className="text-amber-400 font-bold">⚠️ IMPORTANT:</strong> The <code className="text-amber-400 font-mono">accountNumber</code> parameter here must be the verified physical meter number retrieved from the lookup step, not the phone number.
+            </p>
             <div className="ml-11 space-y-6">
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
                 </div>
-                <ParamRow name="phoneNumber"    type="string" required desc="Phone number in 233XXXXXXXXX format" />
-                <ParamRow name="accountNumber"  type="string" required desc="ECG meter or account number" />
+                <ParamRow name="phoneNumber"    type="string" required desc="Phone number in 233XXXXXXXXX format to receive the receipt SMS" />
+                <ParamRow name="accountNumber"  type="string" required desc="Verified physical ECG prepaid meter number" />
                 <ParamRow name="amount"         type="number" required desc="Amount in GHS" />
               </div>
               <div className="grid lg:grid-cols-2 gap-6">
