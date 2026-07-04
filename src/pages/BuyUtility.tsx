@@ -13,6 +13,7 @@ import { useConnectivity } from "@/hooks/useConnectivity";
 import { WifiOff } from "lucide-react";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import { motion, AnimatePresence } from "framer-motion";
+import { createPortal } from "react-dom";
 import SEO from "@/components/SEO";
 
 type UtilityType = "electricity" | "water" | "tv";
@@ -367,7 +368,7 @@ const BuyUtility = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={cn("grid grid-cols-1 gap-4", (activeTab === "electricity" && provider === "ECG Prepaid") ? "" : "sm:grid-cols-2")}>
                   {/* Meter / Smartcard number input */}
                   {provider !== "NEDCO" && (
                     <div className="space-y-1">
@@ -391,7 +392,7 @@ const BuyUtility = () => {
                   )}
 
                   {/* Phone input for NEDCO or fallback */}
-                  {(activeTab === "electricity" || activeTab === "water") && (
+                  {((activeTab === "electricity" && provider !== "ECG Prepaid") || activeTab === "water") && (
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                         {provider === "NEDCO" ? "2. Phone Number" : "Recipient Phone Number"}
@@ -681,132 +682,123 @@ const BuyUtility = () => {
         }}
       />
 
-      <AnimatePresence>
-        {showRegisterDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+      {showRegisterDialog && createPortal(
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowRegisterDialog(false)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+          />
+
+          {/* Modal Box */}
+          <div className="relative w-full max-w-md rounded-3xl border border-border bg-[#101016] p-6 md:p-8 shadow-2xl overflow-hidden z-10 text-left animate-in zoom-in-95 duration-200">
+            <button
               onClick={() => setShowRegisterDialog(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-
-            {/* Modal Box */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0d0d12] p-6 md:p-8 shadow-2xl overflow-hidden z-10 text-left"
+              className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all"
             >
-              <button
-                onClick={() => setShowRegisterDialog(false)}
-                className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <X className="w-4 h-4" />
+            </button>
 
-              <h2 className="text-xl font-black text-foreground mb-1">Register ECG Meter</h2>
-              <p className="text-xs text-muted-foreground mb-6 leading-normal">
-                Link a new physical ECG Prepaid meter to a phone number. This updates the records on the ECG PowerApp server so the number can be verified for payments.
-              </p>
+            <h3 className="font-black text-foreground text-sm uppercase tracking-wider mb-2">Register ECG Meter</h3>
+            <p className="text-xs text-muted-foreground mb-6 leading-normal">
+              Link a new physical ECG Prepaid meter to a phone number. This updates the records on the ECG PowerApp server so the number can be verified for payments.
+            </p>
 
-              <form onSubmit={handleRegisterMeter} className="space-y-4">
-                {/* Meter Alias */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                    Meter Alias (e.g. My Home)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={regAlias}
-                    onChange={(e) => setRegAlias(e.target.value)}
-                    placeholder="e.g. Home Prepaid"
-                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
-                  />
-                </div>
+            <form onSubmit={handleRegisterMeter} className="space-y-4">
+              {/* Meter Alias */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  Meter Alias (e.g. My Home)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={regAlias}
+                  onChange={(e) => setRegAlias(e.target.value)}
+                  placeholder="e.g. Home Prepaid"
+                  className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
 
-                {/* Meter Number */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                    Meter Number (on your card)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={regMeterNumber}
-                    onChange={(e) => setRegMeterNumber(e.target.value)}
-                    placeholder="e.g. 7001234567"
-                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
-                  />
-                </div>
+              {/* Meter Number */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  Meter Number (on your card)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={regMeterNumber}
+                  onChange={(e) => setRegMeterNumber(e.target.value)}
+                  placeholder="e.g. 7001234567"
+                  className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
 
-                {/* Phone Number */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                    PowerApp Mobile Number
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={regPhone}
-                    onChange={(e) => setRegPhone(e.target.value)}
-                    placeholder="e.g. 0541234567"
-                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
-                  />
-                </div>
+              {/* Phone Number */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  PowerApp Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={regPhone}
+                  onChange={(e) => setRegPhone(e.target.value)}
+                  placeholder="e.g. 0541234567"
+                  className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
 
-                {/* Meter Category */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                    Category
-                  </label>
-                  <select
-                    value={regCategory}
-                    onChange={(e) => setRegCategory(e.target.value)}
-                    className="w-full h-11 px-3 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors text-foreground"
-                  >
-                    <option value="PREPAID">PREPAID</option>
-                    <option value="POSTPAID">POSTPAID</option>
-                  </select>
-                </div>
-
-                {/* Account Number (Optional) */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                    Account Number (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={regAccountNumber}
-                    onChange={(e) => setRegAccountNumber(e.target.value)}
-                    placeholder="e.g. Optional account reference"
-                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
-                  />
-                </div>
-
-                {/* Register Button */}
-                <button
-                  type="submit"
-                  disabled={registering}
-                  className="w-full h-11 rounded-xl bg-amber-400 hover:bg-amber-500 disabled:bg-amber-400/50 text-black font-black text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 mt-2"
+              {/* Meter Category */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  Category
+                </label>
+                <select
+                  value={regCategory}
+                  onChange={(e) => setRegCategory(e.target.value)}
+                  className="w-full h-11 px-3 bg-secondary/50 border border-border rounded-xl text-sm font-black focus:outline-none focus:border-primary/50 transition-colors text-foreground"
                 >
-                  {registering ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Registering...</span>
-                    </>
-                  ) : (
-                    "Register & Link Meter"
-                  )}
-                </button>
-              </form>
-            </motion.div>
+                  <option value="PREPAID">PREPAID</option>
+                  <option value="POSTPAID">POSTPAID</option>
+                </select>
+              </div>
+
+              {/* Account Number (Optional) */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  Account Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={regAccountNumber}
+                  onChange={(e) => setRegAccountNumber(e.target.value)}
+                  placeholder="e.g. Optional account reference"
+                  className="w-full h-11 px-4 bg-secondary/50 border border-border rounded-xl text-sm font-medium focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+
+              {/* Register Button */}
+              <button
+                type="submit"
+                disabled={registering}
+                className="w-full h-11 rounded-xl bg-amber-400 hover:bg-amber-500 disabled:bg-amber-400/50 text-black font-black text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 mt-2"
+              >
+                {registering ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Registering...</span>
+                  </>
+                ) : (
+                  "Register & Link Meter"
+                )}
+              </button>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
