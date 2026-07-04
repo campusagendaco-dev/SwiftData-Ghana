@@ -106,6 +106,14 @@ const BuyUtility = () => {
   const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
   const [selectedMeterNumber, setSelectedMeterNumber] = useState<string | null>(null);
 
+  const [showRegisterDialog, setShowRegisterDialog] = useState(false);
+  const [regAlias, setRegAlias] = useState("");
+  const [regMeterNumber, setRegMeterNumber] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regCategory, setRegCategory] = useState("PREPAID");
+  const [regAccountNumber, setRegAccountNumber] = useState("");
+  const [registering, setRegistering] = useState(false);
+
   const reset = () => {
     setProvider("");
     setAccountNumber("");
@@ -117,6 +125,50 @@ const BuyUtility = () => {
     setMeters([]);
     setSelectedMeterId(null);
     setSelectedMeterNumber(null);
+  };
+
+  const handleRegisterMeter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regAlias || !regMeterNumber || !regPhone) {
+      toast({ title: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setRegistering(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("utility-lookup", {
+        body: {
+          action: "add_meter",
+          utility_type: "electricity",
+          provider: "ECG Prepaid",
+          alias: regAlias.trim(),
+          meter_number: regMeterNumber.trim(),
+          phone_number: regPhone.trim(),
+          meter_category: regCategory,
+          account_number: regAccountNumber.trim() || undefined
+        }
+      });
+
+      if (error || !data?.success) {
+        toast({ title: "Registration failed", description: data?.error || "Could not register meter.", variant: "destructive" });
+      } else {
+        toast({ title: "Meter Registered Successfully!", description: `Meter ${regMeterNumber} is now registered.` });
+        setShowRegisterDialog(false);
+        setRegAlias("");
+        setRegMeterNumber("");
+        setRegPhone("");
+        setRegAccountNumber("");
+        
+        // Auto fill and trigger verification lookup for the new registered phone number
+        setAccountNumber(regPhone.trim());
+        setTimeout(() => {
+          handleVerify();
+        }, 100);
+      }
+    } catch (err: any) {
+      toast({ title: "Network error", description: "Please try again later.", variant: "destructive" });
+    } finally {
+      setRegistering(false);
+    }
   };
 
   const handleTabChange = (id: UtilityType) => {
@@ -300,11 +352,18 @@ const BuyUtility = () => {
                       <Info className="w-4 h-4 shrink-0 mt-0.5" />
                       <div>
                         <p className="font-bold mb-0.5">ECG Prepaid Verification Info</p>
-                        <p className="text-muted-foreground/80">
-                          For ECG Prepaid lookup, please enter the **phone number** registered on your ECG PowerApp mobile account. Entering a physical card or meter number will result in verification failure.
+                        <p className="text-muted-foreground/80 font-medium">
+                          For ECG Prepaid lookup, please enter the **phone number** registered on your ECG PowerApp mobile account. If you are a new user or need to link a new meter, click register below.
                         </p>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterDialog(true)}
+                      className="shrink-0 h-8 px-3 rounded-xl bg-amber-400 hover:bg-amber-500 text-black font-black text-[10px] uppercase tracking-wider transition-colors ml-3 mt-1"
+                    >
+                      Register
+                    </button>
                   </div>
                 )}
 
@@ -621,6 +680,133 @@ const BuyUtility = () => {
           console.error("Payment failed:", error);
         }}
       />
+
+      <AnimatePresence>
+        {showRegisterDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRegisterDialog(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0d0d12] p-6 md:p-8 shadow-2xl overflow-hidden z-10 text-left"
+            >
+              <button
+                onClick={() => setShowRegisterDialog(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <h2 className="text-xl font-black text-foreground mb-1">Register ECG Meter</h2>
+              <p className="text-xs text-muted-foreground mb-6 leading-normal">
+                Link a new physical ECG Prepaid meter to a phone number. This updates the records on the ECG PowerApp server so the number can be verified for payments.
+              </p>
+
+              <form onSubmit={handleRegisterMeter} className="space-y-4">
+                {/* Meter Alias */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                    Meter Alias (e.g. My Home)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={regAlias}
+                    onChange={(e) => setRegAlias(e.target.value)}
+                    placeholder="e.g. Home Prepaid"
+                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
+                  />
+                </div>
+
+                {/* Meter Number */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                    Meter Number (on your card)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={regMeterNumber}
+                    onChange={(e) => setRegMeterNumber(e.target.value)}
+                    placeholder="e.g. 7001234567"
+                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
+                  />
+                </div>
+
+                {/* Phone Number */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                    PowerApp Mobile Number
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={regPhone}
+                    onChange={(e) => setRegPhone(e.target.value)}
+                    placeholder="e.g. 0541234567"
+                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
+                  />
+                </div>
+
+                {/* Meter Category */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                    Category
+                  </label>
+                  <select
+                    value={regCategory}
+                    onChange={(e) => setRegCategory(e.target.value)}
+                    className="w-full h-11 px-3 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors text-foreground"
+                  >
+                    <option value="PREPAID">PREPAID</option>
+                    <option value="POSTPAID">POSTPAID</option>
+                  </select>
+                </div>
+
+                {/* Account Number (Optional) */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                    Account Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={regAccountNumber}
+                    onChange={(e) => setRegAccountNumber(e.target.value)}
+                    placeholder="e.g. Optional account reference"
+                    className="w-full h-11 px-4 bg-background border border-border rounded-xl text-sm font-semibold focus:outline-none focus:border-amber-400/50 transition-colors"
+                  />
+                </div>
+
+                {/* Register Button */}
+                <button
+                  type="submit"
+                  disabled={registering}
+                  className="w-full h-11 rounded-xl bg-amber-400 hover:bg-amber-500 disabled:bg-amber-400/50 text-black font-black text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 mt-2"
+                >
+                  {registering ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Registering...</span>
+                    </>
+                  ) : (
+                    "Register & Link Meter"
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
