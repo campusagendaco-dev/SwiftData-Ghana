@@ -1090,8 +1090,8 @@ serve(async (req) => {
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: sibling.provider_order_id }), { headers: corsHeaders });
           }
           
-          // Case 2: Sibling is active in our DB (processing, pending, paid)
-          if (sibling.status === "processing" || sibling.status === "pending" || sibling.status === "paid") {
+          // Case 2: Sibling is active in our DB (processing, paid)
+          if (sibling.status === "processing" || sibling.status === "paid") {
             if (!isOlder) {
               console.log(`[verify-payment] Sibling order ${sibling.id} is active but newer than current order. Ignoring sibling.`);
               continue;
