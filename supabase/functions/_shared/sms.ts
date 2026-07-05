@@ -282,43 +282,24 @@ export async function sendBulkSmsViaTxtConnect(
   }
 
   const effectiveKey = apiKey;
-  const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
-  const BULK_BATCH = 100;
   let sent = 0;
   const failures: Array<{ phone: string; reason: string }> = [];
 
-  for (let i = 0; i < recipients.length; i += BULK_BATCH) {
-    const batch = recipients.slice(i, i + BULK_BATCH);
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${effectiveKey}`,
-        },
-        body: JSON.stringify({
-          to: batch,
-          from,
-          sms: body,
-          unicode: "0",
-        }),
-      });
-      if (!response.ok) {
-        for (const p of batch) {
-          failures.push({ phone: p, reason: `HTTP ${response.status}` });
-          await logSmsToDb(p, from, body, type, "failed", `HTTP ${response.status}`, agentId).catch(console.error);
+  const CONCURRENCY = 10;
+  for (let i = 0; i < recipients.length; i += CONCURRENCY) {
+    const chunk = recipients.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (r) => {
+        try {
+          await sendSmsViaTxtConnect(effectiveKey, from, r, body, type, agentId);
+          sent++;
+        } catch (err: any) {
+          failures.push({ phone: r, reason: err?.message || "Failed" });
         }
-      } else {
-        sent += batch.length;
-        for (const p of batch) {
-          await logSmsToDb(p, from, body, type, "success", undefined, agentId).catch(console.error);
-        }
-      }
-    } catch (err: any) {
-      for (const p of batch) {
-        failures.push({ phone: p, reason: err?.message || "Network error" });
-        await logSmsToDb(p, from, body, type, "failed", err?.message || "Network error", agentId).catch(console.error);
-      }
+      })
+    );
+    if (i + CONCURRENCY < recipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
   }
 
