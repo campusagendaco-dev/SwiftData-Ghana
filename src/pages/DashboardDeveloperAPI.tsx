@@ -68,6 +68,36 @@ const DashboardDeveloperAPI = () => {
   const [transferAmount, setTransferAmount] = useState("");
   const [transferring, setTransferring] = useState(false);
 
+  const [apiRequestStatus, setApiRequestStatus] = useState<string | null>(null);
+  const [requestingAccess, setRequestingAccess] = useState(false);
+
+  const submitApiRequest = async () => {
+    if (!user) return;
+    setRequestingAccess(true);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ api_request_status: "pending" })
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Access Requested",
+        description: "Your request for API access has been submitted to the admin team."
+      });
+      setApiRequestStatus("pending");
+    } catch (err: any) {
+      toast({
+        title: "Request failed",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setRequestingAccess(false);
+    }
+  };
+
   const BASE_URL = "https://lsocdjpflecduumopijn.supabase.co/functions/v1/developer-api";
 
   const fetchApiKey = useCallback(async () => {
@@ -77,7 +107,7 @@ const DashboardDeveloperAPI = () => {
     const [profileRes, walletRes] = await Promise.all([
       supabase
         .from("profiles")
-        .select("api_key_prefix, api_access_enabled, api_rate_limit, api_secret_key_hash, api_test_mode, api_webhook_url, api_ip_whitelist")
+        .select("api_key_prefix, api_access_enabled, api_rate_limit, api_secret_key_hash, api_test_mode, api_webhook_url, api_ip_whitelist, api_request_status")
         .eq("user_id", user.id)
         .maybeSingle(),
       supabase
@@ -97,6 +127,7 @@ const DashboardDeveloperAPI = () => {
       const ips = profileRes.data.api_ip_whitelist ?? [];
       setApiIpWhitelist(ips);
       setWhitelistInput(ips.join(", "));
+      setApiRequestStatus(profileRes.data.api_request_status ?? null);
     }
 
     if (walletRes.data) {
@@ -366,9 +397,60 @@ const DashboardDeveloperAPI = () => {
 
       {/* Access status banner */}
       {!loading && (
-        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium ${accessEnabled ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-red-500/20 bg-red-500/5 text-red-400"}`}>
-          {accessEnabled ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-          {accessEnabled ? "API access is active. Use your API key to start integrating." : "API access disabled. Please contact support."}
+        <div className="space-y-4">
+          <div className={cn(
+            "flex flex-col md:flex-row md:items-center justify-between gap-4 px-5 py-4 rounded-2xl border text-sm font-medium transition-all shadow-sm",
+            accessEnabled 
+              ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" 
+              : apiRequestStatus === "pending"
+                ? "border-amber-500/20 bg-amber-500/5 text-amber-400"
+                : "border-red-500/20 bg-red-500/5 text-red-400"
+          )}>
+            <div className="flex items-center gap-3">
+              {accessEnabled ? (
+                <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+              ) : apiRequestStatus === "pending" ? (
+                <Clock className="w-5 h-5 text-amber-400 animate-pulse shrink-0" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+              )}
+              <div>
+                <p className="font-bold text-sm">
+                  {accessEnabled 
+                    ? "API Access is Active" 
+                    : apiRequestStatus === "pending"
+                      ? "API Request Pending Approval"
+                      : apiRequestStatus === "rejected"
+                        ? "API Request Rejected"
+                        : "API Access is Disabled"}
+                </p>
+                <p className="text-xs opacity-75 mt-0.5 font-normal">
+                  {accessEnabled 
+                    ? "Use your API key credentials to authenticate your automated bundle queries." 
+                    : apiRequestStatus === "pending"
+                      ? "Our admin team is currently reviewing your account. You will receive an SMS update once approved."
+                      : apiRequestStatus === "rejected"
+                        ? "Your previous application was rejected. Please review settings or apply again below."
+                        : "Submit a request to activate developer capabilities and access live endpoints."}
+                </p>
+              </div>
+            </div>
+
+            {!accessEnabled && apiRequestStatus !== "pending" && (
+              <Button
+                onClick={submitApiRequest}
+                disabled={requestingAccess}
+                className="rounded-xl bg-red-500 hover:bg-red-400 text-white font-black text-[10px] tracking-widest uppercase h-9 px-4 gap-1.5 shrink-0 self-start md:self-auto border-none"
+              >
+                {requestingAccess ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Zap className="w-3.5 h-3.5" />
+                )}
+                Request API Access
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

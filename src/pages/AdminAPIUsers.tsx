@@ -51,6 +51,8 @@ interface APIUser {
   api_test_mode?: boolean;
   wallet_balance?: number;
   api_wallet_balance?: number;
+  api_request_status?: string | null;
+  api_requested_at?: string | null;
 }
 
 interface APIOrder {
@@ -303,7 +305,11 @@ const AdminAPIUsers = () => {
       toast({ title: "Failed", description: fnData?.error ?? error?.message, variant: "destructive" });
     } else {
       toast({ title: newVal ? "API Access Enabled" : "API Access Revoked" });
-      setUsers((prev) => prev.map((u) => u.user_id === user.user_id ? { ...u, api_access_enabled: newVal } : u));
+      setUsers((prev) => prev.map((u) => u.user_id === user.user_id ? { 
+        ...u, 
+        api_access_enabled: newVal,
+        api_request_status: newVal ? "approved" : "rejected"
+      } : u));
     }
   };
 
@@ -454,8 +460,8 @@ const AdminAPIUsers = () => {
 
   const totalApiUsers = users.length;
   const activeApiUsers = users.filter((u) => u.api_access_enabled).length;
+  const pendingRequests = users.filter((u) => u.api_request_status === "pending").length;
   const totalRequestsToday = users.reduce((a, u) => a + (u.api_requests_today ?? 0), 0);
-  const totalRequestsAll = users.reduce((a, u) => a + (u.api_requests_total ?? 0), 0);
 
   return (
     <div className="space-y-6 pb-10">
@@ -477,9 +483,8 @@ const AdminAPIUsers = () => {
         {[
           { label: "Total API Users", value: totalApiUsers, icon: Users, color: "text-blue-400" },
           { label: "Active Access", value: activeApiUsers, icon: CheckCircle, color: "text-emerald-400" },
-          { label: "Revoked Access", value: totalApiUsers - activeApiUsers, icon: XCircle, color: "text-red-400" },
-          { label: "Requests Today", value: totalRequestsToday.toLocaleString(), icon: Activity, color: "text-amber-400" },
-          { label: "Total Requests", value: totalRequestsAll.toLocaleString(), icon: BarChart2, color: "text-purple-400" },
+          { label: "Pending Requests", value: pendingRequests, icon: Clock, color: "text-amber-400" },
+          { label: "Requests Today", value: totalRequestsToday.toLocaleString(), icon: Activity, color: "text-cyan-400" },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label} className="bg-white/3 border-white/8">
             <CardContent className="p-4 flex items-center gap-3">
@@ -528,7 +533,7 @@ const AdminAPIUsers = () => {
             const dirty = isDirty(user);
 
             return (
-              <Card key={user.user_id} className={`border-white/8 transition-all ${user.api_access_enabled ? "bg-white/3" : "bg-red-500/5 border-red-500/10"}`}>
+              <Card key={user.user_id} className={`border-white/8 transition-all ${user.api_access_enabled ? "bg-white/3" : user.api_request_status === "pending" ? "bg-amber-500/5 border-amber-500/20" : "bg-red-500/5 border-red-500/10"}`}>
                 <CardContent className="p-0">
                   {/* User summary row */}
                   <div className="p-4 flex flex-col md:flex-row md:items-center gap-4">
@@ -539,6 +544,11 @@ const AdminAPIUsers = () => {
                         <Badge variant="outline" className={user.api_access_enabled ? "border-emerald-500/30 text-emerald-400 text-[10px]" : "border-red-500/30 text-red-400 text-[10px]"}>
                           {user.api_access_enabled ? "Active" : "Revoked"}
                         </Badge>
+                        {user.api_request_status === "pending" && (
+                          <Badge variant="outline" className="border-amber-500/50 text-amber-400 text-[10px] animate-pulse bg-amber-500/5">
+                            Pending Approval
+                          </Badge>
+                        )}
                         {user.api_test_mode && <Badge variant="outline" className="border-sky-500/30 text-sky-400 text-[10px] bg-sky-500/5">Testing</Badge>}
                         {user.agent_approved && <Badge variant="outline" className="border-amber-500/30 text-amber-400 text-[10px]">Agent</Badge>}
                         {user.sub_agent_approved && <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[10px]">Sub-Agent</Badge>}
@@ -591,14 +601,47 @@ const AdminAPIUsers = () => {
 
                     {/* Action buttons */}
                     <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className={`gap-1.5 h-8 text-xs ${user.api_access_enabled ? "border-red-500/30 text-red-400 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"}`}
-                        onClick={() => toggleAccess(user)}
-                      >
-                        {user.api_access_enabled ? <><ShieldOff className="w-3.5 h-3.5" /> Revoke</> : <><Shield className="w-3.5 h-3.5" /> Enable</>}
-                      </Button>
+                      {user.api_request_status === "pending" ? (
+                        <>
+                          <Button
+                            size="sm"
+                            className="gap-1.5 h-8 text-xs bg-emerald-500 hover:bg-emerald-400 text-white font-bold border-none"
+                            onClick={() => toggleAccess(user)}
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="gap-1.5 h-8 text-xs font-bold"
+                            onClick={async () => {
+                              const accessToken = session?.access_token;
+                              if (!accessToken) return;
+                              const { data: fnData, error } = await supabase.functions.invoke("system-payout-v1", {
+                                body: { action: "toggle_api_access", user_id: user.user_id, enabled: false },
+                                headers: { Authorization: `Bearer ${accessToken}` },
+                              });
+                              if (error || fnData?.error) {
+                                toast({ title: "Failed", description: fnData?.error ?? error?.message, variant: "destructive" });
+                              } else {
+                                toast({ title: "API Request Rejected" });
+                                setUsers((prev) => prev.map((u) => u.user_id === user.user_id ? { ...u, api_request_status: "rejected", api_access_enabled: false } : u));
+                              }
+                            }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Reject
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={`gap-1.5 h-8 text-xs ${user.api_access_enabled ? "border-red-500/30 text-red-400 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"}`}
+                          onClick={() => toggleAccess(user)}
+                        >
+                          {user.api_access_enabled ? <><ShieldOff className="w-3.5 h-3.5" /> Revoke</> : <><Shield className="w-3.5 h-3.5" /> Enable</>}
+                        </Button>
+                      )}
                       <Button 
                         size="sm" 
                         variant="outline" 

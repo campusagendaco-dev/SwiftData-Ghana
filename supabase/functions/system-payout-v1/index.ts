@@ -333,8 +333,8 @@ serve(async (req: Request) => {
         // Try with new security columns first
         const { data: newData, error: newError } = await supabaseAdmin
           .from("profiles")
-          .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_secret_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
-          .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true")
+          .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_secret_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at")
+          .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true,api_request_status.eq.pending")
           .order("full_name");
 
         if (newError) {
@@ -342,8 +342,8 @@ serve(async (req: Request) => {
           // Fallback to legacy columns if migration hasn't been run
           const { data: legacyData, error: legacyError } = await supabaseAdmin
             .from("profiles")
-            .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices")
-            .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true")
+            .select("user_id, full_name, email, api_key_prefix, api_key_hash, api_access_enabled, api_rate_limit, api_allowed_actions, api_ip_whitelist, api_webhook_url, api_requests_today, api_requests_total, api_last_used_at, agent_approved, sub_agent_approved, api_custom_prices, api_request_status, api_requested_at")
+            .or("api_key_prefix.not.is.null,api_key_hash.not.is.null,api_access_enabled.eq.true,api_request_status.eq.pending")
             .order("full_name");
           
           users = legacyData;
@@ -388,9 +388,13 @@ serve(async (req: Request) => {
       case "toggle_api_access": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { enabled } = body;
+        const patch: Record<string, any> = { 
+          api_access_enabled: !!enabled,
+          api_request_status: enabled ? "approved" : "rejected"
+        };
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
-          .update({ api_access_enabled: !!enabled })
+          .update(patch)
           .eq("user_id", user_id);
 
         if (updateError) throw updateError;
