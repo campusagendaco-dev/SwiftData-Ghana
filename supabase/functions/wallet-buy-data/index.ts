@@ -318,7 +318,7 @@ serve(async (req: Request) => {
       .gte("created_at", oneHourAgo);
 
     if (recentOrders && recentOrders.length > 0) {
-      const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
+      const statusesToCheck = ["paid", "processing", "fulfilled", "completed"];
       const match = recentOrders.find(o => {
         if (!statusesToCheck.includes(o.status)) return false;
 
