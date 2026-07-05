@@ -3,6 +3,27 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { log } from "../_shared/logger.ts";
+import { sendPaymentSms } from "../_shared/sms.ts";
+
+async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: string; title: string; body: string; url?: string; icon?: string }) {
+  try {
+    const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/send-push-notification`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("[Push] Trigger failed:", text);
+    }
+  } catch (e) {
+    console.error("[Push] Trigger error:", e);
+  }
+}
 
 // DataHub Ghana webhook handler
 // Receives order status callbacks from DataHub Ghana
@@ -138,7 +159,7 @@ serve(async (req) => {
 
     const { data: order, error: fetchError } = await supabaseAdmin
       .from("orders")
-      .select("id, status, agent_id, profit, parent_profit")
+      .select("id, status, agent_id, profit, parent_profit, customer_phone, network, package_size, order_type, amount, metadata")
       .or(filters)
       .maybeSingle();
 
@@ -189,6 +210,55 @@ serve(async (req) => {
       }
       await notifyApiClient(supabaseAdmin, order.id, "fulfilled");
       log(supabaseAdmin, { level: "info", source: "datahub-webhook", event: "order.fulfilled", message: `Order fulfilled via DataHub webhook`, order_id: order.id, data: { datahubStatus, datahubReference, profit: order.profit, parent_profit: order.parent_profit } });
+
+      // Trigger Push Notification for Agent
+      if (order.agent_id && order.agent_id !== '00000000-0000-0000-0000-000000000000') {
+        try {
+          const profit = Number(order.profit || 0).toFixed(2);
+          const isUtility = order.order_type === "utility";
+          await triggerPushNotification(supabaseAdmin, {
+            user_id: order.agent_id,
+            title: isUtility ? "🎉 Utility Bill Payment Completed" : "🎉 New payment for Data selling",
+            body: isUtility ? `Your utility order has been processed.` : `You just received GHS ${profit} from your recent data sale.`,
+            url: "/dashboard/orders",
+            icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
+          });
+        } catch (e) {
+          console.error("[datahub-webhook] Push notification failed:", e);
+        }
+      }
+
+      // Trigger SMS for Customer
+      if (order.customer_phone) {
+        try {
+          const isUtility = order.order_type === "utility";
+          const networkName = order.network || "";
+          const packageName = order.package_size || "";
+          const isAirtime = String(packageName).toUpperCase() === "AIRTIME";
+          
+          let displayPackage = `${networkName} ${packageName}`;
+          if (isAirtime) {
+            const basePrice = order.metadata?.base_price || order.amount;
+            displayPackage = `${networkName} GHS ${Number(basePrice).toFixed(2)} Airtime`;
+          }
+
+          let customMsg = "";
+          if (isUtility) {
+            const token = data.prepaid_token || data.token || (order.metadata as any)?.prepaid_token;
+            if (token) {
+              customMsg = `Payment received! ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nTxID: ${order.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+            } else {
+              customMsg = `Payment received! Your ${networkName} payment for account ${order.customer_phone} of GHS ${Number(order.amount).toFixed(2)} is being processed.\nTxID: ${order.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+            }
+          } else {
+            customMsg = `Success! Your order for ${displayPackage} to ${order.customer_phone} has been processed.\nTxID: ${order.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+          }
+
+          await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom", { message: customMsg }, order.agent_id);
+        } catch (smsErr) {
+          console.error("[datahub-webhook] Success SMS dispatch failed:", smsErr);
+        }
+      }
     } else if (systemStatus === "fulfillment_failed") {
       await notifyApiClient(supabaseAdmin, order.id, "fulfillment_failed");
       // Auto-refund has been disabled per admin requirements (manual refunds only)
