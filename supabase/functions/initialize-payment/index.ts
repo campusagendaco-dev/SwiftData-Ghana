@@ -155,9 +155,10 @@ serve(async (req: Request) => {
 
     let PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
 
-    if (activeGateway === "paystack" && !PAYSTACK_SECRET_KEY) {
-      PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
-    }
+    if (activeGateway === "paystack") {
+      if (!PAYSTACK_SECRET_KEY) {
+        PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+      }
 
       if (!PAYSTACK_SECRET_KEY) {
         console.error("PAYSTACK_SECRET_KEY is not configured");
