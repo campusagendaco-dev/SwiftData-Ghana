@@ -6,10 +6,10 @@ RETURNS TRIGGER AS $$
 DECLARE
   v_store_exists BOOLEAN;
 BEGIN
-  -- Check if a store already exists for this user_id
+  -- Check if a store already exists for this user_id and slug
   SELECT EXISTS(
     SELECT 1 FROM public.reseller_stores 
-    WHERE user_id = NEW.user_id
+    WHERE user_id = NEW.user_id AND slug = NEW.slug
   ) INTO v_store_exists;
 
   IF (NEW.is_agent = true OR NEW.is_sub_agent = true) 
@@ -19,10 +19,9 @@ BEGIN
     IF v_store_exists THEN
       UPDATE public.reseller_stores
       SET store_name = NEW.store_name,
-          slug = NEW.slug,
           store_logo_url = NEW.store_logo_url,
           store_primary_color = COALESCE(NEW.store_primary_color, '#fbbf24')
-      WHERE user_id = NEW.user_id;
+      WHERE user_id = NEW.user_id AND slug = NEW.slug;
     ELSE
       INSERT INTO public.reseller_stores (
         user_id, 
@@ -37,7 +36,8 @@ BEGIN
         NEW.slug, 
         NEW.store_logo_url, 
         COALESCE(NEW.store_primary_color, '#fbbf24')
-      );
+      )
+      ON CONFLICT (slug) DO NOTHING;
     END IF;
   END IF;
   RETURN NEW;
@@ -45,14 +45,14 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Sync existing profiles to reseller_stores
--- 1. Update existing rows in reseller_stores to match profiles
+-- 1. Update existing rows in reseller_stores to match profiles (matching by user_id and slug)
 UPDATE public.reseller_stores s
 SET store_name = p.store_name,
-    slug = p.slug,
     store_logo_url = p.store_logo_url,
     store_primary_color = COALESCE(p.store_primary_color, '#fbbf24')
 FROM public.profiles p
 WHERE s.user_id = p.user_id
+  AND s.slug = p.slug
   AND (p.is_agent = true OR p.is_sub_agent = true)
   AND p.store_name IS NOT NULL AND p.store_name <> ''
   AND p.slug IS NOT NULL AND p.slug <> '';
@@ -76,5 +76,5 @@ WHERE (p.is_agent = true OR p.is_sub_agent = true)
   AND p.store_name IS NOT NULL AND p.store_name <> ''
   AND p.slug IS NOT NULL AND p.slug <> ''
   AND NOT EXISTS (
-    SELECT 1 FROM public.reseller_stores s WHERE s.user_id = p.user_id
+    SELECT 1 FROM public.reseller_stores s WHERE s.user_id = p.user_id AND s.slug = p.slug
   );
