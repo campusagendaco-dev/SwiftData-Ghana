@@ -56,9 +56,9 @@ serve(async (req) => {
       .eq("id", 1)
       .maybeSingle();
 
-    let PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+    let PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
     if (!PAYSTACK_SECRET_KEY) {
-      PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+      PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
     }
 
     if (!PAYSTACK_SECRET_KEY) {

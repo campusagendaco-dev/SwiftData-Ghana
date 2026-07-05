@@ -101,7 +101,7 @@ async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: str
   return {
     apiKey: apiKey || settings?.data_provider_api_key || "",
     baseUrl: (baseUrl || settings?.data_provider_base_url || "").replace(/\/+$/, ""),
-    paystackSecretKey: settings?.paystack_secret_key || ""
+    paystackSecretKey: getFirstEnv("PAYSTACK_SECRET_KEY") || settings?.paystack_secret_key || ""
   };
 }
 

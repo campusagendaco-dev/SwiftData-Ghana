@@ -93,19 +93,18 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  let paystackKey = "";
-  try {
-    const { data: settings } = await supabase
-      .from("v_system_settings_with_secrets").select("paystack_secret_key")
-      .eq("id", 1)
-      .maybeSingle();
-    paystackKey = settings?.paystack_secret_key || "";
-  } catch (dbErr) {
-    console.error("Failed to fetch paystack_secret_key from DB in vendor:", dbErr);
-  }
+  let paystackKey = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
 
   if (!paystackKey) {
-    paystackKey = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+    try {
+      const { data: settings } = await supabase
+        .from("v_system_settings_with_secrets").select("paystack_secret_key")
+        .eq("id", 1)
+        .maybeSingle();
+      paystackKey = settings?.paystack_secret_key || "";
+    } catch (dbErr) {
+      console.error("Failed to fetch paystack_secret_key from DB in vendor:", dbErr);
+    }
   }
 
   if (!paystackKey) {
