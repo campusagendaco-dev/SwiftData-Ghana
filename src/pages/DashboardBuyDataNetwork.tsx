@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, Clock } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, Clock, AlertTriangle } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -148,6 +148,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [activationFee, setActivationFee] = useState(50);
+  const [saveToBeneficiary, setSaveToBeneficiary] = useState(true);
+  const [beneficiaryName, setBeneficiaryName] = useState("");
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
@@ -155,6 +157,41 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const isPhoneValid = useMemo(() => 
     normalizedPhone.length === 10 || normalizedPhone.length === 12 || normalizedPhone.length === 9,
   [normalizedPhone]);
+
+  const isBeneficiarySaved = useMemo(() => {
+    if (!isPhoneValid) return false;
+    const cleanPhone = phone.trim().replace(/\D/g, "");
+    const suffix = cleanPhone.slice(-9);
+    if (suffix.length < 9) return false;
+    
+    return savedCustomers.some((c: any) => {
+      const cClean = (c.phone || "").trim().replace(/\D/g, "");
+      return cClean.slice(-9) === suffix;
+    });
+  }, [phone, isPhoneValid, savedCustomers]);
+
+  const saveBeneficiaryIfNeeded = async () => {
+    if (saveToBeneficiary && !isBeneficiarySaved && phone && user) {
+      try {
+        const { error } = await supabase.from("saved_customers").insert({
+          agent_id: user.id,
+          name: beneficiaryName.trim() || `Customer (${phone})`,
+          phone: phone.trim(),
+          network: selectedTypeOrCategory === "mashup" ? "MTN" : network,
+        });
+        if (error) {
+          console.error("Failed to auto-save beneficiary:", error.message);
+        } else {
+          console.log("Successfully saved beneficiary to address book.");
+          const { data } = await supabase.from("saved_customers").select("*").order("name");
+          setSavedCustomers(data || []);
+          setBeneficiaryName("");
+        }
+      } catch (err) {
+        console.error("Error auto-saving beneficiary:", err);
+      }
+    }
+  };
 
   // Restore phone from navigation state if it exists (for auto-network switching)
   useEffect(() => {
@@ -602,10 +639,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         return;
       }
 
-      console.log("Wallet buy response data:", data);
-
-      if (typeof data?.order_id === "string" || data?.success) {
+      console.log("Wallet buy response data:", data);      if (typeof data?.order_id === "string" || data?.success) {
         playSuccessSound();
+        await saveBeneficiaryIfNeeded();
         toast({ title: "Purchase successful!", description: "Order proceed. Will be delivered between 10min to 60min.", variant: "default" });
         if (data?.order_id) {
           setLastOrder({ 
@@ -622,6 +658,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       } else {
         // Fallback success if we got here without a explicit error
         playSuccessSound();
+        await saveBeneficiaryIfNeeded();
         toast({ title: "Order Placed", description: "Check your order history for status." });
         setShowSuccessOverlay(true);
         setTimeout(() => setShowSuccessOverlay(false), 5000);
@@ -670,7 +707,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     setCheckoutOpen(true);
   };
 
-  const handleCheckoutSuccess = (ref: string) => {
+  const handleCheckoutSuccess = async (ref: string) => {
+    await saveBeneficiaryIfNeeded();
+    
     setCheckoutOpen(false);
     setSelectedSize("");
     setPhone("");
@@ -929,6 +968,42 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
               )}
               {phone.length > 0 && !isPhoneValid && (
                 <p className="text-[10px] font-bold text-destructive mt-1.5 uppercase tracking-tight">Invalid Ghana number format</p>
+              )}
+              {isPhoneValid && !isBeneficiarySaved && (
+                <div className="mt-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 space-y-2 animate-in fade-in slide-in-from-top-1">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-amber-400">Not in Beneficiary List</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Please double-check the recipient number to prevent mistakes.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1.5 border-t border-white/5">
+                    <input
+                      id="save-beneficiary-checkbox"
+                      type="checkbox"
+                      checked={saveToBeneficiary}
+                      onChange={(e) => setSaveToBeneficiary(e.target.checked)}
+                      className="rounded bg-secondary/50 border-border/50 text-primary focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
+                    />
+                    <Label htmlFor="save-beneficiary-checkbox" className="text-[10px] font-medium text-foreground cursor-pointer select-none">
+                      Save to beneficiary list on purchase
+                    </Label>
+                  </div>
+                  {saveToBeneficiary && (
+                    <div className="space-y-1">
+                      <Label htmlFor="beneficiary-name" className="text-[9px] font-bold text-muted-foreground uppercase">Beneficiary Name</Label>
+                      <Input
+                        id="beneficiary-name"
+                        size="sm"
+                        value={beneficiaryName}
+                        onChange={(e) => setBeneficiaryName(e.target.value)}
+                        placeholder="e.g. Yaw Sarpong"
+                        className="bg-secondary/40 border-border/50 h-8 text-xs focus:border-primary/50 text-white"
+                      />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
