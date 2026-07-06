@@ -218,7 +218,12 @@ const AgentStore = () => {
 
       if (error || !data) {
         console.error("Failed to invoke verify-beneficiary:", error);
-        return true; 
+        toast({
+          title: "Verification Offline",
+          description: data?.message || "Beneficiary verification is currently offline. Please try again shortly.",
+          variant: "destructive"
+        });
+        return false; 
       }
 
       if (data.exists === false) {
@@ -233,7 +238,12 @@ const AgentStore = () => {
       return true;
     } catch (err) {
       console.error("Beneficiary validation error:", err);
-      return true; 
+      toast({
+        title: "Verification Error",
+        description: "Could not connect to the verification service. Please try again.",
+        variant: "destructive"
+      });
+      return false; 
     }
   };
 
