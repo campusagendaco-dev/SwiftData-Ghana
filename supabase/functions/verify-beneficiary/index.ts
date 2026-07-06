@@ -34,6 +34,21 @@ serve(async (req) => {
     
     const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Check if beneficiary verification is enabled in system settings
+    const { data: settings } = await supabaseClient
+      .from("system_settings")
+      .select("beneficiary_verification_enabled")
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (settings && settings.beneficiary_verification_enabled === false) {
+      console.log("[verify-beneficiary] Verification is globally disabled in system settings.");
+      return new Response(
+        JSON.stringify({ success: true, exists: true, message: "Beneficiary verification is disabled." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Retrieve active DataHub provider config
     const { data: provider, error: pErr } = await supabaseClient
       .from("providers")

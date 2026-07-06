@@ -156,6 +156,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [checkedPhone, setCheckedPhone] = useState<string>("");
   const [showBeneficiaryModal, setShowBeneficiaryModal] = useState(false);
   const [beneficiaryModalPhone, setBeneficiaryModalPhone] = useState("");
+  const [beneficiaryCheckEnabled, setBeneficiaryCheckEnabled] = useState(true);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
@@ -239,7 +240,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     const triggerBeneficiaryCheck = async () => {
       const net = String(network || "").toUpperCase();
       const isMtn = net.includes("MTN") || net.includes("YELLO");
-      if (!isMtn || !isPhoneValid) {
+      if (!isMtn || !isPhoneValid || !beneficiaryCheckEnabled) {
         setBeneficiaryError(null);
         setIsCheckingBeneficiary(false);
         setCheckedPhone("");
@@ -282,7 +283,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     const timer = setTimeout(triggerBeneficiaryCheck, 300);
     return () => clearTimeout(timer);
-  }, [normalizedPhone, network, isPhoneValid, checkedPhone]);
+  }, [normalizedPhone, network, isPhoneValid, checkedPhone, beneficiaryCheckEnabled]);
 
   useEffect(() => {
     const loadPricing = async () => {
@@ -316,15 +317,18 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     supabase
       .from("system_settings")
-      .select("agent_activation_fee, active_payment_gateway")
+      .select("agent_activation_fee, active_payment_gateway, beneficiary_verification_enabled")
       .eq("id", 1)
       .maybeSingle()
       .then(({ data }) => {
-        if (data?.agent_activation_fee) {
-          setActivationFee(Number(data.agent_activation_fee));
-        }
-        if (data?.active_payment_gateway) {
-          setActiveGateway(data.active_payment_gateway);
+        if (data) {
+          if (data.agent_activation_fee) {
+            setActivationFee(Number(data.agent_activation_fee));
+          }
+          if (data.active_payment_gateway) {
+            setActiveGateway(data.active_payment_gateway);
+          }
+          setBeneficiaryCheckEnabled(data.beneficiary_verification_enabled !== false);
         }
       });
   }, [profile?.is_sub_agent, profile?.parent_agent_id, user]);
@@ -654,6 +658,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   };
 
   const checkBeneficiaryValidity = async (phoneToCheck: string, networkToCheck: string): Promise<boolean> => {
+    if (!beneficiaryCheckEnabled) {
+      return true;
+    }
     const net = String(networkToCheck || "").toUpperCase();
     if (!net.includes("MTN")) {
       return true;

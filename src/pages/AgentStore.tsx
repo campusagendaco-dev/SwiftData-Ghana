@@ -141,6 +141,7 @@ const AgentStore = () => {
   const [checkedPhone, setCheckedPhone] = useState<string>("");
   const [showBeneficiaryModal, setShowBeneficiaryModal] = useState(false);
   const [beneficiaryModalPhone, setBeneficiaryModalPhone] = useState("");
+  const [beneficiaryCheckEnabled, setBeneficiaryCheckEnabled] = useState(true);
 
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -214,7 +215,7 @@ const AgentStore = () => {
     const triggerBeneficiaryCheck = async () => {
       const net = String(selectedNetwork || "").toUpperCase();
       const isMtn = net.includes("MTN") || net.includes("YELLO") || selectedTypeOrCategory === "mashup";
-      if (!isMtn || !isPhoneValid || selectedService !== "data") {
+      if (!isMtn || !isPhoneValid || selectedService !== "data" || !beneficiaryCheckEnabled) {
         setBeneficiaryError(null);
         setIsCheckingBeneficiary(false);
         setCheckedPhone("");
@@ -257,9 +258,12 @@ const AgentStore = () => {
 
     const timer = setTimeout(triggerBeneficiaryCheck, 300);
     return () => clearTimeout(timer);
-  }, [phoneDigits, selectedNetwork, selectedService, isPhoneValid, selectedTypeOrCategory, checkedPhone]);
+  }, [phoneDigits, selectedNetwork, selectedService, isPhoneValid, selectedTypeOrCategory, checkedPhone, beneficiaryCheckEnabled]);
 
   const checkBeneficiaryValidity = async (phoneToCheck: string, networkToCheck: string): Promise<boolean> => {
+    if (!beneficiaryCheckEnabled) {
+      return true;
+    }
     const net = String(networkToCheck || "").toUpperCase();
     const isMtn = net.includes("MTN") || net.includes("YELLO") || selectedTypeOrCategory === "mashup";
     if (!isMtn) {
@@ -454,7 +458,7 @@ const AgentStore = () => {
             storeQuery.maybeSingle(),
             supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
-            supabase.from("system_settings").select("active_payment_gateway").eq("id", 1).maybeSingle(),
+            supabase.from("system_settings").select("active_payment_gateway, beneficiary_verification_enabled").eq("id", 1).maybeSingle(),
             supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
           ]);
           
@@ -509,8 +513,11 @@ const AgentStore = () => {
           setKorbaMappings(mappingsRes.data);
         }
         setPriceMultipliers(pricingCtx.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
-        if (sysRes?.data?.active_payment_gateway) {
-          setActiveGateway(sysRes.data.active_payment_gateway);
+        if (sysRes?.data) {
+          if (sysRes.data.active_payment_gateway) {
+            setActiveGateway(sysRes.data.active_payment_gateway);
+          }
+          setBeneficiaryCheckEnabled(sysRes.data.beneficiary_verification_enabled !== false);
         }
 
         if (!agentRes.data) { setNotFound(true); setLoading(false); return; }

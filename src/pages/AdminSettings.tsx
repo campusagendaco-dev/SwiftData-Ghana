@@ -23,6 +23,7 @@ interface SystemSettings {
   backup_provider: "hubtel" | "paystack" | "flutterwave";
   active_payment_gateway?: string;
   auto_gateway_switch_by_package?: boolean;
+  beneficiary_verification_enabled?: boolean;
   holiday_mode_enabled: boolean;
   holiday_message: string;
   disable_ordering: boolean;
@@ -115,6 +116,7 @@ const AdminSettings = () => {
     backup_provider: "hubtel",
     active_payment_gateway: "paystack",
     auto_gateway_switch_by_package: false,
+    beneficiary_verification_enabled: true,
     holiday_mode_enabled: false,
     holiday_message: "",
     disable_ordering: false,
@@ -419,6 +421,7 @@ const AdminSettings = () => {
           backup_provider: (d.backup_provider as any) || "hubtel",
           active_payment_gateway: d.active_payment_gateway || "paystack",
           auto_gateway_switch_by_package: d.auto_gateway_switch_by_package || false,
+          beneficiary_verification_enabled: d.beneficiary_verification_enabled !== false,
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
           disable_ordering: d.disable_ordering || false,
@@ -814,6 +817,19 @@ const AdminSettings = () => {
                 <Switch
                   checked={settings.welcome_promo_enabled}
                   onCheckedChange={(c) => setSettings({ ...settings, welcome_promo_enabled: c })}
+                />
+              </div>
+
+              <div className="flex items-start justify-between border-t border-white/5 pt-4">
+                <div className="space-y-0.5">
+                  <Label>MTN Beneficiary Whitelist Verification</Label>
+                  <p className="text-xs text-muted-foreground text-rose-500/80">
+                    Verify recipient MTN numbers against the DataHub whitelisting API before checkout and payment.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.beneficiary_verification_enabled !== false}
+                  onCheckedChange={(c) => setSettings({ ...settings, beneficiary_verification_enabled: c })}
                 />
               </div>
 
