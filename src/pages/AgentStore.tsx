@@ -16,7 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Zap, Loader2, Store, MessageCircle,
   ShieldCheck, Phone, X, CreditCard, Gift, Tag, CheckCircle2,
-  Smartphone, Package, Clock, ArrowRight, Wifi, Star, History
+  Smartphone, Package, Clock, ArrowRight, Wifi, Star, History,
+  AlertTriangle
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import StoreAuth from "@/components/StoreAuth";
@@ -27,6 +28,7 @@ import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 interface PromoResult {
   valid: boolean;
@@ -137,6 +139,8 @@ const AgentStore = () => {
   const [isCheckingBeneficiary, setIsCheckingBeneficiary] = useState(false);
   const [beneficiaryError, setBeneficiaryError] = useState<string | null>(null);
   const [checkedPhone, setCheckedPhone] = useState<string>("");
+  const [showBeneficiaryModal, setShowBeneficiaryModal] = useState(false);
+  const [beneficiaryModalPhone, setBeneficiaryModalPhone] = useState("");
 
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -237,7 +241,10 @@ const AgentStore = () => {
         }
 
         if (data.exists === false) {
-          setBeneficiaryError(data.message || "This MTN number is not whitelisted by the network.");
+          const errMsg = data.message || "This MTN number is not whitelisted by the network.";
+          setBeneficiaryError(errMsg);
+          setBeneficiaryModalPhone(phoneDigits);
+          setShowBeneficiaryModal(true);
         } else {
           setBeneficiaryError(null);
         }
@@ -269,11 +276,8 @@ const AgentStore = () => {
 
     if (phoneToCheck === checkedPhone) {
       if (beneficiaryError) {
-        toast({
-          title: "Not on beneficiary list",
-          description: beneficiaryError,
-          variant: "destructive"
-        });
+        setBeneficiaryModalPhone(phoneToCheck);
+        setShowBeneficiaryModal(true);
         return false;
       }
       return true;
@@ -1820,6 +1824,39 @@ const AgentStore = () => {
         onSuccess={handleCheckoutSuccess}
         onFailure={handleCheckoutFailure}
       />
+
+      {/* Beneficiary Warning Modal */}
+      <Dialog open={showBeneficiaryModal} onOpenChange={setShowBeneficiaryModal}>
+        <DialogContent className="max-w-md bg-white text-black p-6 rounded-[28px] border-none shadow-2xl flex flex-col gap-6">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-xl font-extrabold text-slate-900 leading-tight">
+                New beneficiary number detected!
+              </h2>
+            </div>
+          </div>
+
+          <div className="rounded-[20px] bg-amber-50/70 border border-amber-200/60 p-5 text-sm text-slate-700 leading-relaxed font-medium space-y-4">
+            <p>
+              The phone number <strong className="font-extrabold text-black font-mono">{beneficiaryModalPhone}</strong> is not added to our beneficiary list at the moment.
+            </p>
+            <p>
+              This number is not on our beneficiary list and orders to it are currently blocked. <span className="text-rose-600 font-bold">Please use a verified number.</span>
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowBeneficiaryModal(false)}
+            className="w-full py-4 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] transition-all text-slate-700 font-extrabold rounded-[20px] text-sm tracking-wide shadow-sm"
+          >
+            Close
+          </button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
