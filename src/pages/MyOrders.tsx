@@ -77,7 +77,7 @@ const MyOrders = () => {
         if (lookupSlug) {
           query = query.eq("slug", lookupSlug);
         } else if (lookupDomain) {
-          query = query.eq("custom_domain", lookupDomain);
+          query = query.ilike("custom_domain", lookupDomain);
         }
 
         const { data, error } = await query.maybeSingle();

@@ -510,9 +510,12 @@ serve(async (req) => {
     // If the order is pending, paid, or fulfillment_failed, check if the provider already processed it
     // (handles race conditions, retries, or manual bypasses)
     // Skip for non-data/airtime order types — they don't involve a data provider
-    // Optimization: Skip checking provider status for freshly paid/pending orders if they haven't been submitted yet (no provider_order_id).
-    // This avoids slow and redundant API status check calls to providers, saving 1-3 seconds.
-    if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed") && isProviderOrder && existingOrder?.provider_order_id) {
+    // Optimization: Skip checking provider status for freshly paid/pending orders if they haven't been submitted yet (no provider_order_id)
+    // AND they are less than 20 seconds old. This avoids slow and redundant API status check calls.
+    const orderAgeSec = (Date.now() - new Date(existingOrder?.created_at || 0).getTime()) / 1000;
+    const shouldCheckProvider = existingOrder?.provider_order_id || orderAgeSec > 20 || force;
+
+    if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed") && isProviderOrder && shouldCheckProvider) {
       const providers = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
       for (const provider of providers) {
         console.log(`[verify-payment] Pre-check status for ${targetReference} at ${provider.name}`);
@@ -1290,29 +1293,6 @@ serve(async (req) => {
       if (overrideNetKey) return { ...requestBody, networkKey: overrideNetKey };
       return requestBody;
     };
-
-    // Concurrency Lock: Transition order status to 'processing' BEFORE calling provider API.
-    // This prevents any concurrent webhook or client-verify requests from submitting a duplicate order to the carrier.
-    const { data: lockedOrder, error: lockError } = await supabaseAdmin
-      .from("orders")
-      .update({ 
-        status: "processing", 
-        updated_at: new Date().toISOString() 
-      })
-      .eq("id", targetReference)
-      .in("status", ["paid", "pending", "awaiting_payment", "fulfillment_failed"])
-      .select("id")
-      .maybeSingle();
-
-    if (lockError || !lockedOrder) {
-      console.warn(`[verify-payment] Concurrency lock could not be acquired for order ${targetReference}. Order status is already updated or submitting. Aborting provider call.`);
-      return new Response(JSON.stringify({ 
-        status: "processing", 
-        message: "Order submission is already in progress or completed." 
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     // Auto-failover: try each active provider in priority order
     for (const provider of activeProviders) {

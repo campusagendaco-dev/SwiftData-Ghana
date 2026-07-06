@@ -308,7 +308,7 @@ const AgentStore = () => {
         if (slug && slug !== "undefined" && slug !== "null") {
           storeQuery = storeQuery.eq("slug", slug);
         } else if (activeDomain) {
-          storeQuery = storeQuery.eq("custom_domain", activeDomain);
+          storeQuery = storeQuery.ilike("custom_domain", activeDomain);
         } else {
           setNotFound(true);
           setLoading(false);

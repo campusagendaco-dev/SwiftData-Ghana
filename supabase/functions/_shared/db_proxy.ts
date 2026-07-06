@@ -22,11 +22,11 @@ export async function fetchViaDb(
   json: () => Promise<any>;
   headers: Headers;
 }> {
-  if (url.includes("korba365.com")) {
+  if (url.includes("korba365.com") || url.includes("datahubgh.com")) {
     const bridgeUrl = Deno.env.get("KORBA_BRIDGE_URL") || "https://swiftdatagh.shop/api/korba";
     const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
     
-    console.log(`[db_proxy] Routing Korba request to Vercel bridge: ${bridgeUrl}`);
+    console.log(`[db_proxy] Routing request to Vercel bridge: ${bridgeUrl}`);
     try {
       const bridgeRes = await fetch(bridgeUrl, {
         method: "POST",

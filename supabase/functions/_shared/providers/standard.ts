@@ -356,13 +356,14 @@ export class StandardAdapter implements ProviderAdapter {
           }
 
           console.log(`[StandardAdapter] calling URL: ${url} (${isGet ? "GET" : "POST"})`);
+          const isStatus = endpoint === "status";
           const res = await fetchViaDb(supabaseAdmin, url, {
             method: isGet ? "GET" : "POST",
             headers,
             body: isGet ? undefined : JSON.stringify(payload),
-            disableFallback: false,
-            allowMutationFallback: true,
-          });
+            disableFallback: !isStatus,
+            allowMutationFallback: isStatus,
+          }, isStatus ? 25 : 35);
 
           const contentType = res.headers.get("content-type");
           const text = await res.text();
