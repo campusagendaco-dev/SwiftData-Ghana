@@ -178,6 +178,27 @@ const OrderStatus = () => {
   // --- SINGLE ORDER LOGIC ---
   const pollStatus = async (force = false) => {
     if (!reference || redirectedRef.current) return;
+
+    // Optimization: If order is already paid/processing, poll database status directly
+    // rather than executing a heavy edge function call that queries the provider.
+    if (!force && (orderStatus === "processing" || orderStatus === "paid")) {
+      try {
+        const { data: rpcData, error } = await supabase.rpc("get_public_order_status", {
+          p_reference: reference
+        });
+        if (rpcData && rpcData.length > 0) {
+          const data = rpcData[0];
+          handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
+          if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
+            redirectedRef.current = true;
+          }
+        }
+      } catch (err) {
+        console.error("Direct RPC polling error:", err);
+      }
+      return;
+    }
+
     setIsRefreshing(true);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
