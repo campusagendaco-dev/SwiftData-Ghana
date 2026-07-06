@@ -770,6 +770,7 @@ serve(async (req: Request) => {
           .update({
             is_agent: true,
             agent_approved: true,
+            is_sub_agent: true,
             onboarding_complete: isOnboarded,
             sub_agent_approved: true,
             agent_prices: pricesToAssign,
