@@ -597,9 +597,50 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     setClaimingFree(false);
   };
 
+  const checkBeneficiaryValidity = async (phoneToCheck: string, networkToCheck: string): Promise<boolean> => {
+    const net = String(networkToCheck || "").toUpperCase();
+    if (!net.includes("MTN")) {
+      return true;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
+        body: {
+          phone: phoneToCheck,
+          network: networkToCheck
+        }
+      });
+
+      if (error || !data) {
+        console.error("Failed to invoke verify-beneficiary:", error);
+        return true; 
+      }
+
+      if (data.exists === false) {
+        toast({
+          title: "Not on beneficiary list",
+          description: data.message || "This MTN number is not whitelisted by the network. Please contact support to whitelist it first.",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Beneficiary validation error:", err);
+      return true; 
+    }
+  };
+
   const handleWalletBuy = async () => {
     if (!validate()) return;
     setBuying(true);
+
+    const isValid = await checkBeneficiaryValidity(phone, network);
+    if (!isValid) {
+      setBuying(false);
+      return;
+    }
 
     const startTime = Date.now();
     const orderId = crypto.randomUUID();
@@ -676,6 +717,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
   const handlePaystackBuy = async () => {
     if (!validate()) return;
+
+    setBuying(true);
+    const isValid = await checkBeneficiaryValidity(normalizedPhone, network);
+    setBuying(false);
+    if (!isValid) return;
 
     const orderId = crypto.randomUUID();
     const orderNetwork = selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network;

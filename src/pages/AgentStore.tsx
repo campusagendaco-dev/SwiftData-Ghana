@@ -202,12 +202,56 @@ const AgentStore = () => {
     }
   }, [agent]);
 
+  const checkBeneficiaryValidity = async (phoneToCheck: string, networkToCheck: string): Promise<boolean> => {
+    const net = String(networkToCheck || "").toUpperCase();
+    if (!net.includes("MTN")) {
+      return true;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
+        body: {
+          phone: phoneToCheck,
+          network: networkToCheck
+        }
+      });
+
+      if (error || !data) {
+        console.error("Failed to invoke verify-beneficiary:", error);
+        return true; 
+      }
+
+      if (data.exists === false) {
+        toast({
+          title: "Not on beneficiary list",
+          description: data.message || "This MTN number is not whitelisted by the network. Please contact support to whitelist it first.",
+          variant: "destructive"
+        });
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Beneficiary validation error:", err);
+      return true; 
+    }
+  };
+
   const handleWalletBuy = async () => {
     if (!isPhoneValid) {
       toast({ title: "Invalid phone number", description: "Use a valid Ghana number.", variant: "destructive" });
       return;
     }
     setBuying(true);
+
+    if (selectedService === "data") {
+      const isValid = await checkBeneficiaryValidity(phone, selectedNetwork);
+      if (!isValid) {
+        setBuying(false);
+        return;
+      }
+    }
+
     const startTime = Date.now();
     const orderId = crypto.randomUUID();
     
@@ -723,6 +767,13 @@ const AgentStore = () => {
       toast({ title: "Enter a valid phone number first", variant: "destructive" });
       phoneInputRef.current?.focus();
       return;
+    }
+
+    if (selectedService === "data") {
+      setBuying(true);
+      const isValid = await checkBeneficiaryValidity(phoneDigits, selectedNetwork);
+      setBuying(false);
+      if (!isValid) return;
     }
 
     const orderNetwork = selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork;
