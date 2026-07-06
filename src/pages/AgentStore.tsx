@@ -134,6 +134,9 @@ const AgentStore = () => {
   const [buying, setBuying] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
+  const [isCheckingBeneficiary, setIsCheckingBeneficiary] = useState(false);
+  const [beneficiaryError, setBeneficiaryError] = useState<string | null>(null);
+  const [checkedPhone, setCheckedPhone] = useState<string>("");
 
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -202,9 +205,77 @@ const AgentStore = () => {
     }
   }, [agent]);
 
+  // Real-time background beneficiary validation for MTN numbers
+  useEffect(() => {
+    const triggerBeneficiaryCheck = async () => {
+      const net = String(selectedNetwork || "").toUpperCase();
+      const isMtn = net.includes("MTN") || net.includes("YELLO") || selectedTypeOrCategory === "mashup";
+      if (!isMtn || !isPhoneValid || selectedService !== "data") {
+        setBeneficiaryError(null);
+        setIsCheckingBeneficiary(false);
+        setCheckedPhone("");
+        return;
+      }
+
+      if (phoneDigits === checkedPhone) return;
+
+      setIsCheckingBeneficiary(true);
+      setBeneficiaryError(null);
+      setCheckedPhone(phoneDigits);
+
+      try {
+        const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
+          body: {
+            phone: phoneDigits,
+            network: selectedNetwork
+          }
+        });
+
+        if (error || !data) {
+          setBeneficiaryError("Verification service is offline. Please try again shortly.");
+          return;
+        }
+
+        if (data.exists === false) {
+          setBeneficiaryError(data.message || "This MTN number is not whitelisted by the network.");
+        } else {
+          setBeneficiaryError(null);
+        }
+      } catch (err) {
+        console.error("Auto beneficiary check error:", err);
+      } finally {
+        setIsCheckingBeneficiary(false);
+      }
+    };
+
+    const timer = setTimeout(triggerBeneficiaryCheck, 300);
+    return () => clearTimeout(timer);
+  }, [phoneDigits, selectedNetwork, selectedService, isPhoneValid, selectedTypeOrCategory, checkedPhone]);
+
   const checkBeneficiaryValidity = async (phoneToCheck: string, networkToCheck: string): Promise<boolean> => {
     const net = String(networkToCheck || "").toUpperCase();
-    if (!net.includes("MTN")) {
+    const isMtn = net.includes("MTN") || net.includes("YELLO") || selectedTypeOrCategory === "mashup";
+    if (!isMtn) {
+      return true;
+    }
+
+    if (isCheckingBeneficiary) {
+      toast({
+        title: "Verifying number...",
+        description: "Please wait a moment while we finish verifying your MTN number.",
+      });
+      return false;
+    }
+
+    if (phoneToCheck === checkedPhone) {
+      if (beneficiaryError) {
+        toast({
+          title: "Not on beneficiary list",
+          description: beneficiaryError,
+          variant: "destructive"
+        });
+        return false;
+      }
       return true;
     }
 
@@ -942,13 +1013,13 @@ const AgentStore = () => {
             <button
               type="button"
               onClick={handlePay}
-              disabled={buying || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)}
+              disabled={buying || isCheckingBeneficiary || beneficiaryError !== null || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)}
               className="shrink-0 h-14 px-5 rounded-[18px] font-black text-[13px] uppercase tracking-wide flex items-center gap-2 active:scale-[0.96] transition-all whitespace-nowrap"
               style={{
                 backgroundColor: netConf.color,
                 color: netConf.textClass === "text-black" ? "#000" : "#fff",
-                opacity: (!isPhoneValid || buying || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? 0.5 : 1,
-                boxShadow: (isPhoneValid && !(isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? `0 8px 25px ${netConf.color}50` : "none",
+                opacity: (!isPhoneValid || buying || isCheckingBeneficiary || beneficiaryError !== null || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? 0.5 : 1,
+                boxShadow: (isPhoneValid && !isCheckingBeneficiary && !beneficiaryError && !(isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? `0 8px 25px ${netConf.color}50` : "none",
                 textShadow: netConf.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none"
               }}
             >
@@ -1016,6 +1087,25 @@ const AgentStore = () => {
         {phone.length > 0 && !isPhoneValid && (
           <p className="text-[11px] font-bold text-red-400 px-1 animate-in fade-in duration-150">
             Enter a valid 10-digit Ghana number
+          </p>
+        )}
+
+        {/* Real-time Beneficiary Validation status */}
+        {isPhoneValid && isCheckingBeneficiary && (
+          <p className="text-[11px] font-bold text-amber-400 px-1 animate-in slide-in-from-top-1 duration-150 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying MTN beneficiary status...
+          </p>
+        )}
+
+        {isPhoneValid && !isCheckingBeneficiary && beneficiaryError && (
+          <p className="text-[11px] font-bold text-red-400 px-1 animate-in slide-in-from-top-1 duration-150">
+            ⚠️ {beneficiaryError}
+          </p>
+        )}
+
+        {isPhoneValid && !isCheckingBeneficiary && !beneficiaryError && (selectedNetwork?.toUpperCase()?.includes("MTN") || selectedTypeOrCategory === "mashup") && selectedService === "data" && checkedPhone === phoneDigits && (
+          <p className="text-[11px] font-bold text-emerald-400 px-1 animate-in slide-in-from-top-1 duration-150 flex items-center gap-1">
+            ✓ Whitelisted on MTN beneficiary list
           </p>
         )}
 
