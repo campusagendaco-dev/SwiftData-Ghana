@@ -1291,6 +1291,29 @@ serve(async (req) => {
       return requestBody;
     };
 
+    // Concurrency Lock: Transition order status to 'processing' BEFORE calling provider API.
+    // This prevents any concurrent webhook or client-verify requests from submitting a duplicate order to the carrier.
+    const { data: lockedOrder, error: lockError } = await supabaseAdmin
+      .from("orders")
+      .update({ 
+        status: "processing", 
+        updated_at: new Date().toISOString() 
+      })
+      .eq("id", targetReference)
+      .in("status", ["paid", "pending", "awaiting_payment", "fulfillment_failed"])
+      .select("id")
+      .maybeSingle();
+
+    if (lockError || !lockedOrder) {
+      console.warn(`[verify-payment] Concurrency lock could not be acquired for order ${targetReference}. Order status is already updated or submitting. Aborting provider call.`);
+      return new Response(JSON.stringify({ 
+        status: "processing", 
+        message: "Order submission is already in progress or completed." 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Auto-failover: try each active provider in priority order
     for (const provider of activeProviders) {
       const providerCallStart = Date.now();
