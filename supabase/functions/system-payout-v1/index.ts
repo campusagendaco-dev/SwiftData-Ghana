@@ -507,6 +507,15 @@ serve(async (req: Request) => {
       case "approve_agent": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         
+        // Fetch current profile to see if they completed onboarding (have store_name and slug)
+        const { data: currentProfile } = await supabaseAdmin
+          .from("profiles")
+          .select("store_name, slug, onboarding_complete")
+          .eq("user_id", user_id)
+          .maybeSingle();
+
+        const isOnboarded = !!(currentProfile?.store_name && currentProfile?.slug);
+
         // Update profile
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
@@ -514,7 +523,7 @@ serve(async (req: Request) => {
             is_agent: true,
             agent_approved: true,
             sub_agent_approved: false,
-            onboarding_complete: true,
+            onboarding_complete: isOnboarded,
             is_sub_agent: false,
             parent_agent_id: null
           })
@@ -582,7 +591,7 @@ serve(async (req: Request) => {
           
           const { data: profile, error: findError } = await supabaseAdmin
             .from("profiles")
-            .select("user_id")
+            .select("user_id, store_name, slug")
             .ilike("email", email.trim())
             .maybeSingle();
 
@@ -597,13 +606,15 @@ serve(async (req: Request) => {
           const targetId = profile.user_id;
           console.log("APPROVE_BY_EMAIL_TARGET", targetId);
 
+          const isOnboarded = !!(profile?.store_name && profile?.slug);
+
           const { error: updError } = await supabaseAdmin
             .from("profiles")
             .update({
               is_agent: true,
               agent_approved: true,
               sub_agent_approved: false,
-              onboarding_complete: true,
+              onboarding_complete: isOnboarded,
               is_sub_agent: false,
               parent_agent_id: null
             })
@@ -724,7 +735,7 @@ serve(async (req: Request) => {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { data: profile } = await supabaseAdmin
           .from("profiles")
-          .select("parent_agent_id")
+          .select("parent_agent_id, store_name, slug")
           .eq("user_id", user_id)
           .maybeSingle();
 
@@ -752,12 +763,14 @@ serve(async (req: Request) => {
           pricesToAssign = hasSubPrices ? subPrices : (parent?.agent_prices || {});
         }
 
+        const isOnboarded = !!(profile?.store_name && profile?.slug);
+
         const { error: updateError } = await supabaseAdmin
           .from("profiles")
           .update({
             is_agent: true,
             agent_approved: true,
-            onboarding_complete: true,
+            onboarding_complete: isOnboarded,
             sub_agent_approved: true,
             agent_prices: pricesToAssign,
           })

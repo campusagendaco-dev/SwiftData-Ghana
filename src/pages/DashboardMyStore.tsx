@@ -779,7 +779,9 @@ export default function DashboardMyStore() {
 
     setSaving(true);
     try {
-      // 1. Update reseller profiles fields
+      const slug = generateSlug(form.store_name);
+
+      // 1. Update reseller profiles fields (keeping store metadata in sync)
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
@@ -789,13 +791,16 @@ export default function DashboardMyStore() {
           momo_number: form.momo_number.trim(),
           momo_network: form.momo_network.trim(),
           momo_account_name: form.momo_account_name.trim(),
+          store_name: form.store_name.trim(),
+          slug,
+          store_logo_url: form.store_logo_url || null,
+          store_primary_color: form.store_primary_color || "#fbbf24",
         })
         .eq("user_id", user.id);
 
       if (profileError) throw profileError;
 
       // 2. Update reseller store specific options
-      const slug = generateSlug(form.store_name);
       const { error: storeError } = await supabase
         .from("reseller_stores")
         .update({

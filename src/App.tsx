@@ -153,6 +153,12 @@ const DashboardGuard = ({ children }: { children: React.ReactNode }) => {
   if (profile?.is_agent && !profile?.agent_approved) {
     return <Navigate to="/agent/pending" replace />;
   }
+
+  // Ensure approved agents have completed store onboarding
+  const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
+  if (isPaidAgent && !profile?.onboarding_complete) {
+    return <Navigate to="/onboarding" replace />;
+  }
   
   return <>{children}</>;
 };
