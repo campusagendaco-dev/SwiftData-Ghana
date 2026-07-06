@@ -133,6 +133,8 @@ const AgentStore = () => {
   const [utilityNumber, setUtilityNumber] = useState("");
   const [utilityAmount, setUtilityAmount] = useState("");
   const [phone, setPhone] = useState("");
+  const phoneDigits = phone.replace(/\D+/g, "");
+  const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
   const [buying, setBuying] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
@@ -425,9 +427,6 @@ const AgentStore = () => {
   const [promoResult, setPromoResult] = useState<PromoResult | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
-
-  const phoneDigits = phone.replace(/\D+/g, "");
-  const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
 
   useEffect(() => {
     const fetchStore = async () => {

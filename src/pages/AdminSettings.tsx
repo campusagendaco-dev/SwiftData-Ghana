@@ -13,7 +13,6 @@ import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { playSound } from "@/lib/sound";
-import { WORLD_CUP_MATCHES } from "@/components/WorldCupPredictor";
 import { getFlagUrl } from "@/lib/utils";
 
 interface SystemSettings {

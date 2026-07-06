@@ -144,9 +144,9 @@ serve(async (req) => {
 
   const readSettings = async () => {
     const fullSelect =
-      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message, active_payment_gateway, auto_gateway_switch_by_package";
+      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_api_source, secondary_price_markup_pct, sub_agent_base_fee, agent_activation_fee, traditional_background_enabled, background_custom_image_url, enable_privacy_shield, ai_recommender_enabled, scheduled_success_sms_message, scheduled_failed_sms_message, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled";
     const legacySelect =
-      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_payment_gateway";
+      "auto_api_switch, preferred_provider, backup_provider, holiday_mode_enabled, holiday_message, disable_ordering, dark_mode_enabled, customer_service_number, support_channel_link, active_payment_gateway, beneficiary_verification_enabled";
 
     const { data: fullData, error: fullError } = await supabaseAdmin
       .from("v_system_settings_with_secrets").select(fullSelect)
@@ -194,6 +194,7 @@ serve(async (req) => {
       scheduled_failed_sms_message: data?.scheduled_failed_sms_message || DEFAULT_SETTINGS.scheduled_failed_sms_message,
       active_payment_gateway: data?.active_payment_gateway || "paystack",
       auto_gateway_switch_by_package: Boolean(data?.auto_gateway_switch_by_package),
+      beneficiary_verification_enabled: data?.beneficiary_verification_enabled !== false,
       table_ready: true,
       warning: null,
     };
@@ -271,6 +272,7 @@ serve(async (req) => {
       scheduled_failed_sms_message: coerceText(payload?.scheduled_failed_sms_message) || DEFAULT_SETTINGS.scheduled_failed_sms_message,
       active_payment_gateway: payload?.active_payment_gateway || "paystack",
       auto_gateway_switch_by_package: payload?.auto_gateway_switch_by_package !== undefined ? Boolean(payload.auto_gateway_switch_by_package) : undefined,
+      beneficiary_verification_enabled: payload?.beneficiary_verification_enabled !== false,
       updated_at: new Date().toISOString(),
       updated_by: user.id,
     };

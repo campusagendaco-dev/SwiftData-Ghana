@@ -202,7 +202,7 @@ serve(async (req: Request) => {
     const isKorba = metadata?.is_korba === true || metadata?.is_korba === "true";
 
     const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package")
+      .from("v_system_settings_with_secrets").select("holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled")
       .eq("id", 1)
       .maybeSingle();
 
@@ -338,7 +338,7 @@ serve(async (req: Request) => {
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
     // --- Secure MTN Beneficiary Whitelist Enforcement ---
-    if (orderType === "data") {
+    if (orderType === "data" && settings?.beneficiary_verification_enabled !== false) {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {
