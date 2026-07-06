@@ -279,11 +279,82 @@ export class StandardAdapter implements ProviderAdapter {
     };
   }
 
+  async verifyDataHubBeneficiary(
+    supabaseAdmin: any,
+    provider: any,
+    phone: string
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const cleanUrl = (provider.base_url || "").trim().replace(/\/+$/, "");
+    const url = `${cleanUrl}/purchases/verify-number`;
+    const apiKey = provider.api_key || "";
+
+    console.log(`[DataHub-Verify-Beneficiary] Verifying ${phone}...`);
+    try {
+      const res = await fetchViaDb(supabaseAdmin, url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          phone: phone,
+          is_ported_number: true
+        }),
+        disableFallback: true,
+      }, 15);
+
+      const text = await res.text();
+      console.log(`[DataHub-Verify-Beneficiary] Response status ${res.status}: ${text}`);
+
+      if (res.ok) {
+        let parsed: any = {};
+        try { parsed = JSON.parse(text); } catch { /* ignore */ }
+        if (parsed.success || parsed.data?.exists) {
+          return { ok: true };
+        }
+      }
+
+      let errorMessage = `${phone} is not added to our beneficiary list`;
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed.error && parsed.message) {
+          errorMessage = parsed.message;
+        } else if (parsed["Not on beneficiary list"]?.message) {
+          errorMessage = parsed["Not on beneficiary list"].message;
+        } else if (parsed["Not on beneficiary list"]?.error) {
+          errorMessage = parsed["Not on beneficiary list"].error;
+        } else if (parsed.message) {
+          errorMessage = parsed.message;
+        }
+      } catch { /* ignore */ }
+
+      return { ok: false, reason: errorMessage };
+    } catch (err: any) {
+      console.error(`[DataHub-Verify-Beneficiary] Call failed:`, err);
+      return { ok: true };
+    }
+  }
+
   async purchase(
     supabaseAdmin: any,
     provider: any,
     data: PurchaseData
   ): Promise<ProviderResponse> {
+    const handlerType = String(provider.handler_type || "").toLowerCase();
+    const network = String(data.networkKey || data.networkRaw || "").toUpperCase();
+
+    if (handlerType === "datahub" && network.includes("MTN")) {
+      const recipient = String(data.recipient || data.phoneNumber || "");
+      const check = await this.verifyDataHubBeneficiary(supabaseAdmin, provider, recipient);
+      if (!check.ok) {
+        return {
+          ok: false,
+          reason: check.reason || `${recipient} is not added to our beneficiary list`
+        };
+      }
+    }
+
     const payload = await this.buildPayload(supabaseAdmin, provider, "purchase", data);
     return this.executeRequest(supabaseAdmin, provider, "purchase", payload, data);
   }
