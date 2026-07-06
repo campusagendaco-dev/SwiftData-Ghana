@@ -152,19 +152,20 @@ const AgentDevAPIDocs = () => {
                     <AlertCircle className="w-6 h-6 text-red-500" />
                     <h3 className="font-black uppercase italic text-xl">Error Intelligence</h3>
                  </div>
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {[
-                       { code: "402", msg: "Insufficient Agent Float", desc: "Providing agent balance is too low." },
-                       { code: "429", msg: "Daily Limit Reached", desc: "You have exceeded your GHS spend cap." },
-                       { code: "403", msg: "Sentinel Lock", desc: "AI has suspended this key for security." }
-                    ].map(e => (
-                       <div key={e.code} className="space-y-1">
-                          <p className="font-black text-red-500 text-lg">Error {e.code}</p>
-                          <p className="font-bold text-sm uppercase tracking-tight">{e.msg}</p>
-                          <p className="text-xs text-muted-foreground italic">{e.desc}</p>
-                       </div>
-                    ))}
-                 </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+                     {[
+                        { code: "400", msg: "MTN Beneficiary Error", desc: "Phone number is not whitelisted by MTN as a beneficiary." },
+                        { code: "402", msg: "Insufficient Agent Float", desc: "Providing agent balance is too low." },
+                        { code: "429", msg: "Daily Limit Reached", desc: "You have exceeded your GHS spend cap." },
+                        { code: "403", msg: "Sentinel Lock", desc: "AI has suspended this key for security." }
+                     ].map(e => (
+                        <div key={e.code} className="space-y-1">
+                           <p className="font-black text-red-500 text-lg">Error {e.code}</p>
+                           <p className="font-bold text-sm uppercase tracking-tight">{e.msg}</p>
+                           <p className="text-xs text-muted-foreground italic">{e.desc}</p>
+                        </div>
+                     ))}
+                  </div>
               </div>
            </div>
         </div>
