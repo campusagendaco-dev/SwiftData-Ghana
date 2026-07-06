@@ -109,6 +109,76 @@ function hasValidAgentId(agentId: unknown): agentId is string {
   return typeof agentId === "string" && agentId.length > 0 && agentId !== "00000000-0000-0000-0000-000000000000";
 }
 
+async function checkBeneficiaryBackend(supabaseClient: any, phone: string, network: string): Promise<{ ok: boolean; reason?: string }> {
+  const net = String(network || "").toUpperCase();
+  if (!net.includes("MTN") && !net.includes("YELLO")) {
+    return { ok: true };
+  }
+
+  try {
+    const { data: provider, error: pErr } = await supabaseClient
+      .from("providers")
+      .select("*")
+      .eq("handler_type", "datahub")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (pErr || !provider) {
+      console.log("[initialize-payment] No active DataHub provider found, skipping beneficiary check.");
+      return { ok: true };
+    }
+
+    const cleanUrl = (provider.base_url || "").trim().replace(/\/+$/, "");
+    const url = `${cleanUrl}/purchases/verify-number`;
+    const apiKey = provider.api_key || "";
+
+    const res = await fetchViaDb(supabaseClient, url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        phone: phone,
+        is_ported_number: true
+      }),
+      disableFallback: true,
+    }, 12);
+
+    const text = await res.text();
+    console.log(`[initialize-payment-beneficiary] Status ${res.status}: ${text}`);
+
+    if (res.ok) {
+      let parsed: any = {};
+      try { parsed = JSON.parse(text); } catch { /* ignore */ }
+      if (parsed.success || parsed.data?.exists) {
+        return { ok: true };
+      }
+    }
+
+    let errorMessage = `${phone} is not added to our beneficiary list`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error && parsed.message) {
+        errorMessage = parsed.message;
+      } else if (parsed["Not on beneficiary list"]?.message) {
+        errorMessage = parsed["Not on beneficiary list"].message;
+      } else if (parsed["Not on beneficiary list"]?.error) {
+        errorMessage = parsed["Not on beneficiary list"].error;
+      } else if (parsed.message) {
+        errorMessage = parsed.message;
+      }
+    } catch { /* ignore */ }
+
+    return { ok: false, reason: errorMessage };
+  } catch (err) {
+    console.error("[initialize-payment] Beneficiary verify exception:", err);
+    // On transient errors, fail open to not block valid purchases
+    return { ok: true };
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -266,6 +336,24 @@ serve(async (req: Request) => {
     const orderType = metadata.order_type || "data";
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
     const isAgentLinkedOrder = hasValidAgentId(agentId);
+
+    // --- Secure MTN Beneficiary Whitelist Enforcement ---
+    if (orderType === "data") {
+      const customerPhone = (metadata.customer_phone || "").trim();
+      const networkName = (metadata.network || "").trim();
+      if (customerPhone && networkName) {
+        const check = await checkBeneficiaryBackend(supabaseAdmin, customerPhone, networkName);
+        if (!check.ok) {
+          console.warn(`[BENEFICIARY_BLOCKED] Blocked checkout for unverified MTN number: ${customerPhone}`);
+          return new Response(JSON.stringify({
+            error: check.reason || "This number is not added to our beneficiary list. Orders to it are currently blocked. Please use a verified number."
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+    }
 
     // Network-specific markup from system settings
     const networkRawForMarkup = typeof metadata.network === "string" ? metadata.network : "";
