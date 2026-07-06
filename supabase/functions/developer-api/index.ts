@@ -423,6 +423,7 @@ serve(async (req: Request) => {
   
   let currentUserId: string | null = null;
   const endpoint = new URL(req.url).pathname;
+  let requestPayload: any = {};
 
   try {
     const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() 
@@ -676,6 +677,7 @@ serve(async (req: Request) => {
     if (finalAction === "buy" && req.method === "POST") {
       const payload = await req.json().catch(() => null);
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
+      requestPayload = payload;
 
       let { phone, amount, package_id, request_id } = payload;
       let { network, package_size } = payload;
@@ -688,13 +690,17 @@ serve(async (req: Request) => {
         request_id = payload.reference;
       }
 
-      // Map smart network names back to DB names if they are using the legacy network + package_size method
+      // Map smart network names back to DB names and normalize casing
       if (network) {
-        const netLower = String(network).toLowerCase();
-        if (netLower === "yello") network = "MTN";
-        else if (netLower === "blue") network = "AT";
-        else if (netLower === "red") network = "TELECEL";
+        const netLower = String(network).toLowerCase().trim();
+        if (netLower === "yello" || netLower === "mtn") network = "MTN";
+        else if (netLower === "blue" || netLower === "at" || netLower === "airteltigo") network = "AT";
+        else if (netLower === "red" || netLower === "telecel" || netLower === "vodafone") network = "TELECEL";
         else if (netLower === "mashup" || netLower === "mtn mash up" || netLower === "mtn_mash_up") network = "MTN Mash Up";
+        else {
+          // Fallback: uppercase whatever they sent (e.g. "MTN")
+          network = String(network).toUpperCase().trim();
+        }
       }
 
       // Smart Package ID Resolution
@@ -717,6 +723,20 @@ serve(async (req: Request) => {
           package_size = match.package_size;
         } else {
           return json({ success: false, error: "Invalid package_id provided." }, 400);
+        }
+      }
+
+      // Case-insensitive database lookup for package_size if a string is provided
+      if (package_size && network && !package_id) {
+        const cleanPkg = String(package_size).trim();
+        const { data: plans } = await supabase
+          .from("global_package_settings")
+          .select("package_size")
+          .eq("network", network)
+          .ilike("package_size", cleanPkg);
+        
+        if (plans && plans.length > 0) {
+          package_size = plans[0].package_size; // Normalize to exact database case (e.g. "1GB")
         }
       }
 
@@ -1214,7 +1234,7 @@ serve(async (req: Request) => {
       p_user_id: currentUserId,
       p_endpoint: endpoint,
       p_method: req.method,
-      p_payload: {},
+      p_payload: requestPayload || {},
       p_error: err.message || String(err),
       p_stack: err.stack || ""
     });
