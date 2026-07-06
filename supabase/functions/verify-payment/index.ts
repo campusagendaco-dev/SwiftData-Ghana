@@ -492,7 +492,7 @@ serve(async (req) => {
     }
 
     // --- 1.2. AGE CHECK FALLBACK ---
-    if (existingOrder && existingOrder.status === "processing" && !force) {
+    if (existingOrder && existingOrder.status === "processing") {
       if (existingOrder.network === "MTN Mash Up") {
         return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
       }
