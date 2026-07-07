@@ -203,13 +203,15 @@ const Dashboard = () => {
     { label: "Profit Earned",   value: `GH₵ ${stats.totalProfit.toFixed(2)}`,      icon: TrendingUp,      color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/20",   glow: "shadow-amber-500/10" },
   ];
 
+  const hasStore = !!(profile?.store_name && profile.store_name.trim() !== "");
+
   const quickActions = [
     { label: "Swift Vendor",   icon: Zap,          path: "/dashboard/swift-vendor",  color: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/20", isNew: true },
     { label: "AFA Register",   icon: ShieldCheck,  path: "/dashboard/afa",           color: "text-purple-400",  bg: "bg-purple-500/10",  border: "border-purple-500/20", isNew: true },
-    { label: "Sub Agents",     icon: Users2,       path: "/dashboard/subagents",     color: "text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/20", isNew: true },
+    hasStore && { label: "Sub Agents",     icon: Users2,       path: "/dashboard/subagents",     color: "text-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/20", isNew: true },
     { label: "Transactions",   icon: ClipboardList, path: "/dashboard/transactions",  color: "text-blue-400",    bg: "bg-blue-500/10",    border: "border-blue-500/20" },
-    { label: "My Store",       icon: Store,         path: "/dashboard/my-store",      color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  ];
+    hasStore && { label: "My Store",       icon: Store,         path: "/dashboard/my-store",      color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
+  ].filter(Boolean) as { label: string; icon: any; path: string; color: string; bg: string; border: string; isNew?: boolean }[];
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl space-y-5 relative overflow-hidden">

@@ -586,9 +586,7 @@ serve(async (req: Request) => {
           pricing_source: globalRow?.pricing_source ?? "unknown",
         };
       } else {
-        // Direct public purchase (no agent store) — use global public_price.
-        // The backend resolves the price server-side; the amount sent by the
-        // client is overwritten so the client can never choose a cheaper price.
+        // Direct public purchase (no agent store) — check if the buyer is a registered reseller
         const globalRow = await lookupGlobalRow(normalizedNetwork, normalizedPackage);
 
         if (globalRow?.is_unavailable) {
@@ -598,9 +596,64 @@ serve(async (req: Request) => {
           });
         }
 
-        const publicBase = Number(globalRow?.public_price) > 0
-          ? Number(globalRow!.public_price)
-          : (Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : 0);
+        let publicBase = 0;
+        let isResellerSubAgent = false;
+        let resolvedParentAgentId: string | null = null;
+        let resolvedParentProfit = 0;
+
+        if (email) {
+          const { data: purchaserProfile } = await supabaseAdmin
+            .from("profiles")
+            .select("is_agent, agent_approved, is_sub_agent, sub_agent_approved, parent_agent_id")
+            .eq("email", email)
+            .maybeSingle();
+
+          const isResellerAgent = !!(purchaserProfile?.is_agent && purchaserProfile?.agent_approved);
+          isResellerSubAgent = !!(purchaserProfile?.is_sub_agent && purchaserProfile?.sub_agent_approved);
+
+          if (isResellerAgent) {
+            publicBase = Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : 0;
+          } else if (isResellerSubAgent && purchaserProfile?.parent_agent_id) {
+            resolvedParentAgentId = purchaserProfile.parent_agent_id;
+            const { data: parentProfile } = await supabaseAdmin
+              .from("profiles")
+              .select("sub_agent_prices, agent_prices")
+              .eq("user_id", resolvedParentAgentId)
+              .maybeSingle();
+
+            if (parentProfile) {
+              const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+              const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+              const hasSubPrices = Object.keys(subPrices).length > 0;
+
+              let parentAssignedBase = resolvePriceFromMap(
+                hasSubPrices ? subPrices : agentPrices,
+                normalizedNetwork,
+                network,
+                normalizedPackage,
+                packageSize,
+              );
+
+              if (!(parentAssignedBase > 0) && hasSubPrices) {
+                parentAssignedBase = resolvePriceFromMap(agentPrices, normalizedNetwork, network, normalizedPackage, packageSize);
+              }
+
+              if (parentAssignedBase > 0) {
+                publicBase = parentAssignedBase;
+              }
+            }
+          }
+        }
+
+        if (!(publicBase > 0)) {
+          if (isResellerSubAgent) {
+            publicBase = Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : 0;
+          } else {
+            publicBase = Number(globalRow?.public_price) > 0
+              ? Number(globalRow!.public_price)
+              : (Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : 0);
+          }
+        }
 
         if (!(Number.isFinite(publicBase) && publicBase > 0)) {
           return new Response(JSON.stringify({ error: "Package price is not configured" }), {
@@ -609,10 +662,16 @@ serve(async (req: Request) => {
           });
         }
 
-        resolvedCostPrice = Number(globalRow?.cost_price) > 0 ? Number(globalRow!.cost_price) : publicBase;
+        const adminBase = Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : publicBase;
+        resolvedCostPrice = Number(globalRow?.cost_price) > 0 ? Number(globalRow!.cost_price) : adminBase;
         const adjustedBase = Number((publicBase * priceMultiplier).toFixed(2));
         resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
         resolvedAmount = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
+
+        if (isResellerSubAgent) {
+          resolvedParentProfit = Math.max(0, parseFloat((publicBase - adminBase).toFixed(2)));
+        }
+
         enrichedMetadata = {
           ...metadata,
           network,
@@ -620,7 +679,8 @@ serve(async (req: Request) => {
           base_price: adjustedBase,
           cost_price: resolvedCostPrice,
           profit: 0,
-          parent_profit: 0,
+          parent_profit: resolvedParentProfit,
+          parent_agent_id: resolvedParentAgentId,
           customer_name: metadata.customer_name || null,
           pricing_source: globalRow?.pricing_source ?? "unknown",
         };

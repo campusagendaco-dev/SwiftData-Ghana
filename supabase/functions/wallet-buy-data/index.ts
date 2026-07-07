@@ -98,8 +98,8 @@ serve(async (req: Request) => {
 
     // Fetch agent profile and package info in parallel for profit calculation
     const [profileResult, pkgResult] = await Promise.all([
-      supabaseAdmin.from("profiles").select("phone, is_sub_agent, parent_agent_id, credit_enabled, credit_limit, credit_used, api_access_enabled, api_custom_prices").eq("user_id", user.id).maybeSingle(),
-      supabaseAdmin.from("global_package_settings").select("package_size, agent_price, api_price, cost_price, is_unavailable").eq("network", normalizedNet),
+      supabaseAdmin.from("profiles").select("phone, is_agent, agent_approved, is_sub_agent, sub_agent_approved, parent_agent_id, credit_enabled, credit_limit, credit_used, api_access_enabled, api_custom_prices").eq("user_id", user.id).maybeSingle(),
+      supabaseAdmin.from("global_package_settings").select("package_size, agent_price, api_price, cost_price, public_price, is_unavailable").eq("network", normalizedNet),
     ]);
 
     const agentProfile = profileResult.data;
@@ -291,9 +291,15 @@ serve(async (req: Request) => {
       parentProfit = Math.max(0, parseFloat((resolvedChargeAmount - adminBase).toFixed(2)));
       agentProfit = 0; // Sub-agent profit is collected offline as cash
     } else {
-      // Direct agent pays admin wholesale price
-      resolvedChargeAmount = adminBase;
-      agentProfit = 0; // Regular agent profit is collected offline as cash
+      // Check if user is an approved agent (reseller)
+      const isApprovedReseller = !!(agentProfile?.is_agent && agentProfile?.agent_approved);
+      if (isApprovedReseller) {
+        resolvedChargeAmount = adminBase;
+      } else {
+        // Direct public customer pays public retail price
+        resolvedChargeAmount = Number(pkgRow?.public_price || pkgRow?.agent_price || 0);
+      }
+      agentProfit = 0; // Regular reseller/agent profit is collected offline as cash
     }
 
     if (resolvedChargeAmount <= 0) {

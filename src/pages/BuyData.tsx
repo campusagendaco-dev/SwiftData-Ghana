@@ -6,6 +6,7 @@ import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
@@ -158,6 +159,8 @@ const getPackageDetails = (pkg: any): string => {
 
 const BuyData = () => {
   const { toast } = useToast();
+  const { profile } = useAuth();
+  const [customPrices, setCustomPrices] = useState<Record<string, Record<string, number>>>({});
   const { theme, isDark } = useAppTheme();
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>("MTN");
   const [selectedPkg, setSelectedPkg] = useState<{ size: string; price: number } | null>(null);
@@ -260,6 +263,48 @@ const BuyData = () => {
     };
     load();
   }, []);
+
+  useEffect(() => {
+    const fetchCustomPrices = async () => {
+      if (!profile) return;
+      
+      if (profile.is_sub_agent && profile.parent_agent_id) {
+        try {
+          const { data: parentProfile, error } = await supabase
+            .from("profiles")
+            .select("sub_agent_prices, agent_prices")
+            .eq("user_id", profile.parent_agent_id)
+            .maybeSingle();
+            
+          if (error) {
+            console.error("[BuyData] Error fetching parent sub-agent prices:", error);
+            return;
+          }
+            
+          if (parentProfile) {
+            const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
+            const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
+            const hasSubPrices = Object.keys(subPrices).length > 0;
+            
+            const resolved: Record<string, Record<string, number>> = {};
+            const sourceMap = hasSubPrices ? subPrices : agentPrices;
+            
+            for (const [net, items] of Object.entries(sourceMap)) {
+              resolved[net] = {};
+              for (const [size, val] of Object.entries(items)) {
+                resolved[net][size] = Number(val);
+              }
+            }
+            setCustomPrices(resolved);
+          }
+        } catch (e) {
+          console.error("[BuyData] Failed to resolve parent sub-agent prices:", e);
+        }
+      }
+    };
+    
+    fetchCustomPrices();
+  }, [profile]);
 
   useEffect(() => { 
     setSelectedPkg(null); 
@@ -372,7 +417,24 @@ const BuyData = () => {
 
         if (gs?.is_unavailable) return null;
         
-        const base = gs?.public_price ?? getPublicPrice(pkg.price);
+        let base = gs?.public_price ?? getPublicPrice(pkg.price);
+        if (profile) {
+          const isApprovedAgent = !!(profile.is_agent && profile.agent_approved);
+          const isApprovedSubAgent = !!(profile.is_sub_agent && profile.sub_agent_approved);
+
+          if (isApprovedAgent) {
+            base = Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : base;
+          } else if (isApprovedSubAgent) {
+            const custom = customPrices[dbNetwork]?.[normSize];
+            if (custom && custom > 0) {
+              base = custom;
+            } else {
+              base = Number(gs?.sub_agent_price) > 0 
+                ? Number(gs!.sub_agent_price) 
+                : (Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : base);
+            }
+          }
+        }
         const multiplier = priceMultipliers[dbNetwork] || (dbNetwork.includes("MTN") ? priceMultipliers["MTN"] : 1) || 1;
         const price = applyPriceMultiplier(base, multiplier);
 
@@ -397,7 +459,7 @@ const BuyData = () => {
 
     processed.sort((a, b) => a.price - b.price);
     return processed;
-  }, [basePackages, selectedNetwork, globalSettings, priceMultipliers, korbaMappings]);
+  }, [basePackages, selectedNetwork, globalSettings, priceMultipliers, korbaMappings, profile, customPrices]);
 
   // Get all available dropdown options for the current network
   const dropdownOptions = useMemo(() => {

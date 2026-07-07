@@ -138,9 +138,15 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const topupRef = (profile as any)?.topup_reference;
   const accountId = topupRef ? `DH-${topupRef}` : "DH-USER";
 
-  const visibleAgentItemsCount = agentNavItems.filter(
-    (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
-  ).length;
+  const hasStore = !!(profile?.store_name && profile.store_name.trim() !== "");
+
+  const visibleAgentItemsCount = agentNavItems
+    .filter(
+      (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
+    )
+    .filter(
+      (item) => hasStore || !["/dashboard/store-settings", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/whatsapp-bot"].includes(item.to)
+    ).length;
 
   const handleSignOut = async () => {
     await signOut();
@@ -270,8 +276,10 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
               Core Services
             </p>
             <div className="space-y-1">
-              {userNavItems.map((item) => {
-                const isActive = location.pathname === item.to || (item.to === "/dashboard/buy-data/mtn" && location.pathname.startsWith("/dashboard/buy-data/"));
+              {userNavItems
+                .filter(item => item.to !== "/dashboard/my-store" || hasStore)
+                .map((item) => {
+                  const isActive = location.pathname === item.to || (item.to === "/dashboard/buy-data/mtn" && location.pathname.startsWith("/dashboard/buy-data/"));
                 return (
                   <Link
                     key={item.to}
@@ -358,6 +366,9 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                       {agentNavItems
                         .filter(
                           (item) => !((profile as any)?.is_sub_agent && !(profile as any)?.is_agent && ["/dashboard/subagents", "/dashboard/subagent-pricing"].includes(item.to)),
+                        )
+                        .filter(
+                          (item) => hasStore || !["/dashboard/store-settings", "/dashboard/subagents", "/dashboard/subagent-pricing", "/dashboard/whatsapp-bot"].includes(item.to)
                         )
                         .map((item) => {
                           const isActive = location.pathname === item.to;

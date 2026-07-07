@@ -662,9 +662,13 @@ const AdminAgents = () => {
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-                      {agent.store_name && (
-                        <span className="flex items-center gap-1.5">
-                          <Store className="w-3.5 h-3.5 text-muted-foreground/60" /> {agent.store_name}
+                      {agent.store_name ? (
+                        <span className="flex items-center gap-1.5 text-amber-500 font-medium bg-amber-500/10 dark:bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10">
+                          <Store className="w-3.5 h-3.5" /> Store: {agent.store_name}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-blue-400 font-medium bg-blue-500/10 dark:bg-blue-500/5 px-2 py-0.5 rounded border border-blue-500/10">
+                          <CheckCircle className="w-3.5 h-3.5" /> Direct Reseller (No Store)
                         </span>
                       )}
                       {agent.phone && (

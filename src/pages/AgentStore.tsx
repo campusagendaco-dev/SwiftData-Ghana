@@ -482,8 +482,9 @@ const AgentStore = () => {
           .select("store_description, store_banner_url");
 
         if (slug && slug !== "undefined" && slug !== "null") {
-          storeQuery = storeQuery.eq("slug", slug);
-          resellerStoreQuery = resellerStoreQuery.eq("slug", slug);
+          const lowerSlug = slug.toLowerCase().trim();
+          storeQuery = storeQuery.eq("slug", lowerSlug);
+          resellerStoreQuery = resellerStoreQuery.eq("slug", lowerSlug);
         } else if (activeDomain) {
           storeQuery = storeQuery.ilike("custom_domain", activeDomain);
           resellerStoreQuery = resellerStoreQuery.ilike("custom_domain", activeDomain);
@@ -506,7 +507,7 @@ const AgentStore = () => {
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
             supabase.from("system_settings").select("active_payment_gateway, beneficiary_verification_enabled").eq("id", 1).maybeSingle(),
             supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7"),
-            resellerStoreQuery.maybeSingle().catch(() => null)
+            Promise.resolve(resellerStoreQuery.maybeSingle()).catch(() => null)
           ]);
           
           pkgRes = pkgResData;
@@ -528,8 +529,9 @@ const AgentStore = () => {
                 .select("store_description, store_banner_url");
 
               if (slug && slug !== "undefined" && slug !== "null") {
-                fallbackQuery = fallbackQuery.eq("slug", slug);
-                fallbackResellerQuery = fallbackResellerQuery.eq("slug", slug);
+                const lowerSlug = slug.toLowerCase().trim();
+                fallbackQuery = fallbackQuery.eq("slug", lowerSlug);
+                fallbackResellerQuery = fallbackResellerQuery.eq("slug", lowerSlug);
               } else if (activeDomain) {
                 fallbackQuery = fallbackQuery.eq("custom_domain", activeDomain);
                 fallbackResellerQuery = fallbackResellerQuery.eq("custom_domain", activeDomain);
@@ -537,7 +539,7 @@ const AgentStore = () => {
               
               const [fallbackRes, fallbackResellerRes] = await Promise.all([
                 fallbackQuery.maybeSingle(),
-                fallbackResellerQuery.maybeSingle().catch(() => null)
+                Promise.resolve(fallbackResellerQuery.maybeSingle()).catch(() => null)
               ]);
 
               if (fallbackRes.error) {
