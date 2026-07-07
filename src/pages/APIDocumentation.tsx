@@ -139,9 +139,15 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
     },
     results: {
       curl: `curl -X POST "${BASE_URL}/results-checker" \\\n  -H "Authorization: Bearer ${K}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "checker_type": "WASSCE",\n    "customer_phone": "0201234567",\n    "quantity": 1,\n    "amount": 17.00,\n    "request_id": "results_ref_001"\n  }'`,
-      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": "application/json",\n  },\n  body: JSON.stringify({\n    checker_type: "WASSCE",\n    customer_phone: "0201234567",\n    quantity: 1,\n    amount: 17.00,\n    request_id: "results_ref_001",\n  }),\n});\nconst data = await res.json();`,
+      node: `const res = await fetch("${BASE_URL}/results-checker", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer ${K}",\n    "Content-Type": application/json",\n  },\n  body: JSON.stringify({\n    checker_type: "WASSCE",\n    customer_phone: "0201234567",\n    quantity: 1,\n    amount: 17.00,\n    request_id: "results_ref_001",\n  }),\n});\nconst data = await res.json();`,
       python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/results-checker",\n    headers={"Authorization": "Bearer ${K}"},\n    json={\n        "checker_type": "WASSCE",\n        "customer_phone": "0201234567",\n        "quantity": 1,\n        "amount": 17.00,\n        "request_id": "results_ref_001",\n    },\n)\nprint(res.json())`,
       php: `<?php\n$payload = json_encode([\n    "checker_type" => "WASSCE",\n    "customer_phone" => "0201234567",\n    "quantity" => 1,\n    "amount" => 17.00,\n    "request_id" => "results_ref_001",\n]);\n$ch = curl_init("${BASE_URL}/results-checker");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => [\n        "Authorization: Bearer ${K}",\n        "Content-Type: application/json",\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    },
+    verify_beneficiary: {
+      curl: `curl -X POST "${BASE_URL.replace("/developer-api", "/verify-beneficiary")}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer YOUR_SUPABASE_ANON_KEY" \\\n  -d '{\n    "phone": "0241234567",\n    "network": "MTN"\n  }'`,
+      node: `const res = await fetch("${BASE_URL.replace("/developer-api", "/verify-beneficiary")}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "Authorization": "Bearer YOUR_SUPABASE_ANON_KEY",\n  },\n  body: JSON.stringify({\n    phone: "0241234567",\n    network: "MTN",\n  }),\n});\nconst data = await res.json();\nconsole.log(data.exists); // true`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL.replace("/developer-api", "/verify-beneficiary")}",\n    headers={"Authorization": "Bearer YOUR_SUPABASE_ANON_KEY"},\n    json={"phone": "0241234567", "network": "MTN"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["phone" => "0241234567", "network" => "MTN"]);\n$ch = curl_init("${BASE_URL.replace("/developer-api", "/verify-beneficiary")}");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => [\n        "Content-Type: application/json",\n        "Authorization: Bearer YOUR_SUPABASE_ANON_KEY"\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
   };
 };
@@ -182,6 +188,9 @@ const RESPONSES: Record<string, string> = {
   error_409: `{\n  "success": false,\n  "error": "Duplicate order detected. Please wait 60 seconds before placing the same order again. Pass 'allow_duplicate': true to bypass."\n}`,
   error_429: `{\n  "success": false,\n  "error": "Rate limit exceeded."\n}`,
   error_500: `{\n  "success": false,\n  "error": "Internal Server Error",\n  "reference": "ERR-7f3a2b1c"\n}`,
+  verify_beneficiary_exists: `{\n  "success": true,\n  "exists": true,\n  "message": "Number verified successfully."\n}`,
+  verify_beneficiary_not_exists: `{\n  "success": true,\n  "exists": false,\n  "error": "Not on beneficiary list",\n  "message": "0241234567 is not added to our beneficiary list"\n}`,
+  verify_beneficiary_offline: `{\n  "success": false,\n  "exists": false,\n  "error": "Verification service unavailable",\n  "message": "MTN beneficiary verification is currently offline. Please try again shortly."\n}`,
 };
 
 
@@ -291,6 +300,7 @@ const NAV_ITEMS = [
   { id: "service-status",  label: "Service Status",      icon: Activity },
   { id: "airtime",         label: "Purchase Airtime",    icon: ShoppingCart },
   { id: "data",            label: "Data Bundles",        icon: ShoppingCart },
+  { id: "verify-beneficiary", label: "Verify Beneficiary", icon: Shield },
   { id: "afa",             label: "AFA Registration",    icon: Activity },
   { id: "results",         label: "Voucher Purchase",     icon: ShoppingCart },
   { id: "bills-validate",  label: "Validate TV Bills",   icon: Search },
@@ -865,6 +875,42 @@ const APIDocumentation = () => {
                     <span className="text-white/40">{desc}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ── Verify Beneficiary ────────────────────────────────────────── */}
+          <section className="pt-8">
+            <SectionAnchor id="verify-beneficiary" />
+            <SectionHeader icon={Shield} title="Verify Beneficiary" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-6">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/functions/v1/verify-beneficiary</code>
+            </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
+              Check if a phone number is registered as an approved MTN beneficiary. Under current carrier requirements, MTN numbers must be whitelisted on our backend before receiving MTN data bundles. Non-MTN numbers do not require beneficiary checks.
+            </p>
+
+            <div className="ml-11 space-y-8">
+              {/* Parameters table */}
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="phone"   type="string" required      desc="The 10-digit recipient number (e.g. 0241234567)" />
+                <ParamRow name="network" type="string" required={false} desc="The network carrier name. Only MTN/YELLO numbers trigger the validation. Optional but recommended." />
+              </div>
+
+              {/* Data example */}
+              <div>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <CodeBlock code={snippets.verify_beneficiary[activeLang]} label="Request" />
+                  <div className="space-y-4">
+                    <ResponseBlock code={RESPONSES.verify_beneficiary_exists} label="Response · 200 OK (Verified)" />
+                    <ResponseBlock code={RESPONSES.verify_beneficiary_not_exists} label="Response · 200 OK (Not Whitelisted)" variant="error" />
+                    <ResponseBlock code={RESPONSES.verify_beneficiary_offline} label="Response · 500 Server Error" variant="error" />
+                  </div>
+                </div>
               </div>
             </div>
           </section>
