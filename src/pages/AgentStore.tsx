@@ -114,6 +114,7 @@ const AgentStore = () => {
   const [agent, setAgent] = useState<AgentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [greeting, setGreeting] = useState("Welcome");
   const [storeDescription, setStoreDescription] = useState<string>("");
   const [storeBannerUrl, setStoreBannerUrl] = useState<string>("");
@@ -544,6 +545,7 @@ const AgentStore = () => {
 
               if (fallbackRes.error) {
                 console.error("[AgentStore] Fallback query failed with error:", fallbackRes.error);
+                setErrorDetails(`Fallback query error: ${fallbackRes.error.message} (${fallbackRes.error.details || ''})`);
                 setNotFound(true);
                 setLoading(false);
                 return;
@@ -552,6 +554,7 @@ const AgentStore = () => {
               resellerStoreRes = fallbackResellerRes;
             } else {
               console.error("[AgentStore] Main query failed with error:", res.error);
+              setErrorDetails(`Main query error: ${res.error.message} (${res.error.details || ''})`);
               setNotFound(true);
               setLoading(false);
               return;
@@ -559,8 +562,9 @@ const AgentStore = () => {
           } else {
             agentRes = res;
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error("Error executing store queries:", err);
+          setErrorDetails(`Execution error: ${err?.message || err?.details || String(err)}`);
           setNotFound(true);
           setLoading(false);
           return;
@@ -663,8 +667,9 @@ const AgentStore = () => {
 
         const fee = Number(profile.sub_agent_activation_markup ?? 0);
         if (Number.isFinite(fee) && fee > 0) setSubAgentBaseFee(fee);
-      } catch (err) {
+      } catch (err: any) {
         console.error("[AgentStore] Error in fetchStore:", err);
+        setErrorDetails(`Post-query error: ${err?.message || err?.details || String(err)}`);
         setNotFound(true);
       } finally {
         setLoading(false);
@@ -1295,12 +1300,18 @@ const AgentStore = () => {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-6 text-white">
         <TraditionalBackground className="fixed inset-0 z-0 opacity-[0.06]" />
-        <div className="relative z-10 text-center max-w-xs">
+        <div className="relative z-10 text-center max-w-sm">
           <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-5">
             <Zap className="w-8 h-8 text-white/20" />
           </div>
           <h1 className="text-2xl font-black mb-2">Store Not Found</h1>
-          <p className="text-white/40 text-sm leading-relaxed">This store doesn't exist or hasn't been activated by an agent yet.</p>
+          <p className="text-white/40 text-sm leading-relaxed mb-4">This store doesn't exist or hasn't been activated by an agent yet.</p>
+          {errorDetails && (
+            <div className="p-4 bg-red-950/40 border border-red-500/20 rounded-2xl text-red-200 text-xs font-mono text-left break-words">
+              <span className="font-bold text-red-400 block mb-1">Debug Info:</span>
+              {errorDetails}
+            </div>
+          )}
         </div>
       </div>
     );
