@@ -69,33 +69,64 @@ serve(async (req) => {
     const url = `${cleanUrl}/purchases/verify-number`;
     const apiKey = provider.api_key || "";
 
-    console.log(`[verify-beneficiary] Fetching DataHub verification for phone: ${phone}`);
-    const res = await fetchViaDb(supabaseClient, url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        phone: phone,
-        is_ported_number: true
-      }),
-      disableFallback: true,
-    }, 12); // Short timeout for frontend responsiveness
+    // Normalize phone number to test both local 10-digit (0...) and intl 12-digit (233...) formats
+    const cleanDigits = phone.replace(/\D/g, "");
+    let localFormat = cleanDigits;
+    let intlFormat = cleanDigits;
 
-    const text = await res.text();
-    console.log(`[verify-beneficiary] DataHub response status ${res.status}: ${text}`);
+    if (cleanDigits.startsWith("233") && cleanDigits.length === 12) {
+      localFormat = "0" + cleanDigits.slice(3);
+    } else if (cleanDigits.length === 9) {
+      localFormat = "0" + cleanDigits;
+      intlFormat = "233" + cleanDigits;
+    } else if (cleanDigits.startsWith("0") && cleanDigits.length === 10) {
+      intlFormat = "233" + cleanDigits.slice(1);
+    }
 
-    if (res.ok) {
-      let parsed: any = {};
-      try { parsed = JSON.parse(text); } catch { /* ignore */ }
-      if (parsed.success || parsed.data?.exists) {
-        return new Response(
-          JSON.stringify({ success: true, exists: true, message: "Number verified successfully." }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    const formatsToTest = [...new Set([localFormat, intlFormat])];
+    let exists = false;
+    let text = "";
+    let status = 200;
+
+    for (const testPhone of formatsToTest) {
+      console.log(`[verify-beneficiary] Testing DataHub variant: ${testPhone}`);
+      try {
+        const res = await fetchViaDb(supabaseClient, url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            phone: testPhone,
+            is_ported_number: true
+          }),
+          disableFallback: true,
+        }, 10);
+
+        text = await res.text();
+        status = res.status;
+        console.log(`[verify-beneficiary] Response for ${testPhone} status ${res.status}: ${text}`);
+
+        if (res.ok) {
+          let parsed: any = {};
+          try { parsed = JSON.parse(text); } catch { /* ignore */ }
+          if (parsed.success || parsed.data?.exists) {
+            exists = true;
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(`[verify-beneficiary] Error testing ${testPhone}:`, err);
       }
+    }
+
+    if (exists) {
+      return new Response(
+        JSON.stringify({ success: true, exists: true, message: "Number verified successfully." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Parse the error message if check fails

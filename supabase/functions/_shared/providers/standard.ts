@@ -288,52 +288,75 @@ export class StandardAdapter implements ProviderAdapter {
     const url = `${cleanUrl}/purchases/verify-number`;
     const apiKey = provider.api_key || "";
 
-    console.log(`[DataHub-Verify-Beneficiary] Verifying ${phone}...`);
-    try {
-      const res = await fetchViaDb(supabaseAdmin, url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": apiKey,
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          phone: phone,
-          is_ported_number: true
-        }),
-        disableFallback: true,
-      }, 15);
+    const cleanDigits = phone.replace(/\D/g, "");
+    let localFormat = cleanDigits;
+    let intlFormat = cleanDigits;
 
-      const text = await res.text();
-      console.log(`[DataHub-Verify-Beneficiary] Response status ${res.status}: ${text}`);
+    if (cleanDigits.startsWith("233") && cleanDigits.length === 12) {
+      localFormat = "0" + cleanDigits.slice(3);
+    } else if (cleanDigits.length === 9) {
+      localFormat = "0" + cleanDigits;
+      intlFormat = "233" + cleanDigits;
+    } else if (cleanDigits.startsWith("0") && cleanDigits.length === 10) {
+      intlFormat = "233" + cleanDigits.slice(1);
+    }
 
-      if (res.ok) {
-        let parsed: any = {};
-        try { parsed = JSON.parse(text); } catch { /* ignore */ }
-        if (parsed.success || parsed.data?.exists) {
-          return { ok: true };
-        }
-      }
+    const formatsToTest = [...new Set([localFormat, intlFormat])];
+    let exists = false;
+    let text = "";
 
-      let errorMessage = `${phone} is not added to our beneficiary list`;
+    for (const testPhone of formatsToTest) {
+      console.log(`[DataHub-Verify-Beneficiary] Verifying ${testPhone}...`);
       try {
-        const parsed = JSON.parse(text);
-        if (parsed.error && parsed.message) {
-          errorMessage = parsed.message;
-        } else if (parsed["Not on beneficiary list"]?.message) {
-          errorMessage = parsed["Not on beneficiary list"].message;
-        } else if (parsed["Not on beneficiary list"]?.error) {
-          errorMessage = parsed["Not on beneficiary list"].error;
-        } else if (parsed.message) {
-          errorMessage = parsed.message;
-        }
-      } catch { /* ignore */ }
+        const res = await fetchViaDb(supabaseAdmin, url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            phone: testPhone,
+            is_ported_number: true
+          }),
+          disableFallback: true,
+        }, 12);
 
-      return { ok: false, reason: errorMessage };
-    } catch (err: any) {
-      console.error(`[DataHub-Verify-Beneficiary] Call failed:`, err);
+        text = await res.text();
+        console.log(`[DataHub-Verify-Beneficiary] Response for ${testPhone} status ${res.status}: ${text}`);
+
+        if (res.ok) {
+          let parsed: any = {};
+          try { parsed = JSON.parse(text); } catch { /* ignore */ }
+          if (parsed.success || parsed.data?.exists) {
+            exists = true;
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(`[DataHub-Verify-Beneficiary] Test failed for ${testPhone}:`, err);
+      }
+    }
+
+    if (exists) {
       return { ok: true };
     }
+
+    let errorMessage = `${phone} is not added to our beneficiary list`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error && parsed.message) {
+        errorMessage = parsed.message;
+      } else if (parsed["Not on beneficiary list"]?.message) {
+        errorMessage = parsed["Not on beneficiary list"].message;
+      } else if (parsed["Not on beneficiary list"]?.error) {
+        errorMessage = parsed["Not on beneficiary list"].error;
+      } else if (parsed.message) {
+        errorMessage = parsed.message;
+      }
+    } catch { /* ignore */ }
+
+    return { ok: false, reason: errorMessage };
   }
 
   async purchase(
