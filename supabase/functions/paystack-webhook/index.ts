@@ -447,13 +447,18 @@ async function notifyFailureAndRefund(
   reference: string,
   paystackKey: string,
   agentId?: string,
+  failureReason?: string,
 ): Promise<void> {
   if (phone) {
     try {
       const { apiKey, senderId } = await getSmsConfig(supabaseAdmin, agentId);
       const recipient = normalizePhone(phone);
       if (apiKey && recipient) {
-        const msg = `SwiftData: Your ${packageLabel} order for ${phone} failed. GHS ${amountGhs.toFixed(2)} has been refunded to your wallet. Ref: ${reference.slice(0, 8)}`;
+        let reasonPart = "";
+        if (failureReason) {
+          reasonPart = ` Reason: ${failureReason}.`;
+        }
+        const msg = `SwiftData: Your ${packageLabel} order for ${phone} failed.${reasonPart} GHS ${amountGhs.toFixed(2)} has been refunded to your wallet. No panic, your refund is completed. Ref: ${reference.slice(0, 8)}`;
         await sendSmsViaTxtConnect(apiKey, senderId, recipient, msg, "order_failed", agentId);
       }
     } catch (e) {
@@ -1038,7 +1043,7 @@ serve(async (req) => {
         failure_reason: `Payment amount mismatch. Expected GHS ${existingAmount.toFixed(2)}, received GHS ${verifiedAmount.toFixed(2)}.`,
       }).eq("id", orderId);
       const mismatchPhone = String(existingOrder?.customer_phone || "");
-      await notifyFailureAndRefund(supabaseAdmin, mismatchPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
+      await notifyFailureAndRefund(supabaseAdmin, mismatchPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id, `Payment amount mismatch (Expected GHS ${existingAmount.toFixed(2)}, received GHS ${verifiedAmount.toFixed(2)})`);
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Payment amount mismatch" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1425,7 +1430,7 @@ serve(async (req) => {
         failure_reason: "Data provider not configured",
       }).eq("id", orderId);
       const unconfiguredPhone = String(existingOrder?.customer_phone || "");
-      await notifyFailureAndRefund(supabaseAdmin, unconfiguredPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
+      await notifyFailureAndRefund(supabaseAdmin, unconfiguredPhone, verifiedAmount, existingOrder?.package_size || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id, "Data provider not configured");
       return new Response(JSON.stringify({ received: true, fulfilled: false }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1501,7 +1506,7 @@ serve(async (req) => {
           status: "fulfillment_failed",
           failure_reason: "Missing network, amount, or phone for airtime fulfillment.",
         }).eq("id", orderId);
-        await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, "Airtime", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
+        await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, "Airtime", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id, "Missing airtime order details");
         return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing airtime order details." }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1572,7 +1577,7 @@ serve(async (req) => {
         status: "fulfillment_failed",
         failure_reason: `Could not parse package size from '${packageSize}'`,
       }).eq("id", orderId);
-      await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, packageSize || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id);
+      await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, packageSize || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id, "Missing order details for fulfillment");
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing order details for fulfillment." }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
