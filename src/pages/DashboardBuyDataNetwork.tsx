@@ -287,17 +287,65 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
   useEffect(() => {
     const loadPricing = async () => {
+      // 1. Try to load cached data for instant render
+      try {
+        const cachedPricing = localStorage.getItem("swift_pricing_cache");
+        if (cachedPricing) {
+          const parsed = JSON.parse(cachedPricing);
+          if (parsed.expiry > Date.now()) {
+            setGlobalSettings(parsed.globalSettings);
+            setPriceMultiplier(parsed.multipliers[network] || 1);
+            if (parsed.korbaMappings) {
+              setKorbaMappings(parsed.korbaMappings);
+            }
+            setSettingsLoading(false);
+          }
+        }
+
+        const cachedSettings = localStorage.getItem("swift_system_settings");
+        if (cachedSettings) {
+          const parsed = JSON.parse(cachedSettings);
+          if (parsed.expiry > Date.now()) {
+            if (parsed.agent_activation_fee) {
+              setActivationFee(Number(parsed.agent_activation_fee));
+            }
+            if (parsed.active_payment_gateway) {
+              setActiveGateway(parsed.active_payment_gateway);
+            }
+            setBeneficiaryCheckEnabled(parsed.beneficiary_verification_enabled !== false);
+          }
+        }
+      } catch (e) {
+        console.error("Cache read error:", e);
+      }
+
+      // 2. Perform background fetches
       const [settingsRes, pricingContext, mappingsRes] = await Promise.all([
         supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, api_price, is_unavailable"),
         fetchApiPricingContext(),
         supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
       ]);
-      setGlobalSettings((settingsRes.data || []) as GlobalPackageSetting[]);
-      setPriceMultiplier(pricingContext.multipliers[network] || 1);
-      if (mappingsRes.data) {
-        setKorbaMappings(mappingsRes.data);
+      
+      const gSettings = (settingsRes.data || []) as GlobalPackageSetting[];
+      const mults = pricingContext.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 };
+      const mappings = mappingsRes.data || [];
+
+      setGlobalSettings(gSettings);
+      setPriceMultiplier(mults[network] || 1);
+      if (mappings) {
+        setKorbaMappings(mappings);
       }
       setSettingsLoading(false);
+
+      // Cache the loaded data
+      try {
+        localStorage.setItem("swift_pricing_cache", JSON.stringify({
+          globalSettings: gSettings,
+          multipliers: mults,
+          korbaMappings: mappings,
+          expiry: Date.now() + 10 * 60 * 1000 // Cache for 10 minutes
+        }));
+      } catch (e) {}
 
       if (profile?.is_sub_agent && profile?.parent_agent_id) {
         const { data: parentProfile } = await supabase
@@ -322,16 +370,25 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
-          if (data.agent_activation_fee) {
-            setActivationFee(Number(data.agent_activation_fee));
-          }
-          if (data.active_payment_gateway) {
-            setActiveGateway(data.active_payment_gateway);
-          }
-          setBeneficiaryCheckEnabled(data.beneficiary_verification_enabled !== false);
+          const fee = Number(data.agent_activation_fee || 0);
+          const gateway = data.active_payment_gateway || "";
+          const benEnabled = data.beneficiary_verification_enabled !== false;
+
+          setActivationFee(fee);
+          setActiveGateway(gateway);
+          setBeneficiaryCheckEnabled(benEnabled);
+
+          try {
+            localStorage.setItem("swift_system_settings", JSON.stringify({
+              agent_activation_fee: fee,
+              active_payment_gateway: gateway,
+              beneficiary_verification_enabled: benEnabled,
+              expiry: Date.now() + 5 * 60 * 1000 // Cache for 5 minutes
+            }));
+          } catch (e) {}
         }
       });
-  }, [profile?.is_sub_agent, profile?.parent_agent_id, user]);
+  }, [profile?.is_sub_agent, profile?.parent_agent_id, user, network]);
 
   // Get packages for current network and purchase type
   const displayPackages = useMemo(() => {

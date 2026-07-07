@@ -430,6 +430,37 @@ const AgentStore = () => {
 
   useEffect(() => {
     const fetchStore = async () => {
+      // 1. Try to load cached data for instant render
+      try {
+        const cachedPricing = localStorage.getItem("swift_pricing_cache");
+        if (cachedPricing) {
+          const parsed = JSON.parse(cachedPricing);
+          if (parsed.expiry > Date.now()) {
+            const gsMap: Record<string, GlobalPkgSetting> = {};
+            (parsed.globalSettings || []).forEach((r: any) => { 
+              const normSize = r.package_size.replace(/\s+/g, "").toUpperCase();
+              gsMap[`${r.network}-${normSize}`] = r; 
+            });
+            setGlobalSettings(gsMap);
+            setPriceMultipliers(parsed.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
+            if (parsed.korbaMappings) setKorbaMappings(parsed.korbaMappings);
+          }
+        }
+
+        const cachedSettings = localStorage.getItem("swift_system_settings");
+        if (cachedSettings) {
+          const parsed = JSON.parse(cachedSettings);
+          if (parsed.expiry > Date.now()) {
+            if (parsed.active_payment_gateway) {
+              setActiveGateway(parsed.active_payment_gateway);
+            }
+            setBeneficiaryCheckEnabled(parsed.beneficiary_verification_enabled !== false);
+          }
+        }
+      } catch (e) {
+        console.error("[AgentStore] Cache read error:", e);
+      }
+
       try {
         setLoading(true);
         const activeDomain = getActiveStoreDomain();
@@ -511,13 +542,34 @@ const AgentStore = () => {
         if (mappingsRes?.data) {
           setKorbaMappings(mappingsRes.data);
         }
-        setPriceMultipliers(pricingCtx.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
+        
+        const mults = pricingCtx.multipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 };
+        setPriceMultipliers(mults);
+
+        let gateway = "paystack";
+        let benEnabled = true;
         if (sysRes?.data) {
-          if (sysRes.data.active_payment_gateway) {
-            setActiveGateway(sysRes.data.active_payment_gateway);
-          }
-          setBeneficiaryCheckEnabled(sysRes.data.beneficiary_verification_enabled !== false);
+          gateway = sysRes.data.active_payment_gateway || "paystack";
+          benEnabled = sysRes.data.beneficiary_verification_enabled !== false;
+          setActiveGateway(gateway);
+          setBeneficiaryCheckEnabled(benEnabled);
         }
+
+        // Cache the fetched data
+        try {
+          localStorage.setItem("swift_pricing_cache", JSON.stringify({
+            globalSettings: pkgRes.data || [],
+            multipliers: mults,
+            korbaMappings: mappingsRes?.data || [],
+            expiry: Date.now() + 10 * 60 * 1000 // Cache for 10 minutes
+          }));
+
+          localStorage.setItem("swift_system_settings", JSON.stringify({
+            active_payment_gateway: gateway,
+            beneficiary_verification_enabled: benEnabled,
+            expiry: Date.now() + 5 * 60 * 1000 // Cache for 5 minutes
+          }));
+        } catch (e) {}
 
         if (!agentRes.data) { setNotFound(true); setLoading(false); return; }
 
