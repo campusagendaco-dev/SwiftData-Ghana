@@ -30,7 +30,7 @@ SELECT
     s.store_banner_url
 FROM public.reseller_stores s
 LEFT JOIN public.profiles p ON s.user_id = p.user_id
-WHERE (p.is_agent = true OR p.is_sub_agent = true)
+WHERE (p.is_agent = true OR p.is_sub_agent = true OR p.agent_approved = true OR p.sub_agent_approved = true)
   AND (p.onboarding_complete = true OR (p.store_name IS NOT NULL AND p.store_name <> ''));
 
 GRANT SELECT ON public.agent_stores TO anon, authenticated;

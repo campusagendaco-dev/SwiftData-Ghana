@@ -541,6 +541,7 @@ const AgentStore = () => {
               ]);
 
               if (fallbackRes.error) {
+                console.error("[AgentStore] Fallback query failed with error:", fallbackRes.error);
                 setNotFound(true);
                 setLoading(false);
                 return;
@@ -548,6 +549,7 @@ const AgentStore = () => {
               agentRes = fallbackRes;
               resellerStoreRes = fallbackResellerRes;
             } else {
+              console.error("[AgentStore] Main query failed with error:", res.error);
               setNotFound(true);
               setLoading(false);
               return;

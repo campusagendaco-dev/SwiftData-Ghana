@@ -175,6 +175,7 @@ const DashboardSubAgents = () => {
       sub_agent_approved: newStatus,
       agent_approved: newStatus,
       is_agent: newStatus,
+      is_sub_agent: newStatus,
       onboarding_complete: newStatus,
       // If approving, also make sure they have the parent's prices
       ...(newStatus ? { agent_prices: subAgentPrices } : {})
