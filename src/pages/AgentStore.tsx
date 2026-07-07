@@ -663,7 +663,8 @@ const AgentStore = () => {
 
         const fee = Number(profile.sub_agent_activation_markup ?? 0);
         if (Number.isFinite(fee) && fee > 0) setSubAgentBaseFee(fee);
-      } catch {
+      } catch (err) {
+        console.error("[AgentStore] Error in fetchStore:", err);
         setNotFound(true);
       } finally {
         setLoading(false);
