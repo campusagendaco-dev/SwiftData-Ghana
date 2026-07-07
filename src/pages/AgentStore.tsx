@@ -500,9 +500,10 @@ const AgentStore = () => {
         let pricingCtx;
         let mappingsRes;
         let resellerStoreRes;
+        let sysRes;
 
         try {
-          const [res, pkgResData, pricingCtxData, sysRes, mappingsData, resellerRes] = await Promise.all([
+          const [res, pkgResData, pricingCtxData, sysResData, mappingsData, resellerRes] = await Promise.all([
             storeQuery.maybeSingle(),
             supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
@@ -515,6 +516,7 @@ const AgentStore = () => {
           pricingCtx = pricingCtxData;
           mappingsRes = mappingsData;
           resellerStoreRes = resellerRes;
+          sysRes = sysResData;
 
           if (res.error) {
             const errMsg = res.error.message || "";
