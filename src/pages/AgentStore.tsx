@@ -115,6 +115,8 @@ const AgentStore = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [greeting, setGreeting] = useState("Welcome");
+  const [storeDescription, setStoreDescription] = useState<string>("");
+  const [storeBannerUrl, setStoreBannerUrl] = useState<string>("");
   const [korbaMappings, setKorbaMappings] = useState<{ package_name: string; network: string; raw_data: any }[]>([]);
   const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>("affordable");
 
@@ -457,6 +459,13 @@ const AgentStore = () => {
             setBeneficiaryCheckEnabled(parsed.beneficiary_verification_enabled !== false);
           }
         }
+
+        const cachedTenant = localStorage.getItem("current_store_tenant");
+        if (cachedTenant) {
+          const parsed = JSON.parse(cachedTenant);
+          if (parsed.description) setStoreDescription(parsed.description);
+          if (parsed.banner) setStoreBannerUrl(parsed.banner);
+        }
       } catch (e) {
         console.error("[AgentStore] Cache read error:", e);
       }
@@ -468,10 +477,16 @@ const AgentStore = () => {
           .from("agent_stores")
           .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, registered_user_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
 
+        let resellerStoreQuery = supabase
+          .from("reseller_stores")
+          .select("store_description, store_banner_url");
+
         if (slug && slug !== "undefined" && slug !== "null") {
           storeQuery = storeQuery.eq("slug", slug);
+          resellerStoreQuery = resellerStoreQuery.eq("slug", slug);
         } else if (activeDomain) {
           storeQuery = storeQuery.ilike("custom_domain", activeDomain);
+          resellerStoreQuery = resellerStoreQuery.ilike("custom_domain", activeDomain);
         } else {
           setNotFound(true);
           setLoading(false);
@@ -482,19 +497,22 @@ const AgentStore = () => {
         let pkgRes;
         let pricingCtx;
         let mappingsRes;
+        let resellerStoreRes;
 
         try {
-          const [res, pkgResData, pricingCtxData, sysRes, mappingsData] = await Promise.all([
+          const [res, pkgResData, pricingCtxData, sysRes, mappingsData, resellerRes] = await Promise.all([
             storeQuery.maybeSingle(),
             supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
             supabase.from("system_settings").select("active_payment_gateway, beneficiary_verification_enabled").eq("id", 1).maybeSingle(),
-            supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
+            supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7"),
+            resellerStoreQuery.maybeSingle().catch(() => null)
           ]);
           
           pkgRes = pkgResData;
           pricingCtx = pricingCtxData;
           mappingsRes = mappingsData;
+          resellerStoreRes = resellerRes;
 
           if (res.error) {
             const errMsg = res.error.message || "";
@@ -505,19 +523,30 @@ const AgentStore = () => {
                 .from("agent_stores")
                 .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
               
+              let fallbackResellerQuery = supabase
+                .from("reseller_stores")
+                .select("store_description, store_banner_url");
+
               if (slug && slug !== "undefined" && slug !== "null") {
                 fallbackQuery = fallbackQuery.eq("slug", slug);
+                fallbackResellerQuery = fallbackResellerQuery.eq("slug", slug);
               } else if (activeDomain) {
                 fallbackQuery = fallbackQuery.eq("custom_domain", activeDomain);
+                fallbackResellerQuery = fallbackResellerQuery.eq("custom_domain", activeDomain);
               }
               
-              const fallbackRes = await fallbackQuery.maybeSingle();
+              const [fallbackRes, fallbackResellerRes] = await Promise.all([
+                fallbackQuery.maybeSingle(),
+                fallbackResellerQuery.maybeSingle().catch(() => null)
+              ]);
+
               if (fallbackRes.error) {
                 setNotFound(true);
                 setLoading(false);
                 return;
               }
               agentRes = fallbackRes;
+              resellerStoreRes = fallbackResellerRes;
             } else {
               setNotFound(true);
               setLoading(false);
@@ -555,6 +584,11 @@ const AgentStore = () => {
           setBeneficiaryCheckEnabled(benEnabled);
         }
 
+        if (resellerStoreRes?.data) {
+          setStoreDescription(resellerStoreRes.data.store_description || "");
+          setStoreBannerUrl(resellerStoreRes.data.store_banner_url || "");
+        }
+
         // Cache the fetched data
         try {
           localStorage.setItem("swift_pricing_cache", JSON.stringify({
@@ -581,7 +615,9 @@ const AgentStore = () => {
           logo: profile.store_logo_url,
           color: profile.store_primary_color,
           slug: (profile as any).slug || slug,
-          custom_domain: (profile as any).custom_domain
+          custom_domain: (profile as any).custom_domain,
+          description: resellerStoreRes?.data?.store_description || "",
+          banner: resellerStoreRes?.data?.store_banner_url || ""
         };
         localStorage.setItem("current_store_tenant", JSON.stringify(tenantData));
 
@@ -1317,12 +1353,25 @@ const AgentStore = () => {
 
         {/* ── Unique Storefront Welcome Hero Card ── */}
         <div
-          className="rounded-[32px] p-7 mb-6 relative overflow-hidden border border-white/10 backdrop-blur-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]"
-          style={{ background: `linear-gradient(135deg, ${accentColor}15 0%, rgba(255,255,255,0.02) 100%)` }}
+          className="rounded-[32px] p-7 mb-6 relative overflow-hidden border border-white/10 backdrop-blur-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] group"
+          style={{ 
+            background: storeBannerUrl 
+              ? `url(${storeBannerUrl}) center/cover no-repeat` 
+              : `linear-gradient(135deg, ${accentColor}15 0%, rgba(255,255,255,0.02) 100%)` 
+          }}
         >
-          {/* Ambient Glow Dot */}
-          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-30 pointer-events-none" style={{ backgroundColor: accentColor }} />
-          <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none" style={{ backgroundColor: accentColor }} />
+          {/* Ambient Glow Dot (only shown if there is no custom banner to avoid conflict) */}
+          {!storeBannerUrl && (
+            <>
+              <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-30 pointer-events-none" style={{ backgroundColor: accentColor }} />
+              <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none" style={{ backgroundColor: accentColor }} />
+            </>
+          )}
+
+          {/* Dark Overlay for custom banner readability */}
+          {storeBannerUrl && (
+            <div className="absolute inset-0 bg-black/55 backdrop-blur-[1px] transition-all group-hover:bg-black/45 z-0" />
+          )}
           
           <div className="flex items-center gap-2 mb-4 relative z-10">
             <span className="px-3 py-1 text-[10px] font-black tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full uppercase shadow-inner">
@@ -1337,8 +1386,8 @@ const AgentStore = () => {
           <h2 className="text-3xl font-black text-white tracking-tight leading-none mb-3 relative z-10 drop-shadow-md">
             Premium Data <br/> & Connectivity.
           </h2>
-          <p className="text-white/60 text-[13px] font-semibold leading-relaxed mb-3 max-w-[280px] relative z-10">
-            Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant fulfillment.
+          <p className="text-white/60 text-[13px] font-semibold leading-relaxed mb-3 max-w-[340px] relative z-10">
+            {storeDescription || "Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant fulfillment."}
           </p>
           <LiveDeliveryBadge className="mb-6 relative z-10" />
 
