@@ -665,13 +665,28 @@ serve(async (req: Request) => {
         else if (net === "telecel" || net === "vodafone") { prefix = "red_"; displayNet = "RED"; }
         
         return {
-          ...p,
           package_id: `${prefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`,
-          network: displayNet
+          network: displayNet,
+          package_size: p.package_size,
+          api_price: Number(p.agent_price || p.api_price || p.public_price || 0),
+          is_unavailable: p.is_unavailable
         };
       });
 
-      return json({ success: true, plans: plansWithId });
+      // Group into categories
+      const categories: Record<string, any[]> = {};
+      plansWithId.forEach(p => {
+        const cat = p.network;
+        if (!categories[cat]) categories[cat] = [];
+        categories[cat].push({
+          package_id: p.package_id,
+          package_size: p.package_size,
+          api_price: p.api_price,
+          is_unavailable: p.is_unavailable
+        });
+      });
+
+      return json({ success: true, plans: plansWithId, categories });
     }
 
     if (finalAction === "buy" && req.method === "POST") {
