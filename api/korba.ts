@@ -3,7 +3,7 @@ import https from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // Read proxy URL from Vercel Environment Variables
-const KORBA_PROXY_URL = process.env.KORBA_PROXY_URL || "http://cvlscvmy:wylckry6fx3o@31.59.20.176:6754/";
+const KORBA_PROXY_URL = process.env.KORBA_PROXY_URL || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
 
 // Simple authorization token to secure the bridge endpoint
 const BRIDGE_SECRET = process.env.KORBA_BRIDGE_SECRET || 'swiftdata-korba-bridge-token-2026';
