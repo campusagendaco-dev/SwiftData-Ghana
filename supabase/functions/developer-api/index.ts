@@ -654,15 +654,34 @@ serve(async (req: Request) => {
       const { data: plans, error: plansErr } = await supabase.from("global_package_settings").select("*").eq("is_unavailable", false).order("network").order("package_size");
       if (plansErr) console.error("Error fetching plans:", plansErr);
       
-      const plansWithId = (plans ?? []).map(p => {
+      // Fetch Korba provider package mappings to exclude them
+      const korbaProviderId = "1177b72a-a2d7-462d-9366-9dde6e83ccd7";
+      const { data: korbaMappings, error: mappingsErr } = await supabase
+        .from("provider_packages")
+        .select("package_name, network")
+        .eq("provider_id", korbaProviderId);
+      
+      if (mappingsErr) console.error("Error fetching Korba package mappings:", mappingsErr);
+
+      const korbaSet = new Set(
+        (korbaMappings ?? []).map(m => `${m.network.toLowerCase()}-${String(m.package_name).replace(/\s+/g, "").toLowerCase()}`)
+      );
+
+      const filteredPlans = (plans ?? []).filter(p => {
+        const net = p.network.toLowerCase();
+        const sizeKey = `${net}-${String(p.package_size).replace(/\s+/g, "").toLowerCase()}`;
+        return !korbaSet.has(sizeKey);
+      });
+
+      const plansWithId = filteredPlans.map(p => {
         let prefix = "pkg_";
         let displayNet = p.network;
         const net = String(p.network).toLowerCase();
         
         if (net === "mtn") { prefix = "yellow_"; displayNet = "YELLO"; }
         else if (net.includes("mash") || net.includes("mashup")) { prefix = "mashup_"; displayNet = "MTN Mash Up"; }
-        else if (net === "at" || net === "airteltigo" || net === "at_premium") { prefix = "blue_"; displayNet = "BLUE"; }
-        else if (net === "telecel" || net === "vodafone") { prefix = "red_"; displayNet = "RED"; }
+        else if (net === "at" || net === "airteltigo" || net === "at_premium") { prefix = "at_"; displayNet = "AT"; }
+        else if (net === "telecel" || net === "vodafone") { prefix = "telecel_"; displayNet = "TELECEL"; }
         
         return {
           package_id: `${prefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`,
@@ -727,10 +746,20 @@ serve(async (req: Request) => {
           const net = String(p.network).toLowerCase();
           if (net === "mtn") prefix = "yellow_";
           else if (net.includes("mash") || net.includes("mashup")) prefix = "mashup_";
-          else if (net === "at" || net === "airteltigo" || net === "at_premium") prefix = "blue_";
-          else if (net === "telecel" || net === "vodafone") prefix = "red_";
+          else if (net === "at" || net === "airteltigo" || net === "at_premium") prefix = "at_";
+          else if (net === "telecel" || net === "vodafone") prefix = "telecel_";
           const pId = `${prefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`;
-          return pId === String(package_id).toLowerCase();
+
+          // Keep legacy support for red_ and blue_ prefixes
+          let legacyPrefix = "pkg_";
+          if (net === "mtn") legacyPrefix = "yellow_";
+          else if (net.includes("mash") || net.includes("mashup")) legacyPrefix = "mashup_";
+          else if (net === "at" || net === "airteltigo" || net === "at_premium") legacyPrefix = "blue_";
+          else if (net === "telecel" || net === "vodafone") legacyPrefix = "red_";
+          const legacyPId = `${legacyPrefix}${String(p.package_size).toLowerCase().replace(/\s+/g, "")}`;
+
+          const inputId = String(package_id).toLowerCase().trim();
+          return pId === inputId || legacyPId === inputId;
         });
 
         if (match) {

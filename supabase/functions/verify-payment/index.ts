@@ -203,12 +203,12 @@ async function fulfillOrder(
       let customMsg = "";
       if (isUtility) {
         if (token) {
-          customMsg = `Payment received! ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nTxID: ${order.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+          customMsg = `Payment received! ECG Prepaid Token: ${token}\nMeter: ${order.customer_phone}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nTxID: ${order.id}`;
         } else {
-          customMsg = `Payment received! Your ${networkName} payment for account ${order.customer_phone} of GHS ${Number(order.amount).toFixed(2)} is being processed.\nTxID: ${order.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+          customMsg = `Payment received! Your ${networkName} payment for account ${order.customer_phone} of GHS ${Number(order.amount).toFixed(2)} is being processed.\nTxID: ${order.id}`;
         }
       } else {
-        customMsg = `Success! Your order for ${displayPackage} to ${order.customer_phone} has been processed.\nTxID: ${order.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+        customMsg = `Success! Your order for ${displayPackage} to ${order.customer_phone} has been processed.\nTxID: ${order.id}`;
       }
 
       await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom", { message: customMsg }, order.agent_id);

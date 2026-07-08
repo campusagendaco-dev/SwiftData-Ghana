@@ -34,7 +34,7 @@ serve(async (req: Request) => {
     }
 
     const txtApiKey = settings.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY");
-    const txtSenderId = settings.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh";
+    const txtSenderId = settings.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
     const smsMessage = settings.auto_pending_sms_message || "Your SwiftData transaction is pending. Please try again or contact support.";
 
     if (!txtApiKey) {

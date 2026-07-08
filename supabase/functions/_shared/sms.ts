@@ -35,7 +35,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
   const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY");
   const hasKorba = !!(korbaClientKey && korbaSecretKey);
 
-  const defaultSenderId = settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh";
+  const defaultSenderId = settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
   let finalSenderId = defaultSenderId;
 
   if (agentId) {
@@ -60,13 +60,13 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
     apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY") || (hasKorba ? "korba" : null),
     senderId: finalSenderId,
     templates: {
-      payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} has been processed. Join for more giveaways & updates: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
-      utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
-      wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+      payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} has been processed.",
+      utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed.",
+      wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
       withdrawal_request: settings?.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
-      withdrawal_completed: settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+      withdrawal_completed: settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed.",
       order_failed: settings?.order_failed_sms_message || "Order for {package} to {phone} failed.{reason} GHS {amount} has been refunded to your wallet. No panic, your refund is completed.",
-      manual_credit: settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
+      manual_credit: settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount}.",
     }
   };
 }

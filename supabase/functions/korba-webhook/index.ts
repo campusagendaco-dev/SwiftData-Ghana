@@ -244,12 +244,12 @@ serve(async (req) => {
             let customMsg = "";
             if (isUtility) {
               if (prepaidToken) {
-                customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+                customMsg = `Payment received! ECG Prepaid Token: ${prepaidToken}\nMeter: ${existingOrder.customer_phone}\nAmount: GHS ${Number(existingOrder.amount).toFixed(2)}\nTxID: ${existingOrder.id}`;
               } else {
-                customMsg = `Payment received! Your ${networkName} payment for account ${existingOrder.customer_phone} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+                customMsg = `Payment received! Your ${networkName} payment for account ${existingOrder.customer_phone} of GHS ${Number(existingOrder.amount).toFixed(2)} is being processed.\nTxID: ${existingOrder.id}`;
               }
             } else {
-              customMsg = `Success! Your order for ${displayPackage} to ${existingOrder.customer_phone} has been processed.\nTxID: ${existingOrder.id}\nJoin our WhatsApp Channel for updates & giveaways: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+              customMsg = `Success! Your order for ${displayPackage} to ${existingOrder.customer_phone} has been processed.\nTxID: ${existingOrder.id}`;
             }
 
             await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: customMsg }, existingOrder.agent_id);

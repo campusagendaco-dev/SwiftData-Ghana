@@ -26,7 +26,7 @@ async function sendManualCreditSms(userId: string, amount: number) {
     if (!smsConfig.apiKey || !recipient) return;
     let message = "";
     if (amount < 0) {
-      message = `Your account has been manually debited with GHS ${Math.abs(amount).toFixed(2)}. Join: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`;
+      message = `Your account has been manually debited with GHS ${Math.abs(amount).toFixed(2)}.`;
     } else {
       message = formatTemplate(smsConfig.templates.manual_credit, { amount: amount.toFixed(2) });
     }
