@@ -20,7 +20,7 @@ import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -1562,13 +1562,13 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h2 className="text-lg font-black text-white tracking-tight uppercase leading-tight">
+              <DialogTitle className="text-lg font-black text-white tracking-tight uppercase leading-tight">
                 New beneficiary number detected!
-              </h2>
+              </DialogTitle>
             </div>
           </div>
 
-          <div className="rounded-[24px] bg-[#12121A]/80 border border-white/5 p-6 text-sm text-zinc-300 leading-relaxed font-medium space-y-4 relative z-10">
+          <DialogDescription className="rounded-[24px] bg-[#12121A]/80 border border-white/5 p-6 text-sm text-zinc-300 leading-relaxed font-medium space-y-4 relative z-10 block">
             <p>
               The phone number <span className="px-2 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/25 rounded-lg font-mono font-black text-sm select-all tracking-wider">{beneficiaryModalPhone}</span> is not added to our beneficiary list at the moment.
             </p>
@@ -1578,7 +1578,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
             <p className="text-rose-400 font-extrabold text-center tracking-wide uppercase text-xs pt-1">
               Orders can not be refunded or canceled!
             </p>
-          </div>
+          </DialogDescription>
 
           <div className="grid grid-cols-2 gap-4 relative z-10">
             <button
