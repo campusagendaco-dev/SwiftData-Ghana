@@ -136,7 +136,7 @@ const AdminSettings = () => {
     at_markup_percentage: "0",
     auto_pending_sms_enabled: false,
     auto_pending_sms_message: "Your SwiftData transaction is pending. Please try again or contact support.",
-    payment_success_sms_message: "Your data bundle is being processed.",
+    payment_success_sms_message: "Your order for {package} to {phone} is being processed. TxID: {id}",
     wallet_topup_sms_message: "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
     withdrawal_request_sms_message: "Withdrawal request of GHS {amount} received. It will be processed shortly.",
     withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed.",
@@ -441,7 +441,7 @@ const AdminSettings = () => {
           at_markup_percentage: String(d.at_markup_percentage || "0"),
           auto_pending_sms_enabled: d.auto_pending_sms_enabled || false,
           auto_pending_sms_message: d.auto_pending_sms_message || "Your SwiftData transaction is pending. Please try again or contact support.",
-          payment_success_sms_message: d.payment_success_sms_message || "Your data bundle is being processed.",
+          payment_success_sms_message: d.payment_success_sms_message || "Your order for {package} to {phone} is being processed. TxID: {id}",
           wallet_topup_sms_message: d.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
           withdrawal_request_sms_message: d.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
           withdrawal_completed_sms_message: d.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
@@ -2477,7 +2477,7 @@ const AdminSettings = () => {
                         onChange={(e) => setSettings({ ...settings, payment_success_sms_message: e.target.value })}
                         placeholder="Your bundle is being processed..."
                       />
-                      <p className="text-[10px] text-muted-foreground">Sent immediately after a successful payment is verified.</p>
+                      <p className="text-[10px] text-muted-foreground">Sent immediately after a successful payment is verified. Available variables: {"{phone}, {package}, {id}"}</p>
                     </div>
 
                     <div className="space-y-2">

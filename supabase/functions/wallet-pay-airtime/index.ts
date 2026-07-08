@@ -185,10 +185,12 @@ serve(async (req) => {
     }
 
     // 3. TRIGGER SMS (NON-BLOCKING)
+    const displayPackage = `${networkRaw || ""} GHS ${Number(requestedAmount).toFixed(2)} Airtime`;
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
-      package: "Airtime",
-      amount: requestedAmount
+      package: displayPackage,
+      amount: requestedAmount,
+      id: orderId
     }, user.id).catch(e => console.error("[SMS-ERROR-AIRTIME]", e));
 
     return new Response(JSON.stringify({ 

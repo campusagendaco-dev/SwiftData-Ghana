@@ -169,7 +169,8 @@ serve(async (req) => {
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
       package: "AFA Registration",
-      amount: price
+      amount: price,
+      id: orderId
     }, user.id).catch(e => console.error("[SMS-ERROR-AFA]", e));
 
     console.log(`[wallet-pay-afa] Created AFA registration order: ${orderId} for ${normalizedPhone}`);

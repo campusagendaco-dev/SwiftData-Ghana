@@ -460,8 +460,9 @@ serve(async (req: Request) => {
     // 3. TRIGGER SMS (NON-BLOCKING)
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
-      package: package_size || "Data Bundle",
-      amount: amountNum
+      package: `${networkRaw} ${package_size}`,
+      amount: amountNum,
+      id: orderId
     }, user.id).catch(e => console.error("[SMS-ERROR]", e));
 
     if (normalizedNet === "MTN Mash Up" && agentProfile?.phone) {

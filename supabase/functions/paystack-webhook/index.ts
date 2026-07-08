@@ -1006,7 +1006,18 @@ serve(async (req) => {
     }
 
     if (shouldSendDataPaymentSms && smsPhone) {
-      await sendPaymentSms(supabaseAdmin, smsPhone, "payment_success", {}, existingOrder?.agent_id);
+      const displayPackage = `${existingOrder?.network || ""} ${existingOrder?.package_size || ""}`;
+      await sendPaymentSms(
+        supabaseAdmin,
+        smsPhone,
+        "payment_success",
+        {
+          phone: existingOrder?.customer_phone || smsPhone,
+          package: displayPackage,
+          id: existingOrder?.id || ""
+        },
+        existingOrder?.agent_id
+      );
     }
 
     if (existingOrder?.network === "MTN Mash Up" && existingOrder?.agent_id) {
@@ -1543,7 +1554,21 @@ serve(async (req) => {
         if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
           await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
         }
-        if (customerPhone) await sendPaymentSms(supabaseAdmin, customerPhone, "payment_success", {}, existingOrder?.agent_id);
+        if (customerPhone) {
+          const basePrice = existingOrder?.metadata?.base_price || existingOrder?.amount || airtimeAmount;
+          const displayPackage = `${existingOrder?.network || network || ""} GHS ${Number(basePrice).toFixed(2)} Airtime`;
+          await sendPaymentSms(
+            supabaseAdmin,
+            customerPhone,
+            "payment_success",
+            {
+              phone: customerPhone,
+              package: displayPackage,
+              id: orderId
+            },
+            existingOrder?.agent_id
+          );
+        }
         if (metadata.channel === "whatsapp" && metadata.wa_from) {
           await sendWhatsAppFulfillmentNotification(String(metadata.wa_from), "airtime", network, `GH₵${airtimeAmount}`, customerPhone);
         }
