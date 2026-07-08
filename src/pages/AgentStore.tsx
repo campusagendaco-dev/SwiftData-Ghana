@@ -146,6 +146,7 @@ const AgentStore = () => {
   const [checkedPhone, setCheckedPhone] = useState<string>("");
   const [showBeneficiaryModal, setShowBeneficiaryModal] = useState(false);
   const [beneficiaryModalPhone, setBeneficiaryModalPhone] = useState("");
+  const [pendingAction, setPendingAction] = useState<"wallet" | "paystack" | null>(null);
   const [beneficiaryCheckEnabled, setBeneficiaryCheckEnabled] = useState(true);
 
   const [authOpen, setAuthOpen] = useState(false);
@@ -311,11 +312,10 @@ const AgentStore = () => {
       }
 
       if (data.exists === false) {
-        toast({
-          title: "Not on beneficiary list",
-          description: data.message || "This MTN number is not whitelisted by the network. Please contact support to whitelist it first.",
-          variant: "destructive"
-        });
+        const errMsg = data.message || "This MTN number is not whitelisted by the network.";
+        setBeneficiaryError(errMsg);
+        setBeneficiaryModalPhone(phoneToCheck);
+        setShowBeneficiaryModal(true);
         return false;
       }
 
@@ -331,17 +331,18 @@ const AgentStore = () => {
     }
   };
 
-  const handleWalletBuy = async () => {
+  const handleWalletBuy = async (bypassBeneficiary = false) => {
     if (!isPhoneValid) {
       toast({ title: "Invalid phone number", description: "Use a valid Ghana number.", variant: "destructive" });
       return;
     }
     setBuying(true);
 
-    if (selectedService === "data") {
+    if (selectedService === "data" && !bypassBeneficiary) {
       const isValid = await checkBeneficiaryValidity(phone, selectedNetwork);
       if (!isValid) {
         setBuying(false);
+        setPendingAction("wallet");
         return;
       }
     }
@@ -358,6 +359,7 @@ const AgentStore = () => {
           amount: selectedPkg!.price,
           reference: orderId,
           agent_id: agent?.user_id,
+          bypass_beneficiary: bypassBeneficiary ? true : undefined,
         },
       });
 
@@ -938,7 +940,7 @@ const AgentStore = () => {
     }
   };
 
-  const handlePaystackBuy = async () => {
+  const handlePaystackBuy = async (bypassBeneficiary = false) => {
     if (!agent) return;
     if (selectedService === "data" && !selectedPkg) return;
     if (selectedService === "airtime") {
@@ -960,11 +962,14 @@ const AgentStore = () => {
       return;
     }
 
-    if (selectedService === "data") {
+    if (selectedService === "data" && !bypassBeneficiary) {
       setBuying(true);
       const isValid = await checkBeneficiaryValidity(phoneDigits, selectedNetwork);
       setBuying(false);
-      if (!isValid) return;
+      if (!isValid) {
+        setPendingAction("paystack");
+        return;
+      }
     }
 
     const orderNetwork = selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork;
@@ -986,6 +991,7 @@ const AgentStore = () => {
       agent_id: agent.user_id,
       payment_source: "agent_store",
       is_korba: selectedService === "utility" || (selectedService === "data" && korbaMappings.some((m: any) => m.network === selectedNetwork && m.package_name === selectedPkg?.size)),
+      bypass_beneficiary: bypassBeneficiary ? true : undefined,
       callback_url: slug
         ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`
         : `${window.location.origin}/order-status?${callbackParams.toString()}`,
@@ -1951,10 +1957,13 @@ const AgentStore = () => {
       />
 
       {/* Beneficiary Warning Modal */}
-      <Dialog open={showBeneficiaryModal} onOpenChange={setShowBeneficiaryModal}>
+      <Dialog open={showBeneficiaryModal} onOpenChange={(open) => {
+        setShowBeneficiaryModal(open);
+        if (!open) setPendingAction(null);
+      }}>
         <DialogContent className="max-w-md bg-white text-black p-6 rounded-[28px] border-none shadow-2xl flex flex-col gap-6">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-[#E0560D] shrink-0">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div className="flex-1">
@@ -1969,17 +1978,40 @@ const AgentStore = () => {
               The phone number <strong className="font-extrabold text-black font-mono">{beneficiaryModalPhone}</strong> is not added to our beneficiary list at the moment.
             </p>
             <p>
-              This number is not on our beneficiary list and orders to it are currently blocked. <span className="text-rose-600 font-bold">Please use a verified number.</span>
+              If you continue, this order will be placed as <strong className="font-extrabold text-black">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-[#E0560D] font-bold">You can still proceed if you wish.</span>
+            </p>
+            <p className="text-[#B91C1C] font-extrabold">
+              Orders can not be refunded or canceled!
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowBeneficiaryModal(false)}
-            className="w-full py-4 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] transition-all text-slate-700 font-extrabold rounded-[20px] text-sm tracking-wide shadow-sm"
-          >
-            Close
-          </button>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowBeneficiaryModal(false);
+                setPendingAction(null);
+              }}
+              className="w-full py-4 bg-[#E5E7EB] hover:bg-[#D1D5DB] active:scale-[0.98] transition-all text-[#4B5563] font-extrabold rounded-[20px] text-sm tracking-wide shadow-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowBeneficiaryModal(false);
+                if (pendingAction === "wallet") {
+                  handleWalletBuy(true);
+                } else if (pendingAction === "paystack") {
+                  handlePaystackBuy(true);
+                }
+                setPendingAction(null);
+              }}
+              className="w-full py-4 bg-[#E0560D] hover:bg-[#C2410C] active:scale-[0.98] transition-all text-white font-extrabold rounded-[20px] text-sm tracking-wide shadow-md"
+            >
+              Continue Anyway
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
