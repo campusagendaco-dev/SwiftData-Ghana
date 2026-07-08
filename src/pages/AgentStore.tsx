@@ -1975,16 +1975,18 @@ const AgentStore = () => {
             </div>
           </div>
 
-          <DialogDescription className="rounded-[24px] bg-[#12121A]/80 border border-white/5 p-6 text-sm text-zinc-300 leading-relaxed font-medium space-y-4 relative z-10 block">
-            <p>
-              The phone number <span className="px-2 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/25 rounded-lg font-mono font-black text-sm select-all tracking-wider">{beneficiaryModalPhone}</span> is not added to our beneficiary list at the moment.
-            </p>
-            <p>
-              If you continue, this order will be placed as <strong className="font-extrabold text-white">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-amber-400/90 font-bold">You can still proceed if you wish.</span>
-            </p>
-            <p className="text-rose-400 font-extrabold text-center tracking-wide uppercase text-xs pt-1">
-              Orders can not be refunded or canceled!
-            </p>
+          <DialogDescription asChild>
+            <div className="rounded-[24px] bg-[#12121A]/80 border border-white/5 p-6 text-sm text-zinc-300 leading-relaxed font-medium space-y-4 relative z-10 block">
+              <p>
+                The phone number <span className="px-2 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/25 rounded-lg font-mono font-black text-sm select-all tracking-wider">{beneficiaryModalPhone}</span> is not added to our beneficiary list at the moment.
+              </p>
+              <p>
+                If you continue, this order will be placed as <strong className="font-extrabold text-white">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-amber-400/90 font-bold">You can still proceed if you wish.</span>
+              </p>
+              <p className="text-rose-400 font-extrabold text-center tracking-wide uppercase text-xs pt-1">
+                Orders can not be refunded or canceled!
+              </p>
+            </div>
           </DialogDescription>
 
           <div className="grid grid-cols-2 gap-4 relative z-10">
