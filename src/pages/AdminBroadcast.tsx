@@ -61,6 +61,7 @@ export default function AdminBroadcast() {
   const [channel, setChannel] = useState<Channel>("notification");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [senderId, setSenderId] = useState("SwiftDataGh");
   const [templateIdx, setTemplateIdx] = useState(5);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [counting, setCounting] = useState(false);
@@ -155,7 +156,11 @@ export default function AdminBroadcast() {
       if (channel === "sms" || channel === "both") {
         const phones = recipients.map((r: any) => r.phone).filter(Boolean);
         supabase.functions.invoke("admin-send-sms", {
-          body: { retry_phones: phones, message: `${title}\n${body}` },
+          body: { 
+            retry_phones: phones, 
+            message: `${title}\n${body}`,
+            sender_id: senderId.trim()
+          },
         }).catch(() => {});
       }
 
@@ -339,6 +344,51 @@ export default function AdminBroadcast() {
               </button>
             ))}
           </Card>
+
+          {/* SMS Sender ID Card */}
+          {(channel === "sms" || channel === "both") && (
+            <Card className="bg-white/5 border-white/10 p-5 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-primary" />
+                <h3 className="text-white font-black text-sm">SMS Sender ID</h3>
+              </div>
+              <div className="space-y-3">
+                <select
+                  value={
+                    ["SwiftDataGh", "Orderinfo"].includes(senderId)
+                      ? senderId
+                      : "custom"
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val !== "custom") {
+                      setSenderId(val);
+                    } else {
+                      setSenderId("");
+                    }
+                  }}
+                  className="bg-white/5 border border-white/10 rounded-xl px-3 h-10 text-white text-xs focus:outline-none focus:border-primary/40 w-full"
+                >
+                  <option value="SwiftDataGh" className="bg-[#1a1a1f] text-white">SwiftDataGh (Default for Broadcasts)</option>
+                  <option value="Orderinfo" className="bg-[#1a1a1f] text-white">Orderinfo</option>
+                  <option value="custom" className="bg-[#1a1a1f] text-white">Custom / Type Custom...</option>
+                </select>
+
+                {(!["SwiftDataGh", "Orderinfo"].includes(senderId) || senderId === "") && (
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Custom Sender ID</label>
+                    <Input
+                      value={senderId}
+                      onChange={(e) => setSenderId(e.target.value)}
+                      placeholder="Type Approved Sender ID"
+                      maxLength={11}
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-xs"
+                    />
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
       </div>
 

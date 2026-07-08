@@ -263,6 +263,9 @@ serve(async (req: Request) => {
     const target_filters: TargetFilters = (payload?.target_filters && typeof payload.target_filters === "object")
       ? payload.target_filters : {};
 
+    const customSenderId = (payload?.sender_id as string)?.trim();
+    const effectiveSenderId = customSenderId || txtSenderId || "SwiftDataGh";
+
     if (!message) {
       return new Response(JSON.stringify({ error: "Message is required" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -279,7 +282,7 @@ serve(async (req: Request) => {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      await sendSmsViaTxtConnect(txtApiKey, txtSenderId, normalized, smsBody);
+      await sendSmsViaTxtConnect(txtApiKey, effectiveSenderId, normalized, smsBody);
       return new Response(JSON.stringify({ success: true, sent: 1, target_type: "test", to: normalized }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -292,7 +295,7 @@ serve(async (req: Request) => {
         .filter((p): p is string => !!p)
         .map((p) => ({ phone: p, name: "Customer", userId: "", isAgent: false }));
 
-      const { sent, failures } = await sendToRecipients(txtApiKey, txtSenderId, retryRecipients, smsBody, new Map());
+      const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, retryRecipients, smsBody, new Map());
       return new Response(JSON.stringify({
         success: true,
         target_type: "retry",
@@ -324,7 +327,7 @@ serve(async (req: Request) => {
       ? await fetchBalanceMap(supabaseAdmin, recipients.filter((r) => r.isAgent).map((r) => r.userId))
       : new Map<string, number>();
 
-    const { sent, failures } = await sendToRecipients(txtApiKey, txtSenderId, recipients, smsBody, balanceMap);
+    const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap);
 
     return new Response(JSON.stringify({
       success: true,

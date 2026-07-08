@@ -334,8 +334,24 @@ export async function sendPaymentSms(
       ? String(vars.message)
       : formatTemplate(templates[type as any] || templates.payment_success, vars);
 
-    console.log(`[SMS] Sending ${type} to ${recipient}...`);
-    return await sendSmsViaTxtConnect(apiKey, senderId, recipient, message);
+    console.log(`[SMS] Sending ${type} to ${recipient} (Sender: ${senderId})...`);
+    
+    try {
+      return await sendSmsViaTxtConnect(apiKey, senderId, recipient, message, type, agentId);
+    } catch (error: any) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const defaultSenderId = Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
+      
+      if (senderId !== defaultSenderId) {
+        console.warn(`[SMS Fallback] Custom Sender ID "${senderId}" failed (${errorMsg}). Retrying with default: "${defaultSenderId}"...`);
+        if (agentId) {
+          await supabaseAdmin.rpc("refund_sms_credit", { p_user_id: agentId }).catch(console.error);
+        }
+        return await sendSmsViaTxtConnect(apiKey, defaultSenderId, recipient, message, type, agentId);
+      }
+      
+      throw error;
+    }
   } catch (error) {
     console.error(`[SMS] Failed to send ${type} SMS to ${customerPhone}:`, error);
   }
