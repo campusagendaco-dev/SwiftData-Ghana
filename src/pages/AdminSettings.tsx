@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { playSound } from "@/lib/sound";
 import { getFlagUrl } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface SystemSettings {
   auto_refund_enabled: boolean;
@@ -2394,16 +2395,48 @@ const AdminSettings = () => {
                   />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="txtconnect-sender">Sender ID</Label>
-                  <Input
-                    id="txtconnect-sender"
-                    value={settings.txtconnect_sender_id}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_sender_id: e.target.value }))}
-                    placeholder="Approved Sender ID (e.g. SwiftData)"
-                    maxLength={11}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Must be an approved alphanumeric Sender ID (max 11 chars).</p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="txtconnect-sender-select">SMS Sender ID Option</Label>
+                    <Select
+                      value={
+                        ["Orderinfo", "SwiftDataGh", "AD Data Hub"].includes(settings.txtconnect_sender_id)
+                          ? settings.txtconnect_sender_id
+                          : "custom"
+                      }
+                      onValueChange={(val) => {
+                        if (val !== "custom") {
+                          setSettings((prev) => ({ ...prev, txtconnect_sender_id: val }));
+                        } else {
+                          setSettings((prev) => ({ ...prev, txtconnect_sender_id: "" }));
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="txtconnect-sender-select" className="w-full bg-slate-900 border-white/10 text-white">
+                        <SelectValue placeholder="Select Sender ID" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-950 border-white/10 text-white">
+                        <SelectItem value="Orderinfo">Orderinfo (Recommended)</SelectItem>
+                        <SelectItem value="SwiftDataGh">SwiftDataGh</SelectItem>
+                        <SelectItem value="AD Data Hub">AD Data Hub</SelectItem>
+                        <SelectItem value="custom">Custom / Type Other...</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {(!["Orderinfo", "SwiftDataGh", "AD Data Hub"].includes(settings.txtconnect_sender_id) || settings.txtconnect_sender_id === "") && (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <Label htmlFor="txtconnect-sender">Custom Sender ID</Label>
+                      <Input
+                        id="txtconnect-sender"
+                        value={settings.txtconnect_sender_id}
+                        onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_sender_id: e.target.value }))}
+                        placeholder="Type Approved Custom Sender ID"
+                        maxLength={11}
+                      />
+                      <p className="text-xs text-muted-foreground">Must be an approved alphanumeric Sender ID (max 11 chars).</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
