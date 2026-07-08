@@ -42,6 +42,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const [verifiedName, setVerifiedName] = useState<string | null>(null);
   const [isVerifyingName, setIsVerifyingName] = useState(false);
   const [nameResolveError, setNameResolveError] = useState<string | null>(null);
+  const [isBeneficiaryVerified, setIsBeneficiaryVerified] = useState(true);
 
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [countdown, setCountdown] = useState(60);
@@ -64,6 +65,54 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       setPaymentPhone(displayPhone);
     }
   }, [recipientNetwork, recipientPhone]);
+
+  // Verify recipient beneficiary status when checkout opens
+  useEffect(() => {
+    if (!isOpen || !recipientPhone) {
+      setIsBeneficiaryVerified(true);
+      return;
+    }
+
+    const verifyRecipient = async () => {
+      const net = String(recipientNetwork || "").toUpperCase();
+      const isMtn = net.includes("MTN") || net.includes("YELLO");
+      if (!isMtn) {
+        setIsBeneficiaryVerified(true);
+        return;
+      }
+
+      if (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true") {
+        setIsBeneficiaryVerified(true);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
+          body: {
+            phone: recipientPhone.replace(/\D/g, ""),
+            network: recipientNetwork
+          }
+        });
+
+        if (error || !data) {
+          console.warn("Failed to verify recipient beneficiary status", error);
+          setIsBeneficiaryVerified(true);
+          return;
+        }
+
+        if (data.exists === false) {
+          setIsBeneficiaryVerified(false);
+        } else {
+          setIsBeneficiaryVerified(true);
+        }
+      } catch (e) {
+        console.warn("Error verifying recipient beneficiary status", e);
+        setIsBeneficiaryVerified(true);
+      }
+    };
+
+    verifyRecipient();
+  }, [isOpen, recipientPhone, recipientNetwork, metadata]);
 
   const [activeGateway, setActiveGateway] = useState<string>("paystack");
 
@@ -282,6 +331,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             use_xcheckout: true,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
+            bypass_beneficiary: !isBeneficiaryVerified ? true : undefined,
           },
         },
       });
@@ -331,6 +381,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             order_id: orderId,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
+            bypass_beneficiary: !isBeneficiaryVerified ? true : undefined,
           },
         },
       });
@@ -404,6 +455,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             order_id: orderId,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
+            bypass_beneficiary: !isBeneficiaryVerified ? true : undefined,
           },
         },
       });
@@ -636,6 +688,17 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                           <span>{nameResolveError || "Account not found"}</span>
                         </>
                       )}
+                    </motion.div>
+                  )}
+
+                  {/* Beneficiary Warning Alert */}
+                  {!isBeneficiaryVerified && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+                      className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal"
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                      <span>{recipientPhone} is not added to our beneficiary list</span>
                     </motion.div>
                   )}
 
