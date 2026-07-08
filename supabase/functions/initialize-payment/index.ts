@@ -367,7 +367,7 @@ serve(async (req: Request) => {
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
     // --- Secure MTN Beneficiary Whitelist Enforcement ---
-    if (orderType === "data" && settings?.beneficiary_verification_enabled !== false) {
+    if (orderType === "data" && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {
