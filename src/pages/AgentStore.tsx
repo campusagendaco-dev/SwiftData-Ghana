@@ -1960,7 +1960,7 @@ const AgentStore = () => {
         setShowBeneficiaryModal(open);
         if (!open) setPendingAction(null);
       }}>
-        <DialogContent className="max-w-md bg-[#0D0D15]/95 border border-white/10 backdrop-blur-2xl p-7 rounded-[2.5rem] shadow-2xl flex flex-col gap-6 relative overflow-hidden text-white !top-[35%]">
+        <DialogContent className="max-w-md bg-[#0D0D15]/95 border border-white/10 backdrop-blur-2xl p-7 rounded-[2.5rem] shadow-2xl flex flex-col gap-6 relative overflow-hidden text-white !left-1/2 !top-[12%] md:!top-[20%] !-translate-x-1/2 !translate-y-0">
           {/* Ambient Background Glow */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/10 rounded-full blur-[60px] pointer-events-none" />
 
