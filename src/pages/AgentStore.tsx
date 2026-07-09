@@ -1129,13 +1129,13 @@ const AgentStore = () => {
             <button
               type="button"
               onClick={handlePay}
-              disabled={buying || isCheckingBeneficiary || beneficiaryError !== null || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)}
+              disabled={buying || isCheckingBeneficiary || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)}
               className="shrink-0 h-14 px-5 rounded-[18px] font-black text-[13px] uppercase tracking-wide flex items-center gap-2 active:scale-[0.96] transition-all whitespace-nowrap"
               style={{
                 backgroundColor: netConf.color,
                 color: netConf.textClass === "text-black" ? "#000" : "#fff",
-                opacity: (!isPhoneValid || buying || isCheckingBeneficiary || beneficiaryError !== null || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? 0.5 : 1,
-                boxShadow: (isPhoneValid && !isCheckingBeneficiary && !beneficiaryError && !(isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? `0 8px 25px ${netConf.color}50` : "none",
+                opacity: (!isPhoneValid || buying || isCheckingBeneficiary || (isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? 0.5 : 1,
+                boxShadow: (isPhoneValid && !isCheckingBeneficiary && !(isCustomerLoggedIn && payMethod === "wallet" && customerBalance < total)) ? `0 8px 25px ${netConf.color}50` : "none",
                 textShadow: netConf.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none"
               }}
             >
@@ -2000,9 +2000,10 @@ const AgentStore = () => {
               type="button"
               onClick={() => {
                 setShowBeneficiaryModal(false);
-                if (pendingAction === "wallet") {
+                const method = pendingAction || payMethod;
+                if (method === "wallet") {
                   handleWalletBuy(true);
-                } else if (pendingAction === "paystack") {
+                } else if (method === "paystack") {
                   handlePaystackBuy(true);
                 }
                 setPendingAction(null);

@@ -1363,7 +1363,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       : "bg-slate-900 text-white dark:bg-white dark:text-black hover:opacity-90 shadow-lg shadow-slate-900/10 dark:shadow-white/10"
                   }`}
                   onClick={payMethod === "wallet" ? handleWalletBuy : handlePaystackBuy}
-                  disabled={buying || isCheckingBeneficiary || beneficiaryError !== null || !resolvedName || !selectedPackage}
+                  disabled={buying || isCheckingBeneficiary || !resolvedName || !selectedPackage}
                 >
                   {buying ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Placing order...</>
@@ -1593,9 +1593,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
               type="button"
               onClick={() => {
                 setShowBeneficiaryModal(false);
-                if (pendingAction === "wallet") {
+                const method = pendingAction || payMethod;
+                if (method === "wallet") {
                   handleWalletBuy(true);
-                } else if (pendingAction === "paystack") {
+                } else if (method === "paystack") {
                   handlePaystackBuy(true);
                 }
                 setPendingAction(null);
