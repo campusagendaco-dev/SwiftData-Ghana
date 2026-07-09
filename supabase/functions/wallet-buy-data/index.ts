@@ -50,7 +50,7 @@ serve(async (req: Request) => {
     const payload = await req.json().catch(() => ({}));
     console.log("[PAYLOAD]", JSON.stringify(payload));
 
-    const { network: networkRaw, package_size, customer_phone, amount: requestedAmount, reference, agent_id, is_korba, metadata: customMetadata } = payload;
+    const { network: networkRaw, package_size, customer_phone, amount: requestedAmount, reference, agent_id, is_korba, metadata: customMetadata, bypass_beneficiary } = payload;
     
     // Auth
     const authHeader = req.headers.get("Authorization");
@@ -425,6 +425,7 @@ serve(async (req: Request) => {
       status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid",
       metadata: {
         is_korba: finalIsKorba,
+        bypass_beneficiary: (bypass_beneficiary === true || bypass_beneficiary === "true") ? true : undefined,
         ...(customMetadata || {})
       }
     });
