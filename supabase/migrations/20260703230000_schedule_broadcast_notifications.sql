@@ -55,7 +55,7 @@ BEGIN
   -- 3. Dispatch SMS broadcasts directly to TxtConnect API in a single bulk request (bypasses rate limits)
   SELECT txtconnect_api_key, txtconnect_sender_id 
   INTO v_sms_api_key, v_sms_sender_id 
-  FROM public.system_settings 
+  FROM public.v_system_settings_with_secrets 
   WHERE id = 1;
 
   SELECT COALESCE(json_agg(public.normalize_phone_sql(phone))::jsonb, '[]'::jsonb) INTO v_phone_array

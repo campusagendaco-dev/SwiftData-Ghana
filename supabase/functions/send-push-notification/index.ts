@@ -17,6 +17,46 @@ const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") || DEFAULT_VAPID_PRI
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+function base64urlToBuf(b64url: string): Uint8Array {
+  const base64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - (base64.length % 4)) % 4;
+  const padded = base64 + "=".repeat(padLen);
+  const binary = atob(padded);
+  const buf = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    buf[i] = binary.charCodeAt(i);
+  }
+  return buf;
+}
+
+function convertRawToJwk(pubStr: string, privStr: string) {
+  const pubBuf = base64urlToBuf(pubStr);
+  const privBuf = base64urlToBuf(privStr);
+
+  const x = btoa(String.fromCharCode(...pubBuf.slice(1, 33)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  const y = btoa(String.fromCharCode(...pubBuf.slice(33, 65)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  const d = btoa(String.fromCharCode(...privBuf))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+
+  return {
+    publicKey: {
+      kty: "EC",
+      crv: "P-256",
+      x,
+      y,
+    },
+    privateKey: {
+      kty: "EC",
+      crv: "P-256",
+      x,
+      y,
+      d,
+    },
+  };
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -52,10 +92,8 @@ serve(async (req: Request) => {
 
     // 2. Setup VAPID Application Server Credentials
     console.log("[Push] Generating VAPID Cryptography...");
-    const keys = await webpush.importVapidKeys({
-      publicKey: VAPID_PUBLIC_KEY,
-      privateKey: VAPID_PRIVATE_KEY,
-    });
+    const jwkKeys = convertRawToJwk(VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    const keys = await webpush.importVapidKeys(jwkKeys);
 
     const appServer = new webpush.ApplicationServer({
       subject: "mailto:admin@swiftdatagh.shop",
