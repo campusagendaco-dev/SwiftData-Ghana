@@ -625,17 +625,6 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 </div>
 
                 <div className="space-y-3.5 pt-1.5">
-                  {/* Beneficiary Warning Alert */}
-                  {!isBeneficiaryVerified && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
-                      className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal"
-                    >
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
-                      <span>{recipientPhone} is not added to our beneficiary list</span>
-                    </motion.div>
-                  )}
-
                   {/* Phone input */}
                   <div className="space-y-1">
                     <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80 block px-1">MoMo Number</label>
@@ -702,7 +691,16 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     </motion.div>
                   )}
 
-
+                  {/* Beneficiary Warning Alert */}
+                  {!isBeneficiaryVerified && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+                      className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal"
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                      <span>{recipientPhone} is not added to our beneficiary list</span>
+                    </motion.div>
+                  )}
 
                   {errorMessage && (
                     <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs font-semibold leading-normal">

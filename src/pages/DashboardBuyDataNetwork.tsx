@@ -20,7 +20,7 @@ import { playSuccessSound } from "@/lib/sound";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -1549,47 +1549,43 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         onFailure={handleCheckoutFailure}
       />
 
+      {/* Beneficiary Warning Modal */}
       <Dialog open={showBeneficiaryModal} onOpenChange={(open) => {
         setShowBeneficiaryModal(open);
         if (!open) setPendingAction(null);
       }}>
-        <DialogContent className="max-w-md w-[90%] md:w-full bg-[#0D0D15]/95 border border-white/10 backdrop-blur-2xl p-6 rounded-[2rem] shadow-2xl flex flex-col gap-5 relative overflow-y-auto max-h-[85vh] text-white !top-[50%] !left-[50%] !-translate-x-1/2 !-translate-y-1/2">
-          {/* Ambient Background Glow */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/10 rounded-full blur-[60px] pointer-events-none" />
-
-          <div className="flex items-center gap-4 relative z-10">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 shrink-0 shadow-[0_0_20px_rgba(245,158,11,0.15)] animate-pulse">
+        <DialogContent className="max-w-md bg-white text-black p-6 rounded-[28px] border-none shadow-2xl flex flex-col gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-[#E0560D] shrink-0">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <DialogTitle className="text-lg font-black text-white tracking-tight uppercase leading-tight">
+              <h2 className="text-xl font-extrabold text-slate-900 leading-tight">
                 New beneficiary number detected!
-              </DialogTitle>
+              </h2>
             </div>
           </div>
 
-          <DialogDescription asChild>
-            <div className="rounded-[24px] bg-[#12121A]/80 border border-white/5 p-6 text-sm text-zinc-300 leading-relaxed font-medium space-y-4 relative z-10 block">
-              <p>
-                The phone number <span className="px-2 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/25 rounded-lg font-mono font-black text-sm select-all tracking-wider">{beneficiaryModalPhone}</span> is not added to our beneficiary list at the moment.
-              </p>
-              <p>
-                If you continue, this order will be placed as <strong className="font-extrabold text-white">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-amber-400/90 font-bold">You can still proceed if you wish.</span>
-              </p>
-              <p className="text-rose-400 font-extrabold text-center tracking-wide uppercase text-xs pt-1">
-                Orders can not be refunded or canceled!
-              </p>
-            </div>
-          </DialogDescription>
+          <div className="rounded-[20px] bg-amber-50/70 border border-amber-200/60 p-5 text-sm text-slate-700 leading-relaxed font-medium space-y-4">
+            <p>
+              The phone number <strong className="font-extrabold text-black font-mono">{beneficiaryModalPhone}</strong> is not added to our beneficiary list at the moment.
+            </p>
+            <p>
+              If you continue, this order will be placed as <strong className="font-extrabold text-black">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-[#E0560D] font-bold">You can still proceed if you wish.</span>
+            </p>
+            <p className="text-[#B91C1C] font-extrabold">
+              Orders can not be refunded or canceled!
+            </p>
+          </div>
 
-          <div className="grid grid-cols-2 gap-4 relative z-10">
+          <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
               onClick={() => {
                 setShowBeneficiaryModal(false);
                 setPendingAction(null);
               }}
-              className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 active:scale-[0.98] transition-all text-zinc-300 hover:text-white font-extrabold rounded-2xl text-xs uppercase tracking-wider shadow-sm"
+              className="w-full py-4 bg-[#E5E7EB] hover:bg-[#D1D5DB] active:scale-[0.98] transition-all text-[#4B5563] font-extrabold rounded-[20px] text-sm tracking-wide shadow-sm"
             >
               Cancel
             </button>
@@ -1604,7 +1600,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 }
                 setPendingAction(null);
               }}
-              className="w-full py-4 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 active:scale-[0.98] transition-all text-white font-black rounded-2xl text-xs uppercase tracking-wider shadow-[0_4px_20px_rgba(249,115,22,0.25)] border border-orange-500/30"
+              className="w-full py-4 bg-[#E0560D] hover:bg-[#C2410C] active:scale-[0.98] transition-all text-white font-extrabold rounded-[20px] text-sm tracking-wide shadow-md"
             >
               Continue Anyway
             </button>
