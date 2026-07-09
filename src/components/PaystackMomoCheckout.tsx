@@ -331,7 +331,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             use_xcheckout: true,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
-            bypass_beneficiary: !isBeneficiaryVerified ? true : undefined,
+            bypass_beneficiary: (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true" || !isBeneficiaryVerified) ? true : undefined,
           },
         },
       });
@@ -381,7 +381,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             order_id: orderId,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
-            bypass_beneficiary: !isBeneficiaryVerified ? true : undefined,
+            bypass_beneficiary: (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true" || !isBeneficiaryVerified) ? true : undefined,
           },
         },
       });
@@ -455,7 +455,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             order_id: orderId,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
-            bypass_beneficiary: !isBeneficiaryVerified ? true : undefined,
+            bypass_beneficiary: (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true" || !isBeneficiaryVerified) ? true : undefined,
           },
         },
       });
