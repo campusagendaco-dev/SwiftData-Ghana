@@ -167,7 +167,7 @@ BEGIN
   -- 3. Dispatch SMS broadcasts directly to TxtConnect API in a single bulk request (bypasses rate limits)
   SELECT txtconnect_api_key, txtconnect_sender_id 
   INTO v_sms_api_key, v_sms_sender_id 
-  FROM public.system_settings 
+  FROM public.v_system_settings_with_secrets 
   WHERE id = 1;
 
   SELECT COALESCE(json_agg(public.normalize_phone_sql(phone))::jsonb, '[]'::jsonb) INTO v_phone_array
@@ -189,8 +189,8 @@ BEGIN
 END;
 $$;
 
--- 4. Update system_settings table defaults and existing values
-UPDATE public.system_settings
+-- 4. Update system_secrets table defaults and existing values
+UPDATE public.system_secrets
 SET 
   txtconnect_sender_id = 'Orderinfo'
 WHERE txtconnect_sender_id = 'SwiftDataGh' OR txtconnect_sender_id IS NULL OR txtconnect_sender_id = '';
@@ -200,11 +200,6 @@ UPDATE public.system_settings
 SET 
   payment_success_sms_message = 'Success! Your order for {phone} has been processed.'
 WHERE payment_success_sms_message LIKE '%https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40%';
-
-UPDATE public.system_settings
-SET 
-  utility_paid_sms_message = 'Payment received! Your {utility_type} bill for {account} is being processed.'
-WHERE utility_paid_sms_message LIKE '%https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40%';
 
 UPDATE public.system_settings
 SET 
@@ -220,3 +215,4 @@ UPDATE public.system_settings
 SET 
   manual_credit_sms_message = 'Your account has been manually credited with GHS {amount}.'
 WHERE manual_credit_sms_message LIKE '%https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40%';
+
