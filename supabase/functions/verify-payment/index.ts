@@ -1252,6 +1252,7 @@ serve(async (req) => {
       order_type: effectiveOrderType,
       orderReference: targetReference,
       reference: targetReference,      // Alias
+      bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary,
     };
 
     let result: any = { ok: false, reason: "No providers" };
@@ -1262,8 +1263,8 @@ serve(async (req) => {
       const defaultNetKey = mapDataNetworkKey(network);
       
       const netKey = overrideNetKey || defaultNetKey;
-      if (ht === "datamart") return { phoneNumber: recipient, network: netKey, planId: packageSize, plan: packageSize, bundle: packageSize, capacity: String(parseCapacity(packageSize)), orderReference: targetReference, gateway: "wallet", reference: targetReference };
-      if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference };
+      if (ht === "datamart") return { phoneNumber: recipient, network: netKey, planId: packageSize, plan: packageSize, bundle: packageSize, capacity: String(parseCapacity(packageSize)), orderReference: targetReference, gateway: "wallet", reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary };
+      if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary };
       if (ht === "qhowmenzconsult") {
         return {
           networkRaw: network,
@@ -1274,6 +1275,7 @@ serve(async (req) => {
           amount: deliveryAmount,
           reference: targetReference,
           order_id: targetReference,
+          bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary,
         };
       }
       if (ht === "skdataplug") {
@@ -1286,6 +1288,7 @@ serve(async (req) => {
           amount: deliveryAmount,
           reference: targetReference,
           order_id: targetReference,
+          bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary,
         };
       }
       

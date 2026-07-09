@@ -367,7 +367,7 @@ export class StandardAdapter implements ProviderAdapter {
     const handlerType = String(provider.handler_type || "").toLowerCase();
     const network = String(data.networkKey || data.networkRaw || "").toUpperCase();
 
-    if (handlerType === "datahub" && network.includes("MTN")) {
+    if (handlerType === "datahub" && network.includes("MTN") && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
       const recipient = String(data.recipient || data.phoneNumber || "");
       const check = await this.verifyDataHubBeneficiary(supabaseAdmin, provider, recipient);
       if (!check.ok) {
