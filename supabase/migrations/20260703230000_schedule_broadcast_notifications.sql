@@ -13,7 +13,6 @@ DECLARE
   v_service_key TEXT;
   v_sms_api_key TEXT;
   v_sms_sender_id TEXT;
-  v_phone_string TEXT;
 BEGIN
   -- Retrieve Supabase Service Role Key from Vault
   SELECT decrypted_secret INTO v_service_key 
@@ -52,27 +51,57 @@ BEGIN
     );
   END LOOP;
 
-  -- 3. Dispatch SMS broadcasts directly to TxtConnect API in a single bulk request (bypasses rate limits)
+  -- 3. Dispatch SMS broadcasts dynamically, grouping recipients by their resolved Sender ID
   SELECT txtconnect_api_key, txtconnect_sender_id 
   INTO v_sms_api_key, v_sms_sender_id 
   FROM public.v_system_settings_with_secrets 
   WHERE id = 1;
 
-  SELECT string_agg(public.normalize_phone_sql(phone), ',') INTO v_phone_string
-  FROM public.profiles
-  WHERE (is_agent = true OR sub_agent_approved = true) AND phone IS NOT NULL AND phone != '';
-
-  IF v_phone_string IS NOT NULL AND v_phone_string != '' AND v_sms_api_key IS NOT NULL AND v_sms_api_key != '' THEN
-    PERFORM net.http_post(
-      url     := 'https://api.txtconnect.net/dev/api/sms/send',
-      headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_sms_api_key),
-      body    := jsonb_build_object(
-        'to', v_phone_string,
-        'from', COALESCE(v_sms_sender_id, 'swiftupdate'),
-        'sms', p_title || E'\n' || p_body,
-        'unicode', '0'
-      )
-    );
+  IF v_sms_api_key IS NOT NULL AND v_sms_api_key != '' THEN
+    FOR r IN 
+      SELECT 
+        COALESCE(
+          -- 1. If sub-agent, check if parent agent has approved custom sender ID
+          CASE 
+            WHEN p.is_sub_agent = true AND p.parent_agent_id IS NOT NULL THEN (
+              SELECT parent.sms_sender_id 
+              FROM public.profiles parent 
+              WHERE parent.user_id = p.parent_agent_id 
+                AND parent.sms_sender_status = 'approved' 
+                AND parent.sms_sender_id IS NOT NULL 
+                AND parent.sms_sender_id != ''
+            )
+            ELSE NULL
+          END,
+          -- 2. If agent, check if they have their own approved custom sender ID
+          CASE 
+            WHEN p.is_agent = true AND p.sms_sender_status = 'approved' AND p.sms_sender_id IS NOT NULL AND p.sms_sender_id != '' THEN p.sms_sender_id
+            ELSE NULL
+          END,
+          -- 3. Fallback to system default
+          v_sms_sender_id,
+          'swiftupdate'
+        ) AS sender_id,
+        string_agg(public.normalize_phone_sql(p.phone), ',') AS phone_string
+      FROM public.profiles p
+      WHERE (p.is_agent = true OR p.sub_agent_approved = true) 
+        AND p.phone IS NOT NULL 
+        AND p.phone != ''
+      GROUP BY 1
+    LOOP
+      IF r.phone_string IS NOT NULL AND r.phone_string != '' THEN
+        PERFORM net.http_post(
+          url     := 'https://api.txtconnect.net/dev/api/sms/send',
+          headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_sms_api_key),
+          body    := jsonb_build_object(
+            'to', r.phone_string,
+            'from', r.sender_id,
+            'sms', p_title || E'\n' || p_body,
+            'unicode', '0'
+          )
+        );
+      END IF;
+    END LOOP;
   END IF;
 END;
 $$;
