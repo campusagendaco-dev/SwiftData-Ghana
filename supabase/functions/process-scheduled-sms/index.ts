@@ -128,28 +128,8 @@ serve(async (req: Request) => {
               try {
                 await sendSmsViaTxtConnect(txtApiKey, txtSenderId, r.phone, body);
                 sent++;
-                // Log success to sms_logs
-                await supabaseAdmin.from("sms_logs").insert({
-                  recipient: r.phone,
-                  sender_id: txtSenderId,
-                  body: body,
-                  type: 'broadcast',
-                  status: 'success',
-                  agent_id: r.userId || null
-                });
               } catch (e) {
-                const errMessage = e instanceof Error ? e.message : "Unknown";
-                failures.push({ phone: r.phone, reason: errMessage });
-                // Log failure to sms_logs
-                await supabaseAdmin.from("sms_logs").insert({
-                  recipient: r.phone,
-                  sender_id: txtSenderId,
-                  body: body,
-                  type: 'broadcast',
-                  status: 'failed',
-                  error_message: errMessage,
-                  agent_id: r.userId || null
-                });
+                failures.push({ phone: r.phone, reason: e instanceof Error ? e.message : "Unknown" });
               }
             }));
           }
@@ -159,23 +139,6 @@ serve(async (req: Request) => {
           const bulkResult = await sendBulkSmsViaTxtConnect(txtApiKey, txtSenderId, phones, smsBody);
           sent = bulkResult.sent;
           failures.push(...bulkResult.failures);
-
-          // Write logs for all recipients in the chunk
-          const logsToInsert = chunk.map(r => {
-            const failure = bulkResult.failures.find(f => f.phone === r.phone);
-            return {
-              recipient: r.phone,
-              sender_id: txtSenderId,
-              body: smsBody,
-              type: 'broadcast',
-              status: failure ? 'failed' : 'success',
-              error_message: failure ? failure.reason : null,
-              agent_id: r.userId || null
-            };
-          });
-          if (logsToInsert.length > 0) {
-            await supabaseAdmin.from("sms_logs").insert(logsToInsert);
-          }
         }
 
         const nextOffset = resumeOffset + chunk.length;

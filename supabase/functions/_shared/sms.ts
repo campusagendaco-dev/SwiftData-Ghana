@@ -285,21 +285,58 @@ export async function sendBulkSmsViaTxtConnect(
   let sent = 0;
   const failures: Array<{ phone: string; reason: string }> = [];
 
-  const CONCURRENCY = 10;
-  for (let i = 0; i < recipients.length; i += CONCURRENCY) {
-    const chunk = recipients.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      chunk.map(async (r) => {
-        try {
-          await sendSmsViaTxtConnect(effectiveKey, from, r, body, type, agentId);
-          sent++;
-        } catch (err: any) {
-          failures.push({ phone: r, reason: err?.message || "Failed" });
-        }
-      })
-    );
-    if (i + CONCURRENCY < recipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+    const chunk = recipients.slice(i, i + BATCH_SIZE);
+    try {
+      const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${effectiveKey}`,
+        },
+        body: JSON.stringify({
+          to: chunk, // TxtConnect accepts JSON array of numbers for bulk sending
+          from: from,
+          sms: body,
+          unicode: "0",
+        }),
+      });
+
+      const responseText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(`TxtConnect returned non-JSON: ${responseText.substring(0, 200)}`);
+      }
+
+      if (!response.ok) {
+        throw new Error(`TxtConnect Error (${response.status}): ${JSON.stringify(data)}`);
+      }
+      
+      if (data && data.msg !== "Sms send Successful" && !data.messageId) {
+         throw new Error(`TxtConnect API failure: ${data.msg || "Unknown error"}`);
+      }
+
+      sent += chunk.length;
+      
+      // Log success for each recipient in database
+      for (const phone of chunk) {
+        await logSmsToDb(phone, from, body, type, "success", undefined, agentId).catch(console.error);
+      }
+    } catch (err: any) {
+      const errMessage = err?.message || "Failed";
+      console.error(`Failed to send bulk SMS batch to chunk starting with ${chunk[0]}:`, err);
+      for (const phone of chunk) {
+        failures.push({ phone, reason: errMessage });
+        await logSmsToDb(phone, from, body, type, "failed", errMessage, agentId).catch(console.error);
+      }
+    }
+
+    if (i + BATCH_SIZE < recipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay between batches to respect rate limits
     }
   }
 
