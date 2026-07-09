@@ -297,7 +297,7 @@ export async function sendBulkSmsViaTxtConnect(
           "Authorization": `Bearer ${effectiveKey}`,
         },
         body: JSON.stringify({
-          to: chunk, // TxtConnect accepts JSON array of numbers for bulk sending
+          to: chunk.join(","), // TxtConnect accepts comma-separated string of phone numbers
           from: from,
           sms: body,
           unicode: "0",
