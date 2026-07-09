@@ -117,8 +117,8 @@ async function runSalesPromoRecommender(supabase: any, isManualTrigger = false):
         
         // Push to internal SMS queue
         const { error: insertError } = await supabase.from("sms_logs").insert({
-          phone_number: phone,
-          message: message,
+          recipient: phone,
+          body: message,
           status: 'pending'
         });
 

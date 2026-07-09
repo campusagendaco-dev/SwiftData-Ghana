@@ -87,8 +87,8 @@ serve(async () => {
                .replace("{phone}", sub.customer_phone);
                
              await supabaseAdmin.from("sms_logs").insert({
-               phone_number: profile.phone,
-               message: failedMsg,
+               recipient: profile.phone,
+               body: failedMsg,
                status: 'pending'
              });
            }
@@ -131,8 +131,8 @@ serve(async () => {
             .replace("{phone}", sub.customer_phone);
             
           await supabaseAdmin.from("sms_logs").insert({
-            phone_number: profile.phone,
-            message: successMsg,
+            recipient: profile.phone,
+            body: successMsg,
             status: 'pending'
           });
         }
