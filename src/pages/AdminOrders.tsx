@@ -145,13 +145,10 @@ const AdminOrders = () => {
     if (statusFilter !== "all") q = q.eq("status", statusFilter);
     if (networkFilter !== "all") {
       q = q.eq("network", networkFilter);
-    } else {
-      q = q.neq("network", "MTN Mash Up");
     }
+
     if (orderTypeFilter !== "all") {
       q = q.eq("order_type", orderTypeFilter);
-    } else {
-      q = q.neq("order_type", "airtime");
     }
 
     const { data, count, error } = await q;
