@@ -40,29 +40,50 @@ interface TrackerData {
   }
 }
 
+function translateFailureReason(reason?: string): string {
+  if (!reason) return "";
+  const r = reason.trim().toUpperCase();
+  if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
+    return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
+  }
+  if (r.includes("PAYEE_LIMIT_REACHED")) {
+    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+  }
+  if (r.includes("NOT_ALLOWED")) {
+    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+  }
+  if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
+    return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
+  }
+  if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
+    return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
+  }
+  return reason;
+}
+
 function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string) {
   if (failed || status === "fulfillment_failed") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.15)", label: "Delivery Failed", sub: message || "Something went wrong with your order", badge: "Failed" };
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.15)", label: "Delivery Failed", sub: translateFailureReason(message) || "Something went wrong with your order", badge: "Failed" };
   }
   if (status === "fulfilled") {
     return { color: "#10B981", glow: "rgba(16,185,129,0.12)", label: "Purchase Successful", sub: "Order proceed. Will be delivered between 10min to 60min.", badge: "Success" };
   }
   if (status === "processing") {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Tracking Order", sub: message || "Order is being transmitted to network", badge: "Live" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Tracking Order", sub: translateFailureReason(message) || "Order is being transmitted to network", badge: "Live" };
   }
   if (status === "paid") {
     return { color: "#F59E0B", glow: "rgba(245,158,11,0.12)", label: "Tracking Order", sub: "Preparing your order for fulfillment", badge: "Queued" };
   }
   if (status === "not_paid") {
-    return { color: "#FBBF24", glow: "rgba(251,191,36,0.10)", label: "Payment Not Found", sub: message || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
+    return { color: "#FBBF24", glow: "rgba(251,191,36,0.10)", label: "Payment Not Found", sub: translateFailureReason(message) || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
   }
   if (status === "error") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.10)", label: "Payment Failed", sub: message || "There was a problem verifying your payment.", badge: "Error" };
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.10)", label: "Payment Failed", sub: translateFailureReason(message) || "There was a problem verifying your payment.", badge: "Error" };
   }
   if (status === "pending" && (network === "MTN Mash Up" || network?.toLowerCase()?.includes("mash"))) {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Paid & Processing", sub: message || "Your payment is confirmed. MTN Mash Up bundle is queued for manual processing.", badge: "Queued" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Paid & Processing", sub: translateFailureReason(message) || "Your payment is confirmed. MTN Mash Up bundle is queued for manual processing.", badge: "Queued" };
   }
-  return { color: "#D97706", glow: "rgba(217,119,6,0.10)", label: "Awaiting Payment", sub: message || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
+  return { color: "#D97706", glow: "rgba(217,119,6,0.10)", label: "Awaiting Payment", sub: translateFailureReason(message) || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
 }
 
 const OrderStatus = () => {

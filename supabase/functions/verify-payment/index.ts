@@ -81,6 +81,27 @@ function normalizeRecipient(phone: string | null | undefined): string {
   return phone.trim();
 }
 
+function translateFailureReason(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  const r = String(reason).trim().toUpperCase();
+  if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
+    return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
+  }
+  if (r.includes("PAYEE_LIMIT_REACHED")) {
+    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+  }
+  if (r.includes("NOT_ALLOWED")) {
+    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+  }
+  if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
+    return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
+  }
+  if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
+    return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
+  }
+  return reason;
+}
+
 async function getProviderCredentials(supabaseAdmin: any): Promise<{ apiKey: string; baseUrl: string; paystackSecretKey: string }> {
   const apiKey = getFirstEnv(
     "PRIMARY_DATA_PROVIDER_API_KEY",
@@ -474,14 +495,15 @@ serve(async (req) => {
           } else if (isFailed) {
             const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(existingOrder.payment_method?.toLowerCase() || "");
             const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
+            const resolvedReason = translateFailureReason(checkResult.reason || "Provider reported failure during status check");
             await supabaseAdmin.from("orders").update({ 
               status: targetStatus, 
-              failure_reason: checkResult.reason || "Provider reported failure during status check" 
+              failure_reason: resolvedReason 
             }).eq("id", targetReference);
             return new Response(JSON.stringify({ 
               status: targetStatus, 
               provider_order_id: existingOrder.provider_order_id,
-              reason: checkResult.reason || "Provider reported failure during status check"
+              reason: resolvedReason
             }), { headers: corsHeaders });
           } else {
             console.log(`[verify-payment] Order ${targetReference} is still processing at provider. Status: ${checkResult.status}`);
@@ -698,7 +720,7 @@ serve(async (req) => {
           metadata = existingOrder?.metadata || {};
           currentOrderType = (existingOrder?.order_type || "data") as string;
         } else if (korbaStatus === "failed" || korbaStatus === "failure") {
-          const failMsg = statusData.message || "Payment failed";
+          const failMsg = translateFailureReason(statusData.message || "Payment failed");
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
             failure_reason: failMsg
@@ -1467,7 +1489,7 @@ serve(async (req) => {
       const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
       const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
       const targetProviderOrderId = "failed_api_call";
-      const targetFailureReason = result.reason || "Provider rejected the request";
+      const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request");
 
       await supabaseAdmin.from("orders").update({
         status: targetStatus,
