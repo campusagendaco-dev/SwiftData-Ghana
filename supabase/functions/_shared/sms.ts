@@ -371,16 +371,17 @@ export async function sendPaymentSms(
       ? String(vars.message)
       : formatTemplate(templates[type as any] || templates.payment_success, vars);
 
-    console.log(`[SMS] Sending ${type} to ${recipient} (Sender: ${senderId})...`);
+    const activeSenderId = vars.senderId ? String(vars.senderId) : senderId;
+    console.log(`[SMS] Sending ${type} to ${recipient} (Sender: ${activeSenderId})...`);
     
     try {
-      return await sendSmsViaTxtConnect(apiKey, senderId, recipient, message, type, agentId);
+      return await sendSmsViaTxtConnect(apiKey, activeSenderId, recipient, message, type, agentId);
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const defaultSenderId = Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
       
-      if (senderId !== defaultSenderId) {
-        console.warn(`[SMS Fallback] Custom Sender ID "${senderId}" failed (${errorMsg}). Retrying with default: "${defaultSenderId}"...`);
+      if (activeSenderId !== defaultSenderId) {
+        console.warn(`[SMS Fallback] Custom Sender ID "${activeSenderId}" failed (${errorMsg}). Retrying with default: "${defaultSenderId}"...`);
         if (agentId) {
           await supabaseAdmin.rpc("refund_sms_credit", { p_user_id: agentId }).catch(console.error);
         }

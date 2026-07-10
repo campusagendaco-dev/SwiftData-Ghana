@@ -802,7 +802,7 @@ serve(async (req) => {
           if (existingOrder?.customer_phone) {
             try {
               const momoMsg = "Your checkout payment is pending. Please quickly dial *170# and check Option 6 (My Approvals) to approve your MoMo transaction.";
-              await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: momoMsg }, existingOrder.agent_id);
+              await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: momoMsg, senderId: "swiftupdate" }, existingOrder.agent_id);
             } catch (smsErr) {
               console.error("[verify-payment] Abandoned payment SMS dispatch failed:", smsErr);
             }
