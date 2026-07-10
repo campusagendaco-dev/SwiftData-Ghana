@@ -798,6 +798,16 @@ serve(async (req) => {
           return new Response(JSON.stringify({ status: "error", error: "The transaction was reversed." }), { headers: corsHeaders });
         } else if (txStatus === "abandoned") {
           console.warn(`[verify-payment] Payment abandoned`);
+          
+          if (existingOrder?.customer_phone) {
+            try {
+              const momoMsg = "Your checkout payment is pending. Please quickly dial *170# and check Option 6 (My Approvals) to approve your MoMo transaction.";
+              await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: momoMsg }, existingOrder.agent_id);
+            } catch (smsErr) {
+              console.error("[verify-payment] Abandoned payment SMS dispatch failed:", smsErr);
+            }
+          }
+
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
             failure_reason: "Customer abandoned transaction"
