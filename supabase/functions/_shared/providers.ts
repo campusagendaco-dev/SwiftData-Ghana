@@ -54,13 +54,20 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   }
   const network = (order?.network || "") as string;
   
+  const isDataOrder = orderType.toLowerCase() === "data";
+  const isAffordable = isDataOrder && (
+    order?.metadata?.category === "affordable" || 
+    order?.metadata?.category === "Affordable SME" ||
+    String(order?.package_size || "").toLowerCase().includes("sme")
+  );
+
   const { data: korbaProvider } = await supabaseAdmin
     .from("providers")
     .select("*")
     .eq("name", "Korba")
     .maybeSingle();
 
-  if (korbaProvider) {
+  if (korbaProvider && !isAffordable) {
     const isAirtime = orderType.toLowerCase() === "airtime";
     const isUtility = orderType.toLowerCase() === "utility";
     const isKorbaFlag = (network && String(network).toUpperCase().startsWith("KORBA")) || 
