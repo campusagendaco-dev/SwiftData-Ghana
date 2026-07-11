@@ -1190,7 +1190,7 @@ serve(async (req: Request) => {
       return {
         success: true,
         response: new Response(JSON.stringify({
-          authorization_url: callback_url,
+          authorization_url: isCardPayment ? (resJson.redirect_url || resJson.results || callback_url) : callback_url,
           reference: reference,
           message: resJson.results || "Payment prompt sent to your phone."
         }), {
