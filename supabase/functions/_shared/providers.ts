@@ -97,7 +97,10 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
   
-  if (orderType.toLowerCase() === "afa") {
+  const isAfaOrder = orderType.toLowerCase() === "afa" || 
+                     (network && (network.toUpperCase() === "AFA" || network.toUpperCase().startsWith("AFA")));
+  
+  if (isAfaOrder) {
     const { data: spendless } = await supabaseAdmin
       .from("providers")
       .select("*")
@@ -107,7 +110,8 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       console.log(`[resolveProvidersForOrder] Resolved Spendless provider for AFA order ${order.id}`);
       return [spendless];
     } else {
-      console.warn(`[resolveProvidersForOrder] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
+      console.warn(`[resolveProvidersForOrder] Spendless provider not found in DB for AFA.`);
+      return [];
     }
   }
   

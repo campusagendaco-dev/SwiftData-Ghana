@@ -24,4 +24,4 @@ Allow: /
 User-agent: WhatsApp
 Allow: /
 
-Sitemap: https://swiftdatagh.com/sitemap.xml
+Sitemap: https://swiftdatagh.shop/sitemap.xml
