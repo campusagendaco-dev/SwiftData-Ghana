@@ -1067,6 +1067,39 @@ serve(async (req) => {
     const recipient = normalizeRecipient(customerPhone);
     const effectiveOrderType = currentOrderType === "free_data_claim" ? "data" : currentOrderType;
 
+    // Fetch manual fulfillment mode from system settings
+    const { data: globalSettings } = await supabaseAdmin
+      .from("v_system_settings_with_secrets")
+      .select("manual_fulfillment_mode")
+      .eq("id", 1)
+      .maybeSingle();
+    const isManualFulfillmentMode = globalSettings?.manual_fulfillment_mode === true;
+
+    if (isManualFulfillmentMode) {
+      console.log(`[verify-payment] Manual fulfillment mode is active. Queuing order ${targetReference} in processing status.`);
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        provider_order_id: "manual_fulfillment_mode",
+        failure_reason: "Queued for manual fulfillment (Auto-delivery paused)"
+      }).eq("id", targetReference);
+
+      log(supabaseAdmin, {
+        level: "info",
+        source: "verify-payment",
+        event: "order.manual_queued",
+        message: `Order queued for manual fulfillment (auto-delivery paused)`,
+        order_id: targetReference,
+        agent_id: claimedOrder.agent_id,
+        data: { network, package_size: packageSize, amount: claimedOrder.amount }
+      });
+
+      return new Response(JSON.stringify({
+        status: "processing",
+        provider_order_id: "manual_fulfillment_mode",
+        message: "Order placed successfully. Processing manually."
+      }), { headers: corsHeaders });
+    }
+
     // Standard Data/Airtime/Utility/AFA Fulfillment
     const activeProviders = await resolveProvidersForOrder(supabaseAdmin, claimedOrder);
 

@@ -1379,6 +1379,33 @@ serve(async (req) => {
       });
     }
 
+    // Fetch manual fulfillment mode from system settings
+    const { data: globalSettings } = await supabaseAdmin
+      .from("system_settings")
+      .select("manual_fulfillment_mode")
+      .eq("id", 1)
+      .maybeSingle();
+    const isManualFulfillment = globalSettings?.manual_fulfillment_mode === true;
+
+    if (isManualFulfillment) {
+      console.log(`[Webhook] Manual fulfillment mode is active. Queuing order ${orderId} in processing status.`);
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        provider_order_id: "manual_fulfillment_mode",
+        failure_reason: "Queued for manual fulfillment (Auto-delivery paused)"
+      }).eq("id", orderId);
+
+      return new Response(JSON.stringify({
+        received: true,
+        fulfilled: false,
+        status: "processing",
+        message: "Order placed successfully. Processing manually."
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (existingOrder?.network === "MTN Mash Up") {
       console.log(`[Webhook] MTN Mash Up order ${orderId} received. Set status to 'pending' for manual export by admin.`);
       return new Response(JSON.stringify({ received: true, fulfilled: false, status: "pending", message: "MTN Mash Up order queued for manual processing" }), {
