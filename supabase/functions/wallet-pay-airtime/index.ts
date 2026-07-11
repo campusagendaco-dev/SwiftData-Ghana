@@ -185,7 +185,7 @@ serve(async (req) => {
     }
 
     // 3. TRIGGER SMS (NON-BLOCKING)
-    const displayPackage = `${networkRaw || ""} GHS ${Number(requestedAmount).toFixed(2)} Airtime`;
+    const displayPackage = `${network || ""} GHS ${Number(requestedAmount).toFixed(2)} Airtime`;
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
       package: displayPackage,
