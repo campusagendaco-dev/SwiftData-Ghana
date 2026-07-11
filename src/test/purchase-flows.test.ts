@@ -97,9 +97,9 @@ describe("purchase flow guardrails", () => {
 
     expect(buyData).toContain("PaystackMomoCheckout");
     expect(agentStore).toContain("PaystackMomoCheckout");
-    expect(agentPending).toContain("invokePublicFunction(\"initialize-payment\"");
+    expect(agentPending).toContain("PaystackMomoCheckout");
     expect(agentPending).toContain("invokePublicFunctionAsUser(\"verify-payment\"");
-    expect(subAgentPending).toContain("invokePublicFunction(\"initialize-payment\"");
+    expect(subAgentPending).toContain("PaystackMomoCheckout");
     expect(subAgentPending).toContain("invokePublicFunctionAsUser(\"verify-payment\"");
     expect(dashboardWallet).toContain("invokePublicFunctionAsUser(\"verify-payment\"");
     expect(dashboardWallet).toContain("invokePublicFunctionAsUser(\"wallet-buy-data\"");
