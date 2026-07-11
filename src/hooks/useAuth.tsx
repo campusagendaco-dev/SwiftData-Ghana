@@ -296,16 +296,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const message = String(error.message || "").toLowerCase();
     const fallbackPassword = cleanPasswordInput(password);
 
+    let finalError = error;
+
     // Retry once with cleaned password for copy/paste hidden-char issues.
     if (message.includes("invalid login credentials") && fallbackPassword && fallbackPassword !== password) {
       const { error: retryError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: fallbackPassword,
       });
-      return { error: retryError };
+      finalError = retryError;
     }
 
-    return { error };
+    if (finalError) {
+      // Call failed-login-tracker edge function (non-blocking)
+      supabase.functions.invoke("failed-login-tracker", {
+        body: { email: normalizedEmail }
+      }).catch(err => console.warn("Failed to log failed login attempt:", err));
+    }
+
+    return { error: finalError };
   };
 
   const signInWithOAuth = async (provider: Provider, redirectPath = "/auth/callback") => {
