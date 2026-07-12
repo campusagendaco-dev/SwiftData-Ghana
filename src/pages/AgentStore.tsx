@@ -148,6 +148,7 @@ const AgentStore = () => {
   const [beneficiaryModalPhone, setBeneficiaryModalPhone] = useState("");
   const [pendingAction, setPendingAction] = useState<"wallet" | "paystack" | null>(null);
   const [beneficiaryCheckEnabled, setBeneficiaryCheckEnabled] = useState(true);
+  const [allowNonBeneficiaryContinue, setAllowNonBeneficiaryContinue] = useState(true);
 
   const [authOpen, setAuthOpen] = useState(false);
 
@@ -455,11 +456,12 @@ const AgentStore = () => {
         const cachedSettings = localStorage.getItem("swift_system_settings");
         if (cachedSettings) {
           const parsed = JSON.parse(cachedSettings);
-          if (parsed.expiry > Date.now()) {
+          if (parsed && parsed.expiry > Date.now()) {
             if (parsed.active_payment_gateway) {
               setActiveGateway(parsed.active_payment_gateway);
             }
             setBeneficiaryCheckEnabled(parsed.beneficiary_verification_enabled !== false);
+            setAllowNonBeneficiaryContinue(parsed.allow_non_beneficiary_continue !== false);
           }
         }
 
@@ -509,7 +511,7 @@ const AgentStore = () => {
             storeQuery.maybeSingle(),
             supabase.from("global_package_settings").select("network, package_size, agent_price, sub_agent_price, public_price, is_unavailable"),
             fetchApiPricingContext().catch(() => ({ source: "primary", multipliers: { MTN: 1, Telecel: 1, AirtelTigo: 1 }, multiplier: 1 })),
-            supabase.from("system_settings").select("active_payment_gateway, beneficiary_verification_enabled").eq("id", 1).maybeSingle(),
+            supabase.from("system_settings").select("active_payment_gateway, beneficiary_verification_enabled, allow_non_beneficiary_continue").eq("id", 1).maybeSingle(),
             supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7"),
             Promise.resolve(resellerStoreQuery.maybeSingle()).catch(() => null)
           ]);
@@ -589,11 +591,14 @@ const AgentStore = () => {
 
         let gateway = "paystack";
         let benEnabled = true;
+        let allowContinue = true;
         if (sysRes?.data) {
           gateway = sysRes.data.active_payment_gateway || "paystack";
           benEnabled = sysRes.data.beneficiary_verification_enabled !== false;
+          allowContinue = sysRes.data.allow_non_beneficiary_continue !== false;
           setActiveGateway(gateway);
           setBeneficiaryCheckEnabled(benEnabled);
+          setAllowNonBeneficiaryContinue(allowContinue);
         }
 
         if (resellerStoreRes?.data) {
@@ -613,6 +618,7 @@ const AgentStore = () => {
           localStorage.setItem("swift_system_settings", JSON.stringify({
             active_payment_gateway: gateway,
             beneficiary_verification_enabled: benEnabled,
+            allow_non_beneficiary_continue: allowContinue,
             expiry: Date.now() + 5 * 60 * 1000 // Cache for 5 minutes
           }));
         } catch (e) {}
@@ -1977,12 +1983,20 @@ const AgentStore = () => {
             <p>
               The phone number <strong className="font-extrabold text-black font-mono">{beneficiaryModalPhone}</strong> is not added to our beneficiary list at the moment.
             </p>
-            <p>
-              If you continue, this order will be placed as <strong className="font-extrabold text-black">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-[#E0560D] font-bold">You can still proceed if you wish.</span>
-            </p>
-            <p className="text-[#B91C1C] font-extrabold">
-              Orders can not be refunded or canceled!
-            </p>
+            {allowNonBeneficiaryContinue ? (
+              <>
+                <p>
+                  If you continue, this order will be placed as <strong className="font-extrabold text-black">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-[#E0560D] font-bold">You can still proceed if you wish.</span>
+                </p>
+                <p className="text-[#B91C1C] font-extrabold">
+                  Orders can not be refunded or canceled!
+                </p>
+              </>
+            ) : (
+              <p className="text-[#B91C1C] font-bold">
+                Purchases for non-beneficiary numbers are currently disabled by the administrator. You cannot proceed with this purchase until this recipient number is whitelisted.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1992,26 +2006,28 @@ const AgentStore = () => {
                 setShowBeneficiaryModal(false);
                 setPendingAction(null);
               }}
-              className="w-full py-4 bg-[#E5E7EB] hover:bg-[#D1D5DB] active:scale-[0.98] transition-all text-[#4B5563] font-extrabold rounded-[20px] text-sm tracking-wide shadow-sm"
+              className={`py-4 bg-[#E5E7EB] hover:bg-[#D1D5DB] active:scale-[0.98] transition-all text-[#4B5563] font-extrabold rounded-[20px] text-sm tracking-wide shadow-sm ${!allowNonBeneficiaryContinue ? "col-span-2 w-full" : "w-full"}`}
             >
-              Cancel
+              {allowNonBeneficiaryContinue ? "Cancel" : "Close"}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowBeneficiaryModal(false);
-                const method = pendingAction || payMethod;
-                if (method === "wallet") {
-                  handleWalletBuy(true);
-                } else if (method === "paystack") {
-                  handlePaystackBuy(true);
-                }
-                setPendingAction(null);
-              }}
-              className="w-full py-4 bg-[#E0560D] hover:bg-[#C2410C] active:scale-[0.98] transition-all text-white font-extrabold rounded-[20px] text-sm tracking-wide shadow-md"
-            >
-              Continue Anyway
-            </button>
+            {allowNonBeneficiaryContinue && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBeneficiaryModal(false);
+                  const method = pendingAction || payMethod;
+                  if (method === "wallet") {
+                    handleWalletBuy(true);
+                  } else if (method === "paystack") {
+                    handlePaystackBuy(true);
+                  }
+                  setPendingAction(null);
+                }}
+                className="w-full py-4 bg-[#E0560D] hover:bg-[#C2410C] active:scale-[0.98] transition-all text-white font-extrabold rounded-[20px] text-sm tracking-wide shadow-md"
+              >
+                Continue Anyway
+              </button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

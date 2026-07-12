@@ -24,6 +24,7 @@ interface SystemSettings {
   active_payment_gateway?: string;
   auto_gateway_switch_by_package?: boolean;
   beneficiary_verification_enabled?: boolean;
+  allow_non_beneficiary_continue?: boolean;
   holiday_mode_enabled: boolean;
   holiday_message: string;
   disable_ordering: boolean;
@@ -117,6 +118,7 @@ const AdminSettings = () => {
     active_payment_gateway: "paystack",
     auto_gateway_switch_by_package: false,
     beneficiary_verification_enabled: true,
+    allow_non_beneficiary_continue: true,
     holiday_mode_enabled: false,
     holiday_message: "",
     disable_ordering: false,
@@ -422,6 +424,7 @@ const AdminSettings = () => {
           active_payment_gateway: d.active_payment_gateway || "paystack",
           auto_gateway_switch_by_package: d.auto_gateway_switch_by_package || false,
           beneficiary_verification_enabled: d.beneficiary_verification_enabled !== false,
+          allow_non_beneficiary_continue: d.allow_non_beneficiary_continue !== false,
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
           disable_ordering: d.disable_ordering || false,
@@ -830,6 +833,19 @@ const AdminSettings = () => {
                 <Switch
                   checked={settings.beneficiary_verification_enabled !== false}
                   onCheckedChange={(c) => setSettings({ ...settings, beneficiary_verification_enabled: c })}
+                />
+              </div>
+
+              <div className="flex items-start justify-between border-t border-white/5 pt-4">
+                <div className="space-y-0.5">
+                  <Label>Allow Continue on New Beneficiary</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Allow users/agents to bypass the warning and continue checkout/purchase when a number is not in the MTN beneficiary whitelist.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.allow_non_beneficiary_continue !== false}
+                  onCheckedChange={(c) => setSettings({ ...settings, allow_non_beneficiary_continue: c })}
                 />
               </div>
 
