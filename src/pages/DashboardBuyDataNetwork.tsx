@@ -242,7 +242,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     const triggerBeneficiaryCheck = async () => {
       const net = String(network || "").toUpperCase();
       const isMtn = net.includes("MTN") || net.includes("YELLO");
-      if (!isMtn || !isPhoneValid || !beneficiaryCheckEnabled) {
+      if (!isMtn || selectedTypeOrCategory !== "affordable" || !isPhoneValid || !beneficiaryCheckEnabled) {
         setBeneficiaryError(null);
         setIsCheckingBeneficiary(false);
         setCheckedPhone("");
@@ -725,7 +725,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       return true;
     }
     const net = String(networkToCheck || "").toUpperCase();
-    if (!net.includes("MTN")) {
+    const isMtn = net.includes("MTN") || net.includes("YELLO");
+    if (!isMtn || selectedTypeOrCategory !== "affordable") {
       return true;
     }
 

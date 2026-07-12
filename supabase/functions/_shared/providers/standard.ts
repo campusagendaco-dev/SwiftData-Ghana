@@ -366,8 +366,10 @@ export class StandardAdapter implements ProviderAdapter {
   ): Promise<ProviderResponse> {
     const handlerType = String(provider.handler_type || "").toLowerCase();
     const network = String(data.networkKey || data.networkRaw || "").toUpperCase();
+    const category = String(data.category || "").toLowerCase();
+    const isAffordable = category === "affordable" || category === "affordable sme" || category.includes("sme");
 
-    if (handlerType === "datahub" && network.includes("MTN") && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
+    if (handlerType === "datahub" && network.includes("MTN") && isAffordable && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
       const recipient = String(data.recipient || data.phoneNumber || "");
       const check = await this.verifyDataHubBeneficiary(supabaseAdmin, provider, recipient);
       if (!check.ok) {

@@ -221,8 +221,8 @@ const AgentStore = () => {
   useEffect(() => {
     const triggerBeneficiaryCheck = async () => {
       const net = String(selectedNetwork || "").toUpperCase();
-      const isMtn = net.includes("MTN") || net.includes("YELLO") || selectedTypeOrCategory === "mashup";
-      if (!isMtn || !isPhoneValid || selectedService !== "data" || !beneficiaryCheckEnabled) {
+      const isMtn = net.includes("MTN") || net.includes("YELLO");
+      if (!isMtn || selectedTypeOrCategory !== "affordable" || !isPhoneValid || selectedService !== "data" || !beneficiaryCheckEnabled) {
         setBeneficiaryError(null);
         setIsCheckingBeneficiary(false);
         setCheckedPhone("");
@@ -272,8 +272,8 @@ const AgentStore = () => {
       return true;
     }
     const net = String(networkToCheck || "").toUpperCase();
-    const isMtn = net.includes("MTN") || net.includes("YELLO") || selectedTypeOrCategory === "mashup";
-    if (!isMtn) {
+    const isMtn = net.includes("MTN") || net.includes("YELLO");
+    if (!isMtn || selectedTypeOrCategory !== "affordable") {
       return true;
     }
 
