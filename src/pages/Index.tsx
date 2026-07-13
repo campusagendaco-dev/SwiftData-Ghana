@@ -293,11 +293,10 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#030305] text-gray-900 dark:text-white">
       <SEO 
-        title="SwiftData Ghana | Cheapest MTN, Telecel & AirtelTigo Data Bundles — Instant Delivery"
-        description="Buy cheap non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana. Safe delivery in 10 to 60 minutes, no account needed. Best prices guaranteed."
-        keywords="SwiftData Ghana, buy data Ghana, cheap MTN data, cheap Telecel data, cheap AirtelTigo data, non-expiry bundles Ghana"
+        title="SwiftData Ghana | Best Data Site for Cheapest MTN, Telecel & AirtelTigo Data"
+        description="SwiftData Ghana is the best data site in Ghana to buy cheap non-expiry MTN, Telecel & AirtelTigo data bundles. Instant delivery, no account needed."
+        keywords="best data site, best data site in ghana, best website to buy cheap data in ghana, SwiftData Ghana, buy data Ghana, cheap MTN data, cheap Telecel data, cheap AirtelTigo data, non-expiry bundles Ghana"
         canonical="https://swiftdatagh.shop/"
-
       />
 
       {/* First-visit agent popup — shown once per session, admin-toggleable */}
