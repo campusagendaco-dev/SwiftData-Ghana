@@ -185,9 +185,8 @@ const AgentProgram = () => {
       <SEO 
         title="Become a Data Reseller Agent — Start Your Business"
         description="Launch your own data reselling business in Ghana. Unlock wholesale prices for MTN, Telecel & AirtelTigo and get your own branded store."
-        keywords="data reseller Ghana, start data business, wholesale MTN data, agent program Ghana"
+        keywords="resell data in ghana, start data business, data reseller Ghana, wholesale MTN data, agent program Ghana, cheap internet bundles ghana"
         canonical="https://swiftdatagh.shop/agent-program"
-
       />
       <div className="container mx-auto max-w-4xl">
         <div className="text-center mb-10 md:mb-16">
