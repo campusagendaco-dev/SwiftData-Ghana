@@ -293,8 +293,8 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#030305] text-gray-900 dark:text-white">
       <SEO 
-        title="SwiftData Ghana | Best Data Site for Cheapest MTN, Telecel & AirtelTigo Data"
-        description="SwiftData Ghana is the best data site in Ghana to buy cheap non-expiry MTN, Telecel & AirtelTigo data bundles. Instant delivery, no account needed."
+        title="Buy Cheap Data Bundles | #1 Affordable Data Site Ghana — SwiftData"
+        description="Buy cheap and affordable data bundles on MTN, Telecel & AirtelTigo with SwiftData Ghana. Instant delivery, no account needed, and 24/7 automated delivery."
         keywords="mtnupu, mtn upu, mtn up2u, mtnupu sites, mtn upu sites, mtn up2u sites, cheapest data bundle in ghana, buy cheap data in ghana, mtn cheap data bundle code, how to buy cheap mtn data, telecel cheap data bundles, airteltigo cheap data bundles, non expiry data ghana, best data site in ghana, cheap internet bundles ghana, resell data in ghana, cheapest mtn data bundle, cheap non expiry data ghana, momo cheap data ghana, buy cheap data bundles in ghana, best data site, best data site in ghana, best website to buy cheap data in ghana, SwiftData Ghana, buy data Ghana, cheap MTN data, cheap Telecel data, cheap AirtelTigo data, non-expiry bundles Ghana"
         canonical="https://swiftdatagh.shop/"
       />
