@@ -84,6 +84,24 @@ serve(async (req) => {
     }
 
     const formatsToTest = [...new Set([localFormat, intlFormat])];
+
+    // Check if the number has any successful order history (means it is already verified)
+    const { data: hasHistory } = await supabaseClient
+      .from("orders")
+      .select("id")
+      .in("status", ["fulfilled", "completed"])
+      .or(`customer_phone.eq.${localFormat},customer_phone.eq.${intlFormat}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (hasHistory) {
+      console.log(`[verify-beneficiary] Number ${localFormat} has successful order history. Automatically verified.`);
+      return new Response(
+        JSON.stringify({ success: true, exists: true, message: "Number verified via order history." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     let exists = false;
     let text = "";
     let status = 200;

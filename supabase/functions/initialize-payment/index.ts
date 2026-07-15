@@ -146,6 +146,21 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
     }
 
     const formatsToTest = [...new Set([localFormat, intlFormat])];
+
+    // Check if the number has any successful order history (means it is already verified)
+    const { data: hasHistory } = await supabaseClient
+      .from("orders")
+      .select("id")
+      .in("status", ["fulfilled", "completed"])
+      .or(`customer_phone.eq.${localFormat},customer_phone.eq.${intlFormat}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (hasHistory) {
+      console.log(`[initialize-payment-beneficiary] Number ${localFormat} verified via order history.`);
+      return { ok: true };
+    }
+
     let exists = false;
     let text = "";
 
