@@ -48,19 +48,20 @@
             el.setAttribute('href', brand.logo);
           });
 
+          var base = window.location.origin;
           var manifest = {
             name: brand.name,
             short_name: brand.shortName || brand.name.slice(0, 12),
             description: brand.description || "Buy cheap non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana. Instant delivery, 24/7.",
-            start_url: brand.startUrl || "/",
-            scope: "/",
+            start_url: new URL(brand.startUrl || "/", base).href,
+            scope: new URL("/", base).href,
             display: "standalone",
             orientation: "portrait-primary",
             background_color: "#0d0d0d",
             theme_color: brand.color,
             icons: [
-              { src: brand.logo, sizes: "192x192", type: "image/png", purpose: "any" },
-              { src: brand.logo, sizes: "512x512", type: "image/png", purpose: "any" }
+              { src: new URL(brand.logo || "/logo.png", base).href, sizes: "192x192", type: "image/png", purpose: "any" },
+              { src: new URL(brand.logo || "/logo.png", base).href, sizes: "512x512", type: "image/png", purpose: "any" }
             ]
           };
 
