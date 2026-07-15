@@ -972,6 +972,20 @@ serve(async (req: Request) => {
           }
         }
 
+        // Log update action to audit_logs table
+        try {
+          await supabaseAdmin.from("audit_logs").insert({
+            admin_id: actor?.id,
+            action: "update_system_settings",
+            details: {
+              updated_fields: Object.keys(filteredSettings).concat(Object.keys(secretUpdates)),
+              admin_email: actor?.email
+            }
+          });
+        } catch (auditErr) {
+          console.error("Failed to insert update_system_settings audit log:", auditErr);
+        }
+
         return new Response(JSON.stringify({ 
           success: true, 
           skipped: Object.keys(settings).filter(k => !validKeys.includes(k) && !SECRET_KEYS.has(k)) 
