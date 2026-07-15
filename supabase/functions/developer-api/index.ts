@@ -788,7 +788,16 @@ serve(async (req: Request) => {
         return json({ success: false, error: "Missing required fields." }, 400);
 
       // Anti-Duplicate Protection (Smart Idempotency & 2-Minute Window)
-      const allowDuplicate = payload?.allow_duplicate === true || payload?.bypass_duplicate_check === true || req.headers.get("X-Bypass-Duplicate-Check") === "true";
+      const { data: sysSettings } = await supabase
+        .from("system_settings")
+        .select("allow_duplicate_purchases")
+        .eq("id", 1)
+        .maybeSingle();
+
+      const allowDuplicate = payload?.allow_duplicate === true || 
+                             payload?.bypass_duplicate_check === true || 
+                             req.headers.get("X-Bypass-Duplicate-Check") === "true" ||
+                             sysSettings?.allow_duplicate_purchases === true;
       const normalizedPhone = normalizeRecipient(phone);
       const clientRef = request_id || payload?.client_reference || req.headers.get("X-Idempotency-Key");
 

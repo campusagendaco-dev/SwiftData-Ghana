@@ -17,6 +17,7 @@ import { getFlagUrl } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface SystemSettings {
+  allow_duplicate_purchases: boolean;
   auto_refund_enabled: boolean;
   auto_api_switch: boolean;
   preferred_provider: "hubtel" | "paystack" | "flutterwave";
@@ -111,6 +112,7 @@ const AdminSettings = () => {
   const [saving, setSaving] = useState(false);
   const [restoringWallets, setRestoringWallets] = useState(false);
   const [settings, setSettings] = useState<SystemSettings>({
+    allow_duplicate_purchases: false,
     auto_refund_enabled: false,
     auto_api_switch: false,
     preferred_provider: "paystack",
@@ -417,6 +419,7 @@ const AdminSettings = () => {
 
         const d = data as any;
         setSettings({
+          allow_duplicate_purchases: d.allow_duplicate_purchases || false,
           auto_refund_enabled: d.auto_refund_enabled || false,
           auto_api_switch: d.auto_api_switch || false,
           preferred_provider: (d.preferred_provider as any) || "paystack",
@@ -514,6 +517,7 @@ const AdminSettings = () => {
     
     const payload = {
       ...settings,
+      allow_duplicate_purchases: settings.allow_duplicate_purchases,
       active_payment_gateway: settings.active_payment_gateway || "paystack",
       customer_service_number: settings.customer_service_number.trim(),
       support_channel_link: settings.support_channel_link.trim(),
@@ -798,6 +802,19 @@ const AdminSettings = () => {
                 <Switch
                   checked={settings.auto_refund_enabled}
                   onCheckedChange={(c) => setSettings({ ...settings, auto_refund_enabled: c })}
+                />
+              </div>
+
+              <div className="flex items-start justify-between border-t border-white/5 pt-4">
+                <div className="space-y-0.5">
+                  <Label>Allow Duplicate Purchases</Label>
+                  <p className="text-xs text-muted-foreground text-amber-500/80">
+                    Allow users to make back-to-back duplicate data/airtime purchases for the same recipient number within 60 minutes.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.allow_duplicate_purchases}
+                  onCheckedChange={(c) => setSettings({ ...settings, allow_duplicate_purchases: c })}
                 />
               </div>
 
