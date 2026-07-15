@@ -3,49 +3,135 @@
         xmlns:xhtml="http://www.w3.org/1999/xhtml"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
-  <!-- Home -->
+  <!-- Home (primary landing page) -->
   <url>
     <loc>https://swiftdatagh.shop/</loc>
+    <lastmod>2026-07-15</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://swiftdatagh.shop/logo.png</image:loc>
       <image:title>SwiftData Ghana Logo</image:title>
-      <image:caption>SwiftData Ghana — Buy Cheap Data Bundles in Ghana</image:caption>
+      <image:caption>SwiftData Ghana — #1 Cheapest Data Bundles in Ghana. 5-Star Rated.</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://swiftdatagh.shop/og-image.png</image:loc>
+      <image:title>SwiftData Ghana OG Banner</image:title>
+      <image:caption>Buy cheap MTN, Telecel, AirtelTigo data bundles in Ghana. Instant delivery.</image:caption>
     </image:image>
   </url>
 
-  <!-- Buy Data (main landing) -->
+  <!-- Buy Data (primary conversion page) -->
   <url>
     <loc>https://swiftdatagh.shop/buy-data</loc>
+    <lastmod>2026-07-15</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.95</priority>
     <image:image>
       <image:loc>https://swiftdatagh.shop/logo.png</image:loc>
-      <image:title>Buy Data Bundles Ghana</image:title>
-      <image:caption>Buy cheap MTN, Telecel and AirtelTigo data bundles in Ghana</image:caption>
+      <image:title>Buy Cheap Data Bundles Ghana</image:title>
+      <image:caption>Buy cheap MTN, Telecel and AirtelTigo data bundles in Ghana — non-expiry, instant delivery</image:caption>
+    </image:image>
+  </url>
+
+  <!-- Buy Airtime -->
+  <url>
+    <loc>https://swiftdatagh.shop/buy-airtime</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- Buy Utility -->
+  <url>
+    <loc>https://swiftdatagh.shop/buy-utility</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>
+
+  <!-- Products / Pricing Page -->
+  <url>
+    <loc>https://swiftdatagh.shop/products</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- Agent Programme (reseller signup) -->
+  <url>
+    <loc>https://swiftdatagh.shop/agent-program</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+    <image:image>
+      <image:loc>https://swiftdatagh.shop/logo.png</image:loc>
+      <image:title>SwiftData Ghana Agent Program</image:title>
+      <image:caption>Resell cheap data bundles in Ghana. Become a SwiftData agent and earn money.</image:caption>
     </image:image>
   </url>
 
   <!-- Order Status / Track -->
   <url>
     <loc>https://swiftdatagh.shop/order-status</loc>
+    <lastmod>2026-07-15</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.70</priority>
   </url>
 
-  <!-- Agent Programme -->
+  <!-- My Orders -->
   <url>
-    <loc>https://swiftdatagh.shop/agent-program</loc>
+    <loc>https://swiftdatagh.shop/my-orders</loc>
+    <lastmod>2026-07-15</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.80</priority>
+    <priority>0.65</priority>
+  </url>
+
+  <!-- Developer / API Documentation -->
+  <url>
+    <loc>https://swiftdatagh.shop/developers</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.60</priority>
+  </url>
+
+  <url>
+    <loc>https://swiftdatagh.shop/api-docs</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.55</priority>
+  </url>
+
+  <!-- Terms of Service -->
+  <url>
+    <loc>https://swiftdatagh.shop/terms</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.40</priority>
+  </url>
+
+  <!-- Privacy Policy -->
+  <url>
+    <loc>https://swiftdatagh.shop/privacy</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.40</priority>
   </url>
 
   <!-- Login / Sign Up -->
   <url>
     <loc>https://swiftdatagh.shop/login</loc>
+    <lastmod>2026-07-15</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.50</priority>
+  </url>
+
+  <!-- Purchase Success -->
+  <url>
+    <loc>https://swiftdatagh.shop/purchase-success</loc>
+    <lastmod>2026-07-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.30</priority>
   </url>
 
 </urlset>

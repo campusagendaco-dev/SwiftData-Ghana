@@ -1,11 +1,38 @@
+# SwiftData Ghana — robots.txt
+# Updated: 2026-07-15
+
 User-agent: *
 Allow: /
+Allow: /buy-data
+Allow: /buy-airtime
+Allow: /buy-utility
+Allow: /products
+Allow: /agent-program
+Allow: /order-status
+Allow: /my-orders
+Allow: /terms
+Allow: /privacy
+Allow: /developers
+Allow: /api-docs
+Allow: /login
 Disallow: /admin/
+Disallow: /admin/*
 Disallow: /dashboard/
+Disallow: /dashboard/*
 Disallow: /api/
+Disallow: /auth/callback
+Disallow: /reset-password
+Disallow: /verify-otp
+Disallow: /verify-mfa
+Disallow: /onboarding
+Disallow: /sub-agent/pending
+Disallow: /agent/pending
 
 User-agent: Googlebot
 Allow: /
+Allow: /buy-data
+Allow: /agent-program
+Allow: /products
 Disallow: /admin/
 Disallow: /dashboard/
 
@@ -24,4 +51,20 @@ Allow: /
 User-agent: WhatsApp
 Allow: /
 
+User-agent: Yandex
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+# Sitemaps
 Sitemap: https://swiftdatagh.shop/sitemap.xml
+
+# Crawl rate
+Crawl-delay: 2
+
+# Host
+Host: https://swiftdatagh.shop
