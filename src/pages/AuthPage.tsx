@@ -532,10 +532,16 @@ const AuthPage = () => {
             </Button>
           </motion.div>
 
-          <div className="mt-3 text-center border-t border-border pt-3">
-            <Link to="/agent-program" className="text-xs font-black text-primary hover:underline tracking-tight">
+          <div className="mt-3 text-center border-t border-border pt-3 space-y-2">
+            <Link to="/agent-program" className="text-xs font-black text-primary hover:underline tracking-tight block">
               Want to become an agent? Learn more →
             </Link>
+            <p className="text-[10px] text-muted-foreground font-medium">
+              By continuing, you agree to our{" "}
+              <Link to="/terms" className="underline hover:text-foreground">Terms of Service</Link>{" "}
+              and{" "}
+              <Link to="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>.
+            </p>
           </div>
         </motion.div>
       </motion.div>

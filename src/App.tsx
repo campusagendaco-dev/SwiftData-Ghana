@@ -125,7 +125,8 @@ const DashboardSwiftVendor = lazy(() => import("./pages/DashboardSwiftVendor"));
 const DashboardAgentDevHub = lazy(() => import("./pages/DashboardAgentDevHub"));
 const AgentDevAPIDocs = lazy(() => import("./pages/AgentDevAPIDocs"));
 const DashboardNotifications = lazy(() => import("./pages/DashboardNotifications"));
-
+const Terms = lazy(() => import("./pages/Terms"));
+const Privacy = lazy(() => import("./pages/Privacy"));
 
 const queryClient = new QueryClient();
 
@@ -386,6 +387,8 @@ const AppContent = () => {
         <Route path="/api-docs" element={<APIDocumentation />} />
         <Route path="/docs/agent-api" element={<AgentDevAPIDocs />} />
         <Route path="/developers" element={<DeveloperPortal />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
 
         {/* Auth pages */}
         <Route path="/login" element={<AuthPage />} />
