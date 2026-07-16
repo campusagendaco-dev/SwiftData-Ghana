@@ -881,8 +881,8 @@ serve(async (req: Request) => {
       // Otherwise, we default to the amount parameter.
       const basePriceVal = payload?.base_price || metadata?.base_price;
       const airtimeBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
-      resolvedPaystackFee = parseFloat(calculatePaystackFee(airtimeBase).toFixed(2));
-      resolvedAmount = parseFloat((airtimeBase + resolvedPaystackFee).toFixed(2));
+      resolvedPaystackFee = 0;
+      resolvedAmount = airtimeBase;
       enrichedMetadata = { ...metadata, base_price: airtimeBase, profit: 0 };
     }
 
@@ -903,8 +903,8 @@ serve(async (req: Request) => {
       // Otherwise, we default to the amount parameter.
       const basePriceVal = payload?.base_price || metadata?.base_price;
       const utilityBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
-      resolvedPaystackFee = parseFloat(calculatePaystackFee(utilityBase).toFixed(2));
-      resolvedAmount = parseFloat((utilityBase + resolvedPaystackFee).toFixed(2));
+      resolvedPaystackFee = 0;
+      resolvedAmount = utilityBase;
       enrichedMetadata = { ...metadata, base_price: utilityBase, profit: 0 };
     }
 

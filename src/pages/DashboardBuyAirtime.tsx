@@ -48,7 +48,7 @@ const NETWORKS = [
 ];
 
 const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100];
-const calcFee = (amount: number) => Math.min(amount * 0.03, 100);
+const calcFee = (amount: number) => 0;
 
 const DashboardBuyAirtime = () => {
   const { user, profile } = useAuth();

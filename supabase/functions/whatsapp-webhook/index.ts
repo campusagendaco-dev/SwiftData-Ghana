@@ -337,8 +337,8 @@ async function initAirtimePayment(
   recipient: string
 ): Promise<PayResult | null> {
   const orderId = crypto.randomUUID();
-  const fee = feeAmount(airtimeBase);
-  const total = parseFloat((airtimeBase + fee).toFixed(2));
+  const fee = 0;
+  const total = airtimeBase;
 
   const provider = getPaymentProvider(from);
 

@@ -250,8 +250,8 @@ const BuyUtility = () => {
   const numAmount = Number(amount);
   const canVerify = !!provider && (!!accountNumber.trim() || !!phoneNumber.trim());
   const canPay = !!accountName && numAmount >= 5;
-  const fee = canPay ? parseFloat((numAmount * 0.03).toFixed(2)) : 0;
-  const total = canPay ? parseFloat((numAmount + fee).toFixed(2)) : 0;
+  const fee = 0;
+  const total = canPay ? parseFloat(numAmount.toFixed(2)) : 0;
   const activeStyle = TABS.find((t) => t.id === activeTab)!;
 
   return (

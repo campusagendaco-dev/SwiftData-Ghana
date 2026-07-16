@@ -133,8 +133,8 @@ const BuyAirtime = () => {
     return () => clearTimeout(timer);
   }, [selectedNetwork, isPhoneValid, phoneDigits]);
 
-  const fee = canPay ? calcFee(numAmount) : 0;
-  const total = canPay ? parseFloat((numAmount + fee).toFixed(2)) : 0;
+  const fee = 0;
+  const total = canPay ? parseFloat(numAmount.toFixed(2)) : 0;
 
   const handlePay = async () => {
     if (orderingDisabled) {
