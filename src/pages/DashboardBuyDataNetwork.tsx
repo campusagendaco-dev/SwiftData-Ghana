@@ -1202,7 +1202,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-bold text-amber-400">Not in Beneficiary List</p>
+                      <p className="text-xs font-bold text-amber-400">Not in Saved Contacts</p>
                       <p className="text-[10px] text-muted-foreground mt-0.5">Please double-check the recipient number to prevent mistakes.</p>
                     </div>
                   </div>
@@ -1215,12 +1215,12 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       className="rounded bg-secondary/50 border-border/50 text-primary focus:ring-0 focus:ring-offset-0 w-3.5 h-3.5 cursor-pointer"
                     />
                     <Label htmlFor="save-beneficiary-checkbox" className="text-[10px] font-medium text-foreground cursor-pointer select-none">
-                      Save to beneficiary list on purchase
+                      Save to contacts on purchase
                     </Label>
                   </div>
                   {saveToBeneficiary && (
                     <div className="space-y-1">
-                      <Label htmlFor="beneficiary-name" className="text-[9px] font-bold text-muted-foreground uppercase">Beneficiary Name</Label>
+                      <Label htmlFor="beneficiary-name" className="text-[9px] font-bold text-muted-foreground uppercase">Contact Name</Label>
                       <Input
                         id="beneficiary-name"
                         size="sm"
