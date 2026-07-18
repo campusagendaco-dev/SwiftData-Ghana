@@ -77,6 +77,15 @@ const BlogPost = () => {
               <span className="flex items-center gap-1.5">
                 <User className="w-4 h-4" /> By {post.author}
               </span>
+              <a 
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent("Hey! Check out this helpful guide: " + post.title + " - https://swiftdatagh.shop/blog/" + post.slug)}`}
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs font-bold text-[#25D366] hover:text-[#128C7E] transition-colors ml-auto sm:ml-auto"
+              >
+                <span className="inline-block w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
+                Share to WhatsApp
+              </a>
             </div>
           </header>
 
