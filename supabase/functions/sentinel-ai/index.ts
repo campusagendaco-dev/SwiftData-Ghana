@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { callAiAgent } from "../_shared/ai.ts";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -189,34 +189,16 @@ serve(async (req: Request) => {
       System Settings: ${JSON.stringify(settings)}
     `;
 
-    // 5. Call AI Brain
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: settings?.active_sentinel_model || "claude-haiku-4-5-20251001",
-        max_tokens: 1500,
-        temperature: 0,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-      }),
-    });
+    // 5. Call AI Brain via dynamic routing and self-healing failover client
+    const aiResult = await callAiAgent(
+      supabaseAdmin,
+      "sentinel_prime",
+      systemPrompt,
+      userMessage,
+      1500
+    );
 
-    const aiData = await aiResponse.json();
-    
-    if (aiData.error) {
-      throw new Error(`Anthropic API Error: ${aiData.error.message || JSON.stringify(aiData.error)}`);
-    }
-    
-    if (!aiData.content || !aiData.content[0] || !aiData.content[0].text) {
-      throw new Error(`Invalid AI Response Structure: ${JSON.stringify(aiData)}`);
-    }
-
-    const rawText = aiData.content[0].text;
+    const rawText = aiResult.text;
     const jsonStart = rawText.indexOf("{");
     const jsonEnd = rawText.lastIndexOf("}");
     if (jsonStart === -1 || jsonEnd === -1) throw new Error("No JSON object found in AI response");

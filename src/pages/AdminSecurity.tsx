@@ -233,6 +233,7 @@ const AdminSecurity = () => {
   const [liveAlerts,     setLiveAlerts]     = useState<LiveAlert[]>([]);
   const [guardianLogs,   setGuardianLogs]   = useState<GuardianLog[]>([]);
   const [suspendedCount, setSuspendedCount] = useState(0);
+  const [dbAgents, setDbAgents] = useState<any[]>([]);
 
   /* AI automation state */
   const [autoMode,        setAutoMode]        = useState(true);
@@ -407,7 +408,7 @@ const AdminSecurity = () => {
     const d30 = new Date(Date.now() - 30 * 864e5).toISOString();
     const d14 = new Date(Date.now() - 14 * 864e5).toISOString();
 
-    const [profilesRes, recentRes, velocityRes, ordersRes, signupsRes, actionRes, blacklistRes, settingsRes] =
+    const [profilesRes, recentRes, velocityRes, ordersRes, signupsRes, actionRes, blacklistRes, settingsRes, agentsRes] =
       await Promise.all([
         (supabase as any).from("profiles")
           .select("user_id,full_name,email,last_ip,last_seen_at,last_location,login_count,is_agent,agent_approved,is_sub_agent,referred_by,created_at,is_suspended,device_id")
@@ -423,6 +424,7 @@ const AdminSecurity = () => {
           .order("created_at", { ascending: false }).limit(50),
         supabase.from("security_blacklist").select("*"),
         supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
+        supabase.from("ai_agent_registry").select("*").order("name"),
       ]);
 
     const profiles = (profilesRes.data || []) as unknown as ProfileRow[];
@@ -486,6 +488,7 @@ const AdminSecurity = () => {
     setBlacklist(blacklistRes.data || []);
     setSysSettings(settingsRes.data);
     setSuspendedCount(profiles.filter(p => p.is_suspended).length);
+    setDbAgents(agentsRes.data || []);
 
     const guardianData = await (supabase as any).from("sentinel_actions").select("*").order("created_at", { ascending: false }).limit(30);
     setGuardianLogs((guardianData.data || []) as unknown as GuardianLog[]);
@@ -1500,7 +1503,9 @@ const AdminSecurity = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {AGENT_FLEET.map(agent => {
           const AIcon = agent.icon;
-          const agentActions = agentFeed.filter(a => a.reasoning?.toLowerCase().includes(agent.key.replace("_", " ").slice(0, 8)) || a.target === "system").length;
+          const dbAgent = dbAgents.find(a => a.name === agent.key);
+          const currentModel = dbAgent?.active_model || "claude-haiku-4-5-20251001";
+          
           return (
             <div key={agent.key} className={`rounded-xl border ${agent.border} bg-zinc-950 p-4 relative overflow-hidden`}>
               {/* subtle scan-line top accent */}
@@ -1517,9 +1522,34 @@ const AdminSecurity = () => {
               <p className={`text-xs font-black ${agent.color} font-mono uppercase tracking-wide mb-0.5`}>{agent.name}</p>
               <p className="text-[10px] text-zinc-500 font-mono mb-2">{agent.role}</p>
               <p className="text-[10px] text-zinc-600 leading-relaxed mb-3">{agent.description}</p>
-              <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+              
+              <div className="flex items-center justify-between pt-2 border-t border-zinc-800 flex-wrap gap-2">
                 <span className="text-[9px] text-zinc-600 font-mono">{agent.schedule}</span>
-                <span className={`text-[9px] font-black font-mono px-1.5 py-0.5 rounded border ${agent.border} ${agent.bg} ${agent.color}`}>ARMED</span>
+                <select
+                  value={currentModel}
+                  onChange={async (e) => {
+                    const modelVal = e.target.value;
+                    setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, active_model: modelVal } : a));
+                    
+                    const { error } = await supabase
+                      .from("ai_agent_registry")
+                      .update({ active_model: modelVal })
+                      .eq("name", agent.key);
+                      
+                    if (error) {
+                      toast({ title: "Failed to update routing", description: error.message, variant: "destructive" });
+                      void fetchData(true);
+                    } else {
+                      toast({ title: `${agent.name} Rerouted`, description: `Agent model updated to ${modelVal}` });
+                    }
+                  }}
+                  className="text-[9px] font-bold font-mono bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-cyan-400 focus:outline-none focus:border-cyan-500/50"
+                >
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku</option>
+                  <option value="claude-sonnet-4-5-20250929">Claude Sonnet</option>
+                  <option value="gemini-1.5-flash">Gemini Flash</option>
+                  <option value="gemini-1.5-pro">Gemini Pro</option>
+                </select>
               </div>
             </div>
           );

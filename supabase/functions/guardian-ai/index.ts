@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { callAiAgent } from "../_shared/ai.ts";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -226,24 +226,15 @@ serve(async (req: Request) => {
       ${JSON.stringify(failingNetworks, null, 2)}
     `;
 
-    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1000,
-        temperature: 0,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-      }),
-    });
+    const aiResult = await callAiAgent(
+      supabaseAdmin,
+      "guardian_ai",
+      systemPrompt,
+      userMessage,
+      1000
+    );
 
-    const aiData = await aiResponse.json();
-    const rawText = aiData.content?.[0]?.text || "{}";
+    const rawText = aiResult.text;
     const jsonStart = rawText.indexOf("{");
     const jsonEnd = rawText.lastIndexOf("}");
     const parsed = JSON.parse(rawText.slice(jsonStart, jsonEnd + 1));

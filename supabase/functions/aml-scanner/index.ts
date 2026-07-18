@@ -16,8 +16,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { callAiAgent } from "../_shared/ai.ts";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -201,24 +201,15 @@ RAW JSON only. No markdown.
 {"aml_level":"CRITICAL|HIGH|MEDIUM","summary":"string","actions":[{"type":"string","params":{}}]}
 `.trim();
 
-    const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1200,
-        temperature: 0,
-        system: systemPrompt,
-        messages: [{ role: "user", content: JSON.stringify(enriched.slice(0, 15)) }],
-      }),
-    });
+    const aiResult = await callAiAgent(
+      db,
+      "aml_scanner",
+      systemPrompt,
+      JSON.stringify(enriched.slice(0, 15)),
+      1200
+    );
 
-    const aiData = await aiRes.json();
-    const rawText = aiData.content?.[0]?.text ?? "{}";
+    const rawText = aiResult.text;
     const jStart = rawText.indexOf("{");
     const jEnd   = rawText.lastIndexOf("}");
     const parsed = JSON.parse(rawText.slice(jStart, jEnd + 1));
