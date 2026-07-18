@@ -530,7 +530,7 @@ const Navbar = () => {
                   <Menu className="w-5 h-5" />
                 </motion.button>
               </div>
-            </div>
+            </motion.div>
           </nav>
         </div>
       </motion.div>
