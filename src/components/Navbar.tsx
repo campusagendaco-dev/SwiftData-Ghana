@@ -282,22 +282,6 @@ const Navbar = () => {
                     <ShieldCheck className="w-2.5 h-2.5 text-white" />
                   </motion.div>
                 </motion.div>
-                <motion.div 
-                  className="leading-tight hidden sm:block overflow-hidden animate-in fade-in"
-                  animate={{
-                    width: scrolled ? 0 : "auto",
-                    opacity: scrolled ? 0 : 1,
-                    marginLeft: scrolled ? 0 : 8
-                  }}
-                  transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                >
-                  <span className={`${logoText} font-black text-[13px] block leading-none tracking-tight whitespace-nowrap`}>
-                    SwiftData Ghana
-                  </span>
-                  <span className="text-amber-400 text-[10px] leading-none font-semibold tracking-wide whitespace-nowrap">
-                    #1 Cheapest Data Bundles
-                  </span>
-                </motion.div>
               </Link>
 
               {/* ── Desktop nav links ── */}
