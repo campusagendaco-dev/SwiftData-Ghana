@@ -18,7 +18,41 @@ serve(async (req: Request) => {
 
     console.log(`Sentinel Prime: Initiating ${event ? 'Surgical Strike' : 'Autonomous Scan'}...`);
 
-    // 1. Fetch System Pulse
+    // 1. Self-Healing Webhook Failover Watchdog
+    console.log("Sentinel Failover: Scanning for stuck pending orders...");
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+    const { data: stuckOrders } = await supabaseAdmin
+      .from("orders")
+      .select("id")
+      .eq("status", "pending")
+      .gte("created_at", twoHoursAgo)
+      .lte("created_at", fiveMinutesAgo);
+
+    if (stuckOrders && stuckOrders.length > 0) {
+      console.log(`Sentinel Failover: Found ${stuckOrders.length} stuck pending orders. Triggering verify-payment healing...`);
+      const healingPromises = stuckOrders.map(async (order) => {
+        try {
+          console.log(`Sentinel Failover: Triggering check for order ${order.id}`);
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ reference: order.id }),
+          });
+          const data = await res.json().catch(() => ({}));
+          console.log(`Sentinel Failover: Healing check result for ${order.id}:`, data);
+        } catch (err: any) {
+          console.error(`[Sentinel Failover] Failed to trigger verify-payment for ${order.id}:`, err.message);
+        }
+      });
+      await Promise.allSettled(healingPromises);
+    }
+
+    // 2. Fetch System Pulse
     let agentsToAnalyze = [];
     let ordersToAnalyze = [];
 
@@ -164,7 +198,7 @@ serve(async (req: Request) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: settings?.active_sentinel_model || "claude-haiku-4-5-20251001",
         max_tokens: 1500,
         temperature: 0,
         system: systemPrompt,
