@@ -244,6 +244,7 @@ serve(async (req: Request) => {
     const payload = await req.json().catch(() => ({}));
     const metadata = payload?.metadata || {};
     const isKorba = metadata?.is_korba === true || metadata?.is_korba === "true";
+    const isCardPayment = payload?.network_code === "CRD" || payload?.payment_method === "card" || metadata?.payment_method === "card";
 
     const { data: settings } = await supabaseAdmin
       .from("v_system_settings_with_secrets").select("allow_duplicate_purchases, holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled")
@@ -265,6 +266,11 @@ serve(async (req: Request) => {
     if (isKorbaPackage) {
       console.log(`[initialize-payment] Auto-routing to Korba gateway because it is a Korba/Instant/Airtime package`);
       activeGateway = "korba";
+    }
+
+    if (isCardPayment) {
+      console.log(`[initialize-payment] Overriding gateway to Paystack for Credit/Debit Card payment`);
+      activeGateway = "paystack";
     }
 
     let PAYSTACK_SECRET_KEY = (Deno as any).env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
@@ -1081,7 +1087,7 @@ serve(async (req: Request) => {
     ? getMomoProviderCode(String(enrichedMetadata.payment_network)) 
     : (enrichedMetadata.network ? getMomoProviderCode(String(enrichedMetadata.network)) : "");
 
-  const isCardPayment = payload?.network_code === "CRD" || payload?.payment_method === "card";
+
 
   function getKorbaNetworkCode(providerCode: string): string {
     const code = providerCode.toLowerCase();

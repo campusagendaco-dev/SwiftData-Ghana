@@ -362,7 +362,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     }
   };
 
-  const initiateKorbaCardPay = async () => {
+  const initiatePaystackCardPay = async () => {
     setStep('initiating');
     setErrorMessage(null);
     const orderId = metadata.order_id || crypto.randomUUID();
@@ -392,7 +392,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
       window.location.href = data.authorization_url;
     } catch (err: any) {
-      console.error("Korba Card launch error:", err);
+      console.error("Paystack Card launch error:", err);
       setErrorMessage(err.message || "Failed to trigger Card payment screen.");
       setStep('payment_number');
       onFailure(err.message || "Card Checkout error");
@@ -744,7 +744,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               >
                 <div className="space-y-1 text-center">
                   <h4 className="text-sm font-black text-foreground uppercase tracking-wide">Pay with Credit/Debit Card</h4>
-                  <p className="text-xs text-muted-foreground">Secure international and local card processing powered by Korba Collections.</p>
+                  <p className="text-xs text-muted-foreground">Secure international and local card processing powered by Paystack.</p>
                 </div>
 
                 {/* Styled Mock Credit Card Graphic */}
@@ -779,7 +779,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 <div className="space-y-3 pt-2">
                   <button
                     type="button"
-                    onClick={initiateKorbaCardPay}
+                    onClick={initiatePaystackCardPay}
                     className="w-full h-12 bg-amber-500 hover:bg-amber-600 text-black font-black rounded-xl transition-all shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2"
                   >
                     Proceed with Card Pay (₵{amount.toFixed(2)})
