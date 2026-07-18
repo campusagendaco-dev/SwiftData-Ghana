@@ -29,6 +29,9 @@ const NavIcon = ({ icon: Icon, className = "" }: { icon: typeof Home; className?
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const lastScrollY = useRef(0);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, isAdmin, signOut } = useAuth();
@@ -78,7 +81,23 @@ const Navbar = () => {
    }, []);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
+    const onScroll = () => {
+      const currentScrollY = window.scrollY;
+      setScrolled(currentScrollY > 12);
+      
+      // Auto-hide watcher on mobile: hide when scroll down, show when scroll up
+      if (window.innerWidth < 768) {
+        if (currentScrollY > lastScrollY.current && currentScrollY > 80) {
+          setVisible(false);
+        } else {
+          setVisible(true);
+        }
+      } else {
+        setVisible(true);
+      }
+      
+      lastScrollY.current = currentScrollY;
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -190,12 +209,18 @@ const Navbar = () => {
       <motion.div 
         className="fixed top-3 left-0 right-0 z-50 px-3 sm:px-5 pointer-events-none"
         initial={{ y: -100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
+        animate={{ y: visible ? 0 : -85, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
       >
         {/* Gradient border shell */}
-        <div
-          className="mx-auto max-w-5xl rounded-2xl pointer-events-auto"
+        <motion.div
+          className="mx-auto rounded-2xl pointer-events-auto"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          animate={{
+            maxWidth: scrolled ? (hovered ? "800px" : "740px") : "1024px",
+          }}
+          transition={{ type: "spring", stiffness: 350, damping: 30 }}
           style={{
             padding: "1px",
             background: pillBorder,
@@ -218,7 +243,13 @@ const Navbar = () => {
               style={{ background: innerHighlight }}
             />
 
-            <div className="flex items-center justify-between h-[54px] px-3 sm:px-4 relative">
+            <motion.div 
+              className="flex items-center justify-between px-3 sm:px-4 relative"
+              animate={{
+                height: scrolled ? "46px" : "54px"
+              }}
+              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+            >
 
               {/* ── Logo ── */}
               <Link to="/" className="flex items-center gap-2.5 shrink-0 group" aria-label="SwiftData Ghana">
@@ -252,22 +283,38 @@ const Navbar = () => {
                     <ShieldCheck className="w-2.5 h-2.5 text-white" />
                   </motion.div>
                 </motion.div>
-                <div className="leading-tight hidden sm:block">
-                  <span className={`${logoText} font-black text-[13px] block leading-none tracking-tight`}>
+                <motion.div 
+                  className="leading-tight hidden sm:block overflow-hidden animate-in fade-in"
+                  animate={{
+                    width: scrolled ? 0 : "auto",
+                    opacity: scrolled ? 0 : 1,
+                    marginLeft: scrolled ? 0 : 8
+                  }}
+                  transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                >
+                  <span className={`${logoText} font-black text-[13px] block leading-none tracking-tight whitespace-nowrap`}>
                     SwiftData Ghana
                   </span>
-                  <span className="text-amber-400 text-[10px] leading-none font-semibold tracking-wide">
+                  <span className="text-amber-400 text-[10px] leading-none font-semibold tracking-wide whitespace-nowrap">
                     #1 Cheapest Data Bundles
                   </span>
-                </div>
+                </motion.div>
               </Link>
 
               {/* ── Desktop nav links ── */}
-              <div className="hidden md:flex items-center gap-0.5">
+              <motion.div 
+                className="hidden md:flex items-center"
+                animate={{
+                  gap: scrolled ? "2px" : "4px"
+                }}
+                transition={{ type: "spring", stiffness: 300, damping: 28 }}
+              >
                 {mainLinks.map(({ to, label, icon }) => (
                   <Link
                     key={to} to={to}
-                    className={`relative flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-200 ${
+                    className={`relative flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200 ${
+                      scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
+                    } ${
                       isActive(to) ? (isDark ? "text-white" : "text-gray-900") : linkIdle
                     }`}
                   >
@@ -293,7 +340,9 @@ const Navbar = () => {
 
                 <button
                   onClick={openTutorial}
-                  className={`flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-150 ${linkIdle}`}
+                  className={`flex items-center gap-1.5 rounded-xl font-medium transition-all duration-150 ${
+                    scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
+                  } ${linkIdle}`}
                 >
                   <NavIcon icon={HelpCircle} /> How It Works
                 </button>
@@ -378,7 +427,9 @@ const Navbar = () => {
                 {user && (
                   <Link
                     to={isAdmin ? "/admin" : "/dashboard"}
-                    className={`relative flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-200 ${
+                    className={`relative flex items-center gap-1.5 rounded-xl font-medium transition-all duration-200 ${
+                      scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
+                    } ${
                       isActive("/dashboard") || isActive("/admin") ? (isDark ? "text-white" : "text-gray-900") : linkIdle
                     }`}
                   >
@@ -408,14 +459,18 @@ const Navbar = () => {
                 {user ? (
                   <button
                     onClick={handleSignOut}
-                    className={`ml-0.5 flex items-center gap-1.5 px-3 py-[7px] rounded-xl text-sm font-medium transition-all duration-150 ${linkIdle}`}
+                    className={`ml-0.5 flex items-center gap-1.5 rounded-xl font-medium transition-all duration-150 ${
+                      scrolled ? "px-2 py-[5px] text-xs" : "px-3 py-[7px] text-sm"
+                    } ${linkIdle}`}
                   >
                     <LogOut className="w-4 h-4" /> Sign Out
                   </button>
                 ) : (
                   <Link to="/login">
                     <motion.div
-                      className="ml-1 flex items-center gap-1.5 text-black text-sm font-bold px-4 py-2 rounded-xl cursor-pointer"
+                      className={`ml-1 flex items-center gap-1.5 text-black font-bold cursor-pointer rounded-xl ${
+                        scrolled ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
+                      }`}
                       whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(251,191,36,0.55)" }}
                       whileTap={{ scale: 0.96 }}
                       style={{
@@ -427,7 +482,7 @@ const Navbar = () => {
                     </motion.div>
                   </Link>
                 )}
-              </div>
+              </motion.div>
 
               {/* ── Mobile right ── */}
               <div className="md:hidden flex items-center gap-1.5">
