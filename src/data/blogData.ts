@@ -20,7 +20,7 @@ export const BLOG_POSTS: BlogPost[] = [
     readTime: "4 min read",
     category: "Guides",
     author: "SwiftData SEO Team",
-    image: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=800",
+    image: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQtpbukup0eWbekRceH5-bAjUQmeoVElR6aO-I_u-UZZQ&s=10",
     keywords: ["cheap mtn data", "cheap data bundles ghana", "cheapest data site", "non-expiry data", "momo data buy"],
     content: `
 <h2>The Rise of Cheap Data Bundles in Ghana</h2>
