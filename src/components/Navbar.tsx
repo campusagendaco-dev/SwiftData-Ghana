@@ -212,13 +212,12 @@ const Navbar = () => {
         animate={{ y: visible ? 0 : -85, opacity: 1 }}
         transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.2 }}
       >
-        {/* Gradient border shell */}
         <motion.div
-          className="mx-auto rounded-2xl pointer-events-auto"
+          className="mx-auto rounded-2xl pointer-events-auto w-full"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           animate={{
-            maxWidth: scrolled ? (hovered ? "800px" : "740px") : "1024px",
+            maxWidth: scrolled ? (hovered ? "800px" : "740px") : (hovered ? "1050px" : "1024px"),
           }}
           transition={{ type: "spring", stiffness: 350, damping: 30 }}
           style={{
