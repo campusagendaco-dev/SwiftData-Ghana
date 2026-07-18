@@ -51,7 +51,8 @@ export async function verifyAdmin(
 
   try {
     const claims = getJwtClaims(token);
-    const isServiceRole = claims && claims.role === "service_role";
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const isServiceRole = !!(serviceRoleKey && token === serviceRoleKey);
 
     let user;
     if (isServiceRole) {

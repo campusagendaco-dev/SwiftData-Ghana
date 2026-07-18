@@ -458,6 +458,24 @@ serve(async (req) => {
       });
     }
 
+    const sendPendingSmsIfNeeded = async (forceSend = false) => {
+      if (!existingOrder || existingOrder.sms_reminder_sent) return;
+      if (!existingOrder.customer_phone) return;
+      
+      const orderAgeMs = Date.now() - new Date(existingOrder.created_at).getTime();
+      if (forceSend || orderAgeMs > 30000) {
+        try {
+          const momoMsg = "Your checkout payment is pending. Please check your account for approvals by dialing *170# (Option 6 - My Approvals) to approve your pending MoMo transaction.";
+          await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: momoMsg, senderId: "swiftupdate" }, existingOrder.agent_id);
+          await supabaseAdmin.from("orders").update({ sms_reminder_sent: true }).eq("id", targetReference);
+          existingOrder.sms_reminder_sent = true;
+          console.log(`[verify-payment] Sent pending/abandoned payment SMS reminder to ${existingOrder.customer_phone} for order ${targetReference}`);
+        } catch (smsErr) {
+          console.error("[verify-payment] Payment SMS dispatch failed:", smsErr);
+        }
+      }
+    };
+
     const credentials = await getProviderCredentials(supabaseAdmin);
     const paystackSecretKey = credentials.paystackSecretKey;
     let orderType = (existingOrder?.order_type || "data") as string;
@@ -728,6 +746,7 @@ serve(async (req) => {
           return new Response(JSON.stringify({ status: "error", error: failMsg }), { headers: corsHeaders });
         } else {
           console.log(`[verify-payment] Korba status is not success: ${korbaStatus}`);
+          await sendPendingSmsIfNeeded(false);
           return new Response(JSON.stringify({ status: "pending", message: "Awaiting mobile money approval." }), { headers: corsHeaders });
         }
       } catch (e) {
@@ -799,14 +818,7 @@ serve(async (req) => {
         } else if (txStatus === "abandoned") {
           console.warn(`[verify-payment] Payment abandoned`);
           
-          if (existingOrder?.customer_phone) {
-            try {
-              const momoMsg = "Your checkout payment is pending. Please quickly dial *170# and check Option 6 (My Approvals) to approve your MoMo transaction.";
-              await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: momoMsg, senderId: "swiftupdate" }, existingOrder.agent_id);
-            } catch (smsErr) {
-              console.error("[verify-payment] Abandoned payment SMS dispatch failed:", smsErr);
-            }
-          }
+          await sendPendingSmsIfNeeded(true);
 
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
@@ -815,9 +827,11 @@ serve(async (req) => {
           return new Response(JSON.stringify({ status: "not_paid", error: "The customer abandoned the transaction." }), { headers: corsHeaders });
         } else if (txStatus === "ongoing") {
           console.log(`[verify-payment] Payment ongoing: user action needed (OTP/transfer)`);
+          await sendPendingSmsIfNeeded(false);
           return new Response(JSON.stringify({ status: "pending", message: "Awaiting customer action (OTP / Transfer) to complete payment." }), { headers: corsHeaders });
         } else if (txStatus === "pending" || txStatus === "processing" || txStatus === "queued") {
           console.log(`[verify-payment] Payment in progress (${txStatus})`);
+          await sendPendingSmsIfNeeded(false);
           return new Response(JSON.stringify({ status: "pending", message: "Transaction is currently in progress." }), { headers: corsHeaders });
         } else {
           console.warn(`[verify-payment] Payment not confirmed or unknown status:`, txStatus);
