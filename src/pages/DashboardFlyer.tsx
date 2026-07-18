@@ -3,13 +3,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { basePackages, networks } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Download, Sparkles, Loader2, Eye, MessageCircle, RefreshCw, Check, QrCode } from "lucide-react";
+import { Download, Sparkles, Loader2, Eye, MessageCircle, RefreshCw, Check, QrCode, Copy } from "lucide-react";
 import html2canvas from "html2canvas";
 import { QRCodeCanvas } from "qrcode.react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AgentPrices { [network: string]: { [size: string]: string } }
 interface DisabledPackages { [network: string]: string[] }
-type Template = "black-gold" | "royal-blue" | "ghana-pride";
+type Template = "black-gold" | "royal-blue" | "ghana-pride" | "ai-generated";
 
 interface FlyerInfo {
   storeName: string;
@@ -22,6 +23,7 @@ const TEMPLATES: { id: Template; name: string; desc: string; bg: string; accent:
   { id: "black-gold",  name: "Black Gold",   desc: "Premium luxury",      bg: "#080808",  accent: "#EAB308", text: "#ffffff" },
   { id: "royal-blue",  name: "Royal Blue",   desc: "Corporate clean",     bg: "#06122b",  accent: "#60A5FA", text: "#ffffff" },
   { id: "ghana-pride", name: "Ghana Pride",  desc: "Bold & vibrant",      bg: "#0d1a0e",  accent: "#FCD116", text: "#ffffff" },
+  { id: "ai-generated", name: "AI Designer", desc: "AI custom theme",     bg: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)", accent: "#f43f5e", text: "#ffffff" },
 ];
 
 // ─── Template builders ────────────────────────────────────────────────────────
@@ -264,6 +266,9 @@ const DashboardFlyer = () => {
   const { profile } = useAuth();
   const { toast } = useToast();
   const [template, setTemplate] = useState<Template>("black-gold");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [caption, setCaption] = useState("");
+  const [copiedCaption, setCopiedCaption] = useState(false);
   const [flyerHtml, setFlyerHtml] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -325,12 +330,37 @@ const DashboardFlyer = () => {
     };
   };
 
-  const generateFlyer = () => {
+  const generateFlyer = async () => {
     if (!profile?.store_name) {
       toast({ title: "Store name required", description: "Set up your store name in Settings first.", variant: "destructive" });
       return;
     }
     setGenerating(true);
+
+    if (template === "ai-generated") {
+      try {
+        const { data, error } = await supabase.functions.invoke("generate-flyer", {
+          body: {
+            storeName: profile.store_name,
+            storeUrl: profile.slug ? `swiftdatagh.shop/store/${profile.slug}` : "swiftdatagh.shop",
+            packages: buildInfo().packages,
+            networks,
+            contact: profile.momo_number || "",
+            prompt: aiPrompt
+          }
+        });
+        if (error || !data?.html) throw new Error(error?.message || "Failed to generate AI flyer");
+        setFlyerHtml(data.html);
+        if (data.caption) setCaption(data.caption);
+        toast({ title: "AI Flyer Generated!", description: "Dynamic styles successfully compiled." });
+      } catch (err: any) {
+        toast({ title: "AI Design failed", description: err.message, variant: "destructive" });
+      } finally {
+        setGenerating(false);
+      }
+      return;
+    }
+
     setTimeout(() => {
       try {
         const html = buildFlyerHtml(template, buildInfo(), includeQr ? qrDataUrl : "");
@@ -479,12 +509,12 @@ const DashboardFlyer = () => {
       {/* Template selector */}
       <div>
         <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground/70 mb-3">Choose Template</p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {TEMPLATES.map(t => (
             <button
               key={t.id}
               type="button"
-              onClick={() => { setTemplate(t.id as Template); setFlyerHtml(null); }}
+              onClick={() => { setTemplate(t.id as Template); setFlyerHtml(null); setCaption(""); }}
               className={`relative rounded-2xl p-4 text-left transition-all border ${
                 template === t.id
                   ? "border-amber-500/50 bg-amber-500/10 dark:bg-amber-400/5"
@@ -507,6 +537,21 @@ const DashboardFlyer = () => {
           ))}
         </div>
       </div>
+
+      {template === "ai-generated" && (
+        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-5 space-y-3 animate-in slide-in-from-top-2 duration-300">
+          <p className="text-[10px] font-black uppercase tracking-widest text-purple-400 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" /> AI Design Co-Pilot Prompt
+          </p>
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            placeholder="e.g., Cyberpunk neon pink layout with a tagline: Speed is everything"
+            className="w-full h-11 rounded-2xl px-4 text-sm font-medium border border-purple-500/30 focus:border-purple-500 outline-none bg-card text-foreground placeholder:text-muted-foreground/30"
+          />
+        </div>
+      )}
 
       {/* Store summary + QR toggle */}
       <div className="rounded-2xl bg-card border border-border shadow-sm p-5 space-y-4">
@@ -609,6 +654,33 @@ const DashboardFlyer = () => {
               {copied ? "Copied!" : "Full Size"}
             </Button>
           </div>
+
+          {/* AI Generated Caption */}
+          {caption && (
+            <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-widest text-purple-400 flex items-center gap-1.5">
+                  📝 AI Copywriting Caption
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(caption);
+                    setCopiedCaption(true);
+                    setTimeout(() => setCopiedCaption(false), 2000);
+                  }}
+                  className="h-7 text-[10px] font-black text-purple-400 hover:bg-purple-500/10 gap-1"
+                >
+                  {copiedCaption ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copiedCaption ? "Copied!" : "Copy Caption"}
+                </Button>
+              </div>
+              <pre className="text-xs text-foreground/80 font-medium font-sans whitespace-pre-wrap leading-relaxed select-all">
+                {caption}
+              </pre>
+            </div>
+          )}
 
           {/* Secondary actions row */}
           <div className="flex gap-3">

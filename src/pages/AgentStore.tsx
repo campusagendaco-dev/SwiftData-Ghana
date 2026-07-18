@@ -884,6 +884,15 @@ const AgentStore = () => {
   const total = basePrice > 0 ? parseFloat((discountedPrice + fee).toFixed(2)) : 0;
 
   const accentColor = agent?.store_primary_color || "#FFCC00";
+  const resolvedGradient = useMemo(() => {
+    const preset = [
+      { color: "#f59e0b", value: "linear-gradient(135deg, rgba(251,191,36,0.15) 0%, rgba(245,158,11,0.15) 50%, rgba(239,68,68,0.15) 100%)" },
+      { color: "#06b6d4", value: "linear-gradient(135deg, rgba(2,132,199,0.15) 0%, rgba(6,182,212,0.15) 50%, rgba(16,185,129,0.15) 100%)" },
+      { color: "#8b5cf6", value: "linear-gradient(135deg, rgba(139,92,246,0.15) 0%, rgba(99,102,241,0.15) 50%, rgba(59,130,246,0.15) 100%)" },
+      { color: "#10b981", value: "linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(132,204,22,0.15) 50%, rgba(6,182,212,0.15) 100%)" }
+    ].find(p => p.color === agent?.store_primary_color);
+    return preset ? preset.value : `linear-gradient(135deg, ${accentColor}15 0%, rgba(255,255,255,0.02) 100%)`;
+  }, [agent?.store_primary_color, accentColor]);
   const netConf = NETWORK_CONFIG[selectedNetwork];
 
   const handleCardClick = useCallback((size: string, price: number) => {
@@ -1389,7 +1398,7 @@ const AgentStore = () => {
           style={{ 
             background: storeBannerUrl 
               ? `url(${storeBannerUrl}) center/cover no-repeat` 
-              : `linear-gradient(135deg, ${accentColor}15 0%, rgba(255,255,255,0.02) 100%)` 
+              : resolvedGradient 
           }}
         >
           {/* Ambient Glow Dot (only shown if there is no custom banner to avoid conflict) */}

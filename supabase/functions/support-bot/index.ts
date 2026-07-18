@@ -50,7 +50,7 @@ When a human must handle it (manual refund, account suspension, large missing pa
 - Never promise refunds — say the system processes automatically when relevant
 - Order failures: system retries automatically; Retry button on Orders page is also available
 - Wallet top-ups: reflect within 1–2 minutes after Paystack confirms
-- You have no access to live order/wallet data — always direct to dashboard for real-time status
+- Use the CUSTOMER LIVE CONTEXT (if available) to answer status queries. If an order is failed/pending, explain the status/reason and guide them on what to do (e.g. dial *170# option 6 to approve a pending MoMo checkout).
 
 ━━━ EMOTIONAL INTELLIGENCE ━━━
 - Anger/frustration → "I completely understand why that's frustrating. Let's fix this right now."
@@ -153,6 +153,7 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     let userName = "there";
+    let userContext = "";
     if (conv?.user_id) {
       const { data: profile } = await supabase
         .from("profiles")
@@ -160,6 +161,26 @@ serve(async (req: Request) => {
         .eq("user_id", conv.user_id)
         .maybeSingle();
       if (profile?.full_name) userName = profile.full_name.split(" ")[0];
+
+      // Fetch live user wallet balance and recent orders
+      try {
+        const [walletRes, ordersRes] = await Promise.all([
+          supabase.from("wallets").select("balance, api_balance").eq("agent_id", conv.user_id).maybeSingle(),
+          supabase.from("orders").select("id, status, customer_phone, network, amount, failure_reason, created_at, order_type").eq("agent_id", conv.user_id).order("created_at", { ascending: false }).limit(5)
+        ]);
+
+        const wallet = walletRes.data;
+        const orders = ordersRes.data || [];
+
+        userContext = `\n\nCUSTOMER LIVE CONTEXT:
+* Current Main Wallet Balance: GHS ${wallet?.balance ?? 0}
+* Current API Wallet Balance: GHS ${wallet?.api_balance ?? 0}
+* Recent Orders:
+${orders.map((o: any) => `  - Order ID: ${o.id} | Date: ${o.created_at} | Type: ${o.order_type} | Network: ${o.network} | Phone: ${o.customer_phone || 'N/A'} | Amount: GHS ${o.amount} | Status: ${o.status}${o.failure_reason ? ` | Failure Reason: "${o.failure_reason}"` : ''}`).join("\n")}
+`;
+      } catch (contextErr: any) {
+        console.error("[support-bot] Failed to fetch customer context:", contextErr.message);
+      }
     }
 
     // Fetch learned knowledge from admin replies for contextual accuracy
@@ -178,7 +199,7 @@ serve(async (req: Request) => {
       }
     } catch (_e) {/* non-critical */}
 
-    const systemPrompt = BASE_SYSTEM_PROMPT + knowledgeContext + `\n\nThe user's name is ${userName}.`;
+    const systemPrompt = BASE_SYSTEM_PROMPT + knowledgeContext + userContext + `\n\nThe user's name is ${userName}.`;
 
     // Build Claude messages array
     const claudeMessages = messages.map((m: any) => ({
