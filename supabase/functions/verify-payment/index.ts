@@ -460,16 +460,29 @@ serve(async (req) => {
 
     const sendPendingSmsIfNeeded = async (forceSend = false) => {
       if (!existingOrder || existingOrder.sms_reminder_sent) return;
-      if (!existingOrder.customer_phone) return;
+      
+      let phone = existingOrder.customer_phone;
+      if (!phone && existingOrder.metadata) {
+        try {
+          const meta = typeof existingOrder.metadata === "string" 
+            ? JSON.parse(existingOrder.metadata) 
+            : existingOrder.metadata;
+          phone = meta?.payment_phone || meta?.customer_phone;
+        } catch (e) {
+          console.error("[verify-payment] Failed to parse metadata for phone fallback:", e);
+        }
+      }
+      
+      if (!phone) return;
       
       const orderAgeMs = Date.now() - new Date(existingOrder.created_at).getTime();
       if (forceSend || orderAgeMs > 30000) {
         try {
           const momoMsg = "Your checkout payment is pending. Please check your account for approvals by dialing *170# (Option 6 - My Approvals) to approve your pending MoMo transaction.";
-          await sendPaymentSms(supabaseAdmin, existingOrder.customer_phone, "custom", { message: momoMsg, senderId: "swiftupdate" }, existingOrder.agent_id);
+          await sendPaymentSms(supabaseAdmin, phone, "custom", { message: momoMsg, senderId: "swiftupdate" }, existingOrder.agent_id);
           await supabaseAdmin.from("orders").update({ sms_reminder_sent: true }).eq("id", targetReference);
           existingOrder.sms_reminder_sent = true;
-          console.log(`[verify-payment] Sent pending/abandoned payment SMS reminder to ${existingOrder.customer_phone} for order ${targetReference}`);
+          console.log(`[verify-payment] Sent pending/abandoned payment SMS reminder to ${phone} for order ${targetReference}`);
         } catch (smsErr) {
           console.error("[verify-payment] Payment SMS dispatch failed:", smsErr);
         }
