@@ -138,7 +138,7 @@ export const BLOG_POSTS: BlogPost[] = [
     readTime: "5 min read",
     category: "Comparisons",
     author: "Ghana Tech Blog",
-    image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=800",
+    image: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRaZHs87h_iaip7BTKaOzleUyqs0iHREtIcWQhKSx8ppQ&s=10",
     keywords: ["cheap data sites", "datasika", "datamart", "getdatagh", "datahub", "swiftdata ghana"],
     content: `
 <h2>The Boom of Third-Party Data Sites in Ghana</h2>
