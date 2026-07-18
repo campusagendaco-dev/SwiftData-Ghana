@@ -127,6 +127,8 @@ const AgentDevAPIDocs = lazy(() => import("./pages/AgentDevAPIDocs"));
 const DashboardNotifications = lazy(() => import("./pages/DashboardNotifications"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
+const BlogList = lazy(() => import("./pages/BlogList"));
+const BlogPost = lazy(() => import("./pages/BlogPost"));
 
 const queryClient = new QueryClient();
 
@@ -389,6 +391,8 @@ const AppContent = () => {
         <Route path="/developers" element={<DeveloperPortal />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/blog" element={<BlogList />} />
+        <Route path="/blog/:slug" element={<BlogPost />} />
 
         {/* Auth pages */}
         <Route path="/login" element={<AuthPage />} />

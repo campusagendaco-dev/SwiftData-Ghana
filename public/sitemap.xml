@@ -134,4 +134,34 @@
     <priority>0.30</priority>
   </url>
 
+  <!-- Blog Listing -->
+  <url>
+    <loc>https://swiftdatagh.shop/blog</loc>
+    <lastmod>2026-07-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- Blog Posts -->
+  <url>
+    <loc>https://swiftdatagh.shop/blog/cheapest-mtn-data-bundles-ghana</loc>
+    <lastmod>2026-07-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <url>
+    <loc>https://swiftdatagh.shop/blog/mtn-mashup-ghana-complete-guide</loc>
+    <lastmod>2026-07-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <url>
+    <loc>https://swiftdatagh.shop/blog/cheapest-data-sites-ghana-comparison</loc>
+    <lastmod>2026-07-18</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
 </urlset>
