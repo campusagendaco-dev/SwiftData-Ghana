@@ -98,7 +98,7 @@ export const BLOG_POSTS: BlogPost[] = [
     readTime: "3 min read",
     category: "Mashup",
     author: "SwiftData Tech Writer",
-    image: "https://images.unsplash.com/photo-1562408590-e32931084e23?auto=format&fit=crop&q=80&w=800",
+    image: "https://d1eipm3vz40hy0.cloudfront.net/images/Customer+Stories+/MTN_Ghana/MTN_phone.png",
     keywords: ["mtn mashup", "mtn pulse", "buy mashup online", "mashup bundles", "ghana internet"],
     content: `
 <h2>What is MTN Pulse Mashup?</h2>
