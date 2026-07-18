@@ -29,6 +29,8 @@ import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 interface PromoResult {
   valid: boolean;
@@ -878,7 +880,7 @@ const AgentStore = () => {
     : Number(utilityAmount) || 0;
 
   const discountedPrice = isFreePromo ? 0 : parseFloat((basePrice * (1 - discountPct / 100)).toFixed(2));
-  const fee = isFreePromo ? 0 : (basePrice > 0 ? calcFee(discountedPrice) : 0);
+  const fee = isFreePromo ? 0 : (selectedService === "data" ? (basePrice > 0 ? calcFee(discountedPrice) : 0) : 0);
   const total = basePrice > 0 ? parseFloat((discountedPrice + fee).toFixed(2)) : 0;
 
   const accentColor = agent?.store_primary_color || "#FFCC00";
@@ -1533,7 +1535,7 @@ const AgentStore = () => {
         )}
 
         {/* Dropdown Selector for Package Type / Category */}
-        {(selectedService === "data" || selectedService === "airtime") && (
+        {selectedService === "data" && (
           <div className="mb-6 animate-fade-in relative z-50">
             <BundleSelectorDropdown
               options={dropdownOptions}
@@ -1709,43 +1711,193 @@ const AgentStore = () => {
           );
         })()}
 
-        {/* ── Airtime Coming Soon ── */}
+        {/* ── Airtime Form ── */}
         {selectedService === "airtime" && (
-          <div className="rounded-3xl border border-white/8 overflow-hidden" style={{ background: "#111116" }}>
-            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 border border-white/10"
-                style={{ backgroundColor: `${accentColor}18` }}>
-                <Smartphone className="w-7 h-7" style={{ color: accentColor }} />
+          <div className="rounded-3xl border border-white/8 overflow-hidden p-6 space-y-6 animate-in fade-in duration-300" style={{ background: "#111116" }}>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">Recipient Phone Number</Label>
+                <div className="relative">
+                  <Phone className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors pointer-events-none z-10 ${isPhoneValid ? "text-emerald-400" : "text-white/30"}`} />
+                  <Input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="e.g. 054 123 4567"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    maxLength={12}
+                    className="w-full h-14 pl-11 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                  />
+                </div>
               </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-400/20 bg-amber-400/8 mb-3">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Coming Soon</span>
+
+              <div>
+                <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">Airtime Amount (GHS)</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-sm">₵</span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="Enter amount (min GHS 1)"
+                    value={airtimeAmount}
+                    onChange={(e) => setAirtimeAmount(e.target.value)}
+                    className="w-full h-14 pl-8 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                  />
+                </div>
               </div>
-              <h3 className="text-lg font-black text-white mb-1">Airtime Top-up</h3>
-              <p className="text-sm text-white/30 font-medium leading-relaxed max-w-[220px]">
-                Airtime purchase will be available very soon. Check back shortly.
-              </p>
+
+              {/* Quick Select Amounts */}
+              <div className="grid grid-cols-6 gap-2">
+                {[2, 5, 10, 20, 50, 100].map((amt) => (
+                  <button
+                    type="button"
+                    key={amt}
+                    onClick={() => setAirtimeAmount(String(amt))}
+                    className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
+                      Number(airtimeAmount) === amt
+                        ? "bg-white text-black border-transparent"
+                        : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    ₵{amt}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Checkout Pricing Panel */}
+            {Number(airtimeAmount) >= 1 && (
+              <div className="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
+                <div className="flex justify-between text-xs text-white/50">
+                  <span>Airtime Value:</span>
+                  <span className="text-white font-bold">₵{Number(airtimeAmount).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-white/50">
+                  <span>Platform Fee:</span>
+                  <span className="text-emerald-400 font-bold">₵0.00</span>
+                </div>
+                <div className="border-t border-white/5 pt-3 flex justify-between text-sm">
+                  <span className="font-bold text-white">Total Pay:</span>
+                  <span className="font-black text-amber-400">₵{Number(airtimeAmount).toFixed(2)}</span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={buying || !isPhoneValid}
+                  onClick={() => handlePaystackBuy(false)}
+                  className="w-full h-12 rounded-[16px] font-black text-sm uppercase tracking-wide text-black transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {buying ? <Loader2 className="w-4 h-4 animate-spin" /> : "Purchase Airtime"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── Utility Coming Soon ── */}
+        {/* ── Utility Form ── */}
         {selectedService === "utility" && (
-          <div className="rounded-3xl border border-white/8 overflow-hidden" style={{ background: "#111116" }}>
-            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 border border-white/10"
-                style={{ backgroundColor: `${accentColor}18` }}>
-                <Zap className="w-7 h-7" style={{ color: accentColor }} />
+          <div className="rounded-3xl border border-white/8 overflow-hidden p-6 space-y-6 animate-in fade-in duration-300" style={{ background: "#111116" }}>
+            <div className="space-y-4">
+              {/* Provider Selector */}
+              <div>
+                <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">Select Utility Provider</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { id: "ECG", label: "ECG Electricity" },
+                    { id: "GWCL", label: "Ghana Water (GWCL)" }
+                  ].map((prov) => (
+                    <button
+                      type="button"
+                      key={prov.id}
+                      onClick={() => { setUtilityType(prov.id as "ECG" | "GWCL"); setUtilityNumber(""); setUtilityAmount(""); }}
+                      className={`py-3.5 text-xs font-black uppercase tracking-wider rounded-[18px] border transition-all active:scale-95 ${
+                        utilityType === prov.id
+                          ? "bg-white text-black border-transparent shadow-xl"
+                          : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
+                      }`}
+                    >
+                      {prov.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-400/20 bg-amber-400/8 mb-3">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Coming Soon</span>
+
+              {/* Meter / Account Number */}
+              <div>
+                <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">
+                  {utilityType === "ECG" ? "ECG Meter Number" : "GWCL Account Number"}
+                </Label>
+                <Input
+                  type="text"
+                  placeholder={utilityType === "ECG" ? "Enter ECG meter number" : "Enter GWCL account number"}
+                  value={utilityNumber}
+                  onChange={(e) => setUtilityNumber(e.target.value)}
+                  className="w-full h-14 pl-4 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                />
               </div>
-              <h3 className="text-lg font-black text-white mb-1">Utility Bills</h3>
-              <p className="text-sm text-white/30 font-medium leading-relaxed max-w-[220px]">
-                ECG & GWCL bill payments are on the way. We'll notify you when it's live.
-              </p>
+
+              {/* Bill Amount */}
+              <div>
+                <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">Bill Amount (GHS)</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-bold text-sm">₵</span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="Enter bill amount"
+                    value={utilityAmount}
+                    onChange={(e) => setUtilityAmount(e.target.value)}
+                    className="w-full h-14 pl-8 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Recipient Phone (for receipt / Momo payment) */}
+              <div>
+                <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">Customer Phone Number (for updates)</Label>
+                <div className="relative">
+                  <Phone className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors pointer-events-none z-10 ${isPhoneValid ? "text-emerald-400" : "text-white/30"}`} />
+                  <Input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="e.g. 054 123 4567"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    maxLength={12}
+                    className="w-full h-14 pl-11 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                  />
+                </div>
+              </div>
             </div>
+
+            {/* Pricing Panel */}
+            {Number(utilityAmount) >= 1 && utilityNumber.length >= 5 && (
+              <div className="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
+                <div className="flex justify-between text-xs text-white/50">
+                  <span>Bill Value:</span>
+                  <span className="text-white font-bold">₵{Number(utilityAmount).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-white/50">
+                  <span>Platform Fee:</span>
+                  <span className="text-emerald-400 font-bold">₵0.00</span>
+                </div>
+                <div className="border-t border-white/5 pt-3 flex justify-between text-sm">
+                  <span className="font-bold text-white">Total Pay:</span>
+                  <span className="font-black text-amber-400">₵{Number(utilityAmount).toFixed(2)}</span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={buying || !isPhoneValid}
+                  onClick={() => handlePaystackBuy(false)}
+                  className="w-full h-12 rounded-[16px] font-black text-sm uppercase tracking-wide text-black transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {buying ? <Loader2 className="w-4 h-4 animate-spin" /> : `Pay ${utilityType} Bill`}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
