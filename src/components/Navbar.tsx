@@ -532,7 +532,7 @@ const Navbar = () => {
               </div>
             </motion.div>
           </nav>
-        </div>
+        </motion.div>
       </motion.div>
 
       {/* ─────────── Backdrop & Drawer Animated Group ─────────── */}
