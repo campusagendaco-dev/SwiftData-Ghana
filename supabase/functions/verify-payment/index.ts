@@ -524,8 +524,7 @@ serve(async (req) => {
             await fulfillOrder(supabaseAdmin, targetReference, provider.id, existingOrder.provider_order_id, token || null);
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
           } else if (isFailed) {
-            const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(existingOrder.payment_method?.toLowerCase() || "");
-            const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
+            const targetStatus = "fulfillment_failed";
             const resolvedReason = translateFailureReason(checkResult.reason || "Provider reported failure during status check");
             await supabaseAdmin.from("orders").update({ 
               status: targetStatus, 
@@ -1558,7 +1557,7 @@ serve(async (req) => {
 
       // Otherwise, it's a definitive failure/rejection (e.g. Insufficient Balance, Invalid Number, etc.)
       const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
-      const targetStatus = isWalletOrApiPayment ? "fulfillment_failed" : "processing";
+      const targetStatus = "fulfillment_failed";
       const targetProviderOrderId = "failed_api_call";
       const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request");
 

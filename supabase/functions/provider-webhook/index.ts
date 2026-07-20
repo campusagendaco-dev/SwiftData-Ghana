@@ -159,7 +159,7 @@ serve(async (req) => {
     
     let systemStatus = "processing";
     if (["completed", "success", "successful", "delivered", "fulfilled"].includes(rawStatus)) systemStatus = "fulfilled";
-    else if (["failed", "rejected", "error"].includes(rawStatus)) systemStatus = "fulfillment_failed";
+    else if (["failed", "rejected", "error", "refunded", "refund", "cancelled", "reversed"].includes(rawStatus)) systemStatus = "fulfillment_failed";
 
     const { data: order, error: fetchError } = await supabaseAdmin
       .from("orders")
