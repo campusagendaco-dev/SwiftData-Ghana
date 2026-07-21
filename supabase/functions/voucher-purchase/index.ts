@@ -31,7 +31,7 @@ serve(async (req) => {
     // 2. Validate input fields
     if (!typeUpper || (typeUpper !== "WASSCE" && typeUpper !== "BECE")) {
       return new Response(JSON.stringify({ success: false, error: "VoucherType is required (WASSCE or BECE)" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -39,7 +39,7 @@ serve(async (req) => {
     const qty = parseInt(Quantity, 10);
     if (isNaN(qty) || qty < 1 || qty > 100) {
       return new Response(JSON.stringify({ success: false, error: "Quantity must be between 1 and 100" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -47,7 +47,7 @@ serve(async (req) => {
     const recipientDigits = String(Recipient || "").replace(/\D+/g, "");
     if (recipientDigits.length !== 10 || !recipientDigits.startsWith("0")) {
       return new Response(JSON.stringify({ success: false, error: "Recipient must be a valid 10-digit phone number starting with 0" }), {
-        status: 400,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -84,8 +84,8 @@ serve(async (req) => {
     }
 
     if (!currentUserId) {
-      return new Response(JSON.stringify({ success: false, error: "Invalid session or API key" }), {
-        status: 401,
+      return new Response(JSON.stringify({ success: false, error: "Session expired or invalid API key. Please log in again." }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -186,8 +186,8 @@ serve(async (req) => {
     });
 
     if (debitError || !debitResult?.success) {
-      return new Response(JSON.stringify({ success: false, error: debitResult?.error || "Insufficient balance or wallet error" }), {
-        status: 402,
+      return new Response(JSON.stringify({ success: false, error: debitResult?.error || "Insufficient wallet balance" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -205,7 +205,7 @@ serve(async (req) => {
       // Refund wallet on provider unconfigured
       await supabaseAdmin.rpc("credit_wallet", { p_agent_id: currentUserId, p_amount: totalCost });
       return new Response(JSON.stringify({ success: false, error: "Voucher provider currently unavailable. Wallet refunded." }), {
-        status: 404,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -320,7 +320,7 @@ serve(async (req) => {
   } catch (err: any) {
     console.error("[Vouchers] Internal error:", err);
     return new Response(JSON.stringify({ success: false, error: err.message || "Internal server error" }), {
-      status: 500,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

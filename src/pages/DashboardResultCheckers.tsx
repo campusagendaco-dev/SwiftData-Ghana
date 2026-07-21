@@ -136,7 +136,22 @@ const DashboardResultCheckers = () => {
       });
 
       if (error || !data?.success) {
-        const msg = data?.error || error?.message || "Insufficient balance or provider error.";
+        let msg = data?.error;
+        if (!msg && error) {
+          try {
+            const errContext = (error as any).context;
+            if (errContext && typeof errContext.json === "function") {
+              const parsed = await errContext.json();
+              if (parsed?.error) msg = parsed.error;
+            }
+          } catch {}
+          if (!msg) {
+            msg = error.message?.includes("non-2xx")
+              ? "Unable to complete purchase. Please ensure you have sufficient wallet balance or try again later."
+              : error.message;
+          }
+        }
+        if (!msg) msg = "Insufficient balance or provider error.";
         setErrorMessage(msg);
         toast({ 
           title: "Purchase Failed", 
