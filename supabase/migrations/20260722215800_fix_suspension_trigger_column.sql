@@ -1,7 +1,5 @@
--- Migration: Account Suspension SMS Trigger
--- Description: Sends an automated warning SMS to a user when their account status is set to suspended (is_suspended = true),
---              explaining potential security compliance reasons (e.g. multi-accounting, suspicious login, velocity limits)
---              and providing the support number to resolve it ASAP.
+-- Migration: Fix column name and remove invalid field reference in account suspension SMS trigger function
+-- Description: Replaces invalid column 'support_number' with 'customer_service_number' and removes reference to non-existent field 'suspension_reason' on profiles.
 
 CREATE OR REPLACE FUNCTION public.handle_profile_suspension_trigger()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -18,14 +16,16 @@ BEGIN
     v_normalized_phone := public.normalize_phone_sql(NEW.phone);
 
     IF v_normalized_phone IS NOT NULL AND v_normalized_phone != '' THEN
-      -- Fetch credentials and support phone number
+      -- Fetch credentials and support phone number using valid column 'customer_service_number'
       SELECT txtconnect_api_key, txtconnect_sender_id, customer_service_number
       INTO v_sms_api_key, v_sms_sender_id, v_support_number
       FROM public.v_system_settings_with_secrets
       WHERE id = 1;
 
-      -- Build compliance suspension explanation text
-      v_message := 'SwiftData Notice: Your account has been suspended due to security compliance rules (e.g. multi-accounting, suspicious login activity, or limit violations). To unsuspend your account ASAP, please contact support at ' || COALESCE(v_support_number, 'our support line') || '. Thank you!';
+      -- Build dynamic compliance notification message
+      v_message := format('SwiftData Notice: Your account has been suspended due to security compliance rules. To unsuspend your account ASAP, please contact support at %s. Thank you!',
+        COALESCE(v_support_number, 'our support line')
+      );
 
       IF v_sms_api_key IS NOT NULL AND v_sms_api_key != '' THEN
          v_payload := jsonb_build_object(
@@ -57,9 +57,3 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
-DROP TRIGGER IF EXISTS trg_profile_suspension ON public.profiles;
-CREATE TRIGGER trg_profile_suspension
-  AFTER UPDATE OF is_suspended ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_profile_suspension_trigger();

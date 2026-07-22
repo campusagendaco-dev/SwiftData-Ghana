@@ -14,6 +14,7 @@ import { useWebAuthn } from "@/hooks/useWebAuthn";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { toast } from "sonner";
 import MfaSetupWidget from "@/components/MfaSetupWidget";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 const DashboardAccountSettings = () => {
   const { user, profile, refreshProfile, isAdmin } = useAuth();
@@ -167,9 +168,10 @@ const DashboardAccountSettings = () => {
       await supabase.auth.signOut();
       navigate("/");
     } catch (e: any) {
+      const errorMsg = await getFunctionErrorMessage(e, "An unexpected error occurred");
       uiToast({ 
         title: "Deletion failed", 
-        description: e.message || "An unexpected error occurred", 
+        description: errorMsg, 
         variant: "destructive" 
       });
       setDeletingAccount(false);

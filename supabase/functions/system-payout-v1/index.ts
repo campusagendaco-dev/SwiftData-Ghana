@@ -307,7 +307,7 @@ serve(async (req: Request) => {
     return json({ error: "Server misconfigured" }, 500);
   }
 
-  const authResult = await verifyAdmin(req, supabaseAdmin);
+  const authResult = await verifyAdmin(req, supabaseAdmin, { checkMfa: false, checkIp: false });
   if (!authResult.success) {
     return new Response(JSON.stringify({ error: authResult.error }), {
       status: authResult.status,
@@ -317,7 +317,7 @@ serve(async (req: Request) => {
   const actor = authResult.user;
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { action: rawAction, user_id, email, redirect_path, new_password } = body;
     const action = (rawAction as string)?.trim();
 

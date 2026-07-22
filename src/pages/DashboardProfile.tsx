@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 interface ProfileStats {
   total_fulfilled_orders: number;
@@ -85,7 +86,8 @@ const DashboardProfile = () => {
       await supabase.auth.signOut();
       window.location.href = "/";
     } catch (e: any) {
-      toast.error(e.message || "Could not delete account. Please contact support.");
+      const errorMsg = await getFunctionErrorMessage(e, "Could not delete account. Please contact support.");
+      toast.error(errorMsg);
       setDeletingAccount(false);
     }
   };

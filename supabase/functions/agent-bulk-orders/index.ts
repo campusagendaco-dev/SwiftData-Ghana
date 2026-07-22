@@ -92,7 +92,11 @@ serve(async (req) => {
 
       // Calculate the cost
       const requestedAmount = Number(o.amount);
-      const adminBase = Number(pkg.agent_price || 0);
+      const adminBase = Number(pkg.agent_price);
+      if (!adminBase || adminBase <= 0) {
+        errors.push({ row: i + 1, phone: o.customer_phone, error: `Pricing gap: Package ${o.network} ${o.package_size} has no valid system price.` });
+        continue;
+      }
       const resolvedCostPrice = Number(pkg.cost_price || 0) > 0 ? Number(pkg.cost_price) : adminBase;
 
       let parentAgentId = null;

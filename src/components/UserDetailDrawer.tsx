@@ -104,6 +104,21 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     setAdminNotes(user?.admin_notes || "");
   }, [user?.user_id, user?.admin_notes]);
 
+  const parseEdgeError = async (error: any, resData?: any): Promise<string> => {
+    if (resData?.error) return resData.error;
+    if (error) {
+      try {
+        const bodyText = await error.context?.text();
+        if (bodyText) {
+          const parsed = JSON.parse(bodyText);
+          if (parsed.error) return parsed.error;
+        }
+      } catch {}
+      return error.message || "Edge function invocation failed";
+    }
+    return "Unknown error";
+  };
+
   const handleSuspend = async () => {
     if (!user) return;
     const next = !isSuspended;
@@ -114,7 +129,9 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       
-      if (error || res?.error) throw new Error(res?.error || error?.message);
+      if (error || res?.error) {
+        throw new Error(await parseEdgeError(error, res));
+      }
 
       setIsSuspended(next);
       toast({ title: next ? "User suspended" : "User unsuspended", description: user.email });
@@ -134,7 +151,9 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         body: { action: "approve_agent", user_id: user.user_id },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      if (error || res?.error) throw new Error(res?.error || error?.message);
+      if (error || res?.error) {
+        throw new Error(await parseEdgeError(error, res));
+      }
       
       toast({ title: "User promoted to Agent", description: user.email });
       onClose();
@@ -159,8 +178,11 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       const action = walletType === "api" ? "manual_api_topup" : "manual_topup";
       const { data: res, error } = await supabase.functions.invoke("system-payout-v1", {
         body: { action: action, user_id: user.user_id, amount: amount },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      if (error || res?.error) throw new Error(res?.error || error?.message);
+      if (error || res?.error) {
+        throw new Error(await parseEdgeError(error, res));
+      }
       
       setData(prev => prev ? { 
         ...prev, 

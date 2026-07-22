@@ -59,7 +59,10 @@ serve(async () => {
         if (!profile) throw new Error("Agent profile not found");
 
         const requestedAmount = profile.is_sub_agent ? Number(pkg.sub_agent_price || pkg.agent_price) : Number(pkg.agent_price || pkg.public_price);
-        const adminBase = Number(pkg.agent_price || 0);
+        const adminBase = Number(pkg.agent_price);
+        if (!adminBase || adminBase <= 0 || !requestedAmount || requestedAmount <= 0) {
+          throw new Error("No valid price configured for this package");
+        }
         const resolvedCostPrice = Number(pkg.cost_price || 0) > 0 ? Number(pkg.cost_price) : adminBase;
 
         let parentAgentId = null;

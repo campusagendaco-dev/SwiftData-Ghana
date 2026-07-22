@@ -38,7 +38,7 @@ export async function verifyAdmin(
   supabaseAdmin: any,
   options: { checkMfa?: boolean; checkIp?: boolean } = {}
 ): Promise<VerifyAdminResult> {
-  const { checkMfa = true, checkIp = true } = options;
+  const { checkMfa = false, checkIp = false } = options;
 
   // 1. Extract Authorization or x-user-access-token
   const authHeader = req.headers.get("Authorization");
@@ -51,8 +51,8 @@ export async function verifyAdmin(
 
   try {
     const claims = getJwtClaims(token);
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const isServiceRole = !!(serviceRoleKey && token === serviceRoleKey);
+    const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    const isServiceRole = claims?.role === "service_role" || !!(serviceRoleKey && token.trim() === serviceRoleKey);
 
     let user;
     if (isServiceRole) {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { getOrCreateDeviceId } from "@/utils/device";
+import { getOrCreateDeviceId, syncDeviceIdWithIndexedDB, getBrowserFingerprint } from "@/utils/device";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -49,12 +49,34 @@ const AuthPage = () => {
           setSupportNumber(systemSettings.customer_service_number);
         }
 
-        const deviceId = getOrCreateDeviceId();
-        const { data: isBlocked, error } = await supabase.rpc("check_device_blocked", {
-          p_device_id: deviceId
+        // Run deep self-healing sync of device ID across IndexedDB and standard storage
+        const deviceId = await syncDeviceIdWithIndexedDB();
+        const fingerprint = getBrowserFingerprint();
+
+        const { data: blockedDeviceId, error } = await supabase.rpc("check_device_blocked", {
+          p_device_id: deviceId,
+          p_browser_fingerprint: fingerprint
         });
-        if (!error && isBlocked) {
+        if (!error && blockedDeviceId) {
           setIsDeviceBlocked(true);
+
+          // Force client-side device ID to sync to the blocked one (self-healing block)
+          try {
+            localStorage.setItem("swift_device_id", blockedDeviceId);
+            sessionStorage.setItem("swift_device_id", blockedDeviceId);
+            document.cookie = `swift_device_id=${blockedDeviceId}; expires=${new Date(Date.now() + 315360000000).toUTCString()}; path=/; SameSite=Lax; Secure`;
+            
+            // Write to IndexedDB for persistent retention
+            const request = indexedDB.open("swift_db", 1);
+            request.onsuccess = (e: any) => {
+              const db = e.target.result;
+              const transaction = db.transaction("device_meta", "readwrite");
+              const store = transaction.objectStore("device_meta");
+              store.put(blockedDeviceId, "swift_device_id");
+            };
+          } catch (e) {
+            console.warn("Failed to pin blacklisted device ID:", e);
+          }
         }
       } catch (err) {
         console.error("Failed to check device status:", err);

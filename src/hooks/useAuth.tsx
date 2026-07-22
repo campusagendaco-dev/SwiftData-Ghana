@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session, Provider } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { getOrCreateDeviceId } from "@/utils/device";
+import { getOrCreateDeviceId, getBrowserFingerprint } from "@/utils/device";
 
 export interface Profile {
   id: string;
@@ -157,12 +157,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               ]).catch((error) => {
                 console.error("Background auth profile refresh failed:", error);
               });
-              // Log IP and update device_id on every fresh sign-in (not on token refreshes)
+              // Log IP and update device_id and browser_fingerprint on every fresh sign-in (not on token refreshes)
               if (event === "SIGNED_IN") {
                 const localDeviceId = getOrCreateDeviceId();
+                const fingerprint = getBrowserFingerprint();
                 void supabase
                   .from("profiles")
-                  .update({ device_id: localDeviceId })
+                  .update({ 
+                    device_id: localDeviceId,
+                    browser_fingerprint: fingerprint
+                  })
                   .eq("user_id", userId);
 
                 void supabase.functions.invoke("log-user-activity", {
@@ -263,6 +267,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const role = isAgent ? "agent" : "user";
 
     const deviceId = getOrCreateDeviceId();
+    const fingerprint = getBrowserFingerprint();
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
@@ -277,7 +282,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           is_sub_agent: isSubAgent,
           parent_agent_id: parentAgentId || null,
           is_agent: isAgent,
-          device_id: deviceId
+          device_id: deviceId,
+          browser_fingerprint: fingerprint
         },
       },
     });

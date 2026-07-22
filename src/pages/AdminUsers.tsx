@@ -266,10 +266,23 @@ const AdminUsers = () => {
     if (!selectedUsers.length) return;
     setBulkActionLoading(true);
     try {
-      const { error } = await supabase.functions.invoke("system-payout-v1", {
-        body: { action: "bulk_suspend_users", user_ids: selectedUsers, suspend }
+      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "bulk_suspend_users", user_ids: selectedUsers, suspend },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      if (error) throw error;
+      if (error) {
+        let msg = error.message;
+        try {
+          const bodyText = await (error as any).context?.text();
+          if (bodyText) {
+            const parsed = JSON.parse(bodyText);
+            if (parsed.error) msg = parsed.error;
+          }
+        } catch {}
+        throw new Error(msg);
+      }
+      if (data?.error) throw new Error(data.error);
+
       toast({ title: suspend ? "Users Suspended" : "Users Restored", description: `${selectedUsers.length} users updated.` });
       setUsers(prev => prev.map(u => selectedUsers.includes(u.user_id) ? { ...u, is_suspended: suspend } : u));
       setSelectedUsers([]);

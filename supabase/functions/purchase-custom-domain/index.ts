@@ -318,6 +318,13 @@ serve(async (req: Request) => {
 
       const salePrice = Number(pricing.sale_price_ghs);
 
+      if (!salePrice || salePrice <= 0) {
+        return new Response(JSON.stringify({ error: "Domain pricing configuration error. Please contact support." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
       // 3. Prevent Duplicates
       const { data: duplicate } = await supabaseAdmin
         .from("reseller_stores")

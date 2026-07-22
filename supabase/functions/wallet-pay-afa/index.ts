@@ -74,6 +74,9 @@ serve(async (req) => {
       .maybeSingle();
 
     const price = Number(afaSetting?.agent_price ?? afaSetting?.public_price ?? 15.00);
+    if (!price || price <= 0) {
+      return new Response(JSON.stringify({ error: "AFA pricing not configured properly. Please contact support." }), { status: 200, headers: corsHeaders });
+    }
 
     // Fetch agent profile
     const { data: agentProfile } = await supabaseAdmin

@@ -141,8 +141,23 @@ serve(async (req: Request) => {
       });
     }
 
-    const adminBase = Number(pkgRow?.agent_price || 0);
-    const resolvedCostPrice = Number(pkgRow?.cost_price || 0) > 0 ? Number(pkgRow!.cost_price) : adminBase;
+    const adminBase = Number(pkgRow?.agent_price);
+    if (!pkgRow || !adminBase || adminBase <= 0) {
+      console.error(`[SECURITY] Blocked order: No valid global wholesale price defined for ${normalizedNet} ${package_size}.`);
+      
+      await supabaseAdmin.rpc("log_security_violation", {
+        p_user_id: user.id,
+        p_reason: `Attempted to purchase unpriced package: ${normalizedNet} ${package_size}`,
+        p_details: { network: networkRaw, package_size }
+      });
+
+      return new Response(JSON.stringify({ error: "This package is currently unavailable for purchase. Please try another bundle." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+    const resolvedCostPrice = Number(pkgRow.cost_price || 0) > 0 ? Number(pkgRow.cost_price) : adminBase;
+
 
     // --- 🔴 SECURITY ENFORCEMENT: STRICT SERVER-SIDE PRICING ---
     // Ignore the frontend's requested amount entirely. Calculate the exact wholesale price 
@@ -308,6 +323,30 @@ serve(async (req: Request) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Validate if user tried to bypass pricing by sending a lower amount
+    if (requestedAmount !== undefined && requestedAmount !== null) {
+      const clientAmount = Number(requestedAmount);
+      if (clientAmount < resolvedChargeAmount - 1.00 || clientAmount <= 0) {
+        console.error(`[SECURITY] Pricing bypass detected for user ${user.id}. Requested: ${clientAmount}, Resolved: ${resolvedChargeAmount}`);
+        
+        await supabaseAdmin.rpc("log_security_violation", {
+          p_user_id: user.id,
+          p_reason: "Pricing bypass attempt (amount manipulation)",
+          p_details: {
+            network: networkRaw,
+            package_size: package_size,
+            requested_amount: clientAmount,
+            resolved_amount: resolvedChargeAmount
+          }
+        });
+
+        return new Response(JSON.stringify({ error: "Pricing mismatch. Order rejected." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
     }
 
     const amountNum = resolvedChargeAmount;

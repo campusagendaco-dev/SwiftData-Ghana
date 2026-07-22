@@ -113,6 +113,13 @@ serve(async (req) => {
       ? Number(sysSettings?.wassce_cost_price || 17.00) 
       : Number(sysSettings?.bece_cost_price || 14.00);
 
+    if (!userPrice || userPrice <= 0 || !costPrice || costPrice <= 0) {
+      return new Response(JSON.stringify({ success: false, error: "Voucher pricing is not configured. Please contact support." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const totalCost = userPrice * qty;
     const profitValue = (userPrice - costPrice) * qty;
 
