@@ -293,6 +293,37 @@ const AdminUsers = () => {
     }
   };
 
+  const handleToggleUserSuspend = async (user: UserRow) => {
+    const next = !user.is_suspended;
+    setRowAction(user.user_id, "suspend");
+    try {
+      const { data, error } = await supabase.functions.invoke("system-payout-v1", {
+        body: { action: "bulk_suspend_users", user_ids: [user.user_id], suspend: next },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+
+      if (error) {
+        let msg = error.message;
+        try {
+          const bodyText = await (error as any).context?.text();
+          if (bodyText) {
+            const parsed = JSON.parse(bodyText);
+            if (parsed.error) msg = parsed.error;
+          }
+        } catch {}
+        throw new Error(msg);
+      }
+      if (data?.error) throw new Error(data.error);
+
+      toast({ title: next ? "User suspended" : "User restored", description: user.email });
+      setUsers(prev => prev.map(u => u.user_id === user.user_id ? { ...u, is_suspended: next } : u));
+    } catch (err: any) {
+      toast({ title: "Action failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRowAction(user.user_id, null);
+    }
+  };
+
   const handleBulkSMS = async () => {
     if (!selectedUsers.length) return;
     const msg = window.prompt(`Enter SMS message for ${selectedUsers.length} users:`);
@@ -599,6 +630,23 @@ const AdminUsers = () => {
                     className="h-8 w-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center p-0"
                   >
                     <Wallet className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => handleToggleUserSuspend(user)}
+                    disabled={actionLoading[user.user_id] === "suspend"}
+                    title={user.is_suspended ? "Restore/Unsuspend user" : "Suspend user"}
+                    className={`h-8 w-8 rounded-xl border flex items-center justify-center p-0 ${
+                      user.is_suspended
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20"
+                        : "bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20"
+                    }`}
+                  >
+                    {actionLoading[user.user_id] === "suspend" ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Ban className="w-3.5 h-3.5" />
+                    )}
                   </Button>
                   <Link
                     to={`/admin/orders?agent=${encodeURIComponent(user.full_name || user.email)}`}
