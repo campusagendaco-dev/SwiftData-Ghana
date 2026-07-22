@@ -1,5 +1,5 @@
--- Migration: Fix column name and remove invalid field reference in account suspension SMS trigger function
--- Description: Replaces invalid column 'support_number' with 'customer_service_number' and removes reference to non-existent field 'suspension_reason' on profiles.
+-- Migration: Fix column name in account suspension SMS trigger and clear suspended_until in admin bulk suspension RPCs
+-- Description: Replaces invalid column 'support_number' with 'customer_service_number', removes invalid 'suspension_reason' field reference, and resets suspended_until = NULL when admins manually suspend users so the auto-unsuspend cron job does not release admin suspensions.
 
 CREATE OR REPLACE FUNCTION public.handle_profile_suspension_trigger()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -57,3 +57,36 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- Ensure manual admin suspensions reset suspended_until to NULL so the 5-minute auto-unsuspend cron job does not override admin suspensions
+CREATE OR REPLACE FUNCTION public.bulk_suspend_users(p_user_ids UUID[], p_suspend BOOLEAN)
+RETURNS JSONB AS $$
+BEGIN
+    UPDATE public.profiles 
+    SET is_suspended = p_suspend,
+        suspended_until = NULL,
+        updated_at = now()
+    WHERE user_id = ANY(p_user_ids);
+
+    RETURN jsonb_build_object('success', true, 'updated_count', array_length(p_user_ids, 1));
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.bulk_suspend_users(UUID[], BOOLEAN) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.toggle_user_suspension(p_user_id UUID, p_suspend BOOLEAN)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.profiles 
+  SET is_suspended = p_suspend,
+      suspended_until = NULL,
+      updated_at = now()
+  WHERE user_id = p_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.toggle_user_suspension(UUID, BOOLEAN) TO authenticated, service_role;
