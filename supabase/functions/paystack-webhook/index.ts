@@ -1762,9 +1762,12 @@ serve(async (req) => {
     const providerName = chosenProvider?.name || "Provider";
 
     const providerCallStart = Date.now();
+    const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
+    const targetApiKey = chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
+
     const result = await callProviderApi(
-      DATA_PROVIDER_BASE_URL,
-      DATA_PROVIDER_API_KEY,
+      targetBaseUrl,
+      targetApiKey,
       "purchase",
       dataPayload,
       DATA_PROVIDER_WEBHOOK_URL,

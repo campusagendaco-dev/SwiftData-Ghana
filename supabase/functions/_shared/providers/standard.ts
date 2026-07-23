@@ -22,9 +22,16 @@ export class StandardAdapter implements ProviderAdapter {
       const ref = String(data.transaction_id || data.reference || data.order_id || "");
       return [`${clean}/order-status/${ref}`];
     }
-    if (handlerType === "skdataplug" && endpoint === "status") {
-      const ref = String(data.transaction_id || data.reference || data.order_id || "");
-      return [`${clean}/status/${ref}/`];
+    if (handlerType === "skdataplug") {
+      if (endpoint === "status") {
+        const ref = String(data.transaction_id || data.reference || data.order_id || "");
+        return [`${clean}/status/${ref}/`];
+      }
+      if (endpoint === "purchase") {
+        return clean.endsWith("/order/") || clean.endsWith("/order")
+          ? [clean.endsWith("/") ? clean : clean + "/"]
+          : [`${clean}/order/`];
+      }
     }
     if (handlerType === "superbdatafy" && endpoint === "status") {
       const ref = String(data.transaction_id || data.reference || data.order_id || "");
@@ -40,7 +47,7 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     // Standard URL formatting fallback
-    if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult" || handlerType === "skdataplug") {
+    if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult") {
       return [clean];
     }
 
@@ -151,6 +158,15 @@ export class StandardAdapter implements ProviderAdapter {
         if (pkgMapping?.raw_data) {
           providerNetwork = pkgMapping.raw_data.network || providerNetwork;
           gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
+        } else {
+          const rawNet = (data.networkRaw || data.network || "").toUpperCase();
+          if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
+            providerNetwork = "TELECEL";
+          } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL")) {
+            providerNetwork = "AT_EXPIRY";
+          } else {
+            providerNetwork = "MTN";
+          }
         }
       } catch (e) {
         console.error("[skdataplug-payload-resolve] Error:", e);
@@ -159,7 +175,8 @@ export class StandardAdapter implements ProviderAdapter {
       return {
         recipient: String(data.recipient || data.phoneNumber || ""),
         network: providerNetwork,
-        gb_size: gbSize
+        gb_size: gbSize,
+        reference: String(data.reference || data.order_id || data.orderReference || "")
       };
     }
 
