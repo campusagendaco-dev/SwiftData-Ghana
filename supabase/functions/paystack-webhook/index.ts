@@ -125,8 +125,16 @@ function buildProviderUrls(baseUrl: string, endpoint: string): string[] {
 
   const urls = new Set<string>();
 
-  if (clean.includes("superbdatafy") || clean.includes("qhowmenzconsult") || clean.includes("skdataplug")) {
+  if (clean.includes("superbdatafy") || clean.includes("qhowmenzconsult")) {
     return [clean];
+  }
+
+  if (clean.includes("skdataplug")) {
+    if (endpoint === "purchase") {
+      return clean.endsWith("/order/") || clean.endsWith("/order")
+        ? [clean.endsWith("/") ? clean : clean + "/"]
+        : [`${clean}/order/`];
+    }
   }
 
   const isDatamart = clean.includes("/api/developer") || clean.includes("datamartgh");
@@ -1741,7 +1749,7 @@ serve(async (req) => {
           description: `Data: ${packageSize} for ${customerPhone}`
         };
 
-    let chosenProvider = null;
+    let candidateProviders: any[] = [];
     try {
       if (orderType === "afa") {
         const { data } = await supabaseAdmin
@@ -1749,98 +1757,106 @@ serve(async (req) => {
           .select("*")
           .eq("handler_type", "spendless")
           .maybeSingle();
-        chosenProvider = data;
+        if (data) candidateProviders = [data];
       } else {
-        const activeProviders = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
-        chosenProvider = activeProviders?.[0];
+        candidateProviders = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
       }
     } catch (e) {
       console.error("Failed to resolve provider for logging:", e);
     }
 
-    const providerId = chosenProvider?.id || null;
-    const providerName = chosenProvider?.name || "Provider";
+    if (candidateProviders.length === 0 && (DATA_PROVIDER_BASE_URL || DATA_PROVIDER_API_KEY)) {
+      candidateProviders.push({
+        id: null,
+        name: "Default Env Provider",
+        base_url: DATA_PROVIDER_BASE_URL,
+        api_key: DATA_PROVIDER_API_KEY,
+        handler_type: "standard",
+      });
+    }
 
-    const providerCallStart = Date.now();
-    const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
-    const targetApiKey = chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
+    let lastResult: any = null;
+    let chosenProvider: any = null;
 
-    const result = await callProviderApi(
-      targetBaseUrl,
-      targetApiKey,
-      "purchase",
-      dataPayload,
-      DATA_PROVIDER_WEBHOOK_URL,
-    );
-    const providerDuration = Date.now() - providerCallStart;
+    for (const provider of candidateProviders) {
+      chosenProvider = provider;
+      const providerId = chosenProvider?.id || null;
+      const providerName = chosenProvider?.name || "Provider";
 
-    console.log("Webhook fulfillment response:", {
-      orderId,
-      status: result.status,
-      reason: result.reason,
-      url: result.url,
-    });
+      const providerCallStart = Date.now();
+      const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
+      const targetApiKey = chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
 
-    if (result.ok) {
-      const providerOrderId = result.id;
-      
-      const patch: Record<string, any> = { 
-        provider_id: providerId,
-        provider_order_id: providerOrderId || null, 
-        status: "processing", 
-        failure_reason: null 
-      };
+      const result = await callProviderApi(
+        targetBaseUrl,
+        targetApiKey,
+        "purchase",
+        dataPayload,
+        DATA_PROVIDER_WEBHOOK_URL,
+      );
+      const providerDuration = Date.now() - providerCallStart;
 
-      await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
-      
-      if (chosenProvider) {
-        await supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", chosenProvider.id);
+      console.log("Webhook fulfillment response:", {
+        orderId,
+        provider: providerName,
+        status: result.status,
+        reason: result.reason,
+        url: result.url,
+      });
+
+      if (result.ok) {
+        const providerOrderId = result.id;
+        
+        const patch: Record<string, any> = { 
+          provider_id: providerId,
+          provider_order_id: providerOrderId || null, 
+          status: "processing", 
+          failure_reason: null 
+        };
+
+        await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+        
+        if (chosenProvider?.id) {
+          await supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", chosenProvider.id);
+        }
+
+        log(supabaseAdmin, { 
+          level: "info", 
+          source: "paystack-webhook", 
+          event: "provider.called", 
+          message: `${providerName} accepted order`, 
+          order_id: orderId, 
+          provider_id: providerId, 
+          duration_ms: providerDuration, 
+          data: { provider: providerName, handler_type: chosenProvider?.handler_type, provider_order_id: providerOrderId, network, package_size: packageSize, recipient: normalizeRecipient(customerPhone) } 
+        });
+
+        log(supabaseAdmin, { 
+          level: "info", 
+          source: "paystack-webhook", 
+          event: "order.processing", 
+          message: `Order successfully bought - set as processing — provider_order_id: ${providerOrderId}`, 
+          order_id: orderId, 
+          agent_id: existingOrder?.agent_id, 
+          provider_id: providerId, 
+          data: { provider_order_id: providerOrderId, network, package_size: packageSize, amount: existingOrder?.amount } 
+        });
+
+        return new Response(JSON.stringify({ received: true, fulfilled: false, status: "processing" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      log(supabaseAdmin, { 
-        level: "info", 
-        source: "paystack-webhook", 
-        event: "provider.called", 
-        message: `${providerName} accepted order`, 
-        order_id: orderId, 
-        provider_id: providerId, 
-        duration_ms: providerDuration, 
-        data: { provider: providerName, handler_type: chosenProvider?.handler_type, provider_order_id: providerOrderId, network, package_size: packageSize, recipient: normalizeRecipient(customerPhone) } 
-      });
-
-      log(supabaseAdmin, { 
-        level: "info", 
-        source: "paystack-webhook", 
-        event: "order.processing", 
-        message: `Order successfully bought - set as processing — provider_order_id: ${providerOrderId}`, 
-        order_id: orderId, 
-        agent_id: existingOrder?.agent_id, 
-        provider_id: providerId, 
-        data: { provider_order_id: providerOrderId, network, package_size: packageSize, amount: existingOrder?.amount } 
-      });
-
-      return new Response(JSON.stringify({ received: true, fulfilled: false, status: "processing" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      lastResult = result;
+      if (chosenProvider?.id) {
+        const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
+        const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
+        await supabaseAdmin.from("providers").update({ consecutive_failures: newFailures }).eq("id", chosenProvider.id);
+      }
     }
 
-    // Provider call failed
-    const reasonStr = String(result.reason || "").toLowerCase();
-    const isTimeoutOrNetworkError = 
-      reasonStr.includes("timeout") || 
-      reasonStr.includes("504") || 
-      reasonStr.includes("502") || 
-      reasonStr.includes("proxy failed") || 
-      reasonStr.includes("connection") || 
-      reasonStr.includes("network error") ||
-      reasonStr.includes("abort");
-
-    if (chosenProvider) {
-      const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
-      const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
-      await supabaseAdmin.from("providers").update({ consecutive_failures: newFailures }).eq("id", chosenProvider.id);
-    }
+    const result = lastResult || { ok: false, reason: "No active provider available" };
 
     if (isTimeoutOrNetworkError) {
       await supabaseAdmin.from("orders").update({
