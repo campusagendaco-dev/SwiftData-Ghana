@@ -85,10 +85,10 @@ export async function fetchViaDb(
   const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
 
   const performDirectFetchFallback = async (originalErr: any) => {
-    const shouldBlockFallback = options.disableFallback || (isMutation && !options.allowMutationFallback);
+    const shouldBlockFallback = options.disableFallback === true;
     if (shouldBlockFallback) {
       console.warn(`[db_proxy] DB Proxy failed (Error: ${JSON.stringify(originalErr)}). Fallback disabled for ${method}. Returning error.`);
-      const errMsg = `DB Proxy failed and Direct Fallback is disabled for ${method}: ${originalErr?.message || JSON.stringify(originalErr)}`;
+      const errMsg = `DB Proxy failed: ${originalErr?.message || JSON.stringify(originalErr)}`;
       return {
         ok: false,
         status: 502,
