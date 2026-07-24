@@ -169,6 +169,9 @@ const AdminOverview = () => {
     const DEPOSIT_TYPES = new Set(["wallet_topup", "agent_activation", "sub_agent_activation"]);
     const SALE_TYPES    = new Set(["data", "airtime", "utility", "afa", "api"]);
 
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || "";
+
     const settled = await Promise.allSettled([
       supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size"),
       supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at"),
@@ -177,7 +180,7 @@ const AdminOverview = () => {
       supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type, paystack_verified_amount, paystack_fee, profit, parent_profit, cost_price, package_size").gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).limit(4000),
       supabase.functions.invoke("system-payout-v1", {
         body: { action: "get_provider_balance" },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
       }).catch(e => ({ data: { success: false, error: e.message }, error: e })),
       supabase.from("withdrawals").select("id, status", { count: "exact" }).in("status", ["pending", "processing"]),
       supabase.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open"),
