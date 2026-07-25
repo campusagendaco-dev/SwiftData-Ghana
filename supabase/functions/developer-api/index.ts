@@ -72,7 +72,17 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
 
   const urls = new Set<string>();
   
-  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "qhowmenzconsult" || handlerType === "skdataplug") {
+  if (handlerType === "skdataplug") {
+    const cleanBase = clean.replace(/\/+$/, "").replace(/\/order\/?$/, "").replace(/\/status\/?$/, "");
+    if (endpoint === "status") {
+      return [`${cleanBase}/status`];
+    }
+    if (endpoint === "purchase") {
+      return [`${cleanBase}/order/`];
+    }
+  }
+
+  if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "qhowmenzconsult") {
     return [clean];
   }
 
@@ -280,11 +290,12 @@ async function callProviderApi(
         
         let reqUrl = url;
         if (handlerType === "skdataplug") {
+          const cleanBase = url.replace(/\/+$/, "").replace(/\/order\/?$/, "").replace(/\/status\/?$/, "");
           if (endpoint === "status") {
              const ref = String(data.transaction_id || data.reference || data.order_id || "");
-             reqUrl = `${url}/status/${ref}/`;
+             reqUrl = `${cleanBase}/status/${ref}/`;
           } else {
-             reqUrl = `${url}/order/`;
+             reqUrl = `${cleanBase}/order/`;
           }
         } else if (handlerType === "superbdatafy") {
           if (endpoint === "status") {
