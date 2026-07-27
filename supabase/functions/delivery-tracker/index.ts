@@ -6,6 +6,7 @@ declare const Deno: any;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
 };
 
 serve(async (req) => {
@@ -38,25 +39,36 @@ serve(async (req) => {
       });
     }
 
-    // 1. Get aggregated stats only (no individual order details)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // 1. Get aggregated stats — 24 hours for active/pending orders, 1 hour window for recent fulfilled rate
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const oneHourAgoMs = Date.now() - 60 * 60 * 1000;
+
     const { data: recentOrders, error: statsError } = await supabaseAdmin
       .from("orders")
       .select("status, created_at, network, package_size")
       // SECURITY: Do NOT select customer_phone — prevents data enumeration
-      .gte("created_at", oneHourAgo)
+      .gte("created_at", twentyFourHoursAgo)
       .order("created_at", { ascending: false })
-      .limit(200); // Cap to prevent large data dumps
+      .limit(300); // Cap to prevent large data dumps
 
     if (statsError) throw statsError;
 
+    const recentFulfilledInHour = recentOrders?.filter(
+      o => o.status === 'fulfilled' && new Date(o.created_at).getTime() >= oneHourAgoMs
+    ) || [];
+
     const stats = {
       checked: recentOrders?.length || 0,
-      delivered: recentOrders?.filter(o => o.status === 'fulfilled').length || 0,
+      delivered: recentFulfilledInHour.length,
       partial: recentOrders?.filter(o => o.status === 'processing').length || 0,
       pending: recentOrders?.filter(o => o.status === 'paid').length || 0,
       failed: recentOrders?.filter(o => o.status === 'fulfillment_failed' || o.status === 'error').length || 0,
     };
+
+    // Deterministic 1-minute bucket seeds for tracking IDs & batch numbers
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const trackingSeed = ((minuteBucket * 2654435761) % 900000) + 1000000;
+    const batchSeed = ((minuteBucket * 1103515245) % 900000) + 100000;
 
     // 2. Get the "Last Delivered" order details — no PII
     const lastDeliveredOrder = recentOrders?.find(o => o.status === 'fulfilled');
@@ -64,7 +76,7 @@ serve(async (req) => {
     if (lastDeliveredOrder) {
       const placedAt = new Date(lastDeliveredOrder.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       lastDelivered = {
-        trackingId: Math.floor(Math.random() * 900000 + 1000000).toString(),
+        trackingId: trackingSeed.toString(),
         summary: `Order delivered at ${placedAt}`
       };
     }
@@ -101,7 +113,7 @@ serve(async (req) => {
           stats,
           lastDelivered,
           checkingNow: { 
-            summary: stats.pending > 0 ? `Checking now: Batch #${Math.floor(Math.random() * 1000000)}` : "Scanner idling... waiting for new orders" 
+            summary: stats.pending > 0 ? `Checking now: Batch #${batchSeed}` : "Scanner idling... waiting for new orders" 
           },
           yourOrders: {
             inCurrentBatch,
@@ -121,3 +133,4 @@ serve(async (req) => {
     });
   }
 });
+

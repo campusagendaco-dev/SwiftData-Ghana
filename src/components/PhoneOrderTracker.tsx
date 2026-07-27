@@ -23,17 +23,32 @@ const PhoneOrderTracker = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const isPhoneValid = useMemo(() => {
-    const d = phone.replace(/\D+/g, "");
-    return d.length >= 9 && d.length <= 15;
-  }, [phone]);
+  const trimmed = phone.trim();
+  const digitsOnly = trimmed.replace(/\D+/g, "");
+  const isPhone = digitsOnly.length >= 9 && digitsOnly.length <= 15 && !/[a-zA-Z]/.test(trimmed);
+  const isReference = !isPhone && trimmed.length >= 6;
+  const isValid = isPhone || isReference;
 
   const handleTrack = async () => {
-    if (!isPhoneValid) return;
+    if (!isValid) return;
     setError("");
     setLoading(true);
 
-    const sanitizedPhone = phone.replace(/\D+/g, "");
+    if (isReference) {
+      const isStorePath = window.location.pathname.startsWith("/store/");
+      let redirectUrl = `/order-status?reference=${encodeURIComponent(trimmed)}`;
+      if (isStorePath) {
+        const parts = window.location.pathname.split("/");
+        const slug = parts[2];
+        if (slug) {
+          redirectUrl = `/store/${slug}/order-status?reference=${encodeURIComponent(trimmed)}`;
+        }
+      }
+      window.location.href = redirectUrl;
+      return;
+    }
+
+    const sanitizedPhone = digitsOnly;
     try {
       const { data, error: invError } = await supabase.functions.invoke("verify-payment", {
         body: { phone: sanitizedPhone },
@@ -66,7 +81,7 @@ const PhoneOrderTracker = ({
     }
   };
 
-  const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Enter" && isPhoneValid) handleTrack(); };
+  const handleKey = (e: React.KeyboardEvent) => { if (e.key === "Enter" && isValid) handleTrack(); };
 
   return (
     <div className={`relative group ${className}`}>
@@ -95,14 +110,14 @@ const PhoneOrderTracker = ({
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 onKeyDown={handleKey}
-                placeholder="Recipient Phone Number"
-                className="h-12 pl-10 bg-white/[0.03] border-white/10 text-white placeholder:text-white/20 rounded-2xl focus-visible:ring-amber-400/30 transition-all"
-                type="tel"
+                placeholder="Phone Number or Order Reference (e.g. 0541234567 or ORD-...)"
+                className="h-12 pl-10 bg-white/[0.03] border-white/10 text-white placeholder:text-white/20 rounded-2xl focus-visible:ring-amber-400/30 transition-all text-xs sm:text-sm"
+                type="text"
               />
             </div>
             <Button 
               onClick={handleTrack} 
-              disabled={!isPhoneValid || loading} 
+              disabled={!isValid || loading} 
               className="h-12 px-8 rounded-2xl bg-amber-400 hover:bg-amber-300 text-black font-black transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />}

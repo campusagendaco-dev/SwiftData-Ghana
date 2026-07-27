@@ -452,7 +452,12 @@ const OrderStatus = () => {
       channel = supabase.channel(`order_status_${activeRef}`)
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${activeRef}` }, (payload) => {
           if (payload.new.status) handleStatusUpdate(payload.new.status as OrderStatusType, payload.new.message || payload.new.failure_reason);
-        }).subscribe();
+        })
+        .subscribe((status) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn("[OrderStatus] Realtime subscription interrupted, relying on HTTP polling fallback.");
+          }
+        });
     }
     
     const interval = setInterval(() => pollStatus(false), 5000);
