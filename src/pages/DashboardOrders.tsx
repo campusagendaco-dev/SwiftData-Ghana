@@ -152,13 +152,6 @@ const DashboardOrders = () => {
   const PAGE_SIZE = 50;
   const retryCountRef = useRef<Record<string, number>>({});
 
-  const copyReceipt = (order: Order) => {
-    const text = `SwiftData Receipt\nOrder ID: ${order.id}\nPhone: ${order.customer_phone}\nService: ${order.network} ${order.package_size}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nStatus: ${order.status.toUpperCase()}`;
-    navigator.clipboard.writeText(text);
-    setCopiedId(order.id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
   const handleRefundOrder = async (order: Order) => {
     if (order.status === "fulfilled") {
       toast({ title: "Cannot Refund", description: "Fulfilled orders cannot be refunded.", variant: "destructive" });
