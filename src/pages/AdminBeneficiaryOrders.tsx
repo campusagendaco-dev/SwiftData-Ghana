@@ -5,7 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RefreshCw, Phone, ShieldAlert, Copy, Check, Download, Users, Search, Calendar, RotateCcw, AlertTriangle, ListCheck } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
@@ -19,6 +20,7 @@ interface BeneficiaryOrder {
   status: string;
   failure_reason: string | null;
   auto_refunded: boolean;
+  metadata?: any;
   created_at: string;
   agent_email?: string;
   agent_name?: string;
@@ -45,6 +47,7 @@ function fmt(dateStr: string) {
 
 export default function AdminBeneficiaryOrders() {
   const { isDark } = useAppTheme();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [groupedNumbers, setGroupedNumbers] = useState<GroupedBeneficiaryNumber[]>([]);
   const [allBeneficiaryOrders, setAllBeneficiaryOrders] = useState<BeneficiaryOrder[]>([]);
@@ -54,12 +57,16 @@ export default function AdminBeneficiaryOrders() {
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupedBeneficiaryNumber | null>(null);
 
+  // Processing Action States
+  const [processingBatch, setProcessingBatch] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
   const fetchBeneficiaryOrders = useCallback(async () => {
     setLoading(true);
     try {
       let q = supabase
         .from("orders")
-        .select("id, agent_id, customer_phone, network, package_size, amount, status, failure_reason, auto_refunded, created_at")
+        .select("id, agent_id, customer_phone, network, package_size, amount, status, failure_reason, auto_refunded, metadata, created_at")
         .or("failure_reason.ilike.%beneficiary list%,failure_reason.ilike.%not added%")
         .order("created_at", { ascending: false })
         .limit(500);
@@ -156,6 +163,155 @@ export default function AdminBeneficiaryOrders() {
     copyToClipboard(numbersList, "csv_copied");
   };
 
+  // --- RETRY SINGLE ORDER ---
+  const handleRetrySingle = async (ord: BeneficiaryOrder) => {
+    setProcessingId(ord.id);
+    try {
+      // 1. Update order metadata to bypass_beneficiary = true & status = 'paid'
+      await supabase.from("orders").update({
+        status: "paid",
+        failure_reason: null,
+        metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
+      }).eq("id", ord.id);
+
+      // 2. Invoke verify-payment Edge function
+      const { data, error } = await supabase.functions.invoke("verify-payment", {
+        body: { reference: ord.id, order_id: ord.id }
+      });
+
+      if (error) {
+        toast({ title: "Retry failed", description: error.message || "Failed to contact provider", variant: "destructive" });
+      } else {
+        toast({
+          title: "Order Re-submitted!",
+          description: `Order ${ord.id.slice(0, 8)} status: ${data?.status || "processing"}`,
+        });
+      }
+      await fetchBeneficiaryOrders();
+    } catch (err: any) {
+      toast({ title: "Retry exception", description: err.message || "Error retrying order", variant: "destructive" });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // --- REFUND SINGLE ORDER ---
+  const handleRefundSingle = async (ord: BeneficiaryOrder) => {
+    if (ord.status === "refunded" || ord.auto_refunded) {
+      toast({ title: "Already Refunded", description: "This order has already been credited to wallet." });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to refund GH₵ ${Number(ord.amount).toFixed(2)} to ${ord.agent_email}?`)) {
+      return;
+    }
+
+    setProcessingId(ord.id);
+    try {
+      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: ord.id });
+      if (error) throw error;
+
+      if (data) {
+        toast({ title: "Order Refunded!", description: `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.` });
+      } else {
+        toast({ title: "Refund Failed", description: "This order is not eligible for refund.", variant: "destructive" });
+      }
+      await fetchBeneficiaryOrders();
+    } catch (err: any) {
+      toast({ title: "Refund Error", description: err.message || "Could not execute refund", variant: "destructive" });
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // --- BATCH RETRY ALL NON-BENEFICIARY ORDERS ---
+  const handleRetryAllBeneficiary = async () => {
+    const targetOrders = allBeneficiaryOrders.filter((o) => o.status !== "fulfilled" && o.status !== "completed");
+    if (targetOrders.length === 0) {
+      toast({ title: "No Orders to Retry", description: "There are no pending or failed beneficiary orders to retry." });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to RE-SUBMIT all ${targetOrders.length} non-beneficiary orders with beneficiary bypass?`)) {
+      return;
+    }
+
+    setProcessingBatch(true);
+    toast({ title: "Batch Retrying Orders...", description: `Re-submitting ${targetOrders.length} orders in parallel batches...` });
+
+    let successCount = 0;
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < targetOrders.length; i += BATCH_SIZE) {
+      const chunk = targetOrders.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(
+        chunk.map(async (ord) => {
+          try {
+            await supabase.from("orders").update({
+              status: "paid",
+              failure_reason: null,
+              metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
+            }).eq("id", ord.id);
+
+            const { data } = await supabase.functions.invoke("verify-payment", {
+              body: { reference: ord.id, order_id: ord.id }
+            });
+            if (data?.status === "fulfilled" || data?.status === "processing") {
+              successCount++;
+            }
+          } catch {
+            // continue batch
+          }
+        })
+      );
+    }
+
+    toast({ title: "Batch Retry Complete", description: `Processed ${targetOrders.length} orders. ${successCount} successfully submitted.` });
+    setProcessingBatch(false);
+    await fetchBeneficiaryOrders();
+  };
+
+  // --- BATCH REFUND ALL UNREFUNDED BENEFICIARY ORDERS ---
+  const handleRefundAllBeneficiary = async () => {
+    const unrefunded = allBeneficiaryOrders.filter((o) => !o.auto_refunded && o.status !== "refunded" && o.status !== "fulfilled");
+    if (unrefunded.length === 0) {
+      toast({ title: "All Orders Already Refunded", description: "Every non-beneficiary order is already refunded to agent wallets." });
+      return;
+    }
+
+    const totalUnrefundedAmount = unrefunded.reduce((sum, o) => sum + Number(o.amount || 0), 0);
+
+    if (!confirm(`Are you sure you want to REFUND all ${unrefunded.length} unrefunded orders totaling GH₵ ${totalUnrefundedAmount.toFixed(2)} to agent wallets?`)) {
+      return;
+    }
+
+    setProcessingBatch(true);
+    toast({ title: "Processing Batch Refunds...", description: `Refunding ${unrefunded.length} orders to agent wallets...` });
+
+    let refundedCount = 0;
+    let totalRefunded = 0;
+
+    for (const ord of unrefunded) {
+      try {
+        const { data } = await supabase.rpc("refund_failed_order", { p_order_id: ord.id });
+        if (data) {
+          refundedCount++;
+          totalRefunded += Number(ord.amount || 0);
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    toast({
+      title: "Batch Refund Complete!",
+      description: `Refunded ${refundedCount} of ${unrefunded.length} orders totaling GH₵ ${totalRefunded.toFixed(2)}.`,
+    });
+    setProcessingBatch(false);
+    await fetchBeneficiaryOrders();
+  };
+
   const filteredGroups = groupedNumbers.filter((grp) => {
     if (statusFilter !== "all" && grp.latestStatus !== statusFilter) return false;
     if (!search.trim()) return true;
@@ -171,11 +327,12 @@ export default function AdminBeneficiaryOrders() {
   const totalUniqueNumbers = groupedNumbers.length;
   const totalAttempts = allBeneficiaryOrders.length;
   const totalVolume = allBeneficiaryOrders.reduce((sum, o) => sum + Number(o.amount || 0), 0);
+  const unrefundedCount = allBeneficiaryOrders.filter((o) => !o.auto_refunded && o.status !== "refunded" && o.status !== "fulfilled").length;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-6">
       {/* Page Title & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className={cn("font-display text-2xl sm:text-3xl font-bold flex items-center gap-2.5", isDark ? "text-white" : "text-gray-900")}>
             <ListCheck className="w-7 h-7 text-amber-500" /> Non-Beneficiary Number Tracker
@@ -184,11 +341,36 @@ export default function AdminBeneficiaryOrders() {
             Comprehensive list of recipient numbers flagged for beneficiary whitelisting across all providers.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Global Batch Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-2 h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+            onClick={handleRetryAllBeneficiary}
+            disabled={processingBatch || loading}
+          >
+            {processingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
+            Retry All Numbers
+          </Button>
+
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-2 h-9 bg-purple-600 hover:bg-purple-700 text-white font-semibold"
+            onClick={handleRefundAllBeneficiary}
+            disabled={processingBatch || loading || unrefundedCount === 0}
+          >
+            {processingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            Refund All ({unrefundedCount})
+          </Button>
+
           <Button variant="outline" size="sm" className="gap-2 h-9 border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400" onClick={copyAllNumbersCsv}>
             {copiedText === "csv_copied" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
             {copiedText === "csv_copied" ? "Copied List!" : "Copy Numbers List"}
           </Button>
+
           <Button variant="outline" size="sm" className="gap-2 h-9" onClick={fetchBeneficiaryOrders} disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
           </Button>
@@ -378,26 +560,56 @@ export default function AdminBeneficiaryOrders() {
           </DialogHeader>
 
           {selectedGroup && (
-            <div className="space-y-3 pt-2">
+            <div className="space-y-4 pt-2">
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
                 Carrier Response: <strong>"{selectedGroup.phone} is not added to our beneficiary list"</strong>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {selectedGroup.orders.map((ord) => {
                   const { date, time } = fmt(ord.created_at);
+                  const isBusy = processingId === ord.id;
                   return (
-                    <div key={ord.id} className="p-3.5 rounded-xl border border-border bg-card/60 flex items-center justify-between gap-4 text-xs">
+                    <div key={ord.id} className="p-3.5 rounded-xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div>
                         <div className="font-mono font-bold text-foreground">{ord.id.slice(0, 8)} • {ord.package_size}</div>
                         <div className="text-muted-foreground font-mono mt-0.5">{ord.agent_email}</div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">{date} at {time}</div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-sm text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
-                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-1", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
-                          {ord.status.toUpperCase()}
-                        </span>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-3">
+                        <div className="text-right">
+                          <div className="font-bold text-sm text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
+                          <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
+                            {ord.status.toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs gap-1 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            onClick={() => handleRetrySingle(ord)}
+                            disabled={isBusy || processingBatch}
+                          >
+                            {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                            Retry
+                          </Button>
+
+                          {ord.status !== "refunded" && !ord.auto_refunded && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs gap-1 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30"
+                              onClick={() => handleRefundSingle(ord)}
+                              disabled={isBusy || processingBatch}
+                            >
+                              {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                              Refund
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
