@@ -2147,11 +2147,12 @@ const AgentStore = () => {
             {allowNonBeneficiaryContinue ? (
               <>
                 <p>
-                  If you continue, this order will be placed as <strong className="font-extrabold text-black">Pending</strong> and held until this number is added to our beneficiary list. <span className="text-[#E0560D] font-bold">You can still proceed if you wish.</span>
+                  If you continue, this order will be submitted and held for beneficiary processing. <span className="text-[#E0560D] font-bold">You can proceed safely if you wish.</span>
                 </p>
-                <p className="text-[#B91C1C] font-extrabold">
-                  Orders can not be refunded or canceled!
-                </p>
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 font-bold text-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  ✓ 100% Instant Auto-Refund Protection Active — If fulfillment fails, your money is automatically returned to your wallet balance instantly.
+                </div>
               </>
             ) : (
               <p className="text-[#B91C1C] font-bold">
