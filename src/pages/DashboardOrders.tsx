@@ -168,27 +168,59 @@ const DashboardOrders = () => {
 
     setRefundingId(order.id);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-and-refund", {
-        body: { order_id: order.id }
-      });
-      if (error) throw error;
+      let isRefunded = false;
+      let statusMessage = "";
 
-      if (data?.success) {
+      // 1. Attempt server-side Edge function verification first
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
+          body: { order_id: order.id }
+        });
+        if (!edgeErr && edgeData?.success) {
+          isRefunded = true;
+          statusMessage = edgeData.message || `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`;
+        } else if (!edgeErr && edgeData?.error) {
+          toast({ title: "Refund Blocked by Server", description: edgeData.error, variant: "destructive" });
+          setRefundingId(null);
+          return;
+        }
+      } catch (e) {
+        console.warn("[Refund] Edge function invoke error, falling back to direct server RPC...", e);
+      }
+
+      // 2. Direct server RPC fallback if Edge function was not reachable
+      if (!isRefunded) {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("refund_failed_order", { p_order_id: order.id });
+        if (rpcErr || !rpcData) {
+          toast({ title: "Refund Blocked", description: rpcErr?.message || "Order is ineligible for refund.", variant: "destructive" });
+          setRefundingId(null);
+          return;
+        }
+        isRefunded = true;
+        statusMessage = `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`;
+      }
+
+      if (isRefunded) {
         toast({
-          title: "Server Verified & Refunded!",
-          description: data.message || `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`,
+          title: "Order Refunded Successfully!",
+          description: statusMessage,
         });
         setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "refunded" } : o)));
-      } else {
-        toast({
-          title: "Refund Blocked by Server",
-          description: data?.error || "Server verified this order is ineligible for refund.",
-          variant: "destructive",
-        });
+
+        // Send SMS trigger
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "refund",
+            phone: order.customer_phone,
+            order_id: order.id,
+            amount: order.amount,
+            agent_id: user.id
+          }
+        }).catch(console.error);
       }
     } catch (err: any) {
       console.error("Refund error:", err);
-      toast({ title: "Refund Failed", description: err.message || "Failed to execute refund", variant: "destructive" });
+      toast({ title: "Refund Error", description: err.message || "Failed to execute refund", variant: "destructive" });
     } finally {
       setRefundingId(null);
     }

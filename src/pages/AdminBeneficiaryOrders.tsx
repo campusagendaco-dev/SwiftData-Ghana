@@ -240,15 +240,47 @@ export default function AdminBeneficiaryOrders() {
 
     setProcessingId(ord.id);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-and-refund", {
-        body: { order_id: ord.id }
-      });
-      if (error) throw error;
+      let isRefunded = false;
+      let statusMsg = "";
 
-      if (data?.success) {
-        toast({ title: "Server Verified & Refunded!", description: data.message || `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.` });
-      } else {
-        toast({ title: "Refund Blocked", description: data?.error || "Server verified this order cannot be refunded.", variant: "destructive" });
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
+          body: { order_id: ord.id }
+        });
+        if (!edgeErr && edgeData?.success) {
+          isRefunded = true;
+          statusMsg = edgeData.message || `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.`;
+        } else if (!edgeErr && edgeData?.error) {
+          toast({ title: "Refund Blocked", description: edgeData.error, variant: "destructive" });
+          setProcessingId(null);
+          return;
+        }
+      } catch (e) {
+        console.warn("[Admin Refund] Edge function error, falling back to direct server RPC...", e);
+      }
+
+      if (!isRefunded) {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc("refund_failed_order", { p_order_id: ord.id });
+        if (rpcErr || !rpcData) {
+          toast({ title: "Refund Failed", description: rpcErr?.message || "This order is ineligible for refund.", variant: "destructive" });
+          setProcessingId(null);
+          return;
+        }
+        isRefunded = true;
+        statusMsg = `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.`;
+      }
+
+      if (isRefunded) {
+        toast({ title: "Order Refunded!", description: statusMsg });
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "refund",
+            phone: ord.customer_phone,
+            order_id: ord.id,
+            amount: ord.amount,
+            agent_id: ord.agent_id
+          }
+        }).catch(console.error);
       }
       await fetchBeneficiaryOrders();
     } catch (err: any) {
