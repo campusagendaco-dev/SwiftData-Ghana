@@ -110,7 +110,7 @@ const AdminUtilityOrders = () => {
 
         const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
         
-        let orString = `utility_account_number.ilike.%${search}%,utility_account_name.ilike.%${search}%,utility_provider.ilike.%${search}%,status.ilike.%${search}%`;
+        let orString = `utility_account_number.ilike.%${search}%,utility_account_name.ilike.%${search}%,utility_provider.ilike.%${search}%`;
         if (matchedUserIds.length > 0) {
           matchedUserIds.forEach(id => {
             orString += `,agent_id.eq.${id}`;
