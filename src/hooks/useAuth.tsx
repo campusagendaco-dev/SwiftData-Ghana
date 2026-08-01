@@ -122,8 +122,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (error) throw error;
       
-      const challenged = data.currentLevel === "aal1" && data.nextLevel === "aal2";
-      const enabled = data.nextLevel === "aal2";
+      const { data: factorsData } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
+      const hasTotpFactor = (factorsData?.totp || []).some((f: any) => f.status === "verified");
+
+      const enabled = data.nextLevel === "aal2" && hasTotpFactor;
+      const challenged = data.currentLevel === "aal1" && enabled;
       
       setMfaStatus({ enabled, challenged });
     } catch (e) {
