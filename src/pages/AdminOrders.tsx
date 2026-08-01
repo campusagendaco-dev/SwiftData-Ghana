@@ -133,7 +133,7 @@ const AdminOrders = () => {
 
         const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
         
-        let orString = `customer_phone.ilike.%${search}%,customer_name.ilike.%${search}%,network.ilike.%${search}%,package_size.ilike.%${search}%`;
+        let orString = `id.ilike.%${search.trim()}%,customer_phone.ilike.%${search}%,customer_name.ilike.%${search}%,network.ilike.%${search}%,package_size.ilike.%${search}%`;
         if (matchedUserIds.length > 0) {
           matchedUserIds.forEach(id => {
             orString += `,agent_id.eq.${id}`;
