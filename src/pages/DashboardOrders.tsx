@@ -146,6 +146,10 @@ const DashboardOrders = () => {
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+  const retryCountRef = useRef<Record<string, number>>({});
 
   const handleRefundOrder = async (order: Order) => {
     if (order.status === "fulfilled") {
