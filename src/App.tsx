@@ -37,6 +37,7 @@ const AgentProgram = lazy(() => import("./pages/AgentProgram"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const DashboardPricing = lazy(() => import("./pages/DashboardPricing"));
 const DashboardOrders = lazy(() => import("./pages/DashboardOrders"));
+const DashboardRefundedOrders = lazy(() => import("./pages/DashboardRefundedOrders"));
 const DashboardWithdraw = lazy(() => import("./pages/DashboardWithdraw"));
 const DashboardWallet = lazy(() => import("./pages/DashboardWallet"));
 const DashboardFlyer = lazy(() => import("./pages/DashboardFlyer"));
@@ -422,6 +423,8 @@ const AppContent = () => {
           <Route index element={<Dashboard />} />
           <Route path="wallet" element={<DashboardWallet />} />
           <Route path="transactions" element={<DashboardOrders />} />
+          <Route path="refunded-orders" element={<DashboardRefundedOrders />} />
+          <Route path="refunds" element={<DashboardRefundedOrders />} />
           <Route path="notifications" element={<DashboardNotifications />} />
           <Route path="buy-data" element={<Navigate to="/dashboard/buy-data/mtn" replace />} />
           <Route path="buy-data/mtn" element={<DashboardBuyDataNetwork network="MTN" />} />

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check, Smartphone, Zap, Download, Search } from "lucide-react";
+import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check, Smartphone, Zap, Download, Search, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
@@ -50,6 +50,15 @@ function getDisplayStatus(status: string, orderType?: string, network?: string |
         dot: "bg-green-500",
         badge: "bg-green-500/12 border-green-500/25 text-green-600 dark:text-green-400",
         text: "text-green-600 dark:text-green-400",
+      };
+    case "refunded":
+      return {
+        label: "Refunded to Wallet",
+        shortLabel: "Refunded ↺",
+        icon: RotateCcw,
+        dot: "bg-purple-500",
+        badge: "bg-purple-500/15 border-purple-500/30 text-purple-600 dark:text-purple-400",
+        text: "text-purple-600 dark:text-purple-400",
       };
     case "fulfillment_failed":
       return {
@@ -161,7 +170,7 @@ const DashboardOrders = () => {
       .from("orders")
       .select("*", { count: "exact" })
       .in("agent_id", candidateAgentIds)
-      .in("status", ["pending", "paid", "processing", "fulfilled", "fulfillment_failed", "awaiting_payment"])
+      .in("status", ["pending", "paid", "processing", "fulfilled", "fulfillment_failed", "awaiting_payment", "refunded"])
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -442,6 +451,7 @@ const DashboardOrders = () => {
               <SelectItem value="utility">Utility Bills</SelectItem>
               <SelectItem value="processing">Processing</SelectItem>
               <SelectItem value="fulfilled">Delivered</SelectItem>
+              <SelectItem value="refunded">Refunded Orders</SelectItem>
               <SelectItem value="fulfillment_failed">Failed</SelectItem>
             </SelectContent>
           </Select>

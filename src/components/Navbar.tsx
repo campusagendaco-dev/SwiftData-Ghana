@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu, X, LogOut, LayoutDashboard, ShieldCheck,
   TrendingUp, Home, HelpCircle, ChevronRight,
-  User, Settings, Wallet, ClipboardList, Store, Sun, Moon, Zap, Palette, Droplets, BookOpen,
+  User, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, Palette, Droplets, BookOpen,
 } from "lucide-react";
 import { THEMES } from "@/lib/themes";
 import { useState, useEffect, useRef } from "react";
@@ -683,6 +683,7 @@ const Navbar = () => {
                       { to: isAdmin ? "/admin" : "/dashboard", label: "Dashboard", icon: LayoutDashboard },
                       { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
                       { to: "/dashboard/transactions", label: "My Transactions", icon: ClipboardList },
+                      { to: "/dashboard/refunded-orders", label: "Refunded Orders", icon: RotateCcw },
                       ...(agentApproved ? [{ to: "/dashboard/my-store", label: "My Store", icon: Store }] : []),
                       { to: "/dashboard/account-settings", label: "Account Settings", icon: Settings },
                     ].map(({ to, label, icon: Icon }) => (
