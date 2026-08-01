@@ -350,30 +350,30 @@ export default function AdminBeneficiaryOrders() {
   const unrefundedCount = allBeneficiaryOrders.filter((o) => !o.auto_refunded && o.status !== "refunded" && o.status !== "fulfilled").length;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-8 animate-in fade-in duration-300">
-      {/* Premium Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-6 sm:p-8 border border-amber-500/20 backdrop-blur-xl shadow-xl">
+    <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-6 sm:space-y-8 animate-in fade-in duration-300">
+      {/* Premium Mobile-Optimized Hero Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-5 sm:p-8 border border-amber-500/20 backdrop-blur-xl shadow-xl">
         <div className="absolute top-0 right-0 -mt-12 -mr-12 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] sm:text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
               <Sparkles className="w-3.5 h-3.5" /> Carrier Whitelist Sentinel Active
             </div>
-            <h1 className={cn("font-display text-2xl sm:text-4xl font-black tracking-tight flex items-center gap-3", isDark ? "text-white" : "text-gray-900")}>
-              Non-Beneficiary Intelligence Hub
+            <h1 className={cn("font-display text-2xl sm:text-4xl font-black tracking-tight flex items-center gap-2.5", isDark ? "text-white" : "text-gray-900")}>
+              Non-Beneficiary Hub
             </h1>
-            <p className={cn("text-sm sm:text-base max-w-2xl leading-relaxed", isDark ? "text-white/70" : "text-gray-600")}>
+            <p className={cn("text-xs sm:text-base max-w-2xl leading-relaxed", isDark ? "text-white/70" : "text-gray-600")}>
               Real-time monitoring and 1-click batch whitelisting for numbers blocked by carrier beneficiary requirements.
             </p>
           </div>
 
-          {/* Action Button Group */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Touch-Optimized Action Button Grid */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
             <Button
               variant="default"
               size="lg"
-              className="gap-2.5 h-11 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95 text-xs sm:text-sm"
               onClick={handleRetryAllBeneficiary}
               disabled={processingBatch || loading}
             >
@@ -384,7 +384,7 @@ export default function AdminBeneficiaryOrders() {
             <Button
               variant="default"
               size="lg"
-              className="gap-2.5 h-11 px-5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-purple-950/20 transition-all active:scale-95"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-purple-950/20 transition-all active:scale-95 text-xs sm:text-sm"
               onClick={handleRefundAllBeneficiary}
               disabled={processingBatch || loading || unrefundedCount === 0}
             >
@@ -395,17 +395,17 @@ export default function AdminBeneficiaryOrders() {
             <Button
               variant="outline"
               size="lg"
-              className="gap-2 h-11 px-4 rounded-2xl border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold backdrop-blur-sm"
+              className="w-full sm:w-auto gap-2 h-11 px-4 rounded-2xl border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold backdrop-blur-sm text-xs sm:text-sm"
               onClick={copyAllNumbersCsv}
             >
               {copiedText === "csv_copied" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-              {copiedText === "csv_copied" ? "Copied List!" : "Export Phone CSV"}
+              {copiedText === "csv_copied" ? "Copied List!" : "Export CSV"}
             </Button>
 
             <Button
               variant="outline"
               size="lg"
-              className="h-11 w-11 p-0 rounded-2xl border-white/10 hover:bg-white/10"
+              className="w-full sm:w-11 h-11 p-0 rounded-2xl border-white/10 hover:bg-white/10 flex items-center justify-center"
               onClick={fetchBeneficiaryOrders}
               disabled={loading}
             >
@@ -416,78 +416,78 @@ export default function AdminBeneficiaryOrders() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-amber-500/20 shadow-xl shadow-amber-950/10" : "bg-white border-amber-100 shadow-md")}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-amber-500/20 shadow-xl shadow-amber-950/10" : "bg-white border-amber-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Unique Flagged</span>
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-500">
-              <Phone className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Unique Flagged</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-500">
+              <Phone className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
-            {totalUniqueNumbers} Numbers
+          <div className="mt-2 sm:mt-3 text-xl sm:text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
+            {totalUniqueNumbers}
           </div>
-          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> Awaiting Carrier Whitelist
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1 flex items-center gap-1.5 truncate">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Whitelist Pending
           </p>
         </div>
 
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-purple-500/20 shadow-xl shadow-purple-950/10" : "bg-white border-purple-100 shadow-md")}>
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-purple-500/20 shadow-xl shadow-purple-950/10" : "bg-white border-purple-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Order Attempts</span>
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/15 flex items-center justify-center text-purple-500">
-              <Zap className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Order Attempts</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-purple-500/15 flex items-center justify-center text-purple-500">
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-purple-600 dark:text-purple-400">
-            {totalAttempts} Attempts
+          <div className="mt-2 sm:mt-3 text-xl sm:text-3xl font-black tracking-tight text-purple-600 dark:text-purple-400">
+            {totalAttempts}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Total transactions impacted</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Total transactions</p>
         </div>
 
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-emerald-500/20 shadow-xl shadow-emerald-950/10" : "bg-white border-emerald-100 shadow-md")}>
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-emerald-500/20 shadow-xl shadow-emerald-950/10" : "bg-white border-emerald-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Total Volume</span>
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center text-emerald-500">
-              <Wallet className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Total Volume</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-emerald-500/15 flex items-center justify-center text-emerald-500">
+              <Wallet className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-emerald-600 dark:text-emerald-400">
+          <div className="mt-2 sm:mt-3 text-xl sm:text-3xl font-black tracking-tight text-emerald-600 dark:text-emerald-400">
             GH₵ {totalVolume.toFixed(2)}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Gross transaction value</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Gross value</p>
         </div>
 
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-blue-500/20 shadow-xl shadow-blue-950/10" : "bg-white border-blue-100 shadow-md")}>
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-blue-500/20 shadow-xl shadow-blue-950/10" : "bg-white border-blue-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Auto-Refund Health</span>
-            <div className="w-10 h-10 rounded-2xl bg-blue-500/15 flex items-center justify-center text-blue-500">
-              <CheckCircle2 className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Sentinel</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-blue-500/15 flex items-center justify-center text-blue-500">
+              <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-2xl font-extrabold tracking-tight text-blue-600 dark:text-blue-400">
-            100% Protected
+          <div className="mt-2 sm:mt-3 text-lg sm:text-2xl font-extrabold tracking-tight text-blue-600 dark:text-blue-400">
+            100% Guard
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Zero agent balance loss guarantee</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Zero balance loss</p>
         </div>
       </div>
 
       {/* Filter Controls Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-3xl bg-card/40 border border-border backdrop-blur-xl">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-card/40 border border-border backdrop-blur-xl">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by phone number, agent email, order reference..."
+            placeholder="Search phone number, agent email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 h-11 rounded-2xl text-sm bg-background/80 border-border"
+            className="pl-10 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs sm:text-sm bg-background/80 border-border"
           />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 sm:gap-3">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40 h-11 rounded-2xl text-xs font-semibold">
-              <SelectValue placeholder="Filter Status" />
+            <SelectTrigger className="w-full sm:w-40 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs font-semibold">
+              <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl">
               <SelectItem value="all">All Statuses</SelectItem>
@@ -497,7 +497,7 @@ export default function AdminBeneficiaryOrders() {
           </Select>
 
           <Select value={timeFilter} onValueChange={setTimeFilter}>
-            <SelectTrigger className="w-40 h-11 rounded-2xl text-xs font-semibold">
+            <SelectTrigger className="w-full sm:w-40 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs font-semibold">
               <SelectValue placeholder="Timeframe" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl">
@@ -510,117 +510,169 @@ export default function AdminBeneficiaryOrders() {
         </div>
       </div>
 
-      {/* Table Section */}
-      <div className={cn("rounded-3xl border overflow-hidden transition-all backdrop-blur-xl shadow-xl", isDark ? "bg-card/70 border-border" : "bg-white border-gray-200")}>
+      {/* Responsive View: Desktop Table vs Mobile Cards */}
+      <div className={cn("rounded-2xl sm:rounded-3xl border overflow-hidden transition-all backdrop-blur-xl shadow-xl", isDark ? "bg-card/70 border-border" : "bg-white border-gray-200")}>
         {loading ? (
-          <div className="p-10 space-y-4">
-            <Skeleton className="h-14 w-full rounded-2xl" />
+          <div className="p-8 sm:p-10 space-y-4">
             <Skeleton className="h-14 w-full rounded-2xl" />
             <Skeleton className="h-14 w-full rounded-2xl" />
           </div>
         ) : filteredGroups.length === 0 ? (
-          <div className="p-16 text-center space-y-4">
-            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto shadow-inner">
-              <Phone className="w-8 h-8" />
+          <div className="p-12 sm:p-16 text-center space-y-4">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto shadow-inner">
+              <Phone className="w-7 h-7 sm:w-8 sm:h-8" />
             </div>
-            <h3 className="text-lg font-bold">No Flagged Numbers Found</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            <h3 className="text-base sm:text-lg font-bold">No Flagged Numbers Found</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
               All numbers in the system are currently whitelisted or no matching beneficiary errors occurred in the selected timeframe.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className={cn("border-b text-xs font-bold uppercase tracking-wider", isDark ? "bg-muted/40 border-border text-muted-foreground" : "bg-gray-50/80 border-gray-100 text-gray-500")}>
-                  <th className="py-4 px-6">Recipient Number</th>
-                  <th className="py-4 px-6">Carrier</th>
-                  <th className="py-4 px-6">Attempts & Urgency</th>
-                  <th className="py-4 px-6">Total Value</th>
-                  <th className="py-4 px-6">Last Attempt</th>
-                  <th className="py-4 px-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {filteredGroups.map((grp) => {
-                  const { date, time } = fmt(grp.lastAttemptAt);
-                  const isHighPriority = grp.totalAttempts >= 3;
-                  return (
-                    <tr key={grp.phone} className={cn("transition-colors hover:bg-muted/30 group", isDark ? "" : "hover:bg-gray-50/80")}>
-                      {/* Phone Number */}
-                      <td className="py-4 px-6">
-                        <div className="font-mono font-black text-base flex items-center gap-2.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          {grp.phone}
-                          <button onClick={() => copyToClipboard(grp.phone, grp.phone)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
-                            {copiedText === grp.phone ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <div className="text-xs text-muted-foreground font-mono truncate max-w-[240px] mt-0.5">
-                          Agents: {grp.agentEmails.join(", ")}
-                        </div>
-                      </td>
+          <>
+            {/* DESKTOP TABLE VIEW */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className={cn("border-b text-xs font-bold uppercase tracking-wider", isDark ? "bg-muted/40 border-border text-muted-foreground" : "bg-gray-50/80 border-gray-100 text-gray-500")}>
+                    <th className="py-4 px-6">Recipient Number</th>
+                    <th className="py-4 px-6">Carrier</th>
+                    <th className="py-4 px-6">Attempts & Urgency</th>
+                    <th className="py-4 px-6">Total Value</th>
+                    <th className="py-4 px-6">Last Attempt</th>
+                    <th className="py-4 px-6 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {filteredGroups.map((grp) => {
+                    const { date, time } = fmt(grp.lastAttemptAt);
+                    const isHighPriority = grp.totalAttempts >= 3;
+                    return (
+                      <tr key={grp.phone} className={cn("transition-colors hover:bg-muted/30 group", isDark ? "" : "hover:bg-gray-50/80")}>
+                        <td className="py-4 px-6">
+                          <div className="font-mono font-black text-base flex items-center gap-2.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                            {grp.phone}
+                            <button onClick={() => copyToClipboard(grp.phone, grp.phone)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
+                              {copiedText === grp.phone ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          <div className="text-xs text-muted-foreground font-mono truncate max-w-[240px] mt-0.5">
+                            Agents: {grp.agentEmails.join(", ")}
+                          </div>
+                        </td>
 
-                      {/* Network */}
-                      <td className="py-4 px-6">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
-                          {grp.network}
-                        </span>
-                      </td>
+                        <td className="py-4 px-6">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
+                            {grp.network}
+                          </span>
+                        </td>
 
-                      {/* Attempts */}
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-sm">{grp.totalAttempts} {grp.totalAttempts === 1 ? "attempt" : "attempts"}</span>
-                          {isHighPriority && (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-500/15 border border-red-500/30 text-red-600 dark:text-red-400 animate-pulse">
-                              High Priority
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground">Auto-logged for whitelist</div>
-                      </td>
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold text-sm">{grp.totalAttempts} {grp.totalAttempts === 1 ? "attempt" : "attempts"}</span>
+                            {isHighPriority && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-500/15 border border-red-500/30 text-red-600 dark:text-red-400 animate-pulse">
+                                High Priority
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">Auto-logged for whitelist</div>
+                        </td>
 
-                      {/* Total Value */}
-                      <td className="py-4 px-6">
-                        <div className="font-black text-sm text-foreground">GH₵ {grp.totalAmount.toFixed(2)}</div>
-                      </td>
+                        <td className="py-4 px-6">
+                          <div className="font-black text-sm text-foreground">GH₵ {grp.totalAmount.toFixed(2)}</div>
+                        </td>
 
-                      {/* Last Attempt */}
-                      <td className="py-4 px-6">
-                        <div className="text-xs font-bold">{date}</div>
-                        <div className="text-[11px] text-muted-foreground">{time}</div>
-                      </td>
+                        <td className="py-4 px-6">
+                          <div className="text-xs font-bold">{date}</div>
+                          <div className="text-[11px] text-muted-foreground">{time}</div>
+                        </td>
 
-                      {/* Actions */}
-                      <td className="py-4 px-6 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-9 px-4 rounded-xl text-xs font-bold gap-2 border border-border/50 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-all"
-                          onClick={() => setSelectedGroup(grp)}
-                        >
-                          View Orders ({grp.orders.length}) <ArrowRight className="w-3.5 h-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <td className="py-4 px-6 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 px-4 rounded-xl text-xs font-bold gap-2 border border-border/50 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-all"
+                            onClick={() => setSelectedGroup(grp)}
+                          >
+                            View Orders ({grp.orders.length}) <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* MOBILE CARDS VIEW */}
+            <div className="block md:hidden divide-y divide-border/40">
+              {filteredGroups.map((grp) => {
+                const { date, time } = fmt(grp.lastAttemptAt);
+                const isHighPriority = grp.totalAttempts >= 3;
+                return (
+                  <div key={grp.phone} className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-mono font-black text-base flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        {grp.phone}
+                        <button onClick={() => copyToClipboard(grp.phone, grp.phone)} className="text-muted-foreground p-1">
+                          {copiedText === grp.phone ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                        {grp.network}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <div>
+                        <span className="text-muted-foreground">Attempts: </span>
+                        <span className="font-extrabold text-foreground">{grp.totalAttempts}</span>
+                        {isHighPriority && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-red-500/15 text-red-600 dark:text-red-400">
+                            High
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Volume: </span>
+                        <span className="font-black text-emerald-600 dark:text-emerald-400">GH₵ {grp.totalAmount.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-muted-foreground font-mono truncate">
+                      Agents: {grp.agentEmails.join(", ")}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[10px] text-muted-foreground">{date} at {time}</span>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="h-9 px-4 rounded-xl text-xs font-bold gap-1.5 bg-amber-500 hover:bg-amber-600 text-black shadow-md"
+                        onClick={() => setSelectedGroup(grp)}
+                      >
+                        View {grp.orders.length} Orders <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
       {/* Orders Detail Dialog */}
       <Dialog open={!!selectedGroup} onOpenChange={(op) => !op && setSelectedGroup(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto rounded-3xl">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto rounded-3xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between text-xl font-black">
-              <span className="flex items-center gap-2.5">
-                <Phone className="w-6 h-6 text-amber-500" /> Orders for {selectedGroup?.phone}
+            <DialogTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-lg sm:text-xl font-black">
+              <span className="flex items-center gap-2">
+                <Phone className="w-5 h-5 text-amber-500" /> Orders for {selectedGroup?.phone}
               </span>
-              <Button variant="outline" size="sm" className="text-xs h-9 rounded-xl gap-1.5 font-bold" onClick={() => selectedGroup && copyToClipboard(selectedGroup.phone, "modal_phone")}>
+              <Button variant="outline" size="sm" className="text-xs h-8 rounded-xl gap-1.5 font-bold self-start sm:self-auto" onClick={() => selectedGroup && copyToClipboard(selectedGroup.phone, "modal_phone")}>
                 {copiedText === "modal_phone" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                 Copy Phone
               </Button>
@@ -628,8 +680,8 @@ export default function AdminBeneficiaryOrders() {
           </DialogHeader>
 
           {selectedGroup && (
-            <div className="space-y-4 pt-3">
-              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
+            <div className="space-y-4 pt-2">
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
                 Carrier Response: <strong>"{selectedGroup.phone} is not added to our beneficiary list"</strong>
               </div>
 
@@ -638,43 +690,43 @@ export default function AdminBeneficiaryOrders() {
                   const { date, time } = fmt(ord.created_at);
                   const isBusy = processingId === ord.id;
                   return (
-                    <div key={ord.id} className="p-4 rounded-2xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition-all hover:border-amber-500/30">
+                    <div key={ord.id} className="p-3.5 sm:p-4 rounded-2xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div>
                         <div className="font-mono font-black text-sm text-foreground">{ord.id.slice(0, 8)} • {ord.package_size}</div>
-                        <div className="text-muted-foreground font-mono mt-0.5">{ord.agent_email}</div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5">{date} at {time}</div>
+                        <div className="text-muted-foreground font-mono mt-0.5 truncate max-w-[220px]">{ord.agent_email}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{date} at {time}</div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-4">
-                        <div className="text-right">
-                          <div className="font-black text-base text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
-                          <span className={cn("inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold mt-1", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
+                        <div className="text-left sm:text-right">
+                          <div className="font-black text-sm sm:text-base text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
+                          <span className={cn("inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold mt-0.5", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
                             {ord.status.toUpperCase()}
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            className="h-8.5 px-3 rounded-xl text-xs font-bold gap-1 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                             onClick={() => handleRetrySingle(ord)}
                             disabled={isBusy || processingBatch}
                           >
                             {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                            Retry Order
+                            Retry
                           </Button>
 
                           {ord.status !== "refunded" && !ord.auto_refunded && (
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30"
+                              className="h-8.5 px-3 rounded-xl text-xs font-bold gap-1 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30"
                               onClick={() => handleRefundSingle(ord)}
                               disabled={isBusy || processingBatch}
                             >
                               {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                              Refund Order
+                              Refund
                             </Button>
                           )}
                         </div>

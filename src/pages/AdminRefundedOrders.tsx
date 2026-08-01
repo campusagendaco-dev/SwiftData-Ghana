@@ -254,20 +254,20 @@ export default function AdminRefundedOrders() {
   const uniqueAgentsCount = new Set(orders.map(o => o.agent_id)).size;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-8 animate-in fade-in duration-300">
-      {/* Premium Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-purple-600/15 via-indigo-500/10 to-blue-500/15 p-6 sm:p-8 border border-purple-500/20 backdrop-blur-xl shadow-xl">
+    <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-6 sm:space-y-8 animate-in fade-in duration-300">
+      {/* Premium Mobile-Optimized Hero Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-purple-600/15 via-indigo-500/10 to-blue-500/15 p-5 sm:p-8 border border-purple-500/20 backdrop-blur-xl shadow-xl">
         <div className="absolute top-0 right-0 -mt-12 -mr-12 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-300">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1.5 sm:space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] sm:text-xs font-extrabold bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-300">
               <Sparkles className="w-3.5 h-3.5" /> Realtime Master Ledger
             </div>
-            <h1 className={cn("font-display text-2xl sm:text-4xl font-black tracking-tight flex items-center gap-3", isDark ? "text-white" : "text-gray-900")}>
+            <h1 className={cn("font-display text-2xl sm:text-4xl font-black tracking-tight flex items-center gap-2.5", isDark ? "text-white" : "text-gray-900")}>
               Platform Refunded Orders
             </h1>
-            <p className={cn("text-sm sm:text-base max-w-2xl leading-relaxed", isDark ? "text-white/70" : "text-gray-600")}>
+            <p className={cn("text-xs sm:text-base max-w-2xl leading-relaxed", isDark ? "text-white/70" : "text-gray-600")}>
               Complete real-time ledger of all auto-refunded and wallet-credited transactions across the platform.
             </p>
           </div>
@@ -275,7 +275,7 @@ export default function AdminRefundedOrders() {
           <Button
             variant="outline"
             size="lg"
-            className="gap-2.5 h-11 px-5 rounded-2xl border-purple-500/30 hover:bg-purple-500/10 text-purple-600 dark:text-purple-300 font-bold backdrop-blur-sm shadow-md"
+            className="gap-2.5 h-11 px-5 rounded-2xl border-purple-500/30 hover:bg-purple-500/10 text-purple-600 dark:text-purple-300 font-bold backdrop-blur-sm shadow-md self-start sm:self-auto text-xs sm:text-sm"
             onClick={fetchRefundedOrders}
             disabled={loading}
           >
@@ -285,75 +285,75 @@ export default function AdminRefundedOrders() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-purple-500/20 shadow-xl shadow-purple-950/10" : "bg-white border-purple-100 shadow-md")}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-purple-500/20 shadow-xl shadow-purple-950/10" : "bg-white border-purple-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Total Refunded Volume</span>
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/15 flex items-center justify-center text-purple-500">
-              <Wallet className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Total Refunded</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-purple-500/15 flex items-center justify-center text-purple-500">
+              <Wallet className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-purple-600 dark:text-purple-400">
+          <div className="mt-2 sm:mt-3 text-xl sm:text-3xl font-black tracking-tight text-purple-600 dark:text-purple-400">
             GH₵ {totalRefundedAmount.toFixed(2)}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">{totalCount} total refunded transactions</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">{totalCount} transactions</p>
         </div>
 
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-blue-500/20 shadow-xl shadow-blue-950/10" : "bg-white border-blue-100 shadow-md")}>
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-blue-500/20 shadow-xl shadow-blue-950/10" : "bg-white border-blue-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Today's Refunds</span>
-            <div className="w-10 h-10 rounded-2xl bg-blue-500/15 flex items-center justify-center text-blue-500">
-              <Calendar className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Today's Refunds</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-blue-500/15 flex items-center justify-center text-blue-500">
+              <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-blue-600 dark:text-blue-400">
+          <div className="mt-2 sm:mt-3 text-xl sm:text-3xl font-black tracking-tight text-blue-600 dark:text-blue-400">
             GH₵ {todayRefundedAmount.toFixed(2)}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">{todayOrders.length} orders refunded today</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">{todayOrders.length} today</p>
         </div>
 
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-amber-500/20 shadow-xl shadow-amber-950/10" : "bg-white border-amber-100 shadow-md")}>
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-amber-500/20 shadow-xl shadow-amber-950/10" : "bg-white border-amber-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Unique Resellers</span>
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-500">
-              <Users className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Unique Resellers</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-500">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
+          <div className="mt-2 sm:mt-3 text-xl sm:text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
             {uniqueAgentsCount}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Distinct reseller accounts</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Reseller accounts</p>
         </div>
 
-        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-emerald-500/20 shadow-xl shadow-emerald-950/10" : "bg-white border-emerald-100 shadow-md")}>
+        <div className={cn("p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all duration-300", isDark ? "bg-card/70 border-emerald-500/20 shadow-xl shadow-emerald-950/10" : "bg-white border-emerald-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Sentinel Guard</span>
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center text-emerald-500">
-              <ShieldCheck className="w-5 h-5" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground">Sentinel</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-emerald-500/15 flex items-center justify-center text-emerald-500">
+              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="mt-3 text-2xl font-extrabold tracking-tight text-emerald-600 dark:text-emerald-400">
-            Active Protection
+          <div className="mt-2 sm:mt-3 text-lg sm:text-2xl font-extrabold tracking-tight text-emerald-600 dark:text-emerald-400">
+            Active Guard
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Wallet-only payment validation active</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Wallet validation active</p>
         </div>
       </div>
 
       {/* Filter Controls Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-3xl bg-card/40 border border-border backdrop-blur-xl">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-card/40 border border-border backdrop-blur-xl">
+        <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search order ID, phone, agent email, reason..."
+            placeholder="Search order ID, phone, agent email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 h-11 rounded-2xl text-sm bg-background/80 border-border"
+            className="pl-10 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs sm:text-sm bg-background/80 border-border"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid grid-cols-3 sm:flex items-center gap-2 sm:gap-3">
           <Select value={orderTypeFilter} onValueChange={setOrderTypeFilter}>
-            <SelectTrigger className="w-36 h-11 rounded-2xl text-xs font-semibold">
+            <SelectTrigger className="w-full sm:w-36 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs font-semibold">
               <SelectValue placeholder="Order Type" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl">
@@ -367,7 +367,7 @@ export default function AdminRefundedOrders() {
           </Select>
 
           <Select value={networkFilter} onValueChange={setNetworkFilter}>
-            <SelectTrigger className="w-36 h-11 rounded-2xl text-xs font-semibold">
+            <SelectTrigger className="w-full sm:w-32 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs font-semibold">
               <SelectValue placeholder="Network" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl">
@@ -379,7 +379,7 @@ export default function AdminRefundedOrders() {
           </Select>
 
           <Select value={dateRangeFilter} onValueChange={setDateRangeFilter}>
-            <SelectTrigger className="w-36 h-11 rounded-2xl text-xs font-semibold">
+            <SelectTrigger className="w-full sm:w-36 h-10 sm:h-11 rounded-xl sm:rounded-2xl text-xs font-semibold">
               <SelectValue placeholder="Timeframe" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl">
@@ -392,161 +392,225 @@ export default function AdminRefundedOrders() {
         </div>
       </div>
 
-      {/* Main Refunds Table */}
-      <div className={cn("rounded-3xl border overflow-hidden transition-all backdrop-blur-xl shadow-xl", isDark ? "bg-card/70 border-border" : "bg-white border-gray-200")}>
+      {/* Responsive View: Desktop Table vs Mobile Cards */}
+      <div className={cn("rounded-2xl sm:rounded-3xl border overflow-hidden transition-all backdrop-blur-xl shadow-xl", isDark ? "bg-card/70 border-border" : "bg-white border-gray-200")}>
         {loading ? (
-          <div className="p-10 space-y-4">
-            <Skeleton className="h-14 w-full rounded-2xl" />
+          <div className="p-8 sm:p-10 space-y-4">
             <Skeleton className="h-14 w-full rounded-2xl" />
             <Skeleton className="h-14 w-full rounded-2xl" />
           </div>
         ) : filteredOrders.length === 0 ? (
-          <div className="p-16 text-center space-y-4">
-            <div className="w-16 h-16 rounded-3xl bg-purple-500/10 text-purple-500 flex items-center justify-center mx-auto shadow-inner">
-              <RotateCcw className="w-8 h-8" />
+          <div className="p-12 sm:p-16 text-center space-y-4">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-purple-500/10 text-purple-500 flex items-center justify-center mx-auto shadow-inner">
+              <RotateCcw className="w-7 h-7 sm:w-8 sm:h-8" />
             </div>
-            <h3 className="text-lg font-bold">No Refunded Orders Match</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            <h3 className="text-base sm:text-lg font-bold">No Refunded Orders Match</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto">
               {search || orderTypeFilter !== "all" || networkFilter !== "all" ? "No records matched your search filters." : "No refunded orders found in the selected timeframe."}
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className={cn("border-b text-xs font-bold uppercase tracking-wider", isDark ? "bg-muted/40 border-border text-muted-foreground" : "bg-gray-50/80 border-gray-100 text-gray-500")}>
-                  <th className="py-4 px-6">Order & Date</th>
-                  <th className="py-4 px-6">Agent / Reseller</th>
-                  <th className="py-4 px-6">Service & Phone</th>
-                  <th className="py-4 px-6">Amount Refunded</th>
-                  <th className="py-4 px-6">Status & Reason</th>
-                  <th className="py-4 px-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {filteredOrders.map((o) => {
-                  const { date, time } = fmt(o.refunded_at || o.created_at);
-                  const amount = Number(o.refund_amount || o.amount || 0).toFixed(2);
-                  const isVerifying = verifyingId === o.id;
+          <>
+            {/* DESKTOP TABLE VIEW */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className={cn("border-b text-xs font-bold uppercase tracking-wider", isDark ? "bg-muted/40 border-border text-muted-foreground" : "bg-gray-50/80 border-gray-100 text-gray-500")}>
+                    <th className="py-4 px-6">Order & Date</th>
+                    <th className="py-4 px-6">Agent / Reseller</th>
+                    <th className="py-4 px-6">Service & Phone</th>
+                    <th className="py-4 px-6">Amount Refunded</th>
+                    <th className="py-4 px-6">Status & Reason</th>
+                    <th className="py-4 px-6 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {filteredOrders.map((o) => {
+                    const { date, time } = fmt(o.refunded_at || o.created_at);
+                    const amount = Number(o.refund_amount || o.amount || 0).toFixed(2);
+                    const isVerifying = verifyingId === o.id;
 
-                  return (
-                    <tr key={o.id} className={cn("transition-colors hover:bg-muted/30 group", isDark ? "" : "hover:bg-gray-50/80")}>
-                      {/* ID & Date */}
-                      <td className="py-4 px-6">
-                        <div className="font-mono font-black text-xs uppercase flex items-center gap-2 text-foreground">
-                          {o.id.slice(0, 8)}
-                          <button onClick={() => copyOrderId(o.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
-                            {copiedId === o.id ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{date} at {time}</div>
-                      </td>
+                    return (
+                      <tr key={o.id} className={cn("transition-colors hover:bg-muted/30 group", isDark ? "" : "hover:bg-gray-50/80")}>
+                        <td className="py-4 px-6">
+                          <div className="font-mono font-black text-xs uppercase flex items-center gap-2 text-foreground">
+                            {o.id.slice(0, 8)}
+                            <button onClick={() => copyOrderId(o.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
+                              {copiedId === o.id ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{date} at {time}</div>
+                        </td>
 
-                      {/* Agent Details */}
-                      <td className="py-4 px-6">
-                        <div className="font-bold text-xs text-foreground">{o.agent_name}</div>
-                        <div className="text-[11px] text-muted-foreground font-mono truncate max-w-[180px]">{o.agent_email}</div>
-                        {o.store_name && <div className="text-[10px] text-purple-500 font-extrabold mt-0.5">Store: {o.store_name}</div>}
-                      </td>
+                        <td className="py-4 px-6">
+                          <div className="font-bold text-xs text-foreground">{o.agent_name}</div>
+                          <div className="text-[11px] text-muted-foreground font-mono truncate max-w-[180px]">{o.agent_email}</div>
+                          {o.store_name && <div className="text-[10px] text-purple-500 font-extrabold mt-0.5">Store: {o.store_name}</div>}
+                        </td>
 
-                      {/* Service & Phone */}
-                      <td className="py-4 px-6">
-                        <div className="font-bold text-xs text-foreground">
-                          {o.network || o.order_type.toUpperCase()} — {o.package_size || "Standard"}
-                        </div>
-                        <div className="text-[11px] font-mono text-muted-foreground">{o.customer_phone || "—"}</div>
-                      </td>
+                        <td className="py-4 px-6">
+                          <div className="font-bold text-xs text-foreground">
+                            {o.network || o.order_type.toUpperCase()} — {o.package_size || "Standard"}
+                          </div>
+                          <div className="text-[11px] font-mono text-muted-foreground">{o.customer_phone || "—"}</div>
+                        </td>
 
-                      {/* Amount Refunded */}
-                      <td className="py-4 px-6">
-                        <div className="font-black text-purple-600 dark:text-purple-400 text-base">
-                          +GH₵ {amount}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground font-medium">Returned to Wallet</div>
-                      </td>
+                        <td className="py-4 px-6">
+                          <div className="font-black text-purple-600 dark:text-purple-400 text-base">
+                            +GH₵ {amount}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground font-medium">Returned to Wallet</div>
+                        </td>
 
-                      {/* Status & Reason */}
-                      <td className="py-4 px-6 max-w-xs">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-black bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-300 mb-1">
-                          <RotateCcw className="w-3 h-3" /> Refunded
-                        </span>
-                        <div className="text-xs text-muted-foreground truncate" title={o.failure_reason || o.refund_reason || "Auto-refund"}>
-                          {o.failure_reason || o.refund_reason || "Fulfillment failed"}
-                        </div>
-                      </td>
+                        <td className="py-4 px-6 max-w-xs">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-black bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-300 mb-1">
+                            <RotateCcw className="w-3 h-3" /> Refunded
+                          </span>
+                          <div className="text-xs text-muted-foreground truncate" title={o.failure_reason || o.refund_reason || "Auto-refund"}>
+                            {o.failure_reason || o.refund_reason || "Fulfillment failed"}
+                          </div>
+                        </td>
 
-                      {/* Actions */}
-                      <td className="py-4 px-6 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                            onClick={() => handleVerifyAndRetry(o)}
-                            disabled={isVerifying}
-                          >
-                            {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                            Verify & Retry
-                          </Button>
+                        <td className="py-4 px-6 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                              onClick={() => handleVerifyAndRetry(o)}
+                              disabled={isVerifying}
+                            >
+                              {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                              Verify & Retry
+                            </Button>
 
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border border-border/50"
-                            onClick={() => setSelectedOrder(o)}
-                          >
-                            <Eye className="w-3.5 h-3.5" /> Details
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border border-border/50"
+                              onClick={() => setSelectedOrder(o)}
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Details
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* MOBILE CARDS VIEW */}
+            <div className="block md:hidden divide-y divide-border/40">
+              {filteredOrders.map((o) => {
+                const { date, time } = fmt(o.refunded_at || o.created_at);
+                const amount = Number(o.refund_amount || o.amount || 0).toFixed(2);
+                const isVerifying = verifyingId === o.id;
+
+                return (
+                  <div key={o.id} className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-mono font-black text-xs uppercase flex items-center gap-1.5">
+                        {o.id.slice(0, 8)}
+                        <button onClick={() => copyOrderId(o.id)} className="text-muted-foreground">
+                          {copiedId === o.id ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-300">
+                        <RotateCcw className="w-3 h-3" /> Refunded
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <div>
+                        <div className="font-bold text-foreground">{o.agent_name}</div>
+                        <div className="font-mono text-[11px] text-muted-foreground truncate max-w-[180px]">{o.agent_email}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-black text-base text-purple-600 dark:text-purple-400">+GH₵ {amount}</div>
+                        <div className="text-[10px] text-muted-foreground">Wallet Credited</div>
+                      </div>
+                    </div>
+
+                    <div className="text-xs bg-muted/30 p-2.5 rounded-xl space-y-1">
+                      <div className="font-semibold text-foreground">{o.network} {o.package_size} • <span className="font-mono">{o.customer_phone || "—"}</span></div>
+                      <div className="text-[11px] text-muted-foreground truncate" title={o.failure_reason || o.refund_reason || "Auto-refund"}>
+                        Reason: {o.failure_reason || o.refund_reason || "Fulfillment failed"}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 gap-2">
+                      <span className="text-[10px] text-muted-foreground">{date} at {time}</span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-8.5 px-3 rounded-xl text-xs font-bold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md"
+                          onClick={() => handleVerifyAndRetry(o)}
+                          disabled={isVerifying}
+                        >
+                          {isVerifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                          Verify & Retry
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8.5 px-2.5 rounded-xl text-xs font-bold border-border/60"
+                          onClick={() => setSelectedOrder(o)}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
       {/* Order Details Modal */}
       <Dialog open={!!selectedOrder} onOpenChange={(op) => !op && setSelectedOrder(null)}>
-        <DialogContent className="max-w-lg rounded-3xl">
+        <DialogContent className="max-w-lg rounded-3xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2.5 text-xl font-black">
+            <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-black">
               <RotateCcw className="w-6 h-6 text-purple-500" /> Refunded Order Details
             </DialogTitle>
           </DialogHeader>
 
           {selectedOrder && (
             <div className="space-y-4 text-sm pt-2">
-              <div className="grid grid-cols-2 gap-3.5 p-4 rounded-2xl bg-muted/40 border border-border">
+              <div className="grid grid-cols-2 gap-3.5 p-4 rounded-2xl bg-muted/40 border border-border text-xs">
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase font-bold">Order ID</div>
-                  <div className="font-mono font-black text-xs mt-0.5">{selectedOrder.id}</div>
+                  <div className="text-muted-foreground uppercase font-bold text-[10px]">Order ID</div>
+                  <div className="font-mono font-black mt-0.5">{selectedOrder.id}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase font-bold">Refund Amount</div>
-                  <div className="font-black text-purple-600 dark:text-purple-400 text-base mt-0.5">GH₵ {Number(selectedOrder.refund_amount || selectedOrder.amount).toFixed(2)}</div>
+                  <div className="text-muted-foreground uppercase font-bold text-[10px]">Refund Amount</div>
+                  <div className="font-black text-purple-600 dark:text-purple-400 text-sm sm:text-base mt-0.5">GH₵ {Number(selectedOrder.refund_amount || selectedOrder.amount).toFixed(2)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase font-bold">Agent Email</div>
-                  <div className="text-xs font-mono font-medium truncate">{selectedOrder.agent_email}</div>
+                  <div className="text-muted-foreground uppercase font-bold text-[10px]">Agent Email</div>
+                  <div className="font-mono font-medium truncate mt-0.5">{selectedOrder.agent_email}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase font-bold">Recipient Phone</div>
-                  <div className="text-xs font-mono font-black">{selectedOrder.customer_phone || "—"}</div>
+                  <div className="text-muted-foreground uppercase font-bold text-[10px]">Recipient Phone</div>
+                  <div className="font-mono font-black mt-0.5">{selectedOrder.customer_phone || "—"}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase font-bold">Network & Package</div>
-                  <div className="text-xs font-extrabold">{selectedOrder.network} {selectedOrder.package_size}</div>
+                  <div className="text-muted-foreground uppercase font-bold text-[10px]">Network & Package</div>
+                  <div className="font-extrabold mt-0.5">{selectedOrder.network} {selectedOrder.package_size}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase font-bold">Payment Method</div>
-                  <div className="text-xs font-black uppercase text-purple-600 dark:text-purple-400">{selectedOrder.payment_method || "wallet"}</div>
+                  <div className="text-muted-foreground uppercase font-bold text-[10px]">Payment Method</div>
+                  <div className="font-black uppercase text-purple-600 dark:text-purple-400 mt-0.5">{selectedOrder.payment_method || "wallet"}</div>
                 </div>
               </div>
 
-              <div className="space-y-2 p-4 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-800 dark:text-purple-200">
+              <div className="space-y-2 p-3.5 sm:p-4 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-800 dark:text-purple-200">
                 <div className="text-xs font-black flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-purple-500" /> Failure & Refund Audit Log
                 </div>
@@ -555,11 +619,11 @@ export default function AdminRefundedOrders() {
                 </p>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-2">
-                <Button variant="outline" size="sm" className="rounded-xl font-bold" onClick={() => copyOrderId(selectedOrder.id)}>
-                  <Copy className="w-3.5 h-3.5 mr-1.5" /> Copy Order ID
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" className="rounded-xl font-bold text-xs" onClick={() => copyOrderId(selectedOrder.id)}>
+                  <Copy className="w-3.5 h-3.5 mr-1" /> Copy ID
                 </Button>
-                <Button variant="default" size="sm" className="rounded-xl font-bold" onClick={() => setSelectedOrder(null)}>
+                <Button variant="default" size="sm" className="rounded-xl font-bold text-xs" onClick={() => setSelectedOrder(null)}>
                   Close
                 </Button>
               </div>
