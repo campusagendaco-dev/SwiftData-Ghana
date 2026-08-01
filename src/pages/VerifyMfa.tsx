@@ -149,9 +149,14 @@ const VerifyMfa = () => {
       navigate("/dashboard");
     } catch (err: any) {
       console.error("[MFA] Verification failed:", err);
-      setError(err.message || "Invalid verification code. Please try again.");
+      const isTotpErr = (err.message || "").toLowerCase().includes("totp") || (err.message || "").toLowerCase().includes("invalid");
+      setError(
+        isTotpErr
+          ? "Invalid or expired 6-digit code. Please check your Authenticator app and ensure your phone clock is set to Automatic time."
+          : (err.message || "Invalid verification code. Please try again.")
+      );
       setOtp(["", "", "", "", "", ""]);
-      inputRefs.current[0]?.focus();
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } finally {
       setLoading(false);
     }
