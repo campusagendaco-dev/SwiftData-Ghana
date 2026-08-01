@@ -90,7 +90,7 @@ serve(async (req) => {
         continue;
       }
 
-      // Calculate the cost
+      // Strict Server-Side Pricing Enforcement
       const requestedAmount = Number(o.amount);
       const adminBase = Number(pkg.agent_price);
       if (!adminBase || adminBase <= 0) {
@@ -99,24 +99,27 @@ serve(async (req) => {
       }
       const resolvedCostPrice = Number(pkg.cost_price || 0) > 0 ? Number(pkg.cost_price) : adminBase;
 
+      const wholesalePrice = (profile.is_sub_agent && Number(pkg.sub_agent_price) > 0) ? Number(pkg.sub_agent_price) : adminBase;
+      
+      if (!Number.isFinite(requestedAmount) || requestedAmount < wholesalePrice - 0.01) {
+        errors.push({ row: i + 1, phone: o.customer_phone, error: `Amount submitted (GH₵ ${requestedAmount}) is below the official wholesale price (GH₵ ${wholesalePrice.toFixed(2)}).` });
+        continue;
+      }
+
+      const chargeAmount = requestedAmount >= wholesalePrice ? requestedAmount : wholesalePrice;
+
       let parentAgentId = null;
       let parentProfit = 0;
       let agentProfit = 0;
 
       if (profile.is_sub_agent && profile.parent_agent_id && adminBase > 0) {
         parentAgentId = profile.parent_agent_id;
-        parentProfit = Math.max(0, requestedAmount - adminBase);
+        parentProfit = Math.max(0, chargeAmount - adminBase);
       } else if (resolvedCostPrice > 0) {
-        agentProfit = Math.max(0, requestedAmount - resolvedCostPrice);
+        agentProfit = Math.max(0, chargeAmount - resolvedCostPrice);
       }
 
-      // We trust the frontend amount, but enforce a floor of 50% cost price to prevent hacking
-      if (requestedAmount < (resolvedCostPrice > 0 ? resolvedCostPrice : adminBase) * 0.5) {
-        errors.push({ row: i + 1, phone: o.customer_phone, error: "Amount submitted is below system floor price." });
-        continue;
-      }
-
-      totalCost += requestedAmount;
+      totalCost += chargeAmount;
 
       validOrdersToInsert.push({
         id: crypto.randomUUID(),
@@ -124,7 +127,7 @@ serve(async (req) => {
         customer_phone: normPhone,
         network: normNet,
         package_size: o.package_size,
-        amount: requestedAmount,
+        amount: chargeAmount,
         payment_method: "wallet",
         cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
         profit: agentProfit,
