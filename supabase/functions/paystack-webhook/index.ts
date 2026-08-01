@@ -1170,15 +1170,50 @@ serve(async (req) => {
       }
       const agentId = metadata?.agent_id;
       if (agentId) {
+        // Fetch current profile details
+        const { data: prof } = await supabaseAdmin
+          .from("profiles")
+          .select("user_id, full_name, store_name, slug, phone")
+          .eq("user_id", agentId)
+          .maybeSingle();
+
+        const storeName = prof?.store_name || prof?.full_name || "Swift Reseller";
+        let rawSlug = prof?.slug;
+        if (!rawSlug) {
+          rawSlug = storeName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+        }
+
         await supabaseAdmin.from("profiles").update({ 
           is_agent: true, 
           agent_approved: true,
           onboarding_complete: true,
           is_sub_agent: false,
-          parent_agent_id: null
+          parent_agent_id: null,
+          slug: rawSlug
         }).eq("user_id", agentId);
+
+        // Auto-sync reseller_stores table
+        if (rawSlug) {
+          await supabaseAdmin.from("reseller_stores").upsert({
+            user_id: agentId,
+            slug: rawSlug,
+            store_name: storeName,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "user_id" }).catch(console.error);
+        }
+
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
         console.log("Agent activated via webhook:", agentId);
+
+        // Send Welcome SMS
+        const targetPhone = normalizePhone(prof?.phone);
+        if (targetPhone) {
+          const { apiKey: txtApiKey } = await getSmsConfig(supabaseAdmin);
+          if (txtApiKey) {
+            const welcomeMsg = `Congratulations ${prof?.full_name || "Partner"}! Your SwiftData reseller account and storefront (https://swiftdatagh.shop/store/${rawSlug}) are now LIVE! Log in to start selling.`;
+            await sendSmsViaTxtConnect(txtApiKey, "SwiftDataGh", targetPhone, welcomeMsg).catch(console.error);
+          }
+        }
       }
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {
         status: 200,
