@@ -190,6 +190,9 @@ export default function AdminBeneficiaryOrders() {
         metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
       }).eq("id", ord.id);
 
+      // Instantly remove from local list so it leaves the page immediately!
+      setAllBeneficiaryOrders((prev) => prev.filter((o) => o.id !== ord.id));
+
       // 3. Invoke verify-payment Edge function
       const { data, error } = await supabase.functions.invoke("verify-payment", {
         body: { reference: ord.id, order_id: ord.id }

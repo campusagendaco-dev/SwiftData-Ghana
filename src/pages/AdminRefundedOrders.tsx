@@ -199,6 +199,9 @@ export default function AdminRefundedOrders() {
         metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
       }).eq("id", ord.id);
 
+      // Instantly remove from local refunded list so it leaves the page immediately!
+      setOrders((prev) => prev.filter((o) => o.id !== ord.id));
+
       // Invoke verify-payment for automated fulfillment
       const { data: payRes, error: payErr } = await supabase.functions.invoke("verify-payment", {
         body: { reference: ord.id, order_id: ord.id }
