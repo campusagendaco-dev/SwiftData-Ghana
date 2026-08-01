@@ -12,5 +12,12 @@ UPDATE public.ai_agent_registry SET active_model = 'claude-haiku-4-5-20251001' W
 UPDATE public.ai_agent_registry SET active_model = 'gemini-1.5-flash' WHERE name = 'sentinel_evolve';
 
 -- Refresh publication to ensure model changes replicate instantly
-ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS public.ai_agent_registry;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.ai_agent_registry;
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.ai_agent_registry;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.ai_agent_registry;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
