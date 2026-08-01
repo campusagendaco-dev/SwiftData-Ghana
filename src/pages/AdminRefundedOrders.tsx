@@ -5,7 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { RefreshCw, RotateCcw, Wallet, Search, Check, Copy, Download, ShieldCheck, Users, Filter, Calendar, ExternalLink, Eye, AlertTriangle, ArrowUpRight } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { RefreshCw, RotateCcw, Wallet, Search, Check, Copy, ShieldCheck, Users, Calendar, Eye, Play, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
@@ -24,6 +25,7 @@ interface AdminRefundedOrder {
   status: string;
   auto_refunded: boolean;
   payment_method: string | null;
+  metadata?: any;
   created_at: string;
   agent_email?: string;
   agent_name?: string;
@@ -40,6 +42,7 @@ function fmt(dateStr: string) {
 
 export default function AdminRefundedOrders() {
   const { isDark } = useAppTheme();
+  const { toast } = useToast();
   const [orders, setOrders] = useState<AdminRefundedOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -48,14 +51,14 @@ export default function AdminRefundedOrders() {
   const [dateRangeFilter, setDateRangeFilter] = useState("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AdminRefundedOrder | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
 
   const fetchRefundedOrders = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch orders with refunded status or auto_refunded = true
       let q = supabase
         .from("orders")
-        .select("id, agent_id, order_type, customer_phone, network, package_size, amount, refund_amount, refund_reason, refunded_at, failure_reason, status, auto_refunded, payment_method, created_at")
+        .select("id, agent_id, order_type, customer_phone, network, package_size, amount, refund_amount, refund_reason, refunded_at, failure_reason, status, auto_refunded, payment_method, metadata, created_at")
         .or("status.eq.refunded,auto_refunded.eq.true")
         .order("created_at", { ascending: false })
         .limit(300);
@@ -79,7 +82,6 @@ export default function AdminRefundedOrders() {
       if (error) {
         console.error("Error fetching admin refunded orders:", error);
       } else if (rawOrders && rawOrders.length > 0) {
-        // Fetch profile info for unique agent_ids
         const agentIds = Array.from(new Set(rawOrders.map(o => o.agent_id).filter(Boolean)));
         const { data: profiles } = await supabase
           .from("profiles")
@@ -140,6 +142,84 @@ export default function AdminRefundedOrders() {
     navigator.clipboard.writeText(id);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // ADMIN VERIFY BENEFICIARY & RETRY
+  const handleVerifyAndRetry = async (ord: AdminRefundedOrder) => {
+    const phone = ord.customer_phone;
+    if (!phone) {
+      toast({ title: "No Phone Number", description: "This order does not have a recipient phone number.", variant: "destructive" });
+      return;
+    }
+
+    setVerifyingId(ord.id);
+    toast({ title: "Verifying Carrier Beneficiary Status...", description: `Checking if ${phone} is now on the beneficiary list...` });
+
+    try {
+      // 1. Check beneficiary status
+      const { data: vData, error: vErr } = await supabase.functions.invoke("verify-beneficiary", {
+        body: { phone, network: ord.network || "MTN" }
+      });
+
+      if (vErr) {
+        toast({ title: "Verification Error", description: vErr.message || "Failed to check beneficiary status.", variant: "destructive" });
+        setVerifyingId(null);
+        return;
+      }
+
+      if (!vData?.exists) {
+        toast({
+          title: "Still Not Added to Beneficiary List",
+          description: `${phone} is not added to our beneficiary list yet. Order remains safely refunded.`,
+          variant: "destructive",
+        });
+        setVerifyingId(null);
+        return;
+      }
+
+      toast({ title: "Number Verified!", description: `${phone} is verified on the beneficiary list! Re-submitting order for fulfillment...` });
+
+      // Debit agent wallet for retry
+      const { data: debitRes, error: debitErr } = await supabase.rpc("debit_wallet", {
+        p_agent_id: ord.agent_id,
+        p_amount: ord.amount,
+      });
+
+      if (debitErr || !debitRes) {
+        toast({ title: "Debit Failed", description: "Could not debit agent wallet balance for retry.", variant: "destructive" });
+        setVerifyingId(null);
+        return;
+      }
+
+      // Update order to status = 'paid', auto_refunded = false, failure_reason = null, bypass_beneficiary = true
+      await supabase.from("orders").update({
+        status: "paid",
+        auto_refunded: false,
+        failure_reason: null,
+        metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
+      }).eq("id", ord.id);
+
+      // Invoke verify-payment for automated fulfillment
+      const { data: payRes, error: payErr } = await supabase.functions.invoke("verify-payment", {
+        body: { reference: ord.id, order_id: ord.id }
+      });
+
+      if (payErr) {
+        toast({ title: "Fulfillment Error", description: payErr.message || "Failed to trigger fulfillment.", variant: "destructive" });
+      } else {
+        toast({
+          title: "Order Re-submitted Successfully!",
+          description: `Order ${ord.id.slice(0, 8)} for ${phone} is now ${payRes?.status || "processing"}.`,
+        });
+      }
+
+      await fetchRefundedOrders();
+    } catch (err: any) {
+      console.error("Retry exception:", err);
+      toast({ title: "Retry Error", description: err.message || "An error occurred while retrying.", variant: "destructive" });
+    } finally {
+      setVerifyingId(null);
+    }
   };
 
   const filteredOrders = orders.filter((o) => {
@@ -333,6 +413,8 @@ export default function AdminRefundedOrders() {
                 {filteredOrders.map((o) => {
                   const { date, time } = fmt(o.refunded_at || o.created_at);
                   const amount = Number(o.refund_amount || o.amount || 0).toFixed(2);
+                  const isVerifying = verifyingId === o.id;
+
                   return (
                     <tr key={o.id} className={cn("transition-colors hover:bg-muted/20", isDark ? "" : "hover:bg-gray-50/80")}>
                       {/* ID & Date */}
@@ -381,9 +463,22 @@ export default function AdminRefundedOrders() {
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
-                        <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={() => setSelectedOrder(o)}>
-                          <Eye className="w-3.5 h-3.5" /> Details
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs gap-1 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            onClick={() => handleVerifyAndRetry(o)}
+                            disabled={isVerifying}
+                          >
+                            {isVerifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                            Verify & Retry
+                          </Button>
+
+                          <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={() => setSelectedOrder(o)}>
+                            <Eye className="w-3.5 h-3.5" /> Details
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );

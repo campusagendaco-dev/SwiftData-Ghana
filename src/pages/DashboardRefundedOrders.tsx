@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, RotateCcw, Wallet, Search, CheckCircle2, Copy, Check, Download, ArrowUpRight, ShieldCheck, DollarSign } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { RefreshCw, RotateCcw, Wallet, Search, Check, Copy, ShieldCheck, Play, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
@@ -17,10 +17,11 @@ interface RefundedOrder {
   amount: number;
   refund_amount: number | null;
   refund_reason: string | null;
-  refunded_at: string | null;
+  failure_reason: string | null;
   status: string;
-  auto_refunded: boolean;
+  refunded_at: string | null;
   created_at: string;
+  metadata?: any;
 }
 
 function fmt(dateStr: string) {
@@ -32,24 +33,26 @@ function fmt(dateStr: string) {
 }
 
 export default function DashboardRefundedOrders() {
-  const { user } = useAuth();
   const { isDark } = useAppTheme();
+  const { toast } = useToast();
   const [orders, setOrders] = useState<RefundedOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
 
   const fetchRefundedOrders = useCallback(async () => {
-    if (!user) return;
     setLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from("orders")
-        .select("id, order_type, customer_phone, network, package_size, amount, refund_amount, refund_reason, refunded_at, status, auto_refunded, created_at")
+        .select("id, order_type, customer_phone, network, package_size, amount, refund_amount, refund_reason, failure_reason, status, refunded_at, created_at, metadata")
         .eq("agent_id", user.id)
         .or("status.eq.refunded,auto_refunded.eq.true")
-        .order("created_at", { ascending: false })
-        .limit(100);
+        .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching refunded orders:", error);
@@ -61,20 +64,19 @@ export default function DashboardRefundedOrders() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     fetchRefundedOrders();
   }, [fetchRefundedOrders]);
 
-  // Real-time subscription for live refund events
+  // Real-time listener for live updates
   useEffect(() => {
-    if (!user) return;
     const channel = supabase
-      .channel("dashboard-refunds-live")
+      .channel("user-refunds-realtime")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "orders", filter: `agent_id=eq.${user.id}` },
+        { event: "*", schema: "public", table: "orders" },
         (payload: any) => {
           const updated = payload.new;
           if (updated?.status === "refunded" || updated?.auto_refunded) {
@@ -83,15 +85,113 @@ export default function DashboardRefundedOrders() {
         }
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, fetchRefundedOrders]);
+  }, [fetchRefundedOrders]);
 
   const copyOrderId = (id: string) => {
     navigator.clipboard.writeText(id);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // VERIFY BENEFICIARY & RETRY IF ADDED TO BENEFICIARY LIST
+  const handleVerifyAndRetry = async (ord: RefundedOrder) => {
+    const phone = ord.customer_phone;
+    if (!phone) {
+      toast({ title: "No Phone Number", description: "This order does not have a recipient phone number.", variant: "destructive" });
+      return;
+    }
+
+    setVerifyingId(ord.id);
+    toast({ title: "Verifying Carrier Beneficiary Status...", description: `Checking if ${phone} has been added to the MTN beneficiary list...` });
+
+    try {
+      // 1. Call verify-beneficiary Edge function
+      const { data: vData, error: vErr } = await supabase.functions.invoke("verify-beneficiary", {
+        body: { phone, network: ord.network || "MTN" }
+      });
+
+      if (vErr) {
+        toast({ title: "Verification Error", description: vErr.message || "Failed to check beneficiary status.", variant: "destructive" });
+        setVerifyingId(null);
+        return;
+      }
+
+      // If STILL not on beneficiary list
+      if (!vData?.exists) {
+        toast({
+          title: "Still Not Added to Beneficiary List",
+          description: `${phone} is not added to our beneficiary list yet. Order remains safely refunded in your wallet.`,
+          variant: "destructive",
+        });
+        setVerifyingId(null);
+        return;
+      }
+
+      // IF ADDED TO BENEFICIARY LIST: Proceed with Retry!
+      toast({ title: "Number Verified!", description: `${phone} is verified on the beneficiary list! Re-submitting order...` });
+
+      // Check current user wallet balance to ensure sufficient funds
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User session expired.");
+
+      const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle();
+      const currentBal = Number(wallet?.balance || 0);
+
+      if (currentBal < ord.amount) {
+        toast({
+          title: "Insufficient Wallet Balance",
+          description: `You need GH₵ ${ord.amount.toFixed(2)} to retry this order (Current Balance: GH₵ ${currentBal.toFixed(2)}).`,
+          variant: "destructive",
+        });
+        setVerifyingId(null);
+        return;
+      }
+
+      // Debit wallet for retry purchase
+      const { data: debitRes, error: debitErr } = await supabase.rpc("debit_wallet", {
+        p_agent_id: user.id,
+        p_amount: ord.amount,
+      });
+
+      if (debitErr || !debitRes) {
+        toast({ title: "Wallet Debit Failed", description: "Could not debit wallet balance for retry.", variant: "destructive" });
+        setVerifyingId(null);
+        return;
+      }
+
+      // Update order to status = 'paid', auto_refunded = false, failure_reason = null, bypass_beneficiary = true
+      await supabase.from("orders").update({
+        status: "paid",
+        auto_refunded: false,
+        failure_reason: null,
+        metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
+      }).eq("id", ord.id);
+
+      // Invoke verify-payment for automated fulfillment
+      const { data: payRes, error: payErr } = await supabase.functions.invoke("verify-payment", {
+        body: { reference: ord.id, order_id: ord.id }
+      });
+
+      if (payErr) {
+        toast({ title: "Fulfillment Error", description: payErr.message || "Failed to trigger fulfillment.", variant: "destructive" });
+      } else {
+        toast({
+          title: "Order Re-submitted Successfully!",
+          description: `Order ${ord.id.slice(0, 8)} for ${phone} is now ${payRes?.status || "processing"}.`,
+        });
+      }
+
+      await fetchRefundedOrders();
+    } catch (err: any) {
+      console.error("Retry exception:", err);
+      toast({ title: "Retry Error", description: err.message || "An error occurred while retrying.", variant: "destructive" });
+    } finally {
+      setVerifyingId(null);
+    }
   };
 
   const filteredOrders = orders.filter((o) => {
@@ -101,20 +201,21 @@ export default function DashboardRefundedOrders() {
       o.id.toLowerCase().includes(q) ||
       (o.customer_phone && o.customer_phone.toLowerCase().includes(q)) ||
       (o.network && o.network.toLowerCase().includes(q)) ||
-      (o.package_size && o.package_size.toLowerCase().includes(q))
+      (o.package_size && o.package_size.toLowerCase().includes(q)) ||
+      (o.failure_reason && o.failure_reason.toLowerCase().includes(q))
     );
   });
 
-  const totalRefundedAmount = orders.reduce((sum, o) => sum + (o.refund_amount || o.amount || 0), 0);
+  const totalRefundedAmount = orders.reduce((sum, o) => sum + Number(o.refund_amount || o.amount || 0), 0);
   const totalRefundedCount = orders.length;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl space-y-6">
-      {/* Header Banner */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className={cn("font-display text-2xl sm:text-3xl font-bold flex items-center gap-2.5", isDark ? "text-white" : "text-gray-900")}>
-            <RotateCcw className="w-7 h-7 text-purple-500 animate-spin-slow" /> Refunded Orders
+            <RotateCcw className="w-7 h-7 text-purple-500" /> My Refunded Orders
           </h1>
           <p className={cn("text-sm mt-1", isDark ? "text-muted-foreground" : "text-gray-600")}>
             Complete record of orders where funds were automatically returned to your wallet balance.
@@ -178,19 +279,16 @@ export default function DashboardRefundedOrders() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by order ID, phone number, network..."
+            placeholder="Search order ID, recipient phone, network..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-10 text-sm bg-background border-border"
           />
         </div>
-        <div className="text-xs text-muted-foreground font-medium self-end sm:self-center">
-          Showing {filteredOrders.length} of {orders.length} refunded orders
-        </div>
       </div>
 
-      {/* Orders List Table */}
-      <div className={cn("rounded-2xl border overflow-hidden transition-all", isDark ? "bg-card/60 border-border" : "bg-white border-gray-200 shadow-sm")}>
+      {/* Table */}
+      <div className={cn("rounded-2xl border overflow-hidden transition-all duration-200", isDark ? "bg-card/60 border-border" : "bg-white border-gray-200 shadow-sm")}>
         {loading ? (
           <div className="p-8 space-y-4">
             <Skeleton className="h-12 w-full rounded-xl" />
@@ -204,7 +302,7 @@ export default function DashboardRefundedOrders() {
             </div>
             <h3 className="text-base font-semibold">No Refunded Orders Found</h3>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              {search ? "No refunded orders match your search criteria." : "You currently have no refunded orders. All successful transactions are delivered directly."}
+              {search ? "No refunded orders match your search query." : "You do not have any auto-refunded orders in your transaction history."}
             </p>
           </div>
         ) : (
@@ -213,17 +311,20 @@ export default function DashboardRefundedOrders() {
               <thead>
                 <tr className={cn("border-b text-xs font-semibold uppercase tracking-wider", isDark ? "bg-muted/30 border-border text-muted-foreground" : "bg-gray-50 border-gray-100 text-gray-500")}>
                   <th className="py-3.5 px-4">Order ID & Date</th>
-                  <th className="py-3.5 px-4">Service</th>
+                  <th className="py-3.5 px-4">Package / Network</th>
                   <th className="py-3.5 px-4">Recipient</th>
-                  <th className="py-3.5 px-4">Amount Refunded</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Action</th>
+                  <th className="py-3.5 px-4">Refund Amount</th>
+                  <th className="py-3.5 px-4">Status & Reason</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {filteredOrders.map((o) => {
                   const { date, time } = fmt(o.refunded_at || o.created_at);
                   const amount = Number(o.refund_amount || o.amount || 0).toFixed(2);
+                  const isVerifying = verifyingId === o.id;
+                  const isBeneficiaryError = (o.failure_reason || "").toLowerCase().includes("beneficiary");
+
                   return (
                     <tr key={o.id} className={cn("transition-colors hover:bg-muted/20", isDark ? "" : "hover:bg-gray-50/80")}>
                       {/* ID & Date */}
@@ -259,17 +360,34 @@ export default function DashboardRefundedOrders() {
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-400">
+                      <td className="py-3.5 px-4 max-w-xs">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-400 mb-1">
                           <RotateCcw className="w-3 h-3" /> Refunded
                         </span>
+                        <div className="text-[11px] text-muted-foreground truncate" title={o.failure_reason || o.refund_reason || "Auto-refund"}>
+                          {o.failure_reason || o.refund_reason || "Fulfillment failed"}
+                        </div>
                       </td>
 
-                      {/* Action */}
+                      {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
-                        <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => copyOrderId(o.id)}>
-                          <Copy className="w-3.5 h-3.5" /> Copy ID
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs gap-1 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            onClick={() => handleVerifyAndRetry(o)}
+                            disabled={isVerifying}
+                            title={isBeneficiaryError ? "Check if recipient has been added to carrier beneficiary list and retry fulfillment" : "Verify and retry order fulfillment"}
+                          >
+                            {isVerifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                            {isBeneficiaryError ? "Check Beneficiary & Retry" : "Verify & Retry"}
+                          </Button>
+
+                          <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-muted-foreground hover:text-foreground" onClick={() => copyOrderId(o.id)}>
+                            <Copy className="w-3.5 h-3.5" /> ID
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   );
