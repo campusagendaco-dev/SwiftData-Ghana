@@ -9,7 +9,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Command, Zap, Phone, Lightbulb
+  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -98,6 +98,7 @@ const NAV_SECTIONS = [
       { label: "Agents",       icon: ShieldCheck,  path: "/admin/agents" },
       { label: "Sub-Agents",   icon: Users2,       path: "/admin/sub-agents" },
       { label: "Orders",       icon: ShoppingCart, path: "/admin/orders" },
+      { label: "Refunded Orders", icon: RotateCcw, path: "/admin/refunded-orders" },
       { label: "Airtime Orders", icon: Phone,        path: "/admin/airtime-orders" },
       { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders" },
       { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders" },

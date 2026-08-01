@@ -70,6 +70,7 @@ const DashboardLeaderboard = lazy(() => import("./pages/DashboardLeaderboard"));
 const AdminOverview = lazy(() => import("./pages/AdminOverview"));
 const AdminAgents = lazy(() => import("./pages/AdminAgents"));
 const AdminOrders = lazy(() => import("./pages/AdminOrders"));
+const AdminRefundedOrders = lazy(() => import("./pages/AdminRefundedOrders"));
 const AdminAirtimeOrders = lazy(() => import("./pages/AdminAirtimeOrders"));
 const AdminMashUpOrders = lazy(() => import("./pages/AdminMashUpOrders"));
 const AdminUtilityOrders = lazy(() => import("./pages/AdminUtilityOrders"));
@@ -476,6 +477,8 @@ const AppContent = () => {
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />
           <Route path="orders" element={<AdminOrders />} />
+          <Route path="refunded-orders" element={<AdminRefundedOrders />} />
+          <Route path="refunds" element={<AdminRefundedOrders />} />
           <Route path="airtime-orders" element={<AdminAirtimeOrders />} />
           <Route path="mashup-orders" element={<AdminMashUpOrders />} />
           <Route path="utility-orders" element={<AdminUtilityOrders />} />
