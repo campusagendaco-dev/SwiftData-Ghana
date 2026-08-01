@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, RotateCcw, Wallet, Search, Check, Copy, ShieldCheck, Users, Calendar, Eye, Play, Loader2, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
