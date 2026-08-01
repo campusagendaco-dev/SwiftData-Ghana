@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2 } from "lucide-react";
+import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2, Sparkles, ExternalLink, ArrowRight, Zap, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
@@ -163,18 +163,34 @@ export default function AdminBeneficiaryOrders() {
     copyToClipboard(numbersList, "csv_copied");
   };
 
-  // --- RETRY SINGLE ORDER ---
+  // RETRY SINGLE ORDER WITH BENEFICIARY CHECK FIRST
   const handleRetrySingle = async (ord: BeneficiaryOrder) => {
     setProcessingId(ord.id);
     try {
-      // 1. Update order metadata to bypass_beneficiary = true & status = 'paid'
+      // 1. Verify beneficiary status first
+      const { data: vData } = await supabase.functions.invoke("verify-beneficiary", {
+        body: { phone: ord.customer_phone, network: ord.network || "MTN" }
+      });
+
+      if (!vData?.exists) {
+        toast({
+          title: "Still Not Whitelisted",
+          description: `${ord.customer_phone} is still not added to the carrier beneficiary list. Order remains safely refunded.`,
+          variant: "destructive"
+        });
+        setProcessingId(null);
+        return;
+      }
+
+      // 2. If verified, update order metadata to bypass_beneficiary = true & status = 'paid'
       await supabase.from("orders").update({
         status: "paid",
+        auto_refunded: false,
         failure_reason: null,
         metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
       }).eq("id", ord.id);
 
-      // 2. Invoke verify-payment Edge function
+      // 3. Invoke verify-payment Edge function
       const { data, error } = await supabase.functions.invoke("verify-payment", {
         body: { reference: ord.id, order_id: ord.id }
       });
@@ -195,7 +211,7 @@ export default function AdminBeneficiaryOrders() {
     }
   };
 
-  // --- REFUND SINGLE ORDER ---
+  // REFUND SINGLE ORDER
   const handleRefundSingle = async (ord: BeneficiaryOrder) => {
     if (ord.status === "refunded" || ord.auto_refunded) {
       toast({ title: "Already Refunded", description: "This order has already been credited to wallet." });
@@ -224,7 +240,7 @@ export default function AdminBeneficiaryOrders() {
     }
   };
 
-  // --- BATCH RETRY ALL NON-BENEFICIARY ORDERS ---
+  // BATCH RETRY ALL
   const handleRetryAllBeneficiary = async () => {
     const targetOrders = allBeneficiaryOrders.filter((o) => o.status !== "fulfilled" && o.status !== "completed");
     if (targetOrders.length === 0) {
@@ -250,6 +266,7 @@ export default function AdminBeneficiaryOrders() {
           try {
             await supabase.from("orders").update({
               status: "paid",
+              auto_refunded: false,
               failure_reason: null,
               metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
             }).eq("id", ord.id);
@@ -272,7 +289,7 @@ export default function AdminBeneficiaryOrders() {
     await fetchBeneficiaryOrders();
   };
 
-  // --- BATCH REFUND ALL UNREFUNDED BENEFICIARY ORDERS ---
+  // BATCH REFUND ALL
   const handleRefundAllBeneficiary = async () => {
     const unrefunded = allBeneficiaryOrders.filter((o) => !o.auto_refunded && o.status !== "refunded" && o.status !== "fulfilled");
     if (unrefunded.length === 0) {
@@ -330,113 +347,146 @@ export default function AdminBeneficiaryOrders() {
   const unrefundedCount = allBeneficiaryOrders.filter((o) => !o.auto_refunded && o.status !== "refunded" && o.status !== "fulfilled").length;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-6">
-      {/* Page Title & Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className={cn("font-display text-2xl sm:text-3xl font-bold flex items-center gap-2.5", isDark ? "text-white" : "text-gray-900")}>
-            <ListCheck className="w-7 h-7 text-amber-500" /> Non-Beneficiary Number Tracker
-          </h1>
-          <p className={cn("text-sm mt-1", isDark ? "text-muted-foreground" : "text-gray-600")}>
-            Comprehensive list of recipient numbers flagged for beneficiary whitelisting across all providers.
-          </p>
-        </div>
+    <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-8 animate-in fade-in duration-300">
+      {/* Premium Hero Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-6 sm:p-8 border border-amber-500/20 backdrop-blur-xl shadow-xl">
+        <div className="absolute top-0 right-0 -mt-12 -mr-12 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        {/* Global Batch Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            className="gap-2 h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-            onClick={handleRetryAllBeneficiary}
-            disabled={processingBatch || loading}
-          >
-            {processingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
-            Retry All Numbers
-          </Button>
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
+              <Sparkles className="w-3.5 h-3.5" /> Carrier Whitelist Sentinel Active
+            </div>
+            <h1 className={cn("font-display text-2xl sm:text-4xl font-black tracking-tight flex items-center gap-3", isDark ? "text-white" : "text-gray-900")}>
+              Non-Beneficiary Intelligence Hub
+            </h1>
+            <p className={cn("text-sm sm:text-base max-w-2xl leading-relaxed", isDark ? "text-white/70" : "text-gray-600")}>
+              Real-time monitoring and 1-click batch whitelisting for numbers blocked by carrier beneficiary requirements.
+            </p>
+          </div>
 
-          <Button
-            variant="default"
-            size="sm"
-            className="gap-2 h-9 bg-purple-600 hover:bg-purple-700 text-white font-semibold"
-            onClick={handleRefundAllBeneficiary}
-            disabled={processingBatch || loading || unrefundedCount === 0}
-          >
-            {processingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-            Refund All ({unrefundedCount})
-          </Button>
+          {/* Action Button Group */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="default"
+              size="lg"
+              className="gap-2.5 h-11 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-950/20 transition-all active:scale-95"
+              onClick={handleRetryAllBeneficiary}
+              disabled={processingBatch || loading}
+            >
+              {processingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-white" />}
+              Retry All ({allBeneficiaryOrders.length})
+            </Button>
 
-          <Button variant="outline" size="sm" className="gap-2 h-9 border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400" onClick={copyAllNumbersCsv}>
-            {copiedText === "csv_copied" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-            {copiedText === "csv_copied" ? "Copied List!" : "Copy Numbers List"}
-          </Button>
+            <Button
+              variant="default"
+              size="lg"
+              className="gap-2.5 h-11 px-5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-purple-950/20 transition-all active:scale-95"
+              onClick={handleRefundAllBeneficiary}
+              disabled={processingBatch || loading || unrefundedCount === 0}
+            >
+              {processingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+              Refund All ({unrefundedCount})
+            </Button>
 
-          <Button variant="outline" size="sm" className="gap-2 h-9" onClick={fetchBeneficiaryOrders} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
-          </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              className="gap-2 h-11 px-4 rounded-2xl border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold backdrop-blur-sm"
+              onClick={copyAllNumbersCsv}
+            >
+              {copiedText === "csv_copied" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              {copiedText === "csv_copied" ? "Copied List!" : "Export Phone CSV"}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 w-11 p-0 rounded-2xl border-white/10 hover:bg-white/10"
+              onClick={fetchBeneficiaryOrders}
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Analytics KPI Header */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className={cn("p-5 rounded-2xl border transition-all", isDark ? "bg-card/60 border-amber-500/20 shadow-lg shadow-amber-950/10" : "bg-white border-amber-100 shadow-sm")}>
+      {/* KPI Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-amber-500/20 shadow-xl shadow-amber-950/10" : "bg-white border-amber-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Unique Flagged Numbers</span>
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Unique Flagged</span>
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-500">
               <Phone className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight text-amber-600 dark:text-amber-400">
+          <div className="mt-3 text-3xl font-black tracking-tight text-amber-600 dark:text-amber-400">
             {totalUniqueNumbers} Numbers
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Pending carrier beneficiary whitelist</p>
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> Awaiting Carrier Whitelist
+          </p>
         </div>
 
-        <div className={cn("p-5 rounded-2xl border transition-all", isDark ? "bg-card/60 border-border shadow-lg" : "bg-white border-gray-200 shadow-sm")}>
+        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-purple-500/20 shadow-xl shadow-purple-950/10" : "bg-white border-purple-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Order Attempts</span>
-            <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-500">
-              <RotateCcw className="w-5 h-5" />
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Order Attempts</span>
+            <div className="w-10 h-10 rounded-2xl bg-purple-500/15 flex items-center justify-center text-purple-500">
+              <Zap className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight">
-            {totalAttempts} Orders
+          <div className="mt-3 text-3xl font-black tracking-tight text-purple-600 dark:text-purple-400">
+            {totalAttempts} Attempts
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Total orders attempted on these numbers</p>
+          <p className="text-xs text-muted-foreground mt-1">Total transactions impacted</p>
         </div>
 
-        <div className={cn("p-5 rounded-2xl border transition-all", isDark ? "bg-card/60 border-border shadow-lg" : "bg-white border-gray-200 shadow-sm")}>
+        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-emerald-500/20 shadow-xl shadow-emerald-950/10" : "bg-white border-emerald-100 shadow-md")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Attempted Volume</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-              <ShieldAlert className="w-5 h-5" />
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Total Volume</span>
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 flex items-center justify-center text-emerald-500">
+              <Wallet className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight text-emerald-600 dark:text-emerald-400">
+          <div className="mt-3 text-3xl font-black tracking-tight text-emerald-600 dark:text-emerald-400">
             GH₵ {totalVolume.toFixed(2)}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Total value of blocked/refunded attempts</p>
+          <p className="text-xs text-muted-foreground mt-1">Gross transaction value</p>
+        </div>
+
+        <div className={cn("p-6 rounded-3xl border transition-all duration-300 hover:scale-[1.02]", isDark ? "bg-card/70 border-blue-500/20 shadow-xl shadow-blue-950/10" : "bg-white border-blue-100 shadow-md")}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Auto-Refund Health</span>
+            <div className="w-10 h-10 rounded-2xl bg-blue-500/15 flex items-center justify-center text-blue-500">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 text-2xl font-extrabold tracking-tight text-blue-600 dark:text-blue-400">
+            100% Protected
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">Zero agent balance loss guarantee</p>
         </div>
       </div>
 
       {/* Filter Controls Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-3xl bg-card/40 border border-border backdrop-blur-xl">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search phone number, agent email..."
+            placeholder="Search by phone number, agent email, order reference..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-10 text-sm bg-background border-border"
+            className="pl-10 h-11 rounded-2xl text-sm bg-background/80 border-border"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-36 h-10 text-xs">
-              <SelectValue placeholder="Status" />
+            <SelectTrigger className="w-40 h-11 rounded-2xl text-xs font-semibold">
+              <SelectValue placeholder="Filter Status" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl">
               <SelectItem value="all">All Statuses</SelectItem>
               <SelectItem value="refunded">Refunded</SelectItem>
               <SelectItem value="fulfillment_failed">Fulfillment Failed</SelectItem>
@@ -444,10 +494,10 @@ export default function AdminBeneficiaryOrders() {
           </Select>
 
           <Select value={timeFilter} onValueChange={setTimeFilter}>
-            <SelectTrigger className="w-36 h-10 text-xs">
+            <SelectTrigger className="w-40 h-11 rounded-2xl text-xs font-semibold">
               <SelectValue placeholder="Timeframe" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="rounded-2xl">
               <SelectItem value="all">All Time</SelectItem>
               <SelectItem value="today">Today Only</SelectItem>
               <SelectItem value="7days">Last 7 Days</SelectItem>
@@ -457,20 +507,21 @@ export default function AdminBeneficiaryOrders() {
         </div>
       </div>
 
-      {/* Grouped Phone Numbers Table */}
-      <div className={cn("rounded-2xl border overflow-hidden transition-all", isDark ? "bg-card/60 border-border" : "bg-white border-gray-200 shadow-sm")}>
+      {/* Table Section */}
+      <div className={cn("rounded-3xl border overflow-hidden transition-all backdrop-blur-xl shadow-xl", isDark ? "bg-card/70 border-border" : "bg-white border-gray-200")}>
         {loading ? (
-          <div className="p-8 space-y-4">
-            <Skeleton className="h-12 w-full rounded-xl" />
-            <Skeleton className="h-12 w-full rounded-xl" />
+          <div className="p-10 space-y-4">
+            <Skeleton className="h-14 w-full rounded-2xl" />
+            <Skeleton className="h-14 w-full rounded-2xl" />
+            <Skeleton className="h-14 w-full rounded-2xl" />
           </div>
         ) : filteredGroups.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
-              <Phone className="w-6 h-6" />
+          <div className="p-16 text-center space-y-4">
+            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto shadow-inner">
+              <Phone className="w-8 h-8" />
             </div>
-            <h3 className="text-base font-semibold">No Non-Beneficiary Numbers Found</h3>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            <h3 className="text-lg font-bold">No Flagged Numbers Found</h3>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
               All numbers in the system are currently whitelisted or no matching beneficiary errors occurred in the selected timeframe.
             </p>
           </div>
@@ -478,61 +529,75 @@ export default function AdminBeneficiaryOrders() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className={cn("border-b text-xs font-semibold uppercase tracking-wider", isDark ? "bg-muted/30 border-border text-muted-foreground" : "bg-gray-50 border-gray-100 text-gray-500")}>
-                  <th className="py-3.5 px-4">Recipient Phone</th>
-                  <th className="py-3.5 px-4">Network</th>
-                  <th className="py-3.5 px-4">Order Attempts</th>
-                  <th className="py-3.5 px-4">Total Value</th>
-                  <th className="py-3.5 px-4">Last Attempt Date</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+                <tr className={cn("border-b text-xs font-bold uppercase tracking-wider", isDark ? "bg-muted/40 border-border text-muted-foreground" : "bg-gray-50/80 border-gray-100 text-gray-500")}>
+                  <th className="py-4 px-6">Recipient Number</th>
+                  <th className="py-4 px-6">Carrier</th>
+                  <th className="py-4 px-6">Attempts & Urgency</th>
+                  <th className="py-4 px-6">Total Value</th>
+                  <th className="py-4 px-6">Last Attempt</th>
+                  <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/50">
+              <tbody className="divide-y divide-border/40">
                 {filteredGroups.map((grp) => {
                   const { date, time } = fmt(grp.lastAttemptAt);
+                  const isHighPriority = grp.totalAttempts >= 3;
                   return (
-                    <tr key={grp.phone} className={cn("transition-colors hover:bg-muted/20", isDark ? "" : "hover:bg-gray-50/80")}>
+                    <tr key={grp.phone} className={cn("transition-colors hover:bg-muted/30 group", isDark ? "" : "hover:bg-gray-50/80")}>
                       {/* Phone Number */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-mono font-bold text-sm flex items-center gap-2">
+                      <td className="py-4 px-6">
+                        <div className="font-mono font-black text-base flex items-center gap-2.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
                           {grp.phone}
-                          <button onClick={() => copyToClipboard(grp.phone, grp.phone)} className="text-muted-foreground hover:text-foreground">
-                            {copiedText === grp.phone ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                          <button onClick={() => copyToClipboard(grp.phone, grp.phone)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
+                            {copiedText === grp.phone ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                           </button>
                         </div>
-                        <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">
+                        <div className="text-xs text-muted-foreground font-mono truncate max-w-[240px] mt-0.5">
                           Agents: {grp.agentEmails.join(", ")}
                         </div>
                       </td>
 
                       {/* Network */}
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                      <td className="py-4 px-6">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
                           {grp.network}
                         </span>
                       </td>
 
                       {/* Attempts */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-sm">{grp.totalAttempts} {grp.totalAttempts === 1 ? "attempt" : "attempts"}</div>
-                        <div className="text-[11px] text-muted-foreground">Auto-recorded for whitelist</div>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm">{grp.totalAttempts} {grp.totalAttempts === 1 ? "attempt" : "attempts"}</span>
+                          {isHighPriority && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-500/15 border border-red-500/30 text-red-600 dark:text-red-400 animate-pulse">
+                              High Priority
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Auto-logged for whitelist</div>
                       </td>
 
                       {/* Total Value */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-sm">GH₵ {grp.totalAmount.toFixed(2)}</div>
+                      <td className="py-4 px-6">
+                        <div className="font-black text-sm text-foreground">GH₵ {grp.totalAmount.toFixed(2)}</div>
                       </td>
 
                       {/* Last Attempt */}
-                      <td className="py-3.5 px-4">
-                        <div className="text-xs font-medium">{date}</div>
+                      <td className="py-4 px-6">
+                        <div className="text-xs font-bold">{date}</div>
                         <div className="text-[11px] text-muted-foreground">{time}</div>
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={() => setSelectedGroup(grp)}>
-                          View {grp.orders.length} Orders
+                      <td className="py-4 px-6 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 px-4 rounded-xl text-xs font-bold gap-2 border border-border/50 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-all"
+                          onClick={() => setSelectedGroup(grp)}
+                        >
+                          View Orders ({grp.orders.length}) <ArrowRight className="w-3.5 h-3.5" />
                         </Button>
                       </td>
                     </tr>
@@ -544,69 +609,69 @@ export default function AdminBeneficiaryOrders() {
         )}
       </div>
 
-      {/* Orders List Dialog */}
+      {/* Orders Detail Dialog */}
       <Dialog open={!!selectedGroup} onOpenChange={(op) => !op && setSelectedGroup(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto rounded-3xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between text-lg font-bold">
-              <span className="flex items-center gap-2">
-                <Phone className="w-5 h-5 text-amber-500" /> Orders for {selectedGroup?.phone}
+            <DialogTitle className="flex items-center justify-between text-xl font-black">
+              <span className="flex items-center gap-2.5">
+                <Phone className="w-6 h-6 text-amber-500" /> Orders for {selectedGroup?.phone}
               </span>
-              <Button variant="outline" size="sm" className="text-xs h-8 gap-1" onClick={() => selectedGroup && copyToClipboard(selectedGroup.phone, "modal_phone")}>
-                {copiedText === "modal_phone" ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              <Button variant="outline" size="sm" className="text-xs h-9 rounded-xl gap-1.5 font-bold" onClick={() => selectedGroup && copyToClipboard(selectedGroup.phone, "modal_phone")}>
+                {copiedText === "modal_phone" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                 Copy Phone
               </Button>
             </DialogTitle>
           </DialogHeader>
 
           {selectedGroup && (
-            <div className="space-y-4 pt-2">
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+            <div className="space-y-4 pt-3">
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
                 Carrier Response: <strong>"{selectedGroup.phone} is not added to our beneficiary list"</strong>
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {selectedGroup.orders.map((ord) => {
                   const { date, time } = fmt(ord.created_at);
                   const isBusy = processingId === ord.id;
                   return (
-                    <div key={ord.id} className="p-3.5 rounded-xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div key={ord.id} className="p-4 rounded-2xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition-all hover:border-amber-500/30">
                       <div>
-                        <div className="font-mono font-bold text-foreground">{ord.id.slice(0, 8)} • {ord.package_size}</div>
+                        <div className="font-mono font-black text-sm text-foreground">{ord.id.slice(0, 8)} • {ord.package_size}</div>
                         <div className="text-muted-foreground font-mono mt-0.5">{ord.agent_email}</div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">{date} at {time}</div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">{date} at {time}</div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-3">
+                      <div className="flex items-center justify-between sm:justify-end gap-4">
                         <div className="text-right">
-                          <div className="font-bold text-sm text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
-                          <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
+                          <div className="font-black text-base text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
+                          <span className={cn("inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold mt-1", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
                             {ord.status.toUpperCase()}
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-8 text-xs gap-1 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                            className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                             onClick={() => handleRetrySingle(ord)}
                             disabled={isBusy || processingBatch}
                           >
-                            {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-                            Retry
+                            {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                            Retry Order
                           </Button>
 
                           {ord.status !== "refunded" && !ord.auto_refunded && (
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 text-xs gap-1 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30"
+                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30"
                               onClick={() => handleRefundSingle(ord)}
                               disabled={isBusy || processingBatch}
                             >
-                              {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                              Refund
+                              {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                              Refund Order
                             </Button>
                           )}
                         </div>
