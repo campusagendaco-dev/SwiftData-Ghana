@@ -677,6 +677,9 @@ export default function AdminBeneficiaryOrders() {
                 Copy Phone
               </Button>
             </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Review flagged non-beneficiary order details and trigger carrier whitelisting retries.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedGroup && (

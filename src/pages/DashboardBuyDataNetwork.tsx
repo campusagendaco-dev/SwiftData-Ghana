@@ -1564,6 +1564,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         if (!open) setPendingAction(null);
       }}>
         <DialogContent className="max-w-md bg-white text-black p-6 rounded-[28px] border-none shadow-2xl flex flex-col gap-6">
+          <DialogHeader className="sr-only">
+            <DialogTitle>New beneficiary number detected!</DialogTitle>
+            <DialogDescription>Carrier beneficiary list warning modal</DialogDescription>
+          </DialogHeader>
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-[#E0560D] shrink-0">
               <AlertTriangle className="w-6 h-6" />

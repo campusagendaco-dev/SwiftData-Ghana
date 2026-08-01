@@ -579,6 +579,9 @@ export default function AdminRefundedOrders() {
             <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-black">
               <RotateCcw className="w-6 h-6 text-purple-500" /> Refunded Order Details
             </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Complete audit log and metadata for refunded transaction.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedOrder && (
