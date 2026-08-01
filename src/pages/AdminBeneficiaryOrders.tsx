@@ -205,6 +205,19 @@ export default function AdminBeneficiaryOrders() {
           title: "Order Re-submitted!",
           description: `Order ${ord.id.slice(0, 8)} status: ${data?.status || "processing"}`,
         });
+
+        // Trigger SMS
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "retry",
+            phone: ord.customer_phone,
+            order_id: ord.id,
+            amount: ord.amount,
+            network: ord.network,
+            package_size: ord.package_size,
+            agent_id: ord.agent_id
+          }
+        }).catch(console.error);
       }
       await fetchBeneficiaryOrders();
     } catch (err: any) {
@@ -232,6 +245,17 @@ export default function AdminBeneficiaryOrders() {
 
       if (data) {
         toast({ title: "Order Refunded!", description: `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.` });
+
+        // Trigger SMS
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "refund",
+            phone: ord.customer_phone,
+            order_id: ord.id,
+            amount: ord.amount,
+            agent_id: ord.agent_id
+          }
+        }).catch(console.error);
       } else {
         toast({ title: "Refund Failed", description: "This order is not eligible for refund.", variant: "destructive" });
       }

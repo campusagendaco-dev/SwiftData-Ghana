@@ -214,6 +214,19 @@ export default function AdminRefundedOrders() {
           title: "Order Re-submitted Successfully!",
           description: `Order ${ord.id.slice(0, 8)} for ${phone} is now ${payRes?.status || "processing"}.`,
         });
+
+        // Trigger SMS Notification
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "retry",
+            phone: ord.customer_phone,
+            order_id: ord.id,
+            amount: ord.amount,
+            network: ord.network,
+            package_size: ord.package_size,
+            agent_id: ord.agent_id
+          }
+        }).catch(console.error);
       }
 
       await fetchRefundedOrders();

@@ -172,6 +172,17 @@ const DashboardOrders = () => {
           description: `GH₵ ${Number(order.amount).toFixed(2)} has been credited to your wallet balance.`,
         });
         setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "refunded" } : o)));
+
+        // Send SMS trigger
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "refund",
+            phone: order.customer_phone,
+            order_id: order.id,
+            amount: order.amount,
+            agent_id: user.id
+          }
+        }).catch(console.error);
       } else {
         toast({ title: "Refund Ineligible", description: "This order is not eligible for refund.", variant: "destructive" });
       }
