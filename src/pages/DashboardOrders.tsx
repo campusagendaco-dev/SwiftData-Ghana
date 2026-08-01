@@ -146,10 +146,18 @@ const DashboardOrders = () => {
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
   const retryCountRef = useRef<Record<string, number>>({});
+
+  const copyReceipt = (order: Order) => {
+    const text = `SwiftData Receipt\nOrder ID: ${order.id}\nPhone: ${order.customer_phone}\nService: ${order.network} ${order.package_size}\nAmount: GHS ${Number(order.amount).toFixed(2)}\nStatus: ${order.status.toUpperCase()}`;
+    navigator.clipboard.writeText(text);
+    setCopiedId(order.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const handleRefundOrder = async (order: Order) => {
     if (order.status === "fulfilled") {
