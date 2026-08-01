@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check, Smartphone, Zap, Download, Search, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { useToast } from "@/hooks/use-toast";
 
 interface Order {
   id: string;
@@ -143,11 +144,44 @@ const DashboardOrders = () => {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 50;
-  const retryCountRef = useRef<Record<string, number>>({});
+  const { toast } = useToast();
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+
+  const handleRefundOrder = async (order: Order) => {
+    if (order.status === "fulfilled") {
+      toast({ title: "Cannot Refund", description: "Fulfilled orders cannot be refunded.", variant: "destructive" });
+      return;
+    }
+    if (order.status === "refunded") {
+      toast({ title: "Already Refunded", description: "This order has already been refunded to your wallet." });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to refund GH₵ ${Number(order.amount).toFixed(2)} for order ${order.id.slice(0, 8)} to your wallet balance?`)) {
+      return;
+    }
+
+    setRefundingId(order.id);
+    try {
+      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: order.id });
+      if (error) throw error;
+
+      if (data) {
+        toast({
+          title: "Order Refunded Successfully!",
+          description: `GH₵ ${Number(order.amount).toFixed(2)} has been credited to your wallet balance.`,
+        });
+        setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "refunded" } : o)));
+      } else {
+        toast({ title: "Refund Ineligible", description: "This order is not eligible for refund.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      console.error("Refund error:", err);
+      toast({ title: "Refund Failed", description: err.message || "Failed to execute refund", variant: "destructive" });
+    } finally {
+      setRefundingId(null);
+    }
+  };
 
   const fetchOrders = useCallback(async (isLoadMore = false) => {
     if (!user) return;
@@ -735,6 +769,18 @@ const DashboardOrders = () => {
                         >
                           <Download className="w-3.5 h-3.5" /> Download PDF
                         </button>
+
+                        {/* Refund Action Button for Agent */}
+                        {order.status !== "fulfilled" && order.status !== "refunded" && (
+                          <button
+                            onClick={() => handleRefundOrder(order)}
+                            disabled={refundingId === order.id}
+                            className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold border transition-all duration-150 bg-purple-500/10 border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 active:scale-95 shadow-sm mt-1"
+                          >
+                            {refundingId === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                            Refund GH₵ {Number(order.amount).toFixed(2)} to Wallet Balance
+                          </button>
+                        )}
                       </div>
 
                       {/* Timeline */}
