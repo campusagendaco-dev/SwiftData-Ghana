@@ -163,28 +163,23 @@ const DashboardOrders = () => {
 
     setRefundingId(order.id);
     try {
-      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: order.id });
+      const { data, error } = await supabase.functions.invoke("verify-and-refund", {
+        body: { order_id: order.id }
+      });
       if (error) throw error;
 
-      if (data) {
+      if (data?.success) {
         toast({
-          title: "Order Refunded Successfully!",
-          description: `GH₵ ${Number(order.amount).toFixed(2)} has been credited to your wallet balance.`,
+          title: "Server Verified & Refunded!",
+          description: data.message || `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`,
         });
         setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "refunded" } : o)));
-
-        // Send SMS trigger
-        supabase.functions.invoke("send-order-sms", {
-          body: {
-            action: "refund",
-            phone: order.customer_phone,
-            order_id: order.id,
-            amount: order.amount,
-            agent_id: user.id
-          }
-        }).catch(console.error);
       } else {
-        toast({ title: "Refund Ineligible", description: "This order is not eligible for refund.", variant: "destructive" });
+        toast({
+          title: "Refund Blocked by Server",
+          description: data?.error || "Server verified this order is ineligible for refund.",
+          variant: "destructive",
+        });
       }
     } catch (err: any) {
       console.error("Refund error:", err);

@@ -240,24 +240,15 @@ export default function AdminBeneficiaryOrders() {
 
     setProcessingId(ord.id);
     try {
-      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: ord.id });
+      const { data, error } = await supabase.functions.invoke("verify-and-refund", {
+        body: { order_id: ord.id }
+      });
       if (error) throw error;
 
-      if (data) {
-        toast({ title: "Order Refunded!", description: `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.` });
-
-        // Trigger SMS
-        supabase.functions.invoke("send-order-sms", {
-          body: {
-            action: "refund",
-            phone: ord.customer_phone,
-            order_id: ord.id,
-            amount: ord.amount,
-            agent_id: ord.agent_id
-          }
-        }).catch(console.error);
+      if (data?.success) {
+        toast({ title: "Server Verified & Refunded!", description: data.message || `GH₵ ${Number(ord.amount).toFixed(2)} returned to wallet.` });
       } else {
-        toast({ title: "Refund Failed", description: "This order is not eligible for refund.", variant: "destructive" });
+        toast({ title: "Refund Blocked", description: data?.error || "Server verified this order cannot be refunded.", variant: "destructive" });
       }
       await fetchBeneficiaryOrders();
     } catch (err: any) {
@@ -338,8 +329,10 @@ export default function AdminBeneficiaryOrders() {
 
     for (const ord of unrefunded) {
       try {
-        const { data } = await supabase.rpc("refund_failed_order", { p_order_id: ord.id });
-        if (data) {
+        const { data } = await supabase.functions.invoke("verify-and-refund", {
+          body: { order_id: ord.id }
+        });
+        if (data?.success) {
           refundedCount++;
           totalRefunded += Number(ord.amount || 0);
         }
