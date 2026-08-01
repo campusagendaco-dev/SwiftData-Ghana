@@ -34,8 +34,8 @@ serve(async (req: Request) => {
     }
 
     const txtApiKey = settings.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY");
-    const txtSenderId = settings.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
-    const smsMessage = settings.auto_pending_sms_message || "Your SwiftData transaction is pending. Please try again or contact support.";
+    const txtSenderId = settings.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh";
+    const smsMessage = settings.auto_pending_sms_message || "SwiftData Alert: Your payment prompt is pending. If Push PIN delayed, approve via *170# -> My Wallet -> My Approvals, or retry at https://swiftdatagh.shop";
 
     if (!txtApiKey) {
       return new Response(JSON.stringify({ error: "TxtConnect API Key missing." }), {
@@ -43,11 +43,11 @@ serve(async (req: Request) => {
       });
     }
 
-    // 2. Find pending orders from today, at least 10 minutes old, not yet reminded.
-    // We skip very recent orders to avoid reminding customers who are still mid-payment.
+    // 2. Find pending orders from today, at least 2 minutes old, not yet reminded.
+    // We skip very recent orders (under 2 minutes) to allow instant prompts to pop up first.
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const minThresholdAgo = new Date(Date.now() - 2 * 60 * 1000);
 
     const { data: pendingOrders, error: ordersError } = await supabaseAdmin
       .from("orders")
@@ -55,7 +55,7 @@ serve(async (req: Request) => {
       .eq("status", "pending")
       .eq("sms_reminder_sent", false)
       .gte("created_at", startOfDay.toISOString())
-      .lte("created_at", tenMinutesAgo.toISOString());
+      .lte("created_at", minThresholdAgo.toISOString());
 
     if (ordersError || !pendingOrders || pendingOrders.length === 0) {
       return new Response(JSON.stringify({ message: "No pending orders need reminders." }), {
