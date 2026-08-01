@@ -99,24 +99,38 @@ const AdminUtilityOrders = () => {
       .range(from, to);
 
     if (search) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.trim());
+      const cleanSearch = search.trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
+      const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
+
       if (isUuid) {
-        q = q.or(`id.eq.${search.trim()},agent_id.eq.${search.trim()}`);
+        q = q.or(`id.eq.${cleanSearch},agent_id.eq.${cleanSearch}`);
       } else {
         const { data: matchedProfiles } = await supabase
           .from("profiles")
           .select("user_id")
-          .or(`full_name.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%,phone.ilike.%${search.trim()}%`);
+          .or(`full_name.ilike.%${cleanSearch}%,email.ilike.%${cleanSearch}%,phone.ilike.%${cleanSearch}%`);
 
         const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
         
-        let orString = `id.ilike.%${search.trim()}%,utility_account_number.ilike.%${search}%,utility_account_name.ilike.%${search}%,utility_provider.ilike.%${search}%`;
+        const orParts: string[] = [
+          `utility_account_number.ilike.%${cleanSearch}%`,
+          `utility_account_name.ilike.%${cleanSearch}%`,
+          `utility_provider.ilike.%${cleanSearch}%`
+        ];
+
+        if (isHex8) {
+          orParts.push(`id.gte.${cleanSearch}-0000-0000-0000-000000000000`);
+          orParts.push(`id.lte.${cleanSearch}-ffff-ffff-ffff-ffffffffffff`);
+        }
+
         if (matchedUserIds.length > 0) {
           matchedUserIds.forEach(id => {
-            orString += `,agent_id.eq.${id}`;
+            orParts.push(`agent_id.eq.${id}`);
           });
         }
-        q = q.or(orString);
+
+        q = q.or(orParts.join(","));
       }
     }
 
