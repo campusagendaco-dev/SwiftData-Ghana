@@ -11,7 +11,7 @@ import {
   TrendingUp, ShoppingCart, AlertTriangle, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
-  Coins, ShieldAlert,
+  Coins, ShieldAlert, Send,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
@@ -84,6 +84,7 @@ const AdminOrders = () => {
   const [retryingAll, setRetryingAll] = useState(false);
   const [forcingFulfill, setForcingFulfill] = useState(false);
   const [healingProcessing, setHealingProcessing] = useState(false);
+  const [sendingLiveSms, setSendingLiveSms] = useState(false);
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [networkFilter, setNetworkFilter] = useState("all");
@@ -544,6 +545,33 @@ const AdminOrders = () => {
   const verifiedCount = allOrders.filter((o) => o.paystack_verified_amount != null).length;
   const uniqueNetworks = [...new Set(allOrders.map((o) => o.network).filter(Boolean))] as string[];
 
+  const handleLiveSmsBlast = async () => {
+    const msg = "SwiftData Alert: Delivery is currently ongoing and we are LIVE! Order now at https://swiftdatagh.shop or join our official WhatsApp channel for live updates: https://whatsapp.com/channel/0029Vb81tu4HVvTdqauPgU0Z";
+    if (!confirm(`Are you sure you want to send the "Delivery Live" SMS blast to all 14,000+ purchasers and order recipients?`)) {
+      return;
+    }
+    setSendingLiveSms(true);
+    toast({ title: "Initiating SMS Broadcast…", description: "Dispatching 'Delivery Live' SMS via SwiftDataGh gateway…" });
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-send-sms", {
+        body: {
+          target_type: "all_order_phones",
+          sender_id: "SwiftDataGh",
+          message: msg,
+        },
+      });
+      if (error || data?.error) {
+        toast({ title: "SMS Broadcast Failed", description: data?.error || error?.message, variant: "destructive" });
+      } else if (data?.success) {
+        toast({ title: "🚀 SMS Broadcast Dispatched!", description: `Successfully queued/sent to ${data.sent || data.total_recipients || 14000} recipients.` });
+      }
+    } catch (e: any) {
+      toast({ title: "Broadcast error", description: e.message || "Failed to trigger broadcast", variant: "destructive" });
+    } finally {
+      setSendingLiveSms(false);
+    }
+  };
+
   if (loading && allOrders.length === 0) return (
     <div className="flex flex-col items-center justify-center py-24 gap-4">
       <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
@@ -600,6 +628,15 @@ const AdminOrders = () => {
           >
             {healingProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
             {healingProcessing ? "Polling Provider…" : `Poll Provider Status (${allOrders.filter(o => o.status === "processing").length})`}
+          </Button>
+          <Button
+            size="sm"
+            className="gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 font-bold"
+            onClick={handleLiveSmsBlast}
+            disabled={sendingLiveSms}
+          >
+            {sendingLiveSms ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-emerald-400" />}
+            {sendingLiveSms ? "Sending SMS Blast…" : "🚀 Push 'Delivery Live' SMS"}
           </Button>
           <Button
             size="sm"

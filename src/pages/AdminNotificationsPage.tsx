@@ -521,6 +521,40 @@ const AdminNotificationsPage = () => {
             </div>
           )}
 
+          {/* 1-Click Quick Action Banner */}
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 font-bold text-lg">
+                🚀
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  1-Click "Delivery Live" SMS Blast
+                  <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">
+                    Broadest Audience (14,000+)
+                  </Badge>
+                </h3>
+                <p className="text-xs text-white/60 mt-0.5">
+                  Preset message to notify all purchasers with or without accounts that delivery is ongoing via Sender ID <code className="text-emerald-300 font-mono">SwiftDataGh</code>.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="gap-2 bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold shrink-0 shadow-md shadow-emerald-500/20"
+              onClick={() => {
+                setTitle("SwiftData Alert");
+                setTargetType("all_order_phones");
+                setMessage("SwiftData Alert: Delivery is currently ongoing and we are LIVE! Order now at https://swiftdatagh.shop or join our official WhatsApp channel for live updates: https://whatsapp.com/channel/0029Vb81tu4HVvTdqauPgU0Z");
+                setSendSms(true);
+                toast({ title: "Preset Loaded!", description: "Pre-filled composer with 'Delivery Live' broadcast payload for all purchasers." });
+              }}
+            >
+              <Sparkles className="w-4 h-4" /> Load & Prepare Blast
+            </Button>
+          </div>
+
           {/* Compose card */}
           <Card className="bg-white/[0.02] border-white/10 shadow-2xl">
             <CardHeader className="border-b border-white/5">
