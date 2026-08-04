@@ -625,7 +625,45 @@ const AgentStore = () => {
           }));
         } catch (e) {}
 
-        if (!agentRes.data) { setNotFound(true); setLoading(false); return; }
+        if (!agentRes?.data) {
+          // Fallback direct profile lookup to prevent "Store Not Found" when reseller_stores is unsynced
+          const targetSlug = slug ? slug.toLowerCase().trim() : null;
+          let profileQuery = supabase
+            .from("profiles")
+            .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, registered_user_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
+
+          if (targetSlug && targetSlug !== "undefined" && targetSlug !== "null") {
+            profileQuery = profileQuery.eq("slug", targetSlug);
+          } else if (activeDomain) {
+            profileQuery = profileQuery.ilike("custom_domain", activeDomain);
+          }
+
+          const { data: profileFallback } = await profileQuery.maybeSingle();
+
+          if (profileFallback && (profileFallback.is_agent || profileFallback.is_sub_agent || profileFallback.agent_approved || profileFallback.sub_agent_approved)) {
+            agentRes = { data: profileFallback, error: null };
+            
+            // Auto-heal background sync into reseller_stores
+            if (profileFallback.user_id && profileFallback.slug) {
+              supabase
+                .from("reseller_stores")
+                .upsert({
+                  user_id: profileFallback.user_id,
+                  store_name: profileFallback.store_name || profileFallback.full_name || "Store",
+                  slug: profileFallback.slug,
+                  store_logo_url: profileFallback.store_logo_url,
+                  store_primary_color: profileFallback.store_primary_color || "#fbbf24"
+                }, { onConflict: "slug" })
+                .then(({ error: syncErr }) => {
+                  if (syncErr) console.warn("[AgentStore] Auto-heal sync to reseller_stores failed:", syncErr);
+                });
+            }
+          } else {
+            setNotFound(true);
+            setLoading(false);
+            return;
+          }
+        }
 
         const profile = agentRes.data as unknown as AgentProfile;
         setAgent(profile);
@@ -1394,58 +1432,58 @@ const AgentStore = () => {
 
         {/* ── Unique Storefront Welcome Hero Card ── */}
         <div
-          className="rounded-[32px] p-7 mb-6 relative overflow-hidden border border-white/10 backdrop-blur-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] group"
+          className="rounded-[36px] p-7 mb-6 relative overflow-hidden border border-white/15 backdrop-blur-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)] group transition-all duration-500"
           style={{ 
             background: storeBannerUrl 
               ? `url(${storeBannerUrl}) center/cover no-repeat` 
               : resolvedGradient 
           }}
         >
-          {/* Ambient Glow Dot (only shown if there is no custom banner to avoid conflict) */}
+          {/* Ambient Glow Dot */}
           {!storeBannerUrl && (
             <>
-              <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-30 pointer-events-none" style={{ backgroundColor: accentColor }} />
-              <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none" style={{ backgroundColor: accentColor }} />
+              <div className="absolute -top-10 -right-10 w-44 h-44 rounded-full blur-3xl opacity-40 pointer-events-none transition-all duration-700 group-hover:opacity-60" style={{ backgroundColor: accentColor }} />
+              <div className="absolute -bottom-10 -left-10 w-44 h-44 rounded-full blur-3xl opacity-30 pointer-events-none transition-all duration-700 group-hover:opacity-50" style={{ backgroundColor: accentColor }} />
             </>
           )}
 
           {/* Dark Overlay for custom banner readability */}
           {storeBannerUrl && (
-            <div className="absolute inset-0 bg-black/55 backdrop-blur-[1px] transition-all group-hover:bg-black/45 z-0" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-black/30 backdrop-blur-[1px] transition-all group-hover:opacity-90 z-0" />
           )}
           
           <div className="flex items-center gap-2 mb-4 relative z-10">
-            <span className="px-3 py-1 text-[10px] font-black tracking-widest text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full uppercase shadow-inner">
+            <span className="px-3.5 py-1 text-[10px] font-black tracking-widest text-amber-300 bg-amber-400/10 border border-amber-400/25 rounded-full uppercase shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] backdrop-blur-md">
               {greeting}
             </span>
-            <div className="flex items-center gap-1.5 px-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
               <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active System</span>
             </div>
           </div>
 
-          <h2 className="text-3xl font-black text-white tracking-tight leading-none mb-3 relative z-10 drop-shadow-md">
-            Premium Data <br/> & Connectivity.
+          <h2 className="text-3xl sm:text-4xl font-black tracking-tight leading-[1.05] mb-3 relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-white via-white/95 to-white/70 drop-shadow-sm">
+            Premium Data <br/> &amp; Connectivity.
           </h2>
-          <p className="text-white/60 text-[13px] font-semibold leading-relaxed mb-3 max-w-[340px] relative z-10">
+          <p className="text-white/70 text-[13px] font-semibold leading-relaxed mb-4 max-w-[340px] relative z-10">
             {storeDescription || "Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant fulfillment."}
           </p>
-          <LiveDeliveryBadge className="mb-6 relative z-10" />
+          <LiveDeliveryBadge className="mb-6 relative z-10 shadow-lg" />
 
-          <div className="flex items-center justify-between p-4 rounded-[24px] bg-white/[0.05] border border-white/10 backdrop-blur-xl shadow-inner relative z-10">
+          <div className="flex items-center justify-between p-4 rounded-[26px] bg-white/[0.06] border border-white/12 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] relative z-10 group/card hover:border-white/20 transition-all">
             <div className="flex items-center gap-3 min-w-0">
               {agent.store_logo_url ? (
-                <img src={agent.store_logo_url} alt="logo" className="w-10 h-10 rounded-[14px] object-cover border border-white/20 shrink-0 shadow-lg" />
+                <img src={agent.store_logo_url} alt="logo" className="w-11 h-11 rounded-[16px] object-cover border border-white/20 shrink-0 shadow-xl group-hover/card:scale-105 transition-transform" />
               ) : (
-                <div className="w-10 h-10 rounded-[14px] flex items-center justify-center border border-white/20 shrink-0 shadow-inner" style={{ backgroundColor: `${accentColor}30` }}>
+                <div className="w-11 h-11 rounded-[16px] flex items-center justify-center border border-white/20 shrink-0 shadow-inner group-hover/card:scale-105 transition-transform" style={{ backgroundColor: `${accentColor}25` }}>
                   <Store className="w-5 h-5" style={{ color: accentColor }} />
                 </div>
               )}
               <div className="leading-tight min-w-0">
-                <p className="font-black text-sm text-white truncate max-w-[120px] tracking-tight">{agent.store_name}</p>
+                <p className="font-black text-sm text-white truncate max-w-[130px] tracking-tight">{agent.store_name}</p>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <ShieldCheck className="w-3 h-3 text-[#25D366]" />
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Verified Partner</p>
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#25D366]" />
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/60">Verified Partner</p>
                 </div>
               </div>
             </div>
@@ -1454,7 +1492,7 @@ const AgentStore = () => {
               <a
                 href={`https://wa.me/${agent.whatsapp_number.replace(/\D+/g, "")}`}
                 target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-[14px] bg-[#25D366] hover:bg-[#20bd5a] text-black text-[11px] font-black tracking-wide transition-all shadow-[0_4px_15px_rgba(37,211,102,0.3)] active:scale-95 shrink-0"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-[16px] bg-[#25D366] hover:bg-[#22c35e] text-black text-[11px] font-black tracking-wide transition-all duration-300 shadow-[0_4px_20px_rgba(37,211,102,0.35)] active:scale-95 shrink-0 hover:scale-105"
               >
                 <MessageCircle className="w-4 h-4 fill-black/20" />
                 Support
@@ -1465,28 +1503,28 @@ const AgentStore = () => {
 
         {/* ── Customer Account Dashboard Card ── */}
         {isCustomerLoggedIn && (
-          <div className="bg-white/5 border border-white/8 rounded-3xl p-5 mb-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl opacity-30" style={{ background: accentColor }} />
+          <div className="bg-gradient-to-b from-white/8 to-white/3 border border-white/12 rounded-[28px] p-5 mb-5 relative overflow-hidden backdrop-blur-2xl shadow-xl">
+            <div className="absolute top-0 right-0 w-28 h-28 rounded-full blur-3xl opacity-35" style={{ background: accentColor }} />
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-[10px] font-black text-white/30 uppercase tracking-widest leading-none">Store Wallet Portal</p>
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none">Store Wallet Portal</p>
                 <p className="text-white text-base font-black truncate mt-1.5 leading-tight">{customerName}</p>
               </div>
-              <button onClick={() => setHistoryOpen(true)} className="text-[10px] font-black px-3 py-1.5 rounded-xl text-black uppercase tracking-wider flex items-center gap-1 hover:brightness-110 transition-all active:scale-95" style={{ backgroundColor: accentColor }}>
+              <button onClick={() => setHistoryOpen(true)} className="text-[10px] font-black px-3.5 py-1.5 rounded-xl text-black uppercase tracking-wider flex items-center gap-1 hover:brightness-110 transition-all active:scale-95 shadow-md" style={{ backgroundColor: accentColor }}>
                 <History className="w-3.5 h-3.5" /> History
               </button>
             </div>
             
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/6">
-              <div className="bg-white/4 rounded-2xl p-3">
-                <p className="text-[9px] text-white/40 font-bold uppercase leading-none">Your Balance</p>
-                <p className="text-lg font-black text-white mt-1.5 leading-none font-mono">GHS {Number(customerBalance).toFixed(2)}</p>
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/8">
+              <div className="bg-white/5 rounded-2xl p-3.5 border border-white/5">
+                <p className="text-[9px] text-white/50 font-bold uppercase leading-none">Your Balance</p>
+                <p className="text-lg font-black text-emerald-400 mt-1.5 leading-none font-mono">GHS {Number(customerBalance).toFixed(2)}</p>
               </div>
               
               <button
                 type="button"
                 onClick={() => setDepositOpen(true)}
-                className="rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-[0.98] transition-all hover:brightness-110 border-0"
+                className="rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-[0.98] transition-all duration-300 hover:brightness-110 border-0 shadow-lg"
                 style={{ backgroundColor: accentColor, color: "#000000" }}
               >
                 <CreditCard className="w-5 h-5 shrink-0" />
@@ -1497,32 +1535,38 @@ const AgentStore = () => {
         )}
 
         {/* ── Service tabs ── */}
-        <div className="flex gap-1.5 p-1.5 rounded-[20px] bg-white/[0.03] border border-white/10 mb-6 backdrop-blur-xl shadow-inner relative z-10">
+        <div className="flex gap-2 p-2 rounded-[24px] bg-white/[0.04] border border-white/12 mb-6 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] relative z-10">
           {[
             { id: "data",    label: "Data",    icon: Wifi },
             { id: "airtime", label: "Airtime", icon: Smartphone },
             { id: "utility", label: "Bills",   icon: Zap },
-          ].map((s) => (
-            <button
-              type="button"
-              key={s.id}
-              onClick={() => { setSelectedService(s.id as ServiceType); setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); }}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-[16px] text-xs font-black uppercase tracking-wide transition-all active:scale-[0.98] ${
-                selectedService === s.id
-                  ? "text-black shadow-[0_4px_12px_rgba(0,0,0,0.3)] bg-white"
-                  : "text-white/40 hover:text-white/70 hover:bg-white/5"
-              }`}
-              style={selectedService === s.id ? { backgroundColor: accentColor } : {}}
-            >
-              <s.icon className={`w-4 h-4 ${selectedService === s.id ? "drop-shadow-sm" : ""}`} />
-              {s.label}
-            </button>
-          ))}
+          ].map((s) => {
+            const active = selectedService === s.id;
+            return (
+              <button
+                type="button"
+                key={s.id}
+                onClick={() => { setSelectedService(s.id as ServiceType); setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-[18px] text-xs font-black uppercase tracking-wider transition-all duration-300 active:scale-[0.97] ${
+                  active
+                    ? "text-black shadow-[0_6px_20px_rgba(0,0,0,0.4)] scale-[1.02]"
+                    : "text-white/50 hover:text-white/80 hover:bg-white/5"
+                }`}
+                style={active ? { 
+                  background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`,
+                  boxShadow: `0 6px 20px ${accentColor}40`
+                } : {}}
+              >
+                <s.icon className={`w-4 h-4 ${active ? "drop-shadow-sm" : ""}`} />
+                {s.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* ── Network tabs (Data & Airtime) ── */}
         {(selectedService === "data" || selectedService === "airtime") && (
-          <div className="flex gap-2.5 mb-6 relative z-10">
+          <div className="flex gap-3 mb-6 relative z-10">
             {NETWORKS.map((n) => {
               const active = selectedNetwork === n;
               const nc = NETWORK_CONFIG[n];
@@ -1531,10 +1575,15 @@ const AgentStore = () => {
                   type="button"
                   key={n}
                   onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); setSelectedTypeOrCategory("affordable"); }}
-                  className={`flex-1 py-3.5 rounded-[18px] text-[11px] font-black uppercase tracking-widest border transition-all active:scale-[0.96] ${
-                    active ? `${nc.bg} ${nc.textClass} border-transparent shadow-xl` : "bg-white/[0.03] border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80 backdrop-blur-md shadow-inner"
+                  className={`flex-1 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest border transition-all duration-300 active:scale-[0.96] ${
+                    active 
+                      ? `${nc.bg} ${nc.textClass} border-white/20 shadow-2xl scale-[1.02]` 
+                      : "bg-white/[0.04] border-white/10 text-white/60 hover:bg-white/10 hover:text-white backdrop-blur-xl shadow-inner"
                   }`}
-                  style={active ? { boxShadow: `0 8px 24px ${nc.color}40`, textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none" } : {}}
+                  style={active ? { 
+                    boxShadow: `0 10px 28px ${nc.color}45`, 
+                    textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none" 
+                  } : {}}
                 >
                   {n}
                 </button>

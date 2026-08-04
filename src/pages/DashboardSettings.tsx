@@ -632,21 +632,21 @@ const DashboardSettings = () => {
 
       if (profileError) throw profileError;
 
-      // 2. Update selected store details
-      if (selectedStoreId && selectedStoreId !== "new") {
+      // 2. Update selected store details (upserting to guarantee reseller_stores sync)
+      if (form.store_name?.trim()) {
         const slug = generateSlug(form.store_name);
         const { error: storeError } = await supabase
           .from("reseller_stores")
-          .update({
+          .upsert({
+            user_id: user.id,
             store_name: form.store_name.trim(),
             store_logo_url: form.store_logo_url,
             store_banner_url: form.store_banner_url,
             store_description: form.store_description.trim() || null,
-            store_primary_color: form.store_primary_color,
+            store_primary_color: form.store_primary_color || "#fbbf24",
             custom_domain: form.custom_domain.trim() || null,
             slug,
-          })
-          .eq("id", selectedStoreId);
+          }, { onConflict: "slug" });
 
         if (storeError) throw storeError;
       }

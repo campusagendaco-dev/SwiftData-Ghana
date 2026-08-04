@@ -90,21 +90,21 @@ const StoreNavbar = ({
       ref={menuRef}
       className="sticky top-0 z-50 transition-all duration-300"
       style={{
-        background: scrolled ? "rgba(6,6,18,0.98)" : "rgba(6,6,18,0.92)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        boxShadow: scrolled ? `0 4px 32px rgba(0,0,0,0.6), 0 0 0 1px ${networkAccent || "#f59e0b"}18` : "none",
+        background: scrolled ? "rgba(4,4,8,0.94)" : "rgba(8,8,16,0.82)",
+        backdropFilter: "blur(28px)",
+        WebkitBackdropFilter: "blur(28px)",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: scrolled ? `0 12px 40px -10px rgba(0,0,0,0.8), 0 0 0 1px ${networkAccent || "#f59e0b"}25` : "none",
       }}
     >
-      {/* Thin accent bar */}
-      <div className="h-[2px] w-full" style={{ background: `linear-gradient(90deg, transparent, ${networkAccent}80, transparent)` }} />
+      {/* Thin ambient gradient accent bar */}
+      <div className="h-[2px] w-full" style={{ background: `linear-gradient(90deg, transparent, ${networkAccent}, transparent)` }} />
 
       {/* ── Main bar ── */}
-      <div className="container mx-auto max-w-3xl flex items-center justify-between px-4 h-14">
+      <div className="container mx-auto max-w-4xl flex items-center justify-between px-4 h-16">
 
         {/* Left */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           {backMode && backHref ? (
             <button
               onClick={() => navigate(backHref)}
@@ -115,28 +115,34 @@ const StoreNavbar = ({
             </button>
           ) : (
             agentSlug && (
-              <Link to={`/store/${agentSlug}`} className="text-white/30 hover:text-white/60 transition-colors shrink-0">
+              <Link to={`/store/${agentSlug}`} className="text-white/30 hover:text-white/70 transition-colors shrink-0">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
             )
           )}
 
-          <Link to={agentSlug ? `/store/${agentSlug}` : "/"} className="flex items-center gap-2.5 min-w-0">
+          <Link to={agentSlug ? `/store/${agentSlug}` : "/"} className="flex items-center gap-3 min-w-0 group">
             <div className="relative shrink-0">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden" style={{ background: logoUrl ? 'white' : `${networkAccent}20`, border: `1.5px solid ${networkAccent}40` }}>
+              <div 
+                className="w-9 h-9 rounded-2xl flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
+                style={{ 
+                  background: logoUrl ? 'white' : `${networkAccent}18`, 
+                  border: `1px solid ${networkAccent}40` 
+                }}
+              >
                 {logoUrl ? (
                   <img src={logoUrl} alt={storeName} className="w-full h-full object-contain" />
                 ) : (
-                  <Store className="w-4 h-4" style={{ color: networkAccent }} />
+                  <Store className="w-4.5 h-4.5" style={{ color: networkAccent }} />
                 )}
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#060612] bg-green-400 animate-pulse" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#040408] bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
             </div>
             <div className="leading-tight min-w-0">
-              <p className="text-white font-bold text-sm leading-none truncate max-w-[130px] sm:max-w-[220px]">
+              <p className="text-white font-black text-sm tracking-tight truncate max-w-[140px] sm:max-w-[240px] group-hover:text-amber-300 transition-colors">
                 {storeName}
               </p>
-              <p className="text-[10px] font-semibold mt-0.5 leading-none opacity-70" style={{ color: networkAccent }}>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest mt-0.5 leading-none opacity-80" style={{ color: networkAccent }}>
                 {backMode ? (stepLabel || "Sub-Agent Signup") : "Verified Data Store"}
               </p>
             </div>
@@ -144,18 +150,18 @@ const StoreNavbar = ({
         </div>
 
         {/* Desktop actions */}
-        <div className="hidden md:flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-2.5">
           {!backMode && (
             <>
               {isCustomerLoggedIn ? (
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 border border-white/10 bg-white/5 rounded-xl px-3 py-1.5 shrink-0">
+                  <div className="flex items-center gap-2 border border-white/10 bg-white/5 backdrop-blur-xl rounded-2xl px-3.5 py-1.5 shrink-0 shadow-inner">
                     <span className="text-[10px] text-white/40 font-black uppercase tracking-wider">Wallet:</span>
-                    <span className="text-xs font-black text-white">GHS {Number(customerBalance || 0).toFixed(2)}</span>
+                    <span className="text-xs font-mono font-black text-emerald-400">GHS {Number(customerBalance || 0).toFixed(2)}</span>
                   </div>
                   <button 
                     onClick={onSignOut} 
-                    className="text-xs font-black text-red-400/80 hover:text-red-400 hover:bg-red-500/5 px-2.5 py-1.5 rounded-lg transition-all"
+                    className="text-xs font-black text-red-400/80 hover:text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-xl transition-all"
                   >
                     Sign Out
                   </button>
@@ -163,40 +169,44 @@ const StoreNavbar = ({
               ) : (
                 <button
                   onClick={onOpenAuth}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 border-0 hover:brightness-110"
-                  style={{ backgroundColor: networkAccent, color: "#000000" }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-black transition-all duration-300 active:scale-95 border-0 hover:brightness-110 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
+                  style={{ 
+                    background: `linear-gradient(135deg, ${networkAccent}, ${networkAccent}dd)`,
+                    color: "#000000",
+                    boxShadow: `0 4px 18px ${networkAccent}35`
+                  }}
                 >
                   Sign In / Register
                 </button>
               )}
 
               <Link to={agentSlug ? `/store/${agentSlug}/order-status` : "/order-status"}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/50 hover:text-white hover:bg-white/8 transition-all ml-1">
-                <MapPin className="w-3.5 h-3.5" /> Track Order
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold text-white/60 hover:text-white hover:bg-white/8 transition-all border border-transparent hover:border-white/10">
+                <MapPin className="w-3.5 h-3.5 text-white/40" /> Track Order
               </Link>
               {showSubAgentLink && agentSlug && (
                 <Link to={`/store/${agentSlug}/sub-agent`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105"
-                  style={{ color: networkAccent, background: `${networkAccent}15`, border: `1px solid ${networkAccent}30` }}>
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all hover:scale-105 backdrop-blur-xl shadow-inner"
+                  style={{ color: networkAccent, background: `${networkAccent}12`, border: `1px solid ${networkAccent}30` }}>
                   <TrendingUp className="w-3.5 h-3.5" /> Become Sub-Agent
                 </Link>
               )}
               <button onClick={openTutorial}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/50 hover:text-white hover:bg-white/8 transition-all">
-                <HelpCircle className="w-3.5 h-3.5" /> Help
+                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold text-white/60 hover:text-white hover:bg-white/8 transition-all">
+                <HelpCircle className="w-3.5 h-3.5 text-white/40" /> Help
               </button>
               {waHref && (
                 <a href={waHref} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all hover:scale-105 active:scale-95"
+                  className="flex items-center gap-1.5 text-white text-xs font-black px-4 py-2 rounded-2xl transition-all duration-300 hover:scale-105 active:scale-95 shadow-[0_4px_18px_rgba(37,211,102,0.3)]"
                   style={{ background: "linear-gradient(135deg,#25D366,#128C7E)" }}>
-                  <MessageCircle className="w-4 h-4" /> Chat
+                  <MessageCircle className="w-4 h-4 fill-black/20" /> Chat
                 </a>
               )}
             </>
           )}
           {backMode && waHref && (
             <a href={waHref} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-white text-xs font-bold px-3 py-1.5 rounded-xl hover:scale-105 transition-all"
+              className="flex items-center gap-1.5 text-white text-xs font-bold px-4 py-2 rounded-2xl hover:scale-105 transition-all shadow-[0_4px_18px_rgba(37,211,102,0.3)]"
               style={{ background: "linear-gradient(135deg,#25D366,#128C7E)" }}>
               <MessageCircle className="w-4 h-4" /> WhatsApp
             </a>
