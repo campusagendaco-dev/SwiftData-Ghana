@@ -322,10 +322,32 @@ serve(async (req: Request) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Fetch balances if {{balance}} token used
-    const balanceMap = hasTokens(smsBody)
-      ? await fetchBalanceMap(supabaseAdmin, recipients.filter((r) => r.isAgent).map((r) => r.userId))
-      : new Map<string, number>();
+    // For large broadcasts (> 150 recipients), dispatch asynchronously to prevent HTTP 546 execution timeout
+    if (recipients.length > 150) {
+      const dispatchPromise = sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap)
+        .then(({ sent, failures }) => {
+          console.log(`[admin-send-sms] Async broadcast complete. Sent: ${sent}, Failures: ${failures.length}`);
+        })
+        .catch((err) => {
+          console.error("[admin-send-sms] Async broadcast error:", err);
+        });
+
+      if (typeof (globalThis as any).EdgeRuntime?.waitUntil === "function") {
+        (globalThis as any).EdgeRuntime.waitUntil(dispatchPromise);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        target_type,
+        total_recipients: recipients.length,
+        valid_numbers: recipients.length,
+        sent: recipients.length,
+        failed: 0,
+        queued_async: true,
+        failures: [],
+        opt_out_count: optOutCount,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap);
 

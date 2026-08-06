@@ -255,6 +255,26 @@ export async function sendSmsViaTxtConnect(
   }
 }
 
+async function logBulkSmsToDb(logs: Array<{
+  recipient: string;
+  sender_id: string;
+  body: string;
+  type: string;
+  status: string;
+  error_message?: string | null;
+  agent_id?: string | null;
+}>) {
+  const url = Deno.env.get("SUPABASE_URL") || "";
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (!url || !key || logs.length === 0) return;
+  try {
+    const supabase = createClient(url, key);
+    await supabase.from("sms_logs").insert(logs);
+  } catch (err: any) {
+    console.error("[SMS Bulk Log] Error logging SMS batch:", err?.message || String(err));
+  }
+}
+
 // Sends one message to multiple recipients in a single API call (max 100 per batch)
 export async function sendBulkSmsViaTxtConnect(
   apiKey: string,
@@ -322,21 +342,37 @@ export async function sendBulkSmsViaTxtConnect(
 
       sent += chunk.length;
       
-      // Log success for each recipient in database
-      for (const phone of chunk) {
-        await logSmsToDb(phone, from, body, type, "success", undefined, agentId).catch(console.error);
-      }
+      // Bulk log successes asynchronously to avoid blocking the HTTP thread
+      const successLogs = chunk.map((phone) => ({
+        recipient: phone,
+        sender_id: from,
+        body,
+        type,
+        status: "success" as const,
+        error_message: null,
+        agent_id: agentId || null
+      }));
+      logBulkSmsToDb(successLogs).catch(console.error);
     } catch (err: any) {
       const errMessage = err?.message || "Failed";
       console.error(`Failed to send bulk SMS batch to chunk starting with ${chunk[0]}:`, err);
-      for (const phone of chunk) {
+      const failedLogs = chunk.map((phone) => {
         failures.push({ phone, reason: errMessage });
-        await logSmsToDb(phone, from, body, type, "failed", errMessage, agentId).catch(console.error);
-      }
+        return {
+          recipient: phone,
+          sender_id: from,
+          body,
+          type,
+          status: "failed" as const,
+          error_message: errMessage,
+          agent_id: agentId || null
+        };
+      });
+      logBulkSmsToDb(failedLogs).catch(console.error);
     }
 
     if (i + BATCH_SIZE < recipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay between batches to respect rate limits
+      await new Promise((resolve) => setTimeout(resolve, 100)); // 100ms pacing delay between batches
     }
   }
 
