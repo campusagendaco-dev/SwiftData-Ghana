@@ -58,9 +58,24 @@ serve(async (req) => {
       });
     }
 
-    // 4. SERVER-SIDE CHECK 3: If processing, check provider status via verify-payment server endpoint
+    // 4. SERVER-SIDE CHECK 3: If processing and already received by an API provider, block refund
     if (order.status === "processing") {
-      console.log(`[verify-and-refund] Order ${order_id} is processing. Running server-side provider verification first...`);
+      const hasProviderRef = order.provider_order_id && 
+        order.provider_order_id !== "" && 
+        order.provider_order_id !== "failed_api_call" && 
+        order.provider_order_id !== "timeout";
+
+      if (hasProviderRef || order.provider_id) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Order has already been submitted and received by the API provider. Cannot refund an active processing order."
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log(`[verify-and-refund] Order ${order_id} is processing without provider reference. Running server-side provider verification first...`);
       const { data: verifyRes } = await supabaseAdmin.functions.invoke("verify-payment", {
         body: { reference: order_id, order_id: order_id, force: true }
       });
