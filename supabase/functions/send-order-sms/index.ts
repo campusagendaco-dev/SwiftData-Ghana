@@ -14,13 +14,14 @@ serve(async (req) => {
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
-    const { phone, action, order_id, amount, package_size, network, agent_id } = body;
+    const { phone, action, order_id, amount, package_size, network, agent_id, reason } = body;
 
     const shortId = order_id ? String(order_id).slice(0, 8).toUpperCase() : "";
     let message = "";
 
     if (action === "refund") {
-      message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) has been refunded to your wallet balance.`;
+      const reasonPart = reason ? ` Reason: ${reason}.` : "";
+      message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) has been refunded to your wallet balance.${reasonPart}`;
     } else if (action === "retry") {
       message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (${network || ""} ${package_size || ""}) has been verified & re-submitted for delivery.`;
     } else if (action === "fulfilled") {

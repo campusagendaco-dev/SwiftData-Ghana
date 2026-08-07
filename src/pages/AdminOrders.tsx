@@ -258,6 +258,7 @@ const AdminOrders = () => {
   };
 
   const handleRefund = async (orderId: string, amount: number) => {
+    const targetOrder = allOrders.find((o) => o.id === orderId);
     if (!confirm(`Are you sure you want to manually refund GH₵ ${amount.toFixed(2)} for order ${orderId}?`)) {
       return;
     }
@@ -269,7 +270,24 @@ const AdminOrders = () => {
         if (currentUser) {
           await logAudit(currentUser.id, "manual_order_refund", { order_id: orderId, amount });
         }
-        toast({ title: "Order refunded successfully!" });
+
+        // Dispatch SMS to recipient explaining refund & reason
+        if (targetOrder) {
+          supabase.functions.invoke("send-order-sms", {
+            body: {
+              action: "refund",
+              order_id: orderId,
+              phone: targetOrder.customer_phone,
+              amount: targetOrder.amount,
+              package_size: targetOrder.package_size,
+              network: targetOrder.network,
+              agent_id: targetOrder.agent_id,
+              reason: targetOrder.failure_reason || "Number not added to carrier beneficiary list",
+            },
+          }).catch((err) => console.error("Refund SMS dispatch error:", err));
+        }
+
+        toast({ title: "Order refunded successfully!", description: "SMS notification dispatched to recipient." });
       } else {
         toast({ title: "Refund failed", description: "This order might already be refunded or not eligible.", variant: "destructive" });
       }
