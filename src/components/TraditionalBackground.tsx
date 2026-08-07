@@ -87,7 +87,12 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      try {
+        channel.unsubscribe();
+        supabase.removeChannel(channel);
+      } catch {
+        // Prevent browser unmount websocket warning
+      }
     };
   }, []);
 
