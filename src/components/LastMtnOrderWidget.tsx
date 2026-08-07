@@ -40,8 +40,7 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
       } else {
         throw new Error("Invalid API response format");
       }
-    } catch (err) {
-      console.warn("Failed fetching MTN live order, using high-fidelity dynamic fallback:", err);
+    } catch {
       setError(true);
       
       // Fallback data dynamically synchronized with user's local time to keep UI 100% perfect
