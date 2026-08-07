@@ -18,9 +18,12 @@ export class StandardAdapter implements ProviderAdapter {
     const clean = (baseUrl || "").trim().replace(/\/+$/, "");
     if (!clean) return [];
 
-    if (handlerType === "datamart" && endpoint === "status") {
-      const ref = String(data.transaction_id || data.reference || data.order_id || "");
-      return [`${clean}/order-status/${ref}`];
+    if (handlerType === "datamart") {
+      if (endpoint === "status") {
+        const ref = String(data.transaction_id || data.reference || data.order_id || "");
+        return [`${clean}/order-status/${ref}`, `${clean}/status/${ref}`];
+      }
+      return [`${clean}/purchase`, `${clean}/order`, clean];
     }
     if (handlerType === "skdataplug") {
       if (endpoint === "status") {
@@ -476,9 +479,11 @@ export class StandardAdapter implements ProviderAdapter {
           if (handlerType === "xcel") {
             headers["x-api-key"] = apiKey;
             headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
-          } else if (handlerType === "skdataplug") {
+          } else if (handlerType === "skdataplug" || handlerType === "datamart") {
             headers["Authorization"] = `Bearer ${apiKey}`;
-          } else if (handlerType !== "datamart" && handlerType !== "spendless" && handlerType !== "qhowmenzconsult") {
+            headers["x-api-key"] = apiKey;
+            headers["User-Agent"] = "SwiftDataGH/2.0";
+          } else if (handlerType !== "spendless" && handlerType !== "qhowmenzconsult") {
             headers["Authorization"] = `Bearer ${apiKey}`;
             headers["User-Agent"] = "SwiftDataGH/2.0";
           }

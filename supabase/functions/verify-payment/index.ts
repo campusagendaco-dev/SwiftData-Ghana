@@ -1355,7 +1355,22 @@ serve(async (req) => {
       const defaultNetKey = mapDataNetworkKey(network);
       
       const netKey = overrideNetKey || defaultNetKey;
-      if (ht === "datamart") return { phoneNumber: recipient, network: netKey, planId: packageSize, plan: packageSize, bundle: packageSize, capacity: String(parseCapacity(packageSize)), orderReference: targetReference, gateway: "wallet", reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
+      if (ht === "datamart") return { 
+        recipient,
+        phone: recipient,
+        phoneNumber: recipient, 
+        network: netKey, 
+        package_size: packageSize,
+        planId: packageSize, 
+        plan: packageSize, 
+        bundle: packageSize, 
+        capacity: String(parseCapacity(packageSize)), 
+        orderReference: targetReference, 
+        reference: targetReference,
+        gateway: "wallet", 
+        bypass_beneficiary: true, 
+        category: claimedOrder.metadata?.category 
+      };
       if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
       if (ht === "qhowmenzconsult") {
         return {
