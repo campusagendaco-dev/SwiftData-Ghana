@@ -101,10 +101,21 @@ export function parseProviderResponse(body: string, contentType: string | null):
       ""
     );
 
-    const ok = technicalStatus === "success" || technicalStatus === "true" || technicalStatus === "1" || technicalStatus === "completed" || technicalStatus === "pending" || parsed?.success === true || parsed?.ok === true;
+    const ok = technicalStatus === "success" || 
+               technicalStatus === "true" || 
+               technicalStatus === "1" || 
+               technicalStatus === "200" || 
+               technicalStatus === "completed" || 
+               technicalStatus === "processing" || 
+               technicalStatus === "pending" || 
+               parsed?.success === true || 
+               parsed?.status === true || 
+               parsed?.status === 200 || 
+               parsed?.code === 200 || 
+               parsed?.ok === true;
 
     if (ok) {
-      return { ok: true, id: orderId, status: effectiveStatus };
+      return { ok: true, id: orderId || reference, status: effectiveStatus || "processing" };
     }
     
     const isFailed = technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";

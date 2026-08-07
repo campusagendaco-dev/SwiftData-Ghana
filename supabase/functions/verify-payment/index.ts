@@ -1321,7 +1321,7 @@ serve(async (req) => {
       }
     }
 
-    const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch").eq("id", 1).maybeSingle();
+    const { data: sysSettings } = await supabaseAdmin.from("v_system_settings_with_secrets").select("auto_api_switch, auto_failover_non_beneficiary_to_datamart").eq("id", 1).maybeSingle();
     const autoApiSwitch = sysSettings?.auto_api_switch !== false;
 
     // Retrieve the actual base price (excluding payment fees) to deliver to the provider API
@@ -1350,27 +1350,52 @@ serve(async (req) => {
     let result: any = { ok: false, reason: "No providers" };
     let successfulProviderId = null;
 
-    const buildDataPayload = (provider: any, overrideNetKey?: string) => {
+    const buildDataPayload = async (provider: any, overrideNetKey?: string) => {
       const ht = provider.handler_type || "standard";
       const defaultNetKey = mapDataNetworkKey(network);
       
       const netKey = overrideNetKey || defaultNetKey;
-      if (ht === "datamart") return { 
-        recipient,
-        phone: recipient,
-        phoneNumber: recipient, 
-        network: netKey, 
-        package_size: packageSize,
-        planId: packageSize, 
-        plan: packageSize, 
-        bundle: packageSize, 
-        capacity: String(parseCapacity(packageSize)), 
-        orderReference: targetReference, 
-        reference: targetReference,
-        gateway: "wallet", 
-        bypass_beneficiary: true, 
-        category: claimedOrder.metadata?.category 
-      };
+      if (ht === "datamart") {
+        let externalId = packageSize;
+        const capNum = parseCapacity(packageSize);
+        const datamartNet = (network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO")
+          ? "YELLO"
+          : ((network.toUpperCase().includes("TELECEL") || network.toUpperCase().includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
+
+        try {
+          const { data: pkgMapping } = await supabaseAdmin
+            .from("provider_packages")
+            .select("external_id")
+            .eq("provider_id", provider.id)
+            .eq("network", "MTN")
+            .eq("package_name", packageSize)
+            .maybeSingle();
+          if (pkgMapping?.external_id) {
+            externalId = pkgMapping.external_id;
+          } else if (capNum > 0) {
+            externalId = `MTN_${capNum}`;
+          }
+        } catch (e) {
+          console.error("[datamart-payload-resolve] Error:", e);
+        }
+
+        return { 
+          phoneNumber: recipient,
+          recipient,
+          phone: recipient, 
+          network: datamartNet, 
+          package_size: packageSize,
+          planId: externalId, 
+          plan: externalId, 
+          bundle: externalId, 
+          capacity: String(capNum > 0 ? capNum : packageSize), 
+          orderReference: targetReference, 
+          reference: targetReference,
+          gateway: "wallet", 
+          bypass_beneficiary: true, 
+          category: claimedOrder.metadata?.category 
+        };
+      }
       if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
       if (ht === "qhowmenzconsult") {
         return {
@@ -1448,7 +1473,7 @@ serve(async (req) => {
           "purchase"
         );
       } else {
-        result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider), "purchase");
+        result = await callProviderApi(supabaseAdmin, provider, await buildDataPayload(provider), "purchase");
       }
       
       // Auto-fallback for AirtelTigo: If AT_PREMIUM fails with "Bundle not available", try AT_BIGTIME
@@ -1458,13 +1483,17 @@ serve(async (req) => {
           console.log(`[verify-payment] Retrying ${provider.name} with AT_BIGTIME/AT for AirtelTigo bundle...`);
           // Datamart/Datahub use AT_BIGTIME. Bossu uses AT.
           const fallbackNetKey = (ht === "bossu" || ht === "standard") ? "AT" : "AT_BIGTIME";
-          result = await callProviderApi(supabaseAdmin, provider, buildDataPayload(provider, fallbackNetKey), "purchase");
+          result = await callProviderApi(supabaseAdmin, provider, await buildDataPayload(provider, fallbackNetKey), "purchase");
         }
       }
 
-      // Auto-failover to Datamart for Non-Beneficiary MTN Numbers
-      if (!result.ok && network.toUpperCase().includes("MTN") && /beneficiary/i.test(String(result.reason || ""))) {
-        console.log(`[verify-payment] Beneficiary error from ${provider.name} for ${recipient}: ${result.reason}. Attempting Datamart API failover...`);
+      // Auto-failover to Datamart for MTN orders rejected by DataHub (Beneficiary / Payee Limit / Unlisted number / Provider rejection)
+      const isDataHub = (provider.handler_type || "").toLowerCase() === "datahub";
+      const isMtn = network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO";
+      const isBeneficiaryOrLimitError = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+      
+      if (!result.ok && isMtn && (isDataHub || isBeneficiaryOrLimitError)) {
+        console.log(`[verify-payment] MTN order rejected by ${provider.name} (${result.reason}). Attempting Datamart API failover...`);
         const { data: dmProvider } = await supabaseAdmin
           .from("providers")
           .select("*")
@@ -1474,11 +1503,12 @@ serve(async (req) => {
 
         if (dmProvider && dmProvider.id !== provider.id) {
           console.log(`[verify-payment] Routing non-beneficiary order for ${recipient} via ${dmProvider.name} (Datamart API)...`);
-          const dmPayload = buildDataPayload(dmProvider, "MTN");
+          const dmPayload = await buildDataPayload(dmProvider, "MTN");
           const dmResult = await callProviderApi(supabaseAdmin, dmProvider, dmPayload, "purchase");
           if (dmResult.ok) {
             result = dmResult;
-            console.log(`[verify-payment] Datamart API failover SUCCESSFUL for ${recipient}!`);
+            successfulProviderId = dmProvider.id;
+            console.log(`[verify-payment] Datamart API failover SUCCESSFUL for ${recipient}! Provider Order ID: ${dmResult.id}`);
           } else {
             console.error(`[verify-payment] Datamart failover also rejected: ${dmResult.reason}`);
           }
@@ -1488,20 +1518,28 @@ serve(async (req) => {
       const providerDuration = Date.now() - providerCallStart;
 
       if (result.ok) {
-        successfulProviderId = provider.id;
+        if (!successfulProviderId) {
+          successfulProviderId = provider.id;
+        }
         // Reset consecutive failures on success
-        supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", provider.id);
-        log(supabaseAdmin, { level: "info", source: "verify-payment", event: "provider.called", message: `${provider.name} accepted order`, order_id: targetReference, provider_id: provider.id, duration_ms: providerDuration, data: { provider: provider.name, handler_type: provider.handler_type, provider_order_id: result.id, network, package_size: packageSize, recipient } });
+        supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", successfulProviderId);
+        log(supabaseAdmin, { level: "info", source: "verify-payment", event: "provider.called", message: `Provider accepted order`, order_id: targetReference, provider_id: successfulProviderId, duration_ms: providerDuration, data: { provider_order_id: result.id, network, package_size: packageSize, recipient } });
         break; // success — stop trying
       } else {
-        // Increment consecutive failures
-        const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", provider.id).maybeSingle();
-        const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
-        const autoDisable = newFailures >= 5 && autoApiSwitch;
-        await supabaseAdmin.from("providers").update({
-          consecutive_failures: newFailures,
-          ...(autoDisable ? { is_active: false, disabled_reason: `Auto-disabled after ${newFailures} consecutive failures` } : {}),
-        }).eq("id", provider.id);
+        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers
+        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+        let newFailures = 0;
+        let autoDisable = false;
+
+        if (!isBeneficiaryErr) {
+          const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", provider.id).maybeSingle();
+          newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
+          autoDisable = newFailures >= 5 && autoApiSwitch;
+          await supabaseAdmin.from("providers").update({
+            consecutive_failures: newFailures,
+            ...(autoDisable ? { is_active: false, disabled_reason: `Auto-disabled after ${newFailures} consecutive failures` } : {}),
+          }).eq("id", provider.id);
+        }
 
         await logProviderError(supabaseAdmin, provider.id, targetReference, result.reason);
         log(supabaseAdmin, { level: "error", source: "verify-payment", event: "provider.rejected", message: `${provider.name} rejected (${newFailures} failures)${autoDisable ? " — AUTO-DISABLED" : ""}: ${result.reason}`, order_id: targetReference, provider_id: provider.id, duration_ms: providerDuration, data: { provider: provider.name, reason: result.reason, consecutive_failures: newFailures, auto_disabled: autoDisable } });
@@ -1518,7 +1556,8 @@ serve(async (req) => {
           }
         }
         
-        if (!autoApiSwitch) {
+        const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart !== false;
+        if (!autoApiSwitch && !datamartFailoverEnabled) {
           console.log(`[verify-payment] Auto API switch is disabled. Not failing over from ${provider.name}.`);
           break;
         }

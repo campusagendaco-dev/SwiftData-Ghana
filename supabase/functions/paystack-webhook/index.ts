@@ -1822,11 +1822,56 @@ serve(async (req) => {
       const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
       const targetApiKey = chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
 
+      const ht = chosenProvider?.handler_type || (
+        (chosenProvider?.base_url || "").toLowerCase().includes("datamart") ? "datamart" : "standard"
+      );
+
+      let currentPayload: any = dataPayload;
+      if (ht === "datamart") {
+        let externalId = packageSize;
+        const capNum = parseCapacity(packageSize);
+        const datamartNet = (network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO")
+          ? "YELLO"
+          : ((network.toUpperCase().includes("TELECEL") || network.toUpperCase().includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
+
+        try {
+          const { data: pkgMapping } = await supabaseAdmin
+            .from("provider_packages")
+            .select("external_id")
+            .eq("provider_id", chosenProvider.id)
+            .eq("network", "MTN")
+            .eq("package_name", packageSize)
+            .maybeSingle();
+          if (pkgMapping?.external_id) {
+            externalId = pkgMapping.external_id;
+          } else if (capNum > 0) {
+            externalId = `MTN_${capNum}`;
+          }
+        } catch (e) {
+          console.error("[datamart-webhook-payload] Error:", e);
+        }
+
+        currentPayload = {
+          phoneNumber: normalizeRecipient(customerPhone),
+          recipient: normalizeRecipient(customerPhone),
+          phone: normalizeRecipient(customerPhone),
+          network: datamartNet,
+          package_size: packageSize,
+          planId: externalId,
+          plan: externalId,
+          bundle: externalId,
+          capacity: String(capNum > 0 ? capNum : packageSize),
+          orderReference: orderId,
+          reference: orderId,
+          gateway: "wallet"
+        };
+      }
+
       const result = await callProviderApi(
         targetBaseUrl,
         targetApiKey,
         "purchase",
-        dataPayload,
+        currentPayload,
         DATA_PROVIDER_WEBHOOK_URL,
       );
       const providerDuration = Date.now() - providerCallStart;
