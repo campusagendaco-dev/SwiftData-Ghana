@@ -1494,12 +1494,22 @@ serve(async (req) => {
       
       if (!result.ok && isMtn && (isDataHub || isBeneficiaryOrLimitError)) {
         console.log(`[verify-payment] MTN order rejected by ${provider.name} (${result.reason}). Attempting Datamart API failover...`);
-        const { data: dmProvider } = await supabaseAdmin
+        let { data: dmProvider } = await supabaseAdmin
           .from("providers")
           .select("*")
           .eq("handler_type", "datamart")
           .eq("is_active", true)
           .maybeSingle();
+
+        if (!dmProvider) {
+          const { data: fallbackDm } = await supabaseAdmin
+            .from("providers")
+            .select("*")
+            .eq("handler_type", "datamart")
+            .limit(1)
+            .maybeSingle();
+          dmProvider = fallbackDm;
+        }
 
         if (dmProvider && dmProvider.id !== provider.id) {
           console.log(`[verify-payment] Routing non-beneficiary order for ${recipient} via ${dmProvider.name} (Datamart API)...`);
@@ -1522,16 +1532,18 @@ serve(async (req) => {
           successfulProviderId = provider.id;
         }
         // Reset consecutive failures on success
-        supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", successfulProviderId);
+        supabaseAdmin.from("providers").update({ consecutive_failures: 0, is_active: true, disabled_reason: null }).eq("id", successfulProviderId);
         log(supabaseAdmin, { level: "info", source: "verify-payment", event: "provider.called", message: `Provider accepted order`, order_id: targetReference, provider_id: successfulProviderId, duration_ms: providerDuration, data: { provider_order_id: result.id, network, package_size: packageSize, recipient } });
         break; // success — stop trying
       } else {
-        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers
+        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers or Datamart failover
         const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+        const isDatamart = (provider.handler_type || "").toLowerCase() === "datamart";
+        const isTimeoutErr = /statement timeout|DB Proxy failed|timeout/i.test(String(result.reason || ""));
         let newFailures = 0;
         let autoDisable = false;
 
-        if (!isBeneficiaryErr) {
+        if (!isBeneficiaryErr && !isDatamart && !isTimeoutErr) {
           const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", provider.id).maybeSingle();
           newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
           autoDisable = newFailures >= 5 && autoApiSwitch;

@@ -22,7 +22,7 @@ export async function fetchViaDb(
   json: () => Promise<any>;
   headers: Headers;
 }> {
-  if (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com")) {
+  if (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com") || url.includes("datamartgh.shop")) {
     const bridgeUrl = Deno.env.get("KORBA_BRIDGE_URL") || "https://swiftdatagh.shop/api/korba";
     const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
     
