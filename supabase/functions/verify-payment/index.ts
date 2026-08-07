@@ -1447,6 +1447,29 @@ serve(async (req) => {
         }
       }
 
+      // Auto-failover to Datamart for Non-Beneficiary MTN Numbers
+      if (!result.ok && network.toUpperCase().includes("MTN") && /beneficiary/i.test(String(result.reason || ""))) {
+        console.log(`[verify-payment] Beneficiary error from ${provider.name} for ${recipient}: ${result.reason}. Attempting Datamart API failover...`);
+        const { data: dmProvider } = await supabaseAdmin
+          .from("providers")
+          .select("*")
+          .eq("handler_type", "datamart")
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (dmProvider && dmProvider.id !== provider.id) {
+          console.log(`[verify-payment] Routing non-beneficiary order for ${recipient} via ${dmProvider.name} (Datamart API)...`);
+          const dmPayload = buildDataPayload(dmProvider, "MTN");
+          const dmResult = await callProviderApi(supabaseAdmin, dmProvider, dmPayload, "purchase");
+          if (dmResult.ok) {
+            result = dmResult;
+            console.log(`[verify-payment] Datamart API failover SUCCESSFUL for ${recipient}!`);
+          } else {
+            console.error(`[verify-payment] Datamart failover also rejected: ${dmResult.reason}`);
+          }
+        }
+      }
+
       const providerDuration = Date.now() - providerCallStart;
 
       if (result.ok) {

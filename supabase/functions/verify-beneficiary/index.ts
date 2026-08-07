@@ -162,8 +162,22 @@ serve(async (req) => {
       }
     } catch { /* ignore */ }
 
+    // Check if Datamart API failover is available
+    const { data: dmProvider } = await supabaseClient
+      .from("providers")
+      .select("id")
+      .eq("handler_type", "datamart")
+      .eq("is_active", true)
+      .maybeSingle();
+
     return new Response(
-      JSON.stringify({ success: true, exists: false, error: "Not on beneficiary list", message: errorMessage }),
+      JSON.stringify({ 
+        success: true, 
+        exists: false, 
+        failover_available: !!dmProvider,
+        error: "Not on beneficiary list", 
+        message: `${errorMessage}. Auto-failover to Datamart Instant API available.` 
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

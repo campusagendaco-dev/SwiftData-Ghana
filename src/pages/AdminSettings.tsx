@@ -26,6 +26,7 @@ interface SystemSettings {
   auto_gateway_switch_by_package?: boolean;
   beneficiary_verification_enabled?: boolean;
   allow_non_beneficiary_continue?: boolean;
+  auto_failover_non_beneficiary_to_datamart?: boolean;
   holiday_mode_enabled: boolean;
   holiday_message: string;
   disable_ordering: boolean;
@@ -863,6 +864,21 @@ const AdminSettings = () => {
                 <Switch
                   checked={settings.allow_non_beneficiary_continue !== false}
                   onCheckedChange={(c) => setSettings({ ...settings, allow_non_beneficiary_continue: c })}
+                />
+              </div>
+
+              <div className="flex items-start justify-between border-t border-white/5 pt-4">
+                <div className="space-y-0.5">
+                  <Label className="text-amber-400 font-semibold flex items-center gap-1.5">
+                    ⚡ Auto-Route Non-Beneficiary MTN Numbers to Datamart API
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Automatically route MTN orders for numbers NOT on the DataHub beneficiary list directly to Datamart API for instant delivery.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.auto_failover_non_beneficiary_to_datamart !== false}
+                  onCheckedChange={(c) => setSettings({ ...settings, auto_failover_non_beneficiary_to_datamart: c })}
                 />
               </div>
 
