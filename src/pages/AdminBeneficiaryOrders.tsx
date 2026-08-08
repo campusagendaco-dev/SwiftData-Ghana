@@ -60,6 +60,44 @@ export default function AdminBeneficiaryOrders() {
   // Processing Action States
   const [processingBatch, setProcessingBatch] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [routingDatamart, setRoutingDatamart] = useState(false);
+
+  const handleRouteAllToDatamart = async () => {
+    if (!confirm(`Are you sure you want to FORCE-ROUTE all ${allBeneficiaryOrders.length} non-beneficiary orders directly to Datamart API?`)) {
+      return;
+    }
+
+    setRoutingDatamart(true);
+    toast({ title: "Routing Orders to Datamart API...", description: "Connecting to Datamart API and submitting orders..." });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("route-to-datamart", {
+        body: { target: "all_beneficiary" }
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "Datamart Routing Failed",
+          description: error?.message || data?.error || "Could not route orders to Datamart API",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Datamart Routing Complete! ⚡",
+          description: data.message || `Successfully routed ${data.routedCount || 0} orders to Datamart API.`,
+        });
+        fetchBeneficiaryOrders();
+      }
+    } catch (err: any) {
+      toast({
+        title: "Routing Error",
+        description: err.message || "Failed to call Datamart API router",
+        variant: "destructive"
+      });
+    } finally {
+      setRoutingDatamart(false);
+    }
+  };
 
   const fetchBeneficiaryOrders = useCallback(async () => {
     setLoading(true);
@@ -419,6 +457,17 @@ export default function AdminBeneficiaryOrders() {
 
           {/* Touch-Optimized Action Button Grid */}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
+            <Button
+              variant="default"
+              size="lg"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-white font-extrabold rounded-2xl shadow-lg shadow-amber-950/30 transition-all active:scale-95 text-xs sm:text-sm border border-amber-400/40"
+              onClick={handleRouteAllToDatamart}
+              disabled={routingDatamart || loading || allBeneficiaryOrders.length === 0}
+            >
+              {routingDatamart ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 fill-amber-200 text-amber-200 animate-pulse" />}
+              ⚡ Route All to Datamart API ({allBeneficiaryOrders.length})
+            </Button>
+
             <Button
               variant="default"
               size="lg"

@@ -84,6 +84,50 @@ const AdminOrders = () => {
   const [retryingAll, setRetryingAll] = useState(false);
   const [forcingFulfill, setForcingFulfill] = useState(false);
   const [healingProcessing, setHealingProcessing] = useState(false);
+  const [routingDatamart, setRoutingDatamart] = useState(false);
+
+  const handleRouteAllToDatamart = async () => {
+    const candidateOrders = selectedOrders.length > 0
+      ? selectedOrders
+      : allOrders.filter(o => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").map(o => o.id);
+
+    if (candidateOrders.length === 0) {
+      toast({ title: "No Orders to Route", description: "No eligible pending/failed orders found to route." });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to FORCE-ROUTE ${candidateOrders.length} orders directly to Datamart API?`)) {
+      return;
+    }
+
+    setRoutingDatamart(true);
+    toast({ title: "Routing to Datamart API...", description: `Submitting ${candidateOrders.length} orders to Datamart API...` });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("route-to-datamart", {
+        body: { order_ids: candidateOrders }
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "Datamart Routing Failed",
+          description: error?.message || data?.error || "Could not route orders to Datamart API",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Datamart Routing Complete! ⚡",
+          description: data.message || `Successfully routed ${data.routedCount || 0} orders to Datamart API.`,
+        });
+        await fetchOrders();
+      }
+    } catch (e: any) {
+      toast({ title: "Routing error", description: e.message, variant: "destructive" });
+    }
+    setRoutingDatamart(false);
+  };
+
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [sendingLiveSms, setSendingLiveSms] = useState(false);
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -643,6 +687,15 @@ const AdminOrders = () => {
               </Button>
             </>
           )}
+          <Button
+            size="sm"
+            className="gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold shadow-md shadow-amber-950/20 border border-amber-400/40"
+            onClick={handleRouteAllToDatamart}
+            disabled={routingDatamart}
+          >
+            {routingDatamart ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 fill-amber-200 text-amber-200" />}
+            ⚡ Route to Datamart API
+          </Button>
           <Button
             size="sm"
             className="gap-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20"
