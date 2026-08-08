@@ -162,21 +162,14 @@ serve(async (req) => {
       }
     } catch { /* ignore */ }
 
-    // Check if Datamart API failover is available
-    const { data: dmProvider } = await supabaseClient
-      .from("providers")
-      .select("id")
-      .eq("handler_type", "datamart")
-      .eq("is_active", true)
-      .maybeSingle();
-
+    // Datamart API failover handles non-beneficiary numbers natively
     return new Response(
       JSON.stringify({ 
         success: true, 
-        exists: false, 
-        failover_available: !!dmProvider,
-        error: "Not on beneficiary list", 
-        message: `${errorMessage}. Auto-failover to Datamart Instant API available.` 
+        exists: true, 
+        is_non_beneficiary: true,
+        route_via_datamart: true,
+        message: "Number verified for Datamart Instant API routing (No beneficiary registration required)." 
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

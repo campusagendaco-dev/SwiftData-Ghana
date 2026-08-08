@@ -387,20 +387,16 @@ serve(async (req: Request) => {
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
-    // --- Secure MTN Beneficiary Whitelist Enforcement ---
+    // --- Secure MTN Beneficiary Whitelist & Datamart Failover Routing ---
     if (orderType === "data" && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {
         const check = await checkBeneficiaryBackend(supabaseAdmin, customerPhone, networkName);
         if (!check.ok) {
-          console.warn(`[BENEFICIARY_BLOCKED] Blocked checkout for unverified MTN number: ${customerPhone}`);
-          return new Response(JSON.stringify({
-            error: check.reason || "This number is not added to our beneficiary list. Orders to it are currently blocked. Please use a verified number."
-          }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          });
+          console.warn(`[BENEFICIARY_FAILOVER] MTN number ${customerPhone} is not on DataHub list (${check.reason}). Flagging for Datamart API failover...`);
+          metadata.bypass_beneficiary = true;
+          metadata.route_via_datamart = true;
         }
       }
     }
