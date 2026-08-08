@@ -11,7 +11,7 @@ import {
   TrendingUp, ShoppingCart, AlertTriangle, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
-  Coins, ShieldAlert, Send,
+  Coins, ShieldAlert, Send, Zap,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
