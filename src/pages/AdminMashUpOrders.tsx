@@ -827,7 +827,8 @@ const AdminMashUpOrders = () => {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right hidden lg:table-cell">
-                    {(order.order_type === "api" ? Number(order.parent_profit) : (Number(order.profit) + Number(order.parent_profit))) > 0 ? (
+                    {(order.status === "fulfilled" || order.status === "completed") &&
+                    (order.order_type === "api" ? Number(order.parent_profit) : (Number(order.profit) + Number(order.parent_profit))) > 0 ? (
                       <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                         +GH₵{(order.order_type === "api" ? Number(order.parent_profit) : (Number(order.profit) + Number(order.parent_profit))).toFixed(2)}
                       </span>

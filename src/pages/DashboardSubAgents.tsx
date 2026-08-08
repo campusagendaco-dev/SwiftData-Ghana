@@ -687,7 +687,7 @@ const DashboardSubAgents = () => {
                             <td className="px-4 py-2.5 text-xs">{order.network} {order.package_size}</td>
                             <td className="px-4 py-2.5 text-xs font-bold text-right">GH₵{Number(order.amount).toFixed(2)}</td>
                             <td className="px-4 py-2.5 text-right">
-                              {Number(order.parent_profit) > 0
+                              {(order.status === "fulfilled" || order.status === "completed") && Number(order.parent_profit) > 0
                                 ? <span className="text-xs font-bold text-emerald-500">+GH₵{Number(order.parent_profit).toFixed(2)}</span>
                                 : <span className="text-xs text-muted-foreground">—</span>}
                             </td>
@@ -726,7 +726,7 @@ const DashboardSubAgents = () => {
                         </div>
                         <div className="text-right">
                           <p className="font-black text-foreground">GH₵{Number(order.amount).toFixed(2)}</p>
-                          {Number(order.parent_profit) > 0 && (
+                          {(order.status === "fulfilled" || order.status === "completed") && Number(order.parent_profit) > 0 && (
                             <span className="text-[10px] font-bold text-emerald-500">+GH₵{Number(order.parent_profit).toFixed(2)} profit</span>
                           )}
                         </div>

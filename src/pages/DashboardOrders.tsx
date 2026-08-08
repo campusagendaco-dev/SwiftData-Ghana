@@ -736,7 +736,8 @@ const DashboardOrders = () => {
                     <div className="text-right shrink-0 flex items-center gap-2">
                       <div>
                         <p className={cn("font-bold text-sm", isDark ? "text-white" : "text-gray-900")}>GH₵ {Number(order.amount).toFixed(2)}</p>
-                        {((order.order_type === "api" ? 0 : Number(order.profit)) > 0 || Number(order.parent_profit) > 0) && (
+                        {(order.status === "fulfilled" || order.status === "completed") &&
+                        ((order.order_type === "api" ? 0 : Number(order.profit)) > 0 || Number(order.parent_profit) > 0) && (
                           <div className="flex items-center justify-end gap-1 mt-0.5">
                             <span className={`w-1.5 h-1.5 rounded-full ${ds.dot} ${ds.spinning ? "animate-pulse" : ""}`} />
                             <span className="text-[11px] text-primary font-semibold">
