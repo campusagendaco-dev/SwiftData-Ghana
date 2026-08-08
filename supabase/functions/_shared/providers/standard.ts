@@ -109,6 +109,51 @@ export class StandardAdapter implements ProviderAdapter {
 
     // --- Purchase Payload Resolutions ---
 
+    if (handlerType === "datamart") {
+      const recipient = String(data.phoneNumber || data.recipient || data.phone || "");
+      const rawNet = String(data.network || data.networkRaw || data.networkKey || "").toUpperCase();
+      const datamartNet = (rawNet.includes("MTN") || rawNet === "YELLO")
+        ? "YELLO"
+        : ((rawNet.includes("TELECEL") || rawNet.includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
+
+      const pkgSize = String(data.package_size || data.plan || data.capacity || "");
+      const capNum = parseCapacity(pkgSize);
+
+      let externalId = data.planId || data.plan || data.bundle || pkgSize;
+
+      if (!data.planId || data.planId === pkgSize) {
+        try {
+          const { data: pkgMapping } = await supabaseAdmin
+            .from("provider_packages")
+            .select("external_id")
+            .eq("provider_id", provider.id)
+            .eq("network", "MTN")
+            .eq("package_name", pkgSize)
+            .maybeSingle();
+          if (pkgMapping?.external_id) {
+            externalId = pkgMapping.external_id;
+          } else if (capNum > 0) {
+            externalId = `MTN_${capNum}`;
+          }
+        } catch (e) {
+          console.error("[datamart-standard-resolve] Error:", e);
+        }
+      }
+
+      return {
+        phoneNumber: recipient,
+        recipient: recipient,
+        network: datamartNet,
+        planId: String(externalId),
+        plan: String(externalId),
+        capacity: String(capNum > 0 ? capNum : pkgSize),
+        orderReference: String(data.orderReference || data.reference || data.order_id || ""),
+        reference: String(data.reference || data.orderReference || data.order_id || ""),
+        gateway: "wallet",
+        bypass_beneficiary: true
+      };
+    }
+
     if (handlerType === "datahub" || handlerType === "spendless") {
       return {
         networkKey: String(data.networkKey || data.networkRaw || ""),
