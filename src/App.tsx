@@ -473,7 +473,7 @@ const AppContent = () => {
         </Route>
 
         {/* Admin dashboard */}
-        <Route path="/admin" element={(isAdminSubdomain || isLocal) ? <AdminGuard><AdminLayout /></AdminGuard> : <Navigate to="/" replace />}>
+        <Route path="/admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
           <Route index element={<AdminOverview />} />
           <Route path="agents" element={<AdminAgents />} />
           <Route path="sub-agents" element={<AdminSubAgents />} />
