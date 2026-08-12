@@ -398,12 +398,12 @@ export default function SubmitBeneficiaryNumbers() {
   }'`;
 
   return (
-    <div className="min-h-screen py-2 sm:py-6 px-2.5 sm:px-6 lg:px-8 max-w-2xl mx-auto space-y-2.5 sm:space-y-6 pb-28 sm:pb-12">
-      {/* ── Ultra-Compact Header Card ── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-3 sm:p-5 border border-amber-500/20 backdrop-blur-xl shadow-sm">
+    <div className="min-h-[calc(100vh-64px)] pt-16 sm:pt-6 pb-20 sm:pb-12 px-2.5 sm:px-6 lg:px-8 max-w-2xl mx-auto space-y-2.5 sm:space-y-6">
+      {/* ── Ultra-Compact Header Card (Clears Fixed Navbar) ── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-2.5 sm:p-5 border border-amber-500/20 backdrop-blur-xl shadow-sm">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-foreground">
+            <h1 className="text-base sm:text-2xl font-black tracking-tight text-foreground">
               Submit Numbers
             </h1>
             <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 text-[9px] sm:text-xs px-2 py-0.2 font-bold">
@@ -432,7 +432,7 @@ export default function SubmitBeneficiaryNumbers() {
 
       {/* ── Main Input Card (Fits 100% on Mobile View) ── */}
       <Card className={cn("border shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
-        <CardHeader className="pb-2 border-b border-white/5 px-3 sm:px-5 pt-3">
+        <CardHeader className="pb-2 border-b border-white/5 px-3 sm:px-5 pt-2.5">
           <div className="flex items-center justify-between">
             <CardTitle className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-1.5">
               <PhoneCall className="w-3.5 h-3.5 text-amber-500" /> Phone numbers
@@ -455,7 +455,7 @@ export default function SubmitBeneficiaryNumbers() {
           </div>
         </CardHeader>
 
-        <CardContent className="p-3 sm:p-5 space-y-3">
+        <CardContent className="p-3 sm:p-5 space-y-2.5">
           {/* Input Textarea - Ultra-Compact on mobile view */}
           <div className="relative">
             <Textarea
@@ -463,7 +463,7 @@ export default function SubmitBeneficiaryNumbers() {
               onChange={(e) => setRawText(e.target.value)}
               placeholder={`0538122730\n0241234567\n0554226398`}
               className={cn(
-                "min-h-[110px] sm:min-h-[200px] font-mono text-xs sm:text-sm rounded-xl p-2.5 sm:p-4 resize-y transition-all border leading-relaxed",
+                "min-h-[90px] sm:min-h-[200px] max-h-[140px] sm:max-h-none font-mono text-xs sm:text-sm rounded-xl p-2.5 sm:p-4 resize-y transition-all border leading-relaxed",
                 isDark
                   ? "bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-amber-500/50"
                   : "bg-slate-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-amber-500"
