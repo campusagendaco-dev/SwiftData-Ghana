@@ -9,20 +9,19 @@ import {
   Check,
   RefreshCw,
   Sparkles,
-  HelpCircle,
-  FileCode2,
   Trash2,
   Terminal,
   ArrowRight,
   UserCheck,
   ShieldCheck,
-  X,
+  PhoneCall,
+  CheckCheck,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -147,6 +146,10 @@ export default function SubmitBeneficiaryNumbers() {
   const handleClear = () => {
     setRawText("");
     setResponseResult(null);
+    toast({
+      title: "Text Cleared",
+      description: "Text area cleared. Ready for new phone numbers.",
+    });
   };
 
   // Step 1: Open Confirmation Modal
@@ -395,54 +398,99 @@ export default function SubmitBeneficiaryNumbers() {
   }'`;
 
   return (
-    <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-8">
-      {/* ── Header Title & Instructions ── */}
+    <div className="min-h-screen py-3 sm:py-8 px-3 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-4 sm:space-y-8 pb-32 sm:pb-12">
+      {/* ── Mobile-Optimized Compact Hero Header ── */}
       <motion.div
         initial={{ opacity: 0, y: -15 }}
         animate={{ opacity: 1, y: 0 }}
-        className="space-y-2"
+        className="space-y-2.5 relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-3.5 sm:p-7 border border-amber-500/20 backdrop-blur-xl shadow-lg"
       >
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            Submit Numbers
-          </h1>
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
+            <Sparkles className="w-3 h-3" /> Fast Beneficiary Approval
+          </div>
+
           {user ? (
-            <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 text-xs">
-              <UserCheck className="w-3.5 h-3.5 mr-1 inline" /> Account User
+            <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] sm:text-xs px-2 py-0.5 font-bold">
+              <UserCheck className="w-3 h-3 mr-1 inline" /> Account Mode
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-amber-500 border-amber-500/30 text-xs">
-              Guest User Mode
+            <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 text-[10px] sm:text-xs px-2 py-0.5 font-bold">
+              Guest Mode
             </Badge>
           )}
         </div>
 
-        <p className={cn("text-sm sm:text-base leading-relaxed max-w-3xl", isDark ? "text-gray-300" : "text-gray-600")}>
-          Paste phone numbers to submit them for approval to be added to our beneficiary list. No verification step — numbers are sent directly. Maximum 500 per request, sent in batches of up to 100.
-        </p>
+        <div className="space-y-1">
+          <h1 className="text-xl sm:text-4xl font-black tracking-tight text-foreground">
+            Submit Numbers
+          </h1>
+          <p className={cn("text-xs sm:text-base leading-relaxed max-w-3xl", isDark ? "text-gray-300" : "text-gray-600")}>
+            Paste phone numbers to submit them for approval to be added to our beneficiary list. Maximum 500 per request, sent in batches of up to 100.
+          </p>
+        </div>
 
-        <p className="text-xs sm:text-sm text-amber-500/90 font-medium">
-          To check whether numbers are already verified, use{" "}
-          <Link to="/dashboard/buy-data/mtn" className="underline hover:text-amber-400 font-semibold">
-            Buy Data → Verify Numbers
-          </Link>
-          .
-        </p>
+        <div className="pt-0.5 flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-500/90 font-semibold">
+          <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            Check verified status:{" "}
+            <Link to="/dashboard/buy-data/mtn" className="underline hover:text-amber-400 font-bold">
+              Buy Data → Verify Numbers
+            </Link>
+          </span>
+        </div>
       </motion.div>
 
-      {/* ── Main Input Card ── */}
+      {/* ── Real-Time Mobile Stat Badges ── */}
+      {rawText.trim() && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs font-semibold"
+        >
+          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
+            <span className="text-muted-foreground text-[10px]">Total Entered</span>
+            <span className={cn("font-mono font-bold text-xs sm:text-sm", parsedData.overLimit ? "text-red-400" : "text-amber-400")}>
+              {parsedData.items.length} / 500
+            </span>
+          </div>
+
+          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
+            <span className="text-muted-foreground text-[10px]">Valid Numbers</span>
+            <span className="font-mono font-bold text-xs sm:text-sm text-emerald-400">
+              {parsedData.valid.length}
+            </span>
+          </div>
+
+          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
+            <span className="text-muted-foreground text-[10px]">Invalid Entries</span>
+            <span className={cn("font-mono font-bold text-xs sm:text-sm", parsedData.invalid.length > 0 ? "text-red-400" : "text-slate-400")}>
+              {parsedData.invalid.length}
+            </span>
+          </div>
+
+          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
+            <span className="text-muted-foreground text-[10px]">Batches</span>
+            <span className="font-mono font-bold text-xs sm:text-sm text-blue-400">
+              {batchCount}
+            </span>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── Main Mobile-Optimized Input Card ── */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className={cn("border shadow-2xl rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300", isDark ? "bg-slate-900/80 border-slate-800" : "bg-white border-gray-200")}>
-          <CardHeader className="pb-3 border-b border-white/5">
+        <Card className={cn("border shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
+          <CardHeader className="pb-2.5 border-b border-white/5 px-3.5 sm:px-6 pt-3.5">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm sm:text-base font-bold text-foreground">
-                Phone numbers
+              <CardTitle className="text-xs sm:text-base font-bold text-foreground flex items-center gap-1.5">
+                <PhoneCall className="w-3.5 h-3.5 text-amber-500" /> Phone numbers
               </CardTitle>
-              <div className="text-xs font-mono font-semibold text-muted-foreground">
+              <div className="text-[11px] sm:text-xs font-mono font-bold text-muted-foreground">
                 <span className={cn(parsedData.overLimit ? "text-red-400" : parsedData.valid.length > 0 ? "text-amber-400 font-bold" : "")}>
                   {parsedData.items.length}
                 </span>{" "}
@@ -451,17 +499,17 @@ export default function SubmitBeneficiaryNumbers() {
             </div>
           </CardHeader>
 
-          <CardContent className="p-5 space-y-5">
-            {/* Input Textarea matching requested layout */}
+          <CardContent className="p-3.5 sm:p-6 space-y-3.5">
+            {/* Input Textarea with responsive min-height */}
             <div className="relative">
               <Textarea
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 placeholder={`0538122730\n0241234567\n0554226398`}
                 className={cn(
-                  "min-h-[220px] font-mono text-sm rounded-xl p-4 resize-y transition-all border leading-relaxed",
+                  "min-h-[140px] sm:min-h-[220px] font-mono text-xs sm:text-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 resize-y transition-all border leading-relaxed",
                   isDark
-                    ? "bg-slate-950/70 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-amber-500/50"
+                    ? "bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-amber-500/50"
                     : "bg-slate-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-amber-500"
                 )}
               />
@@ -469,53 +517,59 @@ export default function SubmitBeneficiaryNumbers() {
               {rawText && (
                 <button
                   onClick={handleClear}
-                  title="Clear numbers"
-                  className="absolute top-3 right-3 p-1.5 rounded-lg bg-gray-500/10 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all"
+                  title="Clear text"
+                  className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-all border border-slate-700/50 shadow-md"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Helper note matching prompt footer */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span>One per line, or separated by commas/spaces. Accepts 0XXXXXXXXX or 233XXXXXXXXX.</span>
-              <div className="flex items-center gap-2">
+            {/* Helper note & Flex-Wrapping Touch Toolbar */}
+            <div className="space-y-2.5">
+              <p className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
+                One per line, or separated by commas/spaces. Accepts 0XXXXXXXXX or 233XXXXXXXXX.
+              </p>
+
+              {/* Flex-Wrapping Touch Action Buttons (Never Overflows) */}
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={handleClear}
                   disabled={!rawText.trim()}
-                  className="h-7 text-xs text-amber-500 hover:bg-amber-500/10 hover:text-amber-400 font-semibold"
+                  className="h-9 px-3 flex-1 min-w-[110px] text-xs font-bold rounded-xl border-amber-500/30 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400 gap-1 transition-all"
                 >
-                  <Trash2 className="w-3.5 h-3.5 mr-1" /> Clean / Clear
+                  <Trash2 className="w-3.5 h-3.5" /> Clean / Clear
                 </Button>
+
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={handleFormat}
                   disabled={!rawText.trim()}
-                  className="h-7 text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+                  className="h-9 px-3 flex-1 min-w-[90px] text-xs font-bold rounded-xl border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white gap-1 transition-all"
                 >
-                  <Sparkles className="w-3.5 h-3.5 mr-1" /> Format
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Format
                 </Button>
+
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={handleLoadSample}
-                  className="h-7 text-xs text-amber-500 hover:bg-amber-500/10"
+                  className="h-9 px-3 text-xs font-bold rounded-xl text-amber-500 hover:bg-amber-500/10 gap-1 shrink-0"
                 >
-                  Load Sample
+                  <Copy className="w-3.5 h-3.5" /> Sample
                 </Button>
               </div>
             </div>
 
             {/* Progress indicator during bulk batching */}
             {loading && progressPercent > 0 && (
-              <div className="space-y-1.5 pt-2">
+              <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between text-xs text-amber-400 font-medium">
                   <span>{currentBatchText}</span>
                   <span>{progressPercent}%</span>
@@ -526,20 +580,20 @@ export default function SubmitBeneficiaryNumbers() {
 
             {/* Validation warning if limit exceeded */}
             {parsedData.overLimit && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>You have entered {parsedData.items.length} numbers. Maximum 500 numbers allowed per submission.</span>
               </div>
             )}
 
-            {/* Submit Button */}
-            <div>
+            {/* Submit Button (Full Width on Mobile with WhatsApp Clearance) */}
+            <div className="pt-1">
               <Button
                 onClick={handleInitiateSubmit}
                 disabled={loading || !rawText.trim() || parsedData.overLimit || parsedData.valid.length === 0}
                 className={cn(
-                  "h-12 px-6 rounded-xl font-bold text-sm shadow-xl gap-2 transition-all duration-300",
-                  "bg-blue-600 hover:bg-blue-700 text-white"
+                  "w-full h-12 rounded-xl sm:rounded-2xl font-extrabold text-xs sm:text-base shadow-xl gap-2 transition-all duration-300 active:scale-[0.98]",
+                  "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white border border-blue-400/30 shadow-blue-950/40"
                 )}
               >
                 {loading ? (
@@ -557,6 +611,28 @@ export default function SubmitBeneficiaryNumbers() {
         </Card>
       </motion.div>
 
+      {/* ── Mobile Sticky Bottom Action CTA Bar (Visible when scrolled with valid input) ── */}
+      {rawText.trim() && parsedData.valid.length > 0 && !loading && (
+        <div className="sm:hidden fixed bottom-3 left-3 right-3 z-40 p-2.5 rounded-2xl bg-slate-950/95 border border-slate-800 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3 animate-in slide-in-from-bottom-5">
+          <div className="pl-1">
+            <div className="text-[11px] font-bold text-slate-300">
+              {parsedData.valid.length} Valid Number{parsedData.valid.length > 1 ? "s" : ""}
+            </div>
+            <div className="text-[10px] text-amber-400 font-mono">
+              {batchCount} batch{batchCount > 1 ? "es" : ""} of 30
+            </div>
+          </div>
+
+          <Button
+            size="sm"
+            onClick={handleInitiateSubmit}
+            className="h-10 px-5 rounded-xl font-extrabold text-xs bg-blue-600 hover:bg-blue-500 text-white gap-1.5 shadow-lg shrink-0"
+          >
+            <Send className="w-3.5 h-3.5" /> Submit Now
+          </Button>
+        </div>
+      )}
+
       {/* ── Response & Output Section ── */}
       <AnimatePresence>
         {responseResult && (
@@ -566,11 +642,11 @@ export default function SubmitBeneficiaryNumbers() {
             exit={{ opacity: 0, y: 20 }}
             className="space-y-6"
           >
-            <Card className={cn("border shadow-2xl rounded-2xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
-              <CardHeader className="pb-3 border-b border-white/5">
+            <Card className={cn("border shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
+              <CardHeader className="pb-3 border-b border-white/5 p-4 sm:p-6">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-amber-500" /> Beneficiary Submission Results
+                  <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-amber-500" /> Submission Results
                   </CardTitle>
                   <Badge variant={responseResult.submitted > 0 ? "default" : "destructive"} className="text-xs px-3 py-1 font-bold">
                     {responseResult.submitted > 0 ? `Submitted (${responseResult.submitted})` : "Failed"}
@@ -578,11 +654,11 @@ export default function SubmitBeneficiaryNumbers() {
                 </div>
               </CardHeader>
 
-              <CardContent className="p-5 space-y-4">
+              <CardContent className="p-4 sm:p-6 space-y-4">
                 {/* Result Message Alert */}
                 <div
                   className={cn(
-                    "p-4 rounded-xl border text-xs sm:text-sm font-medium space-y-1.5",
+                    "p-3.5 sm:p-4 rounded-xl border text-xs sm:text-sm font-medium space-y-1.5",
                     responseResult.submitted > 0
                       ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
                       : "bg-red-500/10 border-red-500/30 text-red-400"
@@ -602,7 +678,7 @@ export default function SubmitBeneficiaryNumbers() {
                 {responseResult.numbers && responseResult.numbers.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-                      <span>Whitelisted Beneficiary Numbers ({responseResult.numbers.length})</span>
+                      <span>Whitelisted Numbers ({responseResult.numbers.length})</span>
                       <button
                         onClick={() => copyToClipboard(responseResult.numbers.join("\n"), "all-submitted")}
                         className="text-amber-500 hover:underline flex items-center gap-1 text-xs"
@@ -611,7 +687,7 @@ export default function SubmitBeneficiaryNumbers() {
                       </button>
                     </div>
 
-                    <div className="max-h-56 overflow-y-auto rounded-xl border p-3 bg-black/30 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    <div className="max-h-56 overflow-y-auto rounded-xl border p-2.5 bg-black/30 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                       {responseResult.numbers.map((num, idx) => (
                         <div key={idx} className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono bg-white/5 border border-white/5">
                           <span>{num}</span>
@@ -626,7 +702,7 @@ export default function SubmitBeneficiaryNumbers() {
                 {responseResult.invalid && responseResult.invalid.length > 0 && (
                   <div className="space-y-2 pt-2 border-t border-white/5">
                     <span className="text-xs font-semibold text-red-400">
-                      Invalid / Rejected Entries ({responseResult.invalid.length})
+                      Invalid Entries ({responseResult.invalid.length})
                     </span>
                     <div className="max-h-36 overflow-y-auto rounded-xl border border-red-500/20 p-2 bg-red-500/5 space-y-1">
                       {responseResult.invalid.map((num, idx) => (
@@ -650,35 +726,35 @@ export default function SubmitBeneficiaryNumbers() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <Card className={cn("border shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
-          <CardHeader className="pb-3 border-b border-white/5">
+        <Card className={cn("border shadow-xl rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
+          <CardHeader className="pb-3 border-b border-white/5 p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base font-bold flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-amber-500" /> Developer API Endpoint
+                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-amber-500" /> Developer API
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Automate bulk beneficiary submissions via standard HTTP REST requests.
+                  Automate bulk beneficiary submissions via REST HTTP calls.
                 </CardDescription>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => copyToClipboard(curlExample, "curl-code")}
-                className="text-xs gap-1.5 text-amber-500 hover:bg-amber-500/10"
+                className="text-xs gap-1.5 text-amber-500 hover:bg-amber-500/10 h-8"
               >
                 {copiedIndex === "curl-code" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />} Copy cURL
               </Button>
             </div>
           </CardHeader>
 
-          <CardContent className="p-5 space-y-4">
-            <pre className="p-4 rounded-xl font-mono text-[11px] sm:text-xs overflow-x-auto bg-slate-950 text-slate-100 border border-slate-800 leading-relaxed">
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            <pre className="p-3.5 sm:p-4 rounded-xl font-mono text-[11px] sm:text-xs overflow-x-auto bg-slate-950 text-slate-100 border border-slate-800 leading-relaxed">
               {curlExample}
             </pre>
 
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground pt-1">
-              <span>Endpoint: <code className="text-amber-400 font-mono">POST /purchases/submit-numbers</code> (Headers: <code className="text-amber-400 font-mono">X-API-Key</code>)</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
+              <span>Endpoint: <code className="text-amber-400 font-mono">POST /purchases/submit-numbers</code></span>
               <Link to="/api-docs" className="text-amber-500 hover:underline flex items-center gap-1 font-semibold">
                 API Documentation <ArrowRight className="w-3.5 h-3.5" />
               </Link>
@@ -687,14 +763,14 @@ export default function SubmitBeneficiaryNumbers() {
         </Card>
       </motion.div>
 
-      {/* ── 1. CONFIRMATION DIALOG MODAL (matching screenshot 1) ── */}
+      {/* ── 1. CONFIRMATION DIALOG MODAL (Mobile Responsive) ── */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className={cn("sm:max-w-md border shadow-2xl rounded-2xl p-6", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
-          <DialogHeader className="space-y-3">
-            <DialogTitle className="text-xl font-extrabold text-white">
+        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl sm:rounded-3xl p-5 sm:p-6", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
+          <DialogHeader className="space-y-2.5">
+            <DialogTitle className="text-lg sm:text-xl font-extrabold text-white">
               Submit for approval?
             </DialogTitle>
-            <DialogDescription className="text-sm text-slate-300 leading-relaxed">
+            <DialogDescription className="text-xs sm:text-sm text-slate-300 leading-relaxed">
               You are about to submit <strong className="text-white font-bold">{parsedData.valid.length}</strong> numbers for approval to be added to our beneficiary list.
             </DialogDescription>
           </DialogHeader>
@@ -703,12 +779,12 @@ export default function SubmitBeneficiaryNumbers() {
             This will be sent in <strong className="text-white font-bold">{batchCount}</strong> batch{batchCount > 1 ? "es" : ""} of up to 100.
           </p>
 
-          <div className="flex items-center justify-end gap-3 pt-4">
+          <div className="flex items-center justify-end gap-2.5 pt-4">
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowConfirmModal(false)}
-              className="px-5 py-2 rounded-xl text-xs font-semibold bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="h-10 px-4 rounded-xl text-xs font-semibold bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
             >
               Cancel
             </Button>
@@ -716,7 +792,7 @@ export default function SubmitBeneficiaryNumbers() {
             <Button
               type="button"
               onClick={handleConfirmSubmit}
-              className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-2 shadow-lg"
+              className="h-10 px-5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-2 shadow-lg"
             >
               <Send className="w-3.5 h-3.5" /> Continue
             </Button>
@@ -724,19 +800,19 @@ export default function SubmitBeneficiaryNumbers() {
         </DialogContent>
       </Dialog>
 
-      {/* ── 2. COMPLETION DIALOG MODAL (matching screenshot 2) ── */}
+      {/* ── 2. COMPLETION DIALOG MODAL (Mobile Responsive) ── */}
       <Dialog open={showCompleteModal} onOpenChange={setShowCompleteModal}>
-        <DialogContent className={cn("sm:max-w-md border shadow-2xl rounded-2xl p-6 space-y-4", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
+        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl sm:rounded-3xl p-5 sm:p-6 space-y-4", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
           <div className="flex items-start gap-3">
-            <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">
-              <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+            <div className="p-1.5 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">
+              <CheckCircle2 className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-400" />
             </div>
 
-            <div className="space-y-1.5">
-              <DialogTitle className="text-xl font-extrabold text-white">
+            <div className="space-y-1">
+              <DialogTitle className="text-lg sm:text-xl font-extrabold text-white">
                 Submission complete
               </DialogTitle>
-              <DialogDescription className="text-sm font-medium text-emerald-400 leading-snug">
+              <DialogDescription className="text-xs sm:text-sm font-semibold text-emerald-400 leading-snug">
                 Submitted {responseResult?.submitted ?? parsedData.valid.length} number(s) for approval in {batchCount} batch{batchCount > 1 ? "es" : ""}.
               </DialogDescription>
             </div>
@@ -746,11 +822,11 @@ export default function SubmitBeneficiaryNumbers() {
             Batches completed: {batchCount}/{batchCount}
           </p>
 
-          <div className="flex items-center justify-end pt-3">
+          <div className="flex items-center justify-end pt-2">
             <Button
               type="button"
               onClick={() => setShowCompleteModal(false)}
-              className="px-6 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
+              className="h-10 px-6 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
             >
               Done
             </Button>
