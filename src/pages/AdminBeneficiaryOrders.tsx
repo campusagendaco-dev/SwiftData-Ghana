@@ -542,6 +542,17 @@ export default function AdminBeneficiaryOrders() {
               asChild
               variant="default"
               size="lg"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-extrabold rounded-2xl shadow-lg shadow-blue-950/30 transition-all active:scale-95 text-xs sm:text-sm border border-blue-400/40"
+            >
+              <Link to="/admin/submitted-numbers">
+                <Phone className="w-4 h-4" /> All Submitted Numbers Page
+              </Link>
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="lg"
               className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-white font-extrabold rounded-2xl shadow-lg shadow-amber-950/30 transition-all active:scale-95 text-xs sm:text-sm border border-amber-400/40"
             >
               <Link to="/submit-numbers">
