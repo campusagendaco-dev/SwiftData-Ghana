@@ -15,8 +15,7 @@ import {
   UserCheck,
   ShieldCheck,
   PhoneCall,
-  CheckCheck,
-  Layers,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -70,6 +69,7 @@ export default function SubmitBeneficiaryNumbers() {
   const [progressPercent, setProgressPercent] = useState(0);
   const [currentBatchText, setCurrentBatchText] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
+  const [showApiDocs, setShowApiDocs] = useState(false);
 
   // Dialog Modals state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -398,267 +398,197 @@ export default function SubmitBeneficiaryNumbers() {
   }'`;
 
   return (
-    <div className="min-h-screen py-3 sm:py-8 px-3 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-4 sm:space-y-8 pb-32 sm:pb-12">
-      {/* ── Mobile-Optimized Compact Hero Header ── */}
-      <motion.div
-        initial={{ opacity: 0, y: -15 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="space-y-2.5 relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-3.5 sm:p-7 border border-amber-500/20 backdrop-blur-xl shadow-lg"
-      >
+    <div className="min-h-screen py-2 sm:py-6 px-2.5 sm:px-6 lg:px-8 max-w-2xl mx-auto space-y-2.5 sm:space-y-6 pb-28 sm:pb-12">
+      {/* ── Ultra-Compact Header Card ── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-3 sm:p-5 border border-amber-500/20 backdrop-blur-xl shadow-sm">
         <div className="flex items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-extrabold bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400">
-            <Sparkles className="w-3 h-3" /> Fast Beneficiary Approval
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight text-foreground">
+              Submit Numbers
+            </h1>
+            <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 text-[9px] sm:text-xs px-2 py-0.2 font-bold">
+              Beneficiary Approval
+            </Badge>
           </div>
 
           {user ? (
-            <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[10px] sm:text-xs px-2 py-0.5 font-bold">
-              <UserCheck className="w-3 h-3 mr-1 inline" /> Account Mode
+            <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 bg-emerald-500/10 text-[9px] px-2 py-0.2 font-bold">
+              Account
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 text-[10px] sm:text-xs px-2 py-0.5 font-bold">
-              Guest Mode
+            <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10 text-[9px] px-2 py-0.2 font-bold">
+              Guest
             </Badge>
           )}
         </div>
 
-        <div className="space-y-1">
-          <h1 className="text-xl sm:text-4xl font-black tracking-tight text-foreground">
-            Submit Numbers
-          </h1>
-          <p className={cn("text-xs sm:text-base leading-relaxed max-w-3xl", isDark ? "text-gray-300" : "text-gray-600")}>
-            Paste phone numbers to submit them for approval to be added to our beneficiary list. Maximum 500 per request, sent in batches of up to 100.
-          </p>
-        </div>
+        <p className={cn("text-[11px] sm:text-xs leading-snug mt-1", isDark ? "text-gray-300" : "text-gray-600")}>
+          Paste numbers to submit for beneficiary whitelisting. Max 500 per request. Check status:{" "}
+          <Link to="/dashboard/buy-data/mtn" className="underline text-amber-400 font-bold">
+            Verify Numbers
+          </Link>
+        </p>
+      </div>
 
-        <div className="pt-0.5 flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-500/90 font-semibold">
-          <PhoneCall className="w-3.5 h-3.5 shrink-0" />
-          <span>
-            Check verified status:{" "}
-            <Link to="/dashboard/buy-data/mtn" className="underline hover:text-amber-400 font-bold">
-              Buy Data → Verify Numbers
-            </Link>
-          </span>
-        </div>
-      </motion.div>
+      {/* ── Main Input Card (Fits 100% on Mobile View) ── */}
+      <Card className={cn("border shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
+        <CardHeader className="pb-2 border-b border-white/5 px-3 sm:px-5 pt-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-1.5">
+              <PhoneCall className="w-3.5 h-3.5 text-amber-500" /> Phone numbers
+            </CardTitle>
 
-      {/* ── Real-Time Mobile Stat Badges ── */}
-      {rawText.trim() && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs font-semibold"
-        >
-          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
-            <span className="text-muted-foreground text-[10px]">Total Entered</span>
-            <span className={cn("font-mono font-bold text-xs sm:text-sm", parsedData.overLimit ? "text-red-400" : "text-amber-400")}>
-              {parsedData.items.length} / 500
-            </span>
-          </div>
-
-          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
-            <span className="text-muted-foreground text-[10px]">Valid Numbers</span>
-            <span className="font-mono font-bold text-xs sm:text-sm text-emerald-400">
-              {parsedData.valid.length}
-            </span>
-          </div>
-
-          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
-            <span className="text-muted-foreground text-[10px]">Invalid Entries</span>
-            <span className={cn("font-mono font-bold text-xs sm:text-sm", parsedData.invalid.length > 0 ? "text-red-400" : "text-slate-400")}>
-              {parsedData.invalid.length}
-            </span>
-          </div>
-
-          <div className={cn("p-2 rounded-xl border flex items-center justify-between", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
-            <span className="text-muted-foreground text-[10px]">Batches</span>
-            <span className="font-mono font-bold text-xs sm:text-sm text-blue-400">
-              {batchCount}
-            </span>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Main Mobile-Optimized Input Card ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-      >
-        <Card className={cn("border shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-300", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
-          <CardHeader className="pb-2.5 border-b border-white/5 px-3.5 sm:px-6 pt-3.5">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs sm:text-base font-bold text-foreground flex items-center gap-1.5">
-                <PhoneCall className="w-3.5 h-3.5 text-amber-500" /> Phone numbers
-              </CardTitle>
-              <div className="text-[11px] sm:text-xs font-mono font-bold text-muted-foreground">
+            <div className="flex items-center gap-2">
+              {rawText.trim() && (
+                <div className="flex items-center gap-1 text-[10px] font-mono font-bold">
+                  <span className="text-emerald-400">{parsedData.valid.length} Valid</span>
+                  {parsedData.invalid.length > 0 && <span className="text-red-400">• {parsedData.invalid.length} Invalid</span>}
+                </div>
+              )}
+              <div className="text-[11px] font-mono font-bold text-muted-foreground bg-slate-800/60 px-2 py-0.5 rounded-lg border border-slate-700/40">
                 <span className={cn(parsedData.overLimit ? "text-red-400" : parsedData.valid.length > 0 ? "text-amber-400 font-bold" : "")}>
                   {parsedData.items.length}
                 </span>{" "}
                 / 500
               </div>
             </div>
-          </CardHeader>
+          </div>
+        </CardHeader>
 
-          <CardContent className="p-3.5 sm:p-6 space-y-3.5">
-            {/* Input Textarea with responsive min-height */}
-            <div className="relative">
-              <Textarea
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder={`0538122730\n0241234567\n0554226398`}
-                className={cn(
-                  "min-h-[140px] sm:min-h-[220px] font-mono text-xs sm:text-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 resize-y transition-all border leading-relaxed",
-                  isDark
-                    ? "bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-amber-500/50"
-                    : "bg-slate-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-amber-500"
-                )}
-              />
-
-              {rawText && (
-                <button
-                  onClick={handleClear}
-                  title="Clear text"
-                  className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-all border border-slate-700/50 shadow-md"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+        <CardContent className="p-3 sm:p-5 space-y-3">
+          {/* Input Textarea - Ultra-Compact on mobile view */}
+          <div className="relative">
+            <Textarea
+              value={rawText}
+              onChange={(e) => setRawText(e.target.value)}
+              placeholder={`0538122730\n0241234567\n0554226398`}
+              className={cn(
+                "min-h-[110px] sm:min-h-[200px] font-mono text-xs sm:text-sm rounded-xl p-2.5 sm:p-4 resize-y transition-all border leading-relaxed",
+                isDark
+                  ? "bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-amber-500/50"
+                  : "bg-slate-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-amber-500"
               )}
-            </div>
+            />
 
-            {/* Helper note & Flex-Wrapping Touch Toolbar */}
-            <div className="space-y-2.5">
-              <p className="text-[10px] sm:text-xs text-muted-foreground leading-tight">
-                One per line, or separated by commas/spaces. Accepts 0XXXXXXXXX or 233XXXXXXXXX.
-              </p>
-
-              {/* Flex-Wrapping Touch Action Buttons (Never Overflows) */}
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleClear}
-                  disabled={!rawText.trim()}
-                  className="h-9 px-3 flex-1 min-w-[110px] text-xs font-bold rounded-xl border-amber-500/30 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400 gap-1 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Clean / Clear
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleFormat}
-                  disabled={!rawText.trim()}
-                  className="h-9 px-3 flex-1 min-w-[90px] text-xs font-bold rounded-xl border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white gap-1 transition-all"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Format
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLoadSample}
-                  className="h-9 px-3 text-xs font-bold rounded-xl text-amber-500 hover:bg-amber-500/10 gap-1 shrink-0"
-                >
-                  <Copy className="w-3.5 h-3.5" /> Sample
-                </Button>
-              </div>
-            </div>
-
-            {/* Progress indicator during bulk batching */}
-            {loading && progressPercent > 0 && (
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between text-xs text-amber-400 font-medium">
-                  <span>{currentBatchText}</span>
-                  <span>{progressPercent}%</span>
-                </div>
-                <Progress value={progressPercent} className="h-2 bg-slate-800" />
-              </div>
-            )}
-
-            {/* Validation warning if limit exceeded */}
-            {parsedData.overLimit && (
-              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>You have entered {parsedData.items.length} numbers. Maximum 500 numbers allowed per submission.</span>
-              </div>
-            )}
-
-            {/* Submit Button (Full Width on Mobile with WhatsApp Clearance) */}
-            <div className="pt-1">
-              <Button
-                onClick={handleInitiateSubmit}
-                disabled={loading || !rawText.trim() || parsedData.overLimit || parsedData.valid.length === 0}
-                className={cn(
-                  "w-full h-12 rounded-xl sm:rounded-2xl font-extrabold text-xs sm:text-base shadow-xl gap-2 transition-all duration-300 active:scale-[0.98]",
-                  "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white border border-blue-400/30 shadow-blue-950/40"
-                )}
+            {rawText && (
+              <button
+                onClick={handleClear}
+                title="Clear text"
+                className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 text-slate-300 hover:text-red-400 transition-all border border-slate-700/50 shadow-sm"
               >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" /> Submitting numbers...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" /> Submit numbers for approval
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
-      {/* ── Mobile Sticky Bottom Action CTA Bar (Visible when scrolled with valid input) ── */}
-      {rawText.trim() && parsedData.valid.length > 0 && !loading && (
-        <div className="sm:hidden fixed bottom-3 left-3 right-3 z-40 p-2.5 rounded-2xl bg-slate-950/95 border border-slate-800 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3 animate-in slide-in-from-bottom-5">
-          <div className="pl-1">
-            <div className="text-[11px] font-bold text-slate-300">
-              {parsedData.valid.length} Valid Number{parsedData.valid.length > 1 ? "s" : ""}
-            </div>
-            <div className="text-[10px] text-amber-400 font-mono">
-              {batchCount} batch{batchCount > 1 ? "es" : ""} of 30
+          {/* Action Toolbar Pills */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-muted-foreground truncate max-w-[140px] sm:max-w-none">
+              One per line or comma separated.
+            </span>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleClear}
+                disabled={!rawText.trim()}
+                className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-amber-500/30 text-amber-500 hover:bg-amber-500/10 gap-1"
+              >
+                <Trash2 className="w-3 h-3" /> Clear
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleFormat}
+                disabled={!rawText.trim()}
+                className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white gap-1"
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" /> Format
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleLoadSample}
+                className="h-8 px-2 text-[11px] font-bold rounded-lg text-amber-500 hover:bg-amber-500/10"
+              >
+                Sample
+              </Button>
             </div>
           </div>
 
-          <Button
-            size="sm"
-            onClick={handleInitiateSubmit}
-            className="h-10 px-5 rounded-xl font-extrabold text-xs bg-blue-600 hover:bg-blue-500 text-white gap-1.5 shadow-lg shrink-0"
-          >
-            <Send className="w-3.5 h-3.5" /> Submit Now
-          </Button>
-        </div>
-      )}
+          {/* Progress indicator during bulk batching */}
+          {loading && progressPercent > 0 && (
+            <div className="space-y-1 pt-1">
+              <div className="flex items-center justify-between text-xs text-amber-400 font-medium">
+                <span>{currentBatchText}</span>
+                <span>{progressPercent}%</span>
+              </div>
+              <Progress value={progressPercent} className="h-1.5 bg-slate-800" />
+            </div>
+          )}
+
+          {/* Validation warning if limit exceeded */}
+          {parsedData.overLimit && (
+            <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>Limit exceeded: Max 500 numbers (got {parsedData.items.length}).</span>
+            </div>
+          )}
+
+          {/* Submit Button (Full Width Mobile CTA) */}
+          <div className="pt-1">
+            <Button
+              onClick={handleInitiateSubmit}
+              disabled={loading || !rawText.trim() || parsedData.overLimit || parsedData.valid.length === 0}
+              className={cn(
+                "w-full h-11 sm:h-12 rounded-xl font-extrabold text-xs sm:text-sm shadow-lg gap-2 transition-all active:scale-[0.98]",
+                "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white border border-blue-400/30 shadow-blue-950/40"
+              )}
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Submitting...
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" /> Submit numbers for approval
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Response & Output Section ── */}
       <AnimatePresence>
         {responseResult && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="space-y-6"
+            exit={{ opacity: 0, y: 15 }}
           >
-            <Card className={cn("border shadow-2xl rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
-              <CardHeader className="pb-3 border-b border-white/5 p-4 sm:p-6">
+            <Card className={cn("border shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
+              <CardHeader className="pb-2 border-b border-white/5 p-3.5 sm:p-5">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-amber-500" /> Submission Results
+                  <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-500" /> Submission Results
                   </CardTitle>
-                  <Badge variant={responseResult.submitted > 0 ? "default" : "destructive"} className="text-xs px-3 py-1 font-bold">
+                  <Badge variant={responseResult.submitted > 0 ? "default" : "destructive"} className="text-[10px] px-2 py-0.5 font-bold">
                     {responseResult.submitted > 0 ? `Submitted (${responseResult.submitted})` : "Failed"}
                   </Badge>
                 </div>
               </CardHeader>
 
-              <CardContent className="p-4 sm:p-6 space-y-4">
-                {/* Result Message Alert */}
+              <CardContent className="p-3.5 sm:p-5 space-y-3">
                 <div
                   className={cn(
-                    "p-3.5 sm:p-4 rounded-xl border text-xs sm:text-sm font-medium space-y-1.5",
+                    "p-3 rounded-xl border text-xs font-medium space-y-1",
                     responseResult.submitted > 0
                       ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
                       : "bg-red-500/10 border-red-500/30 text-red-400"
@@ -674,41 +604,23 @@ export default function SubmitBeneficiaryNumbers() {
                   </div>
                 </div>
 
-                {/* Submitted List */}
                 {responseResult.numbers && responseResult.numbers.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
                       <span>Whitelisted Numbers ({responseResult.numbers.length})</span>
                       <button
                         onClick={() => copyToClipboard(responseResult.numbers.join("\n"), "all-submitted")}
-                        className="text-amber-500 hover:underline flex items-center gap-1 text-xs"
+                        className="text-amber-500 hover:underline flex items-center gap-1 text-[11px]"
                       >
-                        {copiedIndex === "all-submitted" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />} Copy List
+                        {copiedIndex === "all-submitted" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copy List
                       </button>
                     </div>
 
-                    <div className="max-h-56 overflow-y-auto rounded-xl border p-2.5 bg-black/30 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    <div className="max-h-44 overflow-y-auto rounded-xl border p-2 bg-black/30 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {responseResult.numbers.map((num, idx) => (
-                        <div key={idx} className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-mono bg-white/5 border border-white/5">
+                        <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] font-mono bg-white/5 border border-white/5">
                           <span>{num}</span>
-                          <span className="text-[10px] text-emerald-400 font-bold uppercase">Submitted</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Invalid List */}
-                {responseResult.invalid && responseResult.invalid.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-white/5">
-                    <span className="text-xs font-semibold text-red-400">
-                      Invalid Entries ({responseResult.invalid.length})
-                    </span>
-                    <div className="max-h-36 overflow-y-auto rounded-xl border border-red-500/20 p-2 bg-red-500/5 space-y-1">
-                      {responseResult.invalid.map((num, idx) => (
-                        <div key={idx} className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-mono text-red-400">
-                          <span>{num}</span>
-                          <span className="text-[10px] text-red-400/70">Invalid phone format</span>
+                          <span className="text-[9px] text-emerald-400 font-bold uppercase">Submitted</span>
                         </div>
                       ))}
                     </div>
@@ -720,71 +632,73 @@ export default function SubmitBeneficiaryNumbers() {
         )}
       </AnimatePresence>
 
-      {/* ── Developer API Integration Preview ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <Card className={cn("border shadow-xl rounded-2xl sm:rounded-3xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
-          <CardHeader className="pb-3 border-b border-white/5 p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-amber-500" /> Developer API
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Automate bulk beneficiary submissions via REST HTTP calls.
-                </CardDescription>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyToClipboard(curlExample, "curl-code")}
-                className="text-xs gap-1.5 text-amber-500 hover:bg-amber-500/10 h-8"
-              >
-                {copiedIndex === "curl-code" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />} Copy cURL
-              </Button>
-            </div>
-          </CardHeader>
+      {/* ── Collapsible Developer API Section (Zero Space Waste on Mobile View) ── */}
+      <div className="pt-1">
+        <button
+          onClick={() => setShowApiDocs(!showApiDocs)}
+          className={cn(
+            "w-full px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all",
+            isDark ? "bg-slate-900/50 border-slate-800 text-slate-400 hover:text-slate-200" : "bg-gray-100 border-gray-200 text-gray-700"
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            <Terminal className="w-3.5 h-3.5 text-amber-500" /> Developer API Endpoint (cURL)
+          </span>
+          <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", showApiDocs ? "rotate-180" : "")} />
+        </button>
 
-          <CardContent className="p-4 sm:p-6 space-y-4">
-            <pre className="p-3.5 sm:p-4 rounded-xl font-mono text-[11px] sm:text-xs overflow-x-auto bg-slate-950 text-slate-100 border border-slate-800 leading-relaxed">
-              {curlExample}
-            </pre>
+        <AnimatePresence>
+          {showApiDocs && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden pt-2"
+            >
+              <Card className={cn("border shadow-md rounded-xl overflow-hidden", isDark ? "bg-slate-900/60 border-slate-800" : "bg-white border-gray-200")}>
+                <CardContent className="p-3 space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-muted-foreground">POST /purchases/submit-numbers</span>
+                    <button
+                      onClick={() => copyToClipboard(curlExample, "curl-code")}
+                      className="text-amber-500 hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      {copiedIndex === "curl-code" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copy cURL
+                    </button>
+                  </div>
 
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-muted-foreground pt-1">
-              <span>Endpoint: <code className="text-amber-400 font-mono">POST /purchases/submit-numbers</code></span>
-              <Link to="/api-docs" className="text-amber-500 hover:underline flex items-center gap-1 font-semibold">
-                API Documentation <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+                  <pre className="p-3 rounded-lg font-mono text-[10px] overflow-x-auto bg-slate-950 text-slate-100 border border-slate-800 leading-relaxed">
+                    {curlExample}
+                  </pre>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ── 1. CONFIRMATION DIALOG MODAL (Mobile Responsive) ── */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl sm:rounded-3xl p-5 sm:p-6", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
-          <DialogHeader className="space-y-2.5">
-            <DialogTitle className="text-lg sm:text-xl font-extrabold text-white">
+        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl p-5", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-base sm:text-xl font-extrabold text-white">
               Submit for approval?
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <DialogDescription className="text-xs text-slate-300 leading-relaxed">
               You are about to submit <strong className="text-white font-bold">{parsedData.valid.length}</strong> numbers for approval to be added to our beneficiary list.
             </DialogDescription>
           </DialogHeader>
 
-          <p className="text-xs text-slate-400 pt-1">
+          <p className="text-[11px] text-slate-400 pt-1">
             This will be sent in <strong className="text-white font-bold">{batchCount}</strong> batch{batchCount > 1 ? "es" : ""} of up to 100.
           </p>
 
-          <div className="flex items-center justify-end gap-2.5 pt-4">
+          <div className="flex items-center justify-end gap-2 pt-3">
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowConfirmModal(false)}
-              className="h-10 px-4 rounded-xl text-xs font-semibold bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="h-9 px-4 rounded-xl text-xs font-semibold bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
             >
               Cancel
             </Button>
@@ -792,7 +706,7 @@ export default function SubmitBeneficiaryNumbers() {
             <Button
               type="button"
               onClick={handleConfirmSubmit}
-              className="h-10 px-5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-2 shadow-lg"
+              className="h-9 px-4 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white gap-1.5 shadow-lg"
             >
               <Send className="w-3.5 h-3.5" /> Continue
             </Button>
@@ -802,31 +716,31 @@ export default function SubmitBeneficiaryNumbers() {
 
       {/* ── 2. COMPLETION DIALOG MODAL (Mobile Responsive) ── */}
       <Dialog open={showCompleteModal} onOpenChange={setShowCompleteModal}>
-        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl sm:rounded-3xl p-5 sm:p-6 space-y-4", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
-          <div className="flex items-start gap-3">
-            <div className="p-1.5 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">
-              <CheckCircle2 className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-400" />
+        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl p-5 space-y-3", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
+          <div className="flex items-start gap-2.5">
+            <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">
+              <CheckCircle2 className="w-6 h-6 text-emerald-400" />
             </div>
 
-            <div className="space-y-1">
-              <DialogTitle className="text-lg sm:text-xl font-extrabold text-white">
+            <div className="space-y-0.5">
+              <DialogTitle className="text-base sm:text-xl font-extrabold text-white">
                 Submission complete
               </DialogTitle>
-              <DialogDescription className="text-xs sm:text-sm font-semibold text-emerald-400 leading-snug">
+              <DialogDescription className="text-xs font-semibold text-emerald-400 leading-snug">
                 Submitted {responseResult?.submitted ?? parsedData.valid.length} number(s) for approval in {batchCount} batch{batchCount > 1 ? "es" : ""}.
               </DialogDescription>
             </div>
           </div>
 
-          <p className="text-xs text-slate-400 pl-10">
+          <p className="text-[11px] text-slate-400 pl-8">
             Batches completed: {batchCount}/{batchCount}
           </p>
 
-          <div className="flex items-center justify-end pt-2">
+          <div className="flex items-center justify-end pt-1">
             <Button
               type="button"
               onClick={() => setShowCompleteModal(false)}
-              className="h-10 px-6 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
+              className="h-9 px-5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
             >
               Done
             </Button>
