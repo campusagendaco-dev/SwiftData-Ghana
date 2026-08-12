@@ -197,6 +197,7 @@ const RESPONSES: Record<string, string> = {
   verify_beneficiary_exists: `{\n  "success": true,\n  "exists": true,\n  "message": "Number verified successfully."\n}`,
   verify_beneficiary_not_exists: `{\n  "success": true,\n  "exists": false,\n  "error": "Not on beneficiary list",\n  "message": "0241234567 is not added to our beneficiary list"\n}`,
   verify_beneficiary_offline: `{\n  "success": false,\n  "exists": false,\n  "error": "Verification service unavailable",\n  "message": "MTN beneficiary verification is currently offline. Please try again shortly."\n}`,
+  submit_numbers_ok: `{\n  "success": true,\n  "data": {\n    "submitted": 3,\n    "numbers": [\n      "0241234567",\n      "0551234569",\n      "0538122730"\n    ],\n    "invalid": [],\n    "message": "3 number(s) submitted for beneficiary approval"\n  }\n}`,
 };
 
 
@@ -307,6 +308,7 @@ const NAV_ITEMS = [
   { id: "airtime",         label: "Purchase Airtime",    icon: ShoppingCart },
   { id: "data",            label: "Data Bundles",        icon: ShoppingCart },
   { id: "verify-beneficiary", label: "Verify Beneficiary", icon: Shield },
+  { id: "submit-numbers",  label: "Submit Beneficiary Numbers", icon: Send },
   { id: "afa",             label: "AFA Registration",    icon: Activity },
   { id: "results",         label: "Voucher Purchase",     icon: ShoppingCart },
   { id: "bills-validate",  label: "Validate TV Bills",   icon: Search },
@@ -916,6 +918,35 @@ const APIDocumentation = () => {
                     <ResponseBlock code={RESPONSES.verify_beneficiary_not_exists} label="Response · 200 OK (Not Whitelisted)" variant="error" />
                     <ResponseBlock code={RESPONSES.verify_beneficiary_offline} label="Response · 500 Server Error" variant="error" />
                   </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Submit Beneficiary Numbers ────────────────────────────────────────── */}
+          <section className="pt-8">
+            <SectionAnchor id="submit-numbers" />
+            <SectionHeader icon={Send} title="Submit Beneficiary Numbers" />
+            <div className="ml-11 flex flex-wrap items-center gap-3 mb-6">
+              <MethodBadge method="POST" />
+              <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/purchases/submit-numbers</code>
+            </div>
+            <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
+              Submit phone numbers directly to Swift's Whitelisting Engine for carrier approval. Accepts a comma-separated or newline-separated list of Ghanaian phone numbers (up to 30 per API request).
+            </p>
+
+            <div className="ml-11 space-y-8">
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/25">Body Parameters</span>
+                </div>
+                <ParamRow name="numbers" type="string" required desc="Comma-separated or array of phone numbers (e.g. '0241234567, 0551234569, 0538122730')" />
+              </div>
+
+              <div>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <CodeBlock code={snippets.submit_numbers[activeLang]} label="Request" />
+                  <ResponseBlock code={RESPONSES.submit_numbers_ok} label="Response · 200 OK" />
                 </div>
               </div>
             </div>

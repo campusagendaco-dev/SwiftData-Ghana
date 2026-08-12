@@ -390,9 +390,9 @@ export default function SubmitBeneficiaryNumbers() {
   };
 
   const curlExample = `curl -X POST \\
-  "https://user.datahubgh.com/api/external/purchases/submit-numbers" \\
+  "https://swiftdatagh.com/api/external/purchases/submit-numbers" \\
   -H "Content-Type: application/json" \\
-  -H "X-API-Key: your-api-key-here" \\
+  -H "X-API-Key: sk_live_your_swift_api_key" \\
   -d '{
     "numbers": "${parsedData.valid.length > 0 ? parsedData.valid.slice(0, 3).join(", ") : "0241234567, 0551234569, 0538122730"}"
   }'`;
