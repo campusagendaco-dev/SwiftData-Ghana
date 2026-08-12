@@ -12,7 +12,123 @@ serve(async (req) => {
   }
 
   try {
-    const { phone, network } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    if (body.action === "submit_numbers" || (body.numbers && !body.phone)) {
+      const rawInput = body.numbers;
+      if (!rawInput) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'numbers is required — e.g. { "numbers": "0241234567, 0551234569" }' }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+
+      let items: string[] = [];
+      if (Array.isArray(rawInput)) {
+        items = rawInput.map((n: any) => String(n).trim()).filter(Boolean);
+      } else if (typeof rawInput === "string") {
+        items = rawInput.split(/[\n,\s]+/).map((n: string) => n.trim()).filter(Boolean);
+      }
+
+      const validNumbers: string[] = [];
+      const invalidNumbers: string[] = [];
+
+      for (const item of items) {
+        const raw = String(item).trim();
+        const digits = raw.replace(/\D/g, "");
+        let normalized = "";
+        if (digits.startsWith("233") && digits.length === 12) {
+          normalized = "0" + digits.slice(3);
+        } else if (digits.length === 9) {
+          normalized = "0" + digits;
+        } else if (digits.startsWith("0") && digits.length === 10) {
+          normalized = digits;
+        }
+
+        const isValid = /^0(23|24|25|53|54|55|59|20|50|27|57|26|56)\d{7}$/.test(normalized);
+        if (isValid) {
+          if (!validNumbers.includes(normalized)) validNumbers.push(normalized);
+        } else {
+          if (!invalidNumbers.includes(raw)) invalidNumbers.push(raw);
+        }
+      }
+
+      if (validNumbers.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: "No valid phone numbers found", invalid: invalidNumbers }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+      const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+      const { data: provider } = await supabaseClient
+        .from("providers")
+        .select("*")
+        .eq("handler_type", "datahub")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
+      const cleanUrl = (Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
+      const targetUrl = cleanUrl.endsWith("/purchases/submit-numbers")
+        ? cleanUrl
+        : cleanUrl.includes("/purchases")
+        ? `${cleanUrl}/submit-numbers`
+        : `${cleanUrl}/purchases/submit-numbers`;
+
+      try {
+        const dhRes = await fetchViaDb(supabaseClient, targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({ numbers: validNumbers.join(", ") }),
+          disableFallback: true,
+        }, 10);
+
+        const resText = await dhRes.text();
+        let parsed: any = null;
+        try { parsed = JSON.parse(resText); } catch {}
+
+        if (dhRes.ok) {
+          const resData = parsed?.data || {
+            submitted: validNumbers.length,
+            numbers: validNumbers,
+            invalid: invalidNumbers,
+            message: `${validNumbers.length} number(s) submitted for beneficiary approval`
+          };
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                submitted: resData.submitted ?? validNumbers.length,
+                numbers: resData.numbers ?? validNumbers,
+                invalid: [...(resData.invalid || []), ...invalidNumbers],
+                message: resData.message ?? `${validNumbers.length} number(s) submitted for beneficiary approval`
+              }
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        }
+
+        if (parsed) {
+          return new Response(JSON.stringify(parsed), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: dhRes.status });
+        }
+      } catch (err: any) {
+        console.error("[verify-beneficiary/submit-numbers] Proxy error:", err);
+      }
+
+      return new Response(
+        JSON.stringify({ success: false, error: "Failed to submit numbers for approval. Please try again later.", data: { submitted: 0, invalid: invalidNumbers } }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 502 }
+      );
+    }
+
+    const { phone, network } = body;
     if (!phone) {
       return new Response(
         JSON.stringify({ success: false, error: "Phone number is required." }),

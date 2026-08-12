@@ -132,6 +132,7 @@ const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const BlogList = lazy(() => import("./pages/BlogList"));
 const BlogPost = lazy(() => import("./pages/BlogPost"));
+const SubmitBeneficiaryNumbers = lazy(() => import("./pages/SubmitBeneficiaryNumbers"));
 
 const queryClient = new QueryClient();
 
@@ -411,6 +412,8 @@ const AppContent = () => {
         <Route path="/buy-data" element={<BuyData />} />
         <Route path="/buy-airtime" element={<BuyAirtime />} />
         <Route path="/buy-utility" element={<BuyUtility />} />
+        <Route path="/submit-numbers" element={<SubmitBeneficiaryNumbers />} />
+        <Route path="/submit-beneficiary" element={<Navigate to="/submit-numbers" replace />} />
 
         {/* Sub agent routes */}
         <Route path="/store/:slug/sub-agent" element={<SubAgentSignup />} />
@@ -446,6 +449,8 @@ const AppContent = () => {
           <Route path="referral" element={<DashboardReferral />} />
           <Route path="bulk" element={<AgentFeatureGuard><DashboardBulk /></AgentFeatureGuard>} />
           <Route path="schedule" element={<DashboardSchedule />} />
+          <Route path="submit-numbers" element={<SubmitBeneficiaryNumbers />} />
+          <Route path="submit-beneficiary" element={<Navigate to="/dashboard/submit-numbers" replace />} />
 
           {/* Paid agent-only pages */}
           <Route path="agent-prices" element={<AgentFeatureGuard><DashboardPricing /></AgentFeatureGuard>} />

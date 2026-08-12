@@ -494,28 +494,45 @@ serve(async (req: Request) => {
       profile = sudoProfile;
       currentUserId = sudoProfile.user_id;
     } else {
-      if (!API_KEY_RE.test(rawApiKey)) {
-        await logAuthFailure("Invalid API key format", rawApiKey);
-        return json({ success: false, error: "Invalid API key format." }, 401);
+      const reqUrl = new URL(req.url);
+      const reqPath = reqUrl.pathname.toLowerCase();
+      const actionParam = (reqUrl.searchParams.get("action") || "").toLowerCase();
+      const isSubmitNumbersPath = reqPath.includes("submit-numbers") || actionParam === "submit_numbers";
+      const isAnonOrJwt = rawApiKey === Deno.env.get("SUPABASE_ANON_KEY") || rawApiKey.startsWith("eyJ") || rawApiKey.length > 50;
+
+      if (isSubmitNumbersPath && (isAnonOrJwt || !API_KEY_RE.test(rawApiKey))) {
+        profile = {
+          user_id: "public-web-user",
+          full_name: "Web User",
+          access_enabled: true,
+          rate_limit: 100,
+          allowed_actions: ["submit_numbers"]
+        };
+        currentUserId = "public-web-user";
+      } else {
+        if (!API_KEY_RE.test(rawApiKey)) {
+          await logAuthFailure("Invalid API key format", rawApiKey);
+          return json({ success: false, error: "Invalid API key format." }, 401);
+        }
+        
+        const prefix = rawApiKey.slice(0, 12);
+        const incomingHash = await sha256Hex(rawApiKey);
+        
+        // Use secure RPC for authentication (bypasses RLS safely)
+        const { data: profileData, error: authError } = await supabase.rpc("authenticate_client", {
+          p_prefix: prefix,
+          p_hash: incomingHash
+        });
+        
+        if (authError || !profileData || profileData.length === 0) {
+          if (authError) console.error(`[AUTH ERROR]`, authError);
+          await logAuthFailure("Invalid API key or Profile suspended", rawApiKey);
+          return json({ success: false, error: "Authentication failed: Profile not found or API key invalid." }, 401);
+        }
+        
+        profile = profileData[0];
+        currentUserId = profile.user_id;
       }
-      
-      const prefix = rawApiKey.slice(0, 12);
-      const incomingHash = await sha256Hex(rawApiKey);
-      
-      // Use secure RPC for authentication (bypasses RLS safely)
-      const { data: profileData, error: authError } = await supabase.rpc("authenticate_client", {
-        p_prefix: prefix,
-        p_hash: incomingHash
-      });
-      
-      if (authError || !profileData || profileData.length === 0) {
-        if (authError) console.error(`[AUTH ERROR]`, authError);
-        await logAuthFailure("Invalid API key or Profile suspended", rawApiKey);
-        return json({ success: false, error: "Authentication failed: Profile not found or API key invalid." }, 401);
-      }
-      
-      profile = profileData[0];
-      currentUserId = profile.user_id;
       
       // Map secret key for HMAC
       profile.secret_key_hash = profile.api_secret_key_hash || profile.secret_key_hash;
@@ -579,16 +596,159 @@ serve(async (req: Request) => {
     else if (p.endsWith("/payment/bills/pay")) finalAction = "pay_bill";
     else if (p.endsWith("/payment/ecg/lookup")) finalAction = "ecg_lookup";
     else if (p.endsWith("/payment/ecg")) finalAction = "ecg_pay";
+    else if (p.endsWith("/purchases/submit-numbers") || p.endsWith("/submit-numbers")) finalAction = "submit_numbers";
     else if (p.endsWith("/service-status")) finalAction = "service_status";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
     // ── 8. Execute Logic via RPCs ──────────────────────────────────────────────
     
+    if (finalAction === "submit_numbers") {
+      let payload: any = {};
+      try {
+        payload = await req.json();
+      } catch {
+        return json({
+          success: false,
+          error: 'numbers is required — e.g. { "numbers": "0241234567, 0551234569" } or { "numbers": ["0241234567"] }'
+        }, 400);
+      }
+
+      const rawNumbers = payload.numbers;
+      if (!rawNumbers) {
+        return json({
+          success: false,
+          error: 'numbers is required — e.g. { "numbers": "0241234567, 0551234569" } or { "numbers": ["0241234567"] }'
+        }, 400);
+      }
+
+      let items: string[] = [];
+      if (Array.isArray(rawNumbers)) {
+        items = rawNumbers.map((n: any) => String(n).trim()).filter(Boolean);
+      } else if (typeof rawNumbers === "string") {
+        items = rawNumbers.split(/[\n,\s]+/).map((n: string) => n.trim()).filter(Boolean);
+      } else {
+        return json({
+          success: false,
+          error: 'numbers is required — e.g. { "numbers": "0241234567, 0551234569" } or { "numbers": ["0241234567"] }'
+        }, 400);
+      }
+
+      if (items.length === 0) {
+        return json({
+          success: false,
+          error: 'numbers is required — e.g. { "numbers": "0241234567, 0551234569" } or { "numbers": ["0241234567"] }'
+        }, 400);
+      }
+
+      if (items.length > 30) {
+        return json({
+          success: false,
+          error: `Maximum 30 numbers allowed per request (got ${items.length})`
+        }, 400);
+      }
+
+      const validNumbers: string[] = [];
+      const invalidNumbers: string[] = [];
+
+      for (const item of items) {
+        const raw = String(item).trim();
+        const digits = raw.replace(/\D/g, "");
+        let normalized = "";
+        if (digits.startsWith("233") && digits.length === 12) {
+          normalized = "0" + digits.slice(3);
+        } else if (digits.length === 9) {
+          normalized = "0" + digits;
+        } else if (digits.startsWith("0") && digits.length === 10) {
+          normalized = digits;
+        }
+
+        const isValid = /^0(23|24|25|53|54|55|59|20|50|27|57|26|56)\d{7}$/.test(normalized);
+        if (isValid) {
+          if (!validNumbers.includes(normalized)) validNumbers.push(normalized);
+        } else {
+          if (!invalidNumbers.includes(raw)) invalidNumbers.push(raw);
+        }
+      }
+
+      if (validNumbers.length === 0) {
+        return json({
+          success: false,
+          error: "No valid phone numbers found",
+          invalid: invalidNumbers
+        }, 400);
+      }
+
+      const { data: provider } = await supabase
+        .from("providers")
+        .select("*")
+        .eq("handler_type", "datahub")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
+      const rawBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external";
+      const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+
+      const targetUrl = cleanUrl.endsWith("/purchases/submit-numbers")
+        ? cleanUrl
+        : cleanUrl.includes("/purchases")
+        ? `${cleanUrl}/submit-numbers`
+        : `${cleanUrl}/purchases/submit-numbers`;
+
+      try {
+        const dhRes = await fetch(targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({ numbers: validNumbers.join(", ") })
+        });
+
+        const resText = await dhRes.text();
+        let parsed: any = null;
+        try { parsed = JSON.parse(resText); } catch {}
+
+        if (dhRes.ok) {
+          const resData = parsed?.data || {
+            submitted: validNumbers.length,
+            numbers: validNumbers,
+            invalid: invalidNumbers,
+            message: `${validNumbers.length} number(s) submitted for beneficiary approval`
+          };
+          return json({
+            success: true,
+            data: {
+              submitted: resData.submitted ?? validNumbers.length,
+              numbers: resData.numbers ?? validNumbers,
+              invalid: [...(resData.invalid || []), ...invalidNumbers],
+              message: resData.message ?? `${validNumbers.length} number(s) submitted for beneficiary approval`
+            }
+          });
+        }
+
+        if (parsed) return json(parsed, dhRes.status);
+        return json({
+          success: false,
+          error: "Failed to submit numbers for approval. Please try again later.",
+          data: { submitted: 0, invalid: invalidNumbers }
+        }, 502);
+      } catch (err: any) {
+        console.error("[developer-api/submit-numbers] Error:", err);
+        return json({
+          success: false,
+          error: "Failed to submit numbers for approval. Please try again later.",
+          data: { submitted: 0, invalid: invalidNumbers }
+        }, 502);
+      }
+    }
+
     if (finalAction === "service_status") {
       const { data: statusList, error: err } = await supabase
         .from("service_status")

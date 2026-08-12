@@ -61,6 +61,7 @@ const userNavItems = [
   { to: "/dashboard/buy-airtime", label: "Buy Airtime", icon: CreditCard },
   { to: "/dashboard/utilities", label: "Utility Bills", icon: Zap },
   { to: "/dashboard/afa", label: "AFA Registration", icon: ShieldCheck },
+  { to: "/dashboard/submit-numbers", label: "Submit MTN Numbers", icon: ShieldCheck },
   // { to: "/dashboard/airtime-to-cash", label: "Airtime to Cash", icon: CreditCard },
   { to: "/dashboard/my-store", label: "My Store", icon: Store },
   { to: "/dashboard/report-issue", label: "Report Issue", icon: Flag },

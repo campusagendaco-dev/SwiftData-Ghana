@@ -149,6 +149,12 @@ const makeSnippets = (key: string): Record<string, Record<Lang, string>> => {
       python: `import requests\n\nres = requests.post(\n    "${BASE_URL.replace("/developer-api", "/verify-beneficiary")}",\n    headers={"Authorization": "Bearer YOUR_SUPABASE_ANON_KEY"},\n    json={"phone": "0241234567", "network": "MTN"}\n)\nprint(res.json())`,
       php: `<?php\n$payload = json_encode(["phone" => "0241234567", "network" => "MTN"]);\n$ch = curl_init("${BASE_URL.replace("/developer-api", "/verify-beneficiary")}");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => [\n        "Content-Type: application/json",\n        "Authorization: Bearer YOUR_SUPABASE_ANON_KEY"\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
     },
+    submit_numbers: {
+      curl: `curl -X POST "${BASE_URL}/purchases/submit-numbers" \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Key: ${K}" \\\n  -d '{\n    "numbers": "0241234567, 0551234569, 0538122730"\n  }'`,
+      node: `const res = await fetch("${BASE_URL}/purchases/submit-numbers", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "X-API-Key": "${K}",\n  },\n  body: JSON.stringify({\n    numbers: "0241234567, 0551234569, 0538122730",\n  }),\n});\nconst data = await res.json();`,
+      python: `import requests\n\nres = requests.post(\n    "${BASE_URL}/purchases/submit-numbers",\n    headers={"X-API-Key": "${K}"},\n    json={"numbers": "0241234567, 0551234569, 0538122730"}\n)\nprint(res.json())`,
+      php: `<?php\n$payload = json_encode(["numbers" => "0241234567, 0551234569, 0538122730"]);\n$ch = curl_init("${BASE_URL}/purchases/submit-numbers");\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_POSTFIELDS => $payload,\n    CURLOPT_HTTPHEADER => [\n        "Content-Type: application/json",\n        "X-API-Key: ${K}"\n    ],\n    CURLOPT_RETURNTRANSFER => true,\n]);\necho curl_exec($ch);`,
+    },
   };
 };
 

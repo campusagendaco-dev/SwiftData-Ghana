@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2, Sparkles, ExternalLink, ArrowRight, Zap, CheckCircle2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2, Sparkles, ExternalLink, ArrowRight, Zap, CheckCircle2, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
@@ -61,6 +62,75 @@ export default function AdminBeneficiaryOrders() {
   const [processingBatch, setProcessingBatch] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [routingDatamart, setRoutingDatamart] = useState(false);
+  const [submittingNumbers, setSubmittingNumbers] = useState(false);
+
+  const handleSubmitAllToBeneficiaryApproval = async () => {
+    const numbersToSubmit = Array.from(new Set(groupedNumbers.map((g) => g.phone).filter(Boolean)));
+    if (numbersToSubmit.length === 0) {
+      toast({ title: "No numbers to submit", description: "There are no non-beneficiary numbers to submit for approval." });
+      return;
+    }
+
+    if (!confirm(`Submit all ${numbersToSubmit.length} unique non-beneficiary numbers directly to DataHub for carrier approval?`)) {
+      return;
+    }
+
+    setSubmittingNumbers(true);
+    toast({ title: "Submitting Numbers for Approval...", description: `Sending ${numbersToSubmit.length} numbers in batches to DataHub...` });
+
+    const BATCH_SIZE = 30;
+    let totalSubmitted = 0;
+
+    try {
+      const { data: provider } = await supabase
+        .from("providers")
+        .select("api_key, base_url")
+        .eq("handler_type", "datahub")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const apiKey = provider?.api_key || "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
+      const baseUrl = (provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
+      const targetUrl = baseUrl.endsWith("/purchases/submit-numbers")
+        ? baseUrl
+        : baseUrl.includes("/purchases")
+        ? `${baseUrl}/submit-numbers`
+        : `${baseUrl}/purchases/submit-numbers`;
+
+      for (let i = 0; i < numbersToSubmit.length; i += BATCH_SIZE) {
+        const batch = numbersToSubmit.slice(i, i + BATCH_SIZE);
+        const res = await fetch(targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify({ numbers: batch.join(", ") }),
+        });
+
+        const text = await res.text();
+        let parsed: any = null;
+        try { parsed = JSON.parse(text); } catch {}
+
+        if (res.ok || parsed?.success) {
+          totalSubmitted += parsed?.data?.submitted ?? batch.length;
+        }
+      }
+
+      toast({
+        title: "Whitelisting Submitted! 🚀",
+        description: `Successfully submitted ${totalSubmitted} number(s) to DataHub for beneficiary approval.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Submission Error",
+        description: err.message || "Failed to submit numbers to DataHub",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingNumbers(false);
+    }
+  };
 
   const handleRouteAllToDatamart = async () => {
     if (!confirm(`Are you sure you want to FORCE-ROUTE all ${allBeneficiaryOrders.length} non-beneficiary orders directly to Datamart API?`)) {
@@ -457,6 +527,28 @@ export default function AdminBeneficiaryOrders() {
 
           {/* Touch-Optimized Action Button Grid */}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5">
+            <Button
+              variant="default"
+              size="lg"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-extrabold rounded-2xl shadow-lg shadow-blue-950/30 transition-all active:scale-95 text-xs sm:text-sm"
+              onClick={handleSubmitAllToBeneficiaryApproval}
+              disabled={submittingNumbers || loading || totalUniqueNumbers === 0}
+            >
+              {submittingNumbers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Submit All to Carrier Whitelist ({totalUniqueNumbers})
+            </Button>
+
+            <Button
+              asChild
+              variant="default"
+              size="lg"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-white font-extrabold rounded-2xl shadow-lg shadow-amber-950/30 transition-all active:scale-95 text-xs sm:text-sm border border-amber-400/40"
+            >
+              <Link to="/submit-numbers">
+                <ExternalLink className="w-4 h-4" /> Submit New Numbers Page
+              </Link>
+            </Button>
+
             <Button
               variant="default"
               size="lg"
