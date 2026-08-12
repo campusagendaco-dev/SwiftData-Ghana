@@ -481,22 +481,18 @@ export default function SubmitBeneficiaryNumbers() {
             )}
           </div>
 
-          {/* Action Toolbar Pills */}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] text-muted-foreground truncate max-w-[140px] sm:max-w-none">
-              One per line or comma separated.
-            </span>
-
-            <div className="flex items-center gap-1.5 shrink-0">
+          {/* Action Toolbar Pills Grid (Fits 100% of all mobile device screen widths) */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={handleClear}
                 disabled={!rawText.trim()}
-                className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-amber-500/30 text-amber-500 hover:bg-amber-500/10 gap-1"
+                className="h-8 text-[11px] font-bold rounded-lg border-amber-500/30 text-amber-500 hover:bg-amber-500/10 gap-1 px-1 sm:px-3 justify-center"
               >
-                <Trash2 className="w-3 h-3" /> Clear
+                <Trash2 className="w-3 h-3 shrink-0" /> Clear
               </Button>
 
               <Button
@@ -505,21 +501,25 @@ export default function SubmitBeneficiaryNumbers() {
                 size="sm"
                 onClick={handleFormat}
                 disabled={!rawText.trim()}
-                className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white gap-1"
+                className="h-8 text-[11px] font-bold rounded-lg border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white gap-1 px-1 sm:px-3 justify-center"
               >
-                <Sparkles className="w-3 h-3 text-amber-400" /> Format
+                <Sparkles className="w-3 h-3 text-amber-400 shrink-0" /> Format
               </Button>
 
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={handleLoadSample}
-                className="h-8 px-2 text-[11px] font-bold rounded-lg text-amber-500 hover:bg-amber-500/10"
+                className="h-8 text-[11px] font-bold rounded-lg border-slate-700 text-amber-500 hover:bg-amber-500/10 gap-1 px-1 sm:px-3 justify-center"
               >
-                Sample
+                <Copy className="w-3 h-3 shrink-0" /> Sample
               </Button>
             </div>
+
+            <p className="text-[10px] text-muted-foreground leading-tight text-center sm:text-left">
+              One per line or separated by commas/spaces (Accepts 0XXXXXXXXX or 233XXXXXXXXX).
+            </p>
           </div>
 
           {/* Progress indicator during bulk batching */}
