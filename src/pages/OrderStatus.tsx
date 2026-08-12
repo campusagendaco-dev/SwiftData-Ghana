@@ -16,6 +16,7 @@ import SEO from "@/components/SEO";
 import html2canvas from "html2canvas";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { playSuccessSound } from "@/lib/sound";
+import { Badge } from "@/components/ui/badge";
 
 type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid";
 
@@ -504,101 +505,108 @@ const OrderStatus = () => {
   // --- RENDER SPECIFIC ORDER ---
   if (reference) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 font-sans antialiased">
+      <div className="min-h-screen bg-[#050508] text-white flex flex-col items-center justify-center p-3 sm:p-6 font-sans antialiased selection:bg-amber-500/30 pt-16 sm:pt-24 pb-16">
         <SEO 
           title={`Track Order Status — ${storeName}`}
           description={`Track the real-time delivery status of your data bundle purchase on ${storeName}.`}
           keywords="track data order Ghana, order status, data delivery status"
           canonical={`https://${brandDomain}/order-status?reference=${reference}`}
         />
-        <div className="w-full max-w-[340px]">
-          <div className="relative overflow-hidden rounded-[2.5rem] bg-white/[0.03] border border-white/10 backdrop-blur-3xl shadow-2xl">
-            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
-            <div className="px-8 pt-8 flex justify-center">
-              <div className="px-3 py-1 rounded-full bg-white/[0.05] border border-white/5 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: meta.color }} />
-                <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{meta.badge}</span>
+
+        {/* Ambient Glow Orbs */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-[140px] opacity-20" style={{ backgroundColor: meta.color }} />
+        </div>
+
+        <div className="w-full max-w-md relative z-10 space-y-4">
+          {/* Main Tracking Card */}
+          <div className="relative overflow-hidden rounded-3xl bg-slate-900/90 border border-slate-800 backdrop-blur-2xl shadow-2xl transition-all duration-300">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] via-transparent to-black/40 pointer-events-none" />
+            
+            {/* Top Status Badge */}
+            <div className="px-6 pt-6 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: meta.color }} />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: meta.color }} />
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 font-mono">{meta.badge} Status</span>
               </div>
+
+              <span className="text-[10px] font-mono text-slate-500 font-bold">
+                REF: {reference.slice(0, 10).toUpperCase()}
+              </span>
             </div>
-            <div className="px-8 pt-8 pb-10 flex flex-col items-center text-center">
-              <div className="relative mb-6">
+
+            {/* Hero Icon & Title */}
+            <div className="px-6 pt-6 pb-8 flex flex-col items-center text-center">
+              <div className="relative mb-5">
                 {orderStatus === "fulfilled" ? (
-                  <div className="relative w-32 h-32">
-                    <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
-                    <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      {/* Phone Body */}
-                      <rect x="55" y="25" width="90" height="150" rx="16" fill="url(#phoneGradTracker)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
-                      {/* Phone Screen */}
-                      <rect x="62" y="32" width="76" height="136" rx="10" fill="#0A0A0C"/>
-                      {/* Phone Notch */}
-                      <rect x="90" y="35" width="20" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
-                      
-                      {/* Decorative waves */}
-                      <path d="M 65 100 Q 100 85 135 100" stroke="rgba(16,185,129,0.3)" strokeWidth="2" fill="none"/>
-                      
-                      {/* Success Badge */}
-                      <circle cx="100" cy="90" r="32" fill="url(#badgeGradTracker)" />
-                      <circle cx="100" cy="90" r="26" fill="#0A0A0C"/>
-                      
-                      {/* Success Checkmark */}
-                      <path d="M 90 90 L 97 97 L 112 82" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-                      
-                      {/* Sparkles */}
-                      <path d="M 45 60 L 48 65 L 53 66 L 49 70 L 50 75 L 45 72 L 40 75 L 41 70 L 37 66 L 42 65 Z" fill="#ffd43b" opacity="0.8"/>
-                      <circle cx="145" cy="55" r="4" fill="#0ea5e9"/>
-                      
-                      <defs>
-                        <linearGradient id="phoneGradTracker" x1="55" y1="25" x2="145" y2="175" gradientUnits="userSpaceOnUse">
-                          <stop stopColor="rgba(255,255,255,0.08)"/>
-                          <stop offset="1" stopColor="rgba(255,255,255,0.02)"/>
-                        </linearGradient>
-                        <linearGradient id="badgeGradTracker" x1="68" y1="58" x2="132" y2="122" gradientUnits="userSpaceOnUse">
-                          <stop stopColor="#10B981"/>
-                          <stop offset="1" stopColor="#059669"/>
-                        </linearGradient>
-                      </defs>
-                    </svg>
+                  <div className="relative w-28 h-28 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-25 animate-pulse" />
+                    <div className="relative z-10 w-24 h-24 rounded-3xl bg-gradient-to-b from-emerald-500/20 to-emerald-950/40 border border-emerald-500/40 flex items-center justify-center shadow-xl shadow-emerald-950/50">
+                      <CheckCircle2 className="w-12 h-12 text-emerald-400 drop-shadow-md" />
+                    </div>
                   </div>
                 ) : (
-                  <>
-                    <div className="absolute inset-0 blur-xl opacity-20 animate-pulse" style={{ backgroundColor: meta.color }} />
-                    <div className="relative w-10 h-10 rounded-2xl border border-white/5 flex items-center justify-center bg-white/[0.03]">
-                      {failed ? <XCircle className="w-5 h-5 text-red-400" /> : <div className="w-4 h-4 rounded-full border-2 border-white/10 border-t-white/40 animate-spin" />}
+                  <div className="relative w-24 h-24 flex items-center justify-center">
+                    <div className="absolute inset-0 blur-2xl opacity-25 animate-pulse" style={{ backgroundColor: meta.color }} />
+                    <div className="relative z-10 w-20 h-20 rounded-3xl bg-slate-950/80 border border-slate-800 flex items-center justify-center shadow-xl">
+                      {failed ? (
+                        <XCircle className="w-10 h-10 text-red-400" />
+                      ) : (
+                        <div className="relative flex items-center justify-center">
+                          <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
+                          <Activity className="w-4 h-4 text-amber-300 absolute" />
+                        </div>
+                      )}
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
-              <h2 className="text-lg font-bold text-white tracking-tight mb-1">{meta.label}</h2>
-              <p className="text-[10px] text-white/30 font-medium max-w-[200px]">{meta.sub}</p>
+
+              <h2 className="text-xl font-extrabold text-white tracking-tight mb-1">{meta.label}</h2>
+              <p className="text-xs text-slate-300 font-medium max-w-xs leading-relaxed">{meta.sub}</p>
+
+              {/* Delivery Speed Badge */}
               {createdAt && ["pending", "paid", "processing"].includes(orderStatus) && (
-                <div className="mt-3.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 text-[11px] font-black uppercase tracking-wider backdrop-blur-md transition-all duration-300">
-                  <span className="relative flex h-2 w-2 mr-0.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <Clock className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                <div className="mt-3.5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono">
+                  <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
                   <span>Est. delivery: ~{getRemainingTimeStr()}</span>
                 </div>
               )}
+
+              {/* Order Specs Pills */}
               {(network || phoneParam) && (
-                <div className="mt-6 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/5">
-                  <span className="text-[9px] font-bold text-white/40 uppercase tracking-tighter">{network}</span>
-                  <span className="text-[9px] font-bold text-white/20">{packageSize}</span>
-                  <span className="text-[9px] font-mono text-white/20">{phoneParam}</span>
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-950/60 border border-slate-800/80">
+                  <Badge variant="outline" className="text-[10px] font-bold border-amber-500/30 text-amber-400 bg-amber-500/10">
+                    {network}
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] font-mono font-bold border-slate-700 text-slate-200">
+                    {packageSize}
+                  </Badge>
+                  <span className="text-xs font-mono font-extrabold text-emerald-400 px-1">
+                    {phoneParam}
+                  </span>
                 </div>
               )}
             </div>
-            <div className="px-10 pb-8">
-              <div className="relative h-[1.5px] bg-white/5 rounded-full overflow-hidden">
-                <div className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out" style={{ width: `${getProgressPercentage()}%`, backgroundColor: meta.color }} />
+
+            {/* Animated Progress Bar */}
+            <div className="px-6 pb-6 space-y-2">
+              <div className="relative h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800/80">
+                <div 
+                  className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out bg-gradient-to-r from-amber-500 via-indigo-500 to-emerald-500 shadow-md"
+                  style={{ width: `${getProgressPercentage()}%` }} 
+                />
               </div>
-              <div className="flex justify-between mt-3">
+              <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pt-1">
                 {STEPS.map((s, i) => {
                   const isActive = step >= i + 1;
                   return (
-                    <div key={s.key} className="flex flex-col items-center gap-1.5">
-                      <div className={cn("w-1.5 h-1.5 rounded-full transition-all duration-700", isActive ? "scale-110 shadow-[0_0_8px_rgba(255,255,255,0.2)]" : "bg-white/5")} style={{ backgroundColor: isActive ? s.color : undefined }} />
-                      <span className={cn("text-[7px] font-bold uppercase tracking-tighter", isActive ? "text-white/40" : "text-white/10")}>{s.key}</span>
+                    <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? "text-emerald-400 font-extrabold" : "text-slate-600")}>
+                      <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-700")} />
+                      <span>{s.key}</span>
                     </div>
                   );
                 })}
@@ -607,8 +615,8 @@ const OrderStatus = () => {
 
             {/* Prepaid Token Display */}
             {orderStatus === "fulfilled" && statusMessage && statusMessage.startsWith("Token:") && (
-              <div className="mx-8 mb-6 p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 text-center space-y-2.5 animate-in zoom-in-95 duration-300">
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60">Your Prepaid Token</p>
+              <div className="mx-6 mb-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400">Prepaid Token Code</p>
                 <div className="flex items-center justify-center gap-2">
                   <span className="text-xl font-black tracking-wider text-white font-mono">
                     {statusMessage.replace("Token:", "").trim()}
@@ -616,64 +624,81 @@ const OrderStatus = () => {
                   <button 
                     onClick={() => {
                       navigator.clipboard.writeText(statusMessage.replace("Token:", "").trim());
-                      toast.success("Token copied!");
+                      toast.success("Token copied to clipboard!");
                     }}
-                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 active:scale-95 transition-all"
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all"
                   >
-                    <Copy className="w-3.5 h-3.5" />
+                    <Copy className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="text-[8px] text-white/30 font-medium">Input this token into your prepaid meter to credit it.</p>
+                <p className="text-[10px] text-slate-400 font-medium">Input this code into your prepaid meter to credit power.</p>
               </div>
             )}
 
-            {/* Real-time Gateway Terminal */}
+            {/* Real-time Gateway Terminal Logs */}
             {createdAt && (orderStatus === "paid" || orderStatus === "processing" || orderStatus === "pending" || orderStatus === "fulfilled" || orderStatus === "fulfillment_failed") && (
-              <div className="mx-8 mb-6 p-4 rounded-2xl bg-black/60 border border-white/5 font-mono text-[9px] space-y-1.5 max-h-[140px] overflow-y-auto select-none">
-                <div className="text-white/20 text-[8px] uppercase tracking-wider mb-1 flex items-center justify-between">
-                  <span>Connection Logs</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="mx-6 mb-6 p-3.5 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-[10px] space-y-1.5 max-h-[140px] overflow-y-auto">
+                <div className="text-slate-500 text-[9px] uppercase font-bold tracking-wider mb-1 flex items-center justify-between border-b border-slate-800/60 pb-1">
+                  <span className="flex items-center gap-1"><Server className="w-3 h-3 text-amber-400" /> Carrier Gateway Feed</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 </div>
                 {getTerminalLogs().map((log, i) => (
                   <div key={i} className="flex gap-2 leading-relaxed">
-                    <span className="text-white/20">{log.time}</span>
+                    <span className="text-slate-500">{log.time}</span>
                     <span className={cn(
-                      log.status === "success" && "text-emerald-400",
-                      log.status === "warn" && "text-amber-400",
-                      log.status === "info" && "text-white/60"
+                      log.status === "success" && "text-emerald-400 font-semibold",
+                      log.status === "warn" && "text-amber-400 font-semibold",
+                      log.status === "info" && "text-slate-300"
                     )}>{log.text}</span>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Reference Footer */}
             {reference && (
-              <div className="bg-white/[0.01] px-6 py-4 flex items-center justify-between gap-3 border-t border-white/5">
+              <div className="bg-slate-950/80 px-6 py-3.5 flex items-center justify-between gap-3 border-t border-slate-800/80">
                 <div className="min-w-0">
-                   <p className="text-[8px] font-bold text-white/10 uppercase tracking-widest mb-0.5">Reference</p>
-                   <code className="text-[10px] font-mono text-white/20 truncate block">{reference}</code>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Order Reference</p>
+                  <code className="text-xs font-mono text-slate-200 font-bold truncate block">{reference}</code>
                 </div>
-                <button onClick={() => { navigator.clipboard.writeText(reference); toast.success("Copied"); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 transition-all">
-                  <Copy className="w-3 h-3 text-white/30" />
-                  <span className="text-[9px] font-bold text-white/30 uppercase">Copy</span>
+                <button 
+                  onClick={() => { navigator.clipboard.writeText(reference); toast.success("Reference copied!"); }} 
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all text-xs font-bold"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy</span>
                 </button>
               </div>
             )}
           </div>
-          <div className="mt-6 flex gap-2">
+
+          {/* Action Toolbar */}
+          <div className="flex items-center gap-2">
             <button 
               onClick={() => setShowReceipt(true)} 
               disabled={orderStatus !== "fulfilled" && orderStatus !== "paid" && orderStatus !== "processing"}
-              className="flex-1 h-12 rounded-[1.2rem] text-black flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-20 font-black uppercase text-[10px] tracking-widest shadow-lg"
-              style={{ backgroundColor: brandColor, boxShadow: `0 10px 15px -3px ${brandColor}33` }}
+              className="flex-1 h-12 rounded-2xl text-slate-950 font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-30"
+              style={{ backgroundColor: brandColor }}
             >
-              <ReceiptText className="w-4 h-4" />
-              View Receipt
+              <ReceiptText className="w-4 h-4" /> View Digital Receipt
             </button>
-            <button onClick={() => pollStatus(true)} disabled={isRefreshing || orderStatus === "fulfilled"} className="w-12 h-12 rounded-[1.2rem] bg-white/5 border border-white/5 flex items-center justify-center transition-all active:scale-95 disabled:opacity-20">
-              <RefreshCw className={cn("w-3.5 h-3.5 text-white/20", isRefreshing && "animate-spin")} />
+
+            <button 
+              onClick={() => pollStatus(true)} 
+              disabled={isRefreshing || orderStatus === "fulfilled"} 
+              className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white disabled:opacity-30"
+              title="Refresh status"
+            >
+              <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin text-amber-400")} />
             </button>
-            <button onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')} className="w-12 h-12 rounded-[1.2rem] bg-white/5 border border-white/5 flex items-center justify-center">
-              <ArrowLeft className="w-4 h-4 text-white/20" />
+
+            <button 
+              onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')} 
+              className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white"
+              title="Back to lookup"
+            >
+              <ArrowLeft className="w-4 h-4" />
             </button>
           </div>
 
