@@ -103,7 +103,11 @@ export default function SubmitBeneficiaryNumbers() {
 
   // Response state
   const [responseResult, setResponseResult] = useState<{
+    received: number;
+    unique: number;
     submitted: number;
+    alreadyOnList: number;
+    duplicates: number;
     numbers: string[];
     invalid: string[];
     message: string;
@@ -341,7 +345,6 @@ export default function SubmitBeneficiaryNumbers() {
     setLoading(true);
     setProgressPercent(0);
     setResponseResult(null);
-
     const totalValid = parsedData.valid;
     const CHUNK_SIZE = 500;
     const BATCH_SIZE = 30; // sub-batches per API call
@@ -349,7 +352,12 @@ export default function SubmitBeneficiaryNumbers() {
     const totalChunks = Math.ceil(totalValid.length / CHUNK_SIZE);
     let allSubmittedNumbers: string[] = [];
     let allInvalidNumbers: string[] = [...parsedData.invalid];
-    let successCount = 0;
+    let totalReceived = 0;
+    let totalUnique = 0;
+    let totalSubmitted = 0;
+    let totalAlreadyOnList = 0;
+    let totalDuplicates = 0;
+    let successfulBatchesCount = 0;
     let lastErrorMsg = "";
 
     try {
@@ -377,135 +385,152 @@ export default function SubmitBeneficiaryNumbers() {
           const currentTotalProcessed = processedValidSoFar + (bIndex + 1) * BATCH_SIZE;
           setProgressPercent(Math.min(100, Math.round((currentTotalProcessed / totalValid.length) * 100)));
 
-        let resData: any = null;
-        let funcError: any = null;
+          let resData: any = null;
+          let funcError: any = null;
 
-        // Tier 1: Direct DataHub Provider API call (Fastest, zero edge function gateway preflight errors)
-        try {
-          let apiKey = "";
-          let baseUrl = "https://user.datahubgh.com/api/external";
+          // Tier 1: Direct DataHub Provider API call (Fastest, zero edge function gateway preflight errors)
+          try {
+            let apiKey = "";
+            let baseUrl = "https://user.datahubgh.com/api/external";
 
-          const { data: provider } = await supabase
-            .from("providers")
-            .select("api_key, base_url")
-            .eq("handler_type", "datahub")
-            .eq("is_active", true)
-            .maybeSingle();
+            const { data: provider } = await supabase
+              .from("providers")
+              .select("api_key, base_url")
+              .eq("handler_type", "datahub")
+              .eq("is_active", true)
+              .maybeSingle();
 
-          if (provider?.api_key) {
-            apiKey = provider.api_key;
-            if (provider.base_url) baseUrl = provider.base_url;
-          } else {
-            apiKey = "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
-          }
+            if (provider?.api_key) {
+              apiKey = provider.api_key;
+              if (provider.base_url) baseUrl = provider.base_url;
+            } else {
+              apiKey = "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
+            }
 
-          const cleanBase = baseUrl.trim().replace(/\/+$/, "");
-          const targetUrl = cleanBase.endsWith("/purchases/submit-numbers")
-            ? cleanBase
-            : cleanBase.includes("/purchases")
-            ? `${cleanBase}/submit-numbers`
-            : `${cleanBase}/purchases/submit-numbers`;
+            const cleanBase = baseUrl.trim().replace(/\/+$/, "");
+            const targetUrl = cleanBase.endsWith("/purchases/submit-numbers")
+              ? cleanBase
+              : cleanBase.includes("/purchases")
+              ? `${cleanBase}/submit-numbers`
+              : `${cleanBase}/purchases/submit-numbers`;
 
-          const directRes = await fetch(targetUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-API-Key": apiKey,
-            },
-            body: JSON.stringify({ numbers: currentBatch.join(", ") }),
-          });
-
-          const text = await directRes.text();
-          let parsed: any = null;
-          try { parsed = JSON.parse(text); } catch {}
-
-          if (directRes.ok || parsed?.success || parsed?.data?.submitted !== undefined) {
-            resData = parsed || {
-              success: true,
-              data: {
-                submitted: currentBatch.length,
-                numbers: currentBatch,
-                invalid: [],
-                message: `${currentBatch.length} number(s) submitted for beneficiary approval`,
+            const directRes = await fetch(targetUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-API-Key": apiKey,
               },
-            };
-            funcError = null;
-          }
-        } catch (err: any) {
-          funcError = err;
-        }
-
-        // Tier 2: Try dedicated submit-numbers Edge Function if Tier 1 failed
-        if (!resData?.success) {
-          try {
-            const sRes = await invokePublicFunction("submit-numbers", {
-              body: { numbers: currentBatch.join(", ") },
+              body: JSON.stringify({ numbers: currentBatch.join(", ") }),
             });
-            if (sRes?.data && sRes.data.success) {
-              resData = sRes.data;
+
+            const text = await directRes.text();
+            let parsed: any = null;
+            try { parsed = JSON.parse(text); } catch {}
+
+            if (directRes.ok || parsed?.success || parsed?.data?.submitted !== undefined || parsed?.data?.received !== undefined) {
+              resData = parsed || {
+                success: true,
+                data: {
+                  received: currentBatch.length,
+                  unique: currentBatch.length,
+                  submitted: currentBatch.length,
+                  already_on_list: 0,
+                  duplicates: 0,
+                  numbers: currentBatch,
+                  invalid: [],
+                  message: `${currentBatch.length} number(s) submitted for beneficiary approval`,
+                },
+              };
               funcError = null;
-            } else if (sRes?.data && !sRes.data.success) {
-              resData = sRes.data;
-            } else if (sRes?.error) {
-              funcError = sRes.error;
             }
           } catch (err: any) {
             funcError = err;
           }
-        }
 
-        // Tier 3: Try active verify-beneficiary Edge Function with submit_numbers action
-        if (!resData?.success) {
-          try {
-            const vRes = await invokePublicFunction("verify-beneficiary", {
-              body: { action: "submit_numbers", numbers: currentBatch.join(", ") },
-            });
-            if (vRes?.data && vRes.data.success) {
-              resData = vRes.data;
-              funcError = null;
-            } else if (vRes?.data && !vRes.data.success) {
-              resData = vRes.data;
-            } else if (vRes?.error) {
-              funcError = vRes.error;
+          // Tier 2: Try dedicated submit-numbers Edge Function if Tier 1 failed
+          if (!resData?.success) {
+            try {
+              const sRes = await invokePublicFunction("submit-numbers", {
+                body: { numbers: currentBatch.join(", ") },
+              });
+              if (sRes?.data && (sRes.data.success || sRes.data.data)) {
+                resData = sRes.data;
+                funcError = null;
+              } else if (sRes?.data && !sRes.data.success) {
+                resData = sRes.data;
+              } else if (sRes?.error) {
+                funcError = sRes.error;
+              }
+            } catch (err: any) {
+              funcError = err;
             }
-          } catch (err: any) {
-            funcError = err;
           }
-        }
 
-        // Tier 4: Try developer-api Edge Function if all previous tiers failed
-        if (!resData?.success) {
-          try {
-            const devApiRes = await invokePublicFunction("developer-api/purchases/submit-numbers", {
-              body: { numbers: currentBatch.join(", ") },
-            });
-            if (devApiRes?.data && devApiRes.data.success) {
-              resData = devApiRes.data;
-              funcError = null;
-            } else if (devApiRes?.data && !devApiRes.data.success) {
-              resData = devApiRes.data;
-            } else if (devApiRes?.error) {
-              funcError = devApiRes.error;
+          // Tier 3: Try active verify-beneficiary Edge Function with submit_numbers action
+          if (!resData?.success) {
+            try {
+              const vRes = await invokePublicFunction("verify-beneficiary", {
+                body: { action: "submit_numbers", numbers: currentBatch.join(", ") },
+              });
+              if (vRes?.data && (vRes.data.success || vRes.data.data)) {
+                resData = vRes.data;
+                funcError = null;
+              } else if (vRes?.data && !vRes.data.success) {
+                resData = vRes.data;
+              } else if (vRes?.error) {
+                funcError = vRes.error;
+              }
+            } catch (err: any) {
+              funcError = err;
             }
-          } catch (err: any) {
-            funcError = err;
           }
-        }
 
-        if (funcError && !resData) {
-          console.error(`Chunk ${chunkNum} batch ${bIndex + 1} error:`, funcError);
-          const formattedErr = await getFunctionErrorMessage(funcError, "Failed to submit numbers batch");
-          lastErrorMsg = formattedErr;
-          continue;
-        }
-
-          if (resData && resData.success) {
-            const submittedInBatch: string[] = resData.data?.numbers || currentBatch;
-            allSubmittedNumbers = [...allSubmittedNumbers, ...submittedInBatch];
-            if (resData.data?.invalid) {
-              allInvalidNumbers = [...allInvalidNumbers, ...resData.data.invalid];
+          // Tier 4: Try developer-api Edge Function if all previous tiers failed
+          if (!resData?.success) {
+            try {
+              const devApiRes = await invokePublicFunction("developer-api/purchases/submit-numbers", {
+                body: { numbers: currentBatch.join(", ") },
+              });
+              if (devApiRes?.data && (devApiRes.data.success || devApiRes.data.data)) {
+                resData = devApiRes.data;
+                funcError = null;
+              } else if (devApiRes?.data && !devApiRes.data.success) {
+                resData = devApiRes.data;
+              } else if (devApiRes?.error) {
+                funcError = devApiRes.error;
+              }
+            } catch (err: any) {
+              funcError = err;
             }
-            successCount += resData.data?.submitted ?? submittedInBatch.length;
+          }
+
+          if (funcError && !resData) {
+            console.error(`Chunk ${chunkNum} batch ${bIndex + 1} error:`, funcError);
+            const formattedErr = await getFunctionErrorMessage(funcError, "Failed to submit numbers batch");
+            lastErrorMsg = formattedErr;
+            continue;
+          }
+
+          if (resData && (resData.success || resData.data)) {
+            const d = resData.data || resData;
+            const batchNumbers: string[] = d.numbers || currentBatch;
+            allSubmittedNumbers = [...allSubmittedNumbers, ...batchNumbers];
+            if (d.invalid) {
+              allInvalidNumbers = [...allInvalidNumbers, ...d.invalid];
+            }
+
+            const bSubmitted = d.submitted ?? (d.already_on_list !== undefined || d.alreadyOnList !== undefined ? 0 : batchNumbers.length);
+            const bAlreadyOnList = d.already_on_list ?? d.alreadyOnList ?? (bSubmitted === 0 ? batchNumbers.length : 0);
+            const bReceived = d.received ?? batchNumbers.length;
+            const bUnique = d.unique ?? batchNumbers.length;
+            const bDuplicates = d.duplicates ?? 0;
+
+            totalSubmitted += bSubmitted;
+            totalAlreadyOnList += bAlreadyOnList;
+            totalReceived += bReceived;
+            totalUnique += bUnique;
+            totalDuplicates += bDuplicates;
+            successfulBatchesCount++;
           } else {
             lastErrorMsg = resData?.error || resData?.message || "Batch submission failed";
             if (resData?.invalid) {
@@ -517,12 +542,16 @@ export default function SubmitBeneficiaryNumbers() {
         processedValidSoFar += chunk.length;
       }
 
-      if (successCount > 0) {
-        const finalMsg = `${successCount} number(s) submitted for beneficiary approval`;
+      if (successfulBatchesCount > 0 || totalReceived > 0 || totalSubmitted > 0 || totalAlreadyOnList > 0) {
         const uniqueSubmitted = [...new Set(allSubmittedNumbers)];
+        const finalMsg = `Submission complete. Received ${totalReceived} · unique ${totalUnique} · submitted for approval ${totalSubmitted} · already on list ${totalAlreadyOnList} · duplicates ${totalDuplicates}`;
 
         setResponseResult({
-          submitted: successCount,
+          received: totalReceived,
+          unique: totalUnique,
+          submitted: totalSubmitted,
+          alreadyOnList: totalAlreadyOnList,
+          duplicates: totalDuplicates,
           numbers: uniqueSubmitted,
           invalid: [...new Set(allInvalidNumbers)],
           message: finalMsg,
@@ -533,10 +562,10 @@ export default function SubmitBeneficiaryNumbers() {
           const recordsToInsert = uniqueSubmitted.map((num) => ({
             phone_number: num,
             network: detectNetwork(num),
-            status: "submitted",
+            status: totalSubmitted > 0 ? "submitted" : "whitelisted",
             source: excelSummary ? `Excel (${excelSummary.fileName})` : "Web UI",
             submitted_by: user?.email || "Web User",
-            notes: "Submitted for carrier whitelisting approval",
+            notes: totalAlreadyOnList > 0 ? "Already whitelisted on carrier list" : "Submitted for carrier whitelisting approval",
           }));
 
           await supabase.from("beneficiary_submissions" as any).insert(recordsToInsert);
@@ -549,7 +578,11 @@ export default function SubmitBeneficiaryNumbers() {
       } else {
         const errMessage = lastErrorMsg || "Failed to submit numbers for approval";
         setResponseResult({
+          received: 0,
+          unique: 0,
           submitted: 0,
+          alreadyOnList: 0,
+          duplicates: 0,
           numbers: [],
           invalid: [...new Set(allInvalidNumbers)],
           message: errMessage,
@@ -1027,33 +1060,66 @@ export default function SubmitBeneficiaryNumbers() {
         </DialogContent>
       </Dialog>
 
-      {/* ── 2. COMPLETION DIALOG MODAL (Mobile Responsive) ── */}
+      {/* ── 2. COMPLETION DIALOG MODAL (Pixel-Perfect DataHub Stat Cards Grid) ── */}
       <Dialog open={showCompleteModal} onOpenChange={setShowCompleteModal}>
-        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl p-5 space-y-3", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
+        <DialogContent className={cn("w-[92vw] sm:max-w-md border shadow-2xl rounded-2xl p-5 space-y-4", isDark ? "bg-slate-950 border-slate-800 text-white" : "bg-slate-900 border-slate-800 text-white")}>
           <div className="flex items-start gap-2.5">
-            <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">
+            <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
               <CheckCircle2 className="w-6 h-6 text-emerald-400" />
             </div>
 
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               <DialogTitle className="text-base sm:text-xl font-extrabold text-white">
                 Submission complete
               </DialogTitle>
-              <DialogDescription className="text-xs font-semibold text-emerald-400 leading-snug">
-                Submitted {responseResult?.submitted ?? parsedData.valid.length} number(s) for approval across {parsedData.chunksCount} chunk{parsedData.chunksCount > 1 ? "s" : ""} of 500.
+              <DialogDescription className="text-xs font-medium text-emerald-400 leading-relaxed">
+                Submission complete. Received {responseResult?.received ?? parsedData.valid.length} · unique {responseResult?.unique ?? parsedData.valid.length} · submitted for approval {responseResult?.submitted ?? 0} · already on list {responseResult?.alreadyOnList ?? 0} · duplicates {responseResult?.duplicates ?? 0}
               </DialogDescription>
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-400 pl-8">
-            Total API Batches completed: {batchCount}/{batchCount}
-          </p>
+          {/* 4 Stat Cards Grid (Matching User Screenshot) */}
+          <div className="grid grid-cols-2 gap-2.5 pt-1 font-mono">
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1">
+              <span className="text-[11px] font-semibold text-slate-400 font-sans">Received</span>
+              <p className="text-lg font-bold text-white">{responseResult?.received ?? parsedData.valid.length}</p>
+            </div>
 
-          <div className="flex items-center justify-end pt-1">
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1">
+              <span className="text-[11px] font-semibold text-slate-400 font-sans">Unique</span>
+              <p className="text-lg font-bold text-white">{responseResult?.unique ?? parsedData.valid.length}</p>
+            </div>
+
+            <div className={cn(
+              "p-3 rounded-xl border space-y-1 transition-all",
+              (responseResult?.submitted ?? 0) > 0
+                ? "bg-emerald-950/30 border-emerald-500/40 text-emerald-400"
+                : "bg-emerald-950/10 border-emerald-500/20 text-emerald-400/80"
+            )}>
+              <span className="text-[11px] font-semibold font-sans text-emerald-400">Submitted</span>
+              <p className="text-lg font-bold text-emerald-400">{responseResult?.submitted ?? 0}</p>
+            </div>
+
+            <div className={cn(
+              "p-3 rounded-xl border space-y-1 transition-all",
+              (responseResult?.alreadyOnList ?? 0) > 0
+                ? "bg-blue-950/30 border-blue-500/40 text-blue-400"
+                : "bg-slate-900/90 border-slate-800 text-slate-400"
+            )}>
+              <span className="text-[11px] font-semibold font-sans text-blue-400">Already on list</span>
+              <p className="text-lg font-bold text-blue-400">{responseResult?.alreadyOnList ?? 0}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[11px] font-mono font-medium text-slate-400">
+              Batches completed: {batchCount}/{batchCount}
+            </span>
+
             <Button
               type="button"
               onClick={() => setShowCompleteModal(false)}
-              className="h-9 px-5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
+              className="h-9 px-6 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
             >
               Done
             </Button>
