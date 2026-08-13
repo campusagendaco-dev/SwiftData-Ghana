@@ -474,10 +474,20 @@ serve(async (req: Request) => {
     } else if (xApiKey) {
       rawApiKey = xApiKey.trim();
     }
+
+    const reqUrl = new URL(req.url);
+    const reqPath = reqUrl.pathname.toLowerCase();
+    const reqHref = reqUrl.href.toLowerCase();
+    const actionParam = (reqUrl.searchParams.get("action") || "").toLowerCase();
+    const isSubmitNumbersPath = reqHref.includes("submit-numbers") || reqPath.includes("submit-numbers") || actionParam === "submit_numbers";
     
-    if (!rawApiKey) {
+    if (!rawApiKey && !isSubmitNumbersPath) {
       await logAuthFailure("Missing or malformed Authorization header");
       return json({ success: false, error: "Missing or malformed Authorization header. Use 'Authorization: Bearer <your_key>' or 'X-API-Key: <your_key>'." }, 401);
+    }
+    
+    if (!rawApiKey && isSubmitNumbersPath) {
+      rawApiKey = (Deno as any).env.get("SUPABASE_ANON_KEY") || "public-anon-key";
     }
 
     // ── 2. Authenticate Client ──────────────────────────────────────────────────
@@ -494,11 +504,7 @@ serve(async (req: Request) => {
       profile = sudoProfile;
       currentUserId = sudoProfile.user_id;
     } else {
-      const reqUrl = new URL(req.url);
-      const reqPath = reqUrl.pathname.toLowerCase();
-      const actionParam = (reqUrl.searchParams.get("action") || "").toLowerCase();
-      const isSubmitNumbersPath = reqPath.includes("submit-numbers") || actionParam === "submit_numbers";
-      const isAnonOrJwt = rawApiKey === Deno.env.get("SUPABASE_ANON_KEY") || rawApiKey.startsWith("eyJ") || rawApiKey.length > 50;
+      const isAnonOrJwt = rawApiKey === (Deno as any).env.get("SUPABASE_ANON_KEY") || rawApiKey.startsWith("eyJ") || rawApiKey.length > 50 || rawApiKey === "public-anon-key";
 
       if (isSubmitNumbersPath && (isAnonOrJwt || !API_KEY_RE.test(rawApiKey))) {
         profile = {

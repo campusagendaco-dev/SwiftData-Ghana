@@ -4,7 +4,7 @@ import {
   ArrowLeft, Copy, Check, Shield, Zap, Code2, BookOpen,
   AlertCircle, ChevronRight, Globe, Key, List, ShoppingCart, AlertTriangle,
   Activity, Lock, RotateCcw, Menu, X, CreditCard, Search,
-  ArrowLeftRight, Gauge, RefreshCw, Database
+  ArrowLeftRight, Gauge, RefreshCw, Database, Send
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";

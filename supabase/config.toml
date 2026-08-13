@@ -39,6 +39,12 @@ verify_jwt = false
 [functions.developer-api]
 verify_jwt = false
 
+[functions.verify-beneficiary]
+verify_jwt = false
+
+[functions.submit-numbers]
+verify_jwt = false
+
 [functions.voucher-purchase]
 verify_jwt = false
 

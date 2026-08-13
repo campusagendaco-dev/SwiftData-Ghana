@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import * as XLSX from "xlsx";
 import {
   Send,
   CheckCircle2,
@@ -16,6 +17,12 @@ import {
   ShieldCheck,
   PhoneCall,
   ChevronDown,
+  FileSpreadsheet,
+  UploadCloud,
+  FileText,
+  Download,
+  FileUp,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,6 +66,15 @@ function normalizeGhanaPhone(phone: string): { normalized: string; isValid: bool
   };
 }
 
+function detectNetwork(phone: string): string {
+  const clean = phone.replace(/\D/g, "");
+  const p = clean.startsWith("233") ? "0" + clean.slice(3) : clean;
+  if (/^0(24|25|53|54|55|59)\d{7}$/.test(p)) return "MTN";
+  if (/^0(20|50)\d{7}$/.test(p)) return "Telecel";
+  if (/^0(27|57|26|56)\d{7}$/.test(p)) return "AirtelTigo";
+  return "Ghana Mobile";
+}
+
 export default function SubmitBeneficiaryNumbers() {
   const { user } = useAuth();
   const { isDark } = useAppTheme();
@@ -75,6 +91,16 @@ export default function SubmitBeneficiaryNumbers() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
 
+  // Smart Excel / File upload state
+  const [fileParsing, setFileParsing] = useState(false);
+  const [excelSummary, setExcelSummary] = useState<{
+    fileName: string;
+    totalScanned: number;
+    validNumbers: string[];
+    invalidCount: number;
+  } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
   // Response state
   const [responseResult, setResponseResult] = useState<{
     submitted: number;
@@ -84,10 +110,144 @@ export default function SubmitBeneficiaryNumbers() {
     error?: string;
   } | null>(null);
 
+  const parseExcelFile = async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+
+    const rawValues: string[] = [];
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: false });
+      for (const row of rows) {
+        if (Array.isArray(row)) {
+          for (const cell of row) {
+            if (cell !== undefined && cell !== null) {
+              const cellStr = String(cell).trim();
+              if (cellStr) rawValues.push(cellStr);
+            }
+          }
+        }
+      }
+    }
+
+    const validNumbers: string[] = [];
+    let invalidCount = 0;
+
+    for (const val of rawValues) {
+      const res = normalizeGhanaPhone(val);
+      if (res.isValid) {
+        if (!validNumbers.includes(res.normalized)) {
+          validNumbers.push(res.normalized);
+        }
+      } else {
+        const digits = val.replace(/\D/g, "");
+        if (digits.length >= 7) {
+          invalidCount++;
+        }
+      }
+    }
+
+    return {
+      fileName: file.name,
+      totalScanned: rawValues.length,
+      validNumbers,
+      invalidCount,
+    };
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+
+    const allowedExts = [".xlsx", ".xls", ".csv", ".tsv", ".txt"];
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (!allowedExts.includes(ext)) {
+      toast({
+        title: "Unsupported file format",
+        description: "Please upload an Excel (.xlsx, .xls) or CSV/TXT file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setFileParsing(true);
+    try {
+      const result = await parseExcelFile(file);
+      setExcelSummary(result);
+
+      if (result.validNumbers.length === 0) {
+        toast({
+          title: "No valid numbers found",
+          description: `Scanned ${result.totalScanned} cells/rows in ${file.name}, but found no valid Ghanaian mobile numbers.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Smart Excel Extraction Complete! 🚀",
+          description: `Extracted ${result.validNumbers.length} valid number(s) from ${file.name}.`,
+        });
+      }
+    } catch (err: any) {
+      console.error("[Excel Parser Error]", err);
+      toast({
+        title: "Failed to parse file",
+        description: err.message || "An error occurred while processing the file.",
+        variant: "destructive",
+      });
+    } finally {
+      setFileParsing(false);
+    }
+  };
+
+  const handleApplyExcelNumbers = (mode: "replace" | "append") => {
+    if (!excelSummary || excelSummary.validNumbers.length === 0) return;
+
+    if (mode === "replace") {
+      setRawText(excelSummary.validNumbers.join("\n"));
+      toast({
+        title: "Text Area Updated",
+        description: `Loaded ${excelSummary.validNumbers.length} valid numbers from ${excelSummary.fileName}.`,
+      });
+    } else {
+      const existing = rawText.trim()
+        .split(/[\n,\s]+/)
+        .map((n) => n.trim())
+        .filter(Boolean);
+
+      const merged = [...new Set([...existing, ...excelSummary.validNumbers])];
+      setRawText(merged.join("\n"));
+      toast({
+        title: "Numbers Appended",
+        description: `Appended ${excelSummary.validNumbers.length} numbers (Total unique: ${merged.length}).`,
+      });
+    }
+
+    setExcelSummary(null);
+  };
+
+  const handleDownloadSampleExcel = () => {
+    const sampleData = [
+      { "Phone Number": "0538122730", "Network": "MTN", "Name": "Beneficiary 1" },
+      { "Phone Number": "0241234567", "Network": "MTN", "Name": "Beneficiary 2" },
+      { "Phone Number": "0554226398", "Network": "MTN", "Name": "Beneficiary 3" },
+      { "Phone Number": "233241112233", "Network": "MTN", "Name": "Beneficiary 4" },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Beneficiary Numbers");
+    XLSX.writeFile(wb, "sample_beneficiary_numbers.xlsx");
+
+    toast({
+      title: "Sample Template Downloaded",
+      description: "Downloaded sample_beneficiary_numbers.xlsx template.",
+    });
+  };
+
   // Parse raw text in real-time
   const parsedData = useMemo(() => {
     if (!rawText.trim()) {
-      return { items: [], valid: [], invalid: [], overLimit: false };
+      return { items: [], valid: [], invalid: [], chunksCount: 0 };
     }
 
     const items = rawText
@@ -111,11 +271,11 @@ export default function SubmitBeneficiaryNumbers() {
       items,
       valid,
       invalid,
-      overLimit: items.length > 500,
+      chunksCount: Math.ceil(valid.length / 500),
     };
   }, [rawText]);
 
-  // Calculate batch count (30 per API call, max 100 per UI display batch description)
+  // Calculate total batch count (30 per API call)
   const batchCount = useMemo(() => {
     if (parsedData.valid.length === 0) return 0;
     return Math.ceil(parsedData.valid.length / 30);
@@ -163,15 +323,6 @@ export default function SubmitBeneficiaryNumbers() {
       return;
     }
 
-    if (parsedData.overLimit) {
-      toast({
-        title: "Limit exceeded",
-        description: `Maximum 500 numbers allowed per request (got ${parsedData.items.length}).`,
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (parsedData.valid.length === 0) {
       toast({
         title: "No valid numbers",
@@ -184,54 +335,145 @@ export default function SubmitBeneficiaryNumbers() {
     setShowConfirmModal(true);
   };
 
-  // Step 2: Execute actual submission logic
+  // Step 2: Execute actual submission logic in 500-number chunks
   const handleConfirmSubmit = async () => {
     setShowConfirmModal(false);
     setLoading(true);
     setProgressPercent(0);
     setResponseResult(null);
 
-    const BATCH_SIZE = 30;
     const totalValid = parsedData.valid;
-    const batches: string[][] = [];
+    const CHUNK_SIZE = 500;
+    const BATCH_SIZE = 30; // sub-batches per API call
 
-    for (let i = 0; i < totalValid.length; i += BATCH_SIZE) {
-      batches.push(totalValid.slice(i, i + BATCH_SIZE));
-    }
-
+    const totalChunks = Math.ceil(totalValid.length / CHUNK_SIZE);
     let allSubmittedNumbers: string[] = [];
     let allInvalidNumbers: string[] = [...parsedData.invalid];
     let successCount = 0;
     let lastErrorMsg = "";
 
     try {
-      for (let bIndex = 0; bIndex < batches.length; bIndex++) {
-        const currentBatch = batches[bIndex];
-        const batchNum = bIndex + 1;
-        setCurrentBatchText(`Submitting batch ${batchNum} of ${batches.length}...`);
-        setProgressPercent(Math.round(((bIndex + 1) / batches.length) * 100));
+      let processedValidSoFar = 0;
+
+      for (let cIndex = 0; cIndex < totalChunks; cIndex++) {
+        const chunk = totalValid.slice(cIndex * CHUNK_SIZE, (cIndex + 1) * CHUNK_SIZE);
+        const chunkNum = cIndex + 1;
+
+        // Sub-batch chunk into groups of 30 for API payloads
+        const batches: string[][] = [];
+        for (let i = 0; i < chunk.length; i += BATCH_SIZE) {
+          batches.push(chunk.slice(i, i + BATCH_SIZE));
+        }
+
+        for (let bIndex = 0; bIndex < batches.length; bIndex++) {
+          const currentBatch = batches[bIndex];
+          
+          if (totalChunks > 1) {
+            setCurrentBatchText(`Chunk ${chunkNum}/${totalChunks} (Numbers ${processedValidSoFar + 1}-${Math.min(processedValidSoFar + chunk.length, totalValid.length)}) — Batch ${bIndex + 1}/${batches.length}...`);
+          } else {
+            setCurrentBatchText(`Submitting batch ${bIndex + 1} of ${batches.length}...`);
+          }
+
+          const currentTotalProcessed = processedValidSoFar + (bIndex + 1) * BATCH_SIZE;
+          setProgressPercent(Math.min(100, Math.round((currentTotalProcessed / totalValid.length) * 100)));
 
         let resData: any = null;
         let funcError: any = null;
 
-        // Tier 1: Try active verify-beneficiary Edge Function with submit_numbers action
+        // Tier 1: Direct DataHub Provider API call (Fastest, zero edge function gateway preflight errors)
         try {
-          const vRes = await invokePublicFunction("verify-beneficiary", {
-            body: { action: "submit_numbers", numbers: currentBatch.join(", ") },
+          let apiKey = "";
+          let baseUrl = "https://user.datahubgh.com/api/external";
+
+          const { data: provider } = await supabase
+            .from("providers")
+            .select("api_key, base_url")
+            .eq("handler_type", "datahub")
+            .eq("is_active", true)
+            .maybeSingle();
+
+          if (provider?.api_key) {
+            apiKey = provider.api_key;
+            if (provider.base_url) baseUrl = provider.base_url;
+          } else {
+            apiKey = "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
+          }
+
+          const cleanBase = baseUrl.trim().replace(/\/+$/, "");
+          const targetUrl = cleanBase.endsWith("/purchases/submit-numbers")
+            ? cleanBase
+            : cleanBase.includes("/purchases")
+            ? `${cleanBase}/submit-numbers`
+            : `${cleanBase}/purchases/submit-numbers`;
+
+          const directRes = await fetch(targetUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": apiKey,
+            },
+            body: JSON.stringify({ numbers: currentBatch.join(", ") }),
           });
-          if (vRes?.data && vRes.data.success) {
-            resData = vRes.data;
+
+          const text = await directRes.text();
+          let parsed: any = null;
+          try { parsed = JSON.parse(text); } catch {}
+
+          if (directRes.ok || parsed?.success || parsed?.data?.submitted !== undefined) {
+            resData = parsed || {
+              success: true,
+              data: {
+                submitted: currentBatch.length,
+                numbers: currentBatch,
+                invalid: [],
+                message: `${currentBatch.length} number(s) submitted for beneficiary approval`,
+              },
+            };
             funcError = null;
-          } else if (vRes?.data && !vRes.data.success) {
-            resData = vRes.data;
-          } else if (vRes?.error) {
-            funcError = vRes.error;
           }
         } catch (err: any) {
           funcError = err;
         }
 
-        // Tier 2: Try developer-api Edge Function if Tier 1 failed
+        // Tier 2: Try dedicated submit-numbers Edge Function if Tier 1 failed
+        if (!resData?.success) {
+          try {
+            const sRes = await invokePublicFunction("submit-numbers", {
+              body: { numbers: currentBatch.join(", ") },
+            });
+            if (sRes?.data && sRes.data.success) {
+              resData = sRes.data;
+              funcError = null;
+            } else if (sRes?.data && !sRes.data.success) {
+              resData = sRes.data;
+            } else if (sRes?.error) {
+              funcError = sRes.error;
+            }
+          } catch (err: any) {
+            funcError = err;
+          }
+        }
+
+        // Tier 3: Try active verify-beneficiary Edge Function with submit_numbers action
+        if (!resData?.success) {
+          try {
+            const vRes = await invokePublicFunction("verify-beneficiary", {
+              body: { action: "submit_numbers", numbers: currentBatch.join(", ") },
+            });
+            if (vRes?.data && vRes.data.success) {
+              resData = vRes.data;
+              funcError = null;
+            } else if (vRes?.data && !vRes.data.success) {
+              resData = vRes.data;
+            } else if (vRes?.error) {
+              funcError = vRes.error;
+            }
+          } catch (err: any) {
+            funcError = err;
+          }
+        }
+
+        // Tier 4: Try developer-api Edge Function if all previous tiers failed
         if (!resData?.success) {
           try {
             const devApiRes = await invokePublicFunction("developer-api/purchases/submit-numbers", {
@@ -250,96 +492,57 @@ export default function SubmitBeneficiaryNumbers() {
           }
         }
 
-        // Tier 3: Direct DataHub Provider API call (guarantees success even if cloud edge functions are un-deployed)
-        if (!resData?.success) {
-          try {
-            let apiKey = "";
-            let baseUrl = "https://user.datahubgh.com/api/external";
-
-            const { data: provider } = await supabase
-              .from("providers")
-              .select("api_key, base_url")
-              .eq("handler_type", "datahub")
-              .eq("is_active", true)
-              .maybeSingle();
-
-            if (provider?.api_key) {
-              apiKey = provider.api_key;
-              if (provider.base_url) baseUrl = provider.base_url;
-            } else {
-              // Known active system DataHub key fallback for public UI submissions
-              apiKey = "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
-            }
-
-            const cleanBase = baseUrl.trim().replace(/\/+$/, "");
-            const targetUrl = cleanBase.endsWith("/purchases/submit-numbers")
-              ? cleanBase
-              : cleanBase.includes("/purchases")
-              ? `${cleanBase}/submit-numbers`
-              : `${cleanBase}/purchases/submit-numbers`;
-
-            const directRes = await fetch(targetUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-API-Key": apiKey,
-              },
-              body: JSON.stringify({ numbers: currentBatch.join(", ") }),
-            });
-
-            const text = await directRes.text();
-            let parsed: any = null;
-            try { parsed = JSON.parse(text); } catch {}
-
-            if (directRes.ok || parsed?.success || parsed?.data?.submitted !== undefined) {
-              resData = parsed || {
-                success: true,
-                data: {
-                  submitted: currentBatch.length,
-                  numbers: currentBatch,
-                  invalid: [],
-                  message: `${currentBatch.length} number(s) submitted for beneficiary approval`
-                }
-              };
-              funcError = null;
-            } else if (parsed) {
-              resData = parsed;
-            }
-          } catch (directErr: any) {
-            console.error("[SubmitNumbers] Direct provider fallback error:", directErr);
-          }
-        }
-
         if (funcError && !resData) {
-          console.error(`Batch ${batchNum} error:`, funcError);
+          console.error(`Chunk ${chunkNum} batch ${bIndex + 1} error:`, funcError);
           const formattedErr = await getFunctionErrorMessage(funcError, "Failed to submit numbers batch");
           lastErrorMsg = formattedErr;
           continue;
         }
 
-        if (resData && resData.success) {
-          const submittedInBatch: string[] = resData.data?.numbers || currentBatch;
-          allSubmittedNumbers = [...allSubmittedNumbers, ...submittedInBatch];
-          if (resData.data?.invalid) {
-            allInvalidNumbers = [...allInvalidNumbers, ...resData.data.invalid];
-          }
-          successCount += resData.data?.submitted ?? submittedInBatch.length;
-        } else {
-          lastErrorMsg = resData?.error || resData?.message || "Batch submission failed";
-          if (resData?.invalid) {
-            allInvalidNumbers = [...allInvalidNumbers, ...resData.invalid];
+          if (resData && resData.success) {
+            const submittedInBatch: string[] = resData.data?.numbers || currentBatch;
+            allSubmittedNumbers = [...allSubmittedNumbers, ...submittedInBatch];
+            if (resData.data?.invalid) {
+              allInvalidNumbers = [...allInvalidNumbers, ...resData.data.invalid];
+            }
+            successCount += resData.data?.submitted ?? submittedInBatch.length;
+          } else {
+            lastErrorMsg = resData?.error || resData?.message || "Batch submission failed";
+            if (resData?.invalid) {
+              allInvalidNumbers = [...allInvalidNumbers, ...resData.invalid];
+            }
           }
         }
+
+        processedValidSoFar += chunk.length;
       }
 
       if (successCount > 0) {
         const finalMsg = `${successCount} number(s) submitted for beneficiary approval`;
+        const uniqueSubmitted = [...new Set(allSubmittedNumbers)];
+
         setResponseResult({
           submitted: successCount,
-          numbers: [...new Set(allSubmittedNumbers)],
+          numbers: uniqueSubmitted,
           invalid: [...new Set(allInvalidNumbers)],
           message: finalMsg,
         });
+
+        // Record submitted numbers into database so Admin can view ALL of them in Admin Dashboard
+        try {
+          const recordsToInsert = uniqueSubmitted.map((num) => ({
+            phone_number: num,
+            network: detectNetwork(num),
+            status: "submitted",
+            source: excelSummary ? `Excel (${excelSummary.fileName})` : "Web UI",
+            submitted_by: user?.email || "Web User",
+            notes: "Submitted for carrier whitelisting approval",
+          }));
+
+          await supabase.from("beneficiary_submissions" as any).insert(recordsToInsert);
+        } catch (dbErr) {
+          console.warn("[DB Log] beneficiary_submissions insert warning:", dbErr);
+        }
 
         // Show completion modal!
         setShowCompleteModal(true);
@@ -423,7 +626,7 @@ export default function SubmitBeneficiaryNumbers() {
         </div>
 
         <p className={cn("text-[11px] sm:text-xs leading-snug mt-1", isDark ? "text-gray-300" : "text-gray-600")}>
-          Paste numbers to submit for beneficiary whitelisting. Max 500 per request. Check status:{" "}
+          Paste or upload numbers to submit for beneficiary whitelisting. Processed in chunks of 500. Check status:{" "}
           <Link to="/dashboard/buy-data/mtn" className="underline text-amber-400 font-bold">
             Verify Numbers
           </Link>
@@ -446,16 +649,134 @@ export default function SubmitBeneficiaryNumbers() {
                 </div>
               )}
               <div className="text-[11px] font-mono font-bold text-muted-foreground bg-slate-800/60 px-2 py-0.5 rounded-lg border border-slate-700/40">
-                <span className={cn(parsedData.overLimit ? "text-red-400" : parsedData.valid.length > 0 ? "text-amber-400 font-bold" : "")}>
-                  {parsedData.items.length}
+                <span className={cn(parsedData.valid.length > 0 ? "text-amber-400 font-bold" : "")}>
+                  {parsedData.valid.length}
                 </span>{" "}
-                / 500
+                Numbers ({parsedData.chunksCount} Chunk{parsedData.chunksCount > 1 ? "s" : ""})
               </div>
             </div>
           </div>
         </CardHeader>
 
         <CardContent className="p-3 sm:p-5 space-y-2.5">
+          {/* ── Smart Excel / CSV Upload Card & Dropzone ── */}
+          <div className="space-y-2 pb-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" /> Smart Excel / File Upload
+              </span>
+              <button
+                type="button"
+                onClick={handleDownloadSampleExcel}
+                className="text-[10px] text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 hover:underline transition-all"
+              >
+                <Download className="w-3 h-3" /> Sample Template (.xlsx)
+              </button>
+            </div>
+
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                  handleFileUpload(e.dataTransfer.files[0]);
+                }
+              }}
+              className={cn(
+                "relative border-2 border-dashed rounded-xl p-3 text-center transition-all cursor-pointer group",
+                isDragOver
+                  ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-950/20"
+                  : isDark
+                  ? "border-slate-800 bg-slate-950/40 hover:border-emerald-500/50 hover:bg-slate-900/60"
+                  : "border-gray-200 bg-slate-50/50 hover:border-emerald-500/50 hover:bg-emerald-50/30"
+              )}
+            >
+              <input
+                type="file"
+                accept=".xlsx, .xls, .csv, .tsv, .txt"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleFileUpload(e.target.files[0]);
+                  }
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              />
+
+              <div className="flex items-center justify-center gap-2">
+                {fileParsing ? (
+                  <RefreshCw className="w-4 h-4 text-emerald-400 animate-spin" />
+                ) : (
+                  <UploadCloud className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                )}
+                <div className="text-left">
+                  <p className="text-xs font-bold text-foreground">
+                    {fileParsing ? "Scanning & Normalizing Excel Cells..." : "Drop Excel (.xlsx, .xls) or CSV here"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Smart scanner extracts & formats Ghanaian numbers automatically
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Smart Extraction Summary Card */}
+            {excelSummary && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-white truncate max-w-[180px]">
+                      {excelSummary.fileName}
+                    </span>
+                  </div>
+                  <Badge variant="outline" className="text-emerald-400 border-emerald-500/40 bg-emerald-500/10 text-[10px]">
+                    {excelSummary.validNumbers.length} Valid Numbers
+                  </Badge>
+                </div>
+
+                <div className="text-[11px] text-slate-300 grid grid-cols-2 gap-1 font-mono">
+                  <div>Total Cells Scanned: <span className="text-white font-bold">{excelSummary.totalScanned}</span></div>
+                  <div>Invalid/Skipped: <span className="text-amber-400 font-bold">{excelSummary.invalidCount}</span></div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleApplyExcelNumbers("replace")}
+                    className="h-7 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex-1 gap-1"
+                  >
+                    <Sparkles className="w-3 h-3" /> Replace List
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleApplyExcelNumbers("append")}
+                    className="h-7 text-[10px] font-bold border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 rounded-lg flex-1 gap-1"
+                  >
+                    <Layers className="w-3 h-3" /> Append ({excelSummary.validNumbers.length})
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setExcelSummary(null)}
+                    className="h-7 text-[10px] text-slate-400 hover:text-white px-2"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
           {/* Input Textarea - Ultra-Compact on mobile view */}
           <div className="relative">
             <Textarea
@@ -533,19 +854,11 @@ export default function SubmitBeneficiaryNumbers() {
             </div>
           )}
 
-          {/* Validation warning if limit exceeded */}
-          {parsedData.overLimit && (
-            <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-[11px] flex items-center gap-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>Limit exceeded: Max 500 numbers (got {parsedData.items.length}).</span>
-            </div>
-          )}
-
           {/* Submit Button (Full Width Mobile CTA) */}
           <div className="pt-1">
             <Button
               onClick={handleInitiateSubmit}
-              disabled={loading || !rawText.trim() || parsedData.overLimit || parsedData.valid.length === 0}
+              disabled={loading || !rawText.trim() || parsedData.valid.length === 0}
               className={cn(
                 "w-full h-11 sm:h-12 rounded-xl font-extrabold text-xs sm:text-sm shadow-lg gap-2 transition-all active:scale-[0.98]",
                 "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white border border-blue-400/30 shadow-blue-950/40"
@@ -690,7 +1003,7 @@ export default function SubmitBeneficiaryNumbers() {
           </DialogHeader>
 
           <p className="text-[11px] text-slate-400 pt-1">
-            This will be sent in <strong className="text-white font-bold">{batchCount}</strong> batch{batchCount > 1 ? "es" : ""} of up to 100.
+            This will be processed in <strong className="text-white font-bold">{parsedData.chunksCount}</strong> chunk{parsedData.chunksCount > 1 ? "s" : ""} of 500 ({batchCount} API batch{batchCount > 1 ? "es" : ""}).
           </p>
 
           <div className="flex items-center justify-end gap-2 pt-3">
@@ -727,13 +1040,13 @@ export default function SubmitBeneficiaryNumbers() {
                 Submission complete
               </DialogTitle>
               <DialogDescription className="text-xs font-semibold text-emerald-400 leading-snug">
-                Submitted {responseResult?.submitted ?? parsedData.valid.length} number(s) for approval in {batchCount} batch{batchCount > 1 ? "es" : ""}.
+                Submitted {responseResult?.submitted ?? parsedData.valid.length} number(s) for approval across {parsedData.chunksCount} chunk{parsedData.chunksCount > 1 ? "s" : ""} of 500.
               </DialogDescription>
             </div>
           </div>
 
           <p className="text-[11px] text-slate-400 pl-8">
-            Batches completed: {batchCount}/{batchCount}
+            Total API Batches completed: {batchCount}/{batchCount}
           </p>
 
           <div className="flex items-center justify-end pt-1">

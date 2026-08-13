@@ -205,6 +205,21 @@ serve(async (req: Request) => {
         message: `${validNumbers.length} number(s) submitted for beneficiary approval`,
       };
 
+      // Record to beneficiary_submissions database table
+      try {
+        const recordsToInsert = validNumbers.map((num) => ({
+          phone_number: num,
+          network: "MTN",
+          status: "submitted",
+          source: "submit-numbers-api",
+          submitted_by: "API User",
+          notes: "Submitted via submit-numbers Edge Function",
+        }));
+        await supabaseClient.from("beneficiary_submissions").insert(recordsToInsert);
+      } catch (e) {
+        console.warn("[submit-numbers] DB record warning:", e);
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
