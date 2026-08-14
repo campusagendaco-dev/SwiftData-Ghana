@@ -149,7 +149,8 @@ serve(async (req) => {
           phone: order.customer_phone,
           order_id: order.id,
           amount: order.amount,
-          agent_id: order.agent_id
+          agent_id: order.agent_id,
+          reason: order.failure_reason
         }
       });
     } catch (smsErr) {

@@ -19,7 +19,14 @@ serve(async (req) => {
     const shortId = order_id ? String(order_id).slice(0, 8).toUpperCase() : "";
     let message = "";
 
-    if (action === "non_beneficiary" || action === "beneficiary_guide") {
+    const rLower = String(reason || "").toLowerCase();
+    const isBeneficiaryReason = rLower.includes("beneficiary") ||
+      rLower.includes("not on") ||
+      rLower.includes("whitelist") ||
+      rLower.includes("not added") ||
+      rLower.includes("unregistered");
+
+    if (action === "non_beneficiary" || action === "beneficiary_guide" || isBeneficiaryReason) {
       const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)} refunded to wallet)` : "";
       message = `SwiftData Alert: Your MTN number ${phone || "recipient"} requires Beneficiary Approval${amtPart}.\n\n` +
         `Smart Guide to Activate:\n` +
@@ -27,17 +34,8 @@ serve(async (req) => {
         `2️⃣ Enter ${phone || "your number"} & tap Submit\n` +
         `3️⃣ Wait 5-15 mins for auto-approval & retry your order!`;
     } else if (action === "refund") {
-      const isBeneficiaryReason = reason && (reason.toLowerCase().includes("beneficiary") || reason.toLowerCase().includes("not on"));
-      if (isBeneficiaryReason) {
-        message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) refunded to wallet as number requires beneficiary approval.\n\n` +
-          `Smart Guide to Activate:\n` +
-          `1️⃣ Visit: https://swiftdatagh.com/submit-numbers\n` +
-          `2️⃣ Submit ${phone || "your number"}\n` +
-          `3️⃣ Retry order in 5-15 mins!`;
-      } else {
-        const reasonPart = reason ? ` Reason: ${reason}.` : "";
-        message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) has been refunded to your wallet balance.${reasonPart}`;
-      }
+      const reasonPart = reason ? ` Reason: ${reason}.` : "";
+      message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) has been refunded to your wallet balance.${reasonPart}`;
     } else if (action === "retry") {
       message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (${network || ""} ${package_size || ""}) has been verified & re-submitted for delivery.`;
     } else if (action === "fulfilled") {
