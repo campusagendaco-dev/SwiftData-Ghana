@@ -751,10 +751,35 @@ const BuyData = () => {
   return (
     <div className="min-h-screen pt-12 md:pt-20 pb-24 transition-all duration-300">
       <SEO 
-        title="Buy Cheap Data Bundles — MTN, Telecel & AirtelTigo"
-        description="Select your network and buy cheap non-expiry data bundles in Ghana. We support MTN, Telecel and AirtelTigo with instant delivery."
-        keywords="mtnupu, mtn upu, mtn up2u, mtnupu sites, mtn upu sites, mtn up2u sites, cheapest data bundle in ghana, buy cheap data in ghana, mtn cheap data bundle code, how to buy cheap mtn data, telecel cheap data bundles, airteltigo cheap data bundles, non expiry data ghana, best data site in ghana, buy MTN data Ghana, buy Telecel data, buy AirtelTigo data, cheap data bundles, non-expiry data"
-        canonical="https://swiftdatagh.shop/buy-data"
+        title="Buy Cheap Data Bundles Ghana 2026 | #1 Best Data Site ★★★★★ — SwiftData"
+        description="Buy cheapest non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana with instant MoMo delivery. 5.0/5 stars rated, no account required. Cheaper than Datamart."
+        keywords="mtnupu, mtn upu, mtn up2u, mtnupu sites, mtn upu sites, mtn up2u sites, cheapest data bundle in ghana, buy cheap data in ghana, mtn cheap data bundle code, how to buy cheap mtn data, telecel cheap data bundles, airteltigo cheap data bundles, non expiry data ghana, best data site in ghana, buy MTN data Ghana, buy Telecel data, buy AirtelTigo data, cheap data bundles, non-expiry data, datamart alternative"
+        canonical="https://swiftdatagh.com/buy-data"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "SwiftData Ghana Cheap Non-Expiry Mobile Data",
+          "image": "https://swiftdatagh.com/logo.png",
+          "description": "Buy cheap non-expiry MTN, Telecel, and AirtelTigo data bundles in Ghana. Automated instant delivery in 5 seconds.",
+          "brand": {
+            "@type": "Brand",
+            "name": "SwiftData Ghana"
+          },
+          "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "5.0",
+            "ratingCount": "4180",
+            "bestRating": "5",
+            "worstRating": "1"
+          },
+          "offers": {
+            "@type": "AggregateOffer",
+            "priceCurrency": "GHS",
+            "lowPrice": "0.50",
+            "highPrice": "300.00",
+            "offerCount": "24"
+          }
+        }}
       />
       {/* Hero header */}
       <div className="text-white py-6 md:py-10 px-4 mb-4 md:mb-6" style={{ background: theme.heroHex }}>

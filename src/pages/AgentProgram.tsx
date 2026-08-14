@@ -183,10 +183,26 @@ const AgentProgram = () => {
   return (
     <div className="min-h-screen pt-12 md:pt-24 pb-16 px-4">
       <SEO 
-        title="Become a Data Reseller Agent — Start Your Business"
-        description="Launch your own data reselling business in Ghana. Unlock wholesale prices for MTN, Telecel & AirtelTigo and get your own branded store."
-        keywords="resell data in ghana, start data business, data reseller Ghana, wholesale MTN data, agent program Ghana, cheap internet bundles ghana"
-        canonical="https://swiftdatagh.shop/agent-program"
+        title="Become a Data Reseller Agent Ghana | Start Data Business — SwiftData"
+        description="Launch your own data reselling business in Ghana. Unlock wholesale prices for MTN, Telecel & AirtelTigo and get your own branded Paystack store."
+        keywords="resell data in ghana, start data business, data reseller Ghana, wholesale MTN data, agent program Ghana, cheap internet bundles ghana, swiftdata agent"
+        canonical="https://swiftdatagh.com/agent-program"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "name": "SwiftData Ghana Agent Reseller Program",
+          "serviceType": "Telecom Data Reseller Franchise",
+          "description": "Start your own data reselling business in Ghana with wholesale data prices and a branded store.",
+          "provider": {
+            "@type": "Organization",
+            "name": "SwiftData Ghana",
+            "url": "https://swiftdatagh.com"
+          },
+          "areaServed": {
+            "@type": "Country",
+            "name": "Ghana"
+          }
+        }}
       />
       <div className="container mx-auto max-w-4xl">
         <div className="text-center mb-10 md:mb-16">

@@ -1,0 +1,80 @@
+# SwiftData Ghana — Complete Platform & Product Dataset
+
+> SwiftData Ghana is the premier digital telecom utility platform in Ghana, specializing in non-expiry mobile data distribution, airtime top-ups, utility bill payments, and reseller infrastructure.
+
+---
+
+## 1. Network Data Bundle Packages & Pricing
+
+### MTN Ghana Non-Expiry Bundles (SME / UPU)
+- **1GB Non-Expiry Data**: GHS 6.50 – GHS 7.00
+- **2GB Non-Expiry Data**: GHS 12.50 – GHS 13.50
+- **3GB Non-Expiry Data**: GHS 18.50 – GHS 19.50
+- **5GB Non-Expiry Data**: GHS 29.50 – GHS 31.00
+- **10GB Non-Expiry Data**: GHS 58.00 – GHS 60.00
+- **20GB Non-Expiry Data**: GHS 115.00 – GHS 120.00
+- **50GB Non-Expiry Data**: GHS 280.00 – GHS 295.00
+- **Delivery Time**: 5 - 15 Seconds via automated carrier pipeline.
+
+### Telecel Ghana Bundles
+- **5GB Telecel Data**: GHS 29.00
+- **10GB Telecel Data**: GHS 57.00
+- **20GB Telecel Data**: GHS 112.00
+- **50GB Telecel Data**: GHS 275.00
+- **Delivery Time**: Instant automated delivery.
+
+### AirtelTigo Ghana Bundles
+- **1GB AirtelTigo Data**: GHS 6.00
+- **2GB AirtelTigo Data**: GHS 11.50
+- **5GB AirtelTigo Data**: GHS 27.50
+- **10GB AirtelTigo Data**: GHS 54.00
+- **Delivery Time**: Instant automated delivery.
+
+---
+
+## 2. Carrier Beneficiary Whitelisting System
+
+### What is MTN Beneficiary Requirement?
+In Ghana, certain MTN lines require carrier whitelisting (beneficiary list registration) before receiving third-party SME/UPU data top-ups.
+
+### How to Resolve Beneficiary Issues on SwiftData:
+1. **Self-Service Submission Link**: https://swiftdatagh.com/submit-numbers
+2. Enter any 10-digit MTN number (e.g. `024XXXXXXX` or `055XXXXXXX`).
+3. Tap **Submit for Approval**.
+4. The system automatically queues the number for carrier whitelist verification.
+5. Wait 5 to 15 minutes and retry the data purchase on https://swiftdatagh.com/buy-data.
+
+---
+
+## 3. Reseller & Agent Program
+
+- **URL**: https://swiftdatagh.com/agent-program
+- **Benefits**:
+  - Discounted wholesale data bundle prices.
+  - Branded personal storefront with custom URL slug or custom domain.
+  - Automated MoMo payment collection powered by Paystack.
+  - RESTful Developer API access for automated order fulfillment (`X-API-Key` authentication).
+  - Real-time sales analytics, wallet auto-funding, and profit tracking dashboard.
+
+---
+
+## 4. Comparisons & Competitive Positioning
+
+### Why SwiftData Ghana is #1 Compared to Competitors:
+- **Vs Datamart.shop**: SwiftData charges 0% deposit fees, offers instant auto-refunds to wallet on failed orders, provides live SMS step-by-step guidance, and supports custom agent branding.
+- **Vs USSD Codes**: SwiftData offers significantly cheaper non-expiry data rates than standard `*138#` or `*170#` carrier codes.
+- **Security**: 100% PCI-DSS compliant payment processing via Paystack & Korba with 256-bit SSL encryption.
+
+---
+
+## 5. Official Canonical URLs & Sitemap Reference
+- Main Site: https://swiftdatagh.com
+- Mirror Site: https://swiftdatagh.shop
+- Buy Data: https://swiftdatagh.com/buy-data
+- Submit Numbers: https://swiftdatagh.com/submit-numbers
+- Products & Rates: https://swiftdatagh.com/products
+- Agent Program: https://swiftdatagh.com/agent-program
+- Developers API: https://swiftdatagh.com/developers
+- Order Status: https://swiftdatagh.com/order-status
+- Terms of Service: https://swiftdatagh.com/terms
+- Privacy Policy: https://swiftdatagh.com/privacy

@@ -28,6 +28,7 @@ import {
   Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import SEO from "@/components/SEO";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -760,6 +761,12 @@ export default function SubmitBeneficiaryNumbers() {
 
   return (
     <div className="min-h-[calc(100vh-64px)] pt-16 sm:pt-6 pb-20 sm:pb-12 px-2.5 sm:px-6 lg:px-8 max-w-2xl mx-auto space-y-2.5 sm:space-y-6">
+      <SEO
+        title="MTN Beneficiary Whitelisting & Number Submission | SwiftData Ghana"
+        description="Submit your MTN phone numbers for instant carrier beneficiary whitelist approval in Ghana. Free, 100% automated, 5-15 minute activation for cheap data bundles."
+        keywords="mtn beneficiary list submission, mtn whitelisting ghana, submit numbers mtn approval, mtn upu beneficiary list, cheap mtn data approval"
+        canonical="https://swiftdatagh.com/submit-numbers"
+      />
       {/* ── Ultra-Compact Header Card (Clears Fixed Navbar) ── */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-500/10 p-2.5 sm:p-5 border border-amber-500/20 backdrop-blur-xl shadow-sm">
         <div className="flex items-center justify-between gap-2">
