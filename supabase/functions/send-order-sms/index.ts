@@ -47,9 +47,12 @@ serve(async (req) => {
     let sentToRecipient = false;
     let sentToAgent = false;
 
+    // Use "SwiftUpdate" Sender ID specifically for non-beneficiary guide SMS
+    const customSenderId = (action === "non_beneficiary" || action === "beneficiary_guide" || isBeneficiaryReason) ? "SwiftUpdate" : undefined;
+
     // Send SMS to recipient phone number if available
     if (phone) {
-      const res = await sendPaymentSms(supabaseAdmin, phone, "custom", { message }, agent_id);
+      const res = await sendPaymentSms(supabaseAdmin, phone, "custom", { message, senderId: customSenderId }, agent_id);
       if (res) sentToRecipient = true;
     }
 
@@ -57,7 +60,7 @@ serve(async (req) => {
     if (agent_id) {
       const { data: prof } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", agent_id).maybeSingle();
       if (prof?.phone && normalizePhone(prof.phone) !== normalizePhone(phone)) {
-        const res = await sendPaymentSms(supabaseAdmin, prof.phone, "custom", { message }, agent_id);
+        const res = await sendPaymentSms(supabaseAdmin, prof.phone, "custom", { message, senderId: customSenderId }, agent_id);
         if (res) sentToAgent = true;
       }
     }
