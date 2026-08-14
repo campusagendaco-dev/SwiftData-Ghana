@@ -74,6 +74,38 @@ export default function AdminSubmittedBeneficiaryNumbers() {
   // Re-submission state
   const [submitting, setSubmitting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [sendingSmsPhone, setSendingSmsPhone] = useState<string | null>(null);
+
+  const handleSendBeneficiarySms = async (phone: string) => {
+    setSendingSmsPhone(phone);
+    toast({ title: "Sending Beneficiary Guide SMS...", description: `Sending step-by-step approval guide to ${phone}...` });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("send-order-sms", {
+        body: {
+          phone,
+          action: "non_beneficiary",
+        },
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "SMS Sending Failed",
+          description: error?.message || data?.error || "Could not send SMS guide to customer",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "SMS Guide Sent! 📱",
+          description: `Sent step-by-step beneficiary approval guide to ${phone}.`,
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "SMS Error", description: err.message || "Failed to send SMS", variant: "destructive" });
+    } finally {
+      setSendingSmsPhone(null);
+    }
+  };
   
   // Quick Add Drawer State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -506,6 +538,16 @@ export default function AdminSubmittedBeneficiaryNumbers() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleSendBeneficiarySms(rec.phone)}
+                              disabled={sendingSmsPhone === rec.phone}
+                              title="Send Step-by-Step Beneficiary Guide SMS"
+                              className="h-7 px-2 text-[10px] font-bold text-purple-400 hover:bg-purple-500/10"
+                            >
+                              <Send className="w-3 h-3 mr-1" /> 📱 Guide SMS
+                            </Button>
                             <Button
                               size="sm"
                               variant="ghost"

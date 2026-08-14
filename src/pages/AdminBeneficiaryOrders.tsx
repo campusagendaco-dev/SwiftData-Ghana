@@ -66,6 +66,8 @@ export default function AdminBeneficiaryOrders() {
   const [routingDatamart, setRoutingDatamart] = useState(false);
   const [submittingNumbers, setSubmittingNumbers] = useState(false);
   const [submittingPhone, setSubmittingPhone] = useState<string | null>(null);
+  const [sendingSmsPhone, setSendingSmsPhone] = useState<string | null>(null);
+  const [sendingBulkSms, setSendingBulkSms] = useState(false);
 
   // Shared submission core: sends numbers to DataHub in batches of 30 AND
   // records every outcome (success or failure) into beneficiary_submissions
@@ -247,6 +249,69 @@ export default function AdminBeneficiaryOrders() {
     } finally {
       setSubmittingPhone(null);
     }
+  };
+
+  const handleSendBeneficiarySms = async (phone: string, amount?: number) => {
+    setSendingSmsPhone(phone);
+    toast({ title: "Sending Beneficiary Guide SMS...", description: `Sending step-by-step approval guide to ${phone}...` });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("send-order-sms", {
+        body: {
+          phone,
+          action: "non_beneficiary",
+          amount: amount || 0,
+        },
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: "SMS Sending Failed",
+          description: error?.message || data?.error || "Could not send SMS guide to customer",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "SMS Guide Sent! 📱",
+          description: `Sent step-by-step beneficiary approval guide to ${phone}.`,
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "SMS Error", description: err.message || "Failed to send SMS", variant: "destructive" });
+    } finally {
+      setSendingSmsPhone(null);
+    }
+  };
+
+  const handleBulkSendBeneficiarySms = async () => {
+    const numbers = Array.from(new Set(groupedNumbers.map((g) => g.phone).filter(Boolean)));
+    if (numbers.length === 0) {
+      toast({ title: "No numbers to notify", description: "No non-beneficiary numbers found." });
+      return;
+    }
+
+    if (!confirm(`Send Step-by-Step Beneficiary Guide SMS to all ${numbers.length} unique phone numbers?`)) {
+      return;
+    }
+
+    setSendingBulkSms(true);
+    toast({ title: "Sending Bulk SMS Guides...", description: `Notifying ${numbers.length} numbers with step-by-step approval guide...` });
+
+    let sent = 0;
+    for (const phone of numbers) {
+      try {
+        const { data } = await supabase.functions.invoke("send-order-sms", {
+          body: { phone, action: "non_beneficiary" },
+        });
+        if (data?.success) sent++;
+      } catch (e) { /* ignore */ }
+    }
+
+    toast({
+      title: "Bulk SMS Complete! 📱",
+      description: `Sent Step-by-Step Approval Guide SMS to ${sent} of ${numbers.length} numbers.`,
+    });
+    setSendingBulkSms(false);
   };
 
   const handleRouteAllToDatamart = async () => {
@@ -656,6 +721,17 @@ export default function AdminBeneficiaryOrders() {
             </Button>
 
             <Button
+              variant="default"
+              size="lg"
+              className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-extrabold rounded-2xl shadow-lg shadow-purple-950/30 transition-all active:scale-95 text-xs sm:text-sm"
+              onClick={handleBulkSendBeneficiarySms}
+              disabled={sendingBulkSms || loading || totalUniqueNumbers === 0}
+            >
+              {sendingBulkSms ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              📱 Send Bulk Guide SMS ({totalUniqueNumbers})
+            </Button>
+
+            <Button
               asChild
               variant="default"
               size="lg"
@@ -908,6 +984,16 @@ export default function AdminBeneficiaryOrders() {
 
                         <td className="py-4 px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border-purple-500/30 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 transition-all"
+                              onClick={() => handleSendBeneficiarySms(grp.phone, grp.totalAmount)}
+                              disabled={sendingSmsPhone === grp.phone}
+                            >
+                              {sendingSmsPhone === grp.phone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              📱 Send Guide SMS
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"

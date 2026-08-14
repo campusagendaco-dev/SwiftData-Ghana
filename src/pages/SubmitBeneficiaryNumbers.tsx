@@ -791,6 +791,37 @@ export default function SubmitBeneficiaryNumbers() {
         </p>
       </div>
 
+      {/* ── Smart Step-by-Step Beneficiary Guide Banner ── */}
+      <div className={cn("p-3.5 sm:p-4 rounded-2xl border backdrop-blur-xl space-y-2.5", isDark ? "bg-amber-500/10 border-amber-500/20 text-amber-300" : "bg-amber-50 border-amber-200 text-amber-900")}>
+        <div className="flex items-center gap-2 font-black text-xs sm:text-sm tracking-wide">
+          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>Smart 3-Step Beneficiary Activation Guide</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] sm:text-xs">
+          <div className={cn("p-2.5 rounded-xl border flex items-start gap-2", isDark ? "bg-black/30 border-white/5" : "bg-white border-amber-200/60 shadow-sm")}>
+            <span className="w-5 h-5 rounded-full bg-amber-500 text-black font-black text-[10px] flex items-center justify-center shrink-0 shadow-sm">1</span>
+            <div>
+              <p className="font-bold">Paste Phone Number</p>
+              <p className="opacity-75 text-[10px]">Enter your MTN number in the box below or upload Excel file.</p>
+            </div>
+          </div>
+          <div className={cn("p-2.5 rounded-xl border flex items-start gap-2", isDark ? "bg-black/30 border-white/5" : "bg-white border-amber-200/60 shadow-sm")}>
+            <span className="w-5 h-5 rounded-full bg-amber-500 text-black font-black text-[10px] flex items-center justify-center shrink-0 shadow-sm">2</span>
+            <div>
+              <p className="font-bold">Tap Submit for Approval</p>
+              <p className="opacity-75 text-[10px]">Your number is queued for instant carrier whitelisting.</p>
+            </div>
+          </div>
+          <div className={cn("p-2.5 rounded-xl border flex items-start gap-2", isDark ? "bg-black/30 border-white/5" : "bg-white border-amber-200/60 shadow-sm")}>
+            <span className="w-5 h-5 rounded-full bg-amber-500 text-black font-black text-[10px] flex items-center justify-center shrink-0 shadow-sm">3</span>
+            <div>
+              <p className="font-bold">Retry Order (5-15 mins)</p>
+              <p className="opacity-75 text-[10px]">Once approved, retry your order for 100% instant delivery!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ── Main Input Card (Fits 100% on Mobile View) ── */}
       <Card className={cn("border shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
         <CardHeader className="pb-2 border-b border-white/5 px-3 sm:px-5 pt-2.5">
