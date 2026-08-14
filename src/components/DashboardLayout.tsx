@@ -104,11 +104,9 @@ const DashboardLayout = () => {
       
       <div className="flex-1 flex flex-col min-w-0 h-[100dvh] overflow-hidden">
         {/* ── Premium Glass Header ── */}
-        <header className={cn(
-          "h-16 flex items-center px-4 sm:px-6 gap-4 shrink-0 sticky top-0 z-40 backdrop-blur-xl border-b transition-all duration-300",
-          isDark ? "bg-black/40 border-white/5" : "bg-white/70 border-gray-200"
-        )}>
-          <button 
+        <div className="px-4 sm:px-6 pt-3 sm:pt-4 pb-2 shrink-0 sticky top-0 z-40">
+        <header className="glass-panel-cyber h-16 flex items-center px-4 sm:px-5 gap-4 rounded-[24px]">
+          <button
             onClick={() => setSidebarOpen(true)} 
             aria-label="Open sidebar menu"
             title="Open Menu"
@@ -220,6 +218,7 @@ const DashboardLayout = () => {
             </button>
           </div>
         </header>
+        </div>
 
         {/* ── Low balance alert banner ── */}
         {showLowBalanceAlert && (

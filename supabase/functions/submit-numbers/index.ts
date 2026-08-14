@@ -34,6 +34,31 @@ serve(async (req: Request) => {
   }
 
   try {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // This endpoint has no auth (verify_jwt = false, by design — it's called
+    // by anonymous visitors from the public Submit Numbers form) and also
+    // triggers the Korba bridge/proxy chain per request, so it needs its own
+    // throttle to prevent spam/abuse from burning proxy bandwidth or hammering
+    // the upstream provider.
+    const clientIp =
+      req.headers.get("cf-connecting-ip") ||
+      req.headers.get("x-real-ip") ||
+      (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() ||
+      "anon";
+    const { data: withinLimit } = await supabaseClient.rpc("check_generic_rate_limit", {
+      p_key: `submit_numbers:${clientIp}`,
+      p_rate_limit: 10, // max 10 submission requests per minute per IP
+    });
+    if (withinLimit === false) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Too many submissions. Please wait a moment and try again." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 429 }
+      );
+    }
+
     let body: any = {};
     try {
       body = await req.json();
@@ -124,10 +149,6 @@ serve(async (req: Request) => {
       );
     }
 
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
     // Retrieve active DataHub provider config
     const { data: provider } = await supabaseClient
       .from("providers")
@@ -174,6 +195,27 @@ serve(async (req: Request) => {
       );
     } catch (err: any) {
       console.error("[submit-numbers] DataHub connection error:", err);
+
+      // We never even got a response from the provider — record that plainly
+      // rather than let these numbers disappear with no trace.
+      try {
+        const unreachedRecords = validNumbers.map((num) => ({
+          phone_number: num,
+          network: "MTN",
+          status: "failed",
+          source: "submit-numbers-api",
+          submitted_by: "API User",
+          notes: `Never reached provider — connection error: ${String(err?.message || err).slice(0, 200)}`,
+          provider_status_code: null,
+        }));
+        const { error: logErr } = await supabaseClient
+          .from("beneficiary_submissions")
+          .upsert(unreachedRecords, { onConflict: "phone_number" });
+        if (logErr) console.error("[submit-numbers] DB failure-record FAILED:", logErr);
+      } catch (e) {
+        console.error("[submit-numbers] DB failure-record FAILED:", e);
+      }
+
       return new Response(
         JSON.stringify({
           success: false,
@@ -205,19 +247,25 @@ serve(async (req: Request) => {
         message: `${validNumbers.length} number(s) submitted for beneficiary approval`,
       };
 
-      // Record to beneficiary_submissions database table
+      // Record to beneficiary_submissions database table (upsert so retries/
+      // duplicate tiers update the existing row per number instead of
+      // piling up duplicates)
       try {
-        const recordsToInsert = validNumbers.map((num) => ({
+        const recordsToUpsert = validNumbers.map((num) => ({
           phone_number: num,
           network: "MTN",
           status: "submitted",
           source: "submit-numbers-api",
           submitted_by: "API User",
-          notes: "Submitted via submit-numbers Edge Function",
+          notes: `Submitted via submit-numbers Edge Function — provider responded ${dhResponse.status}`,
+          provider_status_code: dhResponse.status,
         }));
-        await supabaseClient.from("beneficiary_submissions").insert(recordsToInsert);
+        const { error: logErr } = await supabaseClient
+          .from("beneficiary_submissions")
+          .upsert(recordsToUpsert, { onConflict: "phone_number" });
+        if (logErr) console.error("[submit-numbers] DB record FAILED:", logErr);
       } catch (e) {
-        console.warn("[submit-numbers] DB record warning:", e);
+        console.error("[submit-numbers] DB record FAILED:", e);
       }
 
       return new Response(
@@ -234,7 +282,26 @@ serve(async (req: Request) => {
       );
     }
 
-    // Upstream error handling
+    // Upstream error handling — log the rejection too so these numbers are
+    // still visible to admin instead of silently vanishing.
+    try {
+      const failedRecords = validNumbers.map((num) => ({
+        phone_number: num,
+        network: "MTN",
+        status: "failed",
+        source: "submit-numbers-api",
+        submitted_by: "API User",
+        notes: `Provider rejected — HTTP ${dhResponse.status}: ${resText.slice(0, 200)}`,
+        provider_status_code: dhResponse.status,
+      }));
+      const { error: logErr } = await supabaseClient
+        .from("beneficiary_submissions")
+        .upsert(failedRecords, { onConflict: "phone_number" });
+      if (logErr) console.error("[submit-numbers] DB failure-record FAILED:", logErr);
+    } catch (e) {
+      console.error("[submit-numbers] DB failure-record FAILED:", e);
+    }
+
     if (parsedResponse) {
       return new Response(JSON.stringify(parsedResponse), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

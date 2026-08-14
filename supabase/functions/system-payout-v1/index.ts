@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
+import { log, notifyAdmins } from "../_shared/logger.ts";
 import https from "node:https";
 import { HttpsProxyAgent } from "npm:https-proxy-agent";
 
@@ -1179,12 +1180,28 @@ serve(async (req: Request) => {
             .eq("id", withdrawal_id);
 
           if (updateErr) {
-            // Transfer is live but DB update failed — log for manual recovery
+            // Transfer is live but DB update failed — log for manual recovery.
+            // Worse than a stale status: paystack_transfer_reference never
+            // saved means the transfer.success webhook won't find this row
+            // by reference later, so it can't auto-finalize at all.
             console.error("CRITICAL: Transfer initiated but status update failed", {
               withdrawal_id,
               transferCode,
               transferReference,
               error: updateErr.message,
+            });
+            log(supabaseAdmin, {
+              level: "error",
+              source: "system-payout-v1",
+              event: "withdrawal_status_update_failed",
+              message: `Paystack transfer ${transferReference} initiated for withdrawal ${withdrawal_id}, but the DB update failed — the completion webhook won't be able to find this withdrawal by reference`,
+              agent_id: withdrawal.agent_id,
+              data: { withdrawal_id, transfer_code: transferCode, transfer_reference: transferReference, amount: netAmount, error: updateErr.message },
+            });
+            notifyAdmins(supabaseAdmin, {
+              title: "🚨 Withdrawal transfer not recorded",
+              message: `Paystack transfer ${transferReference} was initiated for GHS ${netAmount.toFixed(2)} (withdrawal ${withdrawal_id.slice(0, 8)}), but saving the transfer reference failed — the auto-finalize webhook won't be able to find it. Verify manually.`,
+              data: { link: "/admin/withdrawals", withdrawal_id, transfer_reference: transferReference },
             });
           }
 

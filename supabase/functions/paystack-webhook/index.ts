@@ -6,7 +6,7 @@ import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sen
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
 import { getActiveProviders, resolveProvidersForOrder } from "../_shared/providers.ts";
-import { log } from "../_shared/logger.ts";
+import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 
 
@@ -605,7 +605,21 @@ serve(async (req) => {
           );
 
           if (finalizeErr || !finalizeResult?.success) {
-            console.error("CRITICAL: transfer.success but finalize_withdrawal failed", finalizeErr || finalizeResult?.error);
+            const errDetail = finalizeErr?.message || finalizeResult?.error || "unknown error";
+            console.error("CRITICAL: transfer.success but finalize_withdrawal failed", errDetail);
+            log(supabaseAdmin, {
+              level: "error",
+              source: "paystack-webhook",
+              event: "finalize_withdrawal_failed",
+              message: `Paystack confirmed transfer ${transferRef} sent, but finalize_withdrawal failed — DB may not reflect a completed payout`,
+              agent_id: withdrawal.agent_id,
+              data: { withdrawal_id: withdrawal.id, transfer_reference: transferRef, amount: withdrawal.amount, error: errDetail },
+            });
+            notifyAdmins(supabaseAdmin, {
+              title: "🚨 Withdrawal transfer not recorded",
+              message: `Paystack confirmed GHS ${Number(withdrawal.amount).toFixed(2)} was sent (ref ${transferRef}), but the withdrawal record failed to finalize. Money left the account — verify and correct the DB manually.`,
+              data: { link: "/admin/withdrawals", withdrawal_id: withdrawal.id, transfer_reference: transferRef },
+            });
           } else {
             // Import sendWithdrawalCompletedSms is in admin-user-actions only; call inline here
             const { data: profile } = await supabaseAdmin

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { basePackages, networks } from "@/lib/data";
+import { escapeHtml } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Download, Sparkles, Loader2, Eye, MessageCircle, RefreshCw, Check, QrCode, Copy } from "lucide-react";
@@ -322,10 +323,11 @@ const DashboardFlyer = () => {
       if (enabled.length) packages[net.name] = enabled;
     }
     return {
-      storeName: profile?.store_name || "My Store",
-      storeUrl: profile?.slug ? `swiftdatagh.shop/store/${profile.slug}` : "swiftdatagh.shop",
-
-      contact: profile?.momo_number || "",
+      // Escaped here, once, since these flow unescaped into raw HTML strings
+      // (innerHTML/document.write) below — not through JSX's auto-escaping.
+      storeName: escapeHtml(profile?.store_name || "My Store"),
+      storeUrl: escapeHtml(profile?.slug ? `swiftdatagh.shop/store/${profile.slug}` : "swiftdatagh.shop"),
+      contact: escapeHtml(profile?.momo_number || ""),
       packages,
     };
   };

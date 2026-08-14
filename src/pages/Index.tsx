@@ -366,7 +366,7 @@ const Index = () => {
             <span className="w-px h-3 bg-white/15" />
             
             <div className="flex items-center gap-2 min-w-[85px] justify-start overflow-hidden">
-              <img src="/logo.png" alt="SwiftData Ghana" className="w-4 h-4 rounded-full hidden sm:block shrink-0" />
+              <img src="/logo.png" alt="SwiftData Ghana" width={16} height={16} className="w-4 h-4 rounded-full hidden sm:block shrink-0" />
               <div 
                 key={activeMessageIndex} 
                 className="text-white/70 text-xs font-bold tracking-tight animate-in slide-in-from-bottom-1 fade-in duration-300 fill-mode-both whitespace-nowrap"
@@ -841,7 +841,7 @@ const Index = () => {
       <section className="py-14 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-3xl text-center">
           <div className="w-14 h-14 rounded-2xl border border-amber-400/20 bg-amber-400/8 flex items-center justify-center mx-auto mb-5">
-            <img src="/logo.png" alt="SwiftData Ghana" className="w-9 h-9 rounded-full" />
+            <img src="/logo.png" alt="SwiftData Ghana" loading="lazy" width={36} height={36} className="w-9 h-9 rounded-full" />
           </div>
           <p className="font-black text-lg mb-2">SwiftData Ghana</p>
           <p className="text-gray-400 dark:text-white/25 text-xs max-w-2xl mx-auto leading-relaxed">

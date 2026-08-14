@@ -90,7 +90,7 @@ const BlogPost = () => {
           </header>
 
           <div className="aspect-[16/9] rounded-2xl overflow-hidden bg-secondary/30 border border-white/5">
-            <img src={post.image} alt={post.title} className="w-full h-full object-cover" />
+            <img src={post.image} alt={post.title} width={1200} height={675} className="w-full h-full object-cover" />
           </div>
 
           {/* Render blog post content */}

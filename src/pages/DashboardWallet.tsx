@@ -444,7 +444,7 @@ const DashboardWallet = () => {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-border bg-card backdrop-blur-xl group shadow-sm">
+        <Card className="relative overflow-hidden bg-card/70 backdrop-blur-2xl border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)] group">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">SwiftPoints</p>
             <Gift className="w-4 h-4 text-amber-500 dark:text-amber-400" />
@@ -465,7 +465,7 @@ const DashboardWallet = () => {
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card className="border-border bg-card backdrop-blur-xl shadow-sm flex-1">
+          <Card className="bg-card/70 backdrop-blur-2xl border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)] flex-1">
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Quick Top Up</p>
               <Zap className="w-4 h-4 text-blue-500 dark:text-blue-400" />
@@ -539,7 +539,7 @@ const DashboardWallet = () => {
             <div className="w-1 h-6 bg-amber-500 rounded-full" />
             <h2 className="text-lg font-black text-foreground uppercase tracking-wider">Purchase Service</h2>
           </div>
-          <Card className="border-border bg-card shadow-sm overflow-hidden rounded-[2rem]">
+          <Card className="bg-card/70 backdrop-blur-2xl border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)] overflow-hidden rounded-[2rem]">
             <CardContent className="p-8 space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">

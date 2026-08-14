@@ -495,7 +495,7 @@ serve(async (req: Request) => {
 
         // Prefer agent_price; fall back to public_price so stores still work
         // when the admin has only filled in the public column.
-        const adminBase = Number(globalRow?.agent_price) > 0
+        let adminBase = Number(globalRow?.agent_price) > 0
           ? Number(globalRow!.agent_price)
           : Number(globalRow?.public_price);
 
@@ -508,9 +508,19 @@ serve(async (req: Request) => {
 
         const { data: sellerProfile } = await supabaseAdmin
           .from("profiles")
-          .select("is_sub_agent, parent_agent_id, agent_prices")
+          .select("is_sub_agent, parent_agent_id, agent_prices, agent_approved, sub_agent_approved")
           .eq("user_id", agentId)
           .maybeSingle();
+
+        // hasValidAgentId() only checks the client-supplied metadata.agent_id is
+        // a non-empty, non-placeholder string — it never verified the ID belongs
+        // to a real, approved agent. Without this check, anyone could pass a
+        // random UUID as agent_id and get wholesale agent_price instead of
+        // public_price for a purchase nobody actually approved as agent-linked.
+        const isRealApprovedAgent = !!sellerProfile && (sellerProfile.agent_approved === true || sellerProfile.sub_agent_approved === true);
+        if (!isRealApprovedAgent && Number(globalRow?.public_price) > 0) {
+          adminBase = Number(globalRow!.public_price);
+        }
 
         const sellerPrices = (sellerProfile?.agent_prices || {}) as Record<string, Record<string, string | number>>;
         const sellerListed = resolvePriceFromMap(

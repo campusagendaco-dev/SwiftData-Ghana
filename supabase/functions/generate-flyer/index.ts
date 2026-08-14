@@ -3,6 +3,17 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "";
 
+// The generated flyer HTML is returned to the client and rendered via
+// innerHTML/document.write (outside JSX's auto-escaping), and both the
+// client-supplied fields (storeName/storeUrl/contact) and the AI's own
+// output (customGreetingText/tagline/etc, reachable via the user-supplied
+// `prompt`) end up interpolated into it — escape everything before it's built in.
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch] as string));
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -75,7 +86,24 @@ serve(async (req) => {
       }
     }
 
-    const htmlFlyer = buildFlyerHtml(storeName, storeUrl, packages || {}, networks || [], contact, aiDesign);
+    const safeAiDesign = {
+      ...aiDesign,
+      customGreetingText: escapeHtml(aiDesign.customGreetingText),
+      tagline: escapeHtml(aiDesign.tagline),
+      fontFamily: escapeHtml(aiDesign.fontFamily),
+      primaryColor: escapeHtml(aiDesign.primaryColor),
+      secondaryColor: escapeHtml(aiDesign.secondaryColor),
+      accentColor: escapeHtml(aiDesign.accentColor),
+      backgroundGradient: escapeHtml(aiDesign.backgroundGradient),
+    };
+    const htmlFlyer = buildFlyerHtml(
+      escapeHtml(storeName),
+      escapeHtml(storeUrl),
+      packages || {},
+      networks || [],
+      escapeHtml(contact),
+      safeAiDesign
+    );
 
     return new Response(JSON.stringify({ html: htmlFlyer, caption: aiDesign.caption, design: aiDesign }), {
       status: 200,
@@ -136,19 +164,21 @@ body { font-family:'${design.fontFamily || 'Poppins'}', sans-serif; background:#
   </div>
   <div class="content">
     ${networks.map((net: { name: string; color: string }) => {
+      // Networks/packages are also client-supplied request-body data, not
+      // just the flyer owner's own store settings — escape before interpolating.
       const netPkgs = packages[net.name];
       if (!netPkgs || !Array.isArray(netPkgs) || netPkgs.length === 0) return '';
       return `<div class="network-section">
         <div class="network-title">
-          <div class="network-dot" style="background:${net.color}"></div>
-          <span class="network-name">${net.name}</span>
+          <div class="network-dot" style="background:${escapeHtml(net.color)}"></div>
+          <span class="network-name">${escapeHtml(net.name)}</span>
         </div>
         <div class="packages-grid">
           ${netPkgs.map((pkg: { size: string; price: number; validity?: string; popular?: boolean }) => `
             <div class="pkg-card">
-              <div class="pkg-size">${pkg.size}</div>
+              <div class="pkg-size">${escapeHtml(pkg.size)}</div>
               <div class="pkg-price">GH₵${pkg.price.toFixed(2)}</div>
-              <div class="pkg-validity">${pkg.validity || 'Non-expiry'}</div>
+              <div class="pkg-validity">${escapeHtml(pkg.validity || 'Non-expiry')}</div>
               ${pkg.popular ? `<div class="pkg-popular" style="background:${design.primaryColor}; color:${design.primaryColor === '#ffffff' ? '#000000' : '#ffffff'}">🔥 HOT</div>` : ''}
             </div>
           `).join('')}

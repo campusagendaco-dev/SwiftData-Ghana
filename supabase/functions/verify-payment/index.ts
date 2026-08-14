@@ -8,7 +8,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
 };
 import { getActiveProviders, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
-import { log } from "../_shared/logger.ts";
+import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 
@@ -186,11 +186,42 @@ async function fulfillOrder(
 
   await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
 
-  try {
-    // Credit profits
-    await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
+  // Credit profits — retry once before giving up, since this moves real
+  // commission money into the agent's wallet and a transient DB blip
+  // shouldn't silently cost them their payout.
+  let profitCredited = false;
+  let lastProfitErr: any = null;
+  for (let attempt = 0; attempt < 2 && !profitCredited; attempt++) {
+    try {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1000));
+      await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
+      profitCredited = true;
+    } catch (e) {
+      lastProfitErr = e;
+    }
+  }
 
-    // Trigger Push Notification for Agent
+  if (!profitCredited) {
+    const errMsg = lastProfitErr?.message || String(lastProfitErr);
+    console.error("[verify-payment] CRITICAL: credit_order_profits failed after retry:", orderId, errMsg);
+    log(supabaseAdmin, {
+      level: "error",
+      source: "verify-payment",
+      event: "profit_credit_failed",
+      message: `Order ${orderId} fulfilled but profit crediting failed after retry — agent commission not paid`,
+      order_id: orderId,
+      agent_id: order.agent_id,
+      data: { error: errMsg, profit: order.profit },
+    });
+    notifyAdmins(supabaseAdmin, {
+      title: "⚠️ Profit credit failed",
+      message: `Order ${orderId.slice(0, 8)} was fulfilled but the agent's commission (GHS ${Number(order.profit || 0).toFixed(2)}) failed to credit after retry. Needs manual reconciliation.`,
+      data: { link: "/admin/pnl", order_id: orderId, agent_id: order.agent_id },
+    });
+  }
+
+  // Trigger Push Notification for Agent — best-effort, not critical
+  try {
     if (order.agent_id && order.agent_id !== '00000000-0000-0000-0000-000000000000') {
       const profit = Number(order.profit || 0).toFixed(2);
       const isUtility = order.order_type === "utility";
@@ -203,7 +234,7 @@ async function fulfillOrder(
       });
     }
   } catch (e) {
-    console.error("[verify-payment] Profit credit or notification failed:", e);
+    console.error("[verify-payment] Push notification failed:", e);
   }
 
   // Trigger SMS for Customer

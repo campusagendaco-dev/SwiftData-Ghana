@@ -25,8 +25,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing destination url' });
   }
 
+  // Only ever forward to our known upstream providers — without this, the
+  // bridge secret alone is all that stands between an attacker and an open
+  // SSRF proxy that can reach any URL from our whitelisted-IP residential
+  // proxy. Keep this list in sync with the trigger condition in
+  // supabase/functions/_shared/db_proxy.ts.
+  const ALLOWED_HOSTS = ['korba365.com', 'datahubgh.com', 'skdataplug.com'];
+  let urlObj: URL;
   try {
-    const urlObj = new URL(url);
+    urlObj = new URL(url);
+  } catch {
+    return res.status(400).json({ error: 'Invalid destination url' });
+  }
+  const isAllowedHost = ALLOWED_HOSTS.some(
+    (host) => urlObj.hostname === host || urlObj.hostname.endsWith(`.${host}`)
+  );
+  if (!isAllowedHost) {
+    return res.status(403).json({ error: 'Destination host not allowed' });
+  }
+
+  try {
     const proxyAgent = new HttpsProxyAgent(KORBA_PROXY_URL);
 
     // Clean up headers to avoid conflicts

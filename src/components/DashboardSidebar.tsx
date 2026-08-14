@@ -168,9 +168,14 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
 
       <aside
         className={cn(
-          "fixed md:sticky top-0 left-0 z-[1000] w-72 h-[100dvh] flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 border-r shadow-2xl",
-          isDark ? "bg-[#0d140d]/95 backdrop-blur-xl border-white/5" : "bg-white border-gray-200",
+          "fixed md:sticky top-0 left-0 z-[1000] w-72 h-[100dvh] md:h-screen flex flex-col transition-all duration-300 ease-in-out md:translate-x-0 md:p-4 md:pr-2",
           open ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+      <div
+        className={cn(
+          "flex-1 flex flex-col overflow-hidden border-r shadow-2xl md:rounded-[24px] md:glass-panel-cyber",
+          isDark ? "bg-[#0a0a0f]/95 backdrop-blur-xl border-white/5" : "bg-white border-gray-200"
         )}
       >
         {/* ── Premium Logo Section ── */}
@@ -185,7 +190,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
               ) : (
                 <img src="/logo.png" alt="Logo" className="w-10 h-10 shrink-0 relative" />
               )}
-              <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center border-2 border-[#0d140d] shadow-lg">
+              <div className={cn("absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center border-2 shadow-lg", isDark ? "border-[#0a0a0f]" : "border-white")}>
                 <ShieldCheck className="w-2.5 h-2.5 text-white" />
               </div>
             </div>
@@ -226,7 +231,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                   <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser?.id}`} />
                   <AvatarFallback className="bg-primary/10 text-xs">{profile?.full_name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0d140d]"></div>
+                <div className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2", isDark ? "border-[#0a0a0f]" : "border-white")}></div>
               </div>
               <div className="flex-1 min-w-0">
                 <p className={cn("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{profile?.full_name || "User"}</p>
@@ -432,6 +437,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
             Sign Out Securely
           </button>
         </div>
+      </div>
       </aside>
     </>
   );

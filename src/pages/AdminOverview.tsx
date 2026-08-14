@@ -722,9 +722,7 @@ const AdminOverview = () => {
               className="rounded-[2rem] w-full"
             >
               <div
-                className={`relative group p-6 rounded-[2rem] border overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl h-full ${
-                  isDark ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.05]" : "bg-white border-gray-100 shadow-xl shadow-black/[0.02]"
-                }`}
+                className="glass-card-neo relative group p-6 rounded-[2rem] overflow-hidden hover:scale-[1.02] h-full"
               >
                 {/* Animated Background Glow */}
                 <div className={`absolute -top-12 -right-12 w-32 h-32 ${c.bg} blur-[60px] opacity-40 group-hover:scale-150 transition-transform duration-700 rounded-full`} />
@@ -1240,9 +1238,7 @@ const AdminOverview = () => {
               ) : (
                 <div className="space-y-1">
                   {recentOrders.map((o) => (
-                    <div key={o.id} className={`group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl transition-all border ${
-                      isDark ? "border-transparent hover:bg-white/[0.04] hover:border-white/10 hover:shadow-lg hover:shadow-black/50 active:scale-[0.99]" : "border-transparent hover:bg-white hover:border-gray-200 hover:shadow-sm active:scale-[0.99]"
-                    }`}>
+                    <div key={o.id} className="table-row-hover-neon group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border border-transparent active:scale-[0.99]">
                       <div className="flex items-center gap-4">
                         {statusIcon(o.status)}
                         <div>

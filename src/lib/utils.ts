@@ -5,6 +5,23 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Escapes text for safe interpolation into raw HTML strings (e.g. templates
+ * fed to innerHTML/document.write outside React's own JSX auto-escaping).
+ * Use this anywhere user- or agent-controlled text is built into an HTML
+ * string by hand — the flyer generator and receipt/PDF builders in
+ * particular, since neither goes through JSX.
+ */
+export function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch] as string));
+}
+
 /** Returns Tailwind classes for data-package cards based on network name */
 export function getNetworkCardColors(network: string): {
   card: string;

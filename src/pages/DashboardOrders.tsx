@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { ClipboardList, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check, Smartphone, Zap, Download, Search, RotateCcw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, escapeHtml } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -417,13 +417,17 @@ const DashboardOrders = () => {
     const statusColor =
       order.status === "fulfilled" ? "#16a34a" :
       order.status === "fulfillment_failed" ? "#dc2626" : "#d97706";
-    const serviceLabel = isWalletTopup ? "Wallet Top-up" : 
-                        isAirtime ? `${order.network} Airtime` : 
-                        isUtility ? order.package_size : 
+    // Escaped up front — this whole HTML string is written via document.write(),
+    // outside JSX's automatic escaping, so any raw order field would otherwise
+    // be able to inject markup/script into the receipt window.
+    const serviceLabel = escapeHtml(isWalletTopup ? "Wallet Top-up" :
+                        isAirtime ? `${order.network} Airtime` :
+                        isUtility ? order.package_size :
                         order.order_type === "vendor_cash_in" ? "Vendor Cash-In" :
                         order.order_type === "vendor_cash_out" ? "Vendor Cash-Out" :
                         order.order_type === "vendor_bank_transfer" ? "Bank Transfer" :
-                        `${order.network} ${order.package_size}`;
+                        `${order.network} ${order.package_size}`);
+    const safeCustomerPhone = escapeHtml(order.customer_phone || "—");
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>SwiftData Receipt</title>
 <style>
@@ -456,7 +460,7 @@ const DashboardOrders = () => {
     <div class="amount-label">Total Paid</div>
     <div class="row"><span class="row-label">Order ID</span><span class="row-value">${order.id.slice(0, 8).toUpperCase()}</span></div>
     <div class="row"><span class="row-label">Service</span><span class="row-value">${serviceLabel || "—"}</span></div>
-    ${!isWalletTopup ? `<div class="row"><span class="row-label">Recipient</span><span class="row-value">${order.customer_phone || "—"}</span></div>` : ""}
+    ${!isWalletTopup ? `<div class="row"><span class="row-label">Recipient</span><span class="row-value">${safeCustomerPhone}</span></div>` : ""}
     <div class="row"><span class="row-label">Date</span><span class="row-value">${date}</span></div>
     <div class="row"><span class="row-label">Time</span><span class="row-value">${time}</span></div>
     ${order.order_type !== "api" && Number(order.profit) > 0 ? `<div class="row"><span class="row-label">Your Profit</span><span class="row-value" style="color:#16a34a">+GH₵ ${Number(order.profit).toFixed(2)}</span></div>` : ""}
@@ -552,13 +556,13 @@ const DashboardOrders = () => {
           )}
           <p className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wide">Processing</p>
         </div>
-        <div className={cn("rounded-xl border px-3 py-2.5 sm:px-4 sm:py-3 text-center", isDark ? "bg-card border-border" : "bg-white border-gray-200 shadow-sm")}>
+        <div className={cn("glass-card-neo rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 text-center")}>
           {loading ? <Skeleton className="h-6 w-16 mx-auto mb-1" /> : (
             <p className="font-black text-lg sm:text-xl text-primary truncate">₵{stats.totalSales.toFixed(2)}</p>
           )}
           <p className={cn("text-[10px] sm:text-[11px] uppercase tracking-wide", isDark ? "text-muted-foreground" : "text-gray-500")}>Total Sales</p>
         </div>
-        <div className={cn("rounded-xl border px-3 py-2.5 sm:px-4 sm:py-3 text-center", isDark ? "bg-card border-border" : "bg-white border-gray-200 shadow-sm")}>
+        <div className={cn("glass-card-neo rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 text-center")}>
           {loading ? <Skeleton className="h-6 w-16 mx-auto mb-1" /> : (
             <p className="font-black text-lg sm:text-xl text-primary truncate">₵{stats.totalProfit.toFixed(2)}</p>
           )}
@@ -567,7 +571,7 @@ const DashboardOrders = () => {
       </div>
 
       {/* Order cards */}
-      <div className={cn("rounded-2xl border overflow-hidden", isDark ? "border-border bg-card" : "border-gray-200 bg-white")}>
+      <div className="glass-card-neo rounded-2xl overflow-hidden">
         <div className={cn("px-5 py-4 border-b flex items-center justify-between", isDark ? "border-border" : "border-gray-100")}>
           <p className={cn("font-semibold text-sm", isDark ? "text-white" : "text-gray-900")}>
             {loading ? "Loading…" : `${orders.length} order${orders.length !== 1 ? "s" : ""}`}

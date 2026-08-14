@@ -432,7 +432,7 @@ const Dashboard = () => {
                 className="rounded-2xl"
               >
                 <div
-                  className={`rounded-2xl p-4 flex flex-col gap-2 border shadow-lg ${s.bg} ${s.glow} h-full`}
+                  className="glass-card-neo rounded-2xl p-4 flex flex-col gap-2 h-full"
                 >
                   <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${s.bg}`}>
                     <s.icon className={`w-4 h-4 ${s.color}`} />
@@ -459,7 +459,7 @@ const Dashboard = () => {
               <button
                 type="button"
                 onClick={() => navigate(a.path)}
-                className={`group flex flex-col items-start gap-3 rounded-2xl border p-4 transition-all w-full h-full ${a.bg} ${a.border}`}
+                className="glass-card-neo group flex flex-col items-start gap-3 rounded-2xl p-4 transition-all w-full h-full"
               >
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${a.bg} border ${a.border}`}>
                   <a.icon className={`w-4 h-4 ${a.color}`} />

@@ -326,9 +326,7 @@ const AdminLayout = () => {
 
         {/* Top bar - FLOATING ISLAND */}
         <div className="px-4 md:px-6 pt-4 pb-2 z-30 sticky top-0">
-          <header className={`flex items-center gap-4 px-5 h-[64px] rounded-[24px] border backdrop-blur-3xl shadow-lg transition-all ${
-            isDark ? "bg-[#111116]/80 border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.5)]" : "bg-white/80 border-gray-200 shadow-[0_8px_30px_rgba(0,0,0,0.05)]"
-          }`}>
+          <header className="glass-panel-cyber flex items-center gap-4 px-5 h-[64px] rounded-[24px]">
             {/* Mobile hamburger */}
             <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -398,7 +396,7 @@ const AdminLayout = () => {
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black shadow-inner uppercase tracking-widest ${
+            <div className={`badge-status-glow flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black shadow-inner uppercase tracking-widest ${
               isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-600"
             }`}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
@@ -410,7 +408,7 @@ const AdminLayout = () => {
 
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 relative z-10 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-          <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-7xl space-y-6">
             <Outlet />
           </div>
         </main>

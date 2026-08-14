@@ -13,6 +13,25 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+    // 0. Identify the caller — this endpoint has no per-order ownership check
+    // otherwise, which would let any authenticated user refund ANY order by
+    // guessing/leaking an order_id (IDOR).
+    const authHeader = req.headers.get("Authorization");
+    const callerToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
+    if (!callerToken) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized: missing session token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: { user: callerUser }, error: callerErr } = await supabaseAdmin.auth.getUser(callerToken);
+    if (callerErr || !callerUser) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized: invalid session" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { order_id } = await req.json();
 
     if (!order_id) {
@@ -34,6 +53,22 @@ serve(async (req) => {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // 1b. Ownership check: only the order's own agent, or an admin, may act on it.
+    if (order.agent_id !== callerUser.id) {
+      const { data: roles } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", callerUser.id)
+        .eq("role", "admin")
+        .limit(1);
+      if (!roles || roles.length === 0) {
+        return new Response(JSON.stringify({ success: false, error: "Forbidden: this order does not belong to you" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // 2. SERVER-SIDE CHECK 1: Already Fulfilled / Completed

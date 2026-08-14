@@ -368,6 +368,7 @@ const AppContent = () => {
         {!isDashboard && !isAgentStore && !isAdmin && <Navbar />}
         <ChunkErrorBoundary>
         <Suspense fallback={<LoadingScreen />}>
+      <main className="contents">
       <Routes>
         {/* Public pages */}
         <Route path="/" element={isAdminSubdomain ? <Navigate to="/admin" replace /> : (activeDomain ? <AgentStore /> : <Index />)} />
@@ -530,6 +531,7 @@ const AppContent = () => {
 
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </main>
       </Suspense>
         </ChunkErrorBoundary>
       {!isDashboard && !isAgentStore && !isAdmin && <Footer />}

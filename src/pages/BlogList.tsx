@@ -41,6 +41,9 @@ const BlogList = () => {
                 <img
                   src={post.image}
                   alt={post.title}
+                  loading="lazy"
+                  width={800}
+                  height={450}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
                 <span className="absolute top-3 left-3 bg-amber-400 text-black text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">

@@ -962,7 +962,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           >
             <RefreshCw className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2">
+          <div className="glass-card-neo flex items-center gap-2 rounded-xl px-3 py-2">
             <Wallet className="w-4 h-4 text-primary" />
             <span className="text-sm font-bold">
               {walletBalance !== null ? `GH₵ ${walletBalance.toFixed(2)}` : "—"}

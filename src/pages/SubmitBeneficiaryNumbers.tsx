@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
@@ -23,11 +23,15 @@ import {
   Download,
   FileUp,
   Layers,
+  History,
+  Search,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -75,6 +79,11 @@ function detectNetwork(phone: string): string {
   return "Ghana Mobile";
 }
 
+function fmtSubmissionDate(dateStr: string) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
 export default function SubmitBeneficiaryNumbers() {
   const { user } = useAuth();
   const { isDark } = useAppTheme();
@@ -113,6 +122,60 @@ export default function SubmitBeneficiaryNumbers() {
     message: string;
     error?: string;
   } | null>(null);
+
+  // My Submitted Numbers — persistent history for the logged-in user
+  const [myNumbers, setMyNumbers] = useState<
+    { id: string; phone: string; network: string; status: string; created_at: string; notes?: string }[]
+  >([]);
+  const [loadingMyNumbers, setLoadingMyNumbers] = useState(false);
+  const [myNumbersSearch, setMyNumbersSearch] = useState("");
+  const [myNumbersError, setMyNumbersError] = useState<string | null>(null);
+
+  const fetchMySubmittedNumbers = useCallback(async () => {
+    if (!user?.email) {
+      setMyNumbers([]);
+      return;
+    }
+    setLoadingMyNumbers(true);
+    setMyNumbersError(null);
+    try {
+      const { data, error } = await supabase
+        .from("beneficiary_submissions" as any)
+        .select("*")
+        .eq("submitted_by", user.email)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+
+      setMyNumbers(
+        ((data as any[]) || []).map((row) => ({
+          id: row.id,
+          phone: row.phone_number,
+          network: row.network || detectNetwork(row.phone_number),
+          status: row.status || "submitted",
+          created_at: row.created_at,
+          notes: row.notes,
+        }))
+      );
+    } catch (err: any) {
+      console.error("[MySubmittedNumbers] fetch error:", err);
+      setMyNumbers([]);
+      setMyNumbersError("Couldn't load your submission history right now.");
+    } finally {
+      setLoadingMyNumbers(false);
+    }
+  }, [user?.email]);
+
+  useEffect(() => {
+    fetchMySubmittedNumbers();
+  }, [fetchMySubmittedNumbers]);
+
+  const filteredMyNumbers = useMemo(() => {
+    if (!myNumbersSearch.trim()) return myNumbers;
+    const q = myNumbersSearch.trim().toLowerCase();
+    return myNumbers.filter((n) => n.phone.toLowerCase().includes(q) || n.network.toLowerCase().includes(q));
+  }, [myNumbers, myNumbersSearch]);
 
   const parseExcelFile = async (file: File) => {
     const buffer = await file.arrayBuffer();
@@ -351,6 +414,7 @@ export default function SubmitBeneficiaryNumbers() {
 
     const totalChunks = Math.ceil(totalValid.length / CHUNK_SIZE);
     let allSubmittedNumbers: string[] = [];
+    let allFailedNumbers: string[] = [];
     let allInvalidNumbers: string[] = [...parsedData.invalid];
     let totalReceived = 0;
     let totalUnique = 0;
@@ -388,11 +452,11 @@ export default function SubmitBeneficiaryNumbers() {
           let resData: any = null;
           let funcError: any = null;
 
-          // Tier 1: Direct DataHub Provider API call (Fastest, zero edge function gateway preflight errors)
+          // Tier 1: Direct DataHub Provider API call (Fastest, zero edge function gateway preflight errors).
+          // Only attempted when the caller can actually read the real provider key
+          // (admins, via RLS) — regular/anonymous users fall straight through to
+          // Tier 2+, which fetch the key server-side and never expose it client-side.
           try {
-            let apiKey = "";
-            let baseUrl = "https://user.datahubgh.com/api/external";
-
             const { data: provider } = await supabase
               .from("providers")
               .select("api_key, base_url")
@@ -400,12 +464,12 @@ export default function SubmitBeneficiaryNumbers() {
               .eq("is_active", true)
               .maybeSingle();
 
-            if (provider?.api_key) {
-              apiKey = provider.api_key;
-              if (provider.base_url) baseUrl = provider.base_url;
-            } else {
-              apiKey = "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
+            if (!provider?.api_key) {
+              throw new Error("No client-visible provider key — falling through to server-side tiers");
             }
+
+            const apiKey = provider.api_key;
+            const baseUrl = provider.base_url || "https://user.datahubgh.com/api/external";
 
             const cleanBase = baseUrl.trim().replace(/\/+$/, "");
             const targetUrl = cleanBase.endsWith("/purchases/submit-numbers")
@@ -414,6 +478,8 @@ export default function SubmitBeneficiaryNumbers() {
               ? `${cleanBase}/submit-numbers`
               : `${cleanBase}/purchases/submit-numbers`;
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
             const directRes = await fetch(targetUrl, {
               method: "POST",
               headers: {
@@ -421,7 +487,9 @@ export default function SubmitBeneficiaryNumbers() {
                 "X-API-Key": apiKey,
               },
               body: JSON.stringify({ numbers: currentBatch.join(", ") }),
+              signal: controller.signal,
             });
+            clearTimeout(timeoutId);
 
             const text = await directRes.text();
             let parsed: any = null;
@@ -508,6 +576,7 @@ export default function SubmitBeneficiaryNumbers() {
             console.error(`Chunk ${chunkNum} batch ${bIndex + 1} error:`, funcError);
             const formattedErr = await getFunctionErrorMessage(funcError, "Failed to submit numbers batch");
             lastErrorMsg = formattedErr;
+            allFailedNumbers = [...allFailedNumbers, ...currentBatch];
             continue;
           }
 
@@ -536,6 +605,13 @@ export default function SubmitBeneficiaryNumbers() {
             if (resData?.invalid) {
               allInvalidNumbers = [...allInvalidNumbers, ...resData.invalid];
             }
+            allFailedNumbers = [...allFailedNumbers, ...currentBatch];
+          }
+
+          // Small pause between batches to avoid tripping provider-side rate
+          // limits on large uploads (hundreds/thousands of numbers).
+          if (bIndex < batches.length - 1) {
+            await new Promise((r) => setTimeout(r, 200));
           }
         }
 
@@ -557,9 +633,13 @@ export default function SubmitBeneficiaryNumbers() {
           message: finalMsg,
         });
 
-        // Record submitted numbers into database so Admin can view ALL of them in Admin Dashboard
+        // Record submitted AND failed numbers into the database so Admin can
+        // see everything that was attempted, not just what succeeded.
+        // upsert (not insert) so retries/duplicate tiers update the existing
+        // row per number instead of piling up duplicates.
+        const uniqueFailed = [...new Set(allFailedNumbers)].filter((n) => !uniqueSubmitted.includes(n));
         try {
-          const recordsToInsert = uniqueSubmitted.map((num) => ({
+          const successRecords = uniqueSubmitted.map((num) => ({
             phone_number: num,
             network: detectNetwork(num),
             status: totalSubmitted > 0 ? "submitted" : "whitelisted",
@@ -567,10 +647,34 @@ export default function SubmitBeneficiaryNumbers() {
             submitted_by: user?.email || "Web User",
             notes: totalAlreadyOnList > 0 ? "Already whitelisted on carrier list" : "Submitted for carrier whitelisting approval",
           }));
+          const failedRecords = uniqueFailed.map((num) => ({
+            phone_number: num,
+            network: detectNetwork(num),
+            status: "failed",
+            source: excelSummary ? `Excel (${excelSummary.fileName})` : "Web UI",
+            submitted_by: user?.email || "Web User",
+            notes: lastErrorMsg || "Submission failed after all provider attempts",
+          }));
 
-          await supabase.from("beneficiary_submissions" as any).insert(recordsToInsert);
+          const { error: dbErr } = await supabase
+            .from("beneficiary_submissions" as any)
+            .upsert([...successRecords, ...failedRecords] as any, { onConflict: "phone_number" });
+
+          if (dbErr) {
+            console.error("[DB Log] beneficiary_submissions upsert FAILED:", dbErr);
+            toast({
+              title: "Admin log not saved",
+              description: "Numbers were processed but couldn't be recorded for admin visibility. Please notify support with this time and number count.",
+              variant: "destructive",
+            });
+          }
         } catch (dbErr) {
-          console.warn("[DB Log] beneficiary_submissions insert warning:", dbErr);
+          console.error("[DB Log] beneficiary_submissions upsert FAILED:", dbErr);
+          toast({
+            title: "Admin log not saved",
+            description: "Numbers were processed but couldn't be recorded for admin visibility. Please notify support with this time and number count.",
+            variant: "destructive",
+          });
         }
 
         // Show completion modal!
@@ -588,6 +692,26 @@ export default function SubmitBeneficiaryNumbers() {
           message: errMessage,
           error: errMessage,
         });
+
+        // Every batch failed — still record them as "failed" so admin can see
+        // exactly which numbers were attempted and lost, instead of nothing.
+        try {
+          const failedRecords = [...new Set(allFailedNumbers)].map((num) => ({
+            phone_number: num,
+            network: detectNetwork(num),
+            status: "failed",
+            source: excelSummary ? `Excel (${excelSummary.fileName})` : "Web UI",
+            submitted_by: user?.email || "Web User",
+            notes: errMessage,
+          }));
+          if (failedRecords.length > 0) {
+            await supabase
+              .from("beneficiary_submissions" as any)
+              .upsert(failedRecords as any, { onConflict: "phone_number" });
+          }
+        } catch (dbErr) {
+          console.error("[DB Log] beneficiary_submissions failure-record FAILED:", dbErr);
+        }
 
         toast({
           title: "Submission Failed",
@@ -615,6 +739,7 @@ export default function SubmitBeneficiaryNumbers() {
       setLoading(false);
       setProgressPercent(0);
       setCurrentBatchText("");
+      fetchMySubmittedNumbers();
     }
   };
 
@@ -977,6 +1102,119 @@ export default function SubmitBeneficiaryNumbers() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── My Submitted Numbers (persistent history, logged-in users only) ── */}
+      {user ? (
+        <Card className={cn("border shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl", isDark ? "bg-slate-900/90 border-slate-800" : "bg-white border-gray-200")}>
+          <CardHeader className="pb-2 border-b border-white/5 px-3 sm:px-5 pt-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-amber-500" /> My Submitted Numbers
+              </CardTitle>
+              <button
+                onClick={fetchMySubmittedNumbers}
+                disabled={loadingMyNumbers}
+                className="flex items-center gap-1 text-[10px] font-bold text-amber-400 hover:text-amber-300 disabled:opacity-50"
+              >
+                <RefreshCw className={cn("w-3 h-3", loadingMyNumbers && "animate-spin")} /> Refresh
+              </button>
+            </div>
+            <CardDescription className="text-[10px] sm:text-xs">
+              Numbers you've submitted for beneficiary approval, and their current status.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="p-3 sm:p-5 space-y-3">
+            {myNumbers.length > 0 && (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input
+                    value={myNumbersSearch}
+                    onChange={(e) => setMyNumbersSearch(e.target.value)}
+                    placeholder="Search your numbers..."
+                    className={cn(
+                      "w-full pl-8 pr-3 py-2 text-xs rounded-xl border outline-none transition-all",
+                      isDark
+                        ? "bg-slate-950/80 border-slate-800 text-white placeholder:text-slate-600 focus-visible:ring-1 focus-visible:ring-amber-500/50"
+                        : "bg-slate-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-amber-500"
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400">Whitelisted</p>
+                    <p className="text-base font-black text-emerald-400">{myNumbers.filter((n) => n.status === "whitelisted").length}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-center">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-blue-400">Pending</p>
+                    <p className="text-base font-black text-blue-400">{myNumbers.filter((n) => n.status === "submitted").length}</p>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-center">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-red-400">Failed</p>
+                    <p className="text-base font-black text-red-400">{myNumbers.filter((n) => n.status === "failed").length}</p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {loadingMyNumbers ? (
+              <div className="space-y-1.5">
+                <Skeleton className="h-10 w-full rounded-xl" />
+                <Skeleton className="h-10 w-full rounded-xl" />
+              </div>
+            ) : myNumbersError ? (
+              <p className="text-xs text-muted-foreground text-center py-4">{myNumbersError}</p>
+            ) : filteredMyNumbers.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">
+                {myNumbers.length === 0 ? "No numbers submitted yet — your history will appear here." : "No numbers match your search."}
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">
+                {filteredMyNumbers.map((n) => (
+                  <div
+                    key={n.id}
+                    className={cn(
+                      "flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs",
+                      isDark ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-100"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {n.status === "whitelisted" ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : n.status === "failed" ? (
+                        <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      )}
+                      <span className="font-mono font-bold truncate">{n.phone}</span>
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-500/30 text-amber-400 bg-amber-500/10 shrink-0">
+                        {n.network}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={cn(
+                          "text-[9px] font-black uppercase tracking-wider",
+                          n.status === "whitelisted" ? "text-emerald-400" : n.status === "failed" ? "text-red-400" : "text-blue-400"
+                        )}
+                      >
+                        {n.status}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">{fmtSubmissionDate(n.created_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className={cn("p-4 rounded-2xl border text-center text-xs", isDark ? "bg-slate-900/50 border-slate-800 text-slate-400" : "bg-gray-50 border-gray-200 text-gray-500")}>
+          <Link to="/login" className="text-amber-400 font-bold hover:underline">Sign in</Link> to see your submission history across visits.
+        </div>
+      )}
 
       {/* ── Collapsible Developer API Section (Zero Space Waste on Mobile View) ── */}
       <div className="pt-1">

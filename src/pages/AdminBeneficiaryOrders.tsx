@@ -10,6 +10,8 @@ import { Link } from "react-router-dom";
 import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2, Sparkles, ExternalLink, ArrowRight, Zap, CheckCircle2, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { invokePublicFunction } from "@/lib/public-function-client";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 interface BeneficiaryOrder {
   id: string;
@@ -63,6 +65,134 @@ export default function AdminBeneficiaryOrders() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [routingDatamart, setRoutingDatamart] = useState(false);
   const [submittingNumbers, setSubmittingNumbers] = useState(false);
+  const [submittingPhone, setSubmittingPhone] = useState<string | null>(null);
+
+  // Shared submission core: sends numbers to DataHub in batches of 30 AND
+  // records every outcome (success or failure) into beneficiary_submissions
+  // so admin's records stay complete regardless of which entry point was used.
+  const submitNumbersToDataHub = async (
+    numbers: string[],
+    sourceLabel: string
+  ): Promise<{ submitted: number; failed: number }> => {
+    const BATCH_SIZE = 30;
+    let totalSubmitted = 0;
+    let totalFailed = 0;
+
+    const { data: provider } = await supabase
+      .from("providers")
+      .select("api_key, base_url")
+      .eq("handler_type", "datahub")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    // No hardcoded fallback key here on purpose — it would ship in the JS bundle
+    // for anyone who fetches this chunk. Without a real (RLS-gated) key, Attempt 1
+    // below is skipped entirely and every batch goes straight to the edge function,
+    // which fetches the key server-side and never exposes it to the client.
+    const apiKey = provider?.api_key || "";
+    const baseUrl = (provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
+    const targetUrl = baseUrl.endsWith("/purchases/submit-numbers")
+      ? baseUrl
+      : baseUrl.includes("/purchases")
+      ? `${baseUrl}/submit-numbers`
+      : `${baseUrl}/purchases/submit-numbers`;
+
+    for (let i = 0; i < numbers.length; i += BATCH_SIZE) {
+      const batch = numbers.slice(i, i + BATCH_SIZE);
+      let ok = false;
+      let statusCode: number | null = null;
+      let errDetail = "";
+      let submittedCount = 0;
+
+      // Attempt 1: direct browser -> DataHub (fast path when it isn't CORS-blocked),
+      // only when we actually have a real key visible to this caller.
+      // Bounded with a timeout so a stalled request can't hang the whole batch loop.
+      if (apiKey) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(targetUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+            body: JSON.stringify({ numbers: batch.join(", ") }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          statusCode = res.status;
+          const text = await res.text();
+          let parsed: any = null;
+          try { parsed = JSON.parse(text); } catch {}
+
+          if (res.ok || parsed?.success) {
+            ok = true;
+            submittedCount = parsed?.data?.submitted ?? batch.length;
+          } else {
+            errDetail = `HTTP ${res.status}: ${text.slice(0, 200)}`;
+          }
+        } catch (err: any) {
+          errDetail = err?.name === "AbortError"
+            ? "Direct request timed out after 8s"
+            : `Connection error: ${err.message || err}`;
+        }
+      }
+
+      // Attempt 2: fall back to the submit-numbers edge function — the same
+      // proven-reliable path the public Submit Numbers form uses, which also
+      // has its own built-in retry-with-backoff for transient network errors.
+      if (!ok) {
+        try {
+          const { data, error } = await invokePublicFunction("submit-numbers", {
+            body: { numbers: batch.join(", ") },
+          });
+          if (data && (data.success || data.data)) {
+            ok = true;
+            const d = data.data || data;
+            submittedCount = d.submitted ?? batch.length;
+            statusCode = 200;
+            errDetail = "";
+          } else if (error) {
+            errDetail = await getFunctionErrorMessage(error, errDetail || "Edge function submission failed");
+          }
+        } catch (err: any) {
+          errDetail = err.message || errDetail || "Edge function submission failed";
+        }
+      }
+
+      if (ok) {
+        totalSubmitted += submittedCount;
+      } else {
+        totalFailed += batch.length;
+      }
+
+      try {
+        const records = batch.map((num) => ({
+          phone_number: num,
+          network: "MTN",
+          status: ok ? "submitted" : "failed",
+          source: sourceLabel,
+          submitted_by: "Admin",
+          notes: ok
+            ? `Submitted via ${sourceLabel} — provider responded ${statusCode}`
+            : errDetail || "Submission failed",
+          provider_status_code: statusCode,
+        }));
+        const { error: logErr } = await supabase
+          .from("beneficiary_submissions" as any)
+          .upsert(records as any, { onConflict: "phone_number" });
+        if (logErr) console.error("[AdminBeneficiaryOrders] DB log FAILED:", logErr);
+      } catch (e) {
+        console.error("[AdminBeneficiaryOrders] DB log FAILED:", e);
+      }
+
+      // Small pause between batches on large submissions to avoid tripping
+      // provider-side rate limits.
+      if (i + BATCH_SIZE < numbers.length) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    return { submitted: totalSubmitted, failed: totalFailed };
+  };
 
   const handleSubmitAllToBeneficiaryApproval = async () => {
     const numbersToSubmit = Array.from(new Set(groupedNumbers.map((g) => g.phone).filter(Boolean)));
@@ -78,48 +208,11 @@ export default function AdminBeneficiaryOrders() {
     setSubmittingNumbers(true);
     toast({ title: "Submitting Numbers for Approval...", description: `Sending ${numbersToSubmit.length} numbers in batches to DataHub...` });
 
-    const BATCH_SIZE = 30;
-    let totalSubmitted = 0;
-
     try {
-      const { data: provider } = await supabase
-        .from("providers")
-        .select("api_key, base_url")
-        .eq("handler_type", "datahub")
-        .eq("is_active", true)
-        .maybeSingle();
-
-      const apiKey = provider?.api_key || "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
-      const baseUrl = (provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
-      const targetUrl = baseUrl.endsWith("/purchases/submit-numbers")
-        ? baseUrl
-        : baseUrl.includes("/purchases")
-        ? `${baseUrl}/submit-numbers`
-        : `${baseUrl}/purchases/submit-numbers`;
-
-      for (let i = 0; i < numbersToSubmit.length; i += BATCH_SIZE) {
-        const batch = numbersToSubmit.slice(i, i + BATCH_SIZE);
-        const res = await fetch(targetUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": apiKey,
-          },
-          body: JSON.stringify({ numbers: batch.join(", ") }),
-        });
-
-        const text = await res.text();
-        let parsed: any = null;
-        try { parsed = JSON.parse(text); } catch {}
-
-        if (res.ok || parsed?.success) {
-          totalSubmitted += parsed?.data?.submitted ?? batch.length;
-        }
-      }
-
+      const { submitted, failed } = await submitNumbersToDataHub(numbersToSubmit, "Admin Non-Beneficiary Hub (bulk)");
       toast({
         title: "Whitelisting Submitted! 🚀",
-        description: `Successfully submitted ${totalSubmitted} number(s) to DataHub for beneficiary approval.`,
+        description: `Successfully submitted ${submitted} number(s) to DataHub for beneficiary approval.${failed > 0 ? ` ${failed} failed — check the Submitted Numbers page for details.` : ""}`,
       });
     } catch (err: any) {
       toast({
@@ -129,6 +222,30 @@ export default function AdminBeneficiaryOrders() {
       });
     } finally {
       setSubmittingNumbers(false);
+    }
+  };
+
+  // Submit a single flagged number for approval — the per-row action for
+  // when one specific number is detected as not part of the beneficiary list.
+  const handleSubmitSingleForApproval = async (phone: string) => {
+    setSubmittingPhone(phone);
+    toast({ title: "Submitting for Approval...", description: `Sending ${phone} to DataHub for carrier whitelisting...` });
+
+    try {
+      const { submitted } = await submitNumbersToDataHub([phone], "Admin Non-Beneficiary Hub (single)");
+      if (submitted > 0) {
+        toast({ title: "Submitted for Approval! 🚀", description: `${phone} was sent to DataHub for carrier whitelisting.` });
+      } else {
+        toast({
+          title: "Submission Failed",
+          description: `Could not submit ${phone} to the provider. Check the Submitted Numbers page for details.`,
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Submission Error", description: err.message || "Failed to submit number", variant: "destructive" });
+    } finally {
+      setSubmittingPhone(null);
     }
   };
 
@@ -790,14 +907,26 @@ export default function AdminBeneficiaryOrders() {
                         </td>
 
                         <td className="py-4 px-6 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-9 px-4 rounded-xl text-xs font-bold gap-2 border border-border/50 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-all"
-                            onClick={() => setSelectedGroup(grp)}
-                          >
-                            View Orders ({grp.orders.length}) <ArrowRight className="w-3.5 h-3.5" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border-blue-500/30 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400 transition-all"
+                              onClick={() => handleSubmitSingleForApproval(grp.phone)}
+                              disabled={submittingPhone === grp.phone || submittingNumbers}
+                            >
+                              {submittingPhone === grp.phone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                              Submit for Approval
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 px-4 rounded-xl text-xs font-bold gap-2 border border-border/50 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-all"
+                              onClick={() => setSelectedGroup(grp)}
+                            >
+                              View Orders ({grp.orders.length}) <ArrowRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -846,16 +975,28 @@ export default function AdminBeneficiaryOrders() {
                       Agents: {grp.agentEmails.join(", ")}
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[10px] text-muted-foreground">{date} at {time}</span>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="h-9 px-4 rounded-xl text-xs font-bold gap-1.5 bg-amber-500 hover:bg-amber-600 text-black shadow-md"
-                        onClick={() => setSelectedGroup(grp)}
-                      >
-                        View {grp.orders.length} Orders <ArrowRight className="w-3.5 h-3.5" />
-                      </Button>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="text-[10px] text-muted-foreground shrink-0">{date} at {time}</span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border-blue-500/30 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                          onClick={() => handleSubmitSingleForApproval(grp.phone)}
+                          disabled={submittingPhone === grp.phone || submittingNumbers}
+                        >
+                          {submittingPhone === grp.phone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          Submit
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-9 px-4 rounded-xl text-xs font-bold gap-1.5 bg-amber-500 hover:bg-amber-600 text-black shadow-md"
+                          onClick={() => setSelectedGroup(grp)}
+                        >
+                          View {grp.orders.length} <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -873,10 +1014,22 @@ export default function AdminBeneficiaryOrders() {
               <span className="flex items-center gap-2">
                 <Phone className="w-5 h-5 text-amber-500" /> Orders for {selectedGroup?.phone}
               </span>
-              <Button variant="outline" size="sm" className="text-xs h-8 rounded-xl gap-1.5 font-bold self-start sm:self-auto" onClick={() => selectedGroup && copyToClipboard(selectedGroup.phone, "modal_phone")}>
-                {copiedText === "modal_phone" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                Copy Phone
-              </Button>
+              <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-8 rounded-xl gap-1.5 font-bold border-blue-500/30 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                  onClick={() => selectedGroup && handleSubmitSingleForApproval(selectedGroup.phone)}
+                  disabled={!selectedGroup || submittingPhone === selectedGroup.phone || submittingNumbers}
+                >
+                  {selectedGroup && submittingPhone === selectedGroup.phone ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Submit for Approval
+                </Button>
+                <Button variant="outline" size="sm" className="text-xs h-8 rounded-xl gap-1.5 font-bold" onClick={() => selectedGroup && copyToClipboard(selectedGroup.phone, "modal_phone")}>
+                  {copiedText === "modal_phone" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                  Copy Phone
+                </Button>
+              </div>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               Review flagged non-beneficiary order details and trigger carrier whitelisting retries.

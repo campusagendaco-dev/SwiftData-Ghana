@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { invokePublicFunction } from "@/lib/public-function-client";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -192,44 +194,25 @@ export default function AdminSubmittedBeneficiaryNumbers() {
     });
 
     try {
-      const { data: provider } = await supabase
-        .from("providers")
-        .select("api_key, base_url")
-        .eq("handler_type", "datahub")
-        .eq("is_active", true)
-        .maybeSingle();
-
-      const apiKey = provider?.api_key || "sk_aaa96faabac1a1c070e186b3760fe612002bc5c26ec31791";
-      const baseUrl = (provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
-      const targetUrl = baseUrl.endsWith("/purchases/submit-numbers")
-        ? baseUrl
-        : baseUrl.includes("/purchases")
-        ? `${baseUrl}/submit-numbers`
-        : `${baseUrl}/purchases/submit-numbers`;
-
-      const res = await fetch(targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": apiKey,
-        },
-        body: JSON.stringify({ numbers: numbersToSubmit.join(", ") }),
+      // Routed through the submit-numbers edge function rather than a direct
+      // client-side call — the provider key never needs to reach the browser
+      // this way, and it comes with its own retry-with-backoff for transient errors.
+      const { data, error } = await invokePublicFunction("submit-numbers", {
+        body: { numbers: numbersToSubmit.join(", ") },
       });
 
-      const text = await res.text();
-      let parsed: any = null;
-      try { parsed = JSON.parse(text); } catch {}
-
-      if (res.ok || parsed?.success) {
+      if (data && (data.success || data.data)) {
+        const d = data.data || data;
         toast({
           title: "Submission Successful! 🚀",
-          description: `Submitted ${parsed?.data?.submitted ?? numbersToSubmit.length} number(s) to DataHub.`,
+          description: `Submitted ${d.submitted ?? numbersToSubmit.length} number(s) to DataHub.`,
         });
         fetchSubmittedNumbers();
       } else {
+        const description = data?.error || (await getFunctionErrorMessage(error, "Provider error"));
         toast({
           title: "Submission Error",
-          description: parsed?.message || parsed?.error || "Provider error",
+          description,
           variant: "destructive",
         });
       }
