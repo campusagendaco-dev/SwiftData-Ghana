@@ -641,7 +641,6 @@ export default function AdminBeneficiaryOrders() {
           }
         }).catch(console.error);
       }
-      await fetchBeneficiaryOrders();
     } catch (err: any) {
       toast({ title: "Retry exception", description: err.message || "Error retrying order", variant: "destructive" });
     } finally {
