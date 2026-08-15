@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useMaskedBalance } from "@/hooks/useMaskedBalance";
+import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
