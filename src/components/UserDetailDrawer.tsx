@@ -43,6 +43,8 @@ interface Order {
   package_size?: string;
   customer_phone?: string;
   amount: number;
+  profit?: number;
+  parent_profit?: number;
   status: string;
   failure_reason?: string | null;
   created_at: string;
@@ -75,6 +77,9 @@ interface DrawerData {
   orders: Order[];
   sharedIpAccounts: SharedAccount[];
   referrerName?: string;
+  totalSalesVolume?: number;
+  totalOwnProfit?: number;
+  totalCommissionsPaid?: number;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -318,7 +323,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     const load = async () => {
       const queries: Promise<any>[] = [
         supabase.from("wallets").select("balance, api_balance").eq("agent_id", user.user_id).maybeSingle(),
-        supabase.from("orders").select("id, order_type, network, package_size, customer_phone, amount, status, failure_reason, created_at")
+        supabase.from("orders").select("id, order_type, network, package_size, customer_phone, amount, profit, parent_profit, status, failure_reason, created_at")
           .eq("agent_id", user.user_id).order("created_at", { ascending: false }).limit(15),
         user.last_ip
           ? (supabase.from("profiles") as any).select("user_id, full_name, email").eq("last_ip", user.last_ip).neq("user_id", user.user_id).limit(5)
@@ -326,9 +331,10 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         user.referred_by
           ? supabase.from("profiles").select("full_name").eq("user_id", user.referred_by).maybeSingle()
           : Promise.resolve({ data: null }),
+        supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid").eq("user_id", user.user_id).maybeSingle(),
       ];
 
-      const [walletRes, ordersRes, sharedRes, referrerRes] = await Promise.all(queries);
+      const [walletRes, ordersRes, sharedRes, referrerRes, salesStatsRes] = await Promise.all(queries);
       const orders = (ordersRes.data || []) as Order[];
 
       setData({
@@ -337,6 +343,9 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         orders,
         sharedIpAccounts: (sharedRes.data || []) as SharedAccount[],
         referrerName: referrerRes.data?.full_name ?? undefined,
+        totalSalesVolume: Number(salesStatsRes.data?.total_sales_volume ?? 0),
+        totalOwnProfit: Number(salesStatsRes.data?.total_own_profit ?? 0),
+        totalCommissionsPaid: Number(salesStatsRes.data?.total_commissions_paid ?? 0),
       });
       setLoading(false);
 
@@ -500,11 +509,12 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         </div>
 
         {/* ── Stats ── */}
-        <div className="px-6 pt-4">
-          <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="px-6 pt-4 space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
               { icon: Wallet, label: "Main Wallet", value: loading ? "…" : `GH₵ ${(data?.walletBalance ?? 0).toFixed(2)}`, color: "text-cyan-400" },
               { icon: ShieldCheck, label: "API Wallet", value: loading ? "…" : `GH₵ ${(data?.apiBalance ?? 0).toFixed(2)}`, color: "text-emerald-400" },
+              { icon: ShoppingCart, label: "Total Sales", value: loading ? "…" : `GH₵ ${(data?.totalSalesVolume ?? 0).toFixed(2)}`, color: "text-blue-400" },
             ].map(({ icon: Icon, label, value, color }) => (
               <div key={label} className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
                 <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
@@ -513,14 +523,15 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {[
-              { icon: ShoppingCart, label: "Orders", value: loading ? "…" : String(data?.orders.length ?? 0) + (data && data.orders.length === 15 ? "+" : ""), color: "text-violet-400" },
+              { icon: TrendingUp, label: "Direct Profit", value: loading ? "…" : `GH₵ ${(data?.totalOwnProfit ?? 0).toFixed(2)}`, color: "text-emerald-400" },
+              { icon: Users2, label: "Sub Comms", value: loading ? "…" : `GH₵ ${(data?.totalCommissionsPaid ?? 0).toFixed(2)}`, color: "text-purple-400" },
               { icon: Hash, label: "Logins", value: String(user.login_count ?? 0), color: "text-amber-400" },
             ].map(({ icon: Icon, label, value, color }) => (
               <div key={label} className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
                 <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
-                <p className={`text-sm font-black ${color}`}>{value}</p>
+                <p className={`text-xs sm:text-sm font-black ${color}`}>{value}</p>
                 <p className="text-[10px] text-white/30 uppercase tracking-wider mt-0.5">{label}</p>
               </div>
             ))}
@@ -682,7 +693,15 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
                         {new Date(order.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <p className="text-xs font-black text-white/70 shrink-0">GH₵{Number(order.amount).toFixed(2)}</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-black text-white/80">GH₵{Number(order.amount).toFixed(2)}</p>
+                      {Number(order.profit || 0) > 0 && (
+                        <p className="text-[10px] font-bold text-emerald-400">+GH₵{Number(order.profit).toFixed(2)} profit</p>
+                      )}
+                      {Number(order.parent_profit || 0) > 0 && (
+                        <p className="text-[9px] font-bold text-purple-400">+GH₵{Number(order.parent_profit || 0).toFixed(2)} parent comm</p>
+                      )}
+                    </div>
                     <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${style}`}>
                       {override ? <Clock className="w-3 h-3" /> : <StatusIcon status={order.status} />}
                       {label}

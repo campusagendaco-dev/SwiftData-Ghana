@@ -30,6 +30,8 @@ interface UserRow {
   login_count?: number;
   parent_name?: string;
   total_sales_volume?: number;
+  total_own_profit?: number;
+  total_commissions_paid?: number;
   wallet_balance?: number;
   api_wallet_balance?: number;
   is_suspended?: boolean;
@@ -97,24 +99,21 @@ const AdminUsers = () => {
       const parentIds = [...new Set(rows.filter(r => r.parent_agent_id).map(r => r.parent_agent_id as string))];
       const [parentsRes, salesRes, walletsRes, mfaRes] = await Promise.all([
         parentIds.length > 0 ? supabase.from("profiles").select("user_id, full_name").in("user_id", parentIds) : Promise.resolve({ data: [] }),
-        supabase.from("orders").select("agent_id, amount").eq("status", "fulfilled").in("agent_id", userIds),
+        supabase.from("user_sales_stats").select("user_id, total_sales_volume, total_own_profit, total_commissions_paid").in("user_id", userIds),
         supabase.from("wallets").select("agent_id, balance, api_balance").in("agent_id", userIds),
         Promise.resolve(supabase.from("user_mfa_status").select("user_id, has_mfa").in("user_id", userIds)).catch(() => ({ data: [] })),
       ]);
       const parentMap = new Map((parentsRes.data || []).map((p: any) => [p.user_id, p.full_name]));
       
-      const salesMap = new Map();
-      (salesRes.data || []).forEach((s: any) => {
-        if (s.agent_id && s.amount) {
-          salesMap.set(s.agent_id, (salesMap.get(s.agent_id) || 0) + Number(s.amount));
-        }
-      });
-      
+      const salesMap = new Map((salesRes.data || []).map((s: any) => [s.user_id, s]));
       const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, w]));
       const mfaMap = new Map((mfaRes?.data || []).map((m: any) => [m.user_id, m.has_mfa]));
       rows.forEach(r => {
         if (r.parent_agent_id) r.parent_name = parentMap.get(r.parent_agent_id) || "Unknown";
-        r.total_sales_volume = salesMap.get(r.user_id) ?? 0;
+        const stats = salesMap.get(r.user_id) as any;
+        r.total_sales_volume = Number(stats?.total_sales_volume ?? 0);
+        r.total_own_profit = Number(stats?.total_own_profit ?? 0);
+        r.total_commissions_paid = Number(stats?.total_commissions_paid ?? 0);
         const wallet = walletMap.get(r.user_id);
         r.wallet_balance = Number(wallet?.balance ?? 0);
         r.api_wallet_balance = Number(wallet?.api_balance ?? 0);
@@ -498,6 +497,16 @@ const AdminUsers = () => {
                   </td>
                   <td className="p-4">
                     <p className="font-bold text-emerald-600 dark:text-emerald-400">GH₵{(user.total_sales_volume || 0).toFixed(2)}</p>
+                    {(user.total_own_profit || 0) > 0 && (
+                      <p className="text-[10px] font-bold text-emerald-500">
+                        Profit: +GH₵{(user.total_own_profit || 0).toFixed(2)}
+                      </p>
+                    )}
+                    {(user.total_commissions_paid || 0) > 0 && (
+                      <p className="text-[9px] font-bold text-purple-400">
+                        Comms: +GH₵{(user.total_commissions_paid || 0).toFixed(2)}
+                      </p>
+                    )}
                   </td>
                   <td className="p-4 hidden md:table-cell">
                     {(user as any).is_sub_agent && user.parent_name ? (
@@ -616,6 +625,12 @@ const AdminUsers = () => {
                   <div>
                     <p className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold">Total Sales</p>
                     <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">GH₵{(user.total_sales_volume || 0).toFixed(2)}</p>
+                    {(user.total_own_profit || 0) > 0 && (
+                      <p className="text-[9px] font-bold text-emerald-500">Profit: +GH₵{(user.total_own_profit || 0).toFixed(2)}</p>
+                    )}
+                    {(user.total_commissions_paid || 0) > 0 && (
+                      <p className="text-[8px] font-bold text-purple-400">Comms: +GH₵{(user.total_commissions_paid || 0).toFixed(2)}</p>
+                    )}
                   </div>
                   {user.is_sub_agent && user.parent_name && (
                     <div>

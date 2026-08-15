@@ -1428,49 +1428,61 @@ const AgentStore = () => {
       />
 
       {/* Main content */}
-      <main className="relative z-10 flex-1 max-w-lg mx-auto w-full px-4 pt-4 pb-24">
+      <main className="relative z-10 flex-1 max-w-lg mx-auto w-full px-4 pt-4 pb-24 space-y-6">
 
-        {/* ── Unique Storefront Welcome Hero Card ── */}
+        {/* ── Ultra-Modern Storefront Hero Card ── */}
         <div
-          className="rounded-[36px] p-7 mb-6 relative overflow-hidden border border-white/15 backdrop-blur-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)] group transition-all duration-500"
+          className="rounded-[36px] p-7 relative overflow-hidden border border-white/15 backdrop-blur-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] group transition-all duration-500"
           style={{ 
             background: storeBannerUrl 
               ? `url(${storeBannerUrl}) center/cover no-repeat` 
               : resolvedGradient 
           }}
         >
-          {/* Ambient Glow Dot */}
+          {/* Ambient Glow Aura */}
           {!storeBannerUrl && (
             <>
-              <div className="absolute -top-10 -right-10 w-44 h-44 rounded-full blur-3xl opacity-40 pointer-events-none transition-all duration-700 group-hover:opacity-60" style={{ backgroundColor: accentColor }} />
-              <div className="absolute -bottom-10 -left-10 w-44 h-44 rounded-full blur-3xl opacity-30 pointer-events-none transition-all duration-700 group-hover:opacity-50" style={{ backgroundColor: accentColor }} />
+              <div className="absolute -top-12 -right-12 w-52 h-52 rounded-full blur-3xl opacity-45 pointer-events-none transition-all duration-700 group-hover:opacity-70" style={{ backgroundColor: accentColor }} />
+              <div className="absolute -bottom-12 -left-12 w-52 h-52 rounded-full blur-3xl opacity-35 pointer-events-none transition-all duration-700 group-hover:opacity-60" style={{ backgroundColor: accentColor }} />
             </>
           )}
 
-          {/* Dark Overlay for custom banner readability */}
+          {/* Dark Gradient Overlay for custom background readability */}
           {storeBannerUrl && (
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-black/30 backdrop-blur-[1px] transition-all group-hover:opacity-90 z-0" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 backdrop-blur-[1px] transition-all group-hover:opacity-90 z-0" />
           )}
           
-          <div className="flex items-center gap-2 mb-4 relative z-10">
-            <span className="px-3.5 py-1 text-[10px] font-black tracking-widest text-amber-300 bg-amber-400/10 border border-amber-400/25 rounded-full uppercase shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] backdrop-blur-md">
-              {greeting}
-            </span>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
-              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active System</span>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+            <div className="flex items-center gap-2">
+              <span className="px-3.5 py-1 text-[10px] font-black tracking-widest text-amber-300 bg-amber-400/10 border border-amber-400/25 rounded-full uppercase shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] backdrop-blur-md">
+                {greeting}
+              </span>
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
+                <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Store Online</span>
+              </div>
             </div>
+
+            {/* Quick Track Order Link */}
+            <a
+              href="#track-section"
+              className="flex items-center gap-1.5 text-[10px] font-bold text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1 rounded-full border border-white/10"
+            >
+              <Clock className="w-3 h-3 text-amber-400" />
+              <span>Track Order</span>
+            </a>
           </div>
 
           <h2 className="text-3xl sm:text-4xl font-black tracking-tight leading-[1.05] mb-3 relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-white via-white/95 to-white/70 drop-shadow-sm">
-            Premium Data <br/> &amp; Connectivity.
+            Instant Data <br/> &amp; Connectivity.
           </h2>
           <p className="text-white/70 text-[13px] font-semibold leading-relaxed mb-4 max-w-[340px] relative z-10">
-            {storeDescription || "Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant fulfillment."}
+            {storeDescription || "Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant delivery guaranteed."}
           </p>
-          <LiveDeliveryBadge className="mb-6 relative z-10 shadow-lg" />
+          <LiveDeliveryBadge className="mb-5 relative z-10 shadow-lg" />
 
-          <div className="flex items-center justify-between p-4 rounded-[26px] bg-white/[0.06] border border-white/12 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] relative z-10 group/card hover:border-white/20 transition-all">
+          {/* Store Info & WhatsApp Support Bar */}
+          <div className="flex items-center justify-between p-4 rounded-[26px] bg-white/[0.07] border border-white/15 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] relative z-10 group/card hover:border-white/30 transition-all">
             <div className="flex items-center gap-3 min-w-0">
               {agent.store_logo_url ? (
                 <img src={agent.store_logo_url} alt="logo" className="w-11 h-11 rounded-[16px] object-cover border border-white/20 shrink-0 shadow-xl group-hover/card:scale-105 transition-transform" />
@@ -1480,10 +1492,10 @@ const AgentStore = () => {
                 </div>
               )}
               <div className="leading-tight min-w-0">
-                <p className="font-black text-sm text-white truncate max-w-[130px] tracking-tight">{agent.store_name}</p>
+                <p className="font-black text-sm text-white truncate max-w-[140px] tracking-tight">{agent.store_name}</p>
                 <div className="flex items-center gap-1 mt-0.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#25D366]" />
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/60">Verified Partner</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Verified Reseller</p>
                 </div>
               </div>
             </div>
@@ -1503,22 +1515,22 @@ const AgentStore = () => {
 
         {/* ── Customer Account Dashboard Card ── */}
         {isCustomerLoggedIn && (
-          <div className="bg-gradient-to-b from-white/8 to-white/3 border border-white/12 rounded-[28px] p-5 mb-5 relative overflow-hidden backdrop-blur-2xl shadow-xl">
-            <div className="absolute top-0 right-0 w-28 h-28 rounded-full blur-3xl opacity-35" style={{ background: accentColor }} />
+          <div className="bg-gradient-to-b from-white/10 to-white/4 border border-white/15 rounded-[28px] p-5 relative overflow-hidden backdrop-blur-2xl shadow-2xl">
+            <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-35" style={{ background: accentColor }} />
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none">Store Wallet Portal</p>
+                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none">Customer Account</p>
                 <p className="text-white text-base font-black truncate mt-1.5 leading-tight">{customerName}</p>
               </div>
               <button onClick={() => setHistoryOpen(true)} className="text-[10px] font-black px-3.5 py-1.5 rounded-xl text-black uppercase tracking-wider flex items-center gap-1 hover:brightness-110 transition-all active:scale-95 shadow-md" style={{ backgroundColor: accentColor }}>
-                <History className="w-3.5 h-3.5" /> History
+                <History className="w-3.5 h-3.5" /> My Orders
               </button>
             </div>
             
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/8">
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/10">
               <div className="bg-white/5 rounded-2xl p-3.5 border border-white/5">
-                <p className="text-[9px] text-white/50 font-bold uppercase leading-none">Your Balance</p>
-                <p className="text-lg font-black text-emerald-400 mt-1.5 leading-none font-mono">GHS {Number(customerBalance).toFixed(2)}</p>
+                <p className="text-[9px] text-white/50 font-bold uppercase leading-none">Wallet Balance</p>
+                <p className="text-lg font-black text-emerald-400 mt-1.5 leading-none font-mono">GH₵ {Number(customerBalance).toFixed(2)}</p>
               </div>
               
               <button
@@ -1528,18 +1540,18 @@ const AgentStore = () => {
                 style={{ backgroundColor: accentColor, color: "#000000" }}
               >
                 <CreditCard className="w-5 h-5 shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-wider leading-none">Deposit Funds</span>
+                <span className="text-[10px] font-black uppercase tracking-wider leading-none">Top-Up Wallet</span>
               </button>
             </div>
           </div>
         )}
 
-        {/* ── Service tabs ── */}
-        <div className="flex gap-2 p-2 rounded-[24px] bg-white/[0.04] border border-white/12 mb-6 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] relative z-10">
+        {/* ── Service Tabs Switcher ── */}
+        <div className="flex gap-2 p-2 rounded-[24px] bg-white/[0.04] border border-white/12 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] relative z-10">
           {[
-            { id: "data",    label: "Data",    icon: Wifi },
-            { id: "airtime", label: "Airtime", icon: Smartphone },
-            { id: "utility", label: "Bills",   icon: Zap },
+            { id: "data",    label: "Data Bundles", icon: Wifi },
+            { id: "airtime", label: "Airtime",      icon: Smartphone },
+            { id: "utility", label: "Utilities",    icon: Zap },
           ].map((s) => {
             const active = selectedService === s.id;
             return (
@@ -1564,9 +1576,9 @@ const AgentStore = () => {
           })}
         </div>
 
-        {/* ── Network tabs (Data & Airtime) ── */}
+        {/* ── Network Pills Selector ── */}
         {(selectedService === "data" || selectedService === "airtime") && (
-          <div className="flex gap-3 mb-6 relative z-10">
+          <div className="flex gap-3 relative z-10">
             {NETWORKS.map((n) => {
               const active = selectedNetwork === n;
               const nc = NETWORK_CONFIG[n];
@@ -1577,7 +1589,7 @@ const AgentStore = () => {
                   onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); setSelectedTypeOrCategory("affordable"); }}
                   className={`flex-1 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest border transition-all duration-300 active:scale-[0.96] ${
                     active 
-                      ? `${nc.bg} ${nc.textClass} border-white/20 shadow-2xl scale-[1.02]` 
+                      ? `${nc.bg} ${nc.textClass} border-white/30 shadow-2xl scale-[1.02]` 
                       : "bg-white/[0.04] border-white/10 text-white/60 hover:bg-white/10 hover:text-white backdrop-blur-xl shadow-inner"
                   }`}
                   style={active ? { 
@@ -1592,9 +1604,9 @@ const AgentStore = () => {
           </div>
         )}
 
-        {/* Dropdown Selector for Package Type / Category */}
+        {/* ── Dropdown Category Selector ── */}
         {selectedService === "data" && (
-          <div className="mb-6 animate-fade-in relative z-50">
+          <div className="animate-fade-in relative z-50">
             <BundleSelectorDropdown
               options={dropdownOptions}
               value={selectedTypeOrCategory}
@@ -1611,7 +1623,7 @@ const AgentStore = () => {
         {/* Dedicated Instant View Header */}
         {selectedService === "data" && selectedTypeOrCategory !== "affordable" && selectedTypeOrCategory !== "mashup" && (
           <div 
-            className="mb-6 p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in relative z-10"
+            className="p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in relative z-10"
             style={{ borderColor: `${accentColor}20`, background: `${accentColor}06` }}
           >
             <div>
@@ -1634,7 +1646,7 @@ const AgentStore = () => {
         {/* Dedicated Mash Up View Header */}
         {selectedService === "data" && selectedTypeOrCategory === "mashup" && (
           <div 
-            className="mb-6 p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in relative z-10"
+            className="p-5 rounded-3xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in relative z-10"
             style={{ borderColor: `${accentColor}20`, background: `${accentColor}06` }}
           >
             <div>
@@ -1652,7 +1664,7 @@ const AgentStore = () => {
           </div>
         )}
 
-        {/* ── Data packages grid ── */}
+        {/* ── Data Packages Grid ── */}
         {selectedService === "data" && (() => {
           if (packages.length === 0) {
             return (
@@ -1669,7 +1681,7 @@ const AgentStore = () => {
                     <Clock className="w-7 h-7 animate-spin-slow" style={{ color: accentColor }} />
                   </div>
                 </div>
-                <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">{selectedNetwork} On Hold</h3>
+                <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">{selectedNetwork} Packages On Hold</h3>
                 <p className="text-sm text-white/40 max-w-md">
                   All {selectedNetwork} packages are temporarily placed on hold. Ordering will resume shortly. Thank you for your patience!
                 </p>
@@ -1687,8 +1699,8 @@ const AgentStore = () => {
           return (
             <div className="space-y-3">
               <div className="flex items-center justify-between px-1">
-                <p className="text-sm font-black text-white/70">{selectedNetwork} Bundles</p>
-                <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest">Tap to select</p>
+                <p className="text-sm font-black text-white/80">{selectedNetwork} Bundles</p>
+                <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Tap a card to select</p>
               </div>
 
               <div className="space-y-3">
@@ -1702,7 +1714,7 @@ const AgentStore = () => {
                             type="button"
                             key={pkg.size}
                             onClick={() => handleCardClick(pkg.size, pkg.price)}
-                            className={`relative rounded-[24px] p-5 text-left transition-all duration-300 border overflow-hidden group ${
+                            className={`relative rounded-[26px] p-5 text-left transition-all duration-300 border overflow-hidden group ${
                               isSelected
                                 ? "scale-[1.02] shadow-2xl border-white/40 ring-4"
                                 : "border-white/10 bg-white/[0.03] backdrop-blur-xl hover:bg-white/10 hover:border-white/20 hover:shadow-lg active:scale-[0.97]"
@@ -1711,13 +1723,13 @@ const AgentStore = () => {
                               background: isSelected
                                 ? `linear-gradient(145deg, ${netConf.color}, ${netConf.color}dd)`
                                 : undefined,
-                              boxShadow: isSelected ? `0 12px 30px ${netConf.color}40` : undefined,
-                              borderColor: isSelected ? "rgba(255,255,255,0.5)" : undefined,
-                              ringColor: isSelected ? `${netConf.color}30` : "transparent"
+                              boxShadow: isSelected ? `0 12px 30px ${netConf.color}45` : undefined,
+                              borderColor: isSelected ? "rgba(255,255,255,0.6)" : undefined,
+                              ringColor: isSelected ? `${netConf.color}40` : "transparent"
                             }}
                           >
                             {/* Inner Highlight for depth */}
-                            <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/10" />
+                            <div className="absolute inset-0 rounded-[26px] pointer-events-none ring-1 ring-inset ring-white/10" />
 
                             {isSelected && (
                               <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-md animate-in zoom-in-50 duration-200">
@@ -1750,7 +1762,7 @@ const AgentStore = () => {
                             })()}
                             <div className={`pt-4 border-t ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "border-black/20" : "border-white/20") : "border-white/10"}`}>
                               <p className={`text-xl font-black tracking-tight ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black" : "text-white") : "text-white/90"}`}>
-                                ₵{pkg.price.toFixed(2)}
+                                GH₵ {pkg.price.toFixed(2)}
                               </p>
                               <p className={`text-[10px] font-bold mt-1 ${isSelected ? ((selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up") ? "text-black/50" : "text-white/50") : "text-white/30"}`}>
                                 {(pkg.validity || "NO EXPIRY").toUpperCase()}
@@ -1771,7 +1783,7 @@ const AgentStore = () => {
 
         {/* ── Airtime Form ── */}
         {selectedService === "airtime" && (
-          <div className="rounded-3xl border border-white/8 overflow-hidden p-6 space-y-6 animate-in fade-in duration-300" style={{ background: "#111116" }}>
+          <div className="rounded-3xl border border-white/12 overflow-hidden p-6 space-y-6 animate-in fade-in duration-300 bg-[#0d0d12]/90 backdrop-blur-2xl">
             <div className="space-y-4">
               <div>
                 <Label className="text-xs font-bold text-white/60 uppercase tracking-wider mb-2 block">Recipient Phone Number</Label>
@@ -1784,7 +1796,7 @@ const AgentStore = () => {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     maxLength={12}
-                    className="w-full h-14 pl-11 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                    className="w-full h-14 pl-11 rounded-[18px] bg-white/[0.04] border-white/10 text-white font-bold"
                   />
                 </div>
               </div>
@@ -1799,7 +1811,7 @@ const AgentStore = () => {
                     placeholder="Enter amount (min GHS 1)"
                     value={airtimeAmount}
                     onChange={(e) => setAirtimeAmount(e.target.value)}
-                    className="w-full h-14 pl-8 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                    className="w-full h-14 pl-8 rounded-[18px] bg-white/[0.04] border-white/10 text-white font-bold"
                   />
                 </div>
               </div>
@@ -1813,7 +1825,7 @@ const AgentStore = () => {
                     onClick={() => setAirtimeAmount(String(amt))}
                     className={`py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
                       Number(airtimeAmount) === amt
-                        ? "bg-white text-black border-transparent"
+                        ? "bg-white text-black border-transparent shadow-md font-black"
                         : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
                     }`}
                   >
@@ -1828,15 +1840,15 @@ const AgentStore = () => {
               <div className="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
                 <div className="flex justify-between text-xs text-white/50">
                   <span>Airtime Value:</span>
-                  <span className="text-white font-bold">₵{Number(airtimeAmount).toFixed(2)}</span>
+                  <span className="text-white font-bold">GH₵ {Number(airtimeAmount).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-white/50">
                   <span>Platform Fee:</span>
-                  <span className="text-emerald-400 font-bold">₵0.00</span>
+                  <span className="text-emerald-400 font-bold">GH₵ 0.00</span>
                 </div>
                 <div className="border-t border-white/5 pt-3 flex justify-between text-sm">
                   <span className="font-bold text-white">Total Pay:</span>
-                  <span className="font-black text-amber-400">₵{Number(airtimeAmount).toFixed(2)}</span>
+                  <span className="font-black text-amber-400">GH₵ {Number(airtimeAmount).toFixed(2)}</span>
                 </div>
 
                 <button
@@ -1855,7 +1867,7 @@ const AgentStore = () => {
 
         {/* ── Utility Form ── */}
         {selectedService === "utility" && (
-          <div className="rounded-3xl border border-white/8 overflow-hidden p-6 space-y-6 animate-in fade-in duration-300" style={{ background: "#111116" }}>
+          <div className="rounded-3xl border border-white/12 overflow-hidden p-6 space-y-6 animate-in fade-in duration-300 bg-[#0d0d12]/90 backdrop-blur-2xl">
             <div className="space-y-4">
               {/* Provider Selector */}
               <div>
@@ -1891,7 +1903,7 @@ const AgentStore = () => {
                   placeholder={utilityType === "ECG" ? "Enter ECG meter number" : "Enter GWCL account number"}
                   value={utilityNumber}
                   onChange={(e) => setUtilityNumber(e.target.value)}
-                  className="w-full h-14 pl-4 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                  className="w-full h-14 pl-4 rounded-[18px] bg-white/[0.04] border-white/10 text-white font-bold"
                 />
               </div>
 
@@ -1906,7 +1918,7 @@ const AgentStore = () => {
                     placeholder="Enter bill amount"
                     value={utilityAmount}
                     onChange={(e) => setUtilityAmount(e.target.value)}
-                    className="w-full h-14 pl-8 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                    className="w-full h-14 pl-8 rounded-[18px] bg-white/[0.04] border-white/10 text-white font-bold"
                   />
                 </div>
               </div>
@@ -1923,7 +1935,7 @@ const AgentStore = () => {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     maxLength={12}
-                    className="w-full h-14 pl-11 rounded-[18px] bg-white/[0.03] border-white/10 text-white font-bold"
+                    className="w-full h-14 pl-11 rounded-[18px] bg-white/[0.04] border-white/10 text-white font-bold"
                   />
                 </div>
               </div>
@@ -1934,15 +1946,15 @@ const AgentStore = () => {
               <div className="mt-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
                 <div className="flex justify-between text-xs text-white/50">
                   <span>Bill Value:</span>
-                  <span className="text-white font-bold">₵{Number(utilityAmount).toFixed(2)}</span>
+                  <span className="text-white font-bold">GH₵ {Number(utilityAmount).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-white/50">
                   <span>Platform Fee:</span>
-                  <span className="text-emerald-400 font-bold">₵0.00</span>
+                  <span className="text-emerald-400 font-bold">GH₵ 0.00</span>
                 </div>
                 <div className="border-t border-white/5 pt-3 flex justify-between text-sm">
                   <span className="font-bold text-white">Total Pay:</span>
-                  <span className="font-black text-amber-400">₵{Number(utilityAmount).toFixed(2)}</span>
+                  <span className="font-black text-amber-400">GH₵ {Number(utilityAmount).toFixed(2)}</span>
                 </div>
 
                 <button
@@ -1960,28 +1972,28 @@ const AgentStore = () => {
         )}
 
         {/* ── Order Tracker ── */}
-        <div className="mt-8" id="track-section">
+        <div className="pt-2" id="track-section">
           <PhoneOrderTracker
             title="Track Your Order"
-            subtitle="Enter your number to check delivery status."
+            subtitle="Enter your phone number to check delivery status."
           />
         </div>
 
         {/* ── Sub-agent CTA (for main agents only) ── */}
         {!agent.is_sub_agent && (
           <div
-            className="mt-8 rounded-3xl p-5 border border-white/8 relative overflow-hidden"
-            style={{ background: `linear-gradient(135deg, ${accentColor}18, transparent)` }}
+            className="rounded-3xl p-5 border border-white/12 relative overflow-hidden shadow-xl"
+            style={{ background: `linear-gradient(135deg, ${accentColor}20, transparent)` }}
           >
             <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: accentColor }}>Reseller Opportunity</p>
             <h3 className="text-xl font-black text-white mb-1">Start Your Own Store</h3>
-            <p className="text-white/40 text-sm mb-4 leading-relaxed">
-              Earn profits reselling under <span className="text-white/60 font-bold">{agent.store_name}</span>.
-              {subAgentBaseFee !== null && <> Activation fee: <span className="text-white font-black">₵{subAgentBaseFee.toFixed(2)}</span>.</>}
+            <p className="text-white/50 text-sm mb-4 leading-relaxed">
+              Earn profits reselling under <span className="text-white/80 font-bold">{agent.store_name}</span>.
+              {subAgentBaseFee !== null && <> Activation fee: <span className="text-white font-black">GH₵ {subAgentBaseFee.toFixed(2)}</span>.</>}
             </p>
             <Link
               to={`/store/${slug}/sub-agent`}
-              className="inline-flex items-center gap-2 font-black text-sm px-5 py-2.5 rounded-2xl text-black transition-all hover:opacity-90 active:scale-95"
+              className="inline-flex items-center gap-2 font-black text-sm px-5 py-2.5 rounded-2xl text-black transition-all hover:opacity-90 active:scale-95 shadow-md"
               style={{ backgroundColor: accentColor }}
             >
               Get Started <ArrowRight className="w-4 h-4" />
@@ -1990,22 +2002,22 @@ const AgentStore = () => {
         )}
 
         {/* ── Footer ── */}
-        <footer className="mt-10 pt-6 border-t border-white/6 text-center space-y-2">
+        <footer className="pt-8 border-t border-white/10 text-center space-y-2">
           <div className="flex items-center justify-center gap-2 mb-3">
-            <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ backgroundColor: accentColor }}>
+            <div className="w-7 h-7 rounded-xl flex items-center justify-center shadow-md" style={{ backgroundColor: accentColor }}>
               <Store className="w-3.5 h-3.5 text-black" />
             </div>
             <span className="font-black text-sm text-white">{agent.store_name}</span>
           </div>
           <div className="flex items-center justify-center gap-4">
             {agent.whatsapp_number && (
-              <a href={`https://wa.me/${agent.whatsapp_number.replace(/\D+/g, "")}`} className="text-[11px] text-white/30 hover:text-white transition-colors font-bold">WhatsApp</a>
+              <a href={`https://wa.me/${agent.whatsapp_number.replace(/\D+/g, "")}`} className="text-[11px] text-white/40 hover:text-white transition-colors font-bold">WhatsApp Support</a>
             )}
             {agent.support_number && (
-              <a href={`tel:${agent.support_number}`} className="text-[11px] text-white/30 hover:text-white transition-colors font-bold">{agent.support_number}</a>
+              <a href={`tel:${agent.support_number}`} className="text-[11px] text-white/40 hover:text-white transition-colors font-bold">{agent.support_number}</a>
             )}
           </div>
-          <p className="text-[10px] text-white/15 font-bold pt-1">© {new Date().getFullYear()} {agent.store_name} · Secure Payments by Paystack</p>
+          <p className="text-[10px] text-white/20 font-bold pt-1">© {new Date().getFullYear()} {agent.store_name} · Secure Payments by Paystack</p>
         </footer>
       </main>
 

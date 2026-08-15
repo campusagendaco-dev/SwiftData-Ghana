@@ -1077,7 +1077,7 @@ const AdminOrders = () => {
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Network</th>
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Package Details</th>
                 <th className="text-right px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Amount</th>
-                <th className="text-right px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Admin Profit</th>
+                <th className="text-right px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Profits (Admin / Agent)</th>
                 <th className="text-center px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Status / Queue</th>
                 <th className="text-center px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Actions</th>
               </tr>
@@ -1194,21 +1194,35 @@ const AdminOrders = () => {
                       GH₵{Number(order.amount).toFixed(2)}
                     </td>
 
-                    <td className="px-4 py-3.5 text-right font-mono text-xs font-bold text-sky-400 whitespace-nowrap">
+                    <td className="px-4 py-3.5 text-right font-mono text-xs whitespace-nowrap">
                       {order.status === "fulfilled" ? (
-                        `+GH₵${(
-                          order.order_type === "api"
-                            ? Number(order.profit || 0)
-                            : (
-                              Number(order.paystack_verified_amount ?? order.amount) - 
-                              Number(order.paystack_fee || 0) - 
-                              Number(order.profit || 0) - 
-                              Number(order.parent_profit || 0) - 
-                              Number(order.cost_price || 0)
-                            )
-                        ).toFixed(2)}`
+                        <>
+                          <div className="font-bold text-sky-400">
+                            Admin: +GH₵{(
+                              order.order_type === "api"
+                                ? Number(order.profit || 0)
+                                : (
+                                  Number(order.paystack_verified_amount ?? order.amount) - 
+                                  Number(order.paystack_fee || 0) - 
+                                  Number(order.profit || 0) - 
+                                  Number(order.parent_profit || 0) - 
+                                  Number(order.cost_price || 0)
+                                )
+                            ).toFixed(2)}
+                          </div>
+                          {Number(order.profit || 0) > 0 && order.order_type !== "api" && (
+                            <div className="text-[10px] font-bold text-emerald-400">
+                              Agent: +GH₵{Number(order.profit || 0).toFixed(2)}
+                            </div>
+                          )}
+                          {Number(order.parent_profit || 0) > 0 && (
+                            <div className="text-[9px] font-bold text-purple-400">
+                              Parent: +GH₵{Number(order.parent_profit || 0).toFixed(2)}
+                            </div>
+                          )}
+                        </>
                       ) : (
-                        "—"
+                        <span className="text-muted-foreground/40">—</span>
                       )}
                     </td>
 
@@ -1303,6 +1317,33 @@ const AdminOrders = () => {
                   <p className="text-[10px] uppercase font-bold text-muted-foreground">Network & Package</p>
                   <p className="font-bold text-foreground mt-0.5">{order.network || "—"} ({order.package_size || "—"})</p>
                 </div>
+                {order.status === "fulfilled" && (
+                  <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-white/5 text-[11px] font-mono">
+                    <span className="text-sky-400 font-bold">
+                      Admin: +GH₵{(
+                        order.order_type === "api"
+                          ? Number(order.profit || 0)
+                          : (
+                            Number(order.paystack_verified_amount ?? order.amount) - 
+                            Number(order.paystack_fee || 0) - 
+                            Number(order.profit || 0) - 
+                            Number(order.parent_profit || 0) - 
+                            Number(order.cost_price || 0)
+                          )
+                      ).toFixed(2)}
+                    </span>
+                    {Number(order.profit || 0) > 0 && order.order_type !== "api" && (
+                      <span className="text-emerald-400 font-bold">
+                        Agent: +GH₵{Number(order.profit || 0).toFixed(2)}
+                      </span>
+                    )}
+                    {Number(order.parent_profit || 0) > 0 && (
+                      <span className="text-purple-400 font-bold">
+                        Parent: +GH₵{Number(order.parent_profit || 0).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-2">
