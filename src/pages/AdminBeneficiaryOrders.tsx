@@ -606,10 +606,19 @@ export default function AdminBeneficiaryOrders() {
       // Instantly remove from local list so it leaves the page immediately!
       setAllBeneficiaryOrders((prev) => prev.filter((o) => o.id !== ord.id));
 
-      // 3. Invoke verify-payment Edge function
-      const { data, error } = await supabase.functions.invoke("verify-payment", {
+      // 3. Invoke verify-payment Edge function (with automatic 429 rate-limit backoff)
+      let res = await supabase.functions.invoke("verify-payment", {
         body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
       });
+
+      if (res.error && (res.error.status === 429 || String(res.error.message).includes("429") || String(res.error.message).includes("Too many"))) {
+        await new Promise((r) => setTimeout(r, 2000));
+        res = await supabase.functions.invoke("verify-payment", {
+          body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
+        });
+      }
+
+      const { data, error } = res;
 
       if (error) {
         toast({ title: "Retry failed", description: error.message || "Failed to contact provider", variant: "destructive" });
@@ -734,9 +743,16 @@ export default function AdminBeneficiaryOrders() {
               metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
             }).eq("id", ord.id);
 
-            const { data } = await supabase.functions.invoke("verify-payment", {
+            let res = await supabase.functions.invoke("verify-payment", {
               body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
             });
+            if (res.error && (res.error.status === 429 || String(res.error.message).includes("429"))) {
+              await new Promise((r) => setTimeout(r, 2000));
+              res = await supabase.functions.invoke("verify-payment", {
+                body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
+              });
+            }
+            const data = res.data;
             if (data?.status === "fulfilled" || data?.status === "processing") {
               successCount++;
             }
