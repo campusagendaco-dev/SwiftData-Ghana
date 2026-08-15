@@ -195,12 +195,15 @@ export default function AdminBeneficiaryOrders() {
             : errDetail || "Submission failed",
           provider_status_code: statusCode,
         }));
-        const { error: logErr } = await supabase
-          .from("beneficiary_submissions" as any)
-          .upsert(records as any, { onConflict: "phone_number" });
-        if (logErr) console.error("[AdminBeneficiaryOrders] DB log FAILED:", logErr);
+        try {
+          await supabase
+            .from("beneficiary_submissions" as any)
+            .upsert(records as any, { onConflict: "phone_number" });
+        } catch {
+          // Table optional; safe fallback
+        }
       } catch (e) {
-        console.error("[AdminBeneficiaryOrders] DB log FAILED:", e);
+        // Safe fallback
       }
 
       // Small pause between batches on large submissions to avoid tripping

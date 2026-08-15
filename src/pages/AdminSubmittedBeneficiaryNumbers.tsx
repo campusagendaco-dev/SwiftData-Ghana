@@ -115,30 +115,7 @@ export default function AdminSubmittedBeneficiaryNumbers() {
   const fetchSubmittedNumbers = async () => {
     setLoading(true);
     try {
-      // 1. Fetch from beneficiary_submissions table if exists
-      const { data: subData, error: subErr } = await supabase
-        .from("beneficiary_submissions" as any)
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!subErr && subData && subData.length > 0) {
-        setRecords(
-          subData.map((row: any) => ({
-            id: row.id || Math.random().toString(),
-            phone: row.phone_number || row.phone,
-            network: row.network || detectNetwork(row.phone_number || row.phone),
-            status: row.status || "submitted",
-            source: row.source || "web_ui",
-            submitted_by: row.submitted_by || "System",
-            created_at: row.created_at || new Date().toISOString(),
-            notes: row.notes,
-          }))
-        );
-        setLoading(false);
-        return;
-      }
-
-      // 2. Fallback: Aggregate failed non-beneficiary orders to form submitted numbers view
+      // Fetch non-beneficiary orders directly from the orders table
       const { data: orders, error: ordersErr } = await supabase
         .from("orders")
         .select("id, customer_phone, network, status, failure_reason, created_at, agent_id")
