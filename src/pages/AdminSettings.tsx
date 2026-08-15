@@ -6,15 +6,21 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock } from "lucide-react";
+import { 
+  Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, 
+  Upload, Trash2, Trash, Loader2, Globe, Database, Plus, ExternalLink, Activity, Shield, 
+  GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock, Check, Key, 
+  Sliders, Server, Volume2, ShieldCheck, Zap
+} from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { playSound } from "@/lib/sound";
-import { getFlagUrl } from "@/lib/utils";
+import { getFlagUrl, cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface SystemSettings {
   allow_duplicate_purchases: boolean;
@@ -111,7 +117,6 @@ const AdminSettings = () => {
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [restoringWallets, setRestoringWallets] = useState(false);
   const [settings, setSettings] = useState<SystemSettings>({
     allow_duplicate_purchases: false,
     auto_refund_enabled: false,
@@ -144,9 +149,9 @@ const AdminSettings = () => {
     payment_success_sms_message: "Your order for {package} to {phone} is being processed. TxID: {id}",
     wallet_topup_sms_message: "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
     withdrawal_request_sms_message: "Withdrawal request of GHS {amount} received. It will be processed shortly.",
-    withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed.",
+    withdrawal_completed_sms_message: "Your withdrawal of GHS {amount} has been completed. Thanks for using SwiftData.",
     order_failed_sms_message: "Order for {package} to {phone} failed. GHS {amount} has been refunded to your wallet.",
-    manual_credit_sms_message: "Your account has been manually credited with GHS {amount}.",
+    manual_credit_sms_message: "Your account has been manually credited with GHS {amount} by admin.",
     scheduled_success_sms_message: "Your scheduled {package} bundle to {phone} has been successfully renewed. Thank you for using SwiftData!",
     scheduled_failed_sms_message: "Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance. Please top up to resume.",
     data_provider_api_key: "",
@@ -200,194 +205,6 @@ const AdminSettings = () => {
     mashup_whatsapp_number: "",
     mashup_delivery_delay_mins: "15",
   });
-
-  const [currentIp, setCurrentIp] = useState("");
-  const [allowedIps, setAllowedIps] = useState<string[]>([]);
-  const [settlingMatch, setSettlingMatch] = useState<Record<string, boolean>>({});
-  const [matchResults, setMatchResults] = useState<Record<string, 'home' | 'draw' | 'away'>>({});
-
-  // World Cup matches states
-  const [worldCupMatches, setWorldCupMatches] = useState<any[]>([]);
-  const [loadingMatches, setLoadingMatches] = useState(false);
-  
-  // Add match form states
-  const [homeTeam, setHomeTeam] = useState("");
-  const [homeFlag, setHomeFlag] = useState("");
-  const [awayTeam, setAwayTeam] = useState("");
-  const [awayFlag, setAwayFlag] = useState("");
-  const [kickoff, setKickoff] = useState("");
-  const [addingMatch, setAddingMatch] = useState(false);
-
-  // Edit match states
-  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
-  const [editHomeTeam, setEditHomeTeam] = useState("");
-  const [editHomeFlag, setEditHomeFlag] = useState("");
-  const [editAwayTeam, setEditAwayTeam] = useState("");
-  const [editAwayFlag, setEditAwayFlag] = useState("");
-  const [editKickoff, setEditKickoff] = useState("");
-  const [updatingMatch, setUpdatingMatch] = useState(false);
-
-  useEffect(() => {
-    fetch("https://api.ipify.org?format=json")
-      .then(r => r.json())
-      .then(d => setCurrentIp(d.ip))
-      .catch(e => console.error("IP fetch failed:", e));
-
-    if (session?.user.id) {
-      supabase
-        .from("user_roles")
-        .select("allowed_ips")
-        .eq("user_id", session.user.id)
-        .eq("role", "admin")
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data?.allowed_ips) setAllowedIps(data.allowed_ips);
-        });
-    }
-  }, [session?.user.id]);
-
-  const [triggeringAI, setTriggeringAI] = useState(false);
-
-  const handleTriggerAIRecommender = async () => {
-    setTriggeringAI(true);
-    try {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/ai-sales-recommender`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentSession?.access_token}`,
-          'apikey': SUPABASE_PUBLISHABLE_KEY
-        }
-      });
-
-      const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error || "Failed to trigger recommender");
-      }
-
-      toast({
-        title: "✨ AI Scan Completed",
-        description: `Successfully analyzed user behavior and sent ${data.sent} recommended SMS promo messages.`,
-      });
-      playSound("success");
-    } catch (err: any) {
-      toast({
-        title: "Scan failed",
-        description: err.message || "An error occurred while running the AI recommender.",
-        variant: "destructive"
-      });
-    } finally {
-      setTriggeringAI(false);
-    }
-  };
-
-  const fetchMatches = async () => {
-    setLoadingMatches(true);
-    try {
-      const { data, error } = await supabase
-        .from("world_cup_matches")
-        .select("*")
-        .order("kickoff", { ascending: true });
-
-      if (error) {
-        if (!error.message?.includes("relation") || !error.message?.includes("does not exist")) {
-          toast({ title: "Error loading matches", description: error.message, variant: "destructive" });
-        }
-      } else if (data) {
-        setWorldCupMatches(data);
-      }
-    } catch (err: any) {
-      console.error("Error loading matches:", err);
-    } finally {
-      setLoadingMatches(false);
-    }
-  };
-
-  const handleAddMatch = async () => {
-    if (!homeTeam || !homeFlag || !awayTeam || !awayFlag || !kickoff) {
-      toast({ title: "Validation Error", description: "Please fill all fields for the new match.", variant: "destructive" });
-      return;
-    }
-
-    setAddingMatch(true);
-    try {
-      const { error } = await supabase
-        .from("world_cup_matches")
-        .insert({
-          home_team: homeTeam,
-          home_flag: homeFlag,
-          away_team: awayTeam,
-          away_flag: awayFlag,
-          kickoff: new Date(kickoff).toISOString(),
-          status: 'pending'
-        });
-
-      if (error) throw error;
-
-      toast({ title: "🏆 Match Added", description: `${homeTeam} vs ${awayTeam} has been scheduled.` });
-      setHomeTeam("");
-      setHomeFlag("");
-      setAwayTeam("");
-      setAwayFlag("");
-      setKickoff("");
-      fetchMatches();
-    } catch (err: any) {
-      toast({ title: "Failed to add match", description: err.message, variant: "destructive" });
-    } finally {
-      setAddingMatch(false);
-    }
-  };
-
-  const handleUpdateMatch = async () => {
-    if (!editingMatchId || !editHomeTeam || !editHomeFlag || !editAwayTeam || !editAwayFlag || !editKickoff) {
-      toast({ title: "Validation Error", description: "Please fill all fields.", variant: "destructive" });
-      return;
-    }
-
-    setUpdatingMatch(true);
-    try {
-      const { error } = await supabase
-        .from("world_cup_matches")
-        .update({
-          home_team: editHomeTeam,
-          home_flag: editHomeFlag,
-          away_team: editAwayTeam,
-          away_flag: editAwayFlag,
-          kickoff: new Date(editKickoff).toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", editingMatchId);
-
-      if (error) throw error;
-
-      toast({ title: "Match Updated", description: "The match details have been successfully saved." });
-      setEditingMatchId(null);
-      fetchMatches();
-    } catch (err: any) {
-      toast({ title: "Failed to update match", description: err.message, variant: "destructive" });
-    } finally {
-      setUpdatingMatch(false);
-    }
-  };
-
-  const handleDeleteMatch = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this match? This will also affect user predictions.")) return;
-
-    try {
-      const { error } = await supabase
-        .from("world_cup_matches")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-
-      toast({ title: "Match Deleted", description: "The match was removed from the database." });
-      fetchMatches();
-    } catch (err: any) {
-      toast({ title: "Failed to delete match", description: err.message, variant: "destructive" });
-    }
-  };
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -510,7 +327,6 @@ const AdminSettings = () => {
     };
 
     fetchSettings();
-    fetchMatches();
   }, [toast]);
 
   const handleSave = async () => {
@@ -599,38 +415,13 @@ const AdminSettings = () => {
 
       if (error || data?.error) {
         const errorMsg = data?.error || error?.message || "Unknown error";
-        console.error("Save error details:", { error, data });
-        
-        const normalized = errorMsg.toLowerCase();
-        if ((normalized.includes("insufficient") || normalized.includes("low")) && normalized.includes("balance")) {
-          toast({ 
-            title: "Insufficient Provider Balance", 
-            description: "The platform's provider balance is currently low. Please top up your provider wallet to ensure orders process successfully.", 
-            variant: "destructive" 
-          });
-        } else if (errorMsg.includes("column") || errorMsg.includes("non-2xx")) {
-          toast({ 
-            title: "🚀 Database Sync Required", 
-            description: "The new configuration settings require a schema update. Please run 'npx supabase db push' to apply these changes.", 
-            variant: "destructive" 
-          });
-        } else {
-          toast({ 
-            title: "⚠️ Save Interrupted", 
-            description: `We couldn't save your changes: ${errorMsg}`, 
-            variant: "destructive" 
-          });
-        }
+        toast({ title: "⚠️ Save Interrupted", description: errorMsg, variant: "destructive" });
       } else {
         toast({ 
-          title: "✨ Settings Locked In",
-          description: "Your system configuration has been updated successfully."
+          title: "✨ Settings Saved",
+          description: "System configuration updated successfully."
         });
-        if (data?.skipped?.length > 0) {
-          console.warn("Some settings were skipped by the server:", data.skipped);
-        }
-        
-        // Log the audit action
+        playSound("success");
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (currentUser) {
           await logAudit(currentUser.id, "update_system_settings", {
@@ -646,2020 +437,533 @@ const AdminSettings = () => {
     }
   };
 
-  const [providers, setProviders] = useState<any[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(false);
-
-  const fetchProviders = async () => {
-    setLoadingProviders(true);
-    const { data, error } = await supabase
-      .from("providers")
-      .select("*")
-      .order("priority", { ascending: true });
-    
-    if (error) {
-      console.error("Error fetching providers:", error);
-    } else {
-      setProviders(data || []);
-    }
-    setLoadingProviders(false);
-  };
-
-  useEffect(() => {
-    fetchProviders();
-  }, []);
-
-  const handleAddProvider = () => {
-    setProviders([...providers, { id: "new-" + Date.now(), name: "New Provider", is_active: true, priority: providers.length + 1, provider_type: "data", settings: {} }]);
-  };
-
-  const handleUpdateProvider = (id: string, updates: any) => {
-    setProviders(providers.map(p => p.id === id ? { ...p, ...updates } : p));
-  };
-
-  const handleDeleteProvider = async (id: string) => {
-    if (id.startsWith("new-")) {
-      setProviders(providers.filter(p => p.id !== id));
-      toast({ title: "Provider Removed", description: "Unsaved provider removed from list." });
-      return;
-    }
-
-    if (!confirm("Are you sure you want to permanently delete this provider? This will remove all associated packages.")) {
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const { error } = await supabase
-        .from("providers")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-
-      toast({ title: "Provider Deleted", description: "Provider has been deleted successfully." });
-      setProviders(providers.filter(p => p.id !== id));
-    } catch (err: any) {
-      console.error("Error deleting provider:", err);
-      toast({ 
-        title: "Delete Failed", 
-        description: err.message || "Failed to delete provider from the database. It might have orders referencing it.", 
-        variant: "destructive" 
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveProviders = async () => {
-    setSaving(true);
-    try {
-      // Process all providers to handle new vs existing correctly
-      const toUpsert = providers.map(p => {
-        // Strip out calculated fields
-        const { created_at, updated_at, balance, last_synced_at, ...item } = p;
-        
-        // Handle new items that have temporary IDs
-        if (typeof item.id === 'string' && item.id.startsWith("new-")) {
-          const { id, ...newItem } = item;
-          return newItem;
-        }
-        return item;
-      });
-
-      // Divide into batches for safer processing
-      const existing = toUpsert.filter(p => !!p.id);
-      const newItems = toUpsert.filter(p => !p.id);
-
-      // 1. Update existing providers by ID (safer than name)
-      if (existing.length > 0) {
-        const { error } = await supabase.from("providers").upsert(existing, { onConflict: 'id' });
-        if (error) throw error;
-      }
-      
-      // 2. Insert new providers (use name for conflict resolution if they already exist)
-      if (newItems.length > 0) {
-        const { error } = await supabase.from("providers").upsert(newItems, { onConflict: 'name' });
-        if (error) throw error;
-      }
-
-      toast({ title: "Providers Updated", description: "Network routing logic synchronized successfully." });
-      fetchProviders();
-    } catch (err: any) {
-      console.error("Save error:", err);
-      toast({ 
-        title: "Conflict Detected", 
-        description: err.message || "A provider with this name may already exist.", 
-        variant: "destructive" 
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (loading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading settings...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[350px] gap-4">
+        <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+        <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest animate-pulse">Loading System Settings...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6 max-w-4xl pb-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-bold">System Settings</h1>
-          <p className="text-sm text-muted-foreground mt-1">Configure global platform behavior.</p>
+    <div className="space-y-6 pb-24">
+      {/* Top Header Bar */}
+      <div className="glass-card-neo p-5 sm:p-6 rounded-3xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5 text-amber-400" /> Platform Configuration
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">System Settings & Integrations</h1>
         </div>
-        <Button onClick={handleSave} disabled={saving} className="gap-2">
-          <Save className="w-4 h-4" />
-          {saving ? "Saving..." : "Save All Changes"}
+
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="h-11 px-6 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-950/40 gap-2 self-end sm:self-auto"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          <span>Save All Changes</span>
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Core Settings */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Platform State</CardTitle>
-              <CardDescription>Control access and ordering capabilities.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <Label>Dark Mode Default</Label>
-                  <p className="text-xs text-muted-foreground">Enable dark mode as the default theme.</p>
-                </div>
-                <Switch
-                  checked={settings.dark_mode_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, dark_mode_enabled: c })}
-                />
+      {/* Main Tabbed Interface */}
+      <Tabs defaultValue="general" className="w-full space-y-6">
+        <TabsList className="glass-card-neo p-1.5 rounded-2xl border border-white/10 flex flex-wrap gap-1 bg-background/50 h-auto">
+          <TabsTrigger value="general" className="rounded-xl px-4 py-2 text-xs font-black gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-slate-950">
+            <Shield className="w-3.5 h-3.5" /> General & Safety
+          </TabsTrigger>
+          <TabsTrigger value="gateways" className="rounded-xl px-4 py-2 text-xs font-black gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-slate-950">
+            <Wallet className="w-3.5 h-3.5" /> Payment Gateways
+          </TabsTrigger>
+          <TabsTrigger value="providers" className="rounded-xl px-4 py-2 text-xs font-black gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-slate-950">
+            <Server className="w-3.5 h-3.5" /> Provider APIs
+          </TabsTrigger>
+          <TabsTrigger value="pricing" className="rounded-xl px-4 py-2 text-xs font-black gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-slate-950">
+            <Percent className="w-3.5 h-3.5" /> Markups & Fees
+          </TabsTrigger>
+          <TabsTrigger value="sms" className="rounded-xl px-4 py-2 text-xs font-black gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-slate-950">
+            <MessageSquare className="w-3.5 h-3.5" /> SMS Alerts Engine
+          </TabsTrigger>
+          <TabsTrigger value="withdrawals" className="rounded-xl px-4 py-2 text-xs font-black gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-slate-950">
+            <Activity className="w-3.5 h-3.5" /> Withdrawal Rules
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── TAB 1: GENERAL & SAFETY ── */}
+        <TabsContent value="general" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-3">
+                <ShieldCheck className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Checkout & System Switches</h3>
               </div>
 
-              <div className="flex items-start justify-between border-t border-white/5 pt-4">
-                <div className="space-y-0.5">
-                  <Label>Automated Failed Orders Refund</Label>
-                  <p className="text-xs text-muted-foreground text-amber-500/80">
-                    Automatically refund failed orders. If disabled, failed orders remain failed and must be manually refunded by the admin to prevent losses from delayed webhooks.
-                  </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-bold text-foreground">Disable Ordering System</Label>
+                    <p className="text-[10px] text-muted-foreground">Emergency switch to pause all purchases.</p>
+                  </div>
+                  <Switch
+                    checked={settings.disable_ordering}
+                    onCheckedChange={(v) => setSettings({ ...settings, disable_ordering: v })}
+                  />
                 </div>
-                <Switch
-                  checked={settings.auto_refund_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, auto_refund_enabled: c })}
-                />
-              </div>
 
-              <div className="flex items-start justify-between border-t border-white/5 pt-4">
-                <div className="space-y-0.5">
-                  <Label>Allow Duplicate Purchases</Label>
-                  <p className="text-xs text-muted-foreground text-amber-500/80">
-                    Allow users to make back-to-back duplicate data/airtime purchases for the same recipient number within 60 minutes.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-bold text-foreground">Allow Duplicate Orders</Label>
+                    <p className="text-[10px] text-muted-foreground">Allow multiple orders for same number within 5 mins.</p>
+                  </div>
+                  <Switch
+                    checked={settings.allow_duplicate_purchases}
+                    onCheckedChange={(v) => setSettings({ ...settings, allow_duplicate_purchases: v })}
+                  />
                 </div>
-                <Switch
-                  checked={settings.allow_duplicate_purchases}
-                  onCheckedChange={(c) => setSettings({ ...settings, allow_duplicate_purchases: c })}
-                />
-              </div>
 
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <Label>Agent Store Visitor Popup</Label>
-                  <p className="text-xs text-muted-foreground">Show a "Get your own store" popup to first-time store visitors.</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-bold text-foreground">Auto-Refund Failed Orders</Label>
+                    <p className="text-[10px] text-muted-foreground">Instantly credit user wallet when order fails.</p>
+                  </div>
+                  <Switch
+                    checked={settings.auto_refund_enabled}
+                    onCheckedChange={(v) => setSettings({ ...settings, auto_refund_enabled: v })}
+                  />
                 </div>
-                <Switch
-                  checked={settings.store_visitor_popup_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, store_visitor_popup_enabled: c })}
-                />
-              </div>
 
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <Label>Welcome Promo Modal</Label>
-                  <p className="text-xs text-muted-foreground">Show "100% discount" modal to first-time buyers.</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-bold text-foreground">Privacy Shield Protection</Label>
+                    <p className="text-[10px] text-muted-foreground">Mask customer phone numbers in public views.</p>
+                  </div>
+                  <Switch
+                    checked={settings.enable_privacy_shield}
+                    onCheckedChange={(v) => setSettings({ ...settings, enable_privacy_shield: v })}
+                  />
                 </div>
-                <Switch
-                  checked={settings.welcome_promo_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, welcome_promo_enabled: c })}
-                />
-              </div>
 
-              <div className="flex items-start justify-between border-t border-white/5 pt-4">
-                <div className="space-y-0.5">
-                  <Label>MTN Beneficiary Whitelist Verification</Label>
-                  <p className="text-xs text-muted-foreground text-rose-500/80">
-                    Verify recipient MTN numbers against the DataHub whitelisting API before checkout and payment.
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.beneficiary_verification_enabled !== false}
-                  onCheckedChange={(c) => setSettings({ ...settings, beneficiary_verification_enabled: c })}
-                />
-              </div>
-
-              <div className="flex items-start justify-between border-t border-white/5 pt-4">
-                <div className="space-y-0.5">
-                  <Label>Allow Continue on New Beneficiary</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Allow users/agents to bypass the warning and continue checkout/purchase when a number is not in the MTN beneficiary whitelist.
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.allow_non_beneficiary_continue !== false}
-                  onCheckedChange={(c) => setSettings({ ...settings, allow_non_beneficiary_continue: c })}
-                />
-              </div>
-
-              <div className="flex items-start justify-between border-t border-white/5 pt-4">
-                <div className="space-y-0.5">
-                  <Label className="text-amber-400 font-semibold flex items-center gap-1.5">
-                    ⚡ Auto-Route Non-Beneficiary MTN Numbers to Datamart API
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Automatically route MTN orders for numbers NOT on the DataHub beneficiary list directly to Datamart API for instant delivery.
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.auto_failover_non_beneficiary_to_datamart !== false}
-                  onCheckedChange={(c) => setSettings({ ...settings, auto_failover_non_beneficiary_to_datamart: c })}
-                />
-              </div>
-
-              <div className="flex items-start justify-between p-3 bg-primary/5 border border-primary/20 rounded-xl">
-                <div className="space-y-0.5">
-                  <Label className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-primary animate-pulse" />
-                    AI Promo Recommender (SMS)
-                  </Label>
-                  <p className="text-xs text-muted-foreground">Automatically scan and send cost-saving data package recommendations to frequent buyers.</p>
-                </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs font-bold text-foreground">AI Sales & Routing Recommender</Label>
+                    <p className="text-[10px] text-muted-foreground">Enable smart AI insights and carrier suggestions.</p>
+                  </div>
                   <Switch
                     checked={settings.ai_recommender_enabled}
-                    onCheckedChange={(c) => setSettings({ ...settings, ai_recommender_enabled: c })}
+                    onCheckedChange={(v) => setSettings({ ...settings, ai_recommender_enabled: v })}
                   />
-                  {settings.ai_recommender_enabled && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-[10px] h-6 px-2 gap-1 mt-1 border-primary/30 hover:bg-primary/10"
-                      onClick={handleTriggerAIRecommender}
-                      disabled={triggeringAI}
-                    >
-                      {triggeringAI ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          Running...
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="w-3 h-3" />
-                          Run Scan Now
-                        </>
-                      )}
-                    </Button>
-                  )}
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-start justify-between p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                <div className="space-y-0.5">
-                  <Label className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-amber-500" />
-                    Secure Privacy Shield
-                  </Label>
-                  <p className="text-xs text-muted-foreground">Disables right-click, blurs screen when minimized, and blocks printing.</p>
-                </div>
-                <Switch
-                  checked={settings.enable_privacy_shield}
-                  onCheckedChange={(c) => setSettings({ ...settings, enable_privacy_shield: c })}
-                />
+            <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-3">
+                <Phone className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Customer Support Contacts</h3>
               </div>
 
-              <div className="flex items-start justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-red-500">Disable All Ordering</Label>
-                  <p className="text-xs text-muted-foreground">Stop users from placing any new orders.</p>
-                </div>
-                <Switch
-                  checked={settings.disable_ordering}
-                  onCheckedChange={(c) => setSettings({ ...settings, disable_ordering: c })}
-                  className="data-[state=checked]:bg-red-500"
-                />
-              </div>
-
-              {settings.disable_ordering && (
-                <div className="relative group overflow-hidden rounded-2xl border border-red-500/20 bg-red-500/10 p-4 transition-all hover:bg-red-500/15">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-red-500" />
-                  <div className="flex items-start gap-3">
-                    <div className="shrink-0 w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/20 flex items-center justify-center">
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-red-400">Ordering is Disabled</p>
-                      <p className="text-xs text-red-500/60 mt-0.5">
-                        Your platform is currently in lock-down. Users will see a maintenance message at checkout.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-emerald-500/20 bg-emerald-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-emerald-500" />
-                MTN Mash Up Automation
-              </CardTitle>
-              <CardDescription>
-                Automatically export and send pending MTN Mash Up orders to a WhatsApp number when a threshold is met.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-bold flex items-center gap-2">
-                    Enable Auto-Export
-                  </Label>
-                  <p className="text-xs text-muted-foreground">Automatically process and send pending Mash Up orders to WhatsApp.</p>
-                </div>
-                <Switch
-                  checked={settings.mashup_automation_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, mashup_automation_enabled: c })}
-                  className="data-[state=checked]:bg-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="mashup-threshold">Export Threshold (Count)</Label>
-                  <Input
-                    id="mashup-threshold"
-                    type="number"
-                    min="1"
-                    value={settings.mashup_export_threshold}
-                    onChange={(e) => setSettings({ ...settings, mashup_export_threshold: e.target.value })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Number of pending orders required to trigger auto-export.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="mashup-delay">Auto-Delivery Delay (Mins)</Label>
-                  <Input
-                    id="mashup-delay"
-                    type="number"
-                    min="1"
-                    value={settings.mashup_delivery_delay_mins}
-                    onChange={(e) => setSettings({ ...settings, mashup_delivery_delay_mins: e.target.value })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Time in minutes before processing status transitions to delivered.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="mashup-whatsapp" className="flex items-center gap-1.5">
-                    <MessageCircle className="w-4 h-4 text-emerald-500" />
-                    WhatsApp Number
-                  </Label>
-                  <Input
-                    id="mashup-whatsapp"
-                    placeholder="e.g. 233240000000"
-                    value={settings.mashup_whatsapp_number}
-                    onChange={(e) => setSettings({ ...settings, mashup_whatsapp_number: e.target.value })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Include country code without the '+' sign.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Contact & Support</CardTitle>
-              <CardDescription>Update the contact information shown to users.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="cs-number" className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-muted-foreground" /> Customer Service Number
-                </Label>
-                <Input
-                  id="cs-number"
-                  placeholder="e.g. 0540309637"
-                  value={settings.customer_service_number}
-                  onChange={(e) => setSettings({ ...settings, customer_service_number: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="support-link" className="flex items-center gap-2">
-                  <MessageCircle className="w-4 h-4 text-muted-foreground" /> Support Channel Link (WhatsApp)
-                </Label>
-                <Input
-                  id="support-link"
-                  placeholder="https://whatsapp.com/channel/..."
-                  value={settings.support_channel_link}
-                  onChange={(e) => setSettings({ ...settings, support_channel_link: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  The floating WhatsApp button and Footer will link here.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-                Reseller Activation
-              </CardTitle>
-              <CardDescription>
-                Set the fee for users to become agents/resellers.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Agent Activation Fee (GH₵)</Label>
-                <Input
-                  type="number"
-                  step="1"
-                  value={settings.agent_activation_fee}
-                  onChange={(e) => setSettings({ ...settings, agent_activation_fee: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Users pay this amount once to unlock the agent dashboard and agent prices.
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-white/5 space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Percent className="w-4 h-4 text-amber-500" />
-                  Sub-Agent Commission Base (GH₵)
-                </Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={settings.sub_agent_base_fee}
-                  onChange={(e) => setSettings({ ...settings, sub_agent_base_fee: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  When a sub-agent activates, this amount is deducted from the parent agent.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Network Markups (Profit Margins)</CardTitle>
-              <CardDescription>Automatically add a percentage markup to specific networks before selling to users.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>MTN (%)</Label>
-                  <Input type="number" step="0.5" value={settings.mtn_markup_percentage} onChange={(e) => setSettings({ ...settings, mtn_markup_percentage: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Telecel (%)</Label>
-                  <Input type="number" step="0.5" value={settings.telecel_markup_percentage} onChange={(e) => setSettings({ ...settings, telecel_markup_percentage: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label>AT (%)</Label>
-                  <Input type="number" step="0.5" value={settings.at_markup_percentage} onChange={(e) => setSettings({ ...settings, at_markup_percentage: e.target.value })} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-primary/20">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-primary" />
-                Result Checker Pricing
-              </CardTitle>
-              <CardDescription>Configure retail prices for customers and base cost price for profit calculation.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-4 p-4 bg-muted/30 border border-border rounded-2xl shadow-sm transition-all hover:border-primary/30">
-                  <Label className="text-sm font-black text-foreground flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-primary" /> WASSCE
-                  </Label>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-widest">Retail Price (GH₵)</Label>
-                    <Input type="number" step="0.1" value={settings.wassce_price} onChange={(e) => setSettings({ ...settings, wassce_price: e.target.value })} className="font-bold" />
-                  </div>
-                  <div className="space-y-2 border-t border-border/50 pt-2">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-widest flex items-center gap-1"><Shield className="w-3 h-3" /> Cost Price (GH₵)</Label>
-                    <Input type="number" step="0.1" value={settings.wassce_cost_price} onChange={(e) => setSettings({ ...settings, wassce_cost_price: e.target.value })} className="font-mono text-xs opacity-80" />
-                  </div>
-                  <div className="flex justify-between items-center pt-1 text-[10px]">
-                    <span className="text-muted-foreground">Estimated Margin:</span>
-                    <span className="font-black text-emerald-500">₵{(parseFloat(settings.wassce_price || "0") - parseFloat(settings.wassce_cost_price || "0")).toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-4 p-4 bg-muted/30 border border-border rounded-2xl shadow-sm transition-all hover:border-amber-500/30">
-                  <Label className="text-sm font-black text-foreground flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-amber-500" /> BECE
-                  </Label>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-widest">Retail Price (GH₵)</Label>
-                    <Input type="number" step="0.1" value={settings.bece_price} onChange={(e) => setSettings({ ...settings, bece_price: e.target.value })} className="font-bold" />
-                  </div>
-                  <div className="space-y-2 border-t border-border/50 pt-2">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-widest flex items-center gap-1"><Shield className="w-3 h-3" /> Cost Price (GH₵)</Label>
-                    <Input type="number" step="0.1" value={settings.bece_cost_price} onChange={(e) => setSettings({ ...settings, bece_cost_price: e.target.value })} className="font-mono text-xs opacity-80" />
-                  </div>
-                  <div className="flex justify-between items-center pt-1 text-[10px]">
-                    <span className="text-muted-foreground">Estimated Margin:</span>
-                    <span className="font-black text-emerald-500">₵{(parseFloat(settings.bece_price || "0") - parseFloat(settings.bece_cost_price || "0")).toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-primary" />
-                Global Site Background
-              </CardTitle>
-              <CardDescription>Control the beautiful drifting Ghanaian traditional background system.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-bold">Drifting Ghanaian Symbols</Label>
-                  <p className="text-xs text-muted-foreground">Toggle floating animated symbols on dark/light themes.</p>
-                </div>
-                <Switch
-                  checked={settings.traditional_background_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, traditional_background_enabled: c })}
-                />
-              </div>
-
-              <div className="space-y-3 pt-2 border-t border-white/5">
-                <Label className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary" />
-                  Choose Background Preset
-                </Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {[
-                    { id: "traditional", label: "Ghana Drifting (Default)", url: "" },
-                    { id: "slideshow", label: "🔄 Auto Slideshow", url: "/auto_switch" },
-                    { id: "worldcup", label: "🏆 World Cup Special", url: "/assets/backgrounds/bg_world_cup.png" },
-                    { id: "worldcup_gold", label: "🏆 Gold Trophy Special", url: "/assets/backgrounds/bg_world_cup_gold.png" },
-                    { id: "worldcup_stars", label: "🇬🇭 Black Stars Special", url: "/assets/backgrounds/bg_world_cup_stars.png" },
-                    { id: "worldcup_stadium", label: "🏟️ Stadium Lights Special", url: "/assets/backgrounds/bg_world_cup_stadium.png" },
-                    { id: "worldcup_abstract", label: "🏆 Golden Pitch Special", url: "/assets/backgrounds/bg_world_cup_abstract.png" },
-                    { id: "mb1", label: "Cyan & Gold V1", url: "/assets/backgrounds/bg_motherboard_1.png" },
-                    { id: "mb2", label: "Elegant Gold/White", url: "/assets/backgrounds/bg_motherboard_2.png" },
-                    { id: "mb3", label: "Neon Cyberpunk", url: "/assets/backgrounds/bg_motherboard_3.png" },
-                    { id: "mb4", label: "Blueprint Schematic", url: "/assets/backgrounds/bg_motherboard_4.png" },
-                    { id: "mb5", label: "Cyan & Gold V2", url: "/assets/backgrounds/bg_motherboard_5.png" },
-                    { id: "mb6", label: "Ghana-Circuit Fusion", url: "/assets/backgrounds/bg_motherboard_adinkra.png" },
-                    { id: "cult1", label: "Luxury Kente Cloth", url: "/assets/backgrounds/bg_ghana_kente.png" },
-                    { id: "cult2", label: "Gold Embossed Adinkra", url: "/assets/backgrounds/bg_ghana_gold_adinkra.png" },
-                    { id: "cult3", label: "Ghanaian Warm Earth", url: "/assets/backgrounds/bg_ghana_warm_earth.png" },
-                    { id: "cult4", label: "3D Gold Adinkra", url: "/assets/backgrounds/bg_ghana_3d.png" },
-                    { id: "rec1", label: "Abstract Data Flow", url: "/assets/backgrounds/bg_data_flow.png" },
-                    { id: "rec2", label: "Frosted Mesh Gradient", url: "/assets/backgrounds/bg_mesh_gradient.png" },
-                    { id: "rec3", label: "Premium Gold Ribbons", url: "/assets/backgrounds/bg_gold_ribbons.png" },
-                  ].map((preset) => {
-                    const isSelected = settings.background_custom_image_url === preset.url;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => setSettings({ ...settings, background_custom_image_url: preset.url })}
-                        className={`relative rounded-xl overflow-hidden aspect-video bg-black/40 border-2 transition-all text-left group flex flex-col justify-end p-2 ${
-                          isSelected ? "border-primary ring-2 ring-primary/20 ring-offset-2 ring-offset-black" : "border-white/10 hover:border-white/30"
-                        }`}
-                      >
-                        {preset.url && preset.url !== "/auto_switch" ? (
-                          <img 
-                            src={preset.url} 
-                            alt={preset.label}
-                            className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-70 transition-opacity"
-                          />
-                        ) : (
-                          <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 to-purple-900/20 flex items-center justify-center">
-                            {preset.url === "/auto_switch" ? (
-                              <RefreshCw className="w-5 h-5 text-indigo-400 opacity-60 animate-spin" style={{ animationDuration: '3s' }} />
-                            ) : (
-                              <Sparkles className="w-6 h-6 text-amber-500 opacity-40" />
-                            )}
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-                        <span className="relative text-[9px] font-black text-white tracking-wide uppercase leading-tight truncate w-full">
-                          {preset.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-2 border-t border-white/5">
-                <Label className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-muted-foreground" />
-                  Custom Image URL / Preview (Overrides Symbols)
-                </Label>
-
-                {settings.background_custom_image_url && (
-                  <div className="relative rounded-xl overflow-hidden border border-white/10 aspect-video sm:aspect-[21/9] bg-black/20 group">
-                    {settings.background_custom_image_url === "/auto_switch" ? (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/40 via-slate-900/60 to-purple-950/40 border border-indigo-500/20">
-                        <div className="relative flex items-center justify-center w-12 h-12 rounded-full bg-indigo-500/10 mb-2">
-                          <RefreshCw className="w-6 h-6 text-indigo-400 animate-spin" style={{ animationDuration: '5s' }} />
-                          <Sparkles className="absolute -top-1 -right-1 w-4 h-4 text-amber-400 animate-pulse" />
-                        </div>
-                        <h4 className="text-white font-black text-xs tracking-widest uppercase">Live Slideshow Active</h4>
-                        <p className="text-indigo-300/40 text-[10px] mt-0.5 max-w-xs text-center px-4 font-medium">
-                          Cycling all 12 premium background styles seamlessly every 15s.
-                        </p>
-                      </div>
-                    ) : (
-                      <img 
-                        src={settings.background_custom_image_url} 
-                        className="w-full h-full object-cover opacity-80" 
-                        alt="Background preview"
-                      />
-                    )}
-                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
-                        className="gap-2"
-                        onClick={() => setSettings({ ...settings, background_custom_image_url: "" })}
-                      >
-                        <Trash2 className="w-4 h-4" /> Remove Custom Background
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Input
-                    placeholder="Paste image URL..."
-                    value={settings.background_custom_image_url}
-                    onChange={(e) => setSettings({ ...settings, background_custom_image_url: e.target.value })}
-                    className="flex-1"
-                  />
-                  <div className="relative shrink-0">
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      id="bg-image-upload"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        
-                        if (file.size > 5 * 1024 * 1024) { // 5MB limit
-                          toast({ title: "File too large", description: "Images should be under 5MB for optimal loading speed.", variant: "destructive" });
-                          return;
-                        }
-
-                        const { data: { user } } = await supabase.auth.getUser();
-                        if (!user) return;
-
-                        setSaving(true);
-                        try {
-                          const ext = file.name.split('.').pop();
-                          const fileName = `site-bg-${Date.now()}.${ext}`;
-                          
-                          const { error } = await supabase.storage
-                            .from('site-assets')
-                            .upload(fileName, file);
-
-                          if (error) throw error;
-
-                          const { data: { publicUrl } } = supabase.storage
-                            .from('site-assets')
-                            .getPublicUrl(fileName);
-
-                          setSettings({ ...settings, background_custom_image_url: publicUrl });
-                          toast({ title: "Image uploaded", description: "Preview applied. Remember to save all changes below." });
-                        } catch (err: any) {
-                          toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                    />
-                    <Button 
-                      variant="secondary" 
-                      onClick={() => document.getElementById('bg-image-upload')?.click()}
-                      disabled={saving}
-                      className="gap-2 w-full"
-                    >
-                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      Upload Image
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Paste a link or upload directly. Providing an image will load a solid fixed background instead of drifting symbols.
-                </p>
-
-                {/* Background Filters */}
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                    Background Image Style Filters
-                  </h4>
-                  
-                  <div className="space-y-4">
-                    {/* Brightness */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-muted-foreground">Image Brightness</span>
-                        <span className="font-mono text-foreground">{Math.round((settings.background_brightness ?? 1.0) * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2.0"
-                        step="0.05"
-                        value={settings.background_brightness ?? 1.0}
-                        onChange={(e) => setSettings({ ...settings, background_brightness: parseFloat(e.target.value) })}
-                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
-                      />
-                    </div>
-
-                    {/* Contrast */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-muted-foreground">Image Contrast</span>
-                        <span className="font-mono text-foreground">{Math.round((settings.background_contrast ?? 1.0) * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2.0"
-                        step="0.05"
-                        value={settings.background_contrast ?? 1.0}
-                        onChange={(e) => setSettings({ ...settings, background_contrast: parseFloat(e.target.value) })}
-                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
-                      />
-                    </div>
-
-                    {/* Blueness / Blue Tint */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-muted-foreground">Blueness (Blue Tint overlay)</span>
-                        <span className="font-mono text-foreground">{Math.round((settings.background_blueness ?? 0.0) * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="1.0"
-                        step="0.05"
-                        value={settings.background_blueness ?? 0.0}
-                        onChange={(e) => setSettings({ ...settings, background_blueness: parseFloat(e.target.value) })}
-                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Adjust visual filter effects. Applied globally to active preset patterns and custom background image uploads.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Video className="w-5 h-5 text-amber-500" />
-                Home Page Background Video
-              </CardTitle>
-              <CardDescription>
-                Upload or change the video that appears on the landing page hero section.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
               <div className="space-y-4">
-                {settings.home_page_video_url && (
-                  <div className="relative rounded-xl overflow-hidden border border-white/10 aspect-video bg-black/20">
-                    <video 
-                      src={settings.home_page_video_url} 
-                      className="w-full h-full object-cover"
-                      muted={settings.home_page_video_muted}
-                      autoPlay
-                      loop
-                    />
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
-                        className="gap-2"
-                        onClick={() => setSettings({ ...settings, home_page_video_url: "" })}
-                      >
-                        <Trash2 className="w-4 h-4" /> Remove Video
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-bold">Mute Video by Default</Label>
-                    <p className="text-xs text-muted-foreground">If disabled, the video will attempt to play with sound for all users.</p>
-                  </div>
-                  <Switch
-                    checked={settings.home_page_video_muted}
-                    onCheckedChange={(c) => setSettings({ ...settings, home_page_video_muted: c })}
-                  />
-                </div>
-                
-                <div className="flex flex-col gap-3">
-                  <Label>Video URL (MP4)</Label>
-                  <div className="flex gap-2">
-                    <Input 
-                      value={settings.home_page_video_url} 
-                      onChange={(e) => setSettings({ ...settings, home_page_video_url: e.target.value })}
-                      placeholder="https://...mp4 or /assets/..."
-                    />
-                    <div className="relative">
-                      <Input
-                        type="file"
-                        accept="video/mp4"
-                        className="hidden"
-                        id="video-upload"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          
-                          if (file.size > 20 * 1024 * 1024) { // 20MB limit
-                            toast({ title: "File too large", description: "Video must be under 20MB.", variant: "destructive" });
-                            return;
-                          }
-
-                          const { data: { user } } = await supabase.auth.getUser();
-                          if (!user) return;
-
-                          setSaving(true);
-                          try {
-                            const fileName = `home-bg-${Date.now()}.mp4`;
-                            const { data, error } = await supabase.storage
-                              .from('site-assets')
-                              .upload(fileName, file);
-
-                            if (error) throw error;
-
-                            const { data: { publicUrl } } = supabase.storage
-                              .from('site-assets')
-                              .getPublicUrl(fileName);
-
-                            setSettings({ ...settings, home_page_video_url: publicUrl });
-                            toast({ title: "Video uploaded", description: "Remember to save all changes." });
-                          } catch (err: any) {
-                            toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                          } finally {
-                            setSaving(false);
-                          }
-                        }}
-                      />
-                      <Button 
-                        variant="secondary" 
-                        onClick={() => document.getElementById('video-upload')?.click()}
-                        disabled={saving}
-                        className="gap-2"
-                      >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                        Upload
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Recommended: MP4, 1080p+, under 10MB for fast loading.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Video className="w-5 h-5 text-amber-500" />
-                Welcome Guide Tutorial Videos
-              </CardTitle>
-              <CardDescription>
-                Customize the walkthrough videos linked inside the Welcome Guide Modal.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Wifi className="w-4 h-4 text-amber-500" />
-                  "Buy Data" Video URL
-                </Label>
-                <Input 
-                  value={settings.tutorial_buy_video_url} 
-                  onChange={(e) => setSettings({ ...settings, tutorial_buy_video_url: e.target.value })}
-                  placeholder="e.g. YouTube embed link or MP4 URL"
-                />
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  Appears when a user selects "Buy a data bundle" in the tutorial.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-emerald-500" />
-                  "Become Agent" Video URL
-                </Label>
-                <Input 
-                  value={settings.tutorial_agent_video_url} 
-                  onChange={(e) => setSettings({ ...settings, tutorial_agent_video_url: e.target.value })}
-                  placeholder="e.g. YouTube embed link or MP4 URL"
-                />
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  Appears when a user selects "Become a data agent" in the tutorial.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-purple-500" />
-                  "Become Sub Agent" Video URL
-                </Label>
-                <Input 
-                  value={settings.tutorial_subagent_video_url} 
-                  onChange={(e) => setSettings({ ...settings, tutorial_subagent_video_url: e.target.value })}
-                  placeholder="e.g. YouTube embed link or MP4 URL"
-                />
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  Appears when a user selects "Become a sub-agent" in the tutorial.
-                </p>
-              </div>
-
-              <Alert className="bg-muted/30 border-border">
-                <AlertCircle className="h-4 w-4 text-amber-500" />
-                <AlertDescription className="text-xs leading-relaxed">
-                  You can paste standard YouTube links (e.g., <code>https://youtube.com/watch?v=...</code>), embed iframe links, or direct MP4 paths. The system will automatically format them correctly for the tutorial window.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
-        </div>
- 
-        {/* Withdrawal & Payout Management */}
-        <div className="space-y-6">
-          <Card className="border-amber-500/20 bg-amber-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <RefreshCw className="w-5 h-5 text-amber-500" />
-                Withdrawal & Payout Management
-              </CardTitle>
-              <CardDescription>Configure how agents withdraw their profits.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-bold">Withdrawal System Status</Label>
-                  <p className="text-xs text-muted-foreground">If disabled, agents cannot place new withdrawal requests.</p>
-                </div>
-                <Switch
-                  checked={settings.withdrawal_system_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, withdrawal_system_enabled: c })}
-                  className="data-[state=checked]:bg-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Min Withdrawal (GHS)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Support Phone Number</Label>
                   <Input
-                    type="number"
-                    value={settings.min_withdrawal_amount}
-                    onChange={(e) => setSettings({ ...settings, min_withdrawal_amount: e.target.value })}
+                    value={settings.customer_service_number}
+                    onChange={(e) => setSettings({ ...settings, customer_service_number: e.target.value })}
+                    placeholder="054XXXXXXX"
+                    className="rounded-xl font-mono text-xs"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Max Withdrawal (GHS)</Label>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">WhatsApp Channel / Group Link</Label>
                   <Input
-                    type="number"
-                    value={settings.max_withdrawal_amount}
-                    onChange={(e) => setSettings({ ...settings, max_withdrawal_amount: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-white/10 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-bold">Auto-Approve Withdrawals</Label>
-                    <p className="text-xs text-muted-foreground">Automatically mark small requests as processing.</p>
-                  </div>
-                  <Switch
-                    checked={settings.withdrawal_auto_approve_enabled}
-                    onCheckedChange={(c) => setSettings({ ...settings, withdrawal_auto_approve_enabled: c })}
+                    value={settings.support_channel_link}
+                    onChange={(e) => setSettings({ ...settings, support_channel_link: e.target.value })}
+                    placeholder="https://whatsapp.com/channel/..."
+                    className="rounded-xl font-mono text-xs"
                   />
                 </div>
 
-                {settings.withdrawal_auto_approve_enabled && (
-                  <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="space-y-2">
-                      <Label>Max Auto Amount (GHS)</Label>
-                      <Input
-                        type="number"
-                        value={settings.withdrawal_auto_approve_max_amount}
-                        onChange={(e) => setSettings({ ...settings, withdrawal_auto_approve_max_amount: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Min Account Age (Days)</Label>
-                      <Input
-                        type="number"
-                        value={settings.withdrawal_auto_approve_min_age_days}
-                        onChange={(e) => setSettings({ ...settings, withdrawal_auto_approve_min_age_days: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-sm font-bold">Require Clean Record</Label>
-                    <p className="text-xs text-muted-foreground">Block auto-approval if agent has recent failed orders.</p>
-                  </div>
-                  <Switch
-                    checked={settings.withdrawal_auto_approve_require_no_chargebacks}
-                    onCheckedChange={(c) => setSettings({ ...settings, withdrawal_auto_approve_require_no_chargebacks: c })}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-emerald-500/20 bg-emerald-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-emerald-500" />
-                Swift Vendor Terminal Settings
-              </CardTitle>
-              <CardDescription>
-                Configure the terminal minimum limits and understand transaction fee splits.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Minimum Transaction Amount (GHS)</Label>
-                <Input
-                  type="number"
-                  step="0.5"
-                  value={settings.vendor_min_transaction}
-                  onChange={(e) => setSettings({ ...settings, vendor_min_transaction: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Minimum transaction amount enforced for Cash-In, Cash-Out, and Bank Transfers. Recommended: ≥ 1.00 GHS.
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-white/10 space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400">Strategic Fee & Profit Splits</h4>
-                
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
-                    <p className="font-bold text-white flex justify-between">
-                      <span>💰 MoMo Cash-In (Disbursement)</span>
-                      <span className="text-emerald-500">60% Agent / 40% Swift</span>
-                    </p>
-                    <p className="leading-relaxed">
-                      Gateway cost: GHS 1.00 flat. Customer fees are tiered: <b>GHS 1.50</b> for ≤ 50 GHS, <b>1.0%</b> for 51-1000 GHS, and <b>GHS 10.00 flat</b> for &gt; 1000 GHS.
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
-                    <p className="font-bold text-white flex justify-between">
-                      <span>💸 MoMo Cash-Out (Collection)</span>
-                      <span className="text-emerald-500">70% Agent / 30% Swift</span>
-                    </p>
-                    <p className="leading-relaxed">
-                      Gateway cost: 0.7%. Customer fee: <b>1.0%</b> capped at GHS 20.00.
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
-                    <p className="font-bold text-white flex justify-between">
-                      <span>🏦 Ghana Bank Transfer</span>
-                      <span className="text-emerald-500">50% Agent / 50% Swift</span>
-                    </p>
-                    <p className="leading-relaxed">
-                      Gateway cost: GHS 8.00 flat. Customer fees: <b>GHS 12.00</b> for ≤ 500 GHS, <b>GHS 15.00</b> for 501-2000 GHS, and <b>GHS 20.00 flat</b> for &gt; 2000 GHS.
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-black/30 border border-white/5 space-y-1">
-                    <p className="font-bold text-white flex justify-between">
-                      <span>🌍 Pan-African Transfer</span>
-                      <span className="text-emerald-500">0.75% Agent / 0.75% Swift</span>
-                    </p>
-                    <p className="leading-relaxed">
-                      Gateway cost: 2.0%. Customer fee: <b>3.5% flat</b>.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-sky-500/20 bg-sky-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-sky-500" />
-                Notification Sounds & Vibration Alerts
-              </CardTitle>
-              <CardDescription>
-                Configure premium audio signals and haptic vibration feedback for push notifications.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-3">
-                <Label className="flex items-center gap-2">
-                  Notification Alert Tone
-                </Label>
-                <div className="flex gap-2">
-                  <select
-                    value={settings.notification_tone}
-                    onChange={(e) => setSettings({ ...settings, notification_tone: e.target.value })}
-                    className="flex-1 rounded-xl border border-input bg-background px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="/sounds/notification_system.mp3">🔔 Modern System Chime (Default)</option>
-                    <option value="/sounds/success.mp3">💰 Crisp Digital Chime (Cha-Ching)</option>
-                    <option value="synth:glass_ting">🔔 Gentle Glass Ting (Synth)</option>
-                    <option value="synth:marimba">🎵 Playful Marimba Chime (Synth)</option>
-                    <option value="synth:laser">⚡ Cyberpunk Laser Drop (Synth)</option>
-                    <option value="synth:soft_alert">💧 Soft Alert (Synth)</option>
-                    <option value="synth:cash">💸 Cash Register (Synth)</option>
-                  </select>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      try {
-                        playSound(settings.notification_tone, 0.5);
-                      } catch (err: any) {
-                        toast({ title: "Failed to play tone", description: err.message, variant: "destructive" });
-                      }
-                    }}
-                    className="rounded-xl border border-input bg-background/50"
-                  >
-                    Test Sound
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-3 border-t border-white/10">
-                <Label className="flex items-center gap-2">
-                  Upload Custom Tone (MP3)
-                </Label>
-                <div className="relative">
-                  <Input
-                    type="file"
-                    accept="audio/mp3,audio/mpeg"
-                    className="hidden"
-                    id="tone-upload"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-
-                      if (file.size > 2 * 1024 * 1024) { // 2MB limit
-                        toast({ title: "File too large", description: "Audio files must be under 2MB.", variant: "destructive" });
-                        return;
-                      }
-
-                      setSaving(true);
-                      try {
-                        const ext = file.name.split('.').pop();
-                        const fileName = `custom-tone-${Date.now()}.${ext}`;
-
-                        const { error } = await supabase.storage
-                          .from('site-assets')
-                          .upload(fileName, file);
-
-                        if (error) throw error;
-
-                        const { data: { publicUrl } } = supabase.storage
-                          .from('site-assets')
-                          .getPublicUrl(fileName);
-
-                        setSettings({ ...settings, notification_tone: publicUrl });
-                        toast({ title: "Custom tone uploaded", description: "Remember to save all changes below." });
-                      } catch (err: any) {
-                        toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                      } finally {
-                        setSaving(false);
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById('tone-upload')?.click()}
-                    disabled={saving}
-                    className="gap-2 w-full rounded-xl border border-input bg-background/50"
-                  >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                    Upload Custom Tone
-                  </Button>
-                </div>
-                {settings.notification_tone.startsWith("http") && (
-                  <p className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                    ✓ Custom Tone Active: {settings.notification_tone.split("/").pop()}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10 pt-3 mt-3">
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-bold">Tactile Mobile Vibration</Label>
-                  <p className="text-xs text-muted-foreground">Trigger physical haptic vibration on incoming notifications.</p>
-                </div>
-                <Switch
-                  checked={settings.notification_vibration_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, notification_vibration_enabled: c })}
-                />
-              </div>
-
-              {settings.notification_vibration_enabled && (
-                <div className="space-y-2 pt-3 border-t border-white/5 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <Label>Vibration Pattern</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="e.g. 200,100,200"
-                      value={settings.notification_vibration_pattern}
-                      onChange={(e) => setSettings({ ...settings, notification_vibration_pattern: e.target.value })}
-                      className="rounded-xl flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        if (typeof navigator !== "undefined" && navigator.vibrate) {
-                          try {
-                            const patternStr = String(settings.notification_vibration_pattern || "");
-                            const pattern = patternStr
-                              .split(",")
-                              .map(Number)
-                              .filter((num) => !isNaN(num) && num >= 0);
-
-                            if (pattern.length > 0) {
-                              navigator.vibrate(pattern);
-                              toast({ title: "Tactile Haptics Dispatched", description: "Your physical device is now vibrating." });
-                            } else {
-                              toast({ title: "Invalid Pattern", description: "Comma-separated milliseconds list (e.g. 200,100,200)", variant: "destructive" });
-                            }
-                          } catch (err: any) {
-                            toast({ title: "Vibration Blocked", description: err.message, variant: "destructive" });
-                          }
-                        } else {
-                          toast({ title: "Haptics Not Supported", description: "Device vibration requires a physical mobile browser.", variant: "destructive" });
-                        }
-                      }}
-                      className="rounded-xl border border-input bg-background/50"
-                    >
-                      Test Pattern
-                    </Button>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Define vibration length in milliseconds, separated by commas. Example: <code>200,100,200</code> vibrates for 200ms, rests 100ms, then vibrates 200ms.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Messaging & Announcements */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <MessageSquare className="w-5 h-5" />
-                Holiday Mode Announcement
-              </CardTitle>
-              <CardDescription>Display a prominent banner across the site.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Enable Holiday Banner</Label>
-                <Switch
-                  checked={settings.holiday_mode_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, holiday_mode_enabled: c })}
-                />
-              </div>
-
-              {settings.holiday_mode_enabled && (
-                <div className="space-y-2 pt-2">
-                  <Label>Banner Message</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Holiday / Maintenance Banner Message</Label>
                   <Textarea
-                    placeholder="e.g. Happy Holidays! Delivery might be delayed."
                     value={settings.holiday_message}
                     onChange={(e) => setSettings({ ...settings, holiday_message: e.target.value })}
-                    className="min-h-[100px]"
+                    placeholder="We are currently undergoing system upgrades..."
+                    className="rounded-xl text-xs min-h-[80px]"
                   />
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
 
-          <Card className="border-emerald-500/20 bg-emerald-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Gift className="w-5 h-5 text-emerald-500" />
-                Free Data Campaign
-              </CardTitle>
-              <CardDescription>Give away free data bundles to your users.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Enable Free Data Campaign</Label>
-                <Switch
-                  checked={settings.free_data_enabled}
-                  onCheckedChange={(c) => setSettings({ ...settings, free_data_enabled: c })}
-                  className="data-[state=checked]:bg-emerald-500"
-                />
+        {/* ── TAB 2: PAYMENT GATEWAYS ── */}
+        <TabsContent value="gateways" className="space-y-6">
+          <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-5">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Payment Processor Credentials</h3>
+              </div>
+              <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] font-mono uppercase">Paystack Active</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Active Payment Gateway</Label>
+                  <Select
+                    value={settings.active_payment_gateway || "paystack"}
+                    onValueChange={(v) => setSettings({ ...settings, active_payment_gateway: v })}
+                  >
+                    <SelectTrigger className="rounded-xl text-xs font-bold">
+                      <SelectValue placeholder="Select gateway" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="paystack">Paystack (Default Momo & Card)</SelectItem>
+                      <SelectItem value="hubtel">Hubtel Direct Checkout</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Paystack Secret Key (live/test)</Label>
+                  <Input
+                    type="password"
+                    value={settings.paystack_secret_key}
+                    onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })}
+                    placeholder="sk_live_..."
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
               </div>
 
-              {settings.free_data_enabled && (
-                <div className="space-y-4 pt-2">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Target Network</Label>
-                      <select 
-                        value={settings.free_data_network}
-                        onChange={(e) => setSettings({ ...settings, free_data_network: e.target.value })}
-                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      >
-                        <option value="MTN">MTN</option>
-                        <option value="Telecel">Telecel</option>
-                        <option value="AirtelTigo">AirtelTigo</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Package Size</Label>
-                      <Input
-                        value={settings.free_data_package_size}
-                        onChange={(e) => setSettings({ ...settings, free_data_package_size: e.target.value })}
-                        placeholder="e.g. 1GB"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Max Claims Allowed</Label>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Hubtel Client ID</Label>
+                  <Input
+                    value={settings.hubtel_client_id}
+                    onChange={(e) => setSettings({ ...settings, hubtel_client_id: e.target.value })}
+                    placeholder="Hubtel ID"
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Hubtel Client Secret</Label>
+                  <Input
+                    type="password"
+                    value={settings.hubtel_client_secret}
+                    onChange={(e) => setSettings({ ...settings, hubtel_client_secret: e.target.value })}
+                    placeholder="Hubtel Secret"
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ── TAB 3: PROVIDER APIS & FAILOVER ── */}
+        <TabsContent value="providers" className="space-y-6">
+          <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-5">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Server className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Datamart & Carrier API Integrations</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-bold">Auto-Failover</Label>
+                <Switch
+                  checked={settings.auto_failover_enabled}
+                  onCheckedChange={(v) => setSettings({ ...settings, auto_failover_enabled: v })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider">Primary Data Provider (Datamart)</h4>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Primary API Key</Label>
+                  <Input
+                    type="password"
+                    value={settings.data_provider_api_key}
+                    onChange={(e) => setSettings({ ...settings, data_provider_api_key: e.target.value })}
+                    placeholder="Datamart Bearer Token"
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Primary Base URL</Label>
+                  <Input
+                    value={settings.data_provider_base_url}
+                    onChange={(e) => setSettings({ ...settings, data_provider_base_url: e.target.value })}
+                    placeholder="https://datamarthub.com"
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-xs font-black uppercase text-cyan-400 tracking-wider">Secondary Failover Provider</h4>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Secondary API Key</Label>
+                  <Input
+                    type="password"
+                    value={settings.secondary_data_provider_api_key}
+                    onChange={(e) => setSettings({ ...settings, secondary_data_provider_api_key: e.target.value })}
+                    placeholder="Secondary Bearer Token"
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Secondary Base URL</Label>
+                  <Input
+                    value={settings.secondary_data_provider_base_url}
+                    onChange={(e) => setSettings({ ...settings, secondary_data_provider_base_url: e.target.value })}
+                    placeholder="https://backup.datamarthub.com"
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ── TAB 4: MARKUPS & FEES ── */}
+        <TabsContent value="pricing" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-3">
+                <Percent className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Global Network Markup Percentages</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">MTN Markup (%)</Label>
+                  <Input
+                    type="number"
+                    value={settings.mtn_markup_percentage}
+                    onChange={(e) => setSettings({ ...settings, mtn_markup_percentage: e.target.value })}
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Telecel Markup (%)</Label>
+                  <Input
+                    type="number"
+                    value={settings.telecel_markup_percentage}
+                    onChange={(e) => setSettings({ ...settings, telecel_markup_percentage: e.target.value })}
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">AT Markup (%)</Label>
+                  <Input
+                    type="number"
+                    value={settings.at_markup_percentage}
+                    onChange={(e) => setSettings({ ...settings, at_markup_percentage: e.target.value })}
+                    className="rounded-xl font-mono text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-3">
+                <GraduationCap className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Agent Fees & Result Checker Pricing</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">Agent Upgrade Fee (GH₵)</Label>
                     <Input
                       type="number"
-                      value={settings.free_data_max_claims}
-                      onChange={(e) => setSettings({ ...settings, free_data_max_claims: e.target.value })}
-                      placeholder="e.g. 100"
+                      value={settings.agent_activation_fee}
+                      onChange={(e) => setSettings({ ...settings, agent_activation_fee: e.target.value })}
+                      className="rounded-xl font-mono text-xs"
                     />
                   </div>
-                  <Alert className="bg-emerald-500/10 border-emerald-500/20">
-                    <Gift className="h-4 w-4 text-emerald-500" />
-                    <AlertDescription className="text-xs text-emerald-500/80">
-                      Users will see a floating "Free Data" button. They must enter a valid free-data promo code to claim.
-                    </AlertDescription>
-                  </Alert>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          <Card className="border-indigo-500/20 bg-indigo-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-500" />
-                Welcome Announcement (Popup)
-              </CardTitle>
-              <CardDescription>Inform all users about new features like SwiftPoints.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Show Popup to Users</Label>
-                <Switch
-                  checked={settings.show_announcement}
-                  onCheckedChange={(c) => setSettings({ ...settings, show_announcement: c })}
-                  className="data-[state=checked]:bg-indigo-500"
-                />
-              </div>
-
-              {settings.show_announcement && (
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-2">
-                    <Label>Announcement Title</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">Sub-Agent Base Fee (GH₵)</Label>
                     <Input
-                      value={settings.announcement_title}
-                      onChange={(e) => setSettings({ ...settings, announcement_title: e.target.value })}
-                      placeholder="e.g. Big News!"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Message Content</Label>
-                    <Textarea
-                      value={settings.announcement_message}
-                      onChange={(e) => setSettings({ ...settings, announcement_message: e.target.value })}
-                      placeholder="Explain the new feature..."
-                      className="min-h-[100px]"
+                      type="number"
+                      value={settings.sub_agent_base_fee}
+                      onChange={(e) => setSettings({ ...settings, sub_agent_base_fee: e.target.value })}
+                      className="rounded-xl font-mono text-xs"
                     />
                   </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
 
-          <Card className="border-indigo-500/20 bg-indigo-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-indigo-500" />
-                WhatsApp Bot AI Prompt
-              </CardTitle>
-              <CardDescription>Train your AI sales assistant by editing its system prompt.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>System Prompt Instructions</Label>
-                <Textarea
-                  value={settings.whatsapp_bot_prompt}
-                  onChange={(e) => setSettings({ ...settings, whatsapp_bot_prompt: e.target.value })}
-                  placeholder="e.g. You are the SwiftData Pro Assistant. Be very polite and use emojis..."
-                  className="min-h-[250px] font-mono text-xs"
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Leave this empty to use the default hardcoded prompt. You can use <code>{"{{storeName}}"}</code> as a variable.
-                </p>
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">WASSCE Checker Price (GH₵)</Label>
+                    <Input
+                      type="number"
+                      value={settings.wassce_price}
+                      onChange={(e) => setSettings({ ...settings, wassce_price: e.target.value })}
+                      className="rounded-xl font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">BECE Checker Price (GH₵)</Label>
+                    <Input
+                      type="number"
+                      value={settings.bece_price}
+                      onChange={(e) => setSettings({ ...settings, bece_price: e.target.value })}
+                      className="rounded-xl font-mono text-xs"
+                    />
+                  </div>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+        </TabsContent>
 
+        {/* ── TAB 5: SMS ALERTS ENGINE ── */}
+        <TabsContent value="sms" className="space-y-6">
+          <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-5">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">TXTConnect SMS Gateway Credentials</h3>
+              </div>
+              <Badge className="bg-sky-500/15 text-sky-400 border-sky-500/30 text-[10px] font-mono uppercase">SwiftUpdate Sender Active</Badge>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">SMS Configuration (TxtConnect)</CardTitle>
-              <CardDescription>
-                Enter your TxtConnect credentials to enable SMS notifications. Get these from{" "}
-                <a href="https://txtconnect.net/" target="_blank" rel="noopener noreferrer" className="underline text-amber-500 hover:text-amber-400">txtconnect.net</a>.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="txtconnect-key">API Key</Label>
-                  <Input
-                    id="txtconnect-key"
-                    type="password"
-                    value={settings.txtconnect_api_key}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_api_key: e.target.value }))}
-                    placeholder="Your TxtConnect API Key"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">TXTConnect API Key</Label>
+                <Input
+                  type="password"
+                  value={settings.txtconnect_api_key}
+                  onChange={(e) => setSettings({ ...settings, txtconnect_api_key: e.target.value })}
+                  placeholder="API Key"
+                  className="rounded-xl font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">Sender ID</Label>
+                <Input
+                  value={settings.txtconnect_sender_id}
+                  onChange={(e) => setSettings({ ...settings, txtconnect_sender_id: e.target.value })}
+                  placeholder="SwiftData"
+                  className="rounded-xl font-mono text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-border">
+              <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider">Automated Customer SMS Templates</h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Successful Order SMS Copy</Label>
+                  <Textarea
+                    value={settings.payment_success_sms_message}
+                    onChange={(e) => setSettings({ ...settings, payment_success_sms_message: e.target.value })}
+                    className="rounded-xl text-xs font-mono min-h-[75px]"
                   />
                 </div>
-                
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="txtconnect-sender-select">SMS Sender ID Option</Label>
-                    <Select
-                      value={
-                        ["Orderinfo", "SwiftDataGh", "AD Data Hub"].includes(settings.txtconnect_sender_id)
-                          ? settings.txtconnect_sender_id
-                          : "custom"
-                      }
-                      onValueChange={(val) => {
-                        if (val !== "custom") {
-                          setSettings((prev) => ({ ...prev, txtconnect_sender_id: val }));
-                        } else {
-                          setSettings((prev) => ({ ...prev, txtconnect_sender_id: "" }));
-                        }
-                      }}
-                    >
-                      <SelectTrigger id="txtconnect-sender-select" className="w-full bg-slate-900 border-white/10 text-white">
-                        <SelectValue placeholder="Select Sender ID" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-950 border-white/10 text-white">
-                        <SelectItem value="Orderinfo">Orderinfo (Recommended)</SelectItem>
-                        <SelectItem value="SwiftDataGh">SwiftDataGh</SelectItem>
-                        <SelectItem value="AD Data Hub">AD Data Hub</SelectItem>
-                        <SelectItem value="custom">Custom / Type Other...</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
 
-                  {(!["Orderinfo", "SwiftDataGh", "AD Data Hub"].includes(settings.txtconnect_sender_id) || settings.txtconnect_sender_id === "") && (
-                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                      <Label htmlFor="txtconnect-sender">Custom Sender ID</Label>
-                      <Input
-                        id="txtconnect-sender"
-                        value={settings.txtconnect_sender_id}
-                        onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_sender_id: e.target.value }))}
-                        placeholder="Type Approved Custom Sender ID"
-                        maxLength={11}
-                      />
-                      <p className="text-xs text-muted-foreground">Must be an approved alphanumeric Sender ID (max 11 chars).</p>
-                    </div>
-                  )}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">Wallet Top-up Credit SMS Copy</Label>
+                  <Textarea
+                    value={settings.wallet_topup_sms_message}
+                    onChange={(e) => setSettings({ ...settings, wallet_topup_sms_message: e.target.value })}
+                    className="rounded-xl text-xs font-mono min-h-[75px]"
+                  />
                 </div>
               </div>
+            </div>
+          </div>
+        </TabsContent>
 
-              {settings.txtconnect_api_key && settings.txtconnect_sender_id && (
-                <>
-                  <Alert className="bg-green-50 text-green-900 border-green-200 mt-4 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20">
-                    <AlertCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                    <AlertDescription className="text-xs font-medium">
-                      TxtConnect credentials configured — SMS sending is enabled.
-                    </AlertDescription>
-                  </Alert>
+        {/* ── TAB 6: WITHDRAWAL ENGINE ── */}
+        <TabsContent value="withdrawals" className="space-y-6">
+          <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-5">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-base text-foreground">Agent Wallet Withdrawal Automation</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs font-bold">System Enabled</Label>
+                <Switch
+                  checked={settings.withdrawal_system_enabled}
+                  onCheckedChange={(v) => setSettings({ ...settings, withdrawal_system_enabled: v })}
+                />
+              </div>
+            </div>
 
-                  <div className="pt-4 border-t border-border mt-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <Label>Auto-SMS for Pending Orders</Label>
-                        <p className="text-xs text-muted-foreground">Automatically send SMS every 30 mins to new pending orders.</p>
-                      </div>
-                      <Switch
-                        checked={settings.auto_pending_sms_enabled}
-                        onCheckedChange={(c) => setSettings({ ...settings, auto_pending_sms_enabled: c })}
-                      />
-                    </div>
-                    {settings.auto_pending_sms_enabled && (
-                      <div className="space-y-2">
-                        <Label>Auto-SMS Message (Pending)</Label>
-                        <Input
-                          value={settings.auto_pending_sms_message}
-                          onChange={(e) => setSettings({ ...settings, auto_pending_sms_message: e.target.value })}
-                          placeholder="Your transaction is pending..."
-                        />
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      <Label>Payment Success SMS Message</Label>
-                      <Input
-                        value={settings.payment_success_sms_message}
-                        onChange={(e) => setSettings({ ...settings, payment_success_sms_message: e.target.value })}
-                        placeholder="Your bundle is being processed..."
-                      />
-                      <p className="text-[10px] text-muted-foreground">Sent immediately after a successful payment is verified. Available variables: {"{phone}, {package}, {id}"}</p>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">Min Withdrawal (GH₵)</Label>
+                <Input
+                  type="number"
+                  value={settings.min_withdrawal_amount}
+                  onChange={(e) => setSettings({ ...settings, min_withdrawal_amount: e.target.value })}
+                  className="rounded-xl font-mono text-xs"
+                />
+              </div>
 
-                    <div className="space-y-2">
-                      <Label>Wallet Top-up SMS Message</Label>
-                      <Input
-                        value={settings.wallet_topup_sms_message}
-                        onChange={(e) => setSettings({ ...settings, wallet_topup_sms_message: e.target.value })}
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}, {balance}"}</p>
-                    </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">Max Withdrawal per Order (GH₵)</Label>
+                <Input
+                  type="number"
+                  value={settings.max_withdrawal_amount}
+                  onChange={(e) => setSettings({ ...settings, max_withdrawal_amount: e.target.value })}
+                  className="rounded-xl font-mono text-xs"
+                />
+              </div>
 
-                    <div className="space-y-2">
-                      <Label>Withdrawal Request SMS Message</Label>
-                      <Input
-                        value={settings.withdrawal_request_sms_message}
-                        onChange={(e) => setSettings({ ...settings, withdrawal_request_sms_message: e.target.value })}
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
-                    </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">Auto-Approve Max Amount (GH₵)</Label>
+                <Input
+                  type="number"
+                  value={settings.withdrawal_auto_approve_max_amount}
+                  onChange={(e) => setSettings({ ...settings, withdrawal_auto_approve_max_amount: e.target.value })}
+                  className="rounded-xl font-mono text-xs"
+                />
+              </div>
+            </div>
 
-                    <div className="space-y-2">
-                      <Label>Withdrawal Completed SMS Message</Label>
-                      <Input
-                        value={settings.withdrawal_completed_sms_message}
-                        onChange={(e) => setSettings({ ...settings, withdrawal_completed_sms_message: e.target.value })}
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Order Failed SMS Message</Label>
-                      <Input
-                        value={settings.order_failed_sms_message}
-                        onChange={(e) => setSettings({ ...settings, order_failed_sms_message: e.target.value })}
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}, {amount}"}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Manual Credit SMS Message</Label>
-                      <Input
-                        value={settings.manual_credit_sms_message}
-                        onChange={(e) => setSettings({ ...settings, manual_credit_sms_message: e.target.value })}
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{amount}"}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Scheduled Order Success SMS Message</Label>
-                      <Input
-                        value={settings.scheduled_success_sms_message}
-                        onChange={(e) => setSettings({ ...settings, scheduled_success_sms_message: e.target.value })}
-                        placeholder="Your scheduled {package} bundle to {phone} has been successfully renewed..."
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}"}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Scheduled Order Failed (No Balance) SMS Message</Label>
-                      <Input
-                        value={settings.scheduled_failed_sms_message}
-                        onChange={(e) => setSettings({ ...settings, scheduled_failed_sms_message: e.target.value })}
-                        placeholder="Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance..."
-                      />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}"}</p>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* New Multi-Provider Manager */}
-          <Card className="border-amber-500/20 bg-amber-500/5">
-            <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-center justify-between pt-4 border-t border-border">
               <div>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-amber-500" />
-                  Provider Smart Routing
-                </CardTitle>
-                <CardDescription>Manage multiple data/airtime providers and set priorities.</CardDescription>
+                <Label className="text-xs font-bold">Auto-Approve Low Value Withdrawals</Label>
+                <p className="text-[10px] text-muted-foreground">Instantly payout withdrawals under auto-approve limit without manual admin click.</p>
               </div>
-              <Button size="sm" onClick={handleAddProvider} className="h-8 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px]">
-                Add Provider
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {loadingProviders ? (
-                 <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
-              ) : providers.length === 0 ? (
-                 <div className="text-center p-8 border-2 border-dashed border-border rounded-2xl">
-                    <p className="text-xs text-muted-foreground">No active providers configured.</p>
-                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {providers.map((provider) => (
-                    <div key={provider.id} className="p-4 rounded-xl bg-muted/30 border border-border space-y-4 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1">
-                            <Label className="text-[10px] text-muted-foreground">Priority</Label>
-                            <Input 
-                              type="number"
-                              value={provider.priority} 
-                              onChange={(e) => handleUpdateProvider(provider.id, { priority: parseInt(e.target.value) || 1 })}
-                              className="h-7 w-12 bg-background border-border text-[10px] p-1 text-center font-bold"
-                            />
-                          </div>
-                          <Input 
-                            value={provider.name || ""} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { name: e.target.value })}
-                            className="h-8 w-48 bg-transparent border-none font-black text-sm focus:ring-0 text-foreground"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="h-8 rounded-lg bg-amber-500/10 border-amber-500/20 text-amber-500 hover:bg-amber-500/20 font-bold text-[10px] gap-2"
-                            onClick={async () => {
-                              if (provider.id.startsWith("new-")) {
-                                toast({ 
-                                  title: "Save Required", 
-                                  description: "Please save the provider before attempting to sync data.", 
-                                  variant: "destructive" 
-                                });
-                                return;
-                              }
-                              try {
-                                const { data, error } = await supabase.functions.invoke("sync-provider-data", {
-                                  body: { provider_id: provider.id },
-                                });
-                                
-                                if (error) {
-                                  const errorBody = await error.context?.json();
-                                  throw new Error(errorBody?.error || error.message);
-                                }
+              <Switch
+                checked={settings.withdrawal_auto_approve_enabled}
+                onCheckedChange={(v) => setSettings({ ...settings, withdrawal_auto_approve_enabled: v })}
+              />
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
 
-                                if (data && data.success === false) {
-                                  throw new Error(data.error || "Unknown sync error");
-                                }
-                                
-                                toast({ 
-                                  title: "Sync Successful", 
-                                  description: `Synced ${data.packages_synced} packages and balance GHS ${data.balance.toFixed(2)}.` 
-                                });
-                                fetchProviders();
-                              } catch (err: any) {
-                                toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
-                              }
-                            }}
-                          >
-                            <Database className="w-3 h-3" />
-                            Sync Data
-                          </Button>
-                          <Switch 
-                            checked={provider.is_active} 
-                            onCheckedChange={(c) => handleUpdateProvider(provider.id, { is_active: c })}
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-red-500/10"
-                            onClick={() => handleDeleteProvider(provider.id)}
-                            title="Delete Provider"
-                            disabled={saving}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">API Key / Secret</Label>
-                          <Input 
-                            type="password" 
-                            value={provider.api_key || ""} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { api_key: e.target.value })}
-                            className="h-8 bg-background border-border text-xs"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">API Base URL</Label>
-                          <Input 
-                            value={provider.base_url || ""} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { base_url: e.target.value })}
-                            placeholder="https://api.provider.com"
-                            className="h-8 bg-background border-border text-xs"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">Type</Label>
-                          <select 
-                            value={provider.provider_type || "data"} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { provider_type: e.target.value })}
-                            className="w-full h-8 bg-background border border-border text-foreground rounded-md px-2 text-xs focus:outline-none"
-                          >
-                            <option value="data">Data Bundles</option>
-                            <option value="airtime">Airtime</option>
-                            <option value="utility">Utility</option>
-                            <option value="sms">SMS</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">API Logic (Handler)</Label>
-                          <select 
-                            value={provider.handler_type || "standard"} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { handler_type: e.target.value })}
-                            className="w-full h-8 bg-background border border-border text-foreground rounded-md px-2 text-xs focus:outline-none"
-                          >
-                            <option value="standard">Standard</option>
-                            <option value="datamart">DataMart GH</option>
-                            <option value="datahub">DataHub Ghana</option>
-                            <option value="superbdatafy">SuperbDatafy</option>
-                            <option value="xcel">XCEL Payment API</option>
-                            <option value="qhowmenzconsult">QHowMenzConsult</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">Webhook Secret (Optional)</Label>
-                          <Input 
-                            type="password"
-                            value={provider.settings?.webhook_secret || ""} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { 
-                              settings: { ...provider.settings, webhook_secret: e.target.value } 
-                            })}
-                            placeholder={provider.handler_type === "xcel" ? "XCEL Webhook Key" : "DataMart Webhook Key"}
-                            className="h-8 bg-background border-border text-xs"
-                          />
-                        </div>
-                        {provider.handler_type === "xcel" && (
-                          <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground">Merchant ID</Label>
-                            <Input 
-                              value={provider.settings?.merchant_id || ""} 
-                              onChange={(e) => handleUpdateProvider(provider.id, { 
-                                settings: { ...provider.settings, merchant_id: e.target.value } 
-                              })}
-                              placeholder="XCEL Merchant ID"
-                              className="h-8 bg-background border-border text-xs"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      {provider.balance > 0 && (
-                        <div className="flex items-center justify-between pt-2 border-t border-border">
-                           <p className="text-[10px] text-muted-foreground font-medium">Current Balance</p>
-                           <p className="text-xs font-black text-emerald-600 dark:text-emerald-400">₵{Number(provider.balance).toFixed(2)}</p>
-                        </div>
-                      )}
-
-                      {provider.last_synced_at && (
-                        <div className="flex items-center justify-between pt-2">
-                           <p className="text-[10px] text-muted-foreground font-medium">Last Synced</p>
-                           <p className="text-[10px] text-foreground/60 font-bold">{new Date(provider.last_synced_at).toLocaleString()}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  <Button onClick={handleSaveProviders} disabled={saving} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold h-10 rounded-xl">
-                     Save Provider Priorities
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Payment Gateway Configuration</CardTitle>
-              <CardDescription>Toggle between active payment gateways and manage credentials.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Active Payment Gateway</Label>
-                <select
-                  value={settings.active_payment_gateway || "paystack"}
-                  onChange={(e) => setSettings({ ...settings, active_payment_gateway: e.target.value })}
-                  className="w-full p-2 rounded-md border border-input bg-background text-foreground"
-                >
-                  <option value="paystack">Paystack</option>
-                  <option value="korba">Korba Collections</option>
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  The system will automatically route customer mobile money prompts and payment flows to the active gateway.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between border-t pt-4">
-                <div className="space-y-0.5">
-                  <Label>Auto Switch Gateway by Package</Label>
-                  <p className="text-[11px] text-muted-foreground leading-normal">
-                    When active, purchasing Korba-synced packages will automatically route through Korba XCheckout, while cheap SME packages fallback to the default gateway.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.auto_gateway_switch_by_package || false}
-                  onChange={(e) => setSettings({ ...settings, auto_gateway_switch_by_package: e.target.checked })}
-                  className="w-4 h-4 accent-amber-500 cursor-pointer"
-                />
-              </div>
-
-              {settings.active_payment_gateway === "paystack" ? (
-                <div className="space-y-2 pt-2 border-t">
-                  <Label>Paystack Secret Key</Label>
-                  <Input 
-                    type="password" 
-                    value={settings.paystack_secret_key || ""} 
-                    onChange={(e) => setSettings({ ...settings, paystack_secret_key: e.target.value })} 
-                    placeholder="sk_live_..." 
-                  />
-                  <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">
-                    Securely managed via Supabase Secrets
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2 pt-2 border-t">
-                  <p className="text-sm font-semibold">Korba Credentials Status</p>
-                  <p className="text-xs text-muted-foreground">
-                    Korba credentials (<code className="bg-muted px-1 py-0.5 rounded">KORBA_CLIENT_ID</code>, <code className="bg-muted px-1 py-0.5 rounded">KORBA_CLIENT_KEY</code>, <code className="bg-muted px-1 py-0.5 rounded">KORBA_SECRET_KEY</code>) are set via Supabase environment variables for static IP routing.
-                  </p>
-                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-500 text-xs flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Korba API endpoints will be accessed via Static IP database proxy automatically.
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="border-red-500/20 bg-red-500/5">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Shield className="w-5 h-5 text-red-500" />
-                Admin IP Lockdown
-              </CardTitle>
-              <CardDescription>
-                Restrict Admin Dashboard access to specific IP addresses. 
-                <span className="block text-red-500 font-bold mt-1 uppercase text-[10px]">Warning: If you enable this, you must include your current IP or you will be locked out!</span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-3 rounded-xl bg-muted border border-border shadow-sm flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Your Current IP</p>
-                  <p className="text-sm font-mono font-black text-foreground">{currentIp || "Detecting..."}</p>
-                </div>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  disabled={!currentIp || allowedIps.includes(currentIp)}
-                  onClick={() => setAllowedIps([...allowedIps, currentIp])}
-                  className="text-[10px] font-black uppercase"
-                >
-                  Whitelist Current IP
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Whitelisted IPs (One per line)</Label>
-                <Textarea 
-                  value={allowedIps.join("\n")}
-                  onChange={(e) => setAllowedIps(e.target.value.split("\n").filter(i => i.trim() !== ""))}
-                  placeholder="e.g. 123.45.67.89"
-                  className="min-h-[100px] font-mono text-xs"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Leave empty to allow access from any IP address (Recommended for dynamic IPs).
-                </p>
-              </div>
-
-              <Button
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    const { error } = await supabase
-                      .from("user_roles")
-                      .update({ allowed_ips: allowedIps })
-                      .eq("user_id", session?.user.id)
-                      .eq("role", "admin");
-
-                    if (error) throw error;
-                    toast({ title: "IP Restrictions Updated", description: "Your access rules have been saved." });
-                  } catch (e: any) {
-                    toast({ title: "Failed to update IPs", description: e.message, variant: "destructive" });
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving}
-                variant="destructive"
-                className="w-full font-bold"
-              >
-                Apply IP Restrictions
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="border-amber-500/30 bg-amber-500/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-amber-400">
-                <Wallet className="w-5 h-5" />
-                Wallet Balance Restoration
-              </CardTitle>
-              <CardDescription>
-                Creates missing wallet records for all agents and restores uncredited top-up balances.
-                This operation is safe to run once — it will not apply if already executed.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={async () => {
-                  if (!window.confirm("Restore wallet balances for all affected agents? This runs once and cannot be reversed.")) return;
-                  setRestoringWallets(true);
-                  try {
-                    const { data, error } = await supabase.rpc("admin_apply_wallet_restoration");
-                    if (error) throw error;
-                    if (data?.success === false) {
-                      toast({ title: "Already Applied", description: data.message || "Restoration was already completed.", variant: "default" });
-                    } else {
-                      toast({
-                        title: "Wallet Restoration Complete",
-                        description: data?.message || `${data?.restored_agents} agent balances restored.`,
-                      });
-                    }
-                  } catch (e: any) {
-                    toast({ title: "Restoration Failed", description: e.message, variant: "destructive" });
-                  } finally {
-                    setRestoringWallets(false);
-                  }
-                }}
-                disabled={restoringWallets}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold"
-              >
-                {restoringWallets ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Restoring Wallets...</>
-                ) : (
-                  <><Wallet className="w-4 h-4 mr-2" /> Restore Agent Wallet Balances</>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      {/* Floating Save Action Bar at bottom */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="h-12 px-6 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-2xl shadow-amber-950/60 border border-amber-400/40 gap-2"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          <span>Save All Settings</span>
+        </Button>
       </div>
     </div>
   );
