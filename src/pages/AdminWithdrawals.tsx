@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,10 +7,13 @@ import {
   Search, CheckCircle, Loader2, XCircle, Copy, Download,
   RefreshCw, ChevronLeft, ChevronRight, Wallet, TrendingUp,
   AlertCircle, Banknote, CheckSquare, Square, Clock, Settings2, Save,
+  ShieldCheck, ArrowUpRight, Filter, DollarSign, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
+import { CardTilt } from "@/components/ui/CardTilt";
+import { cn } from "@/lib/utils";
 
 interface WithdrawalRow {
   id: string;
@@ -27,15 +30,16 @@ interface WithdrawalRow {
   total_profit?: number;
   fee: number;
   net_amount: number;
+  paystack_transfer_reference?: string;
 }
 
 const PAGE_SIZE = 50;
 
 const statusColors: Record<string, string> = {
-  completed:  "bg-green-500/20 text-green-400 border-green-500/30",
-  pending:    "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  processing: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  failed:     "bg-red-500/20 text-red-400 border-red-500/30",
+  completed:  "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  pending:    "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  processing: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+  failed:     "bg-rose-500/15 text-rose-400 border-rose-500/30",
 };
 
 const STATUS_TABS = ["all", "pending", "processing", "completed", "failed"] as const;
@@ -198,11 +202,9 @@ const AdminWithdrawals = () => {
 
   useEffect(() => { fetchWithdrawals(); fetchSettings(); }, [fetchWithdrawals, fetchSettings]);
 
-  // Reset page & selection when filters change
   useEffect(() => { setPage(0); }, [search, statusFilter, networkFilter, dateFrom, dateTo]);
   useEffect(() => { setSelectedIds(new Set()); }, [statusFilter]);
 
-  // ── Stats ──────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const pending   = withdrawals.filter(w => w.status === "pending");
     const completed = withdrawals.filter(w => w.status === "completed");
@@ -225,7 +227,6 @@ const AdminWithdrawals = () => {
     };
   }, [withdrawals]);
 
-  // ── Filtered + paginated ───────────────────────────────────────────────
   const filtered = useMemo(() => {
     let rows = withdrawals;
     if (statusFilter !== "all")  rows = rows.filter(w => w.status === statusFilter);
@@ -262,7 +263,6 @@ const AdminWithdrawals = () => {
     });
   };
 
-  // ── Actions ────────────────────────────────────────────────────────────
   const handleConfirm = async (withdrawalId: string) => {
     setConfirming(withdrawalId);
     const withdrawal = withdrawals.find(w => w.id === withdrawalId);
@@ -381,62 +381,80 @@ const AdminWithdrawals = () => {
     navigator.clipboard.writeText(number).then(() => toast.success("MoMo number copied"));
   };
 
-  if (loading) return <div className="text-muted-foreground p-4">Loading withdrawals…</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center min-h-[350px] gap-3">
+      <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+      <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest animate-pulse">Loading Withdrawal Management Center...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-
+    <div className="space-y-6 pb-12">
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold">Withdrawal Requests</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {withdrawals.length} total · {stats.pendingCount} pending
-          </p>
+      <div className="glass-card-neo p-5 sm:p-6 rounded-3xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+              <Banknote className="w-3.5 h-3.5" /> Payout Management
+            </span>
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px] font-mono uppercase">
+              {stats.pendingCount} Pending Requests
+            </Badge>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">Agent Withdrawal Requests</h1>
         </div>
-        <Button variant="outline" size="sm" className="gap-2 self-start" onClick={() => fetchWithdrawals(true)} disabled={refreshing}>
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
+
+        <Button
+          onClick={() => fetchWithdrawals(true)}
+          disabled={refreshing}
+          variant="outline"
+          className="h-10 px-5 rounded-xl border-border bg-background/80 font-bold text-xs uppercase tracking-wider gap-2 self-start sm:self-auto"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${refreshing ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>
 
       {/* ── Withdrawal Limits Settings ── */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="glass-card-neo rounded-3xl border border-white/10 overflow-hidden">
         <button
           type="button"
           onClick={() => setShowSettings(s => !s)}
-          className="w-full flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
+          className="w-full flex items-center justify-between p-5 hover:bg-white/5 transition-colors"
         >
-          <div className="flex items-center gap-2">
-            <Settings2 className="w-4 h-4 text-primary" />
-            <span className="text-sm font-bold">Withdrawal Limits</span>
-            <span className="text-xs text-muted-foreground">
-              Min: GHS {parseFloat(minAmount || "25").toFixed(2)} · Max: GHS {parseFloat(maxAmount || "5000").toFixed(2)}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <Settings2 className="w-4 h-4" />
+            </div>
+            <div className="text-left">
+              <span className="text-sm font-black text-foreground block">Withdrawal Threshold Limits</span>
+              <span className="text-xs text-muted-foreground font-mono">
+                Min: GH₵ {parseFloat(minAmount || "25").toFixed(2)} · Max: GH₵ {parseFloat(maxAmount || "5000").toFixed(2)}
+              </span>
+            </div>
           </div>
-          <span className="text-xs text-muted-foreground">{showSettings ? "▲" : "▼"}</span>
+          <span className="text-xs font-bold text-muted-foreground">{showSettings ? "▲ Hide Config" : "▼ Edit Limits"}</span>
         </button>
         {showSettings && (
-          <div className="px-4 pb-4 border-t border-border pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+          <div className="p-5 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-4 items-end bg-background/50">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Min Withdrawal (GHS)</label>
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Min Withdrawal (GH₵)</label>
               <Input
                 type="number" min="1" step="1"
                 value={minAmount}
                 onChange={e => setMinAmount(e.target.value)}
-                className="bg-secondary"
+                className="bg-background border-border font-mono font-bold"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Max Withdrawal (GHS)</label>
+              <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Max Withdrawal (GH₵)</label>
               <Input
                 type="number" min="1" step="1"
                 value={maxAmount}
                 onChange={e => setMaxAmount(e.target.value)}
-                className="bg-secondary"
+                className="bg-background border-border font-mono font-bold"
               />
             </div>
-            <Button onClick={saveSettings} disabled={savingSettings} className="gap-2">
+            <Button onClick={saveSettings} disabled={savingSettings} className="h-10 rounded-xl bg-amber-500 text-slate-950 font-black text-xs gap-2">
               {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save Limits
             </Button>
@@ -446,63 +464,73 @@ const AdminWithdrawals = () => {
 
       {/* ── Stats cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-card border border-border rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Clock className="w-3.5 h-3.5 text-yellow-400" />
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Pending</p>
-          </div>
-          <p className="text-2xl font-black text-yellow-400">{stats.pendingCount}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">GH₵{stats.pendingAmount.toFixed(2)} to send</p>
-          {Object.keys(stats.networkTotals).length > 0 && (
-            <div className="mt-2 space-y-0.5 border-t border-border pt-2">
-              {Object.entries(stats.networkTotals).map(([net, amt]) => (
-                <p key={net} className="text-[10px] text-muted-foreground">{net}: GH₵{(amt as number).toFixed(2)}</p>
-              ))}
+        <CardTilt className="rounded-2xl w-full">
+          <div className="glass-card-neo p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 flex flex-col justify-between gap-2 h-full">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">Pending Requests</p>
             </div>
-          )}
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Banknote className="w-3.5 h-3.5 text-green-400" />
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Paid Out</p>
+            <div>
+              <p className="text-2xl font-black font-mono text-amber-400">{stats.pendingCount}</p>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">GH₵ {stats.pendingAmount.toFixed(2)} to send</p>
+            </div>
           </div>
-          <p className="text-2xl font-black text-green-400">GH₵{stats.totalPaid.toFixed(2)}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{withdrawals.filter(w => w.status === "completed").length} completed</p>
-        </div>
+        </CardTilt>
 
-        <div className="bg-card border border-border rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="w-3.5 h-3.5 text-purple-400" />
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fees Collected</p>
+        <CardTilt className="rounded-2xl w-full">
+          <div className="glass-card-neo p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 flex flex-col justify-between gap-2 h-full">
+            <div className="flex items-center gap-2">
+              <Banknote className="w-4 h-4 text-emerald-400" />
+              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Total Paid Out</p>
+            </div>
+            <div>
+              <p className="text-2xl font-black font-mono text-emerald-400">GH₵ {stats.totalPaid.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{withdrawals.filter(w => w.status === "completed").length} completed</p>
+            </div>
           </div>
-          <p className="text-2xl font-black text-purple-400">GH₵{stats.totalFees.toFixed(2)}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">1.5% per withdrawal</p>
-        </div>
+        </CardTilt>
 
-        <div className="bg-card border border-border rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Wallet className="w-3.5 h-3.5 text-blue-400" />
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Average</p>
+        <CardTilt className="rounded-2xl w-full">
+          <div className="glass-card-neo p-4 rounded-2xl border border-purple-500/30 bg-purple-500/10 flex flex-col justify-between gap-2 h-full">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-purple-400" />
+              <p className="text-[10px] font-black uppercase tracking-wider text-purple-400">Fees Collected</p>
+            </div>
+            <div>
+              <p className="text-2xl font-black font-mono text-purple-400">GH₵ {stats.totalFees.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">1.5% fee margin</p>
+            </div>
           </div>
-          <p className="text-2xl font-black text-blue-400">GH₵{stats.avgAmount.toFixed(2)}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">per request</p>
-        </div>
+        </CardTilt>
+
+        <CardTilt className="rounded-2xl w-full">
+          <div className="glass-card-neo p-4 rounded-2xl border border-sky-500/30 bg-sky-500/10 flex flex-col justify-between gap-2 h-full">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-sky-400" />
+              <p className="text-[10px] font-black uppercase tracking-wider text-sky-400">Average Payout</p>
+            </div>
+            <div>
+              <p className="text-2xl font-black font-mono text-sky-400">GH₵ {stats.avgAmount.toFixed(2)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">per withdrawal</p>
+            </div>
+          </div>
+        </CardTilt>
       </div>
 
       {/* ── Filters ── */}
-      <div className="space-y-3">
+      <div className="glass-card-neo p-5 rounded-3xl border border-white/10 space-y-4">
         {/* Status tabs */}
-        <div className="flex items-center gap-1 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {STATUS_TABS.map(s => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all border ${
+              className={cn(
+                "px-3.5 py-1.5 rounded-xl text-xs font-black capitalize transition-all border",
                 statusFilter === s
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-secondary text-muted-foreground border-transparent hover:border-border"
-              }`}
+                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md font-mono"
+                  : "bg-background/50 border-border text-muted-foreground hover:text-foreground"
+              )}
             >
               {s === "all"
                 ? `All (${withdrawals.length})`
@@ -512,103 +540,92 @@ const AdminWithdrawals = () => {
         </div>
 
         {/* Search + network + dates + export */}
-        <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-col sm:flex-row gap-2 flex-wrap items-center justify-between">
+          <div className="relative flex-1 min-w-[220px] w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search name, email, MoMo…"
+              placeholder="Search agent name, email, MoMo..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-9 bg-secondary"
+              className="pl-9 bg-background border-border text-xs rounded-xl"
             />
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 w-full sm:w-auto">
             {NETWORKS.map(n => (
               <button
                 key={n}
                 onClick={() => setNetworkFilter(n)}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all border ${
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
                   networkFilter === n
-                    ? "bg-secondary border-primary text-foreground"
-                    : "bg-secondary border-transparent text-muted-foreground hover:border-border"
-                }`}
+                    ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                    : "bg-background/50 border-border text-muted-foreground hover:text-foreground"
+                )}
               >
                 {n}
               </button>
             ))}
           </div>
 
-          <input
-            type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            title="From date" placeholder="From"
-            className="px-3 py-2 rounded-lg text-xs bg-secondary border border-border text-foreground"
-          />
-          <input
-            type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            title="To date" placeholder="To"
-            className="px-3 py-2 rounded-lg text-xs bg-secondary border border-border text-foreground"
-          />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              title="From date"
+              className="px-3 py-1.5 rounded-xl text-xs bg-background border border-border text-foreground font-mono"
+            />
+            <input
+              type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              title="To date"
+              className="px-3 py-1.5 rounded-xl text-xs bg-background border border-border text-foreground font-mono"
+            />
 
-          <Button variant="outline" size="sm" className="gap-2 whitespace-nowrap" onClick={() => exportCsv(filtered)}>
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </Button>
+            <Button variant="outline" size="sm" className="gap-2 rounded-xl text-xs" onClick={() => exportCsv(filtered)}>
+              <Download className="w-3.5 h-3.5" /> CSV
+            </Button>
+          </div>
         </div>
       </div>
 
       {/* ── Bulk action bar ── */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-primary/10 border border-primary/20 rounded-xl">
-          <span className="text-sm font-bold text-primary">{selectedIds.size} selected</span>
-          <Button size="sm" className="gap-2" disabled={bulkConfirming} onClick={handleBulkConfirm}>
-            {bulkConfirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-            Confirm All as Sent
-          </Button>
-          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setSelectedIds(new Set())}>
-            Clear
-          </Button>
+        <div className="flex items-center justify-between p-4 bg-amber-500/15 border border-amber-500/30 rounded-2xl">
+          <span className="text-xs font-black text-amber-400">{selectedIds.size} request(s) selected</span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" className="gap-2 rounded-xl bg-amber-500 text-slate-950 font-black text-xs" disabled={bulkConfirming} onClick={handleBulkConfirm}>
+              {bulkConfirming ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+              Confirm All as Sent
+            </Button>
+            <Button size="sm" variant="ghost" className="text-xs" onClick={() => setSelectedIds(new Set())}>
+              Clear
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* ── Result count ── */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          Showing {paginated.length ? page * PAGE_SIZE + 1 : 0}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length} results
-        </span>
-        {(dateFrom || dateTo || networkFilter !== "all" || search) && (
-          <button
-            className="text-primary hover:underline"
-            onClick={() => { setDateFrom(""); setDateTo(""); setNetworkFilter("all"); setSearch(""); }}
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
-
-      {/* ── Table ── */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      {/* ── Withdrawal Requests Table ── */}
+      <div className="glass-card-neo rounded-3xl border border-white/10 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-border bg-muted/30">
+              <tr className="border-b border-white/10 bg-white/5">
                 <th className="p-4 w-10">
                   <button onClick={toggleSelectAll} className="text-muted-foreground hover:text-foreground">
                     {allPendingSelected && pendingInView.length > 0
-                      ? <CheckSquare className="w-4 h-4 text-primary" />
+                      ? <CheckSquare className="w-4 h-4 text-amber-400" />
                       : <Square className="w-4 h-4" />}
                   </button>
                 </th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Date & Time</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Agent</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Amount</th>
-                <th className="text-left p-4 font-medium text-muted-foreground hidden md:table-cell">Total Profit</th>
-                <th className="text-left p-4 font-medium text-muted-foreground hidden lg:table-cell">MoMo Details</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Status</th>
-                <th className="text-left p-4 font-medium text-muted-foreground">Action</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground">Date & Time</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground">Agent Profile</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground">Requested Amount</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground hidden md:table-cell">Total Agent Profit</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground hidden lg:table-cell">MoMo Account</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground">Payout Status</th>
+                <th className="text-left p-4 font-black uppercase text-muted-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-white/5">
               {paginated.map(w => {
                 const missingMomo   = !w.momo_number || !w.momo_network;
                 const isRejectingThis = rejectingId === w.id;
@@ -617,59 +634,54 @@ const AdminWithdrawals = () => {
                 return (
                   <tr
                     key={w.id}
-                    className={`border-b border-border/50 hover:bg-muted/20 ${
-                      missingMomo && w.status === "pending" ? "bg-yellow-500/[0.04]" : ""
-                    }`}
+                    className={cn(
+                      "hover:bg-white/5 transition-colors",
+                      missingMomo && w.status === "pending" ? "bg-amber-500/5" : ""
+                    )}
                   >
-                    {/* Checkbox */}
                     <td className="p-4">
                       {w.status === "pending" && (
                         <button onClick={() => toggleSelect(w.id)}>
                           {selectedIds.has(w.id)
-                            ? <CheckSquare className="w-4 h-4 text-primary" />
+                            ? <CheckSquare className="w-4 h-4 text-amber-400" />
                             : <Square className="w-4 h-4 text-muted-foreground" />}
                         </button>
                       )}
                     </td>
 
-                    {/* Date + time */}
-                    <td className="p-4 text-muted-foreground whitespace-nowrap">
-                      <p className="text-sm">{new Date(w.created_at).toLocaleDateString()}</p>
-                      <p className="text-xs">{new Date(w.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                    <td className="p-4 whitespace-nowrap">
+                      <p className="font-bold text-foreground">{new Date(w.created_at).toLocaleDateString()}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono">{new Date(w.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
                     </td>
 
-                    {/* Agent */}
                     <td className="p-4">
-                      <p className="font-medium text-sm">{w.agent_name || "Unknown"}</p>
-                      <p className="text-xs text-muted-foreground">{w.agent_email || ""}</p>
+                      <p className="font-black text-foreground">{w.agent_name || "Unknown Agent"}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono">{w.agent_email || ""}</p>
                     </td>
 
-                    {/* Amount */}
-                    <td className="p-4">
-                      <p className="font-medium whitespace-nowrap">GH₵{w.amount.toFixed(2)}</p>
-                      <p className="text-[10px] text-red-400 font-bold">Fee: GH₵{(w.fee || 0).toFixed(2)}</p>
+                    <td className="p-4 whitespace-nowrap">
+                      <p className="font-black font-mono text-foreground text-sm">GH₵ {w.amount.toFixed(2)}</p>
+                      <p className="text-[10px] text-rose-400 font-bold font-mono">Fee: GH₵ {(w.fee || 0).toFixed(2)}</p>
                     </td>
 
-                    {/* Total profit */}
-                    <td className="p-4 text-muted-foreground hidden md:table-cell">
-                      GH₵{(w.total_profit || 0).toFixed(2)}
+                    <td className="p-4 text-muted-foreground font-mono font-bold hidden md:table-cell">
+                      GH₵ {(w.total_profit || 0).toFixed(2)}
                     </td>
 
-                    {/* MoMo details */}
                     <td className="p-4 hidden lg:table-cell">
                       {missingMomo ? (
-                        <div className="flex items-center gap-1.5 text-yellow-500 text-xs">
+                        <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold">
                           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                          Missing MoMo details
+                          Missing MoMo Details
                         </div>
                       ) : (
                         <div>
-                          <p className="text-sm">{w.momo_account_name || "—"}</p>
+                          <p className="font-bold text-foreground">{w.momo_account_name || "—"}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <p className="text-xs text-muted-foreground">{w.momo_number} · {w.momo_network}</p>
+                            <p className="text-[11px] text-muted-foreground font-mono">{w.momo_number} · {w.momo_network}</p>
                             <button
                               onClick={() => copyMomo(w.momo_number!)}
-                              className="text-muted-foreground hover:text-foreground transition-colors"
+                              className="text-muted-foreground hover:text-amber-400 transition-colors"
                               title="Copy MoMo number"
                             >
                               <Copy className="w-3 h-3" />
@@ -679,30 +691,30 @@ const AdminWithdrawals = () => {
                       )}
                     </td>
 
-                    {/* Status */}
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
-                        <p className="font-black text-emerald-400 text-sm whitespace-nowrap">
-                          SEND: GH₵{(w.net_amount || w.amount).toFixed(2)}
+                        <p className="font-black text-emerald-400 font-mono text-xs whitespace-nowrap">
+                          PAY OUT: GH₵ {(w.net_amount || w.amount).toFixed(2)}
                         </p>
-                        <Badge className={`${statusColors[w.status] || ""} w-fit`}>{w.status}</Badge>
+                        <Badge className={cn("w-fit text-[9px] font-black uppercase tracking-wider", statusColors[w.status])}>
+                          {w.status}
+                        </Badge>
                         {w.failure_reason && (
-                          <p className="text-[10px] text-red-400 mt-0.5 max-w-[140px] truncate" title={w.failure_reason}>
+                          <p className="text-[10px] text-rose-400 max-w-[140px] truncate" title={w.failure_reason}>
                             {w.failure_reason}
                           </p>
                         )}
                       </div>
                     </td>
 
-                    {/* Action */}
                     <td className="p-4">
                       {(w.status === "pending" || w.status === "failed" || (w.status === "processing" && !w.paystack_transfer_reference)) && !isRejectingThis && (
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-1.5 min-w-[140px]">
                           <Button
-                            size="sm" variant="outline" className="text-xs gap-1.5 h-8 bg-indigo-500/10 text-indigo-400 border-indigo-500/20 hover:bg-indigo-500/20"
+                            size="sm" variant="outline" className="text-[10px] h-7 bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20 font-bold"
                             disabled={busy || missingMomo}
                             onClick={async () => {
-                               const toastId = toast.loading("Verifying account...");
+                               const toastId = toast.loading("Verifying MoMo Account...");
                                try {
                                  const net = (w.momo_network || "").toUpperCase();
                                  let bankCode = "MTN";
@@ -715,76 +727,68 @@ const AdminWithdrawals = () => {
  
                                  if (error || !data?.success) throw new Error(data?.error || "Resolution failed");
  
-                                 // Update DB
                                  await supabase.from("profiles").update({ momo_account_name: data?.account_name }).eq("user_id", w.agent_id);
                                  
-                                 toast.success("Identity Verified", { description: `Resolved to: ${data?.account_name}`, id: toastId });
+                                 toast.success("Identity Verified", { description: `Account: ${data?.account_name}`, id: toastId });
                                  fetchWithdrawals(true);
                                } catch (e: any) {
                                  toast.error("Verification Failed", { description: e.message, id: toastId });
                                }
                              }}
                           >
-                            <RefreshCw className="w-3 h-3" />
-                            Verify Identity
+                            <RefreshCw className="w-3 h-3 mr-1" /> Verify Identity
                           </Button>
+
                           <Button
-                            size="sm" variant="outline" className="text-xs gap-1.5 h-8"
+                            size="sm" className="text-[10px] h-7 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black"
                             disabled={busy}
                             onClick={() => handleConfirm(w.id)}
                           >
                             {confirming === w.id
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <CheckCircle className="w-3 h-3" />}
+                              ? <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                              : <CheckCircle className="w-3 h-3 mr-1" />}
                             Mark as Sent
                           </Button>
+
                           <Button
-                            size="sm" className="text-xs gap-1.5 h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                            size="sm" className="text-[10px] h-7 bg-sky-600 hover:bg-sky-500 text-white font-black"
                             disabled={busy}
                             onClick={() => handlePaystackPayout(w.id)}
                           >
                             {payingPaystack === w.id
-                              ? <Loader2 className="w-3 h-3 animate-spin" />
-                              : <Banknote className="w-3 h-3" />}
+                              ? <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                              : <Banknote className="w-3 h-3 mr-1" />}
                             Pay via Paystack
                           </Button>
+
                           <Button
                             size="sm" variant="outline"
-                            className="text-xs gap-1.5 h-8 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                            className="text-[10px] h-7 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 font-bold"
                             disabled={busy}
                             onClick={() => { setRejectingId(w.id); setRejectReason(""); }}
                           >
-                            <XCircle className="w-3 h-3" />
-                            Reject
+                            <XCircle className="w-3 h-3 mr-1" /> Reject
                           </Button>
                         </div>
                       )}
 
                       {w.status === "processing" && w.paystack_transfer_reference && (
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-1.5 min-w-[140px]">
                           <Button
-                            size="sm" className="text-xs gap-1.5 h-8 bg-indigo-600 hover:bg-indigo-700 text-white"
+                            size="sm" className="text-[10px] h-7 bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
                             disabled={busy}
                             onClick={async () => {
                               setConfirming(w.id);
-                              const toastId = toast.loading("Checking Paystack status...");
+                              const toastId = toast.loading("Syncing Paystack status...");
                               try {
                                 const { data, error } = await supabase.functions.invoke("system-payout-v1", {
                                   body: { action: "verify_paystack_transfer", withdrawal_id: w.id },
                                   headers: { Authorization: `Bearer ${session?.access_token}` }
                                 });
                                 
-                                if (error || !data?.success) {
-                                  throw new Error(data?.error || error?.message || "Verification request failed");
-                                }
+                                if (error || !data?.success) throw new Error(data?.error || error?.message || "Sync failed");
                                 
-                                if (data.status === "success") {
-                                  toast.success("Sync Successful", { description: data.message, id: toastId });
-                                } else if (data.status === "failed" || data.status === "reversed" || data.status === "abandoned") {
-                                  toast.error("Transfer Failed", { description: data.message, id: toastId });
-                                } else {
-                                  toast.info("Transfer Pending", { description: data.message, id: toastId });
-                                }
+                                toast.success("Sync Complete", { description: data.message, id: toastId });
                                 fetchWithdrawals(true);
                               } catch (e: any) {
                                 toast.error("Sync Failed", { description: e.message, id: toastId });
@@ -793,45 +797,41 @@ const AdminWithdrawals = () => {
                               }
                             }}
                           >
-                            {confirming === w.id ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <RefreshCw className="w-3 h-3" />
-                            )}
+                            {confirming === w.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
                             Sync Status
                           </Button>
+
                           <Button
-                            size="sm" variant="outline" className="text-xs gap-1.5 h-8 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10"
+                            size="sm" variant="outline" className="text-[10px] h-7 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 font-bold"
                             disabled={busy}
                             onClick={() => handleConfirm(w.id)}
                           >
-                            <CheckCircle className="w-3 h-3" />
-                            Force Complete
+                            <CheckCircle className="w-3 h-3 mr-1" /> Force Complete
                           </Button>
                         </div>
                       )}
 
                       {/* Inline reject form */}
                       {(w.status === "pending" || w.status === "failed" || (w.status === "processing" && !w.paystack_transfer_reference)) && isRejectingThis && (
-                        <div className="space-y-1.5 min-w-[180px]">
+                        <div className="space-y-1.5 min-w-[160px]">
                           <Input
-                            placeholder="Reason for rejection…"
+                            placeholder="Rejection reason..."
                             value={rejectReason}
                             onChange={e => setRejectReason(e.target.value)}
-                            className="h-7 text-xs bg-secondary"
+                            className="h-7 text-[10px] bg-background border-border"
                             autoFocus
                             onKeyDown={e => { if (e.key === "Enter") handleReject(w.id); if (e.key === "Escape") { setRejectingId(null); setRejectReason(""); } }}
                           />
                           <div className="flex gap-1">
                             <Button
-                              size="sm" variant="destructive" className="text-xs h-7 flex-1"
+                              size="sm" variant="destructive" className="text-[10px] h-7 flex-1 font-bold"
                               disabled={rejecting || !rejectReason.trim()}
                               onClick={() => handleReject(w.id)}
                             >
                               {rejecting ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirm"}
                             </Button>
                             <Button
-                              size="sm" variant="ghost" className="text-xs h-7"
+                              size="sm" variant="ghost" className="text-[10px] h-7"
                               onClick={() => { setRejectingId(null); setRejectReason(""); }}
                             >
                               Cancel
@@ -848,22 +848,22 @@ const AdminWithdrawals = () => {
         </div>
 
         {filtered.length === 0 && (
-          <div className="p-8 text-center text-muted-foreground">No withdrawals found.</div>
+          <div className="p-8 text-center text-xs text-muted-foreground">No withdrawal requests found matching filters.</div>
         )}
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between p-4 border-t border-border">
+          <div className="flex items-center justify-between p-4 border-t border-white/10 text-xs">
             <Button
-              variant="outline" size="sm" className="gap-1.5"
+              variant="outline" size="sm" className="gap-1.5 rounded-xl font-bold"
               disabled={page === 0}
               onClick={() => setPage(p => p - 1)}
             >
               <ChevronLeft className="w-4 h-4" /> Previous
             </Button>
-            <span className="text-xs text-muted-foreground">Page {page + 1} of {totalPages}</span>
+            <span className="text-muted-foreground font-mono">Page {page + 1} of {totalPages}</span>
             <Button
-              variant="outline" size="sm" className="gap-1.5"
+              variant="outline" size="sm" className="gap-1.5 rounded-xl font-bold"
               disabled={page >= totalPages - 1}
               onClick={() => setPage(p => p + 1)}
             >

@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { CardTilt } from "@/components/ui/CardTilt";
-import { BarChart3, TrendingUp, Users, Smartphone, Zap, Loader2, RefreshCw, DollarSign, ShoppingCart, Target, Trophy, Award, Activity } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Smartphone, Loader2, RefreshCw, DollarSign, ShoppingCart, Target, Award, Sparkles, Activity } from "lucide-react";
 import {
-  AreaChart, Area, BarChart, Bar, Cell,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { CardTilt } from "@/components/ui/CardTilt";
 import { cn } from "@/lib/utils";
 
 interface OrderRecord {
@@ -29,18 +29,21 @@ interface AgentRecord {
 
 const NETWORK_COLORS: Record<string, string> = {
   MTN: "#f59e0b",
-  Telecel: "#f43f5e",
+  Telecel: "#ef4444",
   AirtelTigo: "#ec4899",
 };
 
 const CustomTooltip = ({ active, payload, label, isDark }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className={`border rounded-2xl p-4 shadow-2xl text-xs backdrop-blur-xl ${isDark ? "bg-slate-950/95 border-white/15 text-white" : "bg-white/95 border-slate-200 text-slate-900"}`}>
-      <p className="mb-2 font-mono font-bold text-[10px] uppercase text-muted-foreground">{label}</p>
+    <div className={`border rounded-2xl p-4 shadow-2xl text-xs backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-950/95 border-white/15 text-white" : "bg-white/95 border-slate-200 text-slate-900"}`}>
+      <p className={`mb-2 font-black tracking-wider uppercase text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label}</p>
       {payload.map((p: any, i: number) => (
-        <div key={i} className="flex items-center justify-between gap-4 py-0.5">
-          <span style={{ color: p.color }} className="font-extrabold">{p.name}:</span>
+        <div key={i} className="flex items-center justify-between gap-6 py-0.5">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color, boxShadow: `0 0 8px ${p.color}` }} />
+            <span className={`font-extrabold text-[10px] uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-700"}`}>{p.name}</span>
+          </div>
           <span style={{ color: p.color }} className="font-mono font-black">
             {p.name === "Revenue" || p.name === "Profit" ? `GH₵ ${Number(p.value).toFixed(2)}` : p.value}
           </span>
@@ -167,65 +170,65 @@ const AdminAnalytics = () => {
         id,
         revenue,
         name: agents.find(a => a.user_id === id)?.full_name || "Unknown Agent",
-        store: agents.find(a => a.user_id === id)?.store_name || "Direct Reseller",
+        store: agents.find(a => a.user_id === id)?.store_name || "",
       }));
   }, [fulfilledOrders, agents]);
 
   const statCards = [
-    { title: "Total Revenue", value: `GH₵ ${totalRevenue.toFixed(2)}`, icon: DollarSign, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/30" },
+    { title: "Total Revenue", value: `GH₵ ${totalRevenue.toFixed(2)}`, icon: DollarSign, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30" },
     { title: "Net Profit", value: `GH₵ ${totalProfit.toFixed(2)}`, icon: TrendingUp, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/30" },
-    { title: "Total Orders", value: orders.length.toLocaleString(), icon: ShoppingCart, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
-    { title: "Active Agents", value: activeAgents, icon: Users, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/30" },
-    { title: "Top Network", value: topNetwork, icon: Smartphone, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30" },
+    { title: "Total Orders", value: orders.length.toLocaleString(), icon: ShoppingCart, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/30" },
+    { title: "Active Agents", value: activeAgents, icon: Users, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+    { title: "Top Carrier", value: topNetwork, icon: Smartphone, color: "text-pink-400", bg: "bg-pink-500/10 border-pink-500/30" },
     { title: "Fulfillment Rate", value: `${isFinite(fulfillmentRate) ? fulfillmentRate.toFixed(1) : 0}%`, icon: Target, color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/30" },
   ];
 
   const gridColor = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
-  const tickColor = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
+  const tickColor = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.5)";
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="glass-card-neo p-5 sm:p-6 rounded-3xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Telemetry & Intelligence
+              <BarChart3 className="w-3.5 h-3.5" /> Intelligence Center
             </span>
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px] font-mono uppercase">
+              Last 30 Days
+            </Badge>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">Platform Analytics & Intelligence</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">Platform Sales Intelligence</h1>
         </div>
 
-        <Button 
-          onClick={fetchData} 
-          disabled={loading} 
-          variant="outline" 
-          className="h-10 px-4 rounded-xl border-border bg-background/80 font-extrabold text-xs uppercase tracking-wider gap-2 self-end sm:self-auto"
+        <Button
+          onClick={fetchData}
+          disabled={loading}
+          variant="outline"
+          className="h-10 px-5 rounded-xl border-border bg-background/80 font-bold text-xs uppercase tracking-wider gap-2 self-start sm:self-auto"
         >
-          <RefreshCw className={cn("w-3.5 h-3.5 text-amber-400", loading && "animate-spin")} /> Refresh Analytics
+          <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${loading ? "animate-spin" : ""}`} /> Refresh Intelligence
         </Button>
       </div>
 
       {loading ? (
         <div className="flex flex-col items-center justify-center min-h-[350px] gap-4">
           <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
-          <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest animate-pulse">Processing Telemetry Metrics...</p>
+          <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest animate-pulse">Calculating sales metrics...</p>
         </div>
       ) : (
         <>
-          {/* Stat cards grid */}
+          {/* Stat cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             {statCards.map((card) => (
               <CardTilt key={card.title} className="rounded-2xl w-full">
-                <div className={cn("glass-card-neo p-4 rounded-2xl border flex flex-col justify-between gap-3 h-full relative overflow-hidden", card.bg)}>
-                  <div className="flex items-center justify-between">
-                    <div className="w-8 h-8 rounded-xl bg-background/50 border border-white/10 flex items-center justify-center">
-                      <card.icon className={cn("w-4 h-4", card.color)} />
-                    </div>
-                    <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase">30D</span>
+                <div className={cn("glass-card-neo p-4 rounded-2xl border flex flex-col justify-between gap-3 h-full", card.bg)}>
+                  <div className="w-8 h-8 rounded-xl bg-background/50 border border-white/10 flex items-center justify-center">
+                    <card.icon className={cn("w-4 h-4", card.color)} />
                   </div>
                   <div>
-                    <p className={cn("text-xl font-black font-mono tracking-tight", card.color)}>{card.value}</p>
+                    <p className={cn("font-mono font-black text-lg sm:text-xl", card.color)}>{card.value}</p>
                     <p className="text-[11px] font-bold text-muted-foreground mt-0.5">{card.title}</p>
                   </div>
                 </div>
@@ -233,33 +236,39 @@ const AdminAnalytics = () => {
             ))}
           </div>
 
-          {/* Revenue / Profit Area Chart */}
+          {/* Revenue & Profit Area Chart */}
           <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
-            <div>
-              <h2 className="text-lg font-black text-foreground">Revenue & Net Profit Trend (Last 14 Days)</h2>
-              <p className="text-xs text-muted-foreground">Daily comparison of gross sales revenue vs admin net profit.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-lg text-foreground">Revenue & Net Profit Trend</h3>
+                <p className="text-xs text-muted-foreground">Daily breakdown of fulfilled order revenue vs platform margin over the last 14 days.</p>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs font-bold">
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-emerald-500" /><span className="text-muted-foreground">Revenue</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-amber-500" /><span className="text-muted-foreground">Net Profit</span></div>
+              </div>
             </div>
 
             <div className="h-[280px] w-full pt-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dailyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <AreaChart data={dailyData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
+                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                  <XAxis dataKey="date" tick={{ fill: tickColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: tickColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="date" tick={{ fill: tickColor, fontSize: 11, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: tickColor, fontSize: 11, fontWeight: "bold" }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip isDark={isDark} />} />
-                  <Legend formatter={(v) => <span className="text-xs font-bold text-muted-foreground">{v}</span>} />
-                  <Area type="monotone" dataKey="Revenue" stroke="#38bdf8" strokeWidth={2.5} fill="url(#colorRevenue)" dot={false} />
-                  <Area type="monotone" dataKey="Profit" stroke="#10b981" strokeWidth={2.5} fill="url(#colorProfit)" dot={false} />
+                  <Area type="monotone" dataKey="Revenue" stroke="#10b981" strokeWidth={3} fill="url(#colorRevenue)" dot={false} />
+                  <Area type="monotone" dataKey="Profit" stroke="#f59e0b" strokeWidth={3} fill="url(#colorProfit)" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -269,15 +278,15 @@ const AdminAnalytics = () => {
             {/* Orders by network bar chart */}
             <div className="lg:col-span-2 glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
               <div>
-                <h2 className="text-lg font-black text-foreground">Orders Volume by Network</h2>
-                <p className="text-xs text-muted-foreground">Order count breakdown per telecom carrier.</p>
+                <h3 className="font-black text-base text-foreground">Carrier Order Volume</h3>
+                <p className="text-xs text-muted-foreground">Fulfilled volume distribution across telecom networks.</p>
               </div>
 
-              <div className="h-[220px] w-full pt-2">
+              <div className="h-[220px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={networkPieData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                    <XAxis dataKey="name" tick={{ fill: tickColor, fontSize: 11, fontWeight: "bold" }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="name" tick={{ fill: tickColor, fontSize: 12, fontWeight: "bold" }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: tickColor, fontSize: 11, fontWeight: "bold" }} axisLine={false} tickLine={false} />
                     <Tooltip content={<CustomTooltip isDark={isDark} />} />
                     <Bar dataKey="value" name="Orders" radius={[8, 8, 0, 0]}>
@@ -290,34 +299,37 @@ const AdminAnalytics = () => {
               </div>
             </div>
 
-            {/* Network revenue breakdown */}
+            {/* Network revenue share */}
             <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
               <div>
-                <h2 className="text-lg font-black text-foreground">Network Revenue Share</h2>
-                <p className="text-xs text-muted-foreground">Sales volume distribution.</p>
+                <h3 className="font-black text-base text-foreground">Revenue Share</h3>
+                <p className="text-xs text-muted-foreground">Revenue percentage per carrier.</p>
               </div>
 
               <div className="space-y-4 pt-2">
                 {networkPieData.length === 0 ? (
-                  <p className="text-xs text-center text-muted-foreground py-8">No network sales recorded</p>
+                  <p className="text-xs text-center py-8 text-muted-foreground">No network sales yet</p>
                 ) : networkPieData.map((net) => {
                   const pct = totalRevenue > 0 ? ((net.revenue / totalRevenue) * 100) : 0;
                   return (
                     <div key={net.name} className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full" style={{ background: NETWORK_COLORS[net.name] || "#6366f1" }} />
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: NETWORK_COLORS[net.name] || "#6366f1" }} />
                           <span className="font-extrabold text-foreground">{net.name}</span>
                         </div>
                         <span className="font-mono font-black text-amber-400">GH₵ {net.revenue.toFixed(2)}</span>
                       </div>
-                      <div className="h-2 rounded-full bg-background/50 border border-white/5 overflow-hidden">
+                      <div className="h-2 rounded-full bg-background/50 overflow-hidden border border-white/10">
                         <div
                           className="h-full rounded-full transition-all duration-700"
                           style={{ width: `${pct}%`, background: NETWORK_COLORS[net.name] || "#6366f1" }}
                         />
                       </div>
-                      <p className="text-[10px] text-muted-foreground font-mono">{net.value} orders · {pct.toFixed(1)}% share</p>
+                      <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                        <span>{net.value} orders</span>
+                        <span>{pct.toFixed(1)}% share</span>
+                      </div>
                     </div>
                   );
                 })}
@@ -325,20 +337,24 @@ const AdminAnalytics = () => {
             </div>
           </div>
 
-          {/* Top agents leaderboard */}
+          {/* Top 5 Agents */}
           <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-black text-foreground">Top 5 Performing Reseller Agents</h2>
-                <p className="text-xs text-muted-foreground">Top sales volume leaders across the network.</p>
+                <h3 className="font-black text-base text-foreground flex items-center gap-2">
+                  <Award className="w-5 h-5 text-amber-400" /> Top 5 Reseller Agents
+                </h3>
+                <p className="text-xs text-muted-foreground">Highest grossing agents on the platform.</p>
               </div>
-              <Trophy className="w-5 h-5 text-amber-400" />
+              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] uppercase font-mono">
+                Top Performers
+              </Badge>
             </div>
 
             {topAgents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <BarChart3 className="w-8 h-8 text-muted-foreground mb-2" />
-                <p className="text-xs text-muted-foreground">No fulfilled agent transactions recorded</p>
+              <div className="flex flex-col items-center py-10 text-center">
+                <Users className="w-8 h-8 text-muted-foreground/30 mb-2" />
+                <p className="text-xs text-muted-foreground">No fulfilled agent sales recorded yet.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -347,24 +363,24 @@ const AdminAnalytics = () => {
                   return (
                     <div key={agent.id} className="p-4 rounded-2xl border border-border bg-background/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <span className={cn(
-                          "w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black shrink-0 font-mono",
-                          idx === 0 ? "bg-amber-500 text-slate-950 shadow-md" : idx === 1 ? "bg-slate-300 text-slate-950" : idx === 2 ? "bg-amber-700 text-white" : "bg-background border border-border text-muted-foreground"
-                        )}>
-                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}
+                        <span className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 font-mono font-black text-sm flex items-center justify-center shrink-0">
+                          #{idx + 1}
                         </span>
                         <div>
                           <p className="text-xs font-black text-foreground">{agent.name}</p>
-                          <p className="text-[10px] text-muted-foreground font-mono">{agent.store}</p>
+                          <p className="text-[10px] text-muted-foreground">{agent.store || "No store name"}</p>
+                          <div className="w-36 h-1.5 rounded-full bg-background/80 overflow-hidden mt-1.5 border border-white/10">
+                            <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between sm:justify-end gap-4">
-                        <div className="text-right">
-                          <p className="text-sm font-black font-mono text-amber-400">GH₵ {agent.revenue.toFixed(2)}</p>
-                          <Badge variant="outline" className="text-[9px] font-mono uppercase">
-                            {fulfilledOrders.filter(o => o.agent_id === agent.id).length} orders
-                          </Badge>
+                        <div className="text-left sm:text-right">
+                          <p className="text-sm font-black font-mono text-emerald-400">GH₵ {agent.revenue.toFixed(2)}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">
+                            {fulfilledOrders.filter(o => o.agent_id === agent.id).length} fulfilled orders
+                          </p>
                         </div>
                       </div>
                     </div>
