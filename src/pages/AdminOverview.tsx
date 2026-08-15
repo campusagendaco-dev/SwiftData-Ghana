@@ -12,7 +12,7 @@ import {
   Users, ShoppingCart, DollarSign, ShieldCheck,
   Package, Wallet, ArrowUpRight, RefreshCw,
   CheckCircle2, Clock, XCircle, Activity, ChevronRight, TrendingUp,
-  MessageCircle,
+  MessageCircle, Zap, AlertTriangle, Layers, Cpu, Server, Lock, Filter
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import { CardTilt } from "@/components/ui/CardTilt";
+import { cn } from "@/lib/utils";
 
 interface RecentOrder {
   id: string;
@@ -57,42 +58,37 @@ const DailySalesTooltip = ({ active, payload, label, isDark }: any) => {
   if (!active || !payload?.length) return null;
   const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0);
   return (
-    <div className={`rounded-[20px] p-4 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] text-sm border backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-[#111116]/90 border-white/10" : "bg-white/90 border-gray-200"}`}>
-      <p className={`mb-3 font-black tracking-tight text-xs uppercase ${isDark ? "text-white/50" : "text-gray-500"}`}>{label}</p>
-      <div className="space-y-2">
+    <div className={`rounded-2xl p-4 shadow-2xl text-xs border backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200 ${isDark ? "bg-slate-950/95 border-white/15 text-white" : "bg-white/95 border-slate-200 text-slate-900"}`}>
+      <p className={`mb-2 font-black tracking-wider uppercase text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label}</p>
+      <div className="space-y-1.5">
         {payload.map((p: any, i: number) => (
           <div key={i} className="flex items-center justify-between gap-6">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color, boxShadow: `0 0 10px ${p.color}` }} />
-              <span className={`font-semibold text-[11px] uppercase tracking-widest ${isDark ? "text-white/70" : "text-gray-600"}`}>{p.name}</span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color, boxShadow: `0 0 8px ${p.color}` }} />
+              <span className={`font-extrabold text-[10px] uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-700"}`}>{p.name}</span>
             </div>
-            <span style={{ color: p.color }} className="font-black">GH₵{Number(p.value).toFixed(2)}</span>
+            <span style={{ color: p.color }} className="font-mono font-black">GH₵ {Number(p.value).toFixed(2)}</span>
           </div>
         ))}
       </div>
-      <div className={`mt-3 pt-3 border-t flex items-center justify-between gap-4 ${isDark ? "border-white/10" : "border-gray-200"}`}>
-        <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-white/40" : "text-gray-400"}`}>Total Vol</span>
-        <span className={`font-black text-lg ${isDark ? "text-white" : "text-gray-900"}`}>GH₵{total.toFixed(2)}</span>
+      <div className={`mt-3 pt-2.5 border-t flex items-center justify-between gap-4 ${isDark ? "border-white/10" : "border-slate-200"}`}>
+        <span className={`text-[10px] font-extrabold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Total Volume</span>
+        <span className="font-mono font-black text-sm text-emerald-400">GH₵ {total.toFixed(2)}</span>
       </div>
-      <div className="flex justify-between items-center mt-2 gap-4">
-        <span className="text-[10px] font-bold text-blue-400">{payload[0]?.payload?.GB?.toFixed(2) || "0.00"} GB Sold</span>
+      <div className="flex justify-between items-center mt-1.5 gap-4">
+        <span className="text-[10px] font-bold text-sky-400">{payload[0]?.payload?.GB?.toFixed(2) || "0.00"} GB Sold</span>
         <span className="text-[10px] font-bold text-purple-400">{payload[0]?.payload?.Orders || 0} Orders</span>
       </div>
-      {payload[0]?.payload?.Deposits > 0 && (
-        <p className="text-[10px] text-amber-500 mt-1 font-bold text-right">
-          + GH₵{payload[0].payload.Deposits.toFixed(2)} Deposits
-        </p>
-      )}
     </div>
   );
 };
 
 const statusIcon = (s: string) => {
   if (s === "fulfilled")
-    return <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>;
+    return <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/30"><CheckCircle2 className="w-4 h-4 text-emerald-400" /></div>;
   if (s === "fulfillment_failed")
-    return <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20"><XCircle className="w-4 h-4 text-red-500" /></div>;
-  return <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20"><Clock className="w-4 h-4 text-amber-500" /></div>;
+    return <div className="w-8 h-8 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/30"><XCircle className="w-4 h-4 text-rose-400" /></div>;
+  return <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/30"><Clock className="w-4 h-4 text-amber-400" /></div>;
 };
 
 const parseCapacity = (sizeStr: string | null) => {
@@ -103,9 +99,8 @@ const parseCapacity = (sizeStr: string | null) => {
   const val = parseFloat(match[1]);
   if (match[2] === "MB") return val / 1024;
   if (match[2] === "TB") return val * 1024;
-  return val; // GB
+  return val;
 };
-
 
 const AdminOverview = () => {
   const { toast } = useToast();
@@ -192,7 +187,6 @@ const AdminOverview = () => {
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
     ]);
 
-    // Safely unwrap allSettled results — failed queries default to empty/null
     const unwrap = (r: PromiseSettledResult<any>) => r.status === "fulfilled" ? r.value : { data: null, error: null };
     const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes, aiRes] = settled.map(unwrap);
 
@@ -210,10 +204,7 @@ const AdminOverview = () => {
     const totalVolumeAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_sales_volume) || 0), 0) : 0;
     const totalAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_own_profit) || 0), 0) : 0;
     const totalSubAgentProfitsAllTime = Array.isArray(salesStats) ? salesStats.reduce((s, st) => s + (Number(st?.total_commissions_paid) || 0), 0) : 0;
-    
-    // Calculate Net Admin Profit for fulfilled orders.
-    // API orders: amount - profit - parent_profit - cost_price (no Paystack fee).
-    // Paystack orders: paystack_verified_amount - paystack_fee - profit - parent_profit - cost_price.
+
     const fulfilledOrders = orders.filter((o: any) => o.status === "fulfilled");
     const totalNetAdminProfit = fulfilledOrders.reduce((s, o: any) => {
       const isApiOrder = o.order_type === "api";
@@ -237,7 +228,6 @@ const AdminOverview = () => {
         return s + (amt - fee);
       }
 
-      // wallet_topup: admin earns the Paystack spread (verified - fee - amount credited to wallet)
       if (o.order_type === "wallet_topup") {
         const credited = Number(o.amount) || 0;
         if (credited <= 0) return s;
@@ -250,7 +240,6 @@ const AdminOverview = () => {
     
     const maintenanceRow = (maintenanceRes?.data as any) || null;
     const maintenanceError = maintenanceRes?.error || maintenanceRow?.error;
-    const isMonthly = timeRange === "1y" || timeRange === "all";
 
     const agentIds = new Set(profiles.filter((p: any) => p?.is_agent && p?.agent_approved).map((p: any) => p?.user_id));
     const subAgentIds = new Set(profiles.filter((p: any) => p?.is_sub_agent && p?.sub_agent_approved).map((p: any) => p?.user_id));
@@ -259,7 +248,6 @@ const AdminOverview = () => {
     let dailySalesData: DailySalesPoint[] = [];
 
     if (rpcStats && Array.isArray(rpcStats)) {
-      // Build a full date range with zeros first so every day is represented
       const daysCount = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
       const dateMap: Record<string, DailySalesPoint> = {};
       for (let i = daysCount - 1; i >= 0; i--) {
@@ -271,7 +259,6 @@ const AdminOverview = () => {
           Customers: 0, Agents: 0, "Sub-Agents": 0, Deposits: 0, Purchases: 0, GB: 0, Orders: 0
         };
       }
-      // Overlay RPC data — use string slice to avoid timezone shifts
       for (const r of rpcStats) {
         const key = String(r.bucket_date || "").slice(0, 10);
         if (dateMap[key]) {
@@ -286,10 +273,8 @@ const AdminOverview = () => {
       }
       dailySalesData = Object.values(dateMap);
     } else {
-      // Fallback to browser-side aggregation if RPC is missing/failed
-      console.warn("Sales stats RPC failed or not found, falling back to local calculation.");
       const chartMap: Record<string, DailySalesPoint> = {};
-      const daysCount = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90; // Limit fallback range
+      const daysCount = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
       for (let i = daysCount - 1; i >= 0; i--) {
         const d = new Date(now);
         d.setDate(now.getDate() - i);
@@ -327,20 +312,15 @@ const AdminOverview = () => {
     const inflowOrders = orders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type) && Number(o.amount || 0) > 0);
     const purchaseOrders = orders.filter((o: any) => o.status === "fulfilled" && ["data", "airtime", "utility", "afa", "api"].includes(o.order_type));
 
-    // Inflow: always use paystack_verified_amount (confirmed settlement)
     const totalRevenue = inflowOrders.reduce((s: number, o: any) => s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0), 0);
 
-    // Purchases: API orders use amount (no Paystack), Paystack orders use verified amount
     const totalPurchases = purchaseOrders.reduce((s: number, o: any) => {
       if (o.order_type === "api") return s + (Number(o.amount) || 0);
       return s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0);
     }, 0);
 
-    // Separate API vs Paystack volumes for reconciliation accuracy
     const apiVolume = purchaseOrders.filter((o: any) => o.order_type === "api").reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
     const paystackVolume = purchaseOrders.filter((o: any) => o.order_type !== "api").reduce((s: number, o: any) => s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0), 0);
-
-    const displayRevenue = totalRevenue;
 
     const PURCHASE_TYPES = ["data", "airtime", "utility", "afa", "api"];
     const todayFulfilledPurchases = todayOrders.filter((o: any) => o.status === "fulfilled" && PURCHASE_TYPES.includes(o.order_type));
@@ -363,7 +343,6 @@ const AdminOverview = () => {
     });
     const rangeInflow = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type) && Number(o.amount || 0) > 0).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
     const rangeVerifiedInflow = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type) && Number(o.amount || 0) > 0).reduce((s: number, o: any) => s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0), 0);
-    // Range purchases: API orders use amount, Paystack orders use verified amount
     const rangePurchaseOrders = rangeOrders.filter((o: any) => o.status === "fulfilled" && ["data", "airtime", "utility", "afa", "api"].includes(o.order_type));
     const rangePurchases = rangePurchaseOrders.reduce((s: number, o: any) => {
       if (o.order_type === "api") return s + (Number(o.amount) || 0);
@@ -376,7 +355,7 @@ const AdminOverview = () => {
 
     setStats({
       totalOrders: orders.length,
-      totalRevenue: displayRevenue,
+      totalRevenue: totalRevenue,
       totalPurchases: totalPurchases,
       totalUsers: profiles.length,
       pendingAgents: profiles.filter((p: any) => p.is_agent && !p.agent_approved && p.onboarding_complete).length,
@@ -419,7 +398,6 @@ const AdminOverview = () => {
     setLastUpdated(new Date());
   }, [timeRange]);
 
-  // Wrap fetchData in a stable function that always clears loading and never crashes the page
   const safeFetchData = useCallback(async () => {
     try {
       await fetchData();
@@ -430,8 +408,6 @@ const AdminOverview = () => {
     }
   }, [fetchData]);
 
-  // Lightweight chart-only refresh — only re-runs the RPC + recent orders.
-  // Used for realtime triggers so the chart updates instantly without re-running all 13 queries.
   const refreshChart = useCallback(async () => {
     const now = new Date();
     let startDate = new Date();
@@ -502,7 +478,7 @@ const AdminOverview = () => {
     const ordersChannel = supabase
       .channel("admin-live-orders")
       .on("postgres_changes", { event: "*", table: "orders", schema: "public" }, (payload) => {
-        refreshChart(); // Fast: only updates chart + recent orders + today's stats
+        refreshChart();
         if (payload.eventType === "INSERT") {
           toast({
             title: "New Order Received!",
@@ -559,9 +535,10 @@ const AdminOverview = () => {
 
   const approveAllPending = async () => {
     setApprovingPending(true);
+    const { data: sessionData } = await supabase.auth.getSession();
     const { data, error } = await supabase.functions.invoke("system-payout-v1", {
       body: { action: "approve_all_pending_agents" },
-      headers: { Authorization: `Bearer ${session?.access_token}` },
+      headers: { Authorization: `Bearer ${sessionData?.session?.access_token}` },
     });
     if (error || data?.error) {
       toast({ title: "Failed to approve agents", description: data?.error || error?.message, variant: "destructive" });
@@ -574,415 +551,312 @@ const AdminOverview = () => {
   };
 
   const statCards = [
-    { title: "Total Inflow",     value: `GH₵ ${(stats.totalRevenue || 0).toFixed(2)}`,                                icon: DollarSign, color: "text-emerald-500",  bg: "bg-emerald-500/10",  border: "border-emerald-500/20"  },
-    { title: "Total Data Sold",   value: `${(stats.totalGb || 0).toFixed(2)} GB`,                                icon: Package, color: "text-blue-500",  bg: "bg-blue-500/10",  border: "border-blue-500/20"  },
-    { title: "Agent Profits",   value: `GH₵ ${(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)).toFixed(2)}`, icon: DollarSign, color: "text-amber-500",  bg: "bg-amber-400/10",  border: "border-amber-400/20"  },
-    { title: "User Balances",   value: `GH₵ ${(stats.totalSystemBalance || 0).toFixed(2)}`,                        icon: Wallet,     color: "text-red-400",    bg: "bg-red-400/10",    border: "border-red-400/20"    },
-    { 
-      title: "Net Admin Profit", 
-      value: `GH₵ ${(stats.totalNetAdminProfit || 0).toFixed(2)}`, 
-      icon: TrendingUp, 
-      color: "text-emerald-500", 
-      bg: "bg-emerald-500/10",
-      description: "Lifetime net profit after all costs."
-    },
-    { title: "Active Users",    value: stats.totalUsers.toLocaleString(),                                      icon: Users,      color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
-    {
-      title: "Pending Agents",
-      value: stats.pendingAgents,
-      icon: ShieldCheck,
-      color: stats.pendingAgents > 0 ? "text-red-500" : "text-emerald-500",
-      bg:    stats.pendingAgents > 0 ? "bg-red-500/10"     : "bg-emerald-500/10",
-      border:stats.pendingAgents > 0 ? "border-red-500/20" : "border-emerald-500/20",
-    },
-    {
-      title: "Provider Wallet",
-      value: providerBalance !== null ? `GH₵ ${providerBalance.toFixed(2)}` : "...",
-      icon: Wallet,
-      color: "text-sky-500",
-      bg: "bg-sky-500/10",
-      border: "border-sky-500/20"
-    },
-    { title: "Today's Data Sold", value: `${(todaySales.gb || 0).toFixed(2)} GB`, icon: Package, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20" },
-    { title: "Today's Orders", value: todaySales.count, icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
-    { title: "Today's Success", value: todaySales.successCount, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-    { title: "Today's Failed",  value: todaySales.failedCount,  icon: XCircle,      color: "text-red-500",     bg: "bg-red-500/10",     border: "border-red-500/20"     },
-    { title: "Today's New Users", value: todaySales.newUsers,     icon: Users,        color: "text-indigo-500",  bg: "bg-indigo-500/10",  border: "border-indigo-500/20"  },
-    { title: "Pending Withdrawals", value: stats.pendingWithdrawals, icon: Wallet,   color: stats.pendingWithdrawals > 0 ? "text-red-500" : "text-emerald-500", bg: stats.pendingWithdrawals > 0 ? "bg-red-500/10" : "bg-emerald-500/10", border: stats.pendingWithdrawals > 0 ? "border-red-500/20" : "border-emerald-500/20" },
-    { title: "Open Tickets",      value: stats.unreadTickets,      icon: MessageCircle, color: stats.unreadTickets > 0 ? "text-amber-500" : "text-emerald-500", bg: stats.unreadTickets > 0 ? "bg-amber-500/10" : "bg-emerald-500/10", border: stats.unreadTickets > 0 ? "border-amber-500/20" : "border-emerald-500/20" },
-    { title: "Total Orders", value: stats.totalOrders.toLocaleString(), icon: ShoppingCart, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+    { title: "Net Admin Profit", value: `GH₵ ${(stats.totalNetAdminProfit || 0).toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", description: "Verified net profit after costs & fees" },
+    { title: "Total Inflow", value: `GH₵ ${(stats.totalRevenue || 0).toFixed(2)}`, icon: DollarSign, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/30" },
+    { title: "Total Data Sold", value: `${(stats.totalGb || 0).toFixed(2)} GB`, icon: Package, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+    { title: "Agent Profits", value: `GH₵ ${(Number(stats.totalAgentProfit || 0) + Number(stats.totalSubAgentProfit || 0)).toFixed(2)}`, icon: DollarSign, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/30" },
+    { title: "Provider Wallet", value: providerBalance !== null ? `GH₵ ${providerBalance.toFixed(2)}` : "...", icon: Server, color: providerBalance !== null && providerBalance < 50 ? "text-rose-400" : "text-cyan-400", bg: providerBalance !== null && providerBalance < 50 ? "bg-rose-500/10 border-rose-500/30" : "bg-cyan-500/10 border-cyan-500/30" },
+    { title: "User Balances", value: `GH₵ ${(stats.totalSystemBalance || 0).toFixed(2)}`, icon: Wallet, color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/30" },
+    { title: "Active Users", value: stats.totalUsers.toLocaleString(), icon: Users, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/30" },
+    { title: "Pending Agents", value: stats.pendingAgents, icon: ShieldCheck, color: stats.pendingAgents > 0 ? "text-rose-400" : "text-emerald-400", bg: stats.pendingAgents > 0 ? "bg-rose-500/10 border-rose-500/30" : "bg-emerald-500/10 border-emerald-500/30" },
   ];
 
-  const axisColor  = isDark ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)";
-  const gridColor  = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.06)";
-  const legendColor= isDark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.55)";
-
-  const card  = isDark ? "bg-white/[0.02] border-white/5" : "bg-white border-gray-200 shadow-sm";
-  const card2 = isDark ? "bg-white/[0.03] border-white/5" : "bg-gray-50 border-gray-200";
-  const muted = isDark ? "text-white/40" : "text-gray-400";
-  const head  = isDark ? "text-white"    : "text-gray-900";
-  const sub   = isDark ? "text-white/50" : "text-gray-500";
-  const divider = isDark ? "border-white/5" : "border-gray-200";
+  const axisColor = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
+  const gridColor = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
-        <p className={`font-medium tracking-widest uppercase text-xs ${muted}`}>Loading Dashboard…</p>
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <div className="relative">
+          <div className="w-12 h-12 rounded-full border-2 border-amber-500/20 border-t-amber-500 animate-spin" />
+          <Cpu className="w-5 h-5 text-amber-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+        </div>
+        <p className="font-mono text-xs text-muted-foreground uppercase tracking-widest animate-pulse">Initializing Admin Command Center...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 pb-10">
-      
-      {/* ── LIVE ACTIVITY TICKER ── */}
-      <div className={`relative flex items-center h-10 overflow-hidden rounded-xl border backdrop-blur-xl shadow-inner ${isDark ? "bg-emerald-500/5 border-emerald-500/10 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}>
-        <div className="absolute left-0 z-10 h-full flex items-center px-4 rounded-l-xl backdrop-blur-xl border-r" style={{ background: isDark ? "rgba(16,185,129,0.1)" : "rgba(16,185,129,0.05)", borderColor: isDark ? "rgba(16,185,129,0.2)" : "rgba(16,185,129,0.3)" }}>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] mr-2" />
-          <span className="text-[10px] font-black uppercase tracking-widest">Live Ticker</span>
+    <div className="space-y-6 pb-16">
+      {/* ── LIVE MARQUEE TICKER ── */}
+      <div className="relative flex items-center h-10 overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-500/5 text-emerald-400 backdrop-blur-xl shadow-inner">
+        <div className="absolute left-0 z-10 h-full flex items-center px-4 rounded-l-2xl bg-emerald-500/10 border-r border-emerald-500/30 backdrop-blur-md">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)] mr-2" />
+          <span className="text-[10px] font-black uppercase tracking-widest font-mono">Live Feed</span>
         </div>
         
-        <div className="flex whitespace-nowrap pl-32 animate-[marquee_30s_linear_infinite] items-center text-xs font-bold font-mono tracking-tight gap-8">
+        <div className="flex whitespace-nowrap pl-36 animate-[marquee_30s_linear_infinite] items-center text-xs font-bold font-mono tracking-tight gap-8">
           <style>{`@keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }`}</style>
-          {recentOrders.slice(0, 5).map((o, i) => (
+          {recentOrders.slice(0, 6).map((o, i) => (
             <div key={`${o.id}-${i}`} className="flex items-center gap-2">
-              <span className={isDark ? "text-white/40" : "text-gray-400"}>{new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              <span className={isDark ? "text-emerald-400" : "text-emerald-600"}>[GH₵{Number(o.amount).toFixed(2)}]</span>
-              <span className={isDark ? "text-white/80" : "text-gray-800"}>{o.network ? `${o.network} ${o.package_size}` : "Order"}</span>
-              <span className={isDark ? "text-white/40" : "text-gray-400"}>via {o.customer_phone || "API"}</span>
+              <span className="text-muted-foreground text-[11px]">{new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              <span className="text-emerald-400 font-extrabold">[GH₵ {Number(o.amount).toFixed(2)}]</span>
+              <span className="text-foreground font-semibold">{o.network ? `${o.network} ${o.package_size}` : "Order"}</span>
+              <span className="text-muted-foreground">via {o.customer_phone || "API"}</span>
             </div>
           ))}
-          {recentOrders.length === 0 && <span>Waiting for new transactions...</span>}
+          {recentOrders.length === 0 && <span>Waiting for live order stream...</span>}
         </div>
       </div>
 
-      <div className={`flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4`}>
-        <div>
-          <h1 className={`text-4xl font-black tracking-tighter ${head}`}>Terminal Overview</h1>
-          <div className="flex items-center gap-3 mt-1.5">
-            <p className={`text-sm font-medium ${sub}`}>High-level platform metrics and financial reconciliation.</p>
+      {/* ── COMMAND CENTER HEADER ── */}
+      <div className="glass-card-neo p-5 sm:p-6 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-amber-400" /> Admin Command Center
+            </span>
+            {lastUpdated && (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                Sync: {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+            )}
           </div>
-          {lastUpdated && (
-            <p className={`text-[10px] mt-2 font-mono uppercase tracking-widest ${muted}`}>
-              Last sync: {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            </p>
-          )}
+          <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">System Overview & Analytics</h1>
         </div>
-        <Button
-          onClick={safeFetchData}
-          className={`gap-2 rounded-xl border font-bold text-[11px] uppercase tracking-widest transition-all h-10 ${
-            isDark ? "bg-white/5 hover:bg-white/10 text-white border-white/10" : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200 shadow-sm"
-          }`}
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Sync Data
-        </Button>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Time Range Selector */}
+          <div className="flex p-1 rounded-xl border border-border bg-background/80">
+            {(["7d", "30d", "1y", "all"] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setTimeRange(r)}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase transition-all ${
+                  timeRange === r
+                    ? "bg-amber-500 text-slate-950 shadow-md font-mono"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {r.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <Button
+            onClick={safeFetchData}
+            variant="outline"
+            className="h-9 px-4 rounded-xl border-border bg-background/80 font-extrabold text-xs uppercase tracking-wider gap-2"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-amber-400" /> Sync
+          </Button>
+        </div>
       </div>
 
-      {/* AI Critical Alerts Banner */}
+      {/* ── AI CRITICAL ALERTS BANNER ── */}
       {aiRecommendations.length > 0 && (
-        <div className="grid gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="space-y-3">
           {aiRecommendations.map((rec) => (
-            <div key={rec.id} className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between shadow-[0_0_30px_-5px_rgba(239,68,68,0.15)]">
-              <div className="absolute top-0 left-0 w-1 h-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></div>
-              <div className="flex items-start gap-4 z-10">
-                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0 border border-red-500/30">
-                  <Activity className="w-5 h-5 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+            <div key={rec.id} className="p-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 backdrop-blur-md flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center shrink-0 border border-rose-500/40">
+                  <AlertTriangle className="w-5 h-5 text-rose-400" />
                 </div>
                 <div>
-                  <h3 className="font-black text-red-500">{rec.title}</h3>
-                  <p className="text-sm mt-1 text-gray-800 dark:text-gray-200 font-medium">
-                    {rec.message}
-                  </p>
+                  <h3 className="font-black text-rose-400 text-sm">{rec.title}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{rec.message}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto z-10">
-                <button 
-                  onClick={async () => {
-                    await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
-                    setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
-                  }}
-                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-black text-sm flex-1 sm:flex-none text-center shadow-[0_0_15px_rgba(239,68,68,0.4)] transition-all active:scale-95"
-                >
-                  Dismiss
-                </button>
-              </div>
+              <Button 
+                onClick={async () => {
+                  await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                  setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
+                }}
+                variant="destructive"
+                size="sm"
+                className="rounded-xl font-bold shrink-0"
+              >
+                Dismiss
+              </Button>
             </div>
           ))}
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      {/* ── PRIMARY KPI CARDS GRID ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {statCards.map((c) => {
           const isFlashing = updatedKeys.has(c.title);
           return (
-            <CardTilt
-              key={c.title}
-              glowColor={c.color.includes("emerald") ? "142 70% 45%" : c.color.includes("blue") ? "217 91% 60%" : c.color.includes("amber") ? "48 96% 53%" : c.color.includes("red") ? "0 72% 51%" : c.color.includes("sky") ? "185 85% 45%" : c.color.includes("purple") ? "262 83% 58%" : "238 75% 70%"}
-              className="rounded-[2rem] w-full"
-            >
-              <div
-                className="glass-card-neo relative group p-6 rounded-[2rem] overflow-hidden hover:scale-[1.02] h-full"
-              >
-                {/* Animated Background Glow */}
-                <div className={`absolute -top-12 -right-12 w-32 h-32 ${c.bg} blur-[60px] opacity-40 group-hover:scale-150 transition-transform duration-700 rounded-full`} />
-                
-                <div className="relative z-10 flex items-center justify-between mb-5">
-                  <div className={`w-12 h-12 rounded-2xl ${c.bg} ${c.border} border-2 flex items-center justify-center shadow-lg`}>
-                    <c.icon className={`w-6 h-6 ${c.color}`} />
+            <CardTilt key={c.title} className="rounded-2xl w-full">
+              <div className={cn("glass-card-neo p-4 rounded-2xl border flex flex-col justify-between gap-3 h-full relative overflow-hidden", c.bg)}>
+                <div className="flex items-center justify-between z-10">
+                  <div className="w-8 h-8 rounded-xl bg-background/50 border border-white/10 flex items-center justify-center">
+                    <c.icon className={cn("w-4 h-4", c.color)} />
                   </div>
-                  <div className="text-right">
-                    <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${muted}`}>{c.title}</p>
-                  </div>
+                  <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase">{c.title}</span>
                 </div>
                 
-                <div className="relative z-10 flex items-baseline gap-2">
-                   <p className={`text-3xl font-black tracking-tighter ${head}`}>{c.value}</p>
-                   {isFlashing && (
-                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                   )}
+                <div className="z-10">
+                  <div className="flex items-baseline gap-1.5">
+                    <p className={cn("text-xl sm:text-2xl font-black font-mono tracking-tight", c.color)}>{c.value}</p>
+                    {isFlashing && <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />}
+                  </div>
+                  {c.description && (
+                    <p className="text-[10px] text-muted-foreground font-medium mt-1">{c.description}</p>
+                  )}
                 </div>
-                
-                {c.description && (
-                  <p className={`relative z-10 text-[10px] mt-2 font-medium ${sub} italic`}>
-                    {c.description}
-                  </p>
-                )}
               </div>
             </CardTilt>
           );
         })}
       </div>
 
-      {/* --- Action Center --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className={`lg:col-span-2 p-8 rounded-[2.5rem] border relative overflow-hidden ${
-          isDark ? "bg-indigo-600/5 border-indigo-500/20" : "bg-indigo-50 border-indigo-100"
-        }`}>
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 blur-[100px] rounded-full" />
+      {/* ── GLOBAL CONTROL HUB & MAINTENANCE ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Actions Card */}
+        <div className="md:col-span-2 glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-400 fill-current" />
+              <h2 className="text-lg font-black text-foreground">Global Administrative Actions</h2>
+            </div>
+            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[9px] font-mono uppercase">System Controls</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Execute global platform syncs, batch audit order statuses, and approve onboarding reseller agents.
+          </p>
+
+          <div className="flex flex-wrap gap-3 pt-2">
+            <Button
+              onClick={async () => {
+                toast({ title: "Global Audit Sync Started", description: "Syncing telecom orders with Datamart..." });
+                try {
+                  await supabase.functions.invoke("datamart-sync");
+                  toast({ title: "Sync Complete", description: "Orders successfully audited." });
+                  safeFetchData();
+                } catch (e) {
+                  toast({ title: "Sync Failed", variant: "destructive" });
+                }
+              }}
+              className="h-11 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-xs shadow-md gap-2"
+            >
+              <RefreshCw className="w-4 h-4" /> Global Audit Sync
+            </Button>
+
+            <Button
+              onClick={approveAllPending}
+              disabled={approvingPending || stats.pendingAgents === 0}
+              className="h-11 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" /> Approve {stats.pendingAgents} Pending Agents
+            </Button>
+          </div>
+        </div>
+
+        {/* Safe Mode / Maintenance */}
+        <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-3 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-rose-400" />
+              <span className="text-xs font-black uppercase text-foreground">Maintenance Mode</span>
+            </div>
+            <Switch
+              checked={maintenanceEnabled}
+              onCheckedChange={setMaintenanceEnabled}
+            />
+          </div>
           
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                 <div className="w-8 h-8 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/40">
-                    <Activity className="w-4 h-4 text-white" />
-                 </div>
-                 <h2 className={`text-2xl font-black tracking-tight ${head}`}>Global Management</h2>
-              </div>
-              <p className={`text-sm ${sub} max-w-md`}>
-                One-click administrative tools to audit accounts, sync provider records, and approve waiting agents.
-              </p>
-            </div>
-            
-            <div className="flex flex-wrap gap-3">
-              <Button 
-                onClick={async () => {
-                  toast({ title: "Global Sync Started", description: "Audit in progress..." });
-                  try {
-                    await supabase.functions.invoke("datamart-sync");
-                    toast({ title: "Sync Complete", description: "All orders recovered and fulfilled." });
-                    safeFetchData();
-                  } catch (e) {
-                    toast({ title: "Sync Failed", variant: "destructive" });
-                  }
-                }}
-                className="h-12 px-6 rounded-2xl bg-amber-400 hover:bg-amber-300 text-black font-black uppercase tracking-widest text-[10px] shadow-lg shadow-amber-400/20 border-none group"
-              >
-                <RefreshCw className="w-4 h-4 mr-2 group-hover:rotate-180 transition-transform duration-700" />
-                Global Audit Sync
-              </Button>
-              
-              <Button 
-                onClick={approveAllPending}
-                disabled={approvingPending || stats.pendingAgents === 0}
-                className="h-12 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20 border-none"
-              >
-                {approvingPending ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
-                Approve {stats.pendingAgents} Agents
-              </Button>
-            </div>
-          </div>
-        </div>
+          <p className="text-xs text-muted-foreground">
+            Instantly restrict checkout paths during carrier upgrades.
+          </p>
 
-        <div className={`p-8 rounded-[2.5rem] border relative overflow-hidden ${
-          isDark ? "bg-white/[0.02] border-white/5" : "bg-white border-gray-200"
-        }`}>
-           <div className="relative z-10 space-y-4">
-              <div className="flex items-center justify-between">
-                 <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${muted}`}>Maintenance</p>
-                 <Switch 
-                   checked={maintenanceEnabled} 
-                   onCheckedChange={setMaintenanceEnabled}
-                   className="data-[state=checked]:bg-red-500"
-                 />
-              </div>
-              <h3 className={`text-lg font-black ${head}`}>Safe Mode</h3>
-              <p className={`text-[11px] ${sub} leading-relaxed`}>
-                Instantly disable all checkout paths. Use this during provider outages or upgrades.
-              </p>
-              <Button 
-                onClick={saveMaintenance}
-                disabled={savingMaintenance}
-                variant="outline"
-                className="w-full h-10 rounded-xl font-bold uppercase tracking-widest text-[10px] border-dashed border-2"
-              >
-                {savingMaintenance ? "Applying..." : "Save Config"}
-              </Button>
-           </div>
+          <Button
+            onClick={saveMaintenance}
+            disabled={savingMaintenance}
+            variant="outline"
+            size="sm"
+            className="w-full rounded-xl font-bold border-dashed text-xs"
+          >
+            {savingMaintenance ? "Saving Config..." : "Save Maintenance Config"}
+          </Button>
         </div>
       </div>
 
-      <div className={`p-8 rounded-[3rem] border ${isDark ? "bg-[#0d0d12] border-amber-500/10 shadow-2xl" : "bg-amber-50/30 border-amber-100 shadow-sm"}`}>
-        <div className="flex flex-col md:flex-row gap-8 items-start">
-          <div className="w-16 h-16 rounded-[1.5rem] bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 shadow-lg">
-            <DollarSign className="w-8 h-8 text-amber-500" />
+      {/* ── FINANCIAL RECONCILIATION & LIQUIDITY ── */}
+      <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-foreground">Financial Reconciliation & Liquidity</h2>
+            <p className="text-xs text-muted-foreground">Audited settlement amounts vs platform wallet liabilities.</p>
           </div>
-          <div className="space-y-6 flex-1">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className={`text-2xl font-black tracking-tight ${head}`}>Financial Reconciliation</h2>
-                <p className={`text-sm mt-1 leading-relaxed ${sub}`}>
-                  Real-time liquidity analysis and Paystack settlement auditing.
-                </p>
-              </div>
-              <div className={`px-4 py-2 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-2`}>
-                 <Clock className={`w-3 h-3 ${muted}`} />
-                 <span className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>Range: {timeRange.toUpperCase()}</span>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-              <div className={`p-6 rounded-[2rem] border ${isDark ? "bg-black/40 border-white/5 shadow-inner" : "bg-white border-gray-100 shadow-sm"}`}>
-                <p className={`text-[10px] uppercase font-black tracking-widest mb-2 text-emerald-500`}>Settled Inflow</p>
-                <div className="flex items-baseline gap-1">
-                   <p className={`text-2xl font-black ${head}`}>GH₵ {(stats.rangeVerifiedInflow || 0).toFixed(2)}</p>
-                   <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                </div>
-                <p className={`text-[10px] mt-2 font-medium ${muted}`}>Paystack confirmed settlements.</p>
-              </div>
-              
-              <div className={`p-6 rounded-[2rem] border ${isDark ? "bg-black/40 border-white/5 shadow-inner" : "bg-white border-gray-100 shadow-sm"}`}>
-                <p className={`text-[10px] uppercase font-black tracking-widest mb-2 text-red-400`}>Wallet Liability</p>
-                <div className="flex items-baseline gap-1">
-                   <p className={`text-2xl font-black ${head}`}>GH₵ {(stats.totalSystemBalance || 0).toFixed(2)}</p>
-                   <Wallet className="w-4 h-4 text-red-400" />
-                </div>
-                <p className={`text-[10px] mt-2 font-medium ${muted}`}>Total unspent funds in user wallets.</p>
-              </div>
-              
-              <div className={`p-6 rounded-[2rem] border ${isDark ? "bg-black/40 border-white/5 shadow-inner" : "bg-white border-gray-100 shadow-sm"}`}>
-                <p className={`text-[10px] uppercase font-black tracking-widest mb-2 text-blue-400`}>Consumed Volume</p>
-                <div className="flex items-baseline gap-1">
-                   <p className={`text-2xl font-black ${head}`}>GH₵ {(stats.rangePurchases || 0).toFixed(2)}</p>
-                   <ShoppingCart className="w-4 h-4 text-blue-400" />
-                </div>
-                <p className={`text-[10px] mt-2 font-medium ${muted}`}>Gross data and airtime consumption.</p>
-              </div>
-            </div>
+          <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] font-mono uppercase w-fit">
+            Range: {timeRange.toUpperCase()}
+          </Badge>
+        </div>
 
-            {/* API vs Paystack volume split */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className={`p-6 rounded-[2rem] border ${isDark ? "bg-black/40 border-white/5 shadow-inner" : "bg-white border-gray-100 shadow-sm"}`}>
-                <p className="text-[10px] uppercase font-black tracking-widest mb-2 text-pink-400">API Volume (All-time)</p>
-                <div className="flex items-baseline gap-1">
-                  <p className={`text-2xl font-black ${head}`}>GH₵ {(stats.apiVolume || 0).toFixed(2)}</p>
-                  <Activity className="w-4 h-4 text-pink-400" />
-                </div>
-                <p className={`text-[10px] mt-2 font-medium ${muted}`}>Developer API orders — no Paystack fee.</p>
-              </div>
-              <div className={`p-6 rounded-[2rem] border ${isDark ? "bg-black/40 border-white/5 shadow-inner" : "bg-white border-gray-100 shadow-sm"}`}>
-                <p className="text-[10px] uppercase font-black tracking-widest mb-2 text-emerald-400">Paystack Volume (All-time)</p>
-                <div className="flex items-baseline gap-1">
-                  <p className={`text-2xl font-black ${head}`}>GH₵ {(stats.paystackVolume || 0).toFixed(2)}</p>
-                  <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-                </div>
-                <p className={`text-[10px] mt-2 font-medium ${muted}`}>Direct Paystack sales — verified settlement amounts.</p>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">Settled Inflow</p>
+            <p className="text-xl sm:text-2xl font-black font-mono text-emerald-400 mt-1">GH₵ {(stats.rangeVerifiedInflow || 0).toFixed(2)}</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Paystack confirmed settlements</p>
+          </div>
 
-            <div className={`text-[11px] p-5 rounded-2xl border flex items-start gap-4 ${isDark ? "bg-white/[0.03] border-white/10 text-white/50" : "bg-white border-amber-200 text-amber-900 shadow-sm"}`}>
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 mt-1">
-                 <ShieldCheck className="w-5 h-5 text-amber-500" />
-              </div>
-              <p className="leading-relaxed">
-                <strong className="text-amber-500 block mb-0.5">Admin Insight</strong>
-                API volume uses the billed amount (no Paystack fee). Paystack volume uses the verified settlement amount.
-                Net Admin Profit deducts Paystack fees only from Paystack orders, keeping API margins accurate.
-              </p>
-            </div>
+          <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-rose-400">Wallet Liability</p>
+            <p className="text-xl sm:text-2xl font-black font-mono text-rose-400 mt-1">GH₵ {(stats.totalSystemBalance || 0).toFixed(2)}</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Unspent balance in user wallets</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-sky-500/10 border border-sky-500/20">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-sky-400">Consumed Volume</p>
+            <p className="text-xl sm:text-2xl font-black font-mono text-sky-400 mt-1">GH₵ {(stats.rangePurchases || 0).toFixed(2)}</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Gross bundle & service sales</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          <div className="p-4 rounded-2xl bg-background/50 border border-border">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">API Volume (All-time)</p>
+            <p className="text-lg font-black font-mono text-foreground mt-0.5">GH₵ {(stats.apiVolume || 0).toFixed(2)}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Developer API orders (no Paystack fee)</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-background/50 border border-border">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase">Paystack Volume (All-time)</p>
+            <p className="text-lg font-black font-mono text-foreground mt-0.5">GH₵ {(stats.paystackVolume || 0).toFixed(2)}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Direct Paystack verified settlements</p>
           </div>
         </div>
       </div>
 
+      {/* ── PROVIDER HEALTH & DIAGNOSTICS ── */}
       {providerDiagnostics && (
-        <div className={`relative group overflow-hidden rounded-3xl border transition-all duration-500 ${
-          providerBalance !== null && providerBalance < 50 
-            ? "bg-red-500/10 border-red-500/20 shadow-[0_8px_32px_rgba(239,68,68,0.1)]" 
-            : "bg-white/[0.03] border-white/10"
-        }`}>
-          <div className={`absolute top-0 right-0 w-64 h-64 blur-[80px] -mr-32 -mt-32 rounded-full transition-all duration-700 ${
-            providerBalance !== null && providerBalance < 50 ? "bg-red-500/15" : "bg-sky-500/10"
-          }`} />
-
-          <div className="relative z-10 p-5 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border shadow-inner transition-transform group-hover:scale-110 ${
-                providerBalance !== null && providerBalance < 50 
-                  ? "bg-red-500/20 border-red-500/30 text-red-500" 
-                  : "bg-sky-500/10 border-sky-500/20 text-sky-500"
-              }`}>
-                <Activity className="w-7 h-7" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-black text-lg tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>Provider Health</h3>
-                  <span className={`w-2 h-2 rounded-full animate-pulse ${providerBalance !== null && providerBalance < 50 ? "bg-red-500" : "bg-emerald-500"}`} />
-                  {providerBalance !== null && providerBalance < 50 && (
-                    <a
-                      href={providerDiagnostics?.baseUrl || "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-2 px-2 py-0.5 rounded-md bg-red-500 text-white text-[10px] font-black uppercase tracking-tighter hover:bg-red-600 transition-colors"
-                    >
-                      Top Up Now
-                    </a>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <Badge variant="outline" className={`text-[10px] font-black tracking-widest px-2 py-0.5 uppercase border ${
-                    isDark ? "border-white/10 bg-white/5 text-white/40" : "border-gray-200 bg-gray-50 text-gray-400"
-                  }`}>
-                    {(providerDiagnostics?.baseUrl || "").replace(/https?:\/\//, "")}
-                  </Badge>
-                  {providerBalance !== null && (
-                    <span className={`text-[10px] font-bold ${providerBalance < 50 ? "text-red-500" : "text-emerald-500"}`}>
-                      {providerBalance < 50 ? "⚠️ Critical Balance" : "✓ Active"}
-                    </span>
-                  )}
-                </div>
-              </div>
+        <div className="glass-card-neo p-5 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <Server className="w-5 h-5" />
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {[
-                { label: "Data API",    value: providerDiagnostics.activeKey },
-                { label: "Airtime API", value: providerDiagnostics.activeAirtimeKey },
-              ].map(d => (
-                <div key={d.label} className={`px-4 py-3 rounded-2xl border transition-all ${
-                  isDark ? "bg-black/40 border-white/5 hover:border-white/10" : "bg-white border-gray-100 hover:border-gray-200"
-                }`}>
-                  <p className={`text-[9px] uppercase font-black tracking-widest mb-1 ${isDark ? "text-white/20" : "text-gray-400"}`}>{d.label}</p>
-                  <p className={`text-xs font-mono font-bold ${isDark ? "text-white/70" : "text-gray-700"}`}>
-                    {d.value}
-                  </p>
-                </div>
-              ))}
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-sm text-foreground">Datamart Carrier Bridge Health</h3>
+                <span className={cn("w-2 h-2 rounded-full animate-pulse", providerBalance !== null && providerBalance < 50 ? "bg-rose-500" : "bg-emerald-500")} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {(providerDiagnostics?.baseUrl || "").replace(/https?:\/\//, "")} · Balance:{" "}
+                <span className={cn("font-bold font-mono", providerBalance !== null && providerBalance < 50 ? "text-rose-400" : "text-emerald-400")}>
+                  {providerBalance !== null ? `GH₵ ${providerBalance.toFixed(2)}` : "..."}
+                </span>
+              </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {providerBalance !== null && providerBalance < 50 && (
+              <a
+                href={providerDiagnostics?.baseUrl || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 text-xs font-black uppercase tracking-wider"
+              >
+                Top Up Provider
+              </a>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── SALES ANALYTICS (rebuilt) ─────────────────────────────── */}
+      {/* ── SALES ANALYTICS CHART ── */}
       {(() => {
         const periodCustomers  = dailySales.reduce((s, d) => s + (d.Customers  || 0), 0);
         const periodAgents     = dailySales.reduce((s, d) => s + (d.Agents     || 0), 0);
@@ -991,183 +865,26 @@ const AdminOverview = () => {
         const todayTotal       = todaySales.total;
         const todayAttempted   = todaySales.successCount + todaySales.failedCount;
         const successRate      = todayAttempted > 0 ? Math.round((todaySales.successCount / todayAttempted) * 100) : 100;
-        const srColor          = successRate >= 90 ? "text-emerald-400" : successRate >= 70 ? "text-amber-400" : "text-red-400";
-        const srBg             = isDark
-          ? successRate >= 90 ? "bg-emerald-500/10 border-emerald-500/20" : successRate >= 70 ? "bg-amber-500/10 border-amber-500/20" : "bg-red-500/10 border-red-500/20"
-          : successRate >= 90 ? "bg-emerald-50 border-emerald-200" : successRate >= 70 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
 
         return (
-          <div className="space-y-4">
-
-            {/* ── Header + time filter ── */}
+          <div className="glass-card-neo p-6 rounded-3xl border border-white/10 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0 ${isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200"}`}>
-                  <TrendingUp className="w-5 h-5 text-amber-500" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className={`font-black text-xl tracking-tight ${head}`}>Sales Analytics</h2>
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black text-emerald-500 uppercase tracking-widest">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
-                    </span>
-                  </div>
-                  <p className={`text-xs mt-0.5 ${muted}`}>Tracking fulfilled sales across your entire network.</p>
-                </div>
+              <div>
+                <h2 className="text-xl font-black text-foreground">Network Sales Analytics</h2>
+                <p className="text-xs text-muted-foreground">Daily sales breakdown across Customers, Agents & Sub-agents.</p>
               </div>
 
-              <div className={`flex p-1 rounded-xl border ${isDark ? "bg-white/5 border-white/10" : "bg-gray-100 border-gray-200"}`}>
-                {(["7d","30d","1y","all"] as const).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setTimeRange(r)}
-                    className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest transition-all ${
-                      timeRange === r
-                        ? isDark ? "bg-amber-400 text-black shadow-lg shadow-amber-400/20" : "bg-white text-gray-900 shadow-sm"
-                        : isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {r.toUpperCase()}
-                  </button>
-                ))}
+              <div className="flex items-center gap-4 flex-wrap text-xs">
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-sky-500" /><span className="font-bold text-muted-foreground">Customers</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-amber-500" /><span className="font-bold text-muted-foreground">Agents</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-md bg-purple-500" /><span className="font-bold text-muted-foreground">Sub-Agents</span></div>
               </div>
             </div>
 
-            {/* ── Period KPI strip ── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                {
-                  label: `${timeRange.toUpperCase()} Sales`,
-                  value: `GH₵ ${periodTotal.toFixed(2)}`,
-                  icon: DollarSign,
-                  color: "text-emerald-400",
-                  bg: isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-200",
-                  sub: stats.totalRangePurchase > 0 ? `GH₵ ${stats.totalRangePurchase.toFixed(2)} in products` : "No purchases yet",
-                },
-                {
-                  label: "Today's Revenue",
-                  value: `GH₵ ${todayTotal.toFixed(2)}`,
-                  icon: Activity,
-                  color: "text-sky-400",
-                  bg: isDark ? "bg-sky-500/10 border-sky-500/20" : "bg-sky-50 border-sky-200",
-                  sub: `${todaySales.successCount + todaySales.failedCount + todaySales.pendingCount} orders placed`,
-                },
-                {
-                  label: "Success Rate",
-                  value: `${successRate}%`,
-                  icon: CheckCircle2,
-                  color: srColor,
-                  bg: srBg,
-                  sub: `${todaySales.successCount} fulfilled · ${todaySales.failedCount} failed`,
-                },
-                {
-                  label: "New Users Today",
-                  value: todaySales.newUsers.toLocaleString(),
-                  icon: Users,
-                  color: "text-purple-400",
-                  bg: isDark ? "bg-purple-500/10 border-purple-500/20" : "bg-purple-50 border-purple-200",
-                  sub: "Registrations today",
-                },
-              ].map((c) => (
-                <div key={c.label} className={`relative overflow-hidden p-4 rounded-2xl border transition-all hover:scale-[1.01] ${c.bg}`}>
-                  <div className="flex items-start justify-between mb-2">
-                    <p className={`text-[10px] uppercase font-black tracking-widest leading-tight ${muted}`}>{c.label}</p>
-                    <c.icon className={`w-4 h-4 shrink-0 ${c.color}`} />
-                  </div>
-                  <p className={`text-2xl font-black tracking-tight ${c.color}`}>{c.value}</p>
-                  <p className={`text-[10px] mt-1.5 ${muted}`}>{c.sub}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* ── Today's segment breakdown ── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                {
-                  label: "TODAY TOTAL",
-                  value: `GH₵ ${todayTotal.toFixed(2)}`,
-                  pct: 100,
-                  color: isDark ? "text-white" : "text-gray-900",
-                  barColor: isDark ? "bg-white/30" : "bg-gray-400",
-                  bg: isDark ? "bg-white/[0.04] border-white/10" : "bg-white border-gray-200 shadow-sm",
-                  badge: `${todaySales.successCount + todaySales.failedCount + todaySales.pendingCount} orders`,
-                },
-                {
-                  label: "CUSTOMERS",
-                  value: `GH₵ ${todaySales.customers.toFixed(2)}`,
-                  pct: todayTotal > 0 ? Math.round((todaySales.customers / todayTotal) * 100) : 0,
-                  color: "text-sky-400",
-                  barColor: "bg-sky-500",
-                  bg: isDark ? "bg-sky-500/10 border-sky-500/20" : "bg-sky-50 border-sky-200",
-                  badge: null,
-                },
-                {
-                  label: "AGENTS",
-                  value: `GH₵ ${todaySales.agents.toFixed(2)}`,
-                  pct: todayTotal > 0 ? Math.round((todaySales.agents / todayTotal) * 100) : 0,
-                  color: "text-amber-400",
-                  barColor: "bg-amber-500",
-                  bg: isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-200",
-                  badge: null,
-                },
-                {
-                  label: "SUB-AGENTS",
-                  value: `GH₵ ${todaySales.subAgents.toFixed(2)}`,
-                  pct: todayTotal > 0 ? Math.round((todaySales.subAgents / todayTotal) * 100) : 0,
-                  color: "text-purple-400",
-                  barColor: "bg-purple-500",
-                  bg: isDark ? "bg-purple-500/10 border-purple-500/20" : "bg-purple-50 border-purple-200",
-                  badge: null,
-                },
-              ].map((c) => (
-                <div key={c.label} className={`p-4 rounded-2xl border ${c.bg}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className={`text-[9px] uppercase tracking-widest font-black ${muted}`}>{c.label}</p>
-                    {c.badge
-                      ? <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-white/10 text-white/40" : "bg-gray-100 text-gray-500"}`}>{c.badge}</span>
-                      : <span className={`text-[10px] font-black ${c.color}`}>{c.pct}%</span>
-                    }
-                  </div>
-                  <p className={`text-xl font-black ${c.color}`}>{c.value}</p>
-                  <div className={`h-1.5 rounded-full mt-3 overflow-hidden ${isDark ? "bg-white/5" : "bg-black/5"}`}>
-                    <div className={`h-full rounded-full transition-all duration-700 ${c.barColor}`} style={{ width: `${c.pct}%` }} />
-                  </div>
-                  {!c.badge && (
-                    <p className={`text-[9px] mt-1.5 ${muted}`}>{c.pct}% of today's total</p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* ── Chart (Bloomberg Aesthetic) ── */}
-            <div className={`rounded-3xl border p-7 ${card} relative overflow-hidden`} style={{ background: isDark ? "linear-gradient(180deg, rgba(20,20,25,0.8) 0%, rgba(10,10,15,0.95) 100%)" : undefined }}>
-              <div className="absolute inset-0 pointer-events-none rounded-3xl ring-1 ring-inset ring-white/5" />
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 relative z-10">
-                <div>
-                  <h3 className={`font-black text-xl tracking-tight ${head}`}>
-                    {timeRange === "1y" || timeRange === "all" ? "Monthly Sales Volume" : "Daily Sales Volume"}
-                  </h3>
-                  <p className={`text-[11px] font-bold uppercase tracking-widest mt-1 ${muted}`}>
-                    {timeRange === "1y" || timeRange === "all"
-                      ? "Monthly revenue by segment"
-                      : "Daily revenue breakdown"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-4 flex-wrap bg-black/20 p-2 rounded-2xl backdrop-blur-md border border-white/5">
-                  {[
-                    { label: "Customers",  color: "#0ea5e9" },
-                    { label: "Agents",     color: "#f59e0b" },
-                    { label: "Sub-Agents", color: "#a855f7" },
-                  ].map((l) => (
-                    <div key={l.label} className="flex items-center gap-2 px-2">
-                      <span className="w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]" style={{ backgroundColor: l.color, color: l.color }} />
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-white/70" : "text-gray-600"}`}>{l.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={280} className="relative z-10">
-                <BarChart data={dailySales} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} barCategoryGap="30%">
+            {/* Recharts Bar Chart */}
+            <div className="h-[300px] w-full pt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailySales} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} barCategoryGap="25%">
                   <defs>
                     <linearGradient id="colorCust" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#0ea5e9" stopOpacity={1}/>
@@ -1186,256 +903,80 @@ const AdminOverview = () => {
                   <XAxis dataKey="date" tick={{ fill: axisColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} dy={10} />
                   <YAxis tick={{ fill: axisColor, fontSize: 10, fontWeight: "bold" }} axisLine={false} tickLine={false} dx={-10} tickFormatter={(val) => `₵${val}`} />
                   <Tooltip cursor={{ fill: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" }} content={(props: any) => <DailySalesTooltip {...props} isDark={isDark} />} />
-                  <Bar dataKey="Customers"  stackId="seg" fill="url(#colorCust)" radius={[0, 0, 0, 0]} minPointSize={2} />
-                  <Bar dataKey="Agents"     stackId="seg" fill="url(#colorAgent)" radius={[0, 0, 0, 0]} minPointSize={2} />
-                  <Bar dataKey="Sub-Agents" stackId="seg" fill="url(#colorSub)" radius={[8, 8, 0, 0]} minPointSize={2} />
+                  <Bar dataKey="Customers" stackId="seg" fill="url(#colorCust)" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Agents" stackId="seg" fill="url(#colorAgent)" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Sub-Agents" stackId="seg" fill="url(#colorSub)" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-
-            {/* ── Status strip ── */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Fulfilled Today", value: todaySales.successCount, icon: CheckCircle2, color: "text-emerald-400", bg: isDark ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-200" },
-                { label: "Failed Today",    value: todaySales.failedCount,  icon: XCircle,      color: "text-red-400",     bg: isDark ? "bg-red-500/10 border-red-500/20"         : "bg-red-50 border-red-200"         },
-                { label: "Pending Today",   value: todaySales.pendingCount, icon: Clock,        color: "text-amber-400",   bg: isDark ? "bg-amber-500/10 border-amber-500/20"     : "bg-amber-50 border-amber-200"     },
-              ].map((s) => (
-                <div key={s.label} className={`p-4 rounded-2xl border flex items-center gap-3 ${s.bg}`}>
-                  <s.icon className={`w-5 h-5 shrink-0 ${s.color}`} />
-                  <div>
-                    <p className={`text-[10px] uppercase font-black tracking-widest ${muted}`}>{s.label}</p>
-                    <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
           </div>
         );
       })()}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        <div className="xl:col-span-2 space-y-8">
-
-          {/* Recent orders */}
-          <div className={`rounded-2xl border overflow-hidden ${card}`}>
-            <div className={`p-5 border-b flex items-center justify-between ${divider} ${isDark ? "bg-white/[0.01]" : "bg-gray-50/80"}`}>
-              <div>
-                <h3 className={`font-bold text-lg tracking-tight ${head}`}>Recent Transactions</h3>
-                <p className={`text-xs mt-0.5 ${muted}`}>The latest 8 orders on the platform.</p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => navigate("/admin/orders")}
-                className={`text-xs gap-1 transition-colors ${isDark ? "hover:text-amber-400 hover:bg-amber-400/10" : "hover:text-amber-600 hover:bg-amber-50"}`}>
-                View All <ArrowUpRight className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-            <div className="p-2">
-              {recentOrders.length === 0 ? (
-                <div className="text-center py-10">
-                  <Package className={`w-8 h-8 mx-auto mb-3 ${muted}`} />
-                  <p className={`text-sm ${muted}`}>No recent orders found.</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {recentOrders.map((o) => (
-                    <div key={o.id} className="table-row-hover-neon group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border border-transparent active:scale-[0.99]">
-                      <div className="flex items-center gap-4">
-                        {statusIcon(o.status)}
-                        <div>
-                          <p className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>
-                            {o.network && o.package_size ? `${o.network} ${o.package_size}` : "General Order"}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={`text-[11px] font-mono font-bold ${muted}`}>{o.customer_phone || "No phone"}</span>
-                            <span className={`w-1 h-1 rounded-full ${isDark ? "bg-white/20" : "bg-gray-300"}`} />
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${muted}`}>{new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 w-full sm:w-auto">
-                        <p className="text-sm font-black text-amber-500">GH₵{Number(o.amount).toFixed(2)}</p>
-                        <Badge variant="outline" className={`text-[9px] uppercase tracking-[0.2em] font-black border ${
-                          o.status === "fulfilled"         ? "bg-green-500/10 text-green-500 border-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.1)]" :
-                          o.status === "fulfillment_failed"? "bg-red-500/10 text-red-500 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]" :
-                                                             "bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
-                        }`}>
-                          {o.status.replace("_", " ")}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+      {/* ── RECENT TRANSACTIONS & ORDER TRACKER ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 glass-card-neo p-6 rounded-3xl border border-white/10 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-base text-foreground">Recent Network Orders</h3>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/admin/orders")} className="text-xs font-bold text-amber-400">
+              View All <ChevronRight className="w-3.5 h-3.5 ml-1" />
+            </Button>
           </div>
 
-          {/* Order tracker */}
-          <div className={`rounded-2xl border p-6 ${card}`}>
-            <PhoneOrderTracker
-              title="Manual Order Tracker"
-              subtitle="Quickly lookup the status of any order using the customer's phone number."
-            />
+          <div className="space-y-2">
+            {recentOrders.map((o) => (
+              <div key={o.id} className="p-3 rounded-2xl border border-border bg-background/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  {statusIcon(o.status)}
+                  <div>
+                    <p className="text-xs font-black text-foreground">
+                      {o.network && o.package_size ? `${o.network} ${o.package_size}` : "Order"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground font-mono">
+                      {o.customer_phone || "API"} · {new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between sm:justify-end gap-3">
+                  <span className="text-sm font-black font-mono text-amber-400">GH₵ {Number(o.amount).toFixed(2)}</span>
+                  <Badge variant="outline" className="text-[9px] uppercase font-black">
+                    {o.status.replace("_", " ")}
+                  </Badge>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="glass-card-neo p-6 rounded-3xl border border-white/10">
+          <PhoneOrderTracker
+            title="Manual Order Tracker"
+            subtitle="Lookup status using customer phone number."
+          />
+        </div>
+      </div>
 
-          {/* Live Activity Hub (Logs) */}
-          <div className={`rounded-[2rem] border overflow-hidden flex flex-col ${card}`}>
-            <div className={`p-6 border-b ${divider} bg-white/[0.02]`}>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className={`font-black text-lg tracking-tight ${head}`}>Activity Hub</h3>
-                  <p className={`text-[10px] uppercase font-bold tracking-widest ${muted}`}>Live Monitor</p>
-                </div>
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Realtime</span>
-                </div>
+      {/* ── QUICK TOOLS SHORTCUTS GRID ── */}
+      <div className="space-y-3">
+        <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Admin Quick Shortcuts</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Agents", icon: Users, path: "/admin/agents", color: "text-blue-400", bg: "bg-blue-500/10" },
+            { label: "Orders", icon: ShoppingCart, path: "/admin/orders", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+            { label: "Packages", icon: Package, path: "/admin/packages", color: "text-purple-400", bg: "bg-purple-500/10" },
+            { label: "Withdrawals", icon: Wallet, path: "/admin/withdrawals", color: "text-amber-400", bg: "bg-amber-500/10" },
+          ].map((a) => (
+            <button
+              key={a.label}
+              onClick={() => navigate(a.path)}
+              className="glass-card-neo p-4 rounded-2xl border border-white/10 hover:border-amber-500/40 flex flex-col items-center justify-center gap-2 transition-all group"
+            >
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center border border-white/10", a.bg)}>
+                <a.icon className={cn("w-5 h-5", a.color)} />
               </div>
-
-              <div className={`flex p-1 rounded-xl border ${isDark ? "bg-white/5 border-white/5" : "bg-gray-100 border-gray-200"}`}>
-                <button
-                  onClick={() => setActiveTab("topups")}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "topups" ? "bg-amber-400 text-black shadow-lg" : isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  Transactions
-                </button>
-                <button
-                  onClick={() => setActiveTab("audit")}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "audit" ? "bg-amber-400 text-black shadow-lg" : isDark ? "text-white/40 hover:text-white/60" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  Audit Logs
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 flex-1 min-h-[360px]">
-              {activeTab === "topups" ? (
-                <div className="space-y-2">
-                  {verifiedLogs.length === 0 ? (
-                    <div className="py-12 text-center opacity-20">
-                      <Activity className="w-8 h-8 mx-auto mb-2" />
-                      <p className="text-[10px] font-bold uppercase tracking-widest">No transactions yet</p>
-                    </div>
-                  ) : (
-                    verifiedLogs.map((log: any) => {
-                      const typeMap: Record<string, { label: string; color: string; bg: string }> = {
-                        data:                  { label: "Data",      color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/20"         },
-                        airtime:               { label: "Airtime",   color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20"       },
-                        wallet_topup:          { label: "Top-up",    color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-                        agent_activation:      { label: "Agent Act", color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/20"     },
-                        sub_agent_activation:  { label: "Sub-Agent", color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/20"   },
-                        utility:               { label: "Utility",   color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/20"   },
-                        api:                   { label: "API",       color: "text-pink-400",    bg: "bg-pink-500/10 border-pink-500/20"       },
-                      };
-                      const t = typeMap[log.order_type] || { label: log.order_type || "Order", color: "text-white/50", bg: "bg-white/5 border-white/10" };
-                      const label = log.network && log.package_size
-                        ? `${log.network} ${log.package_size}`
-                        : log.customer_phone || "—";
-                      return (
-                        <div key={log.id} className={`p-3 rounded-2xl border transition-all hover:brightness-110 ${isDark ? "bg-white/[0.03] border-white/5" : "bg-gray-50 border-gray-100"}`}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${t.bg} ${t.color}`}>
-                              {t.label}
-                            </span>
-                            <span className={`text-[9px] font-mono ${muted}`}>
-                              {new Date(log.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
-                              {" · "}
-                              {new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="min-w-0">
-                              <p className={`text-xs font-bold truncate ${isDark ? "text-white/90" : "text-gray-800"}`}>{label}</p>
-                              <p className={`text-[10px] font-mono ${muted}`}>#{log.id.slice(0, 8).toUpperCase()}</p>
-                            </div>
-                            <p className={`text-sm font-black shrink-0 ml-3 ${t.color}`}>GH₵{Number(log.amount).toFixed(2)}</p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <Button variant="ghost" onClick={() => navigate("/admin/orders")} className={`w-full h-10 text-[9px] font-black uppercase tracking-[0.2em] transition-colors ${isDark ? "text-white/20 hover:text-white/60 hover:bg-white/5" : "text-gray-400 hover:text-gray-700"}`}>
-                    View All Orders
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {auditLogs.length === 0 ? (
-                    <div className="py-12 text-center opacity-20">
-                      <Activity className="w-8 h-8 mx-auto mb-2" />
-                      <p className="text-[10px] font-bold uppercase tracking-widest">No audit events</p>
-                    </div>
-                  ) : (
-                    auditLogs.map((log: any) => (
-                      <div key={log.id} className={`p-3 rounded-2xl border transition-all hover:brightness-110 ${isDark ? "bg-white/[0.03] border-white/5" : "bg-gray-50 border-gray-100"}`}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest border border-amber-500/20 px-1.5 py-0.5 rounded-md bg-amber-500/5">
-                            {log.action.replace(/_/g, " ")}
-                          </span>
-                          <span className={`text-[9px] font-mono ${muted}`}>{new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                        </div>
-                        <p className={`text-xs font-black mb-1 ${head}`}>{log.profiles?.full_name || "System"}</p>
-                        <p className={`text-[10px] font-mono truncate p-2 rounded-lg border ${isDark ? "text-white/40 bg-black/20 border-white/5" : "text-gray-600 bg-white border-gray-200"}`}>
-                          {JSON.stringify(log.details)}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                  <Button variant="ghost" onClick={() => navigate("/admin/audit-logs")} className={`w-full h-10 text-[9px] font-black uppercase tracking-[0.2em] transition-colors ${isDark ? "text-white/20 hover:text-white/60 hover:bg-white/5" : "text-gray-400 hover:text-gray-700"}`}>
-                    Open Security Center
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Quick Tools */}
-          <div className={`rounded-[2rem] border p-8 ${card}`}>
-            <h3 className={`font-black text-lg tracking-tight mb-0.5 ${head}`}>Quick Tools</h3>
-            <p className={`text-xs mb-6 ${muted}`}>Platform management shortcuts.</p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: "Agents",      icon: Users,       path: "/admin/agents",      color: "text-blue-500",   bg: "bg-blue-500/10"   },
-                { label: "Orders",      icon: ShoppingCart,path: "/admin/orders",      color: "text-emerald-500",bg: "bg-emerald-500/10"},
-                { label: "Packages",    icon: Package,     path: "/admin/packages",    color: "text-purple-500", bg: "bg-purple-500/10" },
-                { label: "Withdrawals", icon: Wallet,      path: "/admin/withdrawals", color: "text-amber-500",  bg: "bg-amber-500/10"  },
-              ].map((a) => (
-                <button
-                  key={a.label}
-                  onClick={() => navigate(a.path)}
-                  className={`group flex flex-col items-center justify-center p-5 rounded-2xl border transition-all gap-3 ${
-                    isDark ? "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/8 shadow-inner" : "border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 shadow-sm"
-                  }`}
-                >
-                  <div className={`w-10 h-10 rounded-2xl ${a.bg} flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm`}>
-                    <a.icon className={`w-5 h-5 ${a.color}`} />
-                  </div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${isDark ? "text-white/40 group-hover:text-white" : "text-gray-500 group-hover:text-gray-900"}`}>{a.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {stats.pendingAgents > 0 && (
-              <button
-                onClick={approveAllPending}
-                disabled={approvingPending}
-                className="w-full mt-6 group flex items-center justify-between p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 transition-all shadow-lg shadow-amber-500/5"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
-                    <ShieldCheck className="w-5 h-5 text-amber-500" />
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-black text-amber-600 dark:text-amber-400">Action Required</p>
-                    <p className="text-[10px] text-amber-500/80 font-bold uppercase tracking-tighter">{stats.pendingAgents} agent{stats.pendingAgents !== 1 ? "s" : ""} awaiting approval</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-amber-500/50 group-hover:translate-x-1 transition-transform" />
-              </button>
-            )}
-          </div>
+              <span className="text-xs font-black text-foreground group-hover:text-amber-400">{a.label}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
