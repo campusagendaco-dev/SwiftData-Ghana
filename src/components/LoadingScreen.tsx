@@ -1,22 +1,34 @@
-import { ShieldCheck, RefreshCw, WifiOff, Store } from "lucide-react";
+import { ShieldCheck, RefreshCw, WifiOff, Store, Sparkles, Activity, Lock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { TraditionalBackground } from "./TraditionalBackground";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
+
+const LOADING_MESSAGES = [
+  "Establishing Encrypted Gateway...",
+  "Synchronizing Telecom Providers...",
+  "Loading Data & Airtime Packages...",
+  "Verifying Agent Credentials...",
+  "Connecting Live Orders Stream..."
+];
 
 const LoadingScreen = () => {
   const [showSlowMessage, setShowSlowMessage] = useState(false);
   const [showRetry, setShowRetry] = useState(false);
   const [cachedStore, setCachedStore] = useState<{ name: string; logo: string | null; color: string | null } | null>(null);
+  const [msgIndex, setMsgIndex] = useState(0);
 
   const pathname = window.location.pathname;
   const activeDomain = getActiveStoreDomain();
   const isStoreRoute = pathname.startsWith("/store/") || !!activeDomain;
-  // Extract slug from /store/:slug if present
   const slug = pathname.startsWith("/store/") ? pathname.split("/store/")[1]?.split("/")[0] : null;
 
   useEffect(() => {
-    const slowTimer = setTimeout(() => setShowSlowMessage(true), 12000);
-    const retryTimer = setTimeout(() => setShowRetry(true), 20000);
+    const slowTimer = setTimeout(() => setShowSlowMessage(true), 10000);
+    const retryTimer = setTimeout(() => setShowRetry(true), 18000);
+
+    const msgInterval = setInterval(() => {
+      setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+    }, 2200);
 
     const cacheKey = slug ? `store_loading_${slug}` : activeDomain ? `store_loading_${activeDomain}` : null;
     if (cacheKey) {
@@ -33,6 +45,7 @@ const LoadingScreen = () => {
     return () => {
       clearTimeout(slowTimer);
       clearTimeout(retryTimer);
+      clearInterval(msgInterval);
     };
   }, [slug, activeDomain]);
 
@@ -41,66 +54,70 @@ const LoadingScreen = () => {
   const brandName = isWhitelabeled
     ? (cachedStore?.name || "ONLINE STORE")
     : "SwiftData GH";
-  const brandSubtitle = isWhitelabeled ? "SECURE PORTAL" : "Secure Gateway";
+  const brandSubtitle = isWhitelabeled ? "SECURE AGENT PORTAL" : "Telecom Reseller Gateway";
   const brandColor = isWhitelabeled
-    ? (cachedStore?.color || "#f59e0b") // Default premium amber for generic whitelabel
-    : "#f59e0b"; // Default SwiftData amber
+    ? (cachedStore?.color || "#f59e0b")
+    : "#f59e0b";
   const brandLogoUrl = isWhitelabeled ? cachedStore?.logo : "/logo.png";
 
   return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#020402]">
-      {/* ── Cultural Grounding Background ── */}
-      <TraditionalBackground className="absolute inset-0 z-0 opacity-[0.2] dark:opacity-[0.3]" />
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#030305] text-white overflow-hidden select-none">
+      {/* ── Cultural Grounding Ambient Pattern ── */}
+      <TraditionalBackground className="absolute inset-0 z-0 opacity-[0.15] dark:opacity-[0.25]" />
 
-      {/* ── Premium Evening Glow ── */}
+      {/* ── Ambient Background Glow Blobs ── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div 
-          className="absolute top-[40%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[140px] animate-pulse-gentle"
-          style={{ background: `${brandColor}15` }} 
+          className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[140px] animate-pulse-gentle"
+          style={{ background: `${brandColor}20` }} 
         />
+        <div className="absolute bottom-[20%] right-[20%] w-[350px] h-[350px] rounded-full bg-blue-600/10 blur-[130px] animate-pulse-gentle" />
+        <div className="absolute top-[20%] left-[20%] w-[350px] h-[350px] rounded-full bg-emerald-500/10 blur-[130px] animate-pulse-gentle" />
       </div>
 
-      {/* ── Signature Activation Animation ── */}
+      {/* ── Futuristic Holographic Ring & Logo Loader ── */}
       <div className="relative z-10 flex items-center justify-center mb-10">
-        {/* Outer Orbit - High Precision */}
-        <div className="absolute w-[120px] h-[120px] rounded-full border border-white/5" />
+        {/* Outer Laser Orbit Ring */}
+        <div className="absolute w-[140px] h-[140px] rounded-full border border-white/10" />
         <div 
-          className="absolute w-[120px] h-[120px] rounded-full border-t animate-spin" 
-          style={{ animationDuration: '3s', borderTopColor: `${brandColor}80` }} 
+          className="absolute w-[140px] h-[140px] rounded-full border-t-2 border-r-2 animate-spin" 
+          style={{ animationDuration: '2.5s', borderColor: `${brandColor} solid`, borderBottomColor: 'transparent', borderLeftColor: 'transparent' }} 
         />
         
-        {/* Inner Orbit - Faster */}
+        {/* Counter Orbit Ring */}
         <div 
-          className="absolute w-[100px] h-[100px] rounded-full border-r animate-spin" 
-          style={{ animationDuration: '2s', animationDirection: 'reverse', borderRightColor: `${brandColor}aa` }} 
+          className="absolute w-[116px] h-[116px] rounded-full border-b-2 border-l-2 animate-spin" 
+          style={{ animationDuration: '1.8s', animationDirection: 'reverse', borderColor: '#38bdf8 solid', borderTopColor: 'transparent', borderRightColor: 'transparent' }} 
         />
 
-        {/* Logo Container with Brand Pulse */}
-        <div className="relative z-20 w-24 h-24 rounded-full bg-[#020402] border border-white/10 backdrop-blur-sm shadow-2xl flex items-center justify-center overflow-hidden">
+        {/* Center Logo Container */}
+        <div className="relative z-20 w-24 h-24 rounded-3xl bg-[#030305]/90 border border-white/20 backdrop-blur-xl shadow-2xl flex items-center justify-center overflow-hidden">
           <div 
-            className="absolute inset-0 rounded-full animate-ping opacity-20" 
-            style={{ background: `${brandColor}20` }}
+            className="absolute inset-0 rounded-3xl animate-ping opacity-25" 
+            style={{ background: `${brandColor}30` }}
           />
           {brandLogoUrl ? (
             <img
               src={brandLogoUrl}
               alt={brandName}
-              className="w-full h-full object-contain p-4 relative z-10"
+              className="w-full h-full object-contain p-3.5 relative z-10"
             />
           ) : (
-            <Store className="w-8 h-8 relative z-10 animate-pulse" style={{ color: brandColor }} />
+            <Store className="w-9 h-9 relative z-10 animate-pulse" style={{ color: brandColor }} />
           )}
-          <div className="absolute bottom-2 right-2 w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center border-2 border-[#020402] shadow-[0_0_15px_rgba(37,99,235,0.4)] z-20">
-            <ShieldCheck className="w-3 h-3 text-white" />
+
+          {/* Verified Security Badge Overlay */}
+          <div className="absolute bottom-1.5 right-1.5 w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center border-2 border-[#030305] shadow-[0_0_12px_rgba(16,185,129,0.5)] z-30">
+            <ShieldCheck className="w-3.5 h-3.5 text-slate-950 stroke-[3]" />
           </div>
         </div>
       </div>
 
-      {/* ── Elite Brand Text ── */}
-      <div className="relative z-10 text-center space-y-6 px-6 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-        <div className="flex flex-col items-center gap-1">
+      {/* ── Brand Typography & Dynamic Status ── */}
+      <div className="relative z-10 text-center space-y-5 px-6 max-w-sm">
+        <div className="flex flex-col items-center gap-1.5">
           {isWhitelabeled ? (
-            <h2 className="text-white font-black text-2xl tracking-[0.2em] uppercase text-center">
+            <h1 className="text-white font-black text-2xl tracking-[0.15em] uppercase text-center font-display">
               {cachedStore ? (
                 <>
                   {brandName.split(" ")[0]}{" "}
@@ -113,53 +130,59 @@ const LoadingScreen = () => {
                   ONLINE <span style={{ color: brandColor }}>STORE</span>
                 </>
               )}
-            </h2>
+            </h1>
           ) : (
-            <h2 className="text-white font-black text-2xl tracking-[0.2em] uppercase">
-              SwiftData <span className="text-primary drop-shadow-[0_0_8px_rgba(245,158,11,0.4)]">GH</span>
-            </h2>
+            <h1 className="text-white font-black text-3xl tracking-[0.15em] uppercase font-display">
+              SwiftData <span className="text-amber-400 drop-shadow-[0_0_12px_rgba(245,158,11,0.5)]">GH</span>
+            </h1>
           )}
-          <div 
-            className="h-px w-12 bg-gradient-to-r from-transparent to-transparent" 
-            style={{ backgroundImage: `linear-gradient(to right, transparent, ${brandColor}80, transparent)` }}
-          />
-        </div>
-        
-        <div className="flex flex-col items-center gap-5">
-          <p className="text-white/30 text-[11px] font-bold uppercase tracking-[0.4em] translate-x-[0.2em]">
+          
+          <p className="text-slate-400 text-[10px] font-extrabold uppercase tracking-[0.3em] font-mono">
             {brandSubtitle}
           </p>
-          
-          {/* Elite Progress Line */}
-          <div className="w-40 h-[1.5px] bg-white/5 rounded-full overflow-hidden">
-            <div 
-              className="h-full animate-progress-slide" 
-              style={{ backgroundImage: `linear-gradient(to right, transparent, ${brandColor}, transparent)` }}
-            />
-          </div>
+        </div>
+
+        {/* Dynamic Status Text Ticker */}
+        <div className="min-h-[24px] flex items-center justify-center gap-2 text-xs font-mono text-slate-300 font-bold bg-white/5 px-4 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
+          <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+          <span className="animate-in fade-in duration-300">{LOADING_MESSAGES[msgIndex]}</span>
+        </div>
+
+        {/* Neon Progress Bar */}
+        <div className="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden mx-auto border border-white/10">
+          <div 
+            className="h-full rounded-full animate-progress-slide" 
+            style={{ backgroundImage: `linear-gradient(to right, transparent, ${brandColor}, transparent)` }}
+          />
+        </div>
+
+        {/* Security Badge Footer */}
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono text-slate-500 pt-2">
+          <Lock className="w-3 h-3 text-emerald-400" />
+          <span>256-Bit SSL Encrypted Connection</span>
         </div>
       </div>
 
-      {/* ── Slow Connection / Retry UI (Absolute bottom prevents layout pushing) ── */}
-      <div className="absolute bottom-12 inset-x-0 h-20 flex flex-col items-center justify-center gap-4 z-20">
+      {/* ── Slow Connection / Retry Controls ── */}
+      <div className="absolute bottom-10 inset-x-0 flex flex-col items-center justify-center gap-3 z-20 px-4">
         {showSlowMessage && !showRetry && (
-          <div className="flex items-center gap-2 text-amber-400/80 animate-in fade-in zoom-in duration-700">
-            <WifiOff className="w-3.5 h-3.5" />
-            <p className="text-[10px] font-black uppercase tracking-widest">Connection looks slow...</p>
+          <div className="flex items-center gap-2 text-amber-400/90 bg-amber-500/10 px-4 py-1.5 rounded-full border border-amber-500/20 text-xs font-bold font-mono animate-in fade-in zoom-in duration-500">
+            <WifiOff className="w-3.5 h-3.5 animate-pulse" />
+            <span>Connection looks slow, holding connection...</span>
           </div>
         )}
 
         {showRetry && (
-          <div className="flex flex-col items-center gap-3 animate-in slide-in-from-bottom-2 duration-500">
-            <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest text-center max-w-[200px]">
-              Still loading? You may have a weak connection.
+          <div className="flex flex-col items-center gap-2.5 animate-in slide-in-from-bottom-2 duration-500">
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider text-center font-mono">
+              Network Delay Detected
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all group"
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-amber-500 text-slate-950 hover:bg-amber-400 font-black text-xs uppercase tracking-wide transition-all shadow-lg shadow-amber-950/40 active:scale-95 group"
             >
               <RefreshCw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
-              <span className="text-xs font-black uppercase tracking-tight">Reload App</span>
+              <span>Reload Gateway</span>
             </button>
           </div>
         )}
@@ -171,12 +194,12 @@ const LoadingScreen = () => {
           100% { transform: translateX(100%); }
         }
         @keyframes pulse-gentle {
-          0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
-          50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
+          0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+          50% { opacity: 0.75; transform: translate(-50%, -50%) scale(1.1); }
         }
         .animate-progress-slide {
-          width: 60%;
-          animation: progress-slide 2.5s cubic-bezier(0.65, 0.05, 0.36, 1) infinite;
+          width: 70%;
+          animation: progress-slide 2s cubic-bezier(0.65, 0.05, 0.36, 1) infinite;
         }
         .animate-pulse-gentle {
           animation: pulse-gentle 4s ease-in-out infinite;
