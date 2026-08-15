@@ -60,7 +60,7 @@ serve(async (req) => {
 
     const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
     const rateLimitKey = isGuest ? `list_orders_ip:${clientIp}` : `list_orders_user:${user.id}`;
-    const rateLimit = isGuest ? 5 : 20; // guests get strict limits
+    const rateLimit = isGuest ? 60 : 180; // guests get 60/min, users get 180/min
 
     // SECURITY: Rate limit (prevents scraping multiple phone numbers)
     const { data: withinLimit } = await supabaseAdmin.rpc("check_generic_rate_limit", {

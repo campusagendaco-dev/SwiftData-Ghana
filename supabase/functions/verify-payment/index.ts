@@ -328,13 +328,20 @@ serve(async (req) => {
       });
     }
 
+    const { reference, orderId, phone, force: forceInput, action } = body;
+    const force = forceInput || action === "retry_order";
+    const resolvedReference = reference || orderId;
+
     // ─── 🛡️ DOS & BRUTE-FORCE RATE LIMITING ─────────────────────────────────
-    const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
-    
-    // Limit IP-based requests to 60 per minute (allows 5-second polling with buffer)
+    const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
+    const authHeader = req.headers.get("authorization") || req.headers.get("x-user-access-token") || "";
+    const isAuthedOrForce = force || (authHeader.length > 20);
+
+    // Limit IP-based requests (1200/min for authed/admin retries, 300/min for public)
+    const ipRateLimit = isAuthedOrForce ? 1200 : 300;
     const { data: ipAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
       p_key: `ip_verify_${clientIp}`,
-      p_rate_limit: 60
+      p_rate_limit: ipRateLimit
     });
     
     if (!ipAllowed) {
@@ -344,17 +351,13 @@ serve(async (req) => {
       });
     }
 
-    const { reference, orderId, phone, force: forceInput, action } = body;
-    const force = forceInput || action === "retry_order";
-    const resolvedReference = reference || orderId;
-
-    // Limit Target Phone-based requests to 4 per minute
-    if (phone) {
+    // Limit Target Phone-based requests ONLY when performing pure phone lookups without an order reference
+    if (phone && !resolvedReference && !force) {
       const cleanPhone = phone.replace(/\D+/g, "");
       if (cleanPhone) {
         const { data: phoneAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
           p_key: `phone_verify_${cleanPhone}`,
-          p_rate_limit: 4
+          p_rate_limit: 30
         });
         
         if (!phoneAllowed) {

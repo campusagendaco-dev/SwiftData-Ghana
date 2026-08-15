@@ -29,7 +29,7 @@ serve(async (req) => {
 
     const { data: withinLimit } = await supabaseAdmin.rpc("check_generic_rate_limit", {
       p_key: `delivery_tracker:${clientIp}`,
-      p_rate_limit: 10 // max 10 requests/minute per IP
+      p_rate_limit: 120 // max 120 requests/minute per IP
     });
 
     if (withinLimit === false) {

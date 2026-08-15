@@ -608,7 +608,7 @@ export default function AdminBeneficiaryOrders() {
 
       // 3. Invoke verify-payment Edge function
       const { data, error } = await supabase.functions.invoke("verify-payment", {
-        body: { reference: ord.id, order_id: ord.id }
+        body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
       });
 
       if (error) {
@@ -735,7 +735,7 @@ export default function AdminBeneficiaryOrders() {
             }).eq("id", ord.id);
 
             const { data } = await supabase.functions.invoke("verify-payment", {
-              body: { reference: ord.id, order_id: ord.id }
+              body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
             });
             if (data?.status === "fulfilled" || data?.status === "processing") {
               successCount++;
@@ -745,6 +745,9 @@ export default function AdminBeneficiaryOrders() {
           }
         })
       );
+      if (i + BATCH_SIZE < targetOrders.length) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
     }
 
     toast({ title: "Batch Retry Complete", description: `Processed ${targetOrders.length} orders. ${successCount} successfully submitted.` });
