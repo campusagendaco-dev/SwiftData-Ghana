@@ -43,29 +43,22 @@ WITH CHECK (true);
 -- submitted for approval by the admin, not just by the agent themselves, and
 -- they still need to see that status on their own Transactions page. There is
 -- no legitimate reason for any non-admin to read someone else's numbers beyond that.
-DROP POLICY IF EXISTS "Allow authenticated read beneficiary_submissions" ON public.beneficiary_submissions;
-DROP POLICY IF EXISTS "Allow public select beneficiary_submissions" ON public.beneficiary_submissions;
+-- Track user_id and raw provider HTTP status for each logged number.
+ALTER TABLE public.beneficiary_submissions
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS provider_status_code INTEGER;
+
 DROP POLICY IF EXISTS "Allow scoped select beneficiary_submissions" ON public.beneficiary_submissions;
 CREATE POLICY "Allow scoped select beneficiary_submissions"
 ON public.beneficiary_submissions FOR SELECT
 USING (
   public.has_role(auth.uid(), 'admin')
+  OR user_id = auth.uid()
   OR submitted_by = (auth.jwt() ->> 'email')
   OR phone_number IN (
     SELECT customer_phone FROM public.orders WHERE agent_id = auth.uid()
   )
 );
-
-DROP POLICY IF EXISTS "Allow authenticated delete beneficiary_submissions" ON public.beneficiary_submissions;
-DROP POLICY IF EXISTS "Allow admin delete beneficiary_submissions" ON public.beneficiary_submissions;
-CREATE POLICY "Allow admin delete beneficiary_submissions"
-ON public.beneficiary_submissions FOR DELETE
-USING ( public.has_role(auth.uid(), 'admin') );
-
--- Track the raw provider HTTP status for each logged number, so "did we
--- actually reach the provider" is a fact in the row, not a guess.
-ALTER TABLE public.beneficiary_submissions
-    ADD COLUMN IF NOT EXISTS provider_status_code INTEGER;
 
 -- Collapse any pre-existing duplicate rows for the same number before the
 -- unique index is added (keeps the newest row per phone number).
