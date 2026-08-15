@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: swiftdata-auth-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: MONGODB_URI
+        sync: false
+      - key: CORS_ORIGINS
+        value: "https://swiftdatagh.shop,https://swiftdatagh.com,http://localhost:8082"
+      - key: SMTP_HOST
+        value: "smtp.gmail.com"
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: "SwiftData GH <no-reply@swiftdatagh.shop>"
