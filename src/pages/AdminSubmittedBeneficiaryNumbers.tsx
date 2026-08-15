@@ -142,29 +142,34 @@ export default function AdminSubmittedBeneficiaryNumbers() {
       const { data: orders, error: ordersErr } = await supabase
         .from("orders")
         .select("id, customer_phone, network, status, failure_reason, created_at, agent_id")
-        .or("failure_reason.ilike.%beneficiary%,failure_reason.ilike.%whitelist%,status.eq.failed")
+        .eq("status", "fulfillment_failed")
         .order("created_at", { ascending: false })
         .limit(300);
 
       if (ordersErr) throw ordersErr;
 
       const phoneMap = new Map<string, SubmittedNumberRecord>();
-      (orders || []).forEach((ord) => {
-        if (!ord.customer_phone) return;
-        const clean = ord.customer_phone.replace(/\D/g, "");
-        const formatted = clean.startsWith("233") && clean.length === 12 ? "0" + clean.slice(3) : clean;
-        if (!phoneMap.has(formatted)) {
-          phoneMap.set(formatted, {
-            id: ord.id,
-            phone: formatted,
-            network: ord.network || detectNetwork(formatted),
-            status: ord.status === "completed" ? "whitelisted" : "submitted",
-            source: "Order Submission",
-            created_at: ord.created_at,
-            notes: ord.failure_reason || "Non-beneficiary approval pending",
-          });
-        }
-      });
+      (orders || [])
+        .filter((ord) => {
+          const reason = (ord.failure_reason || "").toLowerCase();
+          return reason.includes("beneficiary") || reason.includes("not added") || reason.includes("whitelist");
+        })
+        .forEach((ord) => {
+          if (!ord.customer_phone) return;
+          const clean = ord.customer_phone.replace(/\D/g, "");
+          const formatted = clean.startsWith("233") && clean.length === 12 ? "0" + clean.slice(3) : clean;
+          if (!phoneMap.has(formatted)) {
+            phoneMap.set(formatted, {
+              id: ord.id,
+              phone: formatted,
+              network: ord.network || detectNetwork(formatted),
+              status: ord.status === "completed" ? "whitelisted" : "submitted",
+              source: "Order Submission",
+              created_at: ord.created_at,
+              notes: ord.failure_reason || "Non-beneficiary approval pending",
+            });
+          }
+        });
 
       setRecords(Array.from(phoneMap.values()));
     } catch (err: any) {

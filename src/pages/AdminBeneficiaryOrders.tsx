@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
-import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2, Sparkles, ExternalLink, ArrowRight, Zap, CheckCircle2, Send } from "lucide-react";
+import { RefreshCw, Phone, ShieldAlert, Copy, Check, Users, Search, Calendar, RotateCcw, ListCheck, Play, Wallet, Loader2, Sparkles, ExternalLink, ArrowRight, Zap, CheckCircle2, Send, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { invokePublicFunction } from "@/lib/public-function-client";
@@ -69,16 +69,29 @@ export default function AdminBeneficiaryOrders() {
   const [sendingSmsPhone, setSendingSmsPhone] = useState<string | null>(null);
   const [sendingBulkSms, setSendingBulkSms] = useState(false);
 
+  // Auto-Submit Sentinel: newly-detected non-beneficiary numbers get submitted
+  // for carrier approval automatically 5s after they first appear here, with no
+  // admin click needed. If the provider reports the number was already on the
+  // beneficiary list, status flips to "In Queue" and its pending orders are
+  // auto-retried; otherwise it shows "Submitted for Approval" (pending carrier review).
+  const AUTO_SUBMIT_DELAY_MS = 5000;
+  type AutoStatus = "pending" | "submitting" | "submitted" | "in_queue";
+  const [autoStatus, setAutoStatus] = useState<Record<string, AutoStatus>>({});
+  const scheduledPhonesRef = useRef<Set<string>>(new Set());
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const allOrdersRef = useRef<BeneficiaryOrder[]>([]);
+
   // Shared submission core: sends numbers to DataHub in batches of 30 AND
   // records every outcome (success or failure) into beneficiary_submissions
   // so admin's records stay complete regardless of which entry point was used.
   const submitNumbersToDataHub = async (
     numbers: string[],
     sourceLabel: string
-  ): Promise<{ submitted: number; failed: number }> => {
+  ): Promise<{ submitted: number; failed: number; alreadyOnList: number }> => {
     const BATCH_SIZE = 30;
     let totalSubmitted = 0;
     let totalFailed = 0;
+    let totalAlreadyOnList = 0;
 
     const { data: provider } = await supabase
       .from("providers")
@@ -105,6 +118,7 @@ export default function AdminBeneficiaryOrders() {
       let statusCode: number | null = null;
       let errDetail = "";
       let submittedCount = 0;
+      let alreadyOnListCount = 0;
 
       // Attempt 1: direct browser -> DataHub (fast path when it isn't CORS-blocked),
       // only when we actually have a real key visible to this caller.
@@ -128,6 +142,7 @@ export default function AdminBeneficiaryOrders() {
           if (res.ok || parsed?.success) {
             ok = true;
             submittedCount = parsed?.data?.submitted ?? batch.length;
+            alreadyOnListCount = parsed?.data?.already_on_list ?? parsed?.data?.alreadyOnList ?? 0;
           } else {
             errDetail = `HTTP ${res.status}: ${text.slice(0, 200)}`;
           }
@@ -150,6 +165,7 @@ export default function AdminBeneficiaryOrders() {
             ok = true;
             const d = data.data || data;
             submittedCount = d.submitted ?? batch.length;
+            alreadyOnListCount = d.already_on_list ?? d.alreadyOnList ?? 0;
             statusCode = 200;
             errDetail = "";
           } else if (error) {
@@ -162,6 +178,7 @@ export default function AdminBeneficiaryOrders() {
 
       if (ok) {
         totalSubmitted += submittedCount;
+        totalAlreadyOnList += alreadyOnListCount;
       } else {
         totalFailed += batch.length;
       }
@@ -170,7 +187,7 @@ export default function AdminBeneficiaryOrders() {
         const records = batch.map((num) => ({
           phone_number: num,
           network: "MTN",
-          status: ok ? "submitted" : "failed",
+          status: !ok ? "failed" : alreadyOnListCount > 0 ? "whitelisted" : "submitted",
           source: sourceLabel,
           submitted_by: "Admin",
           notes: ok
@@ -193,7 +210,75 @@ export default function AdminBeneficiaryOrders() {
       }
     }
 
-    return { submitted: totalSubmitted, failed: totalFailed };
+    return { submitted: totalSubmitted, failed: totalFailed, alreadyOnList: totalAlreadyOnList };
+  };
+
+  // Shared "this number is confirmed on the beneficiary list right now" path —
+  // flips the badge to In Queue and immediately retries its pending orders.
+  // handleRetrySingle does its own fresh beneficiary check first, so this is
+  // safe even if the list changed between whatever check triggered this and now.
+  const promoteToInQueue = async (phone: string) => {
+    setAutoStatus((prev) => ({ ...prev, [phone]: "in_queue" }));
+    const pendingOrders = allOrdersRef.current.filter(
+      (o) => o.customer_phone === phone && o.status !== "fulfilled" && o.status !== "completed"
+    );
+    for (const ord of pendingOrders) {
+      await handleRetrySingle(ord);
+    }
+  };
+
+  // Fires automatically AUTO_SUBMIT_DELAY_MS after a number is first confirmed
+  // NOT yet on the beneficiary list — submits it for carrier approval with no
+  // admin click required, then reacts to what the provider reports back.
+  const runAutoSubmit = async (phone: string) => {
+    setAutoStatus((prev) => ({ ...prev, [phone]: "submitting" }));
+    try {
+      const { submitted, alreadyOnList } = await submitNumbersToDataHub(
+        [phone],
+        "Auto-Submit Sentinel (5s)"
+      );
+
+      if (alreadyOnList > 0) {
+        await promoteToInQueue(phone);
+      } else if (submitted > 0) {
+        setAutoStatus((prev) => ({ ...prev, [phone]: "submitted" }));
+      } else {
+        // Failed — leave it visible as still-pending so the manual "Submit for
+        // Approval" button remains the obvious next step.
+        setAutoStatus((prev) => ({ ...prev, [phone]: "pending" }));
+      }
+    } catch (e) {
+      console.error("[AutoSubmit] failed for", phone, e);
+      setAutoStatus((prev) => ({ ...prev, [phone]: "pending" }));
+    }
+  };
+
+  // Entry point for every number in the Non-Beneficiary Hub — runs an
+  // immediate, cheap "is this already whitelisted?" check FIRST (covers
+  // numbers that were submitted a while ago and may have been approved
+  // since — no reason to make those wait), and only falls back to the 5s
+  // delayed auto-submit for numbers genuinely not on the list yet.
+  const checkAndScheduleAutoSubmit = async (phone: string, network: string) => {
+    setAutoStatus((prev) => ({ ...prev, [phone]: "pending" }));
+    try {
+      const { data: vData } = await supabase.functions.invoke("verify-beneficiary", {
+        body: { phone, network: network || "MTN" },
+      });
+      if (vData?.exists) {
+        await promoteToInQueue(phone);
+        return;
+      }
+    } catch (e) {
+      console.error("[AutoSubmit] immediate beneficiary check failed for", phone, e);
+      // Fall through to the scheduled submit regardless — worst case it
+      // re-submits a number that was already pending, which is harmless.
+    }
+
+    const timer = setTimeout(() => {
+      timersRef.current.delete(phone);
+      runAutoSubmit(phone);
+    }, AUTO_SUBMIT_DELAY_MS);
+    timersRef.current.set(phone, timer);
   };
 
   const handleSubmitAllToBeneficiaryApproval = async () => {
@@ -357,7 +442,7 @@ export default function AdminBeneficiaryOrders() {
       let q = supabase
         .from("orders")
         .select("id, agent_id, customer_phone, network, package_size, amount, status, failure_reason, auto_refunded, metadata, created_at")
-        .or("failure_reason.ilike.%beneficiary list%,failure_reason.ilike.%not added%")
+        .eq("status", "fulfillment_failed")
         .order("created_at", { ascending: false })
         .limit(500);
 
@@ -380,7 +465,12 @@ export default function AdminBeneficiaryOrders() {
       if (error) {
         console.error("Error fetching beneficiary orders:", error);
       } else if (rawOrders && rawOrders.length > 0) {
-        const agentIds = Array.from(new Set(rawOrders.map((o) => o.agent_id).filter(Boolean)));
+        const filteredBeneficiaryOrders = rawOrders.filter((o) => {
+          const reason = (o.failure_reason || "").toLowerCase();
+          return reason.includes("beneficiary") || reason.includes("not added");
+        });
+
+        const agentIds = Array.from(new Set(filteredBeneficiaryOrders.map((o) => o.agent_id).filter(Boolean)));
         const { data: profiles } = await supabase
           .from("profiles")
           .select("user_id, full_name, email")
@@ -389,7 +479,7 @@ export default function AdminBeneficiaryOrders() {
         const profileMap = new Map<string, { full_name?: string; email?: string }>();
         (profiles || []).forEach((p) => profileMap.set(p.user_id, p));
 
-        const enriched: BeneficiaryOrder[] = rawOrders.map((o) => {
+        const enriched: BeneficiaryOrder[] = filteredBeneficiaryOrders.map((o) => {
           const prof = profileMap.get(o.agent_id);
           return {
             ...o,
@@ -441,6 +531,36 @@ export default function AdminBeneficiaryOrders() {
   useEffect(() => {
     fetchBeneficiaryOrders();
   }, [fetchBeneficiaryOrders]);
+
+  // Keep a ref mirror of the latest orders so runAutoSubmit (fired from a
+  // setTimeout closure) always sees fresh data instead of whatever was
+  // current when its timer was scheduled.
+  useEffect(() => {
+    allOrdersRef.current = allBeneficiaryOrders;
+  }, [allBeneficiaryOrders]);
+
+  // Process every non-beneficiary number exactly once per phone, the first
+  // time it's seen (including ones that were already "submitted" from before
+  // this feature existed, or from an earlier page load) — scheduledPhonesRef
+  // prevents re-processing on every refetch, and timers live in a ref (not
+  // effect-cleanup-tied) so an unrelated refetch within the 5s window can't
+  // cancel a still-pending auto-submit.
+  useEffect(() => {
+    groupedNumbers.forEach((grp) => {
+      if (scheduledPhonesRef.current.has(grp.phone)) return;
+      scheduledPhonesRef.current.add(grp.phone);
+      checkAndScheduleAutoSubmit(grp.phone, grp.network);
+    });
+  }, [groupedNumbers]);
+
+  // Only clear pending timers on actual unmount (navigating away) — not on
+  // every re-render.
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach((t) => clearTimeout(t));
+      timersRef.current.clear();
+    };
+  }, []);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -687,6 +807,33 @@ export default function AdminBeneficiaryOrders() {
   const totalAttempts = allBeneficiaryOrders.length;
   const totalVolume = allBeneficiaryOrders.reduce((sum, o) => sum + Number(o.amount || 0), 0);
   const unrefundedCount = allBeneficiaryOrders.filter((o) => !o.auto_refunded && o.status !== "refunded" && o.status !== "fulfilled").length;
+
+  // Sentinel status badge — reflects the auto-submit lifecycle for this phone.
+  const renderAutoStatusBadge = (phone: string) => {
+    const status = autoStatus[phone];
+    if (status === "submitting") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-blue-500/15 border border-blue-500/30 text-blue-600 dark:text-blue-400">
+          <Loader2 className="w-3 h-3 animate-spin" /> Submitting...
+        </span>
+      );
+    }
+    if (status === "submitted") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-indigo-500/15 border border-indigo-500/30 text-indigo-600 dark:text-indigo-400">
+          <Send className="w-3 h-3" /> Submitted for Approval
+        </span>
+      );
+    }
+    if (status === "in_queue") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
+          <Clock className="w-3 h-3" /> In Queue
+        </span>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl space-y-6 sm:space-y-8 animate-in fade-in duration-300">
@@ -953,6 +1100,9 @@ export default function AdminBeneficiaryOrders() {
                           <div className="text-xs text-muted-foreground font-mono truncate max-w-[240px] mt-0.5">
                             Agents: {grp.agentEmails.join(", ")}
                           </div>
+                          {renderAutoStatusBadge(grp.phone) && (
+                            <div className="mt-1.5">{renderAutoStatusBadge(grp.phone)}</div>
+                          )}
                         </td>
 
                         <td className="py-4 px-6">
@@ -1060,6 +1210,8 @@ export default function AdminBeneficiaryOrders() {
                     <div className="text-[11px] text-muted-foreground font-mono truncate">
                       Agents: {grp.agentEmails.join(", ")}
                     </div>
+
+                    {renderAutoStatusBadge(grp.phone)}
 
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <span className="text-[10px] text-muted-foreground shrink-0">{date} at {time}</span>

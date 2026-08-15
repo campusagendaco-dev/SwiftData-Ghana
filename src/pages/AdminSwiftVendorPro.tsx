@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeSearchTerm } from "@/lib/utils";
 import { 
   Sheet, 
   SheetContent, 
@@ -100,10 +100,11 @@ const AdminSwiftVendorPro = () => {
     if (!manualSearchQuery.trim()) return;
     setSearchingManual(true);
     try {
+      const s = sanitizeSearchTerm(manualSearchQuery);
       const { data, error } = await supabase
         .from('profiles')
         .select('user_id, full_name, email, phone, vendor_status')
-        .or(`full_name.ilike.%${manualSearchQuery}%,email.ilike.%${manualSearchQuery}%,phone.ilike.%${manualSearchQuery}%`)
+        .or(`full_name.ilike.%${s}%,email.ilike.%${s}%,phone.ilike.%${s}%`)
         .limit(5);
       if (error) throw error;
       setManualSearchResults(data || []);

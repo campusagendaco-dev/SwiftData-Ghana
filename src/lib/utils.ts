@@ -22,6 +22,21 @@ export function escapeHtml(value: unknown): string {
   }[ch] as string));
 }
 
+/**
+ * Strips characters that are structural in PostgREST's embedded filter
+ * grammar (used by supabase-js's `.or()`/`.filter()`) — commas separate
+ * conditions and parentheses group them, with no escape syntax for literal
+ * occurrences in an unquoted value. Any raw comma/paren in a user-typed
+ * search term (pasted phone numbers, names, etc.) corrupts the filter string
+ * and the request fails with a 400/500. None of these characters are ever
+ * meaningful in a phone/name/email search, so stripping them is safe.
+ * Apply this once, right where free-text search input is captured, before
+ * it's used to build any `.or(...)`/`.filter(...)` string.
+ */
+export function sanitizeSearchTerm(value: string): string {
+  return value.replace(/[,()]/g, " ").trim();
+}
+
 /** Returns Tailwind classes for data-package cards based on network name */
 export function getNetworkCardColors(network: string): {
   card: string;

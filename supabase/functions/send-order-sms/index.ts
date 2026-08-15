@@ -26,13 +26,11 @@ serve(async (req) => {
       rLower.includes("not added") ||
       rLower.includes("unregistered");
 
-    if (action === "non_beneficiary" || action === "beneficiary_guide" || isBeneficiaryReason) {
-      const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)} refunded to wallet)` : "";
-      message = `SwiftData Alert: Your MTN number ${phone || "recipient"} requires Beneficiary Approval${amtPart}.\n\n` +
-        `Smart Guide to Activate:\n` +
-        `1️⃣ Visit: https://swiftdatagh.com/submit-numbers\n` +
-        `2️⃣ Enter ${phone || "your number"} & tap Submit\n` +
-        `3️⃣ Wait 5-15 mins for auto-approval & retry your order!`;
+    if (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) {
+      const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)})` : "";
+      message = `SwiftData Notice: Order #${shortId} for ${phone || "recipient"} is IN QUEUE ⏳ for MTN Whitelist Approval${amtPart}.\n\n` +
+        `Your bundle will deliver automatically after approval. No action needed!\n` +
+        `Track status: https://swiftdatagh.shop/submit-numbers`;
     } else if (action === "refund") {
       const reasonPart = reason ? ` Reason: ${reason}.` : "";
       message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) has been refunded to your wallet balance.${reasonPart}`;
@@ -47,8 +45,8 @@ serve(async (req) => {
     let sentToRecipient = false;
     let sentToAgent = false;
 
-    // Use "SwiftUpdate" Sender ID specifically for non-beneficiary guide SMS
-    const customSenderId = (action === "non_beneficiary" || action === "beneficiary_guide" || isBeneficiaryReason) ? "SwiftUpdate" : undefined;
+    // Use "SwiftUpdate" Sender ID specifically for queued/non-beneficiary guide SMS
+    const customSenderId = (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) ? "SwiftUpdate" : undefined;
 
     // Send SMS to recipient phone number if available
     if (phone) {

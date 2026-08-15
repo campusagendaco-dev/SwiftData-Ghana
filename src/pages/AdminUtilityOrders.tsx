@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeSearchTerm } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,7 +100,7 @@ const AdminUtilityOrders = () => {
       .range(from, to);
 
     if (search) {
-      const cleanSearch = search.trim();
+      const cleanSearch = sanitizeSearchTerm(search);
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
       const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
 

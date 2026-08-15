@@ -37,9 +37,12 @@ USING (true)
 WITH CHECK (true);
 
 -- SELECT and DELETE are scoped: admins see/manage everything (Admin Submitted
--- Numbers page), everyone else can only see their own submission history
--- (the "My Submitted Numbers" panel, matched on their own email) — there is
--- no legitimate reason for any non-admin to read or delete someone else's rows.
+-- Numbers page), everyone else can see their own submission history (the "My
+-- Submitted Numbers" panel, matched on their own email) PLUS the status of any
+-- number tied to one of their own orders — an agent's failed order can get
+-- submitted for approval by the admin, not just by the agent themselves, and
+-- they still need to see that status on their own Transactions page. There is
+-- no legitimate reason for any non-admin to read someone else's numbers beyond that.
 DROP POLICY IF EXISTS "Allow authenticated read beneficiary_submissions" ON public.beneficiary_submissions;
 DROP POLICY IF EXISTS "Allow public select beneficiary_submissions" ON public.beneficiary_submissions;
 DROP POLICY IF EXISTS "Allow scoped select beneficiary_submissions" ON public.beneficiary_submissions;
@@ -48,6 +51,9 @@ ON public.beneficiary_submissions FOR SELECT
 USING (
   public.has_role(auth.uid(), 'admin')
   OR submitted_by = (auth.jwt() ->> 'email')
+  OR phone_number IN (
+    SELECT customer_phone FROM public.orders WHERE agent_id = auth.uid()
+  )
 );
 
 DROP POLICY IF EXISTS "Allow authenticated delete beneficiary_submissions" ON public.beneficiary_submissions;

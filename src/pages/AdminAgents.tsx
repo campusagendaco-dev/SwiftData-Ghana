@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeSearchTerm } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -98,7 +98,8 @@ const AdminAgents = () => {
     query = query.eq("is_sub_agent" as any, false);
 
     if (search) {
-      query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,store_name.ilike.%${search}%,phone.ilike.%${search}%`);
+      const s = sanitizeSearchTerm(search);
+      query = query.or(`full_name.ilike.%${s}%,email.ilike.%${s}%,store_name.ilike.%${s}%,phone.ilike.%${s}%`);
     }
 
     if (filter === "approved") {

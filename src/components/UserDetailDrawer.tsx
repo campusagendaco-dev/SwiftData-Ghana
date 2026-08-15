@@ -44,8 +44,24 @@ interface Order {
   customer_phone?: string;
   amount: number;
   status: string;
+  failure_reason?: string | null;
   created_at: string;
 }
+
+// Matches the same detection logic used on the Non-Beneficiary Hub, the
+// general Admin Orders list, and the agent's own Transactions page, so this
+// drawer's badges stay consistent with all of them.
+function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason">): boolean {
+  if (order.status !== "fulfillment_failed") return false;
+  const reason = (order.failure_reason || "").toLowerCase();
+  return reason.includes("beneficiary") || reason.includes("not added");
+}
+
+const BENEFICIARY_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  submitted: { label: "in queue", className: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+  whitelisted: { label: "in queue", className: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+  in_queue: { label: "in queue", className: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+};
 
 interface SharedAccount {
   user_id: string;
@@ -98,6 +114,9 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   const [topupAmount, setTopupAmount] = useState("");
   const [topupLoading, setTopupLoading] = useState(false);
   const [walletType, setWalletType] = useState<"main" | "api">("main");
+  // Per-phone beneficiary whitelist status, shared with the Non-Beneficiary
+  // Hub, the general Admin Orders list, and the agent's own Transactions page.
+  const [beneficiaryStatus, setBeneficiaryStatus] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setIsSuspended(user?.is_suspended ?? false);
@@ -299,7 +318,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     const load = async () => {
       const queries: Promise<any>[] = [
         supabase.from("wallets").select("balance, api_balance").eq("agent_id", user.user_id).maybeSingle(),
-        supabase.from("orders").select("id, order_type, network, package_size, customer_phone, amount, status, created_at")
+        supabase.from("orders").select("id, order_type, network, package_size, customer_phone, amount, status, failure_reason, created_at")
           .eq("agent_id", user.user_id).order("created_at", { ascending: false }).limit(15),
         user.last_ip
           ? (supabase.from("profiles") as any).select("user_id, full_name, email").eq("last_ip", user.last_ip).neq("user_id", user.user_id).limit(5)
@@ -310,18 +329,39 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       ];
 
       const [walletRes, ordersRes, sharedRes, referrerRes] = await Promise.all(queries);
+      const orders = (ordersRes.data || []) as Order[];
 
       setData({
         walletBalance: Number(walletRes.data?.balance ?? 0),
         apiBalance: Number(walletRes.data?.api_balance ?? 0),
-        orders: (ordersRes.data || []) as Order[],
+        orders,
         sharedIpAccounts: (sharedRes.data || []) as SharedAccount[],
         referrerName: referrerRes.data?.full_name ?? undefined,
       });
       setLoading(false);
+
+      setBeneficiaryStatus({});
     };
 
     void load();
+  }, [user?.user_id]);
+
+  // Live updates for beneficiary submission status while the drawer is open.
+  useEffect(() => {
+    if (!user) return;
+    const ch = supabase
+      .channel("user-drawer-beneficiary-status-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beneficiary_submissions" },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row?.phone_number) return;
+          setBeneficiaryStatus((prev) => ({ ...prev, [row.phone_number]: row.status }));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [user?.user_id]);
 
   if (!user) return null;
@@ -622,7 +662,12 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           ) : (
             <div className="space-y-2">
               {data.orders.map((order) => {
-                const style = STATUS_STYLES[order.status] || "text-white/40 bg-white/5 border-white/10";
+                const phoneStatus = isBeneficiaryFailure(order) && order.customer_phone
+                  ? beneficiaryStatus[order.customer_phone]
+                  : undefined;
+                const override = phoneStatus ? BENEFICIARY_STATUS_BADGE[phoneStatus] : undefined;
+                const style = override?.className || STATUS_STYLES[order.status] || "text-white/40 bg-white/5 border-white/10";
+                const label = override?.label || order.status.replace(/_/g, " ");
                 return (
                   <div key={order.id} className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2.5 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
@@ -639,8 +684,8 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
                     </div>
                     <p className="text-xs font-black text-white/70 shrink-0">GH₵{Number(order.amount).toFixed(2)}</p>
                     <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${style}`}>
-                      <StatusIcon status={order.status} />
-                      {order.status.replace(/_/g, " ")}
+                      {override ? <Clock className="w-3 h-3" /> : <StatusIcon status={order.status} />}
+                      {label}
                     </span>
                   </div>
                 );

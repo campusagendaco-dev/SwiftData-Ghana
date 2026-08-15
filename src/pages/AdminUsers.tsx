@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeSearchTerm } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -70,11 +71,12 @@ const AdminUsers = () => {
       .range(from, to);
 
     if (search) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.trim());
+      const cleanSearch = sanitizeSearchTerm(search);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
       if (isUuid) {
-        q = q.eq("user_id", search.trim());
+        q = q.eq("user_id", cleanSearch);
       } else {
-        q = q.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+        q = q.or(`full_name.ilike.%${cleanSearch}%,email.ilike.%${cleanSearch}%,phone.ilike.%${cleanSearch}%`);
       }
     }
 

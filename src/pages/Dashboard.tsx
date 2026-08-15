@@ -17,11 +17,10 @@ import WelcomeAnnouncement from "@/components/WelcomeAnnouncement";
 import ReferAndEarn from "@/components/ReferAndEarn";
 import DailyCheckIn from "@/components/DailyCheckIn";
 import PromoCarousel from "@/components/PromoCarousel";
-import CompleteProfileBanner from "@/components/CompleteProfileBanner";
-import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import { CardTilt } from "@/components/ui/CardTilt";
 import { Badge } from "@/components/ui/badge";
 import WorldCupPredictor from "@/components/WorldCupPredictor";
+import AgentTierRecommenderCard from "@/components/AgentTierRecommenderCard";
 
 interface DashboardStats {
   walletBalance: number;
@@ -443,6 +442,9 @@ const Dashboard = () => {
               </CardTilt>
             ))}
       </div>
+
+      {/* ── Agent Tier Upgrade & Loyalty Goal Recommender ── */}
+      <AgentTierRecommenderCard totalOrders={stats.totalOrders} totalSales={stats.totalSalesAmount} />
 
       {/* ── Quick actions ── */}
       <div>

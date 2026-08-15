@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   Send, Users, Filter, RefreshCw,
-  Megaphone, Bell, MessageSquare, BarChart3,
+  Megaphone, Bell, MessageSquare, BarChart3, Sparkles
 } from "lucide-react";
 
 type Segment = "all_agents" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
@@ -219,6 +219,71 @@ export default function AdminBroadcast() {
             <div className="flex items-center gap-2 mb-2">
               <Megaphone className="w-4 h-4 text-primary" />
               <h2 className="text-white font-black">Compose Message</h2>
+            </div>
+
+            {/* AI Smart SMS Copy Recommendation Panel */}
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-400">
+                    AI Smart SMS Recommendations
+                  </span>
+                </div>
+                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">High Converting</Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  {
+                    title: "⚡ System Delivery Restored",
+                    badge: "All Networks Active",
+                    body: "⚡ All carrier networks (MTN, Telecel, AirtelTigo) are fully active and delivering instantly. You can now place customer orders safely at https://swiftdatagh.shop! 🚀",
+                    channel: "both" as Channel,
+                    segment: "all_agents" as Segment,
+                  },
+                  {
+                    title: "✅ MTN Whitelist Completed",
+                    badge: "Queue Cleared",
+                    body: "✅ MTN Beneficiary Whitelist queue has been cleared! All pending numbers are whitelisted. Resubmit your orders now at https://swiftdatagh.shop 📲",
+                    channel: "sms" as Channel,
+                    segment: "dormant_agents" as Segment,
+                  },
+                  {
+                    title: "🔥 Weekend Profit Boost",
+                    badge: "Commission Bonus",
+                    body: "🔥 Weekend Special: Enjoy extra commission discounts on all MTN & Telecel data packages today! Boost your daily profit margin now at https://swiftdatagh.shop 💰",
+                    channel: "both" as Channel,
+                    segment: "all_agents" as Segment,
+                  },
+                  {
+                    title: "📦 MTN SME Wholesale Promo",
+                    badge: "High Margin",
+                    body: "📦 Super cheap MTN SME bundles available! Buy 5GB at GHS 21.20, sell at GHS 24.00, and earn GHS 2.80 profit per order. Top up wallet now at https://swiftdatagh.shop 💸",
+                    channel: "sms" as Channel,
+                    segment: "active_7d" as Segment,
+                  },
+                ].map((rec, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setTitle(rec.title);
+                      setBody(rec.body);
+                      setChannel(rec.channel);
+                      setSegment(rec.segment);
+                      toast({ title: "SMS Recommendation Applied", description: `Loaded "${rec.title}" template.` });
+                    }}
+                    className="p-2.5 rounded-xl border border-white/10 bg-black/40 hover:bg-amber-500/15 text-left transition-all group space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white group-hover:text-amber-400">{rec.title}</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/70">{rec.badge}</span>
+                    </div>
+                    <p className="text-[10px] text-white/50 line-clamp-2 leading-tight">{rec.body}</p>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Templates */}
