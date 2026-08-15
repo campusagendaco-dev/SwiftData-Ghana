@@ -29,18 +29,19 @@ app.use("/auth", authRoutes);
 app.use("/api/v1/auth", authRoutes);
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true });
+  const mongoStatus = mongoose.connection.readyState === 1 ? "connected" : "connecting";
+  res.json({ ok: true, status: "healthy", mongo: mongoStatus });
 });
 
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => {
-    const port = Number(process.env.PORT || 3000);
-    app.listen(port, "0.0.0.0", () => {
-      console.log(`Auth backend running on http://0.0.0.0:${port}`);
-    });
-  })
-  .catch((error) => {
-    console.error("Mongo connection failed:", error);
-    process.exit(1);
-  });
+const port = Number(process.env.PORT || 3000);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`[Render/AuthBackend] Running on http://0.0.0.0:${port}`);
+  if (process.env.MONGODB_URI) {
+    mongoose
+      .connect(process.env.MONGODB_URI)
+      .then(() => console.log("[Render/AuthBackend] MongoDB connected successfully."))
+      .catch((error) => console.error("[Render/AuthBackend] Mongo connection error:", error));
+  } else {
+    console.warn("[Render/AuthBackend] Warning: MONGODB_URI env var not set.");
+  }
+});
