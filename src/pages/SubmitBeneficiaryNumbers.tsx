@@ -141,7 +141,9 @@ export default function SubmitBeneficiaryNumbers() {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) return parsed;
       }
-    } catch {}
+    } catch (e) {
+      /* ignore storage read error */
+    }
     return [];
   }, [user?.email]);
 
@@ -167,7 +169,8 @@ export default function SubmitBeneficiaryNumbers() {
         const merged = [...newItems, ...existing].slice(0, 200);
         localStorage.setItem(key, JSON.stringify(merged));
         return merged;
-      } catch {
+      } catch (e) {
+        /* ignore storage write error */
         return [];
       }
     },
@@ -228,7 +231,9 @@ export default function SubmitBeneficiaryNumbers() {
             fetchedRows = fallbackData as any[];
             queryError = null;
           }
-        } catch {}
+        } catch (e) {
+          /* ignore fallback error */
+        }
       }
 
       // 3. Fallback query: Query user's non-beneficiary failed orders from orders table
@@ -243,13 +248,15 @@ export default function SubmitBeneficiaryNumbers() {
             .order("created_at", { ascending: false })
             .limit(100);
 
-          if (!ordersErr && ordersData && ordersData.length > 0) {
-            ordersRows = ordersData.filter((o) => {
-              const reason = (o.failure_reason || "").toLowerCase();
+          if (!ordersErr && ordersData && (ordersData as any[]).length > 0) {
+            ordersRows = (ordersData as any[]).filter((o: any) => {
+              const reason = String(o.failure_reason || "").toLowerCase();
               return reason.includes("beneficiary") || reason.includes("not added") || reason.includes("whitelist");
             });
           }
-        } catch {}
+        } catch (e) {
+          /* ignore orders error */
+        }
       }
 
       // Combine DB records, order failures, and local storage submissions
@@ -598,19 +605,21 @@ export default function SubmitBeneficiaryNumbers() {
           // (admins, via RLS) — regular/anonymous users fall straight through to
           // Tier 2+, which fetch the key server-side and never expose it client-side.
           try {
-            const { data: provider } = await supabase
-              .from("providers")
+            const { data: providerData } = await supabase
+              .from("providers" as any)
               .select("api_key, base_url")
               .eq("handler_type", "datahub")
               .eq("is_active", true)
               .maybeSingle();
 
-            if (!provider?.api_key) {
+            const provider = providerData as any;
+
+            if (!provider || !provider.api_key) {
               throw new Error("No client-visible provider key — falling through to server-side tiers");
             }
 
-            const apiKey = provider.api_key;
-            const baseUrl = provider.base_url || "https://user.datahubgh.com/api/external";
+            const apiKey = String(provider.api_key);
+            const baseUrl = String(provider.base_url || "https://user.datahubgh.com/api/external");
 
             const cleanBase = baseUrl.trim().replace(/\/+$/, "");
             const targetUrl = cleanBase.endsWith("/purchases/submit-numbers")
@@ -634,7 +643,11 @@ export default function SubmitBeneficiaryNumbers() {
 
             const text = await directRes.text();
             let parsed: any = null;
-            try { parsed = JSON.parse(text); } catch {}
+            try { 
+              parsed = JSON.parse(text); 
+            } catch (e) {
+              /* ignore JSON parse failure on text response */
+            }
 
             if (directRes.ok || parsed?.success || parsed?.data?.submitted !== undefined || parsed?.data?.received !== undefined) {
               resData = parsed || {
@@ -874,7 +887,11 @@ export default function SubmitBeneficiaryNumbers() {
       console.error("[SubmitNumbers] Execution error:", err);
       const errMsg = err.message || "Upstream approval service error. Please try again later.";
       setResponseResult({
+        received: 0,
+        unique: 0,
         submitted: 0,
+        alreadyOnList: 0,
+        duplicates: 0,
         numbers: [],
         invalid: [...new Set(allInvalidNumbers)],
         message: errMsg,
