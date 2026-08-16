@@ -294,25 +294,25 @@ const StoreDepositFlow = ({
                 animate="animate"
                 exit="exit"
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center space-y-6 max-w-md mx-auto"
+                className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center space-y-4 max-w-md mx-auto"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 rounded-full blur-2xl opacity-40 animate-pulse bg-amber-500/40" />
+                  <div className="absolute inset-0 rounded-full blur-xl opacity-30 animate-pulse bg-amber-500/30" />
                   <motion.img 
                     src="/assets/golden_ghana_coin.png"
                     alt="Golden Ghanaian Coin"
-                    className="w-16 h-16 object-contain select-none relative z-10 rounded-full drop-shadow-[0_0_25px_rgba(245,158,11,0.7)]"
+                    className="w-12 h-12 object-contain select-none relative z-10 rounded-full drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]"
                     animate={{ rotateY: 360 }}
                     transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
-                <div>
-                  <h2 className="text-2xl font-black mb-2 text-white uppercase tracking-tight">Authorize Payment</h2>
-                  <p className="text-sm text-emerald-400 font-extrabold leading-relaxed max-w-[280px] mx-auto">
-                    Please check your phone and enter your Mobile Money PIN to authorize the transaction.
+                <div className="space-y-1">
+                  <h2 className="text-lg font-black text-white uppercase tracking-wide">AUTHORIZE PAYMENT</h2>
+                  <p className="text-xs text-emerald-400 font-extrabold leading-relaxed max-w-[220px] mx-auto">
+                    Please check your phone now and enter your Mobile Money PIN to authorize.
                   </p>
                 </div>
-                <div className="w-full max-w-[240px] h-3 bg-black/60 border border-amber-500/30 rounded-full mt-4 relative overflow-visible shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                <div className="w-full max-w-[200px] h-2 bg-black/60 border border-amber-500/25 rounded-full mt-2 relative overflow-visible shadow-inner">
                   <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-yellow-500/20 to-emerald-500/20 rounded-full" />
                   <motion.div 
                     className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 rounded-full"
@@ -323,14 +323,14 @@ const StoreDepositFlow = ({
                   <motion.img 
                     src="/assets/golden_ghana_coin.png"
                     alt="Golden Ghanaian Coin"
-                    className="absolute -top-2.5 w-8 h-8 object-contain select-none rounded-full drop-shadow-[0_2px_10px_rgba(245,158,11,0.9)]"
+                    className="absolute -top-2 w-6 h-6 object-contain select-none rounded-full drop-shadow-[0_2px_8px_rgba(245,158,11,0.8)]"
                     initial={{ left: "0%", rotate: 0 }}
                     animate={{ left: "100%", rotate: 720 }}
                     style={{ transform: "translateX(-50%)" }}
                     transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </div>
-                <p className="text-xs font-black text-amber-400 uppercase tracking-widest animate-pulse mt-2">WAITING FOR APPROVAL...</p>
+                <p className="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider animate-pulse mt-1">WAITING FOR APPROVAL...</p>
               </motion.div>
             )}
 
