@@ -297,24 +297,40 @@ const StoreDepositFlow = ({
                 className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center space-y-6 max-w-md mx-auto"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 rounded-full blur-2xl opacity-20 animate-pulse" style={{ backgroundColor: accentColor }} />
-                  <Loader2 className="w-16 h-16 animate-spin relative z-10" style={{ color: accentColor }} />
+                  <div className="absolute inset-0 rounded-full blur-2xl opacity-40 animate-pulse bg-amber-500/40" />
+                  <motion.img 
+                    src="/assets/golden_ghana_coin.png"
+                    alt="Golden Ghanaian Coin"
+                    className="w-16 h-16 object-contain select-none relative z-10 rounded-full drop-shadow-[0_0_25px_rgba(245,158,11,0.7)]"
+                    animate={{ rotateY: 360 }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black mb-2 text-white">Authorize Payment</h2>
-                  <p className="text-sm text-white/60 font-semibold leading-relaxed max-w-[280px] mx-auto">
+                  <h2 className="text-2xl font-black mb-2 text-white uppercase tracking-tight">Authorize Payment</h2>
+                  <p className="text-sm text-emerald-400 font-extrabold leading-relaxed max-w-[280px] mx-auto">
                     Please check your phone and enter your Mobile Money PIN to authorize the transaction.
                   </p>
                 </div>
-                <div className="w-full max-w-[200px] h-1.5 bg-white/10 rounded-full overflow-hidden mt-4">
+                <div className="w-full max-w-[240px] h-3 bg-black/60 border border-amber-500/30 rounded-full mt-4 relative overflow-visible shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-yellow-500/20 to-emerald-500/20 rounded-full" />
                   <motion.div 
-                    className="h-full rounded-full"
-                    style={{ backgroundColor: accentColor }}
+                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 rounded-full"
                     initial={{ width: "0%" }}
                     animate={{ width: "100%" }}
-                    transition={{ duration: 30, ease: "linear" }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                  <motion.img 
+                    src="/assets/golden_ghana_coin.png"
+                    alt="Golden Ghanaian Coin"
+                    className="absolute -top-2.5 w-8 h-8 object-contain select-none rounded-full drop-shadow-[0_2px_10px_rgba(245,158,11,0.9)]"
+                    initial={{ left: "0%", rotate: 0 }}
+                    animate={{ left: "100%", rotate: 720 }}
+                    style={{ transform: "translateX(-50%)" }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </div>
+                <p className="text-xs font-black text-amber-400 uppercase tracking-widest animate-pulse mt-2">WAITING FOR APPROVAL...</p>
               </motion.div>
             )}
 

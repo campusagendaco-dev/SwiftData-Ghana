@@ -810,17 +810,17 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 className="py-8 flex flex-col items-center justify-center text-center space-y-4"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 bg-amber-500/10 rounded-full blur-xl animate-pulse" />
+                  <div className="absolute inset-0 bg-amber-500/20 rounded-full blur-2xl animate-pulse" />
                   <motion.img
-                    src="/assets/world_cup_ball_2026.png"
-                    alt="2026 World Cup Ball"
-                    className="w-12 h-12 object-contain select-none inline-block relative z-10 rounded-full"
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                    src="/assets/golden_ghana_coin.png"
+                    alt="Golden Ghanaian Coin"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]"
+                    animate={{ rotateY: 360 }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
                 <div className="space-y-1 px-4">
-                  <h4 className="text-sm font-black text-foreground uppercase tracking-wider animate-pulse">Contacting Operator</h4>
+                  <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider animate-pulse">Contacting Operator</h4>
                   <p className="text-xs text-muted-foreground">Requesting direct payment prompt for {paymentPhone} on {paymentNetwork} network...</p>
                 </div>
               </motion.div>
@@ -896,7 +896,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     onClick={() => verifyOtp()}
                     disabled={otp.join("").length < 6}
                     className="w-full h-11 relative overflow-hidden rounded-xl shadow-lg transition-all active:scale-[0.97] hover:-translate-y-0.5 flex items-center justify-center gap-1.5 text-xs font-black uppercase tracking-wider text-black disabled:opacity-20 disabled:pointer-events-none"
-                    style={{ background: `linear-gradient(135deg, hsl(${theme.primary}) 0%, #F59E0B 100%)` }}
+                    style={{ background: `linear-gradient(135deg, #F59E0B 0%, #D97706 100%)` }}
                   >
                     <span>Verify and Approve</span>
                   </button>
@@ -914,68 +914,70 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 className="py-8 flex flex-col items-center justify-center text-center space-y-4"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-xl animate-pulse" />
+                  <div className="absolute inset-0 bg-amber-500/20 rounded-full blur-2xl animate-pulse" />
                   <motion.img
-                    src="/assets/world_cup_ball_2026.png"
-                    alt="2026 World Cup Ball"
-                    className="w-12 h-12 object-contain select-none inline-block relative z-10 rounded-full"
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                    src="/assets/golden_ghana_coin.png"
+                    alt="Golden Ghanaian Coin"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]"
+                    animate={{ rotateY: 360 }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
                 <div className="space-y-1 px-4">
-                  <h4 className="text-sm font-black text-foreground uppercase tracking-wider animate-pulse">Securing Verification</h4>
+                  <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider animate-pulse">Securing Verification</h4>
                   <p className="text-xs text-muted-foreground">Confirming OTP signature with Paystack billing engines...</p>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 5: success state */}
+            {/* STEP 5: success / approval waiting state */}
             {step === 'success' && (
               <motion.div
                 key="success"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="py-10 flex flex-col items-center text-center space-y-5"
+                className="py-8 flex flex-col items-center text-center space-y-5"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 rounded-full blur-2xl opacity-30 animate-pulse bg-emerald-500" />
+                  <div className="absolute inset-0 rounded-full blur-2xl opacity-40 animate-pulse bg-amber-500/40" />
                   <motion.img
-                    src="/assets/world_cup_ball_2026.png"
-                    alt="2026 World Cup Ball"
-                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full"
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "linear" }}
+                    src="/assets/golden_ghana_coin.png"
+                    alt="Golden Ghanaian Coin"
+                    className="w-16 h-16 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_25px_rgba(245,158,11,0.7)]"
+                    animate={{ rotateY: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
                 <div className="space-y-2">
-                  <h4 className="text-xl font-black text-foreground uppercase tracking-tight">Authorize Payment</h4>
-                  <p className="text-[13px] text-emerald-400/80 font-bold max-w-[240px] mx-auto leading-relaxed px-2">
+                  <h4 className="text-2xl font-black text-foreground uppercase tracking-tight drop-shadow-sm">AUTHORIZE PAYMENT</h4>
+                  <p className="text-[13px] text-emerald-400 font-extrabold max-w-[260px] mx-auto leading-relaxed px-2">
                     Please check your phone now and enter your Mobile Money PIN to approve the transaction.
                   </p>
                 </div>
-                {/* World Cup turf progress line with rolling ball */}
-                <div className="w-full max-w-[220px] h-2 bg-emerald-950/40 border border-emerald-500/25 rounded-full mt-2 relative overflow-visible">
-                  <div className="absolute inset-0 bg-emerald-900/10 rounded-full" />
+
+                {/* Golden Cedi Track with Rolling Coin */}
+                <div className="w-full max-w-[240px] h-3 bg-black/60 border border-amber-500/30 rounded-full mt-2 relative overflow-visible shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-yellow-500/20 to-emerald-500/20 rounded-full" />
                   <motion.div 
-                    className="absolute inset-y-0 left-0 bg-emerald-500 rounded-full"
+                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 rounded-full"
                     initial={{ width: "0%" }}
                     animate={{ width: "100%" }}
-                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                   />
                   <motion.img 
-                    src="/assets/world_cup_ball_2026.png"
-                    alt="2026 World Cup Ball"
-                    className="absolute -top-1.5 w-5 h-5 object-contain select-none rounded-full"
+                    src="/assets/golden_ghana_coin.png"
+                    alt="Golden Ghanaian Coin"
+                    className="absolute -top-2.5 w-8 h-8 object-contain select-none rounded-full drop-shadow-[0_2px_10px_rgba(245,158,11,0.9)]"
                     initial={{ left: "0%", rotate: 0 }}
-                    animate={{ left: "100%", rotate: 360 }}
+                    animate={{ left: "100%", rotate: 720 }}
                     style={{ transform: "translateX(-50%)" }}
-                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                   />
                 </div>
-                <p className="text-xs font-bold text-emerald-400/80 uppercase tracking-widest animate-pulse mt-2 mb-1">Waiting for approval...</p>
+
+                <p className="text-xs font-black text-amber-400 uppercase tracking-widest animate-pulse mt-2 mb-1">WAITING FOR APPROVAL...</p>
                 
-                <p className="text-[10px] text-muted-foreground font-medium px-4">
+                <p className="text-[10px] text-muted-foreground font-medium px-4 leading-relaxed">
                   Didn't receive a prompt? Dial <span className="font-bold text-foreground">*170#</span> &rarr; Option 6 (My Approvals) for MTN, or <span className="font-bold text-foreground">*110#</span> for Telecel.
                 </p>
 
@@ -991,7 +993,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   </button>
                   <button
                     onClick={() => onSuccess(reference)}
-                    className="flex-1 py-2.5 bg-foreground/5 hover:bg-foreground/10 border border-border rounded-xl text-[10px] font-black uppercase tracking-wider text-foreground transition-all active:scale-95 flex justify-center items-center gap-1"
+                    className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-black rounded-xl text-[10px] uppercase tracking-wider shadow-lg transition-all active:scale-95 flex justify-center items-center gap-1"
                   >
                     Verify Now <ArrowRight className="w-3.5 h-3.5" />
                   </button>
@@ -1002,7 +1004,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     onClick={handleFallbackCheckout}
                     className="w-full py-2.5 hover:bg-foreground/5 border border-border rounded-xl text-[10px] font-black uppercase tracking-widest text-foreground/60 transition-all active:scale-95 flex justify-center items-center gap-1.5"
                   >
-                    <ShieldCheck className="w-3 h-3" /> Still no prompt? Use Standard Checkout
+                    <ShieldCheck className="w-3 h-3 text-amber-400" /> Still no prompt? Use Standard Checkout
                   </button>
                 </div>
               </motion.div>
@@ -1012,8 +1014,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         </div>
 
         {/* Secure transaction lock footer */}
-        <div className="py-4 bg-[#0a0a0d] border-t border-white/5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/60" /> Secure 256-Bit SSL Payment
+        <div className="py-4 bg-[#0a0a0d] border-t border-white/5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-500/70">
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Secure 256-Bit SSL Payment &bull; SwiftData
         </div>
       </motion.div>
     </div>
