@@ -20,11 +20,10 @@ const InstallPrompt = () => {
     const hasDismissed = localStorage.getItem("pwa-prompt-dismissed");
     
     const handleBeforeInstallPrompt = (e: Event) => {
+      if (hasDismissed) return;
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      if (!hasDismissed) {
-        setIsVisible(true);
-      }
+      setIsVisible(true);
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);

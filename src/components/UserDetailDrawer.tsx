@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -370,7 +371,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { safeRemoveChannel(ch); };
   }, [user?.user_id]);
 
   if (!user) return null;

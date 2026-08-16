@@ -6,6 +6,7 @@ import { Menu, User, Wallet, Bell, Search, PlusCircle, AlertTriangle, X, Sun, Mo
 import { useAuth } from "@/hooks/useAuth";
 import { NotificationCenter } from "./NotificationCenter";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useNavigate } from "react-router-dom";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -95,7 +96,7 @@ const DashboardLayout = () => {
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { safeRemoveChannel(channel); };
   }, [user]);
 
   return (

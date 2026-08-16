@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -527,7 +528,7 @@ const AdminSecurity = () => {
 
   /* ── multi-channel realtime ───────────────────────────────────────── */
   useEffect(() => {
-    const profileCh = supabase.channel(`sec-p-${Math.random().toString(36).slice(2)}`)
+    const profileCh = supabase.channel("admin-sec-profiles")
       .on("postgres_changes" as any, { event: "UPDATE", schema: "public", table: "profiles" }, (payload: any) => {
         const p = payload.new as RecentLogin;
         if (!p.last_seen_at) return;
@@ -539,7 +540,7 @@ const AdminSecurity = () => {
         }, ...prev].slice(0, 20));
       }).subscribe();
 
-    const sentinelCh = supabase.channel(`sec-s-${Math.random().toString(36).slice(2)}`)
+    const sentinelCh = supabase.channel("admin-sec-sentinel")
       .on("postgres_changes" as any, { event: "INSERT", schema: "public", table: "sentinel_actions" }, (payload: any) => {
         const action = payload.new as GuardianLog;
         setGuardianLogs(prev => [action, ...prev].slice(0, 30));
@@ -550,7 +551,7 @@ const AdminSecurity = () => {
         });
       }).subscribe();
 
-    const blCh = supabase.channel(`sec-bl-${Math.random().toString(36).slice(2)}`)
+    const blCh = supabase.channel("admin-sec-blacklist")
       .on("postgres_changes" as any, { event: "INSERT", schema: "public", table: "security_blacklist" }, (payload: any) => {
         const e = payload.new;
         setLiveAlerts(prev => [{
@@ -562,9 +563,9 @@ const AdminSecurity = () => {
       }).subscribe();
 
     return () => {
-      supabase.removeChannel(profileCh);
-      supabase.removeChannel(sentinelCh);
-      supabase.removeChannel(blCh);
+      safeRemoveChannel(profileCh);
+      safeRemoveChannel(sentinelCh);
+      safeRemoveChannel(blCh);
     };
   }, [addEntry]);
 

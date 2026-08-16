@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useToast } from "@/hooks/use-toast";
 import { playSound, safeVibrate } from "@/lib/sound";
 
@@ -88,9 +89,9 @@ const AdminNotifications = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(ordersChannel);
-      supabase.removeChannel(withdrawalsChannel);
-      supabase.removeChannel(agentsChannel);
+      safeRemoveChannel(ordersChannel);
+      safeRemoveChannel(withdrawalsChannel);
+      safeRemoveChannel(agentsChannel);
     };
   }, []); // stable — toastRef handles the latest toast reference
 

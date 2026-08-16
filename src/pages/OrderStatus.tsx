@@ -8,6 +8,7 @@ import {
   Clock, ArrowRight, Package, ReceiptText, Store
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
@@ -475,7 +476,7 @@ const OrderStatus = () => {
     
     const interval = setInterval(() => pollStatus(false), 8000);
     return () => { 
-      if (channel) supabase.removeChannel(channel); 
+      safeRemoveChannel(channel); 
       clearInterval(interval); 
     };
   }, [reference, resolvedOrderId, pollStatus]);
