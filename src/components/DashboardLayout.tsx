@@ -62,7 +62,7 @@ const DashboardLayout = () => {
       }
 
       if (data) {
-        setWalletBalance(Number(data.balance || 0));
+        setWalletBalance(Number((data as any).balance || 0));
       } else {
         setWalletBalance(0);
       }
@@ -209,7 +209,7 @@ const DashboardLayout = () => {
               )}
             >
               <Avatar className={cn("w-9 h-9 border-2 transition-all", isDark ? "border-white/10 group-hover:border-primary/50" : "border-gray-200 group-hover:border-primary/50")}>
-                <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} />
+                <AvatarImage src={(profile as any)?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} />
                 <AvatarFallback className="bg-primary/10 text-xs">{firstName.charAt(0)}</AvatarFallback>
               </Avatar>
               <div className="hidden sm:flex flex-col items-start text-left leading-tight">
@@ -253,7 +253,7 @@ const DashboardLayout = () => {
         {/* ── Push notification banner ── */}
         {supported && permissionState === "default" && !pushDismissed && (
           <div className={cn(
-            "shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-2.5 transition-all duration-300 animate-in slide-in-from-top-4 duration-500",
+            "shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-2.5 transition-all duration-300 animate-in slide-in-from-top-4",
             isDark ? "bg-indigo-500/10 border-b border-indigo-500/20" : "bg-indigo-50 border-b border-indigo-200"
           )}>
             <div className="flex items-center gap-2.5">
@@ -261,7 +261,7 @@ const DashboardLayout = () => {
               <p className={cn("text-xs font-bold transition-colors", isDark ? "text-indigo-300" : "text-indigo-800")}>
                 Want real-time lock-screen alerts for your store sales?{" "}
                 <button
-                  onClick={subscribeUser}
+                  onClick={() => subscribeUser()}
                   disabled={subLoading}
                   className={cn("underline underline-offset-2 transition-colors font-black", isDark ? "text-white hover:text-indigo-200" : "text-indigo-950 hover:text-indigo-700")}
                 >
@@ -280,18 +280,24 @@ const DashboardLayout = () => {
           </div>
         )}
 
-        {/* ── AI Profit Recommender Banner ── */}
+        {/* ── AI Recommendation Alert Banner ── */}
         {aiRecommendations.length > 0 && (
-          <div className="shrink-0 px-4 sm:px-6 py-3 transition-all duration-300">
+          <div className="p-4 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border-b border-indigo-500/20 backdrop-blur-md">
             {aiRecommendations.map((rec) => (
-              <div key={rec.id} className="p-4 mb-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 backdrop-blur-md relative overflow-hidden flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between shadow-[0_0_30px_-5px_rgba(99,102,241,0.15)]">
-                <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
-                <div className="flex items-start gap-4 z-10">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center shrink-0 border border-indigo-500/30">
-                    <span className="text-xl">✨</span>
+              <div key={rec.id} className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 mt-1 sm:mt-0 shrink-0">
+                    <Zap className="w-5 h-5 animate-pulse" />
                   </div>
                   <div>
-                    <h3 className="font-black text-indigo-400">{rec.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        AI Sales Advisor
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                        Smart Recommendation
+                      </span>
+                    </div>
                     <p className="text-sm mt-1 text-gray-800 dark:text-gray-300 font-medium">
                       {rec.message}
                     </p>
@@ -300,7 +306,7 @@ const DashboardLayout = () => {
                 <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto z-10">
                   <button 
                     onClick={async () => {
-                      await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                      await (supabase.from("ai_recommendations" as any) as any).update({ is_acted_upon: true }).eq("id", rec.id);
                       setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
                       navigate("/dashboard/pricing");
                     }}
@@ -310,7 +316,7 @@ const DashboardLayout = () => {
                   </button>
                   <button 
                     onClick={async () => {
-                      await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                      await (supabase.from("ai_recommendations" as any) as any).update({ is_acted_upon: true }).eq("id", rec.id);
                       setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
                     }}
                     className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 transition-colors"

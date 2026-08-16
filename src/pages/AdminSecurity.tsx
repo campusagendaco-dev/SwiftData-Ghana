@@ -1532,9 +1532,9 @@ const AdminSecurity = () => {
                     const modelVal = e.target.value;
                     setDbAgents(prev => prev.map(a => a.name === agent.key ? { ...a, active_model: modelVal } : a));
                     
-                    const { error } = await supabase
-                      .from("ai_agent_registry")
-                      .update({ active_model: modelVal })
+                    const { error } = await (supabase
+                      .from("ai_agent_registry" as any) as any)
+                      .update({ active_model: modelVal } as any)
                       .eq("name", agent.key);
                       
                     if (error) {

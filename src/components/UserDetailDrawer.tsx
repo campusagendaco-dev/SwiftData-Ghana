@@ -127,7 +127,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   useEffect(() => {
     setIsSuspended(user?.is_suspended ?? false);
     setAdminNotes(user?.admin_notes || "");
-  }, [user?.user_id, user?.admin_notes]);
+  }, [user?.user_id, user?.admin_notes, user?.is_suspended]);
 
   const parseEdgeError = async (error: any, resData?: any): Promise<string> => {
     if (resData?.error) return resData.error;
@@ -138,7 +138,9 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           const parsed = JSON.parse(bodyText);
           if (parsed.error) return parsed.error;
         }
-      } catch {}
+      } catch (e) {
+        // Ignore error body JSON parse failures
+      }
       return error.message || "Edge function invocation failed";
     }
     return "Unknown error";
@@ -354,6 +356,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     };
 
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
 
   // Live updates for beneficiary submission status while the drawer is open.
@@ -372,6 +375,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       )
       .subscribe();
     return () => { safeRemoveChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
 
   if (!user) return null;

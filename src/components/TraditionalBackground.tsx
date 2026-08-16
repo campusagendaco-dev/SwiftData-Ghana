@@ -44,11 +44,12 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opac
           .maybeSingle();
         
         if (data) {
-          setEnabled(data.traditional_background_enabled !== false);
-          setCustomBgUrl(data.background_custom_image_url || null);
-          setBrightness(typeof data.background_brightness === 'number' ? data.background_brightness : 1.0);
-          setContrast(typeof data.background_contrast === 'number' ? data.background_contrast : 1.0);
-          setBlueness(typeof data.background_blueness === 'number' ? data.background_blueness : 0.0);
+          const d = data as any;
+          setEnabled(d.traditional_background_enabled !== false);
+          setCustomBgUrl(d.background_custom_image_url || null);
+          setBrightness(typeof d.background_brightness === 'number' ? d.background_brightness : 1.0);
+          setContrast(typeof d.background_contrast === 'number' ? d.background_contrast : 1.0);
+          setBlueness(typeof d.background_blueness === 'number' ? d.background_blueness : 0.0);
         }
       } catch (e) {
         console.error("Failed to load dynamic background settings:", e);
