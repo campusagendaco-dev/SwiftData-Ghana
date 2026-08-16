@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
-// Global Asset Recovery: Intercepts dynamic JS module import failures (typical after new app deployments or SW cache corruption)
+// Global Asset Recovery & Production Build v1.2.1: Intercepts dynamic JS module import failures (typical after new app deployments or SW cache corruption)
 // and seamlessly triggers an automatic hard-refresh to fetch the newest production assets, while clearing problematic service workers.
 const forceAssetRecovery = async (sourceMsg?: string) => {
   console.warn("Global Asset Recovery triggered:", sourceMsg);
