@@ -193,7 +193,7 @@ const DashboardOrders = () => {
       }
 
       if (!isRefunded) {
-        const { data: rpcData, error: rpcErr } = await supabase.rpc("refund_failed_order", { p_order_id: order.id });
+        const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("refund_failed_order", { p_order_id: order.id });
         if (rpcErr || !rpcData) {
           toast({ title: "Refund Blocked", description: rpcErr?.message || "Order is ineligible for refund.", variant: "destructive" });
           setRefundingId(null);
@@ -334,35 +334,41 @@ const DashboardOrders = () => {
     }
   }, [fetchOrders]);
 
-  // Auto-retry pending/paid orders sequentially every 30s
+  // Auto-retry pending/paid orders sequentially every 45s with rate-limit protection
   useEffect(() => {
     if (!user) return;
-    const interval = setInterval(() => {
-      setOrders((current) => {
-        const stuck = current.filter(
-          (o) => o.status === "pending" || o.status === "paid"
-        );
-        
-        const processStuck = async () => {
-          for (const o of stuck) {
-            const attempts = retryCountRef.current[o.id] ?? 0;
-            if (attempts >= 10) continue;
-            retryCountRef.current[o.id] = attempts + 1;
-            try {
-              await invokePublicFunctionAsUser("verify-payment", { body: { reference: o.id } });
-            } catch (e) {
-              console.error("Auto-retry error:", e);
-            }
-            await new Promise(resolve => setTimeout(resolve, 1000));
+    let isCancelled = false;
+
+    const runAutoRetry = async () => {
+      const stuck = orders.filter(
+        (o) => o.status === "pending" || o.status === "paid"
+      );
+      if (stuck.length === 0) return;
+
+      for (const o of stuck) {
+        if (isCancelled) break;
+        const attempts = retryCountRef.current[o.id] ?? 0;
+        if (attempts >= 5) continue;
+        retryCountRef.current[o.id] = attempts + 1;
+        try {
+          const res = await invokePublicFunctionAsUser("verify-payment", { body: { reference: o.id } });
+          if (res?.error?.status === 429 || String(res?.error?.message).includes("429")) {
+            console.warn("[DashboardOrders] Auto-retry hit 429 rate limit. Pausing batch retry.");
+            break; // Pause batch if rate limited!
           }
-        };
-        
-        processStuck();
-        return current;
-      });
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [user]);
+        } catch (e) {
+          console.error("Auto-retry error:", e);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    };
+
+    const interval = setInterval(runAutoRetry, 45_000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [user, orders]);
 
   const copyReceipt = useCallback((order: Order) => {
     const { date, time } = fmt(order.created_at);

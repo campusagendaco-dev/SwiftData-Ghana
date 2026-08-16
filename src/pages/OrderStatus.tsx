@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -172,12 +172,13 @@ const OrderStatus = () => {
 
         const { data, error } = await query.maybeSingle();
         if (data && !error) {
+          const storeData = data as any;
           const loaded = {
-            name: data.store_name,
-            logo: data.store_logo_url,
-            color: data.store_primary_color,
-            slug: data.slug,
-            custom_domain: data.custom_domain
+            name: storeData.store_name,
+            logo: storeData.store_logo_url,
+            color: storeData.store_primary_color,
+            slug: storeData.slug,
+            custom_domain: storeData.custom_domain
           };
           setStoreInfo(loaded);
           localStorage.setItem("current_store_tenant", JSON.stringify(loaded));
@@ -188,6 +189,7 @@ const OrderStatus = () => {
     };
 
     loadStoreDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeParam, activeDomain]);
 
   const storeName = isStoreRoute && storeInfo?.name ? storeInfo.name : "SwiftData Ghana";
@@ -197,50 +199,7 @@ const OrderStatus = () => {
 
   const meta = getStatusMeta(orderStatus, failed, network, statusMessage);
 
-  // --- SINGLE ORDER LOGIC ---
-  const pollStatus = async (force = false) => {
-    if (!reference || redirectedRef.current) return;
-
-    // Optimization: If order is already paid/processing, poll database status directly
-    // rather than executing a heavy edge function call that queries the provider.
-    if (!force && (orderStatus === "processing" || orderStatus === "paid")) {
-      try {
-        const { data: rpcData, error } = await supabase.rpc("get_public_order_status", {
-          p_reference: reference
-        });
-        if (rpcData && rpcData.length > 0) {
-          const data = rpcData[0];
-          handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
-          if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
-            redirectedRef.current = true;
-          }
-        }
-      } catch (err) {
-        console.error("Direct RPC polling error:", err);
-      }
-      return;
-    }
-
-    setIsRefreshing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("verify-payment", {
-        body: { reference: resolvedOrderId || reference, force },
-      });
-      if (error || !data) throw error || new Error("Failed to fetch status");
-      handleStatusUpdate(data.status, data.message || data.error);
-      
-      // Stop polling if we reached a terminal state
-      if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
-        redirectedRef.current = true; // reuse this ref as a 'stop polling' flag
-      }
-    } catch (err) {
-      console.error("Polling error:", err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const handleStatusUpdate = (status: OrderStatusType, message?: string) => {
+  const handleStatusUpdate = useCallback((status: OrderStatusType, message?: string) => {
     setOrderStatus(status);
     if (message) setStatusMessage(message);
     if (status === "fulfillment_failed") {
@@ -254,7 +213,59 @@ const OrderStatus = () => {
       }
       return;
     }
-  };
+  }, []);
+
+  // --- SINGLE ORDER LOGIC ---
+  const pollStatus = useCallback(async (force = false) => {
+    if (!reference || redirectedRef.current) return;
+
+    // Direct DB RPC status query first (lightweight, zero edge function rate-limit cost)
+    if (!force) {
+      try {
+        const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
+          p_reference: reference
+        });
+        const rpcList = rpcData as any[];
+        if (rpcList && rpcList.length > 0) {
+          const data = rpcList[0];
+          handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
+          if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
+            redirectedRef.current = true;
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Direct RPC polling error:", err);
+      }
+    }
+
+    setIsRefreshing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-payment", {
+        body: { reference: resolvedOrderId || reference, force },
+      });
+
+      if (error) {
+        const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
+        if (isRateLimit) {
+          console.warn("[OrderStatus] verify-payment 429 rate limited. Relying on DB status RPC polling.");
+          return;
+        }
+        throw error;
+      }
+      if (!data) throw new Error("Failed to fetch status");
+      handleStatusUpdate(data.status, data.message || data.error);
+      
+      // Stop polling if we reached a terminal state
+      if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
+        redirectedRef.current = true; // reuse this ref as a 'stop polling' flag
+      }
+    } catch (err) {
+      console.error("Polling error:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [reference, resolvedOrderId, handleStatusUpdate]);
 
   const copyReceipt = () => {
     const now = new Date().toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short" });
@@ -380,13 +391,14 @@ const OrderStatus = () => {
     if (!reference) return;
     const fetchOrderDetails = async () => {
       try {
-        const { data: rpcData, error } = await supabase.rpc("get_public_order_status", {
+        const { data: rpcData, error } = await (supabase.rpc as any)("get_public_order_status", {
           p_reference: reference
         });
 
         if (error) {
           console.error("Error fetching order details:", error);
-          if (error.status === 401 || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("token") || error.message?.toLowerCase().includes("unauthorized")) {
+          const errObj = error as any;
+          if (errObj.status === 401 || errObj.message?.toLowerCase().includes("jwt") || errObj.message?.toLowerCase().includes("token") || errObj.message?.toLowerCase().includes("unauthorized")) {
             console.warn("[OrderStatus] Stale/invalid auth token detected (401). Clearing session to allow guest access.");
             try {
               await supabase.auth.signOut({ scope: "local" });
@@ -395,8 +407,8 @@ const OrderStatus = () => {
             }
             window.location.reload();
           }
-        } else if (rpcData && rpcData.length > 0) {
-          const data = rpcData[0];
+        } else if (rpcData && (rpcData as any[]).length > 0) {
+          const data = (rpcData as any[])[0];
           setResolvedOrderId(data.id);
           setCreatedAt(data.created_at);
           if (data.network) setOrderNetwork(data.network);
@@ -410,7 +422,7 @@ const OrderStatus = () => {
       }
     };
     fetchOrderDetails();
-  }, [reference]);
+  }, [reference, handleStatusUpdate]);
 
   useEffect(() => {
     const fetchEstSpeed = async () => {
@@ -461,12 +473,12 @@ const OrderStatus = () => {
         });
     }
     
-    const interval = setInterval(() => pollStatus(false), 5000);
+    const interval = setInterval(() => pollStatus(false), 8000);
     return () => { 
       if (channel) supabase.removeChannel(channel); 
       clearInterval(interval); 
     };
-  }, [reference, resolvedOrderId]);
+  }, [reference, resolvedOrderId, pollStatus]);
 
   // --- GLOBAL TRACKER LOGIC ---
   const fetchTrackerData = async () => {

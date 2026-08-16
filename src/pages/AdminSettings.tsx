@@ -241,7 +241,7 @@ const AdminSettings = () => {
         .eq("role", "admin")
         .maybeSingle()
         .then(({ data }) => {
-          if (data?.allowed_ips) setAllowedIps(data.allowed_ips);
+          if (data && (data as any).allowed_ips) setAllowedIps((data as any).allowed_ips);
         });
     }
   }, [session?.user.id]);
@@ -312,8 +312,7 @@ const AdminSettings = () => {
 
     setAddingMatch(true);
     try {
-      const { error } = await supabase
-        .from("world_cup_matches")
+      const { error } = await (supabase.from("world_cup_matches" as any) as any)
         .insert({
           home_team: homeTeam,
           home_flag: homeFlag,
@@ -321,7 +320,7 @@ const AdminSettings = () => {
           away_flag: awayFlag,
           kickoff: new Date(kickoff).toISOString(),
           status: 'pending'
-        });
+        } as any);
 
       if (error) throw error;
 
@@ -347,8 +346,7 @@ const AdminSettings = () => {
 
     setUpdatingMatch(true);
     try {
-      const { error } = await supabase
-        .from("world_cup_matches")
+      const { error } = await (supabase.from("world_cup_matches" as any) as any)
         .update({
           home_team: editHomeTeam,
           home_flag: editHomeFlag,
@@ -356,7 +354,7 @@ const AdminSettings = () => {
           away_flag: editAwayFlag,
           kickoff: new Date(editKickoff).toISOString(),
           updated_at: new Date().toISOString()
-        })
+        } as any)
         .eq("id", editingMatchId);
 
       if (error) throw error;
@@ -504,6 +502,8 @@ const AdminSettings = () => {
           mashup_export_threshold: String(d.mashup_export_threshold || "10"),
           mashup_whatsapp_number: d.mashup_whatsapp_number || "",
           mashup_delivery_delay_mins: String(d.mashup_delivery_delay_mins || "15"),
+          show_scrolling_ad: d.show_scrolling_ad || false,
+          scrolling_ad_text: d.scrolling_ad_text || "",
         });
       }
       setLoading(false);
@@ -511,6 +511,7 @@ const AdminSettings = () => {
 
     fetchSettings();
     fetchMatches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
   const handleSave = async () => {
@@ -732,13 +733,13 @@ const AdminSettings = () => {
 
       // 1. Update existing providers by ID (safer than name)
       if (existing.length > 0) {
-        const { error } = await supabase.from("providers").upsert(existing, { onConflict: 'id' });
+        const { error } = await supabase.from("providers" as any).upsert(existing as any, { onConflict: 'id' });
         if (error) throw error;
       }
       
       // 2. Insert new providers (use name for conflict resolution if they already exist)
       if (newItems.length > 0) {
-        const { error } = await supabase.from("providers").upsert(newItems, { onConflict: 'name' });
+        const { error } = await supabase.from("providers" as any).upsert(newItems as any, { onConflict: 'name' });
         if (error) throw error;
       }
 
@@ -796,7 +797,7 @@ const AdminSettings = () => {
               <div className="flex items-start justify-between border-t border-white/5 pt-4">
                 <div className="space-y-0.5">
                   <Label>Automated Failed Orders Refund</Label>
-                  <p className="text-xs text-muted-foreground text-amber-500/80">
+                  <p className="text-xs text-amber-500/80">
                     Automatically refund failed orders. If disabled, failed orders remain failed and must be manually refunded by the admin to prevent losses from delayed webhooks.
                   </p>
                 </div>
@@ -809,7 +810,7 @@ const AdminSettings = () => {
               <div className="flex items-start justify-between border-t border-white/5 pt-4">
                 <div className="space-y-0.5">
                   <Label>Allow Duplicate Purchases</Label>
-                  <p className="text-xs text-muted-foreground text-amber-500/80">
+                  <p className="text-xs text-amber-500/80">
                     Allow users to make back-to-back duplicate data/airtime purchases for the same recipient number within 60 minutes.
                   </p>
                 </div>
@@ -844,7 +845,7 @@ const AdminSettings = () => {
               <div className="flex items-start justify-between border-t border-white/5 pt-4">
                 <div className="space-y-0.5">
                   <Label>MTN Beneficiary Whitelist Verification</Label>
-                  <p className="text-xs text-muted-foreground text-rose-500/80">
+                  <p className="text-xs text-rose-500/80">
                     Verify recipient MTN numbers against the DataHub whitelisting API before checkout and payment.
                   </p>
                 </div>
@@ -2592,9 +2593,8 @@ const AdminSettings = () => {
                 onClick={async () => {
                   setSaving(true);
                   try {
-                    const { error } = await supabase
-                      .from("user_roles")
-                      .update({ allowed_ips: allowedIps })
+                    const { error } = await (supabase.from("user_roles" as any) as any)
+                      .update({ allowed_ips: allowedIps } as any)
                       .eq("user_id", session?.user.id)
                       .eq("role", "admin");
 
@@ -2632,14 +2632,15 @@ const AdminSettings = () => {
                   if (!window.confirm("Restore wallet balances for all affected agents? This runs once and cannot be reversed.")) return;
                   setRestoringWallets(true);
                   try {
-                    const { data, error } = await supabase.rpc("admin_apply_wallet_restoration");
+                    const { data, error } = await (supabase.rpc as any)("admin_apply_wallet_restoration");
                     if (error) throw error;
-                    if (data?.success === false) {
-                      toast({ title: "Already Applied", description: data.message || "Restoration was already completed.", variant: "default" });
+                    const resData = data as any;
+                    if (resData?.success === false) {
+                      toast({ title: "Already Applied", description: resData.message || "Restoration was already completed.", variant: "default" });
                     } else {
                       toast({
                         title: "Wallet Restoration Complete",
-                        description: data?.message || `${data?.restored_agents} agent balances restored.`,
+                        description: resData?.message || `${resData?.restored_agents} agent balances restored.`,
                       });
                     }
                   } catch (e: any) {

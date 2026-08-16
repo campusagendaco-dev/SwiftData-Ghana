@@ -31,13 +31,13 @@ export async function invokePublicFunction(functionName: string, options?: { bod
     const reference = body?.reference || crypto.randomUUID();
     try {
       const { queueTransaction } = await import("./offline-queue");
-      const SUPABASE_URL = publicFunctionClient.supabaseUrl;
+      const baseUrl = SUPABASE_URL;
       const cacheBuster = `cb=${Date.now()}`;
       const finalUrl = supportsQueryInPath
         ? (functionName.includes("?") 
-            ? `${SUPABASE_URL}/functions/v1/${functionName}&${cacheBuster}` 
-            : `${SUPABASE_URL}/functions/v1/${functionName}?${cacheBuster}`)
-        : `${SUPABASE_URL}/functions/v1/${functionName}`;
+            ? `${baseUrl}/functions/v1/${functionName}&${cacheBuster}` 
+            : `${baseUrl}/functions/v1/${functionName}?${cacheBuster}`)
+        : `${baseUrl}/functions/v1/${functionName}`;
       
       await queueTransaction({
         id: reference,
@@ -85,6 +85,9 @@ export async function invokePublicFunction(functionName: string, options?: { bod
   while (retries <= maxRetries) {
     try {
       const result = await publicFunctionClient.functions.invoke(finalFunctionName, finalOptions);
+      if (result.error && (result.error.status === 429 || String(result.error.message).includes("429"))) {
+        console.warn(`[PublicFunctionClient] ${functionName} hit rate limit (429).`);
+      }
       // If we got a result (even an error), return it
       return result;
     } catch (error: any) {
@@ -102,8 +105,8 @@ export async function invokePublicFunction(functionName: string, options?: { bod
               const body = options?.body as any;
               const reference = body?.reference || crypto.randomUUID();
               const { queueTransaction } = await import("./offline-queue");
-              const SUPABASE_URL = publicFunctionClient.supabaseUrl;
-              const finalUrl = `${SUPABASE_URL}/functions/v1/${finalFunctionName}`;
+              const baseUrl = SUPABASE_URL;
+              const finalUrl = `${baseUrl}/functions/v1/${finalFunctionName}`;
               
               await queueTransaction({
                 id: reference,

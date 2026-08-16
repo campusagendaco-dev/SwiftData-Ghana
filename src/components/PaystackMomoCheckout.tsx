@@ -126,10 +126,11 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           .maybeSingle();
 
         if (data) {
-          if (data.auto_gateway_switch_by_package && (metadata?.is_korba === true || metadata?.is_korba === "true")) {
+          const settings = data as any;
+          if (settings.auto_gateway_switch_by_package && (metadata?.is_korba === true || metadata?.is_korba === "true")) {
             setActiveGateway("korba");
-          } else if (data.active_payment_gateway) {
-            setActiveGateway(data.active_payment_gateway);
+          } else if (settings.active_payment_gateway) {
+            setActiveGateway(settings.active_payment_gateway);
           }
         }
       } catch (e) {
@@ -212,6 +213,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   // Polling for success verification
   useEffect(() => {
     let isPolling = true;
+    let pollTimer: NodeJS.Timeout | null = null;
     
     if (step === 'success' && reference) {
       const pollVerification = async () => {
@@ -221,23 +223,32 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           });
           
           if (!isPolling) return;
+
+          if (error) {
+            const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
+            if (isRateLimit) {
+              console.warn("[PaystackMomoCheckout] 429 rate limited, backing off polling for 12 seconds.");
+              pollTimer = setTimeout(pollVerification, 12000);
+              return;
+            }
+          }
           
           if (data?.status === "fulfilled" || data?.status === "paid" || data?.status === "processing") {
             toast({ title: "Payment Verified", description: "Your transaction was successful!" });
             onSuccess(reference);
           } else if (data?.status === "failed" || data?.status === "error" || data?.status === "fulfillment_failed") {
-            const failMsg = data.error || data.reason || "The transaction was unsuccessful.";
+            const failMsg = data?.error || data?.reason || "The transaction was unsuccessful.";
             toast({ title: "Payment Failed", description: failMsg, variant: "destructive" });
             setErrorMessage(failMsg);
             setStep('payment_number');
           } else {
-            // Still pending, poll again after 3 seconds
-            setTimeout(pollVerification, 3000);
+            // Still pending, poll again after 5 seconds
+            pollTimer = setTimeout(pollVerification, 5000);
           }
         } catch (err) {
           if (!isPolling) return;
           // on error, wait and try again
-          setTimeout(pollVerification, 5000);
+          pollTimer = setTimeout(pollVerification, 8000);
         }
       };
       
@@ -246,6 +257,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     
     return () => {
       isPolling = false;
+      if (pollTimer) clearTimeout(pollTimer);
     };
   }, [step, reference, onSuccess, toast]);
 

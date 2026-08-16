@@ -275,7 +275,7 @@ async function callProviderApi(
   provider: any,
   data: Record<string, unknown>,
   endpoint: string = "purchase"
-): Promise<{ ok: boolean; reason: string; id?: string; status?: string }> {
+): Promise<{ ok: boolean; reason?: string; id?: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
   const adapter = getProviderAdapter(handlerType);
 
@@ -301,7 +301,7 @@ async function callProviderApi(
 
 // --- Main Handler ---
 
-serve(async (req) => {
+serve(async (req: any) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -333,19 +333,25 @@ serve(async (req) => {
     const resolvedReference = reference || orderId;
 
     // ─── 🛡️ DOS & BRUTE-FORCE RATE LIMITING ─────────────────────────────────
-    const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
+    const rawIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
+    const clientIp = rawIp || "unknown-ip";
     const authHeader = req.headers.get("authorization") || req.headers.get("x-user-access-token") || "";
     const isAuthedOrForce = force || (authHeader.length > 20);
 
-    // Limit IP-based requests (1200/min for authed/admin retries, 300/min for public)
-    const ipRateLimit = isAuthedOrForce ? 1200 : 300;
+    // Differentiate rate key if IP is unknown/shared
+    const rateKey = (clientIp === "unknown-ip" && authHeader)
+      ? `ip_verify_auth_${authHeader.slice(-16)}`
+      : `ip_verify_${clientIp}`;
+
+    // Limit IP-based requests (1200/min for authed/admin retries, 600/min for public)
+    const ipRateLimit = isAuthedOrForce ? 1200 : 600;
     const { data: ipAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
-      p_key: `ip_verify_${clientIp}`,
+      p_key: rateKey,
       p_rate_limit: ipRateLimit
     });
     
     if (!ipAllowed) {
-      console.warn(`[SECURITY] Blocked rate-limited IP on verify-payment: ${clientIp}`);
+      console.warn(`[SECURITY] Blocked rate-limited key on verify-payment: ${rateKey}`);
       return new Response(JSON.stringify({ error: "Too many requests. Please slow down." }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -357,7 +363,7 @@ serve(async (req) => {
       if (cleanPhone) {
         const { data: phoneAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
           p_key: `phone_verify_${cleanPhone}`,
-          p_rate_limit: 30
+          p_rate_limit: 60
         });
         
         if (!phoneAllowed) {
@@ -466,7 +472,6 @@ serve(async (req) => {
     const { data: existingOrder } = await supabaseAdmin
       .from("orders").select("*").eq("id", targetReference).maybeSingle();
 
-    const authHeader = req.headers.get("authorization") || "";
     const isServiceRole = authHeader.includes(SUPABASE_SERVICE_ROLE_KEY || "nevermatch_placeholder");
 
     // Client restriction: Leave the payment verification/fulfillment trigger to the webhook confirmation,
@@ -554,7 +559,7 @@ serve(async (req) => {
           const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
           const isFailed = checkResult.status === "failed" || checkResult.status === "error" || checkResult.status === "refunded";
           if (isDelivered) {
-            const token = checkResult.raw?.prepaid_token;
+            const token = (checkResult as any).raw?.prepaid_token;
             await fulfillOrder(supabaseAdmin, targetReference, provider.id, existingOrder.provider_order_id, token || null);
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
           } else if (isFailed) {
@@ -617,7 +622,7 @@ serve(async (req) => {
           
           if (isDelivered) {
             console.log(`[verify-payment] Found fulfilled order ${targetReference} at ${provider.name} during pre-check.`);
-            const token = checkResult.raw?.prepaid_token;
+            const token = (checkResult as any).raw?.prepaid_token;
             await fulfillOrder(supabaseAdmin, targetReference, provider.id, checkResult.id || existingOrder.provider_order_id || null, token || null);
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
           } else if (isProcessing) {
@@ -1178,7 +1183,7 @@ serve(async (req) => {
         .gte("created_at", sixtyMinutesAgo)
         .order("created_at", { ascending: false });
 
-      const siblingOrders = (rawSiblings || []).filter(o => {
+      const siblingOrders = (rawSiblings || []).filter((o: any) => {
         const n1 = String(o.network || "").trim().toUpperCase();
         const n2 = String(network || "").trim().toUpperCase();
         const networksMatch = n1 === n2 ||
@@ -1512,11 +1517,11 @@ serve(async (req) => {
       
       // Auto-fallback for AirtelTigo: If AT_PREMIUM fails with "Bundle not available", try AT_BIGTIME
       if (!result.ok && /bundle not available|invalid bundle/i.test(result.reason) && (network.toUpperCase().includes("AIRTEL") || network.toUpperCase() === "AT")) {
-        const ht = provider.handler_type || "standard";
+        const ht = String(provider.handler_type || "standard");
         if (ht === "datamart" || ht === "spendless" || ht === "datahub" || ht === "bossu") {
           console.log(`[verify-payment] Retrying ${provider.name} with AT_BIGTIME/AT for AirtelTigo bundle...`);
           // Datamart/Datahub use AT_BIGTIME. Bossu uses AT.
-          const fallbackNetKey = (ht === "bossu" || ht === "standard") ? "AT" : "AT_BIGTIME";
+          const fallbackNetKey = (ht as string === "bossu" || ht as string === "standard") ? "AT" : "AT_BIGTIME";
           result = await callProviderApi(supabaseAdmin, provider, await buildDataPayload(provider, fallbackNetKey), "purchase");
         }
       }
