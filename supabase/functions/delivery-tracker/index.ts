@@ -9,7 +9,7 @@ const corsHeaders = {
   "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
 };
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -54,15 +54,15 @@ serve(async (req) => {
     if (statsError) throw statsError;
 
     const recentFulfilledInHour = recentOrders?.filter(
-      o => o.status === 'fulfilled' && new Date(o.created_at).getTime() >= oneHourAgoMs
+      (o: any) => o.status === 'fulfilled' && new Date(o.created_at).getTime() >= oneHourAgoMs
     ) || [];
 
     const stats = {
       checked: recentOrders?.length || 0,
       delivered: recentFulfilledInHour.length,
-      partial: recentOrders?.filter(o => o.status === 'processing').length || 0,
-      pending: recentOrders?.filter(o => o.status === 'paid').length || 0,
-      failed: recentOrders?.filter(o => o.status === 'fulfillment_failed' || o.status === 'error').length || 0,
+      partial: recentOrders?.filter((o: any) => o.status === 'processing').length || 0,
+      pending: recentOrders?.filter((o: any) => o.status === 'paid').length || 0,
+      failed: recentOrders?.filter((o: any) => o.status === 'fulfillment_failed' || o.status === 'error').length || 0,
     };
 
     // Deterministic 1-minute bucket seeds for tracking IDs & batch numbers
@@ -71,7 +71,7 @@ serve(async (req) => {
     const batchSeed = ((minuteBucket * 1103515245) % 900000) + 100000;
 
     // 2. Get the "Last Delivered" order details — no PII
-    const lastDeliveredOrder = recentOrders?.find(o => o.status === 'fulfilled');
+    const lastDeliveredOrder = recentOrders?.find((o: any) => o.status === 'fulfilled');
     let lastDelivered = null;
     if (lastDeliveredOrder) {
       const placedAt = new Date(lastDeliveredOrder.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -83,18 +83,18 @@ serve(async (req) => {
 
     // 3. Build batch summaries — NO phone numbers exposed
     const inCurrentBatch = recentOrders
-      ?.filter(o => o.status === 'paid' || o.status === 'processing')
+      ?.filter((o: any) => o.status === 'paid' || o.status === 'processing')
       .slice(0, 5)
-      .map(o => ({
+      .map((o: any) => ({
         network: o.network || "YELLO",
         capacity: o.package_size || "1GB",
         deliveryStatus: o.status === 'processing' ? 'Processing' : 'In Queue'
       })) || [];
 
     const inLastDeliveredBatch = recentOrders
-      ?.filter(o => o.status === 'fulfilled')
+      ?.filter((o: any) => o.status === 'fulfilled')
       .slice(0, 5)
-      .map(o => ({
+      .map((o: any) => ({
         network: o.network || "YELLO",
         capacity: o.package_size || "1GB",
         deliveryStatus: "Sent"

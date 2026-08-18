@@ -53,7 +53,7 @@ const AdminUsers = () => {
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const PAGE_SIZE = 50;
-  const [actionLoading, setActionLoading] = useState<Record<string, "reset" | "delete" | "approve-sub" | "approve-agent" | "impersonate" | null>>({});
+  const [actionLoading, setActionLoading] = useState<Record<string, "reset" | "delete" | "approve-sub" | "approve-agent" | "impersonate" | "suspend" | null>>({});
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
 
   const fetchUsers = useCallback(async (isLoadMore = false) => {
@@ -130,7 +130,7 @@ const AdminUsers = () => {
   useEffect(() => { 
     const timer = setTimeout(() => fetchUsers(false), 300);
     return () => clearTimeout(timer);
-  }, [tab, search]);
+  }, [tab, search, fetchUsers]);
 
   const setRowAction = (userId: string, action: UserRow["is_agent"] extends boolean ? any : any) => {
     setActionLoading((prev) => ({ ...prev, [userId]: action }));
@@ -279,7 +279,7 @@ const AdminUsers = () => {
             const parsed = JSON.parse(bodyText);
             if (parsed.error) msg = parsed.error;
           }
-        } catch {}
+        } catch (_e) { /* ignore parse error */ }
         throw new Error(msg);
       }
       if (data?.error) throw new Error(data.error);
@@ -311,7 +311,7 @@ const AdminUsers = () => {
             const parsed = JSON.parse(bodyText);
             if (parsed.error) msg = parsed.error;
           }
-        } catch {}
+        } catch (_e) { /* ignore parse error */ }
         throw new Error(msg);
       }
       if (data?.error) throw new Error(data.error);

@@ -137,6 +137,10 @@ const AdminOrders = () => {
   // Reset to page 1 when any filter changes
   useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter, networkFilter, orderTypeFilter]);
 
+  const fetchBeneficiaryStatusForOrders = useCallback(async (_batch: OrderRow[]) => {
+    return;
+  }, []);
+
   const fetchOrders = useCallback(async () => {
     setLoading(true);
 
@@ -192,10 +196,15 @@ const AdminOrders = () => {
     if (networkFilter !== "all") {
       q = q.eq("network", networkFilter);
     }
-
     if (orderTypeFilter !== "all") {
       q = q.eq("order_type", orderTypeFilter);
     }
+    if (search.trim()) {
+      const term = sanitizeSearchTerm(search);
+      q = q.or(`id.ilike.%${term}%,customer_phone.ilike.%${term}%,customer_name.ilike.%${term}%`);
+    }
+
+    q = q.order("created_at", { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
     const { data, count, error } = await q;
     
@@ -251,16 +260,7 @@ const AdminOrders = () => {
     setAllOrders(enriched);
     setLoading(false);
     void fetchBeneficiaryStatusForOrders(enriched);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, toast]);
-
-  // Looks up beneficiary_submissions for any non-beneficiary failures in this
-  // page of orders, so the badge reflects submitted/in-queue status instead
-  // of just the raw dead-end "fulfillment_failed" label.
-  const fetchBeneficiaryStatusForOrders = useCallback(async (_batch: OrderRow[]) => {
-    // Non-beneficiary failure orders are automatically mapped to "in queue"
-    // via isBeneficiaryFailure(order) in getOrderBadge without needing REST queries.
-    return;
-  }, []);
+  }, [page, search, statusFilter, networkFilter, orderTypeFilter, toast, profiles, fetchBeneficiaryStatusForOrders]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchOrders(), 300);
@@ -346,7 +346,7 @@ const AdminOrders = () => {
     }
     setRefunding(orderId);
     try {
-      const { data, error } = await supabase.rpc("refund_failed_order", { p_order_id: orderId });
+      const { data, error } = await (supabase.rpc as any)("refund_failed_order", { p_order_id: orderId });
       if (error) throw error;
       if (data) {
         if (currentUser) {
@@ -465,8 +465,8 @@ const AdminOrders = () => {
 
       toast({ title: "Executing database update…", description: `Transitioning ${totalCount} orders globally…` });
 
-      const { error } = await supabase
-        .from("orders")
+      const { error } = await (supabase
+        .from("orders") as any)
         .update({ 
           status: "fulfilled", 
           failure_reason: "Forced global fulfillment via admin dashboard" 
@@ -510,8 +510,8 @@ const AdminOrders = () => {
       }
 
       const name = data.account_name;
-      const { error: updateError } = await supabase
-        .from("orders")
+      const { error: updateError } = await (supabase
+        .from("orders") as any)
         .update({ customer_name: name })
         .eq("id", orderId);
 
@@ -530,8 +530,8 @@ const AdminOrders = () => {
     if (!bulkStatus || selectedIds.size === 0) return;
     setBulkUpdating(true);
     const ids = Array.from(selectedIds);
-    const { error } = await supabase
-      .from("orders")
+    const { error } = await (supabase
+      .from("orders") as any)
       .update({ status: bulkStatus, failure_reason: null, updated_at: new Date().toISOString() })
       .in("id", ids);
     if (error) {

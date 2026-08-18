@@ -112,7 +112,7 @@ export default function AdminSubmittedBeneficiaryNumbers() {
   const [addRawText, setAddRawText] = useState("");
   const [addLoading, setAddLoading] = useState(false);
 
-  const fetchSubmittedNumbers = async () => {
+  const fetchSubmittedNumbers = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch non-beneficiary orders directly from the orders table
@@ -159,11 +159,11 @@ export default function AdminSubmittedBeneficiaryNumbers() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     fetchSubmittedNumbers();
-  }, []);
+  }, [fetchSubmittedNumbers]);
 
   // Filtered records
   const filteredRecords = useMemo(() => {

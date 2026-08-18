@@ -168,7 +168,7 @@ const AgentStore = () => {
 
   const fetchWalletBalance = useCallback(async () => {
     if (profile?.user_id) {
-      const { data } = await supabase.from("wallets").select("balance").eq("agent_id", profile.user_id).maybeSingle();
+      const { data }: { data: any } = await (supabase.from("wallets" as any)).select("balance").eq("agent_id", profile.user_id).maybeSingle();
       if (data) {
         setCustomerWalletBalance(Number(data.balance));
       } else {
@@ -192,15 +192,14 @@ const AgentStore = () => {
   useEffect(() => {
     if (profile && !profile.parent_agent_id && agent?.user_id && profile.user_id !== agent.user_id) {
       const linkAccount = async () => {
-        await supabase
-          .from("profiles")
+        await (supabase.from("profiles") as any)
           .update({ parent_agent_id: agent.user_id })
           .eq("user_id", profile.user_id);
         refreshProfile();
       };
       linkAccount();
     }
-  }, [profile, agent?.user_id]);
+  }, [profile, agent?.user_id, refreshProfile]);
 
   // Dynamically update document title and favicon to match storefront branding
   useEffect(() => {
@@ -210,14 +209,32 @@ const AgentStore = () => {
       if (agent.store_logo_url) {
         let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
         if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          document.getElementsByTagName('head')[0].appendChild(link);
+          link = document.createElement("link");
+          link.rel = "icon";
+          document.head.appendChild(link);
         }
         link.href = agent.store_logo_url;
       }
     }
-  }, [agent]);
+  }, [agent?.store_name, agent?.store_logo_url]);
+
+  // Combined packages list for current network with dynamically calculated selling prices
+  const availablePackages = useMemo(() => {
+    const rawList = basePackages[selectedNetwork] || [];
+    
+    // Sort packages by size numerically (e.g. 1GB, 2GB, 5GB, 10GB, 50GB)
+    const sortedList = [...rawList].sort((a, b) => {
+      const getMb = (sz: string) => {
+        const num = parseFloat(sz);
+        if (sz.toUpperCase().includes("GB")) return num * 1024;
+        if (sz.toUpperCase().includes("MB")) return num;
+        return num;
+      };
+      return getMb(a.size) - getMb(b.size);
+    });
+
+    return sortedList;
+  }, [selectedNetwork]);
 
   // Real-time background beneficiary validation for MTN numbers
   useEffect(() => {
@@ -623,13 +640,15 @@ const AgentStore = () => {
             allow_non_beneficiary_continue: allowContinue,
             expiry: Date.now() + 5 * 60 * 1000 // Cache for 5 minutes
           }));
-        } catch (e) {}
+        } catch (e) {
+          // ignore cache read failure
+        }
 
         if (!agentRes?.data) {
           // Fallback direct profile lookup to prevent "Store Not Found" when reseller_stores is unsynced
           const targetSlug = slug ? slug.toLowerCase().trim() : null;
-          let profileQuery = supabase
-            .from("profiles")
+          let profileQuery = (supabase
+            .from("profiles") as any)
             .select("user_id, store_name, full_name, whatsapp_number, support_number, email, whatsapp_group_link, agent_prices, sub_agent_prices, registered_user_prices, disabled_packages, is_agent, is_sub_agent, agent_approved, sub_agent_approved, parent_agent_id, sub_agent_activation_markup, store_logo_url, store_primary_color, slug, custom_domain");
 
           if (targetSlug && targetSlug !== "undefined" && targetSlug !== "null") {
@@ -645,8 +664,8 @@ const AgentStore = () => {
             
             // Auto-heal background sync into reseller_stores
             if (profileFallback.user_id && profileFallback.slug) {
-              supabase
-                .from("reseller_stores")
+              (supabase
+                .from("reseller_stores") as any)
                 .upsert({
                   user_id: profileFallback.user_id,
                   store_name: profileFallback.store_name || profileFallback.full_name || "Store",
@@ -697,8 +716,8 @@ const AgentStore = () => {
         }
 
         if (profile.is_sub_agent && profile.parent_agent_id) {
-          const { data: parentProfile } = await supabase
-            .from("agent_stores").select("sub_agent_prices, agent_prices").eq("user_id", profile.parent_agent_id).maybeSingle();
+          const { data: parentProfile } = await (supabase
+            .from("agent_stores") as any).select("sub_agent_prices, agent_prices").eq("user_id", profile.parent_agent_id).maybeSingle();
           if (parentProfile) {
             const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, any>;
             const parentSellingPrices = (parentProfile.agent_prices || {}) as Record<string, any>;
@@ -849,7 +868,7 @@ const AgentStore = () => {
       .filter(Boolean) as { size: string; price: number; validity: string; popular?: boolean; isInstant: boolean; category: string }[];
 
     return processed;
-  }, [basePackages, selectedNetwork, globalSettings, korbaMappings, agent, resolveDisplayPrice, activeGateway]);
+  }, [selectedNetwork, globalSettings, korbaMappings, agent, resolveDisplayPrice, activeGateway]);
 
   // Get all available dropdown options for the current network
   const dropdownOptions = useMemo(() => {
@@ -1726,7 +1745,7 @@ const AgentStore = () => {
                               boxShadow: isSelected ? `0 12px 30px ${netConf.color}45` : undefined,
                               borderColor: isSelected ? "rgba(255,255,255,0.6)" : undefined,
                               ringColor: isSelected ? `${netConf.color}40` : "transparent"
-                            }}
+                            } as any}
                           >
                             {/* Inner Highlight for depth */}
                             <div className="absolute inset-0 rounded-[26px] pointer-events-none ring-1 ring-inset ring-white/10" />

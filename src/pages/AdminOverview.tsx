@@ -183,7 +183,7 @@ const AdminOverview = () => {
       supabase.from("audit_logs").select("id, action, details, created_at, profiles(full_name)").order("created_at", { ascending: false }).limit(6),
       supabase.from("wallets").select("balance"),
       supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
-      supabase.rpc("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
+      (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
     ]);
 
@@ -421,12 +421,12 @@ const AdminOverview = () => {
 
     try {
       const [rpcRes, recentRes, todayRes] = await Promise.all([
-        supabase.rpc("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
+        (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
         supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
         supabase.from("orders").select("id, amount, agent_id, status, order_type, paystack_verified_amount, created_at, package_size").gte("created_at", `${todayStr}T00:00:00`),
       ]);
 
-      const rpcStats = rpcRes.data;
+      const rpcStats = (rpcRes.data || []) as any[];
       if (rpcStats && Array.isArray(rpcStats)) {
         const daysCount = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
         const dateMap: Record<string, DailySalesPoint> = {};
@@ -659,7 +659,7 @@ const AdminOverview = () => {
               </div>
               <Button 
                 onClick={async () => {
-                  await supabase.from("ai_recommendations").update({ is_acted_upon: true }).eq("id", rec.id);
+                  await (supabase.from("ai_recommendations") as any).update({ is_acted_upon: true }).eq("id", rec.id);
                   setAiRecommendations(prev => prev.filter(r => r.id !== rec.id));
                 }}
                 variant="destructive"

@@ -104,8 +104,9 @@ export default function AdminBeneficiaryOrders() {
     // for anyone who fetches this chunk. Without a real (RLS-gated) key, Attempt 1
     // below is skipped entirely and every batch goes straight to the edge function,
     // which fetches the key server-side and never exposes it to the client.
-    const apiKey = provider?.api_key || "";
-    const baseUrl = (provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
+    const providerData = (provider || {}) as Record<string, any>;
+    const apiKey = (providerData.api_key || "") as string;
+    const baseUrl = ((providerData.base_url || "https://user.datahubgh.com/api/external") as string).trim().replace(/\/+$/, "");
     const targetUrl = baseUrl.endsWith("/purchases/submit-numbers")
       ? baseUrl
       : baseUrl.includes("/purchases")
@@ -137,7 +138,7 @@ export default function AdminBeneficiaryOrders() {
           statusCode = res.status;
           const text = await res.text();
           let parsed: any = null;
-          try { parsed = JSON.parse(text); } catch {}
+          try { parsed = JSON.parse(text); } catch (_err) { /* ignore parse error */ }
 
           if (res.ok || parsed?.success) {
             ok = true;
@@ -442,7 +443,7 @@ export default function AdminBeneficiaryOrders() {
   const fetchBeneficiaryOrders = useCallback(async () => {
     setLoading(true);
     try {
-      let q = supabase
+      let q: any = supabase
         .from("orders")
         .select("id, agent_id, customer_phone, network, package_size, amount, status, failure_reason, auto_refunded, metadata, created_at")
         .eq("status", "fulfillment_failed")
@@ -554,14 +555,15 @@ export default function AdminBeneficiaryOrders() {
       scheduledPhonesRef.current.add(grp.phone);
       checkAndScheduleAutoSubmit(grp.phone, grp.network);
     });
-  }, [groupedNumbers]);
+  }, [groupedNumbers, checkAndScheduleAutoSubmit]);
 
   // Only clear pending timers on actual unmount (navigating away) — not on
   // every re-render.
   useEffect(() => {
+    const currentTimers = timersRef.current;
     return () => {
-      timersRef.current.forEach((t) => clearTimeout(t));
-      timersRef.current.clear();
+      currentTimers.forEach((t) => clearTimeout(t));
+      currentTimers.clear();
     };
   }, []);
 
@@ -596,7 +598,7 @@ export default function AdminBeneficiaryOrders() {
       }
 
       // 2. If verified, update order metadata to bypass_beneficiary = true & status = 'paid'
-      await supabase.from("orders").update({
+      await (supabase.from("orders") as any).update({
         status: "paid",
         auto_refunded: false,
         failure_reason: null,
@@ -681,7 +683,7 @@ export default function AdminBeneficiaryOrders() {
       }
 
       if (!isRefunded) {
-        const { data: rpcData, error: rpcErr } = await supabase.rpc("refund_failed_order", { p_order_id: ord.id });
+        const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("refund_failed_order", { p_order_id: ord.id });
         if (rpcErr || !rpcData) {
           toast({ title: "Refund Failed", description: rpcErr?.message || "This order is ineligible for refund.", variant: "destructive" });
           setProcessingId(null);
@@ -735,7 +737,7 @@ export default function AdminBeneficiaryOrders() {
       await Promise.all(
         chunk.map(async (ord) => {
           try {
-            await supabase.from("orders").update({
+            await (supabase.from("orders") as any).update({
               status: "paid",
               auto_refunded: false,
               failure_reason: null,

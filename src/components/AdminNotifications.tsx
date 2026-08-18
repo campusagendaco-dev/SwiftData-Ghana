@@ -20,14 +20,15 @@ const AdminNotifications = () => {
 
     const fetchConfig = async () => {
       const { data } = await supabase
-        .from("public_system_settings")
+        .from("public_system_settings" as any)
         .select("notification_tone, notification_vibration_enabled, notification_vibration_pattern")
         .eq("id", 1)
         .maybeSingle();
-      if (data) {
-        if (data.notification_tone) activeTone = data.notification_tone;
-        isVibeEnabled = data.notification_vibration_enabled !== false;
-        if (data.notification_vibration_pattern) vibePatternStr = data.notification_vibration_pattern;
+      const settings = data as any;
+      if (settings) {
+        if (settings.notification_tone) activeTone = settings.notification_tone;
+        isVibeEnabled = settings.notification_vibration_enabled !== false;
+        if (settings.notification_vibration_pattern) vibePatternStr = settings.notification_vibration_pattern;
       }
     };
 

@@ -479,7 +479,7 @@ const OrderStatus = () => {
       safeRemoveChannel(channel); 
       clearInterval(interval); 
     };
-  }, [reference, resolvedOrderId, pollStatus]);
+  }, [reference, resolvedOrderId, pollStatus, handleStatusUpdate]);
 
   // --- GLOBAL TRACKER LOGIC ---
   const fetchTrackerData = async () => {

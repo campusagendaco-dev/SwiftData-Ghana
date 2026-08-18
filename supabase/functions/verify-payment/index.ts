@@ -1,3 +1,5 @@
+declare const Deno: any;
+
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
@@ -717,12 +719,24 @@ serve(async (req: any) => {
       console.log(`[verify-payment] Internal/Free payment confirmed for ${targetReference}`);
       verifiedAmount = Number(existingOrder?.amount || 0);
     } else if (paymentMethod === "korba") {
-      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
-      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+      let korbaProvider: any = null;
+      try {
+        const { data } = await supabaseAdmin
+          .from("providers")
+          .select("settings, api_secret, api_key")
+          .eq("handler_type", "korba")
+          .maybeSingle();
+        korbaProvider = data;
+      } catch (err) {
+        console.error("[verify-payment] Error fetching Korba provider:", err);
+      }
+
+      const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || korbaProvider?.settings?.client_id || "2419";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || korbaProvider?.api_key || korbaProvider?.settings?.client_key || "";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || "";
 
       if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
-        return new Response(JSON.stringify({ error: "Korba gateway not configured" }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ error: "Korba gateway credentials not configured" }), { status: 500, headers: corsHeaders });
       }
 
       const statusPayload = {

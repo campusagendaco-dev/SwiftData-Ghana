@@ -727,7 +727,7 @@ const AdminWithdrawals = () => {
  
                                  if (error || !data?.success) throw new Error(data?.error || "Resolution failed");
  
-                                 await supabase.from("profiles").update({ momo_account_name: data?.account_name }).eq("user_id", w.agent_id);
+                                 await (supabase.from("profiles") as any).update({ momo_account_name: data?.account_name }).eq("user_id", w.agent_id);
                                  
                                  toast.success("Identity Verified", { description: `Account: ${data?.account_name}`, id: toastId });
                                  fetchWithdrawals(true);

@@ -3,7 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
 
-serve(async (req) => {
+declare const Deno: any;
+
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -50,7 +52,7 @@ serve(async (req) => {
 
     // Send SMS to recipient phone number if available
     if (phone) {
-      const res = await sendPaymentSms(supabaseAdmin, phone, "custom", { message, senderId: customSenderId }, agent_id);
+      const res = await sendPaymentSms(supabaseAdmin, phone, "custom", { message, ...(customSenderId ? { senderId: customSenderId } : {}) }, agent_id);
       if (res) sentToRecipient = true;
     }
 
@@ -58,7 +60,7 @@ serve(async (req) => {
     if (agent_id) {
       const { data: prof } = await supabaseAdmin.from("profiles").select("phone").eq("user_id", agent_id).maybeSingle();
       if (prof?.phone && normalizePhone(prof.phone) !== normalizePhone(phone)) {
-        const res = await sendPaymentSms(supabaseAdmin, prof.phone, "custom", { message, senderId: customSenderId }, agent_id);
+        const res = await sendPaymentSms(supabaseAdmin, prof.phone, "custom", { message, ...(customSenderId ? { senderId: customSenderId } : {}) }, agent_id);
         if (res) sentToAgent = true;
       }
     }

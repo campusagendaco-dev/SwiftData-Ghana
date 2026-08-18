@@ -81,13 +81,13 @@ const Dashboard = () => {
 
     try {
       const [walletRes, ordersRes, settingsRes] = await Promise.all([
-        supabase.from("wallets").select("balance, loyalty_balance").eq("agent_id", user.id).maybeSingle(),
+        (supabase.from("wallets" as any)).select("balance, loyalty_balance").eq("agent_id", user.id).maybeSingle(),
         supabase
           .from("orders")
           .select("amount, order_type, status, profit, parent_profit, agent_id, parent_agent_id")
           .or(`agent_id.eq.${user.id},parent_agent_id.eq.${user.id}`)
           .in("status", ["paid", "processing", "fulfilled", "fulfillment_failed"]),
-        supabase.from("public_system_settings").select("world_cup_predictor_enabled").eq("id", 1).maybeSingle().then(r => r).catch(err => ({ data: null, error: err })),
+        Promise.resolve(supabase.from("public_system_settings" as any).select("world_cup_predictor_enabled").eq("id", 1).maybeSingle()).catch(err => ({ data: null, error: err })),
       ]);
 
       if (ordersRes.error) {
@@ -99,7 +99,8 @@ const Dashboard = () => {
         setPredictorEnabled(settingsRes.data.world_cup_predictor_enabled !== false);
       }
 
-      const balance = walletRes.data ? Number(walletRes.data.balance) : 0;
+      const walletData: any = walletRes.data;
+      const balance = walletData ? Number(walletData.balance || 0) : 0;
       const allOrders = ordersRes.data ?? [];
       
       const fulfilledOrders = allOrders.filter((o: any) => o.status === "fulfilled");
@@ -133,7 +134,7 @@ const Dashboard = () => {
         totalSalesAmount: directSales + subAgentSales,
         subAgentEarnings,
         totalProfit: directProfit + parentProfit + subAgentEarnings,
-        loyaltyBalance: Number(walletRes.data?.loyalty_balance || 0),
+        loyaltyBalance: Number(walletData?.loyalty_balance || 0),
       });
 
     } catch (err) {

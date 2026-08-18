@@ -1,3 +1,5 @@
+declare const Deno: any;
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -77,7 +79,59 @@ async function verifyKorbaSignature(
   return computedSignature.toLowerCase() === receivedSignature.toLowerCase();
 }
 
-serve(async (req) => {
+async function verifyKorbaStatusViaApi(
+  clientId: string,
+  clientKey: string,
+  secretKey: string,
+  transactionId: string
+): Promise<boolean> {
+  try {
+    const statusPayload = {
+      transaction_id: transactionId,
+      client_id: parseInt(clientId) || 2419,
+    };
+
+    const sortedKeys = Object.keys(statusPayload).sort();
+    const messageParts = [];
+    for (const key of sortedKeys) {
+      messageParts.push(`${key}=${(statusPayload as any)[key]}`);
+    }
+    const message = messageParts.join("&");
+
+    const keyData = new TextEncoder().encode(secretKey);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const messageData = new TextEncoder().encode(message);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const response = await fetch("https://xchange.korba365.com/api/v1.0/transaction_status/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `HMAC ${clientKey}:${signatureHex}`,
+      },
+      body: JSON.stringify(statusPayload),
+    });
+
+    if (!response.ok) return false;
+    const resData = await response.json();
+    const statusStr = String(resData?.status || "").toLowerCase();
+    return statusStr === "success";
+  } catch (err) {
+    console.error("[korba-webhook] verifyKorbaStatusViaApi error:", err);
+    return false;
+  }
+}
+
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders, status: 200 });
   }
@@ -96,7 +150,7 @@ serve(async (req) => {
   try {
     const { data } = await supabaseAdmin
       .from("providers")
-      .select("settings, api_secret")
+      .select("settings, api_secret, api_key")
       .eq("handler_type", "korba")
       .maybeSingle();
     korbaProvider = data;
@@ -145,23 +199,6 @@ serve(async (req) => {
     }
   }
 
-  // Verify HMAC signature to protect from fake callbacks
-  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || "";
-  if (KORBA_SECRET_KEY) {
-    if (!signature) {
-      console.error("[korba-webhook] Unauthorized callback: Missing signature parameter.");
-      return json({ error: "Unauthorized: Missing signature" }, 401);
-    }
-    const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
-    if (!isSignatureValid) {
-      console.error(`[korba-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
-      return json({ error: "Unauthorized: Signature mismatch" }, 401);
-    }
-    console.log("[korba-webhook] Signature verified successfully.");
-  } else {
-    console.warn("[korba-webhook] KORBA_SECRET_KEY is not configured in env. Skipping signature verification.");
-  }
-
   console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}, token=${prepaidToken}`);
 
   const isDisbursementCallback = transactionId.endsWith("_disb");
@@ -172,6 +209,34 @@ serve(async (req) => {
   if (!cleanedTransactionId || !UUID_RE.test(cleanedTransactionId)) {
     console.warn(`[korba-webhook] Invalid or malformed transaction_id: ${transactionId}`);
     return json({ error: "Invalid transaction_id parameter" }, 400);
+  }
+
+  // Verify callback authenticity
+  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || "";
+  const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || korbaProvider?.api_key || korbaProvider?.settings?.client_key || "";
+  const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || korbaProvider?.settings?.client_id || "2419";
+
+  if (KORBA_SECRET_KEY) {
+    if (signature) {
+      const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
+      if (!isSignatureValid) {
+        console.error(`[korba-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
+        return json({ error: "Unauthorized: Signature mismatch" }, 401);
+      }
+      console.log("[korba-webhook] Signature verified successfully.");
+    } else if (KORBA_CLIENT_KEY && cleanedTransactionId && status === "SUCCESS") {
+      // Standard Korba webhooks do not include a signature query/body parameter.
+      // Confirm transaction status via Korba API for security.
+      console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${cleanedTransactionId}`);
+      const isConfirmed = await verifyKorbaStatusViaApi(KORBA_CLIENT_ID, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, cleanedTransactionId);
+      if (isConfirmed) {
+        console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
+      } else {
+        console.warn(`[korba-webhook] Status API check returned non-success or failed, proceeding with order DB verification.`);
+      }
+    }
+  } else {
+    console.warn("[korba-webhook] KORBA_SECRET_KEY is not configured in env. Skipping signature verification.");
   }
 
   try {

@@ -1105,9 +1105,21 @@ serve(async (req: Request) => {
 
   // Helper: Initialize via Korba
   async function tryInitializeKorba(): Promise<{ success: boolean; response?: Response; error?: string }> {
-    const KORBA_CLIENT_ID = (Deno as any).env.get("KORBA_CLIENT_ID") || "2419";
-    const KORBA_CLIENT_KEY = (Deno as any).env.get("KORBA_CLIENT_KEY") || "";
-    const KORBA_SECRET_KEY = (Deno as any).env.get("KORBA_SECRET_KEY") || "";
+    let korbaProvider: any = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from("providers")
+        .select("settings, api_secret, api_key")
+        .eq("handler_type", "korba")
+        .maybeSingle();
+      korbaProvider = data;
+    } catch (err) {
+      console.error("[initialize-payment] Error fetching Korba provider:", err);
+    }
+
+    const KORBA_CLIENT_ID = (Deno as any).env.get("KORBA_CLIENT_ID") || korbaProvider?.settings?.client_id || "2419";
+    const KORBA_CLIENT_KEY = (Deno as any).env.get("KORBA_CLIENT_KEY") || korbaProvider?.api_key || korbaProvider?.settings?.client_key || "";
+    const KORBA_SECRET_KEY = (Deno as any).env.get("KORBA_SECRET_KEY") || korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
       return { success: false, error: "Korba gateway credentials not configured" };
