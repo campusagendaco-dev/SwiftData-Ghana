@@ -363,8 +363,9 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   // Live updates for beneficiary submission status while the drawer is open.
   useEffect(() => {
     if (!user) return;
+    const channelId = `user_drawer_beneficiary_${user.user_id}_${Math.random().toString(36).substring(7)}`;
     const ch = supabase
-      .channel("user-drawer-beneficiary-status-live")
+      .channel(channelId)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "beneficiary_submissions" },
