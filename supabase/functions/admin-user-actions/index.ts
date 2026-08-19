@@ -1168,11 +1168,18 @@ serve(async (req: Request) => {
       case "bulk_suspend_users": {
         const { user_ids, suspend } = body;
         if (!Array.isArray(user_ids)) throw new Error("user_ids must be an array");
+        const isSuspend = !!suspend;
         const { data: result, error: rpcError } = await supabaseAdmin.rpc("bulk_suspend_users", {
           p_user_ids: user_ids,
-          p_suspend: !!suspend
+          p_suspend: isSuspend
         });
         if (rpcError) throw rpcError;
+
+        // Also sync Supabase Auth GoTrue banned_until status so active session tokens are revoked immediately
+        Promise.all(user_ids.map((uid: string) => 
+          supabaseAdmin.auth.admin.updateUserById(uid, { ban_duration: isSuspend ? "876000h" : "none" }).catch(() => null)
+        )).catch(() => null);
+
         return new Response(JSON.stringify(result), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
