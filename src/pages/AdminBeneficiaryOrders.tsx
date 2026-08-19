@@ -217,6 +217,78 @@ export default function AdminBeneficiaryOrders() {
     return { submitted: totalSubmitted, failed: totalFailed, alreadyOnList: totalAlreadyOnList };
   };
 
+  // RETRY SINGLE ORDER WITH BENEFICIARY CHECK FIRST
+  const handleRetrySingle = useCallback(async (ord: BeneficiaryOrder) => {
+    setProcessingId(ord.id);
+    try {
+      // 1. Verify beneficiary status first
+      const { data: vData } = await supabase.functions.invoke("verify-beneficiary", {
+        body: { phone: ord.customer_phone, network: ord.network || "MTN" }
+      });
+
+      if (!vData?.exists) {
+        toast({
+          title: "Still Not Whitelisted",
+          description: `${ord.customer_phone} is still not added to the carrier beneficiary list. Order remains safely refunded.`,
+          variant: "destructive"
+        });
+        setProcessingId(null);
+        return;
+      }
+
+      // 2. If verified, update order metadata to bypass_beneficiary = true & status = 'paid'
+      await (supabase.from("orders") as any).update({
+        status: "paid",
+        auto_refunded: false,
+        failure_reason: null,
+        metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
+      }).eq("id", ord.id);
+
+      // Instantly remove from local list so it leaves the page immediately!
+      setAllBeneficiaryOrders((prev) => prev.filter((o) => o.id !== ord.id));
+
+      // 3. Invoke verify-payment Edge function (with automatic 429 rate-limit backoff)
+      let res = await supabase.functions.invoke("verify-payment", {
+        body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
+      });
+
+      if (res.error && (res.error.status === 429 || String(res.error.message).includes("429") || String(res.error.message).includes("Too many"))) {
+        await new Promise((r) => setTimeout(r, 2000));
+        res = await supabase.functions.invoke("verify-payment", {
+          body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
+        });
+      }
+
+      const { data, error } = res;
+
+      if (error) {
+        toast({ title: "Retry failed", description: error.message || "Failed to contact provider", variant: "destructive" });
+      } else {
+        toast({
+          title: "Order Re-submitted!",
+          description: `Order ${ord.id.slice(0, 8)} status: ${data?.status || "processing"}`,
+        });
+
+        // Trigger SMS
+        supabase.functions.invoke("send-order-sms", {
+          body: {
+            action: "retry",
+            phone: ord.customer_phone,
+            order_id: ord.id,
+            amount: ord.amount,
+            network: ord.network,
+            package_size: ord.package_size,
+            agent_id: ord.agent_id
+          }
+        }).catch(console.error);
+      }
+    } catch (err: any) {
+      toast({ title: "Retry exception", description: err.message || "Error retrying order", variant: "destructive" });
+    } finally {
+      setProcessingId(null);
+    }
+  }, [toast]);
+
   // Shared "this number is confirmed on the beneficiary list right now" path —
   // flips the badge to In Queue and immediately retries its pending orders.
   // handleRetrySingle does its own fresh beneficiary check first, so this is
@@ -576,78 +648,6 @@ export default function AdminBeneficiaryOrders() {
   const copyAllNumbersCsv = () => {
     const numbersList = Array.from(new Set(groupedNumbers.map((g) => g.phone))).join("\n");
     copyToClipboard(numbersList, "csv_copied");
-  };
-
-  // RETRY SINGLE ORDER WITH BENEFICIARY CHECK FIRST
-  const handleRetrySingle = async (ord: BeneficiaryOrder) => {
-    setProcessingId(ord.id);
-    try {
-      // 1. Verify beneficiary status first
-      const { data: vData } = await supabase.functions.invoke("verify-beneficiary", {
-        body: { phone: ord.customer_phone, network: ord.network || "MTN" }
-      });
-
-      if (!vData?.exists) {
-        toast({
-          title: "Still Not Whitelisted",
-          description: `${ord.customer_phone} is still not added to the carrier beneficiary list. Order remains safely refunded.`,
-          variant: "destructive"
-        });
-        setProcessingId(null);
-        return;
-      }
-
-      // 2. If verified, update order metadata to bypass_beneficiary = true & status = 'paid'
-      await (supabase.from("orders") as any).update({
-        status: "paid",
-        auto_refunded: false,
-        failure_reason: null,
-        metadata: { ...(ord.metadata || {}), bypass_beneficiary: true }
-      }).eq("id", ord.id);
-
-      // Instantly remove from local list so it leaves the page immediately!
-      setAllBeneficiaryOrders((prev) => prev.filter((o) => o.id !== ord.id));
-
-      // 3. Invoke verify-payment Edge function (with automatic 429 rate-limit backoff)
-      let res = await supabase.functions.invoke("verify-payment", {
-        body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
-      });
-
-      if (res.error && (res.error.status === 429 || String(res.error.message).includes("429") || String(res.error.message).includes("Too many"))) {
-        await new Promise((r) => setTimeout(r, 2000));
-        res = await supabase.functions.invoke("verify-payment", {
-          body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
-        });
-      }
-
-      const { data, error } = res;
-
-      if (error) {
-        toast({ title: "Retry failed", description: error.message || "Failed to contact provider", variant: "destructive" });
-      } else {
-        toast({
-          title: "Order Re-submitted!",
-          description: `Order ${ord.id.slice(0, 8)} status: ${data?.status || "processing"}`,
-        });
-
-        // Trigger SMS
-        supabase.functions.invoke("send-order-sms", {
-          body: {
-            action: "retry",
-            phone: ord.customer_phone,
-            order_id: ord.id,
-            amount: ord.amount,
-            network: ord.network,
-            package_size: ord.package_size,
-            agent_id: ord.agent_id
-          }
-        }).catch(console.error);
-      }
-    } catch (err: any) {
-      toast({ title: "Retry exception", description: err.message || "Error retrying order", variant: "destructive" });
-    } finally {
-      setProcessingId(null);
-    }
   };
 
   // REFUND SINGLE ORDER
