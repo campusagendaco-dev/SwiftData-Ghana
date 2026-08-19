@@ -528,7 +528,8 @@ const AdminSecurity = () => {
 
   /* ── multi-channel realtime ───────────────────────────────────────── */
   useEffect(() => {
-    const profileCh = supabase.channel("admin-sec-profiles")
+    const instanceId = Math.random().toString(36).slice(2);
+    const profileCh = supabase.channel(`admin-sec-profiles-${instanceId}`)
       .on("postgres_changes" as any, { event: "UPDATE", schema: "public", table: "profiles" }, (payload: any) => {
         const p = payload.new as RecentLogin;
         if (!p.last_seen_at) return;
@@ -540,7 +541,7 @@ const AdminSecurity = () => {
         }, ...prev].slice(0, 20));
       }).subscribe();
 
-    const sentinelCh = supabase.channel("admin-sec-sentinel")
+    const sentinelCh = supabase.channel(`admin-sec-sentinel-${instanceId}`)
       .on("postgres_changes" as any, { event: "INSERT", schema: "public", table: "sentinel_actions" }, (payload: any) => {
         const action = payload.new as GuardianLog;
         setGuardianLogs(prev => [action, ...prev].slice(0, 30));
@@ -551,7 +552,7 @@ const AdminSecurity = () => {
         });
       }).subscribe();
 
-    const blCh = supabase.channel("admin-sec-blacklist")
+    const blCh = supabase.channel(`admin-sec-blacklist-${instanceId}`)
       .on("postgres_changes" as any, { event: "INSERT", schema: "public", table: "security_blacklist" }, (payload: any) => {
         const e = payload.new;
         setLiveAlerts(prev => [{

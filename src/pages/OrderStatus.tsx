@@ -463,7 +463,8 @@ const OrderStatus = () => {
     let channel: any = null;
     
     if (isUuid) {
-      channel = supabase.channel(`order_status_${activeRef}`)
+      const channelId = `order_status_${activeRef}_${Math.random().toString(36).substring(7)}`;
+      channel = supabase.channel(channelId)
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${activeRef}` }, (payload) => {
           if (payload.new.status) handleStatusUpdate(payload.new.status as OrderStatusType, payload.new.message || payload.new.failure_reason);
         })
