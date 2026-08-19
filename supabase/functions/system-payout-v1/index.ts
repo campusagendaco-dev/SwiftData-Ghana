@@ -138,6 +138,8 @@ type AdminUserAction =
   | "approve_all_pending_agents"
   | "reset_user_mfa"
   | "get_admins"
+  | "get_edge_ip"
+  | "test_direct_korba"
   | "grant_admin_role"
   | "revoke_admin_role"
   | "verify_paystack_transfer"

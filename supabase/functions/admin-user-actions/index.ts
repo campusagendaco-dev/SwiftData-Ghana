@@ -1542,8 +1542,8 @@ serve(async (req: Request) => {
         await supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "grant_admin_role",
-          target_email: profile.email,
-          metadata: { target_name: profile.full_name, granted_by: actor.id }
+          target_email: activeProfile.email,
+          metadata: { target_name: activeProfile.full_name, granted_by: actor.id }
         });
 
         return new Response(JSON.stringify({ success: true }), {

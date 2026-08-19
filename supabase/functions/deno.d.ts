@@ -8,3 +8,9 @@ declare module "https://*" {
   export const createClient: any;
   export const corsHeaders: any;
 }
+
+declare module "npm:*" {
+  const content: any;
+  export default content;
+  export const HttpsProxyAgent: any;
+}
