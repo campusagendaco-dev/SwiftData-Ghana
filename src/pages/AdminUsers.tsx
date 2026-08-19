@@ -286,6 +286,7 @@ const AdminUsers = () => {
 
       toast({ title: suspend ? "Users Suspended" : "Users Restored", description: `${selectedUsers.length} users updated.` });
       setUsers(prev => prev.map(u => selectedUsers.includes(u.user_id) ? { ...u, is_suspended: suspend } : u));
+      setSelectedUser(prev => (prev && selectedUsers.includes(prev.user_id)) ? { ...prev, is_suspended: suspend } : prev);
       setSelectedUsers([]);
     } catch (err: any) {
       toast({ title: "Bulk action failed", description: err.message, variant: "destructive" });
@@ -318,6 +319,7 @@ const AdminUsers = () => {
 
       toast({ title: next ? "User suspended" : "User restored", description: user.email });
       setUsers(prev => prev.map(u => u.user_id === user.user_id ? { ...u, is_suspended: next } : u));
+      setSelectedUser(prev => (prev && prev.user_id === user.user_id) ? { ...prev, is_suspended: next } : prev);
     } catch (err: any) {
       toast({ title: "Action failed", description: err.message, variant: "destructive" });
     } finally {

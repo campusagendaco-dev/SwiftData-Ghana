@@ -161,6 +161,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       }
 
       setIsSuspended(next);
+      if (user) user.is_suspended = next;
       toast({ title: next ? "User suspended" : "User unsuspended", description: user.email });
     } catch (err: unknown) {
       toast({ title: "Action failed", description: (err as Error).message, variant: "destructive" });
