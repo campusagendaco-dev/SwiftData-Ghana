@@ -221,7 +221,7 @@ export default function AdminBeneficiaryOrders() {
   // flips the badge to In Queue and immediately retries its pending orders.
   // handleRetrySingle does its own fresh beneficiary check first, so this is
   // safe even if the list changed between whatever check triggered this and now.
-  const promoteToInQueue = async (phone: string) => {
+  const promoteToInQueue = useCallback(async (phone: string) => {
     setAutoStatus((prev) => ({ ...prev, [phone]: "in_queue" }));
     const pendingOrders = allOrdersRef.current.filter(
       (o) => o.customer_phone === phone && o.status !== "fulfilled" && o.status !== "completed"
@@ -229,12 +229,12 @@ export default function AdminBeneficiaryOrders() {
     for (const ord of pendingOrders) {
       await handleRetrySingle(ord);
     }
-  };
+  }, [handleRetrySingle]);
 
   // Fires automatically AUTO_SUBMIT_DELAY_MS after a number is first confirmed
   // NOT yet on the beneficiary list — submits it for carrier approval with no
   // admin click required, then reacts to what the provider reports back.
-  const runAutoSubmit = async (phone: string) => {
+  const runAutoSubmit = useCallback(async (phone: string) => {
     setAutoStatus((prev) => ({ ...prev, [phone]: "submitting" }));
     try {
       const { submitted, alreadyOnList } = await submitNumbersToDataHub(
@@ -255,14 +255,14 @@ export default function AdminBeneficiaryOrders() {
       console.error("[AutoSubmit] failed for", phone, e);
       setAutoStatus((prev) => ({ ...prev, [phone]: "pending" }));
     }
-  };
+  }, [promoteToInQueue]);
 
   // Entry point for every number in the Non-Beneficiary Hub — runs an
   // immediate, cheap "is this already whitelisted?" check FIRST (covers
   // numbers that were submitted a while ago and may have been approved
   // since — no reason to make those wait), and only falls back to the 5s
   // delayed auto-submit for numbers genuinely not on the list yet.
-  const checkAndScheduleAutoSubmit = async (phone: string, network: string) => {
+  const checkAndScheduleAutoSubmit = useCallback(async (phone: string, network: string) => {
     setAutoStatus((prev) => ({ ...prev, [phone]: "pending" }));
     try {
       const { data: vData } = await supabase.functions.invoke("verify-beneficiary", {
@@ -283,7 +283,7 @@ export default function AdminBeneficiaryOrders() {
       runAutoSubmit(phone);
     }, AUTO_SUBMIT_DELAY_MS);
     timersRef.current.set(phone, timer);
-  };
+  }, [promoteToInQueue, runAutoSubmit]);
 
   const handleSubmitAllToBeneficiaryApproval = async () => {
     const numbersToSubmit = Array.from(new Set(groupedNumbers.map((g) => g.phone).filter(Boolean)));
