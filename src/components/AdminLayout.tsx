@@ -118,6 +118,7 @@ const NAV_SECTIONS = [
       { label: "P&L Report",        icon: LineChart,   path: "/admin/pnl" },
       { label: "Credit Mgmt",       icon: Banknote,    path: "/admin/credit-management" },
       { label: "Broadcast",         icon: Megaphone,   path: "/admin/broadcast" },
+      { label: "Voice Calls (mNotify)", icon: PhoneCall, path: "/admin/voice-sms" },
       { label: "Promo Banners",     icon: ImageIcon,   path: "/admin/banners" },
     ],
   },

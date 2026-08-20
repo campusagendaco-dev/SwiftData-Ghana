@@ -102,6 +102,7 @@ const AdminSubAgents = lazy(() => import("./pages/AdminSubAgents"));
 const AdminSystemLogs = lazy(() => import("./pages/AdminSystemLogs"));
 const AdminAPIOrders = lazy(() => import("./pages/AdminAPIOrders"));
 const AdminBroadcast = lazy(() => import("./pages/AdminBroadcast"));
+const AdminVoiceSMS = lazy(() => import("./pages/AdminVoiceSMS"));
 const AdminFeatureFlags = lazy(() => import("./pages/AdminFeatureFlags"));
 const AdminSmsTemplates = lazy(() => import("./pages/AdminSmsTemplates"));
 const AdminCreditManagement = lazy(() => import("./pages/AdminCreditManagement"));
@@ -519,6 +520,7 @@ const AppContent = () => {
           <Route path="engagement" element={<AdminEngagement />} />
           <Route path="system-logs" element={<AdminSystemLogs />} />
           <Route path="broadcast" element={<AdminBroadcast />} />
+          <Route path="voice-sms" element={<AdminVoiceSMS />} />
           <Route path="feature-flags" element={<AdminFeatureFlags />} />
           <Route path="sms-templates" element={<AdminSmsTemplates />} />
           <Route path="credit-management" element={<AdminCreditManagement />} />
