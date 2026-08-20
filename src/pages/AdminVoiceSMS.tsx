@@ -57,7 +57,7 @@ export default function AdminVoiceSMS() {
   const { isDark } = useAppTheme();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"broadcast" | "templates" | "settings">("broadcast");
+  const [activeTab, setActiveTab] = useState<"broadcast" | "sms" | "templates" | "sender_id" | "settings">("broadcast");
   const [campaignTitle, setCampaignTitle] = useState("");
   const [targetType, setTargetType] = useState<"custom" | "all_users" | "agents" | "sub_agents">("custom");
   const [customNumbers, setCustomNumbers] = useState("");
@@ -65,6 +65,19 @@ export default function AdminVoiceSMS() {
   const [voiceId, setVoiceId] = useState("");
   const [isSchedule, setIsSchedule] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
+  
+  // SMS specific state
+  const [smsMessage, setSmsMessage] = useState("");
+  const [smsSenderId, setSmsSenderId] = useState("SwiftData");
+  const [isSmsOtp, setIsSmsOtp] = useState(false);
+  const [lastSmsResult, setLastSmsResult] = useState<any | null>(null);
+
+  // Sender ID registration state
+  const [regSenderName, setRegSenderName] = useState("");
+  const [regPurpose, setRegPurpose] = useState("For Transactional and Order Notification SMS");
+  const [checkSenderName, setCheckSenderName] = useState("");
+  const [senderCheckResult, setSenderCheckResult] = useState<any | null>(null);
+  const [registeringSender, setRegisteringSender] = useState(false);
   
   // File state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -269,6 +282,106 @@ export default function AdminVoiceSMS() {
     }
   };
 
+  const handleSendQuickSms = async () => {
+    if (!smsMessage.trim()) {
+      toast({ title: "Message Required", description: "Please enter your SMS message content.", variant: "destructive" });
+      return;
+    }
+    if (targetType === "custom" && parsedRecipients().length === 0) {
+      toast({ title: "No Phone Numbers", description: "Please enter at least one valid recipient phone number.", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Are you sure you want to broadcast this SMS via mNotify to ${getTargetRecipientCount()} recipients?`)) {
+      return;
+    }
+
+    setSending(true);
+    setLastSmsResult(null);
+    try {
+      const payload: any = {
+        action: "send_sms",
+        sender: smsSenderId.trim() || "SwiftData",
+        message: smsMessage.trim(),
+        api_key: apiKey.trim() || undefined,
+        is_schedule: isSchedule,
+        schedule_date: isSchedule ? scheduleDate : undefined,
+        sms_type: isSmsOtp ? "otp" : undefined
+      };
+      if (targetType === "custom") {
+        payload.recipients = parsedRecipients();
+      } else {
+        payload.target_group = targetType;
+      }
+      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+        body: payload,
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || "Failed to dispatch SMS.");
+      }
+      toast({
+        title: "SMS Broadcast Dispatched! ✉️",
+        description: `Successfully sent SMS to ${data.summary?.total_sent || getTargetRecipientCount()} recipients.`
+      });
+      setLastSmsResult(data.summary);
+      fetchBalanceAndTemplates();
+    } catch (err: any) {
+      toast({ title: "SMS Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleRegisterSenderId = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regSenderName.trim()) {
+      toast({ title: "Sender ID Required", variant: "destructive" });
+      return;
+    }
+    setRegisteringSender(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+        body: {
+          action: "register_sender_id",
+          sender_name: regSenderName.trim(),
+          purpose: regPurpose.trim(),
+          api_key: apiKey.trim() || undefined
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
+      if (error || !data?.success) throw new Error(data?.error || error?.message || "Failed to register Sender ID.");
+      toast({ title: "Sender ID Submitted", description: `Sender ID "${regSenderName}" is now ${data.summary?.status || "Pending approval"}.` });
+      setRegSenderName("");
+    } catch (err: any) {
+      toast({ title: "Registration Error", description: err.message, variant: "destructive" });
+    } finally {
+      setRegisteringSender(false);
+    }
+  };
+
+  const handleCheckSenderStatus = async () => {
+    if (!checkSenderName.trim()) return;
+    setRegisteringSender(true);
+    setSenderCheckResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+        body: {
+          action: "check_sender_id",
+          sender_name: checkSenderName.trim(),
+          api_key: apiKey.trim() || undefined
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
+      });
+      if (error || !data?.success) throw new Error(data?.error || error?.message || "Could not check status.");
+      setSenderCheckResult(data.summary || { status: data.status });
+      toast({ title: "Sender ID Status Retrieved" });
+    } catch (err: any) {
+      toast({ title: "Status Check Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRegisteringSender(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-24 max-w-6xl mx-auto">
       {/* Header */}
@@ -276,14 +389,14 @@ export default function AdminVoiceSMS() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-              <Radio className="w-3 h-3 animate-pulse" /> mNotify Voice Engine
+              <Radio className="w-3 h-3 animate-pulse" /> mNotify Communication Suite
             </span>
           </div>
           <h1 className={`font-display text-3xl font-black tracking-tight ${isDark ? "bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent" : "text-gray-900"}`}>
-            Voice Call & Audio SMS Broadcasts
+            mNotify Voice & Quick Bulk SMS
           </h1>
           <p className={`text-sm mt-1 ${isDark ? "text-white/50" : "text-gray-500"}`}>
-            Broadcast real voice calls, announcements, and audio messages directly to customers and agents.
+            Broadcast real voice phone calls, audio campaigns, and quick bulk SMS directly via mNotify.
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -299,65 +412,87 @@ export default function AdminVoiceSMS() {
       </div>
 
       {/* Balance & Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="p-5 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Voice Units Available</p>
+            <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Voice Balance</p>
             <p className="text-2xl font-black text-foreground mt-1">
-              {voiceBalance !== null ? `${voiceBalance.toLocaleString()} units` : "Active"}
+              {voiceBalance !== null ? `${voiceBalance.toLocaleString()}` : "Active"}
             </p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-            <PhoneCall className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+            <PhoneCall className="w-5 h-5" />
           </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Registered Audience</p>
+            <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">SMS Balance</p>
+            <p className="text-2xl font-black text-foreground mt-1">
+              {smsBalance !== null ? `${smsBalance.toLocaleString()}` : "Active"}
+            </p>
+          </div>
+          <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <Send className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Target Audience</p>
             <p className="text-2xl font-black text-foreground mt-1">
               {counts.all.toLocaleString()} users
             </p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <Users className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <Users className="w-5 h-5" />
           </div>
         </div>
 
         <div className="p-5 rounded-2xl bg-card border border-border shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">API Connection</p>
-            <p className="text-sm font-bold text-emerald-500 flex items-center gap-1.5 mt-2">
+            <p className="text-xs font-bold text-emerald-500 flex items-center gap-1.5 mt-2">
               <CheckCircle2 className="w-4 h-4" /> mNotify v2.0 Ready
             </p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-            <Key className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+            <Key className="w-5 h-5" />
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border gap-6">
+      <div className="flex border-b border-border gap-6 overflow-x-auto">
         <button
           onClick={() => setActiveTab("broadcast")}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === "broadcast"
               ? "border-cyan-500 text-cyan-500"
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          <Volume2 className="w-4 h-4" /> New Voice Broadcast
+          <Volume2 className="w-4 h-4" /> Voice Call Broadcast
+        </button>
+        <button
+          onClick={() => setActiveTab("sms")}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === "sms"
+              ? "border-cyan-500 text-cyan-500"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Send className="w-4 h-4" /> Quick Bulk SMS
         </button>
         <button
           onClick={() => setActiveTab("templates")}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === "templates"
               ? "border-cyan-500 text-cyan-500"
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          <FileAudio className="w-4 h-4" /> Templates & IVR
+          <FileAudio className="w-4 h-4" /> Templates
           {templates.length > 0 && (
             <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30 text-[10px]">
               {templates.length}
@@ -365,14 +500,24 @@ export default function AdminVoiceSMS() {
           )}
         </button>
         <button
+          onClick={() => setActiveTab("sender_id")}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === "sender_id"
+              ? "border-cyan-500 text-cyan-500"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Radio className="w-4 h-4" /> Sender IDs
+        </button>
+        <button
           onClick={() => setActiveTab("settings")}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
             activeTab === "settings"
               ? "border-cyan-500 text-cyan-500"
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          <Key className="w-4 h-4" /> API Credentials
+          <Key className="w-4 h-4" /> Credentials
         </button>
       </div>
 
@@ -628,7 +773,280 @@ export default function AdminVoiceSMS() {
         </div>
       )}
 
-      {/* TAB 2: TEMPLATES & IVR */}
+      {/* TAB 2: QUICK BULK SMS */}
+      {activeTab === "sms" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="p-6 rounded-2xl bg-card border border-border shadow-sm space-y-5">
+              <h2 className="text-base font-black text-foreground flex items-center gap-2">
+                <Send className="w-5 h-5 text-emerald-500" /> mNotify Quick Bulk SMS
+              </h2>
+
+              {/* Sender ID & SMS Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Sender ID (Max 11 chars)</label>
+                  <Input
+                    value={smsSenderId}
+                    maxLength={11}
+                    onChange={(e) => setSmsSenderId(e.target.value)}
+                    placeholder="e.g. SwiftData"
+                    className="rounded-xl h-11 bg-secondary/50 font-bold"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/40 border border-border mt-auto h-11">
+                  <div>
+                    <p className="text-xs font-bold text-foreground">OTP Priority Mode</p>
+                    <p className="text-[10px] text-muted-foreground">Special routing for OTPs (GH₵0.035)</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isSmsOtp}
+                    onChange={(e) => setIsSmsOtp(e.target.checked)}
+                    className="w-4 h-4 rounded border-input text-emerald-500 focus:ring-emerald-500/30"
+                  />
+                </div>
+              </div>
+
+              {/* Audience Target */}
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Select Target Audience</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { id: "all_users", label: "All Users", count: counts.all },
+                    { id: "agents", label: "Agents", count: counts.agents },
+                    { id: "sub_agents", label: "Sub-Agents", count: counts.subAgents },
+                    { id: "custom", label: "Custom Phone(s)", count: parsedRecipients().length },
+                  ].map((target) => (
+                    <button
+                      key={target.id}
+                      type="button"
+                      onClick={() => setTargetType(target.id as any)}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        targetType === target.id
+                          ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400 font-bold"
+                          : "bg-secondary/40 border-border text-muted-foreground hover:bg-secondary"
+                      }`}
+                    >
+                      <p className="text-xs font-black">{target.label}</p>
+                      <p className="text-[11px] opacity-70 mt-0.5">{target.count} contacts</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom numbers textarea if target is custom */}
+              {targetType === "custom" && (
+                <div className="space-y-1.5 animate-in fade-in duration-200">
+                  <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">
+                    Phone Numbers (separated by commas or new lines)
+                  </label>
+                  <Textarea
+                    value={customNumbers}
+                    onChange={(e) => setCustomNumbers(e.target.value)}
+                    placeholder="e.g. 0241234567, 0557654321, 0209876543"
+                    rows={3}
+                    className="rounded-xl bg-secondary/50 font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {parsedRecipients().length} valid phone number(s) detected.
+                  </p>
+                </div>
+              )}
+
+              {/* Message Content */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">SMS Message Content</label>
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    {smsMessage.length} chars ({Math.ceil((smsMessage.length || 1) / 160)} page)
+                  </span>
+                </div>
+                <Textarea
+                  value={smsMessage}
+                  onChange={(e) => setSmsMessage(e.target.value)}
+                  placeholder="Type your message text here..."
+                  rows={4}
+                  className="rounded-xl bg-secondary/50 font-medium text-sm"
+                />
+              </div>
+
+              {/* Schedule Optional */}
+              <div className="pt-2 border-t border-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-foreground">Schedule for Later</p>
+                    <p className="text-[11px] text-muted-foreground">Auto-dispatch at a scheduled date and time.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isSchedule}
+                    onChange={(e) => setIsSchedule(e.target.checked)}
+                    className="w-4 h-4 rounded border-input text-emerald-500 focus:ring-emerald-500/30"
+                  />
+                </div>
+
+                {isSchedule && (
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <Input
+                      type="text"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      placeholder="YYYY-MM-DD hh:mm (e.g. 2026-08-25 14:30)"
+                      className="rounded-xl h-10 bg-secondary/50 font-mono text-xs"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                onClick={handleSendQuickSms}
+                disabled={sending}
+                className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/20 gap-2 transition-all active:scale-[0.99]"
+              >
+                {sending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Sending SMS to {getTargetRecipientCount()} Recipients...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" /> Dispatch Quick SMS ({getTargetRecipientCount()} Messages)
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Column: Live Summary & Tips */}
+          <div className="space-y-6">
+            {lastSmsResult && (
+              <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 animate-in zoom-in-95 duration-200 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                  <CheckCircle2 className="w-5 h-5" /> SMS Broadcast Successful
+                </div>
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <p><strong className="text-foreground">Campaign ID:</strong> <span className="font-mono text-emerald-400">{lastSmsResult._id || "N/A"}</span></p>
+                  <p><strong className="text-foreground">Messages Sent:</strong> <span className="font-bold text-foreground">{lastSmsResult.total_sent || 0}</span></p>
+                  <p><strong className="text-foreground">Credits Used:</strong> <span className="font-bold text-emerald-400">{lastSmsResult.credit_used || 0} units</span></p>
+                  {lastSmsResult.credit_left !== undefined && (
+                    <p><strong className="text-foreground">Remaining Credits:</strong> <span className="font-bold text-foreground">{lastSmsResult.credit_left}</span></p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="p-5 rounded-2xl bg-card border border-border shadow-sm space-y-3">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-muted-foreground">
+                <Info className="w-4 h-4 text-emerald-400" /> mNotify SMS Features
+              </div>
+              <ul className="space-y-2.5 text-xs text-muted-foreground leading-relaxed">
+                <li className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                  <span>Supports up to 11 alphanumeric characters for your custom registered Sender ID.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                  <span>Instant delivery reports and campaign tracking via the returned Campaign ID.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: SENDER ID REGISTRATION & STATUS */}
+      {activeTab === "sender_id" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Register Sender ID */}
+          <div className="p-6 rounded-2xl bg-card border border-border shadow-sm space-y-4">
+            <h2 className="text-base font-black text-foreground flex items-center gap-2">
+              <Radio className="w-5 h-5 text-cyan-500" /> Register New Sender ID
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Submit your desired Sender ID to mNotify for telecom approval.
+            </p>
+            <form onSubmit={handleRegisterSenderId} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Sender Name (Max 11 chars)</label>
+                <Input
+                  value={regSenderName}
+                  maxLength={11}
+                  onChange={(e) => setRegSenderName(e.target.value)}
+                  placeholder="e.g. SwiftData"
+                  required
+                  className="rounded-xl h-11 bg-secondary/50 font-bold"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Registration Purpose</label>
+                <Textarea
+                  value={regPurpose}
+                  onChange={(e) => setRegPurpose(e.target.value)}
+                  placeholder="Reason for registering the sender id (e.g. For Sending Transactional & Order Alerts)"
+                  rows={3}
+                  required
+                  className="rounded-xl bg-secondary/50 text-xs"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={registeringSender}
+                className="w-full h-11 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs gap-2"
+              >
+                {registeringSender ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Submit Sender ID Registration
+              </Button>
+            </form>
+          </div>
+
+          {/* Check Sender ID Status */}
+          <div className="p-6 rounded-2xl bg-card border border-border shadow-sm space-y-4">
+            <h2 className="text-base font-black text-foreground flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-500" /> Check Sender ID Status
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Verify if your registered Sender ID has been approved on mNotify.
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Registered Sender Name</label>
+                <Input
+                  value={checkSenderName}
+                  onChange={(e) => setCheckSenderName(e.target.value)}
+                  placeholder="e.g. SwiftData"
+                  className="rounded-xl h-11 bg-secondary/50 font-bold"
+                />
+              </div>
+              <Button
+                onClick={handleCheckSenderStatus}
+                disabled={registeringSender || !checkSenderName.trim()}
+                variant="outline"
+                className="w-full h-11 rounded-xl font-bold text-xs gap-2 border-input bg-card"
+              >
+                {registeringSender ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Check Status
+              </Button>
+
+              {senderCheckResult && (
+                <div className="p-4 rounded-xl bg-secondary/40 border border-border space-y-1.5 animate-in fade-in duration-200">
+                  <p className="text-xs font-bold text-foreground">Status Result:</p>
+                  <p className="text-sm font-black text-emerald-400">
+                    {senderCheckResult.status || senderCheckResult["sender name status"] || "Approved"}
+                  </p>
+                  <pre className="text-[10px] font-mono text-muted-foreground overflow-x-auto p-2 bg-secondary/80 rounded-lg">
+                    {JSON.stringify(senderCheckResult, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: TEMPLATES & IVR */}
       {activeTab === "templates" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">

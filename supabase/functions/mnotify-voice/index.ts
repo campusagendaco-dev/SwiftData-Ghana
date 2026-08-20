@@ -6,6 +6,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
   sendMnotifyVoiceCall,
+  sendMnotifyQuickSms,
+  registerMnotifySenderId,
+  checkMnotifySenderIdStatus,
   fetchMnotifyTemplates,
   fetchMnotifyIvrScenarios,
   getMnotifyBalance,
@@ -144,6 +147,56 @@ serve(async (req: Request) => {
         // Non-critical audit log
       }
 
+      return json(result);
+    }
+
+    if (action === "send_sms" || action === "send_quick_sms") {
+      const { recipients, sender, message, is_schedule, schedule_date, sms_type, api_key } = body;
+      let targetPhones: string[] = [];
+
+      if (Array.isArray(recipients) && recipients.length > 0) {
+        targetPhones = recipients;
+      } else if (body.target_group) {
+        if (body.target_group === "all_users") {
+          const { data: users } = await supabaseAdmin.from("profiles").select("phone").not("phone", "is", null);
+          targetPhones = (users || []).map((u: any) => u.phone).filter(Boolean);
+        } else if (body.target_group === "agents") {
+          const { data: agents } = await supabaseAdmin.from("profiles").select("phone").eq("is_agent", true).not("phone", "is", null);
+          targetPhones = (agents || []).map((u: any) => u.phone).filter(Boolean);
+        } else if (body.target_group === "sub_agents") {
+          const { data: subAgents } = await supabaseAdmin.from("profiles").select("phone").eq("sub_agent_approved", true).not("phone", "is", null);
+          targetPhones = (subAgents || []).map((u: any) => u.phone).filter(Boolean);
+        }
+      }
+
+      const uniquePhones = Array.from(new Set(targetPhones.map(p => String(p).trim()).filter(Boolean)));
+      if (uniquePhones.length === 0) {
+        return json({ success: false, error: "No recipient phone numbers found for this SMS campaign." });
+      }
+
+      const result = await sendMnotifyQuickSms(supabaseAdmin, {
+        recipients: uniquePhones,
+        sender: sender || "SwiftData",
+        message: message,
+        isSchedule: is_schedule,
+        scheduleDate: schedule_date,
+        smsType: sms_type
+      }, api_key);
+
+      return json(result);
+    }
+
+    if (action === "register_sender_id") {
+      const { sender_name, purpose, api_key } = body;
+      if (!sender_name) return json({ success: false, error: "Sender Name is required." });
+      const result = await registerMnotifySenderId(supabaseAdmin, sender_name, purpose, api_key);
+      return json(result);
+    }
+
+    if (action === "check_sender_id") {
+      const { sender_name, api_key } = body;
+      if (!sender_name) return json({ success: false, error: "Sender Name is required." });
+      const result = await checkMnotifySenderIdStatus(supabaseAdmin, sender_name, api_key);
       return json(result);
     }
 

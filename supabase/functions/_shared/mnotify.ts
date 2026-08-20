@@ -248,3 +248,154 @@ export async function getMnotifyBalance(supabaseAdmin: any, apiKey?: string): Pr
     return { success: false, error: e.message };
   }
 }
+
+/**
+ * Send Quick Bulk SMS via mNotify
+ * POST https://api.mnotify.com/api/sms/quick?key=YOUR_API_KEY
+ */
+export async function sendMnotifyQuickSms(
+  supabaseAdmin: any,
+  payload: {
+    recipients: string[];
+    sender: string;
+    message: string;
+    isSchedule?: boolean;
+    scheduleDate?: string;
+    smsType?: "otp" | string;
+  },
+  apiKey?: string
+): Promise<{ success: boolean; message?: string; summary?: any; error?: string }> {
+  const key = apiKey || await getMnotifyApiKey(supabaseAdmin);
+  if (!key) {
+    return { success: false, error: "mNotify API key is not configured." };
+  }
+
+  if (!payload.recipients || payload.recipients.length === 0) {
+    return { success: false, error: "Recipient phone numbers are required." };
+  }
+
+  if (!payload.message || !payload.message.trim()) {
+    return { success: false, error: "Message content cannot be empty." };
+  }
+
+  const cleanRecipients = payload.recipients
+    .map(p => p.trim().replace(/[^\d+]/g, ""))
+    .filter(p => p.length >= 9);
+
+  if (cleanRecipients.length === 0) {
+    return { success: false, error: "No valid recipient numbers provided." };
+  }
+
+  const bodyPayload: any = {
+    recipient: cleanRecipients,
+    sender: (payload.sender || "SwiftData").slice(0, 11),
+    message: payload.message,
+    is_schedule: payload.isSchedule ? true : false,
+    schedule_date: payload.isSchedule && payload.scheduleDate ? payload.scheduleDate : ""
+  };
+
+  if (payload.smsType === "otp") {
+    bodyPayload.sms_type = "otp";
+  }
+
+  try {
+    const url = `https://api.mnotify.com/api/sms/quick?key=${encodeURIComponent(key)}`;
+    const response = await fetchViaDb(supabaseAdmin, url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bodyPayload)
+    });
+
+    const responseText = await response.text();
+    let json: any;
+    try {
+      json = JSON.parse(responseText);
+    } catch {
+      return { success: false, error: `Invalid response from mNotify: ${responseText.slice(0, 150)}` };
+    }
+
+    if (json.status === "success" || json.code === "2000") {
+      return {
+        success: true,
+        message: json.message || "SMS sent successfully.",
+        summary: json.summary
+      };
+    }
+
+    return {
+      success: false,
+      error: json.message || json.error || "Failed to send SMS via mNotify."
+    };
+  } catch (err: any) {
+    console.error("[mNotify] sendMnotifyQuickSms error:", err);
+    return { success: false, error: err.message || "Network error sending SMS." };
+  }
+}
+
+/**
+ * Register Sender ID with mNotify
+ * POST https://api.mnotify.com/api/senderid/register?key=YOUR_API_KEY
+ */
+export async function registerMnotifySenderId(
+  supabaseAdmin: any,
+  senderName: string,
+  purpose: string,
+  apiKey?: string
+): Promise<{ success: boolean; message?: string; summary?: any; error?: string }> {
+  const key = apiKey || await getMnotifyApiKey(supabaseAdmin);
+  if (!key) return { success: false, error: "mNotify API key is not configured." };
+
+  try {
+    const url = `https://api.mnotify.com/api/senderid/register?key=${encodeURIComponent(key)}`;
+    const response = await fetchViaDb(supabaseAdmin, url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender_name: senderName.slice(0, 11),
+        purpose: purpose || "For Transactional and Order Notification SMS"
+      })
+    });
+
+    const json = await response.json();
+    if (json.status === "success" || json.code === "2000") {
+      return { success: true, message: json.message, summary: json.summary };
+    }
+    return { success: false, error: json.message || "Failed to register Sender ID." };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Network error registering Sender ID." };
+  }
+}
+
+/**
+ * Check Sender ID Status on mNotify
+ * POST https://api.mnotify.com/api/senderid/status/?key=YOUR_API_KEY
+ */
+export async function checkMnotifySenderIdStatus(
+  supabaseAdmin: any,
+  senderName: string,
+  apiKey?: string
+): Promise<{ success: boolean; status?: string; summary?: any; error?: string }> {
+  const key = apiKey || await getMnotifyApiKey(supabaseAdmin);
+  if (!key) return { success: false, error: "mNotify API key is not configured." };
+
+  try {
+    const url = `https://api.mnotify.com/api/senderid/status/?key=${encodeURIComponent(key)}`;
+    const response = await fetchViaDb(supabaseAdmin, url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender_name: senderName })
+    });
+
+    const json = await response.json();
+    if (json.status === "success" || json.code === "2000") {
+      return {
+        success: true,
+        status: json.summary?.status || json.summary?.["sender name status"] || "Approved",
+        summary: json.summary
+      };
+    }
+    return { success: false, error: json.message || "Could not retrieve status." };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
