@@ -79,6 +79,24 @@ serve(async (req) => {
       });
     }
 
+    if (amountNum > 200) {
+      console.error(`[SECURITY] Blocked excessive airtime amount from user ${user.id}: ${amountNum}`);
+      return new Response(JSON.stringify({ error: "Maximum single airtime purchase is GHS 200.00." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const cleanPhone = String(customer_phone || "").replace(/\D+/g, "");
+    const cleanPhone9 = cleanPhone.slice(-9);
+    const KNOWN_SCAMMER_PHONES = ["0557061663", "233557061663", "557061663", "0544447965", "233544447965", "544447965"];
+    if (cleanPhone9 && KNOWN_SCAMMER_PHONES.some(p => p.endsWith(cleanPhone9))) {
+      return new Response(JSON.stringify({ error: "This recipient phone number is restricted." }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Anti-Duplicate Protection (1 Minute to prevent double-clicks, strictly scoped to this agent)
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
     const normalizedPhone = normalizeRecipient(customer_phone);

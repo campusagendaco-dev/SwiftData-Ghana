@@ -387,6 +387,46 @@ serve(async (req: Request) => {
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
+    // --- 🛡️ ANTI-FRAUD & SCAMMER SHIELD ---
+    const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
+    const cleanPhone9 = rawTargetPhone.slice(-9);
+
+    const KNOWN_SCAMMER_PHONES = [
+      "0557061663", "233557061663", "557061663",
+      "0544447965", "233544447965", "544447965"
+    ];
+
+    if (cleanPhone9 && KNOWN_SCAMMER_PHONES.some(p => p.endsWith(cleanPhone9))) {
+      console.warn(`[ANTI_FRAUD] Blocked blacklisted scammer phone attempt: ${rawTargetPhone}`);
+      return new Response(JSON.stringify({
+        error: "This phone number has been restricted due to suspicious activity. Please contact customer support."
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Check 3-Strike Unpaid/Failed Rate Limit (15-Minute Window)
+    if (cleanPhone9.length >= 9) {
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const { data: recentFailures } = await supabaseAdmin
+        .from("orders")
+        .select("id")
+        .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
+        .eq("status", "fulfillment_failed")
+        .gte("created_at", fifteenMinsAgo);
+
+      if (recentFailures && recentFailures.length >= 3) {
+        console.warn(`[ANTI_FRAUD] 3-Strike rate limit triggered for ${rawTargetPhone} (${recentFailures.length} recent failed attempts).`);
+        return new Response(JSON.stringify({
+          error: "Your phone number has been temporarily restricted due to repeated uncompleted transactions. Please try again after 15 minutes."
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // --- Secure MTN Beneficiary Whitelist & Datamart Failover Routing ---
     if (orderType === "data" && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
@@ -889,10 +929,22 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      if (amount > 200) {
+        return new Response(JSON.stringify({ error: "Maximum single airtime purchase is GHS 200.00." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       // If client explicitly passed the base price (excluding fees), we use it.
       // Otherwise, we default to the amount parameter.
       const basePriceVal = payload?.base_price || metadata?.base_price;
       const airtimeBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
+      if (airtimeBase > 200) {
+        return new Response(JSON.stringify({ error: "Maximum single airtime purchase is GHS 200.00." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       resolvedPaystackFee = 0;
       resolvedAmount = airtimeBase;
       enrichedMetadata = { ...metadata, base_price: airtimeBase, profit: 0 };

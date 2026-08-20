@@ -76,7 +76,7 @@ const DashboardBuyAirtime = () => {
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
   const numAmount = Number(amount);
-  const canPay = isPhoneValid && numAmount >= 1 && resolvedName;
+  const canPay = isPhoneValid && numAmount >= 1 && numAmount <= 200 && resolvedName;
 
   useEffect(() => {
     const fetchBalance = async () => {
@@ -543,12 +543,19 @@ const DashboardBuyAirtime = () => {
               </div>
               <input
                 type="number"
+                min="1"
+                max="200"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
                 className={cn("w-full h-24 pl-16 pr-6 rounded-3xl text-5xl font-black placeholder:text-opacity-20 focus:outline-none transition-all duration-300 bg-background border")}
                 style={
-                  numAmount > 0
+                  numAmount > 200
+                    ? {
+                        background: "rgba(239,68,68,0.08)",
+                        borderColor: "#EF4444",
+                      }
+                    : numAmount > 0
                     ? {
                         background: `${activeNet.color}07`,
                         borderColor: activeNet.color,
@@ -559,6 +566,11 @@ const DashboardBuyAirtime = () => {
                       }
                 }
               />
+              {numAmount > 200 && (
+                <p className="text-xs font-bold text-red-500 mt-2 px-1">
+                  ⚠️ Maximum single airtime purchase is GH₵200.00.
+                </p>
+              )}
             </div>
           </div>
         </div>

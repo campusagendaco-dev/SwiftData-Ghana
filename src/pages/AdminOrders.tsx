@@ -1245,32 +1245,48 @@ const AdminOrders = () => {
                     </td>
 
                     <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-[10px] gap-1 h-7 px-2 border-white/10 hover:border-amber-400/30 rounded-lg font-bold"
-                            disabled={retrying === order.id}
-                            onClick={() => handleRetry(order.id)}
-                          >
-                            {retrying === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                            Retry
-                          </Button>
-                        )}
-                        {order.status === "fulfillment_failed" && !order.auto_refunded && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="text-[10px] gap-1 h-7 px-2 border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg font-bold"
-                            disabled={refunding === order.id}
-                            onClick={() => handleRefund(order.id, order.amount)}
-                          >
-                            {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
-                            Refund
-                          </Button>
-                        )}
-                      </div>
+                      {(() => {
+                        const isUnpaidSpam = (order.status === "fulfillment_failed" || order.status === "failed") &&
+                          (order.failure_reason === "FAILED" || order.failure_reason === "TRANSACTION_NOT_FOUND" || String(order.failure_reason).toUpperCase().includes("ABANDONED")) &&
+                          order.payment_method !== "wallet";
+
+                        if (isUnpaidSpam) {
+                          return (
+                            <span className="inline-flex items-center px-2 py-1 rounded-md text-[9px] font-bold bg-rose-500/10 border border-rose-500/20 text-rose-400 cursor-not-allowed" title="Customer never completed payment at the gateway. Retry & Refund are disabled to prevent fraud.">
+                              🚫 Unpaid (Spam Shield)
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <div className="flex items-center justify-center gap-1.5">
+                            {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[10px] gap-1 h-7 px-2 border-white/10 hover:border-amber-400/30 rounded-lg font-bold"
+                                disabled={retrying === order.id}
+                                onClick={() => handleRetry(order.id)}
+                              >
+                                {retrying === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                Retry
+                              </Button>
+                            )}
+                            {order.status === "fulfillment_failed" && !order.auto_refunded && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="text-[10px] gap-1 h-7 px-2 border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg font-bold"
+                                disabled={refunding === order.id}
+                                onClick={() => handleRefund(order.id, order.amount)}
+                              >
+                                {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
+                                Refund
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

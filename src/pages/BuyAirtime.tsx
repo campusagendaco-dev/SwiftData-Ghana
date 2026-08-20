@@ -61,7 +61,7 @@ const BuyAirtime = () => {
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
   const numAmount = Number(amount);
-  const canPay = isPhoneValid && numAmount >= 1 && resolvedName;
+  const canPay = isPhoneValid && numAmount >= 1 && numAmount <= 200 && resolvedName;
 
   // Auto-detect network based on digits
   const detectNetworkFromPhone = (num: string) => {
@@ -391,15 +391,22 @@ const BuyAirtime = () => {
                 </div>
                 <input
                   type="number"
+                  min="1"
+                  max="200"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
                   className="w-full h-20 pl-16 pr-6 rounded-2xl text-4xl font-black transition-all duration-300 bg-background border"
                   style={{
-                    borderColor: numAmount > 0 ? "#FBBF24" : (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"),
+                    borderColor: numAmount > 200 ? "#EF4444" : numAmount > 0 ? "#FBBF24" : (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"),
                     color: isDark ? "white" : "black",
                   }}
                 />
+                {numAmount > 200 && (
+                  <p className="text-xs font-bold text-red-500 mt-1.5">
+                    ⚠️ Maximum single airtime purchase is GH₵200.00.
+                  </p>
+                )}
               </div>
             </div>
           </div>

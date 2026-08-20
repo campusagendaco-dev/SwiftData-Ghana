@@ -819,40 +819,56 @@ const AdminAirtimeOrders = () => {
                       </td>
                       <td className="p-2.5 text-center">
                         <div className="flex items-center justify-center">
-                          {(o.status === "fulfillment_failed" || o.status === "paid" || o.status === "processing") ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-7 w-7 p-0 hover:bg-muted">
-                                  <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-36">
-                                <DropdownMenuItem 
-                                  onClick={() => handleRetryOrder(o.id)}
-                                  disabled={retrying === o.id || forcingFulfill}
-                                  className="text-[11px] font-semibold cursor-pointer"
-                                >
-                                  {retrying === o.id ? "Retrying..." : "Retry API"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => handleForceFulfill(o.id)}
-                                  disabled={retrying === o.id || forcingFulfill}
-                                  className="text-[11px] font-semibold text-green-600 dark:text-green-400 cursor-pointer"
-                                >
-                                  Force Complete
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => handleRefundOrder(o.id)}
-                                  disabled={refunding === o.id || forcingFulfill}
-                                  className="text-[11px] font-semibold text-red-600 dark:text-red-400 cursor-pointer"
-                                >
-                                  {refunding === o.id ? "Refunding..." : "Refund Wallet"}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground font-semibold">—</span>
-                          )}
+                          {(() => {
+                            const isUnpaidSpam = (o.status === "fulfillment_failed" || o.status === "failed") &&
+                              (o.failure_reason === "FAILED" || o.failure_reason === "TRANSACTION_NOT_FOUND" || String(o.failure_reason).toUpperCase().includes("ABANDONED")) &&
+                              o.payment_method !== "wallet";
+
+                            if (isUnpaidSpam) {
+                              return (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-red-500/10 border border-red-500/20 text-red-400 cursor-not-allowed" title="Customer did not authorize payment at the gateway. Retry & Refund are locked.">
+                                  Unpaid
+                                </span>
+                              );
+                            }
+
+                            if (o.status === "fulfillment_failed" || o.status === "paid" || o.status === "processing") {
+                              return (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-7 w-7 p-0 hover:bg-muted">
+                                      <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-36">
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRetryOrder(o.id)}
+                                      disabled={retrying === o.id || forcingFulfill}
+                                      className="text-[11px] font-semibold cursor-pointer"
+                                    >
+                                      {retrying === o.id ? "Retrying..." : "Retry API"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleForceFulfill(o.id)}
+                                      disabled={retrying === o.id || forcingFulfill}
+                                      className="text-[11px] font-semibold text-green-600 dark:text-green-400 cursor-pointer"
+                                    >
+                                      Force Complete
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleRefundOrder(o.id)}
+                                      disabled={refunding === o.id || forcingFulfill}
+                                      className="text-[11px] font-semibold text-red-600 dark:text-red-400 cursor-pointer"
+                                    >
+                                      {refunding === o.id ? "Refunding..." : "Refund Wallet"}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              );
+                            }
+
+                            return <span className="text-[10px] text-muted-foreground font-semibold">—</span>;
+                          })()}
                         </div>
                       </td>
                     </tr>
