@@ -4,6 +4,7 @@ declare const Deno: any;
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 import {
   sendMnotifyVoiceCall,
   sendMnotifyQuickSms,
@@ -33,29 +34,21 @@ serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Authenticate user
+  // Authenticate admin or service role
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
+  const userToken = req.headers.get("x-user-access-token");
+  const token = (userToken || authHeader?.replace(/^Bearer\s+/i, "") || "").trim();
+
+  if (!token) {
     return json({ error: "Unauthorized: Missing Authorization header" }, 401);
   }
 
-  const token = authHeader.replace("Bearer ", "");
-  const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-
-  if (authError || !user) {
-    return json({ error: "Unauthorized: Invalid token" }, 401);
-  }
-
-  // Check admin/agent permission
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("role, is_admin, is_agent")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const isAdmin = profile?.role === "admin" || profile?.is_admin === true;
-  if (!isAdmin) {
-    return json({ error: "Forbidden: Admin privileges required." }, 403);
+  const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+  if (!isServiceRole) {
+    const authResult = await verifyAdmin(req, supabaseAdmin);
+    if (!authResult.success) {
+      return json({ error: authResult.error || "Forbidden: Admin privileges required." }, authResult.status || 403);
+    }
   }
 
   try {
