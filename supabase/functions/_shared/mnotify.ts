@@ -83,8 +83,8 @@ export async function fetchMnotifyTemplates(supabaseAdmin: any, apiKey?: string)
       return { success: false, error: `Invalid response from mNotify: ${responseText.slice(0, 150)}` };
     }
 
-    if (json.status === "success" || Array.isArray(json.data) || Array.isArray(json)) {
-      const list = json.data || (Array.isArray(json) ? json : []);
+    if (json.status === "success" || Array.isArray(json.template_list) || Array.isArray(json.data) || Array.isArray(json)) {
+      const list = json.template_list || json.data || (Array.isArray(json) ? json : []);
       return { success: true, data: list };
     }
 
