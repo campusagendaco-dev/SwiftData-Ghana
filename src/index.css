@@ -79,11 +79,12 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
 
   body {
-    @apply bg-background text-foreground;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-family: 'Poppins', sans-serif;
   }
 
@@ -95,7 +96,9 @@
 
 @layer utilities {
   .text-gradient {
-    @apply bg-clip-text text-transparent;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
     background-image: linear-gradient(135deg, hsl(48 96% 53%), hsl(36 100% 50%));
   }
 
@@ -108,11 +111,24 @@
   }
 
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border;
+    background-color: hsl(var(--card) / 0.8);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid hsl(var(--border));
   }
 
   .glass-card-neo {
-    @apply bg-card/70 backdrop-blur-2xl border border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)];
+    background-color: hsl(var(--card) / 0.7);
+    -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 8px 32px 0 rgba(0,0,0,0.2);
+    transition: all 300ms ease;
+  }
+
+  .glass-card-neo:hover {
+    border-color: rgba(245, 158, 11, 0.3);
+    box-shadow: 0 12px 40px -10px rgba(245, 158, 11, 0.2);
   }
 
   .glow-cyan {
@@ -129,7 +145,12 @@
   }
 
   .glass-panel-cyber {
-    @apply bg-card/75 backdrop-blur-2xl border border-border shadow-[0_16px_48px_-12px_rgba(0,0,0,0.4)] transition-all duration-300;
+    background-color: hsl(var(--card) / 0.75);
+    -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 16px 48px -12px rgba(0,0,0,0.4);
+    transition: all 300ms ease;
   }
 
   .glow-cyan-lg {
@@ -150,7 +171,15 @@
   }
 
   .table-row-hover-neon {
-    @apply transition-colors duration-150 hover:bg-amber-500/5 dark:hover:bg-amber-400/10;
+    transition: background-color 150ms ease;
+  }
+
+  .table-row-hover-neon:hover {
+    background-color: rgba(245, 158, 11, 0.05);
+  }
+
+  .dark .table-row-hover-neon:hover {
+    background-color: rgba(251, 191, 36, 0.1);
   }
 }
 
