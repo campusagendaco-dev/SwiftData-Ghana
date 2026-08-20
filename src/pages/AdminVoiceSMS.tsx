@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -303,14 +303,7 @@ export default function AdminVoiceSMS() {
     subAgents: 13,
   });
 
-  // Load Saved Audio Templates from LocalStorage & Supabase
-  useEffect(() => {
-    loadSavedAudioTemplates();
-    fetchAudienceCounts();
-    fetchBalanceAndTemplates();
-  }, []);
-
-  const loadSavedAudioTemplates = () => {
+  const loadSavedAudioTemplates = useCallback(() => {
     try {
       const saved = localStorage.getItem("swiftdata_saved_audio_templates");
       if (saved) {
@@ -319,7 +312,7 @@ export default function AdminVoiceSMS() {
     } catch (e) {
       console.warn("Failed to load local audio templates:", e);
     }
-  };
+  }, []);
 
   const saveAudioTemplatesToStorage = (updatedList: MnotifyTemplate[]) => {
     setAudioTemplates(updatedList);
@@ -330,10 +323,10 @@ export default function AdminVoiceSMS() {
     }
   };
 
-  const fetchAudienceCounts = async () => {
+  const fetchAudienceCounts = useCallback(async () => {
     if (!session?.access_token) return;
     try {
-      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+      const { data } = await supabase.functions.invoke("mnotify-voice", {
         body: { action: "get_audience_counts" },
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
@@ -350,9 +343,9 @@ export default function AdminVoiceSMS() {
     } catch (e) {
       console.error("Error fetching audience counts:", e);
     }
-  };
+  }, [session?.access_token]);
 
-  const fetchBalanceAndTemplates = async () => {
+  const fetchBalanceAndTemplates = useCallback(async () => {
     if (!session?.access_token) return;
     setLoadingTemplates(true);
     try {
@@ -379,7 +372,14 @@ export default function AdminVoiceSMS() {
     } finally {
       setLoadingTemplates(false);
     }
-  };
+  }, [session?.access_token, apiKey]);
+
+  // Load Saved Audio Templates from LocalStorage & Supabase
+  useEffect(() => {
+    loadSavedAudioTemplates();
+    fetchAudienceCounts();
+    fetchBalanceAndTemplates();
+  }, [loadSavedAudioTemplates, fetchAudienceCounts, fetchBalanceAndTemplates]);
 
   // ── Scheduling Helpers ──────────────────────────────────────────────
   const applySchedulePreset = (preset: string) => {
