@@ -1,4 +1,4 @@
-/// <reference path="../deno.d.ts" />
+import "../deno.d.ts";
 declare const Deno: any;
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
