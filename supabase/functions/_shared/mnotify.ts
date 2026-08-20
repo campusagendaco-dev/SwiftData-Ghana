@@ -220,12 +220,22 @@ export async function fetchMnotifyIvrScenarios(supabaseAdmin: any, apiKey?: stri
  */
 export async function sendMnotifyVoiceCall(
   supabaseAdmin: any,
-  payload: MnotifyVoicePayload,
+  payload: {
+    campaign: string;
+    recipients: string[];
+    voiceId?: string;
+    audioBase64?: string;
+    audioUrl?: string;
+    audioFileName?: string;
+    audioMimeType?: string;
+    isSchedule?: boolean;
+    scheduleDate?: string;
+  },
   apiKey?: string
-): Promise<MnotifyVoiceResponse> {
+): Promise<{ success: boolean; status?: string; code?: string; message?: string; summary?: any; error?: string; raw?: any }> {
   const key = apiKey || await getMnotifyApiKey(supabaseAdmin);
   if (!key) {
-    return { success: false, error: "mNotify API key is not configured. Please add MNOTIFY_API_KEY in settings." };
+    return { success: false, error: "mNotify API key is not configured. Please set your API key in Settings or provider configuration." };
   }
 
   if (!payload.campaign || !payload.campaign.trim()) {
@@ -233,26 +243,32 @@ export async function sendMnotifyVoiceCall(
   }
 
   if (!payload.recipients || payload.recipients.length === 0) {
-    return { success: false, error: "At least one recipient phone number is required." };
+    return { success: false, error: "At least one valid recipient phone number is required." };
   }
 
-  if (!payload.voiceId && !payload.audioBase64) {
-    return { success: false, error: "Please provide either a voice file or an existing voice_id." };
+  if (!payload.voiceId && !payload.audioBase64 && !payload.audioUrl) {
+    return { success: false, error: "Please upload an audio file or select an existing voice template." };
   }
 
   try {
     const formData = new FormData();
     formData.append("campaign", payload.campaign.trim());
 
-    // Append recipients
-    for (const r of payload.recipients) {
-      const cleanPhone = r.trim().replace(/[^\d+]/g, "");
-      if (cleanPhone) {
-        formData.append("recipient[]", cleanPhone);
-      }
+    // Clean and append recipients (up to max 500 per quick call)
+    const validRecipients = payload.recipients
+      .map(r => r.trim().replace(/[^\d+]/g, ""))
+      .filter(r => r.length >= 9 && !r.startsWith("00000000"))
+      .slice(0, 500);
+
+    if (validRecipients.length === 0) {
+      return { success: false, error: "No valid recipient phone numbers found after validation." };
     }
 
-    if (payload.voiceId) {
+    for (const r of validRecipients) {
+      formData.append("recipient[]", r);
+    }
+
+    if (payload.voiceId && payload.voiceId.trim()) {
       formData.append("voice_id", payload.voiceId.trim());
     } else if (payload.audioBase64) {
       // Decode Base64 audio to Uint8Array
@@ -266,6 +282,15 @@ export async function sendMnotifyVoiceCall(
       const blob = new Blob([bytes], { type: mimeType });
       formData.append("file", blob, fileName);
       formData.append("voice_id", "");
+    } else if (payload.audioUrl) {
+      const fileRes = await fetch(payload.audioUrl);
+      if (!fileRes.ok) {
+        return { success: false, error: `Could not retrieve audio template from storage (${fileRes.statusText}).` };
+      }
+      const arrayBuffer = await fileRes.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: "audio/mpeg" });
+      formData.append("file", blob, payload.audioFileName || "voice_message.mp3");
+      formData.append("voice_id", "");
     }
 
     formData.append("is_schedule", payload.isSchedule ? "true" : "false");
@@ -273,7 +298,6 @@ export async function sendMnotifyVoiceCall(
 
     const url = `https://api.mnotify.com/api/voice/quick?key=${encodeURIComponent(key)}`;
     
-    // Direct fetch with FormData
     const response = await fetch(url, {
       method: "POST",
       body: formData,
@@ -286,18 +310,18 @@ export async function sendMnotifyVoiceCall(
     } catch {
       return {
         success: false,
-        error: `Invalid response from mNotify: ${responseText.slice(0, 200)}`,
+        error: `mNotify server returned non-JSON response: ${responseText.slice(0, 150)}`,
         raw: responseText,
       };
     }
 
-    if (json.status === "success" || json.code === "2000") {
+    if (json.status === "success" || json.code === "2000" || json.code === 2000) {
       return {
         success: true,
         status: json.status,
-        code: json.code,
-        message: json.message || "Voice call sent successfully.",
-        summary: json.summary,
+        code: String(json.code),
+        message: json.message || "Voice broadcast placed successfully.",
+        summary: json.summary || { total_sent: validRecipients.length },
         raw: json,
       };
     }
@@ -305,8 +329,8 @@ export async function sendMnotifyVoiceCall(
     return {
       success: false,
       status: json.status,
-      code: json.code,
-      error: json.message || json.error || "Failed to dispatch voice call.",
+      code: String(json.code),
+      error: json.message || json.error || `mNotify error (code ${json.code || "unknown"}): ${JSON.stringify(json)}`,
       raw: json,
     };
   } catch (err: any) {

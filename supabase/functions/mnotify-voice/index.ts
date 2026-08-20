@@ -202,7 +202,7 @@ serve(async (req: Request) => {
     }
 
     if (action === "send_voice_call" || action === "send_voice") {
-      const { campaign, recipients, target_group, voice_id, audio_base64, audio_filename, audio_mimetype, is_schedule, schedule_date, api_key } = body;
+      const { campaign, recipients, target_group, voice_id, audio_base64, audio_url, audio_filename, audio_mimetype, is_schedule, schedule_date, api_key } = body;
 
       const uniquePhones = await resolveTargetPhones(supabaseAdmin, recipients, target_group);
 
@@ -215,6 +215,7 @@ serve(async (req: Request) => {
         recipients: uniquePhones,
         voiceId: voice_id,
         audioBase64: audio_base64,
+        audioUrl: audio_url,
         audioFileName: audio_filename,
         audioMimeType: audio_mimetype,
         isSchedule: is_schedule,

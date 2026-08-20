@@ -736,10 +736,15 @@ export default function AdminVoiceSMS() {
         payload.target_group = targetType;
       }
 
-      if (audioSource === "file" && audioBase64) {
-        payload.audio_base64 = audioBase64;
-        payload.audio_filename = selectedFile?.name || "voice_message.mp3";
-        payload.audio_mimetype = selectedFile?.type || "audio/mpeg";
+      if (audioSource === "file") {
+        if (audioBase64) {
+          payload.audio_base64 = audioBase64;
+          payload.audio_filename = selectedFile?.name || "voice_message.mp3";
+          payload.audio_mimetype = selectedFile?.type || "audio/mpeg";
+        } else if (audioPreviewUrl) {
+          payload.audio_url = audioPreviewUrl;
+          payload.audio_filename = selectedFile?.name || "voice_message.mp3";
+        }
       } else {
         payload.voice_id = voiceId.trim();
       }
@@ -750,7 +755,7 @@ export default function AdminVoiceSMS() {
       });
 
       if (error || !data?.success) {
-        throw new Error(data?.error || error?.message || "Failed to dispatch voice call.");
+        throw new Error(data?.error || error?.message || (data ? JSON.stringify(data) : "Failed to dispatch voice call."));
       }
 
       toast({
