@@ -391,12 +391,15 @@ serve(async (req: Request) => {
     const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
     const cleanPhone9 = rawTargetPhone.slice(-9);
 
-    const KNOWN_SCAMMER_PHONES = [
+    const KNOWN_SCAMMERS = [
       "0557061663", "233557061663", "557061663",
-      "0544447965", "233544447965", "544447965"
+      "0544447965", "233544447965", "544447965",
+      "0554634611", "233554634611", "554634611",
+      "0559352100", "233559352100", "559352100",
+      "0548823936", "233548823936", "548823936"
     ];
 
-    if (cleanPhone9 && KNOWN_SCAMMER_PHONES.some(p => p.endsWith(cleanPhone9))) {
+    if (cleanPhone9 && KNOWN_SCAMMERS.some(p => p.endsWith(cleanPhone9))) {
       console.warn(`[ANTI_FRAUD] Blocked blacklisted scammer phone attempt: ${rawTargetPhone}`);
       return new Response(JSON.stringify({
         error: "This phone number has been restricted due to suspicious activity. Please contact customer support."
