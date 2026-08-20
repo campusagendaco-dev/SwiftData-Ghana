@@ -199,6 +199,14 @@ serve(async (req: Request) => {
     }
   }
 
+  // Automatically extract prepaid token from message if not provided in prepaid_token parameter
+  if (!prepaidToken && message) {
+    const tokenMatch = message.match(/\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/) || message.match(/\b\d{20}\b/);
+    if (tokenMatch) {
+      prepaidToken = tokenMatch[0].replace(/[-\s]/g, "");
+    }
+  }
+
   console.log(`[korba-webhook] Callback received: tx=${transactionId}, status=${status}, msg=${message}, token=${prepaidToken}`);
 
   const isDisbursementCallback = transactionId.endsWith("_disb");

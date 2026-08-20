@@ -628,26 +628,34 @@ const OrderStatus = () => {
             </div>
 
             {/* Prepaid Token Display */}
-            {orderStatus === "fulfilled" && statusMessage && statusMessage.startsWith("Token:") && (
-              <div className="mx-6 mb-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400">Prepaid Token Code</p>
-                <div className="flex items-center justify-center gap-2">
-                  <span className="text-xl font-black tracking-wider text-white font-mono">
-                    {statusMessage.replace("Token:", "").trim()}
-                  </span>
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(statusMessage.replace("Token:", "").trim());
-                      toast.success("Token copied to clipboard!");
-                    }}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+            {orderStatus === "fulfilled" && (
+              (statusMessage && (statusMessage.includes("Token") || statusMessage.includes("token"))) || 
+              Boolean((orderData as any)?.metadata?.prepaid_token)
+            ) && (() => {
+              const rawToken = (orderData as any)?.metadata?.prepaid_token || statusMessage?.replace(/^.*(?:Token|token):?/i, "").trim();
+              if (!rawToken) return null;
+              return (
+                <div className="mx-6 mb-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2 animate-in zoom-in-95 duration-200">
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400">Prepaid Token Code</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-xl font-black tracking-wider text-white font-mono">
+                      {rawToken}
+                    </span>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(rawToken);
+                        toast.success("Token copied to clipboard!");
+                      }}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all"
+                      title="Copy Token"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium">Input this code into your prepaid meter keypad to credit power.</p>
                 </div>
-                <p className="text-[10px] text-slate-400 font-medium">Input this code into your prepaid meter to credit power.</p>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Real-time Gateway Terminal Logs */}
             {createdAt && (orderStatus === "paid" || orderStatus === "processing" || orderStatus === "pending" || orderStatus === "fulfilled" || orderStatus === "fulfillment_failed") && (
