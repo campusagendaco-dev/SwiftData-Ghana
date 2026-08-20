@@ -44,11 +44,16 @@ serve(async (req: Request) => {
   }
 
   const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+  let user: any = null;
+
   if (!isServiceRole) {
     const authResult = await verifyAdmin(req, supabaseAdmin);
     if (!authResult.success) {
       return json({ error: authResult.error || "Forbidden: Admin privileges required." }, authResult.status || 403);
     }
+    user = authResult.user;
+  } else {
+    user = { id: "00000000-0000-0000-0000-000000000000", email: "service-role@supabase.local" };
   }
 
   try {
