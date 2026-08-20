@@ -96,6 +96,98 @@ export async function fetchMnotifyTemplates(supabaseAdmin: any, apiKey?: string)
 }
 
 /**
+ * Create a new Message Template on mNotify
+ * POST https://api.mnotify.com/api/template?key=YOUR_API_KEY
+ */
+export async function createMnotifyTemplate(
+  supabaseAdmin: any,
+  payload: { title: string; content: string },
+  apiKey?: string
+): Promise<{ success: boolean; data?: any; message?: string; error?: string }> {
+  const key = apiKey || await getMnotifyApiKey(supabaseAdmin);
+  if (!key) {
+    return { success: false, error: "mNotify API key is not configured." };
+  }
+
+  if (!payload.title || !payload.title.trim()) {
+    return { success: false, error: "Template title is required." };
+  }
+
+  if (!payload.content || !payload.content.trim()) {
+    return { success: false, error: "Template content is required." };
+  }
+
+  try {
+    const url = `https://api.mnotify.com/api/template?key=${encodeURIComponent(key)}`;
+    const response = await fetchViaDb(supabaseAdmin, url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        title: payload.title.trim(),
+        content: payload.content.trim(),
+        template_name: payload.title.trim(),
+        message: payload.content.trim()
+      })
+    });
+
+    const responseText = await response.text();
+    let json: any;
+    try {
+      json = JSON.parse(responseText);
+    } catch {
+      return { success: false, error: `Invalid response from mNotify: ${responseText.slice(0, 150)}` };
+    }
+
+    if (json.status === "success" || json.code === "2000") {
+      return {
+        success: true,
+        message: json.message || "Template saved successfully on mNotify.",
+        data: json.data || json.summary || { title: payload.title, content: payload.content }
+      };
+    }
+
+    return {
+      success: false,
+      error: json.message || json.error || "Failed to create template on mNotify."
+    };
+  } catch (err: any) {
+    console.error("[mNotify] createMnotifyTemplate error:", err);
+    return { success: false, error: err.message || "Network error creating template." };
+  }
+}
+
+/**
+ * Delete a Message Template on mNotify
+ * DELETE https://api.mnotify.com/api/template/{id}?key=YOUR_API_KEY
+ */
+export async function deleteMnotifyTemplate(
+  supabaseAdmin: any,
+  templateId: string | number,
+  apiKey?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const key = apiKey || await getMnotifyApiKey(supabaseAdmin);
+  if (!key) {
+    return { success: false, error: "mNotify API key is not configured." };
+  }
+
+  try {
+    const url = `https://api.mnotify.com/api/template/${encodeURIComponent(templateId)}?key=${encodeURIComponent(key)}`;
+    const response = await fetchViaDb(supabaseAdmin, url, {
+      method: "DELETE",
+      headers: { "Accept": "application/json" }
+    });
+
+    const json = await response.json().catch(() => null);
+    if (json?.status === "success" || response.ok) {
+      return { success: true, message: json?.message || "Template deleted successfully." };
+    }
+    return { success: false, error: json?.message || "Failed to delete template." };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Network error deleting template." };
+  }
+}
+
+/**
  * Fetch IVR Scenarios from mNotify
  * GET https://api.mnotify.com/api/ivr-scenarios?key=YOUR_API_KEY
  */

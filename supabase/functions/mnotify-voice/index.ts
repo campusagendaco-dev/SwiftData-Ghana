@@ -11,6 +11,8 @@ import {
   registerMnotifySenderId,
   checkMnotifySenderIdStatus,
   fetchMnotifyTemplates,
+  createMnotifyTemplate,
+  deleteMnotifyTemplate,
   fetchMnotifyIvrScenarios,
   getMnotifyBalance,
   getMnotifyApiKey
@@ -63,6 +65,24 @@ serve(async (req: Request) => {
     if (action === "get_templates") {
       const customKey = body.api_key;
       const res = await fetchMnotifyTemplates(supabaseAdmin, customKey);
+      return json(res);
+    }
+
+    if (action === "create_template") {
+      const { title, content, api_key } = body;
+      if (!title || !content) {
+        return json({ success: false, error: "Template title and content are required." }, 400);
+      }
+      const res = await createMnotifyTemplate(supabaseAdmin, { title, content }, api_key);
+      return json(res);
+    }
+
+    if (action === "delete_template") {
+      const { template_id, api_key } = body;
+      if (!template_id) {
+        return json({ success: false, error: "Template ID is required." }, 400);
+      }
+      const res = await deleteMnotifyTemplate(supabaseAdmin, template_id, api_key);
       return json(res);
     }
 
