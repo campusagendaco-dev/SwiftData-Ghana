@@ -319,15 +319,28 @@ export default function AdminVoiceSMS() {
 
   const fetchAudienceCounts = async () => {
     try {
-      const [{ count: allCount }, { count: agentCount }, { count: subCount }] = await Promise.all([
-        supabase.from("profiles").select("*", { count: "exact", head: true }).not("phone", "is", null),
-        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("is_agent", true).not("phone", "is", null),
-        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("sub_agent_approved", true).not("phone", "is", null)
-      ]);
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("phone, whatsapp_number, momo_number, vendor_phone, is_agent, sub_agent_approved");
+
+      let allCount = 0;
+      let agentCount = 0;
+      let subCount = 0;
+
+      for (const p of profiles || []) {
+        const raw = p.phone || p.whatsapp_number || p.momo_number || p.vendor_phone;
+        const valid = raw && typeof raw === "string" && raw.trim().replace(/[^\d+]/g, "").length >= 9;
+        if (valid) {
+          allCount++;
+          if (p.is_agent) agentCount++;
+          if (p.sub_agent_approved) subCount++;
+        }
+      }
+
       setCounts({
-        all: allCount || 0,
-        agents: agentCount || 0,
-        subAgents: subCount || 0
+        all: allCount,
+        agents: agentCount,
+        subAgents: subCount
       });
     } catch (e) {
       console.error("Error fetching audience counts:", e);

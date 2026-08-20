@@ -22,6 +22,43 @@ const JSON_HEADERS = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 
+async function resolveTargetPhones(supabaseAdmin: any, recipients?: string[], targetGroup?: string): Promise<string[]> {
+  if (Array.isArray(recipients) && recipients.length > 0) {
+    return Array.from(new Set(
+      recipients
+        .map((p) => String(p).trim().replace(/[^\d+]/g, ""))
+        .filter((p) => p.length >= 9)
+    ));
+  }
+
+  if (!targetGroup) return [];
+
+  let query = supabaseAdmin.from("profiles").select("phone, whatsapp_number, momo_number, vendor_phone");
+  if (targetGroup === "agents") {
+    query = query.eq("is_agent", true);
+  } else if (targetGroup === "sub_agents") {
+    query = query.eq("sub_agent_approved", true);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn("[mnotify-voice] Error resolving audience profiles:", error);
+  }
+
+  const phones: string[] = [];
+  for (const row of data || []) {
+    const raw = row.phone || row.whatsapp_number || row.momo_number || row.vendor_phone;
+    if (raw && typeof raw === "string") {
+      const clean = raw.trim().replace(/[^\d+]/g, "");
+      if (clean.length >= 9) {
+        phones.push(clean);
+      }
+    }
+  }
+
+  return Array.from(new Set(phones));
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -99,42 +136,12 @@ serve(async (req: Request) => {
     }
 
     if (action === "send_voice_call" || action === "send_voice") {
-      const { campaign, recipients, voice_id, audio_base64, audio_filename, audio_mimetype, is_schedule, schedule_date, api_key } = body;
+      const { campaign, recipients, target_group, voice_id, audio_base64, audio_filename, audio_mimetype, is_schedule, schedule_date, api_key } = body;
 
-      let targetPhones: string[] = [];
-
-      if (Array.isArray(recipients) && recipients.length > 0) {
-        targetPhones = recipients;
-      } else if (body.target_group) {
-        // Resolve target group from DB
-        if (body.target_group === "all_users") {
-          const { data: users } = await supabaseAdmin
-            .from("profiles")
-            .select("phone")
-            .not("phone", "is", null);
-          targetPhones = (users || []).map((u: any) => u.phone).filter(Boolean);
-        } else if (body.target_group === "agents") {
-          const { data: agents } = await supabaseAdmin
-            .from("profiles")
-            .select("phone")
-            .eq("is_agent", true)
-            .not("phone", "is", null);
-          targetPhones = (agents || []).map((u: any) => u.phone).filter(Boolean);
-        } else if (body.target_group === "sub_agents") {
-          const { data: subAgents } = await supabaseAdmin
-            .from("profiles")
-            .select("phone")
-            .eq("sub_agent_approved", true)
-            .not("phone", "is", null);
-          targetPhones = (subAgents || []).map((u: any) => u.phone).filter(Boolean);
-        }
-      }
-
-      // Deduplicate and filter valid phone numbers
-      const uniquePhones = Array.from(new Set(targetPhones.map(p => String(p).trim()).filter(Boolean)));
+      const uniquePhones = await resolveTargetPhones(supabaseAdmin, recipients, target_group);
 
       if (uniquePhones.length === 0) {
-        return json({ success: false, error: "No recipient phone numbers found for this campaign." });
+        return json({ success: false, error: "No recipient phone numbers found for this campaign. Please ensure your audience or custom phone list has valid contacts." });
       }
 
       const result = await sendMnotifyVoiceCall(supabaseAdmin, {
@@ -169,27 +176,12 @@ serve(async (req: Request) => {
     }
 
     if (action === "send_sms" || action === "send_quick_sms") {
-      const { recipients, sender, message, is_schedule, schedule_date, sms_type, api_key } = body;
-      let targetPhones: string[] = [];
+      const { recipients, target_group, sender, message, is_schedule, schedule_date, sms_type, api_key } = body;
 
-      if (Array.isArray(recipients) && recipients.length > 0) {
-        targetPhones = recipients;
-      } else if (body.target_group) {
-        if (body.target_group === "all_users") {
-          const { data: users } = await supabaseAdmin.from("profiles").select("phone").not("phone", "is", null);
-          targetPhones = (users || []).map((u: any) => u.phone).filter(Boolean);
-        } else if (body.target_group === "agents") {
-          const { data: agents } = await supabaseAdmin.from("profiles").select("phone").eq("is_agent", true).not("phone", "is", null);
-          targetPhones = (agents || []).map((u: any) => u.phone).filter(Boolean);
-        } else if (body.target_group === "sub_agents") {
-          const { data: subAgents } = await supabaseAdmin.from("profiles").select("phone").eq("sub_agent_approved", true).not("phone", "is", null);
-          targetPhones = (subAgents || []).map((u: any) => u.phone).filter(Boolean);
-        }
-      }
+      const uniquePhones = await resolveTargetPhones(supabaseAdmin, recipients, target_group);
 
-      const uniquePhones = Array.from(new Set(targetPhones.map(p => String(p).trim()).filter(Boolean)));
       if (uniquePhones.length === 0) {
-        return json({ success: false, error: "No recipient phone numbers found for this SMS campaign." });
+        return json({ success: false, error: "No recipient phone numbers found for this SMS campaign. Please ensure your audience or custom phone list has valid contacts." });
       }
 
       const result = await sendMnotifyQuickSms(supabaseAdmin, {
