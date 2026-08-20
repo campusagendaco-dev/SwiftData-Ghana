@@ -410,24 +410,29 @@ serve(async (req: Request) => {
       });
     }
 
-    // Autonomous Dynamic Fraud Detection: Auto-Block Any Number with >= 2 Unpaid/Failed Attempts
+    // Rate Limiter: Protect against custom airtime spam and high-frequency bot loops
     if (cleanPhone9.length >= 9) {
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
       const { data: recentFailures } = await supabaseAdmin
         .from("orders")
-        .select("id, amount, status, failure_reason")
+        .select("id, amount, status, order_type")
         .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
         .eq("status", "fulfillment_failed")
         .gte("created_at", fifteenMinsAgo);
 
-      if (recentFailures && recentFailures.length >= 2) {
-        console.warn(`[ANTI_FRAUD] Dynamic Auto-Block triggered for ${rawTargetPhone} (${recentFailures.length} recent uncompleted transactions).`);
-        return new Response(JSON.stringify({
-          error: "Security Alert: This phone number has been temporarily auto-blocked due to repeated uncompleted transactions. Please wait 15 minutes or contact support."
-        }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (recentFailures) {
+        const airtimeFailures = recentFailures.filter((o: any) => o.order_type === "airtime").length;
+        const totalFailures = recentFailures.length;
+
+        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 6) {
+          console.warn(`[ANTI_FRAUD] Rate limit triggered for ${rawTargetPhone} (${totalFailures} failures).`);
+          return new Response(JSON.stringify({
+            error: "Security Alert: This phone number has been temporarily restricted due to repeated uncompleted transactions. Please wait 15 minutes or contact support."
+          }), {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
     }
 

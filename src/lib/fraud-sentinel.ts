@@ -57,24 +57,32 @@ export async function runFraudSentinelCheck(params: {
     };
   }
 
-  // 4. 3-Strike Unpaid Order Throttling (15-minute velocity window)
+  // 4. Rate Limiter (Targeted at Airtime & High-Volume Bot Flooding)
   if (clean9.length >= 9) {
     try {
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      const { data: recentFailures } = await supabase
+      const query = supabase
         .from("orders")
-        .select("id, amount, status")
+        .select("id, amount, status, order_type")
         .or(`customer_phone.ilike.%${clean9},metadata->>payment_phone.ilike.%${clean9}`)
         .eq("status", "fulfillment_failed")
         .gte("created_at", fifteenMinsAgo);
 
-      if (recentFailures && recentFailures.length >= 2) {
-        console.warn(`[FRAUD_SENTINEL] Dynamic Auto-Block triggered for ${cleanPhone} (${recentFailures.length} recent uncompleted transactions)`);
-        return {
-          allowed: false,
-          threatLevel: "HIGH",
-          reason: "Security Alert: Your phone number has been temporarily auto-blocked due to repeated uncompleted transactions. Please try again after 15 minutes."
-        };
+      const { data: recentFailures } = await query;
+
+      if (recentFailures) {
+        const airtimeFailures = recentFailures.filter((o: any) => o.order_type === "airtime").length;
+        const totalFailures = recentFailures.length;
+
+        // Strict limit for custom airtime orders (3+), higher tolerance for catalog data orders (6+)
+        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 6) {
+          console.warn(`[FRAUD_SENTINEL] Rate limit triggered for ${cleanPhone} (${totalFailures} failures)`);
+          return {
+            allowed: false,
+            threatLevel: "HIGH",
+            reason: "Security Alert: Your phone number has been temporarily restricted due to repeated uncompleted transactions. Please try again after 15 minutes."
+          };
+        }
       }
     } catch (err) {
       console.warn("[FRAUD_SENTINEL] Velocity check error:", err);
