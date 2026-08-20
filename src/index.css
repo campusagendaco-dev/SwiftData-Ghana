@@ -157,31 +157,31 @@
 /* ── Glass mode overrides (dark themes) ───────────────── */
 [data-glass="1"] .bg-card {
   background: rgba(var(--glass-rgb), 0.22) !important;
-  backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   border-color: rgba(var(--glass-border-rgb), 0.15) !important;
 }
 
 @media (min-width: 768px) {
   [data-glass="1"] .bg-card {
     background: rgba(var(--glass-rgb), 0.18) !important;
-    backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
   }
 }
 
 [data-glass="1"] .glass-card {
   background: rgba(var(--glass-rgb), 0.28) !important;
-  backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid rgba(var(--glass-border-rgb), 0.2) !important;
 }
 
 @media (min-width: 768px) {
   [data-glass="1"] .glass-card {
     background: rgba(var(--glass-rgb), 0.25) !important;
-    backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
   }
 }
 
