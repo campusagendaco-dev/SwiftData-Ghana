@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { useAppTheme } from "@/contexts/AppThemeContext";
+import { useAuth } from "@/hooks/useAuth";
+import { useAppTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import {
   PhoneCall,
