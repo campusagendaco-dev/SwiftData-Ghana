@@ -51,10 +51,11 @@ serve(async (req) => {
     if (providerError || !provider) throw new Error("Provider not found");
 
     const handlerType = provider.handler_type || "standard";
-    const apiKey = provider.api_key;
-    const baseUrl = provider.base_url?.replace(/\/+$/, "");
+    const apiKey = (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) || provider.api_key;
+    const baseUrl = (provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
 
-    if (!apiKey || !baseUrl) throw new Error("Provider API key or Base URL missing");
+    if (!apiKey) throw new Error("Provider API key missing");
+    if (!baseUrl && handlerType !== "mnotify") throw new Error("Provider Base URL missing");
 
     let packagesSynced = 0;
     let balance = provider.balance;
@@ -828,6 +829,31 @@ serve(async (req) => {
       } else {
         console.warn("[sync:korba] No packages fetched from Korba API (only added airtime fallback packages).");
       }
+    } else if (handlerType === "mnotify") {
+      console.log(`[sync:mnotify] Syncing mNotify balance for ${provider.name}...`);
+      let voiceBalance = 0;
+      let smsBalance = 0;
+      try {
+        const [voiceRes, smsRes] = await Promise.all([
+          fetch(`https://api.mnotify.com/api/balance/voice?key=${apiKey}`),
+          fetch(`https://api.mnotify.com/api/balance/sms?key=${apiKey}`)
+        ]);
+
+        if (voiceRes.ok) {
+          const vData = await voiceRes.json();
+          voiceBalance = Number(vData.balance || vData.voice_balance || 0);
+        }
+        if (smsRes.ok) {
+          const sData = await smsRes.json();
+          smsBalance = Number(sData.balance || sData.sms_balance || 0);
+        }
+      } catch (err) {
+        console.warn("[sync:mnotify] Failed to fetch live mNotify balance:", err);
+      }
+
+      balance = voiceBalance > 0 ? voiceBalance : smsBalance;
+      packagesSynced = 0;
+      console.log(`[sync:mnotify] Balance synced: Voice=${voiceBalance}, SMS=${smsBalance}`);
     } else {
       throw new Error(`Sync not implemented for handler type: ${handlerType}`);
     }
