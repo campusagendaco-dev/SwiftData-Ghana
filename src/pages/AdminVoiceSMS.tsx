@@ -319,15 +319,27 @@ export default function AdminVoiceSMS() {
 
   const fetchAudienceCounts = async () => {
     try {
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("phone, whatsapp_number, momo_number, vendor_phone, is_agent, sub_agent_approved");
+      let allProfiles: any[] = [];
+      let from = 0;
+      const step = 1000;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("phone, whatsapp_number, momo_number, vendor_phone, is_agent, sub_agent_approved")
+          .range(from, from + step - 1);
+
+        if (error || !data || data.length === 0) break;
+        allProfiles.push(...data);
+        if (data.length < step) break;
+        from += step;
+      }
 
       let allCount = 0;
       let agentCount = 0;
       let subCount = 0;
 
-      for (const p of profiles || []) {
+      for (const p of allProfiles) {
         const raw = p.phone || p.whatsapp_number || p.momo_number || p.vendor_phone;
         const valid = raw && typeof raw === "string" && raw.trim().replace(/[^\d+]/g, "").length >= 9;
         if (valid) {

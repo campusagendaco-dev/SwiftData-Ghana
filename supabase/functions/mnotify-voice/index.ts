@@ -33,27 +33,37 @@ async function resolveTargetPhones(supabaseAdmin: any, recipients?: string[], ta
 
   if (!targetGroup) return [];
 
-  let query = supabaseAdmin.from("profiles").select("phone, whatsapp_number, momo_number, vendor_phone");
-  if (targetGroup === "agents") {
-    query = query.eq("is_agent", true);
-  } else if (targetGroup === "sub_agents") {
-    query = query.eq("sub_agent_approved", true);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.warn("[mnotify-voice] Error resolving audience profiles:", error);
-  }
-
   const phones: string[] = [];
-  for (const row of data || []) {
-    const raw = row.phone || row.whatsapp_number || row.momo_number || row.vendor_phone;
-    if (raw && typeof raw === "string") {
-      const clean = raw.trim().replace(/[^\d+]/g, "");
-      if (clean.length >= 9) {
-        phones.push(clean);
+  let from = 0;
+  const step = 1000;
+
+  while (true) {
+    let query = supabaseAdmin
+      .from("profiles")
+      .select("phone, whatsapp_number, momo_number, vendor_phone")
+      .range(from, from + step - 1);
+
+    if (targetGroup === "agents") {
+      query = query.eq("is_agent", true);
+    } else if (targetGroup === "sub_agents") {
+      query = query.eq("sub_agent_approved", true);
+    }
+
+    const { data, error } = await query;
+    if (error || !data || data.length === 0) break;
+
+    for (const row of data) {
+      const raw = row.phone || row.whatsapp_number || row.momo_number || row.vendor_phone;
+      if (raw && typeof raw === "string") {
+        const clean = raw.trim().replace(/[^\d+]/g, "");
+        if (clean.length >= 9 && !clean.startsWith("00000000")) {
+          phones.push(clean);
+        }
       }
     }
+
+    if (data.length < step) break;
+    from += step;
   }
 
   return Array.from(new Set(phones));
