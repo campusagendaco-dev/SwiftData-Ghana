@@ -4,7 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // 1. Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { 
