@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
-import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown, Globe, Clock, Ban, MessageCircle, Wallet, Eye } from "lucide-react";
+import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown, Globe, Clock, Ban, MessageCircle, Wallet, Eye, ArrowUpDown, ArrowDown, ArrowUp, ArrowDownWideNarrow } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
 
 interface UserRow {
@@ -39,7 +40,15 @@ interface UserRow {
   has_mfa?: boolean;
 }
 
-type RoleTab = "all" | "customers" | "agents" | "sub-agents";
+export type RoleTab = "all" | "customers" | "agents" | "sub-agents";
+export type UserSortOption = 
+  | "created_at_desc" 
+  | "created_at_asc" 
+  | "wallet_desc" 
+  | "wallet_asc" 
+  | "api_wallet_desc" 
+  | "sales_desc"
+  | "name_asc";
 
 const AdminUsers = () => {
   const { isDark } = useAppTheme();
@@ -49,6 +58,7 @@ const AdminUsers = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<RoleTab>("all");
+  const [sortBy, setSortBy] = useState<UserSortOption>("wallet_desc");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -66,32 +76,140 @@ const AdminUsers = () => {
     const from = currentPage * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    let q = supabase
-      .from("profiles")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(from, to);
+    let rows: UserRow[] = [];
+    let count: number | null = 0;
+    const cleanSearch = search ? sanitizeSearchTerm(search) : "";
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
 
-    if (search) {
-      const cleanSearch = sanitizeSearchTerm(search);
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
-      if (isUuid) {
-        q = q.eq("user_id", cleanSearch);
-      } else {
-        q = q.or(`full_name.ilike.%${cleanSearch}%,email.ilike.%${cleanSearch}%,phone.ilike.%${cleanSearch}%`);
+    if (!cleanSearch && (sortBy === "wallet_desc" || sortBy === "wallet_asc")) {
+      const { data: walletRows, count: walletCount } = await supabase
+        .from("wallets")
+        .select("agent_id, balance, api_balance", { count: "exact" })
+        .order("balance", { ascending: sortBy === "wallet_asc" })
+        .range(from, to);
+
+      count = walletCount;
+      const targetAgentIds = (walletRows || []).map((w: any) => w.agent_id);
+
+      if (targetAgentIds.length > 0) {
+        let profQuery = supabase
+          .from("profiles")
+          .select("*")
+          .in("user_id", targetAgentIds);
+
+        if (tab === "customers") {
+          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent" as any, false);
+        } else if (tab === "agents") {
+          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent" as any, false);
+        } else if (tab === "sub-agents") {
+          profQuery = profQuery.eq("is_sub_agent" as any, true);
+        }
+
+        const { data: profData } = await profQuery;
+        const profMap = new Map((profData || []).map((p: any) => [p.user_id, p]));
+
+        rows = (walletRows || [])
+          .map((w: any) => profMap.get(w.agent_id))
+          .filter(Boolean) as UserRow[];
       }
+    } else if (!cleanSearch && sortBy === "api_wallet_desc") {
+      const { data: walletRows, count: walletCount } = await supabase
+        .from("wallets")
+        .select("agent_id, balance, api_balance", { count: "exact" })
+        .order("api_balance", { ascending: false })
+        .range(from, to);
+
+      count = walletCount;
+      const targetAgentIds = (walletRows || []).map((w: any) => w.agent_id);
+
+      if (targetAgentIds.length > 0) {
+        let profQuery = supabase
+          .from("profiles")
+          .select("*")
+          .in("user_id", targetAgentIds);
+
+        if (tab === "customers") {
+          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent" as any, false);
+        } else if (tab === "agents") {
+          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent" as any, false);
+        } else if (tab === "sub-agents") {
+          profQuery = profQuery.eq("is_sub_agent" as any, true);
+        }
+
+        const { data: profData } = await profQuery;
+        const profMap = new Map((profData || []).map((p: any) => [p.user_id, p]));
+
+        rows = (walletRows || [])
+          .map((w: any) => profMap.get(w.agent_id))
+          .filter(Boolean) as UserRow[];
+      }
+    } else if (!cleanSearch && sortBy === "sales_desc") {
+      const { data: salesRows, count: salesCount } = await supabase
+        .from("user_sales_stats")
+        .select("user_id, total_sales_volume", { count: "exact" })
+        .order("total_sales_volume", { ascending: false })
+        .range(from, to);
+
+      count = salesCount;
+      const targetUserIds = (salesRows || []).map((s: any) => s.user_id);
+
+      if (targetUserIds.length > 0) {
+        let profQuery = supabase
+          .from("profiles")
+          .select("*")
+          .in("user_id", targetUserIds);
+
+        if (tab === "customers") {
+          profQuery = profQuery.eq("is_agent", false).eq("is_sub_agent" as any, false);
+        } else if (tab === "agents") {
+          profQuery = profQuery.eq("is_agent", true).eq("is_sub_agent" as any, false);
+        } else if (tab === "sub-agents") {
+          profQuery = profQuery.eq("is_sub_agent" as any, true);
+        }
+
+        const { data: profData } = await profQuery;
+        const profMap = new Map((profData || []).map((p: any) => [p.user_id, p]));
+
+        rows = (salesRows || [])
+          .map((s: any) => profMap.get(s.user_id))
+          .filter(Boolean) as UserRow[];
+      }
+    } else {
+      let q = supabase
+        .from("profiles")
+        .select("*", { count: "exact" });
+
+      if (sortBy === "created_at_asc") {
+        q = q.order("created_at", { ascending: true });
+      } else if (sortBy === "name_asc") {
+        q = q.order("full_name", { ascending: true });
+      } else {
+        q = q.order("created_at", { ascending: false });
+      }
+
+      q = q.range(from, to);
+
+      if (cleanSearch) {
+        if (isUuid) {
+          q = q.eq("user_id", cleanSearch);
+        } else {
+          q = q.or(`full_name.ilike.%${cleanSearch}%,email.ilike.%${cleanSearch}%,phone.ilike.%${cleanSearch}%`);
+        }
+      }
+
+      if (tab === "customers") {
+        q = q.eq("is_agent", false).eq("is_sub_agent" as any, false);
+      } else if (tab === "agents") {
+        q = q.eq("is_agent", true).eq("is_sub_agent" as any, false);
+      } else if (tab === "sub-agents") {
+        q = q.eq("is_sub_agent" as any, true);
+      }
+
+      const res = await q;
+      rows = ((res.data as any[]) || []) as UserRow[];
+      count = res.count;
     }
 
-    if (tab === "customers") {
-      q = q.eq("is_agent", false).eq("is_sub_agent" as any, false);
-    } else if (tab === "agents") {
-      q = q.eq("is_agent", true).eq("is_sub_agent" as any, false);
-    } else if (tab === "sub-agents") {
-      q = q.eq("is_sub_agent" as any, true);
-    }
-
-    const { data, count } = await q;
-    const rows = ((data as any[]) || []) as UserRow[];
     setTotalCount(count || 0);
 
     const userIds = rows.map(r => r.user_id);
@@ -125,12 +243,12 @@ const AdminUsers = () => {
     setHasMore(count ? (from + rows.length < count) : rows.length === PAGE_SIZE);
     if (isLoadMore) setPage(currentPage);
     setLoading(false);
-  }, [page, search, tab]);
+  }, [page, search, tab, sortBy]);
 
   useEffect(() => { 
     const timer = setTimeout(() => fetchUsers(false), 300);
     return () => clearTimeout(timer);
-  }, [tab, search, fetchUsers]);
+  }, [tab, search, sortBy, fetchUsers]);
 
   const setRowAction = (userId: string, action: UserRow["is_agent"] extends boolean ? any : any) => {
     setActionLoading((prev) => ({ ...prev, [userId]: action }));
@@ -245,7 +363,18 @@ const AdminUsers = () => {
     "sub-agents": tab === "sub-agents" ? totalCount : 0,
   };
 
-  const filtered = users;
+  const filtered = useMemo(() => {
+    return [...users].sort((a, b) => {
+      if (sortBy === "wallet_desc") return (b.wallet_balance || 0) - (a.wallet_balance || 0);
+      if (sortBy === "wallet_asc") return (a.wallet_balance || 0) - (b.wallet_balance || 0);
+      if (sortBy === "api_wallet_desc") return (b.api_wallet_balance || 0) - (a.api_wallet_balance || 0);
+      if (sortBy === "sales_desc") return (b.total_sales_volume || 0) - (a.total_sales_volume || 0);
+      if (sortBy === "created_at_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (sortBy === "created_at_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      if (sortBy === "name_asc") return (a.full_name || a.email).localeCompare(b.full_name || b.email);
+      return 0;
+    });
+  }, [users, sortBy]);
 
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
@@ -406,16 +535,37 @@ const AdminUsers = () => {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, email, phone..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          title="Search users"
-          className="pl-9 rounded-xl border-input bg-card shadow-sm"
-        />
+      {/* Search & Sort Controls */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, email, phone..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            title="Search users"
+            className="pl-9 rounded-xl border-input bg-card shadow-sm h-10"
+          />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Select value={sortBy} onValueChange={(val) => setSortBy(val as UserSortOption)}>
+            <SelectTrigger className="h-10 min-w-[220px] rounded-xl border-input bg-card shadow-sm text-xs font-semibold">
+              <div className="flex items-center gap-2">
+                <ArrowDownWideNarrow className="w-4 h-4 text-amber-500" />
+                <SelectValue placeholder="Sort users..." />
+              </div>
+            </SelectTrigger>
+            <SelectContent className="rounded-xl border-border bg-card">
+              <SelectItem value="wallet_desc" className="text-xs font-medium">💰 Highest Main Wallet</SelectItem>
+              <SelectItem value="wallet_asc" className="text-xs font-medium">💰 Lowest Main Wallet</SelectItem>
+              <SelectItem value="api_wallet_desc" className="text-xs font-medium">⚡ Highest API Wallet</SelectItem>
+              <SelectItem value="sales_desc" className="text-xs font-medium">📈 Highest Total Sales</SelectItem>
+              <SelectItem value="created_at_desc" className="text-xs font-medium">🕒 Newest Registered</SelectItem>
+              <SelectItem value="created_at_asc" className="text-xs font-medium">🕒 Oldest Registered</SelectItem>
+              <SelectItem value="name_asc" className="text-xs font-medium">🔤 Name (A - Z)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Desktop Table View */}
@@ -433,12 +583,48 @@ const AdminUsers = () => {
                      className="rounded border-input text-amber-500 focus:ring-amber-500/30"
                    />
                 </th>
-                <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">User</th>
+                <th 
+                  onClick={() => setSortBy(prev => prev === "name_asc" ? "created_at_desc" : "name_asc")}
+                  className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
+                  title="Sort by user name"
+                >
+                  <div className="flex items-center gap-1.5">
+                    User
+                    {sortBy === "name_asc" ? <ArrowUp className="w-3.5 h-3.5 text-amber-500" /> : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                  </div>
+                </th>
                 <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Phone</th>
                 <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Role</th>
-                <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Main Wallet</th>
-                <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">API Wallet</th>
-                <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Sales</th>
+                <th 
+                  onClick={() => setSortBy(prev => prev === "wallet_desc" ? "wallet_asc" : "wallet_desc")}
+                  className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
+                  title="Sort by Main Wallet Balance"
+                >
+                  <div className="flex items-center gap-1.5">
+                    Main Wallet
+                    {sortBy === "wallet_desc" ? <ArrowDown className="w-3.5 h-3.5 text-cyan-500" /> : sortBy === "wallet_asc" ? <ArrowUp className="w-3.5 h-3.5 text-cyan-500" /> : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                  </div>
+                </th>
+                <th 
+                  onClick={() => setSortBy(prev => prev === "api_wallet_desc" ? "wallet_desc" : "api_wallet_desc")}
+                  className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
+                  title="Sort by API Wallet Balance"
+                >
+                  <div className="flex items-center gap-1.5">
+                    API Wallet
+                    {sortBy === "api_wallet_desc" ? <ArrowDown className="w-3.5 h-3.5 text-emerald-500" /> : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                  </div>
+                </th>
+                <th 
+                  onClick={() => setSortBy(prev => prev === "sales_desc" ? "created_at_desc" : "sales_desc")}
+                  className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
+                  title="Sort by Total Sales Volume"
+                >
+                  <div className="flex items-center gap-1.5">
+                    Sales
+                    {sortBy === "sales_desc" ? <ArrowDown className="w-3.5 h-3.5 text-emerald-500" /> : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+                  </div>
+                </th>
                 <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider hidden md:table-cell">Parent Agent</th>
                 <th className="text-left p-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Actions</th>
               </tr>
