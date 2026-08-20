@@ -1,3 +1,6 @@
+/// <reference path="../deno.d.ts" />
+declare const Deno: any;
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
@@ -33,7 +36,7 @@ function findName(obj: any): string | null {
   return null;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -132,9 +135,9 @@ serve(async (req) => {
       .eq("provider_type", "utility")
       .order("priority", { ascending: true });
 
-    const activeProvider = dbProviders?.find((p) => p.is_active && p.name === "Korba") 
-      || dbProviders?.find((p) => p.is_active)
-      || dbProviders?.find((p) => p.name === "Korba")
+    const activeProvider = (dbProviders as any[])?.find((p: any) => p.is_active && p.name === "Korba") 
+      || (dbProviders as any[])?.find((p: any) => p.is_active)
+      || (dbProviders as any[])?.find((p: any) => p.name === "Korba")
       || { name: "Korba", handler_type: "korba" };
 
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || activeProvider?.settings?.client_id || "2419";
