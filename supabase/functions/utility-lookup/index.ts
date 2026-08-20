@@ -126,22 +126,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: false, error: "Missing required fields" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const { data: activeProviders, error: providerError } = await supabaseAdmin
+    const { data: dbProviders } = await supabaseAdmin
       .from("providers")
       .select("*")
       .eq("provider_type", "utility")
-      .eq("is_active", true)
       .order("priority", { ascending: true });
 
-    if (!activeProviders || activeProviders.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: "No active utility providers available" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
+    const activeProvider = dbProviders?.find((p) => p.is_active && p.name === "Korba") 
+      || dbProviders?.find((p) => p.is_active)
+      || dbProviders?.find((p) => p.name === "Korba")
+      || { name: "Korba", handler_type: "korba" };
 
-    const activeProvider = activeProviders.find((p) => p.name === "Korba") || activeProviders[0];
-
-    const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "PLACEHOLDER_CLIENT_ID";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "PLACEHOLDER_CLIENT_KEY";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "PLACEHOLDER_SECRET_KEY";
+    const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || activeProvider?.settings?.client_id || "2419";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || activeProvider?.api_key || "";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || activeProvider?.api_secret || "";
 
     let lookupUrl = "";
     let payload: any = {};
