@@ -44,6 +44,9 @@ import {
   FileText,
   Tag,
   Share2,
+  Music,
+  Headphones,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,15 +66,23 @@ import {
 
 interface MnotifyTemplate {
   id?: string | number;
+  _id?: string;
   title?: string;
   template_name?: string;
   name?: string;
   content?: string;
   message?: string;
   voice_id?: string;
-  type?: string;
+  type?: "sms" | "voice" | "both";
   category?: string;
   created_at?: string;
+  // Audio specific properties
+  is_audio_template?: boolean;
+  audio_url?: string;
+  audio_base64?: string;
+  file_name?: string;
+  file_size?: number;
+  duration_sec?: number;
 }
 
 interface CampaignSummary {
@@ -152,7 +163,7 @@ const ACCENT: Record<AccentKey, {
 const TABS: { id: "broadcast" | "sms" | "templates" | "sender_id" | "settings"; label: string; icon: any; accent: AccentKey }[] = [
   { id: "broadcast", label: "Voice Broadcast", icon: Volume2, accent: "cyan" },
   { id: "sms", label: "Quick SMS", icon: Send, accent: "emerald" },
-  { id: "templates", label: "Templates", icon: Bookmark, accent: "violet" },
+  { id: "templates", label: "Templates & Audio", icon: Bookmark, accent: "violet" },
   { id: "sender_id", label: "Sender IDs", icon: Radio, accent: "amber" },
   { id: "settings", label: "Credentials", icon: Key, accent: "slate" },
 ];
@@ -228,14 +239,30 @@ export default function AdminVoiceSMS() {
 
   // Template Management State
   const [templates, setTemplates] = useState<MnotifyTemplate[]>([]);
+  const [audioTemplates, setAudioTemplates] = useState<MnotifyTemplate[]>([]);
+  const [templateFilter, setTemplateFilter] = useState<"all" | "audio" | "text">("all");
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  // Create Template Modal State
   const [showCreateTemplateModal, setShowCreateTemplateModal] = useState(false);
+  const [templateCreationMode, setTemplateCreationMode] = useState<"text" | "audio">("audio");
   const [newTemplateTitle, setNewTemplateTitle] = useState("");
   const [newTemplateContent, setNewTemplateContent] = useState("");
   const [newTemplateCategory, setNewTemplateCategory] = useState("Promotions");
   const [newTemplateType, setNewTemplateType] = useState<"sms" | "voice" | "both">("both");
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [copiedId, setCopiedId] = useState<string | number | null>(null);
+
+  // Modal Audio Upload State
+  const [modalAudioFile, setModalAudioFile] = useState<File | null>(null);
+  const [modalAudioBase64, setModalAudioBase64] = useState<string | null>(null);
+  const [modalAudioPreviewUrl, setModalAudioPreviewUrl] = useState<string | null>(null);
+  const [modalAudioPlaying, setModalAudioPlaying] = useState(false);
+  const modalAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Template Cards Playback State
+  const [activePlayingId, setActivePlayingId] = useState<string | number | null>(null);
+  const cardAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Sender ID registration state
   const [regSenderName, setRegSenderName] = useState("");
@@ -263,11 +290,32 @@ export default function AdminVoiceSMS() {
   const [lastResult, setLastResult] = useState<CampaignSummary | null>(null);
   const [counts, setCounts] = useState<{ all: number; agents: number; subAgents: number }>({ all: 0, agents: 0, subAgents: 0 });
 
-  // Fetch counts & balance on mount
+  // Load Saved Audio Templates from LocalStorage & Supabase
   useEffect(() => {
+    loadSavedAudioTemplates();
     fetchAudienceCounts();
     fetchBalanceAndTemplates();
   }, []);
+
+  const loadSavedAudioTemplates = () => {
+    try {
+      const saved = localStorage.getItem("swiftdata_saved_audio_templates");
+      if (saved) {
+        setAudioTemplates(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.warn("Failed to load local audio templates:", e);
+    }
+  };
+
+  const saveAudioTemplatesToStorage = (updatedList: MnotifyTemplate[]) => {
+    setAudioTemplates(updatedList);
+    try {
+      localStorage.setItem("swiftdata_saved_audio_templates", JSON.stringify(updatedList));
+    } catch (e) {
+      console.warn("Failed to save audio templates to local storage:", e);
+    }
+  };
 
   const fetchAudienceCounts = async () => {
     try {
@@ -376,47 +424,131 @@ export default function AdminVoiceSMS() {
     };
   };
 
-  // ── Template Handlers ──────────────────────────────────────────────
+  // ── Template Handlers (Text & Audio) ────────────────────────────────
   const handleSaveTemplate = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!newTemplateTitle.trim() || !newTemplateContent.trim()) {
-      toast({ title: "Title & Content Required", description: "Please provide both title and content.", variant: "destructive" });
-      return;
-    }
 
-    setCreatingTemplate(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("mnotify-voice", {
-        body: {
-          action: "create_template",
-          title: newTemplateTitle.trim(),
-          content: newTemplateContent.trim(),
-          api_key: apiKey.trim() || undefined
-        },
-        headers: { Authorization: `Bearer ${session?.access_token}` }
-      });
-
-      if (error || !data?.success) {
-        throw new Error(data?.error || error?.message || "Failed to create template.");
+    if (templateCreationMode === "audio") {
+      if (!newTemplateTitle.trim()) {
+        toast({ title: "Template Title Required", description: "Please name this audio template.", variant: "destructive" });
+        return;
+      }
+      if (!modalAudioFile || !modalAudioBase64) {
+        toast({ title: "Audio File Required", description: "Please upload an audio file to save.", variant: "destructive" });
+        return;
       }
 
-      toast({
-        title: "Template Saved! 📑",
-        description: `"${newTemplateTitle}" is now synced with your mNotify account.`
-      });
+      setCreatingTemplate(true);
+      try {
+        // 1. Upload to Supabase Storage
+        const fileExt = modalAudioFile.name.split(".").pop() || "mp3";
+        const filePath = `templates/${Date.now()}_${modalAudioFile.name.replace(/[^a-zA-Z0-9._-]/g, "")}`;
 
-      setNewTemplateTitle("");
-      setNewTemplateContent("");
-      setShowCreateTemplateModal(false);
-      fetchBalanceAndTemplates();
-    } catch (err: any) {
-      toast({ title: "Template Creation Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setCreatingTemplate(false);
+        const { error: uploadError } = await supabase.storage
+          .from("voice-broadcasts")
+          .upload(filePath, modalAudioFile, { upsert: true, contentType: modalAudioFile.type || "audio/mpeg" });
+
+        let publicUrl = modalAudioPreviewUrl || "";
+        if (!uploadError) {
+          const { data: pubUrlData } = supabase.storage.from("voice-broadcasts").getPublicUrl(filePath);
+          if (pubUrlData?.publicUrl) publicUrl = pubUrlData.publicUrl;
+        }
+
+        const newAudioItem: MnotifyTemplate = {
+          id: `audio-${Date.now()}`,
+          title: newTemplateTitle.trim(),
+          category: newTemplateCategory.trim() || "Voice Audio",
+          type: "voice",
+          is_audio_template: true,
+          audio_url: publicUrl,
+          audio_base64: modalAudioBase64,
+          file_name: modalAudioFile.name,
+          file_size: modalAudioFile.size,
+          created_at: new Date().toISOString(),
+        };
+
+        const updated = [newAudioItem, ...audioTemplates];
+        saveAudioTemplatesToStorage(updated);
+
+        toast({
+          title: "Audio Template Saved! 🎙️",
+          description: `"${newTemplateTitle}" is saved and ready to broadcast anytime.`
+        });
+
+        setNewTemplateTitle("");
+        setModalAudioFile(null);
+        setModalAudioBase64(null);
+        setModalAudioPreviewUrl(null);
+        setShowCreateTemplateModal(false);
+      } catch (err: any) {
+        toast({ title: "Failed to Save Audio", description: err.message, variant: "destructive" });
+      } finally {
+        setCreatingTemplate(false);
+      }
+
+    } else {
+      // Text Script Mode
+      if (!newTemplateTitle.trim() || !newTemplateContent.trim()) {
+        toast({ title: "Title & Content Required", description: "Please provide both title and content.", variant: "destructive" });
+        return;
+      }
+
+      setCreatingTemplate(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("mnotify-voice", {
+          body: {
+            action: "create_template",
+            title: newTemplateTitle.trim(),
+            content: newTemplateContent.trim(),
+            api_key: apiKey.trim() || undefined
+          },
+          headers: { Authorization: `Bearer ${session?.access_token}` }
+        });
+
+        if (error || !data?.success) {
+          throw new Error(data?.error || error?.message || "Failed to create template.");
+        }
+
+        toast({
+          title: "Template Saved! 📑",
+          description: `"${newTemplateTitle}" is now synced with your mNotify account.`
+        });
+
+        setNewTemplateTitle("");
+        setNewTemplateContent("");
+        setShowCreateTemplateModal(false);
+        fetchBalanceAndTemplates();
+      } catch (err: any) {
+        toast({ title: "Template Creation Failed", description: err.message, variant: "destructive" });
+      } finally {
+        setCreatingTemplate(false);
+      }
     }
   };
 
+  const handleSaveUploadedAudioAsTemplate = () => {
+    if (!selectedFile || !audioBase64) {
+      toast({ title: "No Audio File Uploaded", description: "Please upload an audio file first.", variant: "destructive" });
+      return;
+    }
+
+    setNewTemplateTitle(campaignTitle || selectedFile.name.replace(/\.[^/.]+$/, ""));
+    setModalAudioFile(selectedFile);
+    setModalAudioBase64(audioBase64);
+    setModalAudioPreviewUrl(audioPreviewUrl);
+    setTemplateCreationMode("audio");
+    setShowCreateTemplateModal(true);
+  };
+
   const handleDeleteTemplate = async (templateId: string | number) => {
+    if (String(templateId).startsWith("audio-")) {
+      if (!confirm("Are you sure you want to delete this saved voice audio template?")) return;
+      const updated = audioTemplates.filter((t) => t.id !== templateId);
+      saveAudioTemplatesToStorage(updated);
+      toast({ title: "Audio Template Deleted" });
+      return;
+    }
+
     if (!confirm("Are you sure you want to delete this template from mNotify?")) return;
     try {
       const { data, error } = await supabase.functions.invoke("mnotify-voice", {
@@ -475,6 +607,25 @@ export default function AdminVoiceSMS() {
     reader.readAsDataURL(file);
   };
 
+  const processModalFile = (file: File) => {
+    if (!file.type.startsWith("audio/") && !file.name.endsWith(".mp3") && !file.name.endsWith(".wav") && !file.name.endsWith(".m4a")) {
+      toast({ title: "Invalid File Type", description: "Please upload an MP3 or WAV audio file.", variant: "destructive" });
+      return;
+    }
+
+    setModalAudioFile(file);
+    const url = URL.createObjectURL(file);
+    setModalAudioPreviewUrl(url);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      const base64Data = result.split(",")[1];
+      setModalAudioBase64(base64Data);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const toggleAudioPlay = () => {
     if (!audioRef.current) return;
     if (isPlaying) {
@@ -483,6 +634,20 @@ export default function AdminVoiceSMS() {
     } else {
       audioRef.current.play();
       setIsPlaying(true);
+    }
+  };
+
+  const toggleCardAudio = (id: string | number, url?: string) => {
+    if (!url) return;
+    if (activePlayingId === id) {
+      cardAudioRef.current?.pause();
+      setActivePlayingId(null);
+    } else {
+      if (cardAudioRef.current) {
+        cardAudioRef.current.src = url;
+        cardAudioRef.current.play();
+        setActivePlayingId(id);
+      }
     }
   };
 
@@ -514,7 +679,7 @@ export default function AdminVoiceSMS() {
     }
 
     if (audioSource === "file" && !audioBase64) {
-      toast({ title: "Audio File Missing", description: "Please upload a recorded audio file (.mp3, .wav).", variant: "destructive" });
+      toast({ title: "Audio File Missing", description: "Please upload or select a recorded audio file.", variant: "destructive" });
       return;
     }
 
@@ -551,10 +716,10 @@ export default function AdminVoiceSMS() {
         payload.target_group = targetType;
       }
 
-      if (audioSource === "file" && selectedFile && audioBase64) {
+      if (audioSource === "file" && audioBase64) {
         payload.audio_base64 = audioBase64;
-        payload.audio_filename = selectedFile.name;
-        payload.audio_mimetype = selectedFile.type || "audio/mpeg";
+        payload.audio_filename = selectedFile?.name || "voice_message.mp3";
+        payload.audio_mimetype = selectedFile?.type || "audio/mpeg";
       } else {
         payload.voice_id = voiceId.trim();
       }
@@ -895,13 +1060,24 @@ export default function AdminVoiceSMS() {
     return { len, page, fill };
   })();
 
-  const allDisplayTemplates = [
+  // Filtered Templates List
+  const allTemplatesCombined = [
+    ...audioTemplates,
     ...templates,
     ...CURATED_SYSTEM_TEMPLATES.filter((st) => !templates.some((t) => (t.title || t.template_name) === st.title))
   ];
 
+  const filteredTemplates = allTemplatesCombined.filter((tmpl) => {
+    if (templateFilter === "audio") return tmpl.is_audio_template || tmpl.type === "voice";
+    if (templateFilter === "text") return !tmpl.is_audio_template;
+    return true;
+  });
+
   return (
     <div className="space-y-6 pb-24 max-w-6xl mx-auto">
+      {/* Hidden audio element for template card playbacks */}
+      <audio ref={cardAudioRef} onEnded={() => setActivePlayingId(null)} className="hidden" />
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -922,7 +1098,7 @@ export default function AdminVoiceSMS() {
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Direct telecommunications engine for Voice Broadcasting, Bulk SMS, Dynamic Templates, and Timed Scheduling.
+            Direct telecommunications engine for Voice Broadcasting, Bulk SMS, Audio Libraries, and Timed Scheduling.
           </p>
         </div>
 
@@ -982,7 +1158,7 @@ export default function AdminVoiceSMS() {
               {tab.label}
               {tab.id === "templates" && (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-mono">
-                  {allDisplayTemplates.length}
+                  {allTemplatesCombined.length}
                 </Badge>
               )}
               {isActive && (
@@ -1017,10 +1193,13 @@ export default function AdminVoiceSMS() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setActiveTab("templates")}
+                      onClick={() => {
+                        setTemplateFilter("audio");
+                        setActiveTab("templates");
+                      }}
                       className="text-xs text-cyan-400 hover:text-cyan-300 gap-1"
                     >
-                      <Bookmark className="w-3.5 h-3.5" /> Pick from Templates
+                      <Headphones className="w-3.5 h-3.5" /> Pick from Audio Library
                     </Button>
                   </div>
 
@@ -1040,7 +1219,18 @@ export default function AdminVoiceSMS() {
 
                   {/* Audio Source Picker */}
                   <div className="space-y-3 pt-2 border-t border-border">
-                    <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Audio Message Source</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Audio Message Source</label>
+                      {selectedFile && audioBase64 && (
+                        <button
+                          type="button"
+                          onClick={handleSaveUploadedAudioAsTemplate}
+                          className="text-[11px] font-bold text-cyan-400 hover:underline flex items-center gap-1"
+                        >
+                          <Save className="w-3 h-3" /> Save Audio as Reusable Template
+                        </button>
+                      )}
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -1050,7 +1240,7 @@ export default function AdminVoiceSMS() {
                           audioSource === "file" ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-bold" : "bg-secondary/40 border-border text-muted-foreground"
                         )}
                       >
-                        <Upload className="w-4 h-4" /> Upload Audio File (.mp3/.wav)
+                        <Upload className="w-4 h-4" /> Upload / Select Audio (.mp3/.wav)
                       </button>
                       <button
                         type="button"
@@ -1090,7 +1280,7 @@ export default function AdminVoiceSMS() {
                           <Upload className="w-6 h-6" />
                         </div>
                         <p className="text-xs font-bold text-foreground">
-                          {selectedFile ? selectedFile.name : "Click to browse or drag audio here"}
+                          {selectedFile ? selectedFile.name : "Click to browse or drag audio file here"}
                         </p>
                         <p className="text-[11px] text-muted-foreground mt-0.5">MP3 or WAV files up to 15MB</p>
 
@@ -1177,15 +1367,15 @@ export default function AdminVoiceSMS() {
                   <ul className="space-y-2.5 text-xs text-muted-foreground leading-relaxed">
                     <li className="flex items-start gap-2.5">
                       <span className="w-5 h-5 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">1</span>
-                      <span>mNotify automatically places phone calls to all selected recipient numbers simultaneously.</span>
+                      <span>mNotify automatically dials recipient numbers across MTN, Telecel, and AirtelTigo.</span>
                     </li>
                     <li className="flex items-start gap-2.5">
                       <span className="w-5 h-5 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">2</span>
-                      <span>When the customer answers, your uploaded voice message plays immediately.</span>
+                      <span>When the customer answers, your uploaded voice message plays immediately with high audio clarity.</span>
                     </li>
                     <li className="flex items-start gap-2.5">
                       <span className="w-5 h-5 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">3</span>
-                      <span>Audio files are assigned a permanent <strong className="text-foreground">Voice ID</strong> for instant 1-click reuse.</span>
+                      <span>Save any audio into your template library to broadcast anytime with a single click.</span>
                     </li>
                   </ul>
                 </div>
@@ -1205,10 +1395,13 @@ export default function AdminVoiceSMS() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setActiveTab("templates")}
+                      onClick={() => {
+                        setTemplateFilter("text");
+                        setActiveTab("templates");
+                      }}
                       className="text-xs text-emerald-400 hover:text-emerald-300 gap-1"
                     >
-                      <Bookmark className="w-3.5 h-3.5" /> Pick from Templates
+                      <Bookmark className="w-3.5 h-3.5" /> Pick from Text Templates
                     </Button>
                   </div>
 
@@ -1251,6 +1444,7 @@ export default function AdminVoiceSMS() {
                             onClick={() => {
                               setNewTemplateTitle(smsMessage.slice(0, 30) + "...");
                               setNewTemplateContent(smsMessage);
+                              setTemplateCreationMode("text");
                               setShowCreateTemplateModal(true);
                             }}
                             className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-bold"
@@ -1348,35 +1542,60 @@ export default function AdminVoiceSMS() {
             </div>
           )}
 
-          {/* TAB 3: TEMPLATES MANAGEMENT */}
+          {/* TAB 3: TEMPLATES & AUDIO LIBRARY */}
           {activeTab === "templates" && (
             <div className="space-y-6">
-              {/* Top Banner with Create Template Button */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-2xl bg-card border border-border shadow-sm">
+              {/* Top Banner with Filters and Add Button */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 rounded-2xl bg-card border border-border shadow-sm">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <Bookmark className="w-5 h-5 text-violet-400" />
-                    <h2 className="text-base font-black text-foreground">Message & Voice Templates Library</h2>
+                    <h2 className="text-base font-black text-foreground">Message & Audio Templates Library</h2>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Save, manage, and sync reusable scripts with dynamic variable tags for both Voice Calls and SMS.
+                    Save, preview, and broadcast reusable Voice Audio Files and SMS notification scripts.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2">
+                  {/* Filter Pills */}
+                  <div className="flex items-center p-1 bg-secondary/50 rounded-xl border border-border">
+                    {[
+                      { id: "all", label: "All" },
+                      { id: "audio", label: "🎙️ Voice Audios" },
+                      { id: "text", label: "✉️ SMS Scripts" },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setTemplateFilter(f.id as any)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                          templateFilter === f.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <Button
-                    onClick={() => setShowCreateTemplateModal(true)}
+                    onClick={() => {
+                      setTemplateCreationMode("audio");
+                      setShowCreateTemplateModal(true);
+                    }}
                     className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-400 hover:to-purple-400 text-white font-bold text-xs gap-1.5 border-0 shadow-lg shadow-violet-500/25"
                   >
-                    <Plus className="w-4 h-4" /> Add New Template
+                    <Plus className="w-4 h-4" /> Add Template / Audio
                   </Button>
+
                   <Button
                     variant="outline"
                     onClick={fetchBalanceAndTemplates}
                     disabled={loadingTemplates}
                     className="rounded-xl text-xs gap-1.5"
                   >
-                    <RefreshCw className={cn("w-3.5 h-3.5", loadingTemplates && "animate-spin")} /> Sync from mNotify
+                    <RefreshCw className={cn("w-3.5 h-3.5", loadingTemplates && "animate-spin")} /> Sync mNotify
                   </Button>
                 </div>
               </div>
@@ -1385,16 +1604,24 @@ export default function AdminVoiceSMS() {
               {loadingTemplates ? (
                 <div className="flex flex-col items-center justify-center p-16 gap-3 text-muted-foreground">
                   <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
-                  <p className="text-xs font-medium">Syncing templates from mNotify...</p>
+                  <p className="text-xs font-medium">Syncing templates from mNotify & storage...</p>
+                </div>
+              ) : filteredTemplates.length === 0 ? (
+                <div className="p-12 text-center rounded-2xl bg-card border border-border space-y-3">
+                  <FileAudio className="w-10 h-10 text-muted-foreground mx-auto" />
+                  <p className="text-sm font-bold text-foreground">No templates found for this filter</p>
+                  <p className="text-xs text-muted-foreground">Click "Add Template / Audio" above to save your first reusable broadcast.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {allDisplayTemplates.map((tmpl, idx) => {
+                  {filteredTemplates.map((tmpl, idx) => {
                     const text = tmpl.content || tmpl.message || "";
                     const tmplId = tmpl.id || tmpl._id || idx;
+                    const isAudio = tmpl.is_audio_template;
                     const isSystem = String(tmplId).startsWith("system-");
                     const wordsCount = text.trim() ? text.trim().split(/\s+/).length : 0;
-                    const estSec = Math.max(5, Math.round(wordsCount * 0.45));
+                    const estSec = tmpl.duration_sec || Math.max(5, Math.round(wordsCount * 0.45));
+                    const isCardPlaying = activePlayingId === tmplId;
 
                     return (
                       <motion.div
@@ -1402,16 +1629,28 @@ export default function AdminVoiceSMS() {
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.2, delay: Math.min(idx, 8) * 0.04 }}
-                        className="relative p-5 rounded-2xl bg-card border border-border shadow-sm space-y-4 flex flex-col justify-between overflow-hidden hover:-translate-y-1 hover:shadow-md transition-all duration-300 group"
+                        className={cn(
+                          "relative p-5 rounded-2xl bg-card border shadow-sm space-y-4 flex flex-col justify-between overflow-hidden hover:-translate-y-1 hover:shadow-md transition-all duration-300 group",
+                          isAudio ? "border-cyan-500/30" : "border-border"
+                        )}
                       >
-                        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 to-purple-500" />
+                        <div className={cn(
+                          "absolute inset-x-0 top-0 h-1 bg-gradient-to-r",
+                          isAudio ? "from-cyan-500 to-blue-500" : "from-violet-500 to-purple-500"
+                        )} />
 
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                              <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px] font-black">
-                                {tmpl.category || "General"}
-                              </Badge>
+                              {isAudio ? (
+                                <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[10px] font-black gap-1">
+                                  <Volume2 className="w-3 h-3" /> Voice Audio
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px] font-black">
+                                  {tmpl.category || "General"}
+                                </Badge>
+                              )}
                               {isSystem && (
                                 <Badge variant="outline" className="text-[9px] text-muted-foreground">
                                   System Preset
@@ -1419,14 +1658,16 @@ export default function AdminVoiceSMS() {
                               )}
                             </div>
                             <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => copyTemplateContent(tmplId, text)}
-                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                                title="Copy Template"
-                              >
-                                {copiedId === tmplId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                              </button>
+                              {!isAudio && text && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyTemplateContent(tmplId, text)}
+                                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                                  title="Copy Template"
+                                >
+                                  {copiedId === tmplId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
                               {!isSystem && (
                                 <button
                                   type="button"
@@ -1444,50 +1685,107 @@ export default function AdminVoiceSMS() {
                             {tmpl.title || tmpl.template_name || `Template #${tmpl.id}`}
                           </h3>
 
-                          {text && (
-                            <p className="text-xs text-muted-foreground line-clamp-3 bg-secondary/30 p-3 rounded-xl font-medium leading-relaxed">
-                              {text}
-                            </p>
+                          {/* Audio Template Player Card */}
+                          {isAudio ? (
+                            <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20 space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-foreground truncate max-w-[160px]">
+                                  {tmpl.file_name || "voice_recording.mp3"}
+                                </span>
+                                {tmpl.file_size && (
+                                  <span className="text-[10px] font-mono text-muted-foreground">
+                                    {(tmpl.file_size / 1024 / 1024).toFixed(2)} MB
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => toggleCardAudio(tmplId, tmpl.audio_url || tmpl.audio_base64 ? `data:audio/mpeg;base64,${tmpl.audio_base64}` : undefined)}
+                                  className="rounded-xl text-xs gap-1.5 font-bold text-cyan-400 border-cyan-500/30 h-8 px-3"
+                                >
+                                  {isCardPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                                  {isCardPlaying ? "Pause" : "Play Audio"}
+                                </Button>
+                                <span className="text-[11px] text-muted-foreground font-mono">
+                                  Ready to broadcast
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            text && (
+                              <p className="text-xs text-muted-foreground line-clamp-3 bg-secondary/30 p-3 rounded-xl font-medium leading-relaxed">
+                                {text}
+                              </p>
+                            )
                           )}
 
-                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground font-mono">
-                            <span>{text.length} chars</span>
-                            <span>·</span>
-                            <span>{wordsCount} words</span>
-                            <span>·</span>
-                            <span className="text-cyan-400">~{estSec}s voice</span>
-                          </div>
+                          {!isAudio && (
+                            <div className="flex items-center gap-3 text-[11px] text-muted-foreground font-mono">
+                              <span>{text.length} chars</span>
+                              <span>·</span>
+                              <span>{wordsCount} words</span>
+                              <span>·</span>
+                              <span className="text-cyan-400">~{estSec}s voice</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* 1-Click Action Buttons */}
-                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setCampaignTitle(tmpl.title || "Voice Broadcast");
-                              setVoiceId(tmpl.voice_id || String(tmpl.id || ""));
-                              setAudioSource("voice_id");
-                              setActiveTab("broadcast");
-                              toast({ title: "Template Loaded into Voice Broadcast" });
-                            }}
-                            className="rounded-xl text-[11px] font-bold text-cyan-400 hover:bg-cyan-500/10 border-cyan-500/20"
-                          >
-                            <Volume2 className="w-3 h-3 mr-1" /> Use Voice
-                          </Button>
+                        <div className="pt-2 border-t border-border/50">
+                          {isAudio ? (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setCampaignTitle(tmpl.title || "Voice Broadcast");
+                                if (tmpl.audio_base64) setAudioBase64(tmpl.audio_base64);
+                                if (tmpl.audio_url) setAudioPreviewUrl(tmpl.audio_url);
+                                if (tmpl.file_name) setSelectedFile(new File([], tmpl.file_name));
+                                setAudioSource("file");
+                                setActiveTab("broadcast");
+                                toast({
+                                  title: "Voice Audio Loaded! 🎙️",
+                                  description: `"${tmpl.title}" is ready to broadcast in the Voice tab.`
+                                });
+                              }}
+                              className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-xs font-bold shadow-md shadow-cyan-500/20 border-0"
+                            >
+                              <Volume2 className="w-3.5 h-3.5 mr-1.5" /> Broadcast This Audio Now
+                            </Button>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setCampaignTitle(tmpl.title || "Voice Broadcast");
+                                  setVoiceId(tmpl.voice_id || String(tmpl.id || ""));
+                                  setAudioSource("voice_id");
+                                  setActiveTab("broadcast");
+                                  toast({ title: "Template Loaded into Voice Broadcast" });
+                                }}
+                                className="rounded-xl text-[11px] font-bold text-cyan-400 hover:bg-cyan-500/10 border-cyan-500/20"
+                              >
+                                <Volume2 className="w-3 h-3 mr-1" /> Use Voice
+                              </Button>
 
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSmsMessage(text);
-                              setActiveTab("sms");
-                              toast({ title: "Template Loaded into Quick SMS" });
-                            }}
-                            className="rounded-xl text-[11px] font-bold text-emerald-400 hover:bg-emerald-500/10 border-emerald-500/20"
-                          >
-                            <Send className="w-3 h-3 mr-1" /> Use SMS
-                          </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSmsMessage(text);
+                                  setActiveTab("sms");
+                                  toast({ title: "Template Loaded into Quick SMS" });
+                                }}
+                                className="rounded-xl text-[11px] font-bold text-emerald-400 hover:bg-emerald-500/10 border-emerald-500/20"
+                              >
+                                <Send className="w-3 h-3 mr-1" /> Use SMS
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </motion.div>
                     );
@@ -1495,89 +1793,156 @@ export default function AdminVoiceSMS() {
                 </div>
               )}
 
-              {/* Create Template Modal */}
+              {/* Create Template & Upload Audio Modal */}
               <Dialog open={showCreateTemplateModal} onOpenChange={setShowCreateTemplateModal}>
                 <DialogContent className="sm:max-w-lg rounded-2xl bg-card border-border">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-base font-black text-foreground">
-                      <Bookmark className="w-5 h-5 text-violet-400" /> Create & Save Template
+                      <Bookmark className="w-5 h-5 text-violet-400" /> Save New Broadcast Template
                     </DialogTitle>
                     <DialogDescription className="text-xs text-muted-foreground">
-                      Save a reusable notification template directly to your mNotify account.
+                      Create and save a reusable Voice Audio File or Text Script for future broadcasts.
                     </DialogDescription>
                   </DialogHeader>
 
+                  {/* Mode Selector */}
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-secondary/50 rounded-xl border border-border my-1">
+                    <button
+                      type="button"
+                      onClick={() => setTemplateCreationMode("audio")}
+                      className={cn(
+                        "py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all",
+                        templateCreationMode === "audio" ? "bg-card text-cyan-400 shadow-sm" : "text-muted-foreground"
+                      )}
+                    >
+                      <Volume2 className="w-3.5 h-3.5" /> Voice Audio File (.mp3/.wav)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateCreationMode("text")}
+                      className={cn(
+                        "py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all",
+                        templateCreationMode === "text" ? "bg-card text-violet-400 shadow-sm" : "text-muted-foreground"
+                      )}
+                    >
+                      <FileText className="w-3.5 h-3.5" /> SMS / Text Script
+                    </button>
+                  </div>
+
                   <form onSubmit={handleSaveTemplate} className="space-y-4 py-2">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Template Title</label>
+                      <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Template Name</label>
                       <Input
                         value={newTemplateTitle}
                         onChange={(e) => setNewTemplateTitle(e.target.value)}
-                        placeholder="e.g. MTN Network Delay Notice"
+                        placeholder={templateCreationMode === "audio" ? "e.g. Welcome Call Audio" : "e.g. Flash Promo SMS"}
                         required
                         className="rounded-xl h-11 bg-secondary/50 font-bold"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Category Tag</label>
-                        <Input
-                          value={newTemplateCategory}
-                          onChange={(e) => setNewTemplateCategory(e.target.value)}
-                          placeholder="e.g. Promotions"
-                          className="rounded-xl h-10 bg-secondary/50 text-xs"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Target Type</label>
-                        <select
-                          value={newTemplateType}
-                          onChange={(e: any) => setNewTemplateType(e.target.value)}
-                          className="w-full h-10 rounded-xl bg-secondary/50 border border-input text-xs font-bold px-3 text-foreground"
-                        >
-                          <option value="both">Both SMS & Voice</option>
-                          <option value="sms">Quick SMS Only</option>
-                          <option value="voice">Voice Broadcast Only</option>
-                        </select>
-                      </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Category Tag</label>
+                      <Input
+                        value={newTemplateCategory}
+                        onChange={(e) => setNewTemplateCategory(e.target.value)}
+                        placeholder="e.g. Promotions, Alerts, Maintenance"
+                        className="rounded-xl h-10 bg-secondary/50 text-xs"
+                      />
                     </div>
 
-                    {/* Content & Dynamic Variables */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Message Content / Voice Script</label>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                          {newTemplateContent.length} chars
-                        </span>
-                      </div>
-                      <Textarea
-                        value={newTemplateContent}
-                        onChange={(e) => setNewTemplateContent(e.target.value)}
-                        placeholder="Enter template message text here..."
-                        rows={4}
-                        required
-                        className="rounded-xl bg-secondary/50 font-medium text-xs"
-                      />
+                    {/* Mode 1: Audio Upload */}
+                    {templateCreationMode === "audio" ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Upload Audio File (.mp3, .wav, .m4a)</label>
+                        <div
+                          className="p-5 rounded-2xl border-2 border-dashed border-border hover:border-cyan-500/40 text-center cursor-pointer bg-secondary/20 transition-all"
+                          onClick={() => document.getElementById("modal-audio-file-input")?.click()}
+                        >
+                          <input
+                            id="modal-audio-file-input"
+                            type="file"
+                            accept="audio/*,.mp3,.wav,.m4a"
+                            className="hidden"
+                            onChange={(e) => e.target.files?.[0] && processModalFile(e.target.files[0])}
+                          />
+                          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mx-auto mb-2">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <p className="text-xs font-bold text-foreground">
+                            {modalAudioFile ? modalAudioFile.name : "Click to select audio file"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">MP3 or WAV files up to 15MB</p>
 
-                      {/* Variable Chips */}
-                      <div className="pt-1.5 space-y-1">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Insert Dynamic Variable Tags:</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {["name", "phone", "balance", "date", "store_name"].map((tag) => (
-                            <button
-                              key={tag}
-                              type="button"
-                              onClick={() => insertVariableIntoTemplate(tag)}
-                              className="px-2 py-0.5 rounded-lg bg-secondary border border-border text-[10px] font-mono text-violet-400 hover:bg-violet-500/10 transition-colors"
-                            >
-                              + {`{{${tag}}}`}
-                            </button>
-                          ))}
+                          {modalAudioPreviewUrl && (
+                            <div className="mt-3 pt-2 border-t border-border flex items-center justify-center gap-2">
+                              <audio
+                                ref={modalAudioRef}
+                                src={modalAudioPreviewUrl}
+                                onEnded={() => setModalAudioPlaying(false)}
+                                className="hidden"
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (modalAudioRef.current) {
+                                    if (modalAudioPlaying) {
+                                      modalAudioRef.current.pause();
+                                      setModalAudioPlaying(false);
+                                    } else {
+                                      modalAudioRef.current.play();
+                                      setModalAudioPlaying(true);
+                                    }
+                                  }
+                                }}
+                                className="rounded-xl text-xs gap-1 font-bold text-cyan-400 border-cyan-500/30 h-7"
+                              >
+                                {modalAudioPlaying ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                {modalAudioPlaying ? "Pause Preview" : "Play Preview"}
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      /* Mode 2: Text Script */
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Message Content</label>
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {newTemplateContent.length} chars
+                          </span>
+                        </div>
+                        <Textarea
+                          value={newTemplateContent}
+                          onChange={(e) => setNewTemplateContent(e.target.value)}
+                          placeholder="Enter message text..."
+                          rows={4}
+                          required
+                          className="rounded-xl bg-secondary/50 font-medium text-xs"
+                        />
+
+                        {/* Variable Chips */}
+                        <div className="pt-1 space-y-1">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Dynamic Tags:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {["name", "phone", "balance", "date", "store_name"].map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => insertVariableIntoTemplate(tag)}
+                                className="px-2 py-0.5 rounded-lg bg-secondary border border-border text-[10px] font-mono text-violet-400 hover:bg-violet-500/10 transition-colors"
+                              >
+                                + {`{{${tag}}}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <DialogFooter className="pt-3 border-t border-border">
                       <Button
@@ -1591,10 +1956,15 @@ export default function AdminVoiceSMS() {
                       <Button
                         type="submit"
                         disabled={creatingTemplate}
-                        className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold text-xs gap-1.5 border-0"
+                        className={cn(
+                          "rounded-xl text-white font-bold text-xs gap-1.5 border-0 shadow-md",
+                          templateCreationMode === "audio"
+                            ? "bg-gradient-to-r from-cyan-500 to-blue-500 shadow-cyan-500/20"
+                            : "bg-gradient-to-r from-violet-500 to-purple-500 shadow-violet-500/20"
+                        )}
                       >
-                        {creatingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bookmark className="w-3.5 h-3.5" />}
-                        Save & Sync to mNotify
+                        {creatingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        {templateCreationMode === "audio" ? "Save Voice Audio Template" : "Save & Sync to mNotify"}
                       </Button>
                     </DialogFooter>
                   </form>
