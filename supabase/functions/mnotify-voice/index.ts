@@ -27,46 +27,81 @@ async function resolveTargetPhones(supabaseAdmin: any, recipients?: string[], ta
     return Array.from(new Set(
       recipients
         .map((p) => String(p).trim().replace(/[^\d+]/g, ""))
-        .filter((p) => p.length >= 9)
+        .filter((p) => p.length >= 9 && !p.startsWith("00000000"))
     ));
   }
 
   if (!targetGroup) return [];
 
-  const phones: string[] = [];
-  let from = 0;
-  const step = 1000;
+  const phones = new Set<string>();
 
-  while (true) {
-    let query = supabaseAdmin
-      .from("profiles")
-      .select("phone, whatsapp_number, momo_number, vendor_phone")
-      .range(from, from + step - 1);
+  // 1. Fetch from profiles if targetGroup is all_customers, all_users, agents, or sub_agents
+  if (targetGroup !== "order_buyers") {
+    let from = 0;
+    const step = 1000;
 
-    if (targetGroup === "agents") {
-      query = query.eq("is_agent", true);
-    } else if (targetGroup === "sub_agents") {
-      query = query.eq("sub_agent_approved", true);
-    }
+    while (true) {
+      let query = supabaseAdmin
+        .from("profiles")
+        .select("phone, whatsapp_number, momo_number, vendor_phone")
+        .range(from, from + step - 1);
 
-    const { data, error } = await query;
-    if (error || !data || data.length === 0) break;
+      if (targetGroup === "agents") {
+        query = query.eq("is_agent", true);
+      } else if (targetGroup === "sub_agents") {
+        query = query.eq("sub_agent_approved", true);
+      }
 
-    for (const row of data) {
-      const raw = row.phone || row.whatsapp_number || row.momo_number || row.vendor_phone;
-      if (raw && typeof raw === "string") {
-        const clean = raw.trim().replace(/[^\d+]/g, "");
-        if (clean.length >= 9 && !clean.startsWith("00000000")) {
-          phones.push(clean);
+      const { data, error } = await query;
+      if (error || !data || data.length === 0) break;
+
+      for (const row of data) {
+        const raw = row.phone || row.whatsapp_number || row.momo_number || row.vendor_phone;
+        if (raw && typeof raw === "string") {
+          const clean = raw.trim().replace(/[^\d+]/g, "");
+          if (clean.length >= 9 && !clean.startsWith("00000000")) {
+            phones.add(clean);
+          }
         }
       }
-    }
 
-    if (data.length < step) break;
-    from += step;
+      if (data.length < step) break;
+      from += step;
+    }
   }
 
-  return Array.from(new Set(phones));
+  // 2. Fetch from orders if targetGroup is all_customers or order_buyers
+  if (targetGroup === "all_customers" || targetGroup === "order_buyers") {
+    let from = 0;
+    const step = 1000;
+
+    while (true) {
+      const { data, error } = await supabaseAdmin
+        .from("orders")
+        .select("customer_phone, metadata")
+        .range(from, from + step - 1);
+
+      if (error || !data || data.length === 0) break;
+
+      for (const o of data) {
+        const rawCustomer = o.customer_phone;
+        const rawPayment = o.metadata?.payment_phone || o.metadata?.phone;
+        for (const r of [rawCustomer, rawPayment]) {
+          if (r && typeof r === "string") {
+            const clean = r.trim().replace(/[^\d+]/g, "");
+            if (clean.length >= 9 && !clean.startsWith("00000000")) {
+              phones.add(clean);
+            }
+          }
+        }
+      }
+
+      if (data.length < step) break;
+      from += step;
+    }
+  }
+
+  return Array.from(phones);
 }
 
 serve(async (req: Request) => {
@@ -108,6 +143,27 @@ serve(async (req: Request) => {
   try {
     const body = await req.json();
     const { action } = body;
+
+    if (action === "get_audience_counts") {
+      const [allCustPhones, buyerPhones, userPhones, agentPhones, subAgentPhones] = await Promise.all([
+        resolveTargetPhones(supabaseAdmin, undefined, "all_customers"),
+        resolveTargetPhones(supabaseAdmin, undefined, "order_buyers"),
+        resolveTargetPhones(supabaseAdmin, undefined, "all_users"),
+        resolveTargetPhones(supabaseAdmin, undefined, "agents"),
+        resolveTargetPhones(supabaseAdmin, undefined, "sub_agents"),
+      ]);
+
+      return json({
+        success: true,
+        counts: {
+          all_customers: allCustPhones.length,
+          order_buyers: buyerPhones.length,
+          all_users: userPhones.length,
+          agents: agentPhones.length,
+          sub_agents: subAgentPhones.length,
+        }
+      });
+    }
 
     if (action === "get_templates") {
       const customKey = body.api_key;
