@@ -421,25 +421,25 @@ const DashboardUtilities = () => {
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-muted-foreground/60 mb-3">
               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black mr-2">2</span>
-              {activeTab === "electricity" && provider === "ECG Prepaid" ? "PowerApp Phone / Account Number" : FIELD_LABELS[activeTab]}
+              {activeTab === "electricity" && provider === "ECG Prepaid" ? "ECG Phone Number or Meter Number" : FIELD_LABELS[activeTab]}
             </p>
             {activeTab === "electricity" && provider === "ECG Prepaid" && (
               <div className="mb-4 flex items-start justify-between p-4 rounded-2xl bg-amber-500/8 border border-amber-500/20 text-amber-500 text-xs leading-relaxed animate-in slide-in-from-top-2 duration-200">
                 <div className="flex gap-3">
                   <Info className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-bold mb-0.5">ECG Prepaid Verification Info</p>
+                    <p className="font-bold mb-0.5">Quick Lookup Alternative</p>
                     <p className="text-muted-foreground">
-                      For prepaid lookup, enter the **phone number** registered on your ECG PowerApp account.
+                      Simply enter your **ECG Phone Number** (e.g. <span className="text-foreground font-mono font-semibold">024XXXXXXX</span>) to instantly load all meters linked to your ECG account.
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowRegisterDialog(true)}
-                  className="shrink-0 h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-black font-black text-[10px] uppercase tracking-wider transition-colors ml-3 mt-1"
+                  className="shrink-0 h-8 px-3 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground border border-border font-bold text-[10px] uppercase tracking-wider transition-colors ml-3 mt-1"
                 >
-                  Register
+                  Register Meter
                 </button>
               </div>
             )}
@@ -449,7 +449,7 @@ const DashboardUtilities = () => {
                   type="text"
                   value={phoneNumber}
                   onChange={(e) => { setPhoneNumber(e.target.value); setAccountName(null); setVerifyError(null); }}
-                  placeholder="Phone Number (Optional, e.g., 233XXXXXXXXX)"
+                  placeholder="Phone Number (Optional, e.g., 024XXXXXXX)"
                   className="w-full h-12 px-4 bg-secondary/60 border border-border rounded-2xl text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
@@ -462,8 +462,8 @@ const DashboardUtilities = () => {
                 placeholder={
                   activeTab === "electricity"
                     ? provider === "ECG Prepaid"
-                      ? "Enter Phone Number linked to ECG PowerApp (e.g. 024XXXXXXX)"
-                      : "Enter Postpaid Meter Number (no letters, e.g. 181198568)"
+                      ? "Enter ECG Phone Number (e.g. 024XXXXXXX) or Meter Number"
+                      : "Enter Postpaid Meter Number (e.g. 181198568)"
                     : FIELD_PLACEHOLDERS[activeTab]
                 }
                 className="flex-1 h-12 px-4 bg-secondary/60 border border-border rounded-2xl text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
@@ -475,7 +475,6 @@ const DashboardUtilities = () => {
               >
                 {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : !isOnline ? <WifiOff className="w-4 h-4" /> : "Verify"}
               </button>
-
             </div>
 
             {/* Verification result */}
