@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
+import { runFraudSentinelCheck } from "@/lib/fraud-sentinel";
 
 interface PaystackMomoCheckoutProps {
   isOpen: boolean;
@@ -302,6 +303,19 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
   const handleFallbackCheckout = async () => {
     setErrorMessage(null);
+
+    const fraudCheck = await runFraudSentinelCheck({
+      phone: paymentPhone || recipientPhone,
+      amount,
+      orderType: metadata?.order_type,
+      network: paymentNetwork || recipientNetwork
+    });
+    if (!fraudCheck.allowed) {
+      setErrorMessage(fraudCheck.reason || "Transaction blocked by Security Sentinel.");
+      onFailure(fraudCheck.reason || "Transaction blocked");
+      return;
+    }
+
     setStep('initiating');
     
     try {
@@ -326,8 +340,22 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   };
 
   const initiateKorbaXCheckout = async () => {
-    setStep('initiating');
     setErrorMessage(null);
+
+    const fraudCheck = await runFraudSentinelCheck({
+      phone: paymentPhone || recipientPhone,
+      amount,
+      orderType: metadata?.order_type,
+      network: paymentNetwork || recipientNetwork
+    });
+    if (!fraudCheck.allowed) {
+      setErrorMessage(fraudCheck.reason || "Transaction blocked by Security Sentinel.");
+      setStep('payment_number');
+      onFailure(fraudCheck.reason || "Transaction blocked");
+      return;
+    }
+
+    setStep('initiating');
     const orderId = metadata.order_id || crypto.randomUUID();
     
     try {
@@ -375,8 +403,22 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   };
 
   const initiatePaystackCardPay = async () => {
-    setStep('initiating');
     setErrorMessage(null);
+
+    const fraudCheck = await runFraudSentinelCheck({
+      phone: paymentPhone || recipientPhone,
+      amount,
+      orderType: metadata?.order_type,
+      network: paymentNetwork || recipientNetwork
+    });
+    if (!fraudCheck.allowed) {
+      setErrorMessage(fraudCheck.reason || "Transaction blocked by Security Sentinel.");
+      setStep('payment_number');
+      onFailure(fraudCheck.reason || "Transaction blocked");
+      return;
+    }
+
+    setStep('initiating');
     const orderId = metadata.order_id || crypto.randomUUID();
     
     try {
@@ -414,6 +456,19 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const initiatePayment = async () => {
     if (!paymentPhone || paymentPhone.length < 9) {
       toast({ title: "Check Payment Phone", description: "Please enter a valid mobile money number", variant: "destructive" });
+      return;
+    }
+
+    const fraudCheck = await runFraudSentinelCheck({
+      phone: paymentPhone || recipientPhone,
+      amount,
+      orderType: metadata?.order_type,
+      network: paymentNetwork || recipientNetwork
+    });
+    if (!fraudCheck.allowed) {
+      setErrorMessage(fraudCheck.reason || "Transaction blocked by Security Sentinel.");
+      setStep('payment_number');
+      onFailure(fraudCheck.reason || "Transaction blocked");
       return;
     }
     
