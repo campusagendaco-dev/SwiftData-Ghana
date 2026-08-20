@@ -553,7 +553,7 @@ export default function AdminBeneficiaryOrders() {
           .in("user_id", agentIds);
 
         const profileMap = new Map<string, { full_name?: string; email?: string }>();
-        (profiles || []).forEach((p) => profileMap.set(p.user_id, p));
+        ((profiles as any[]) || []).forEach((p: any) => profileMap.set(p.user_id, p));
 
         const enriched: BeneficiaryOrder[] = filteredBeneficiaryOrders.map((o) => {
           const prof = profileMap.get(o.agent_id);

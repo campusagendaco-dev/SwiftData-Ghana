@@ -126,12 +126,13 @@ export default function AdminSubmittedBeneficiaryNumbers() {
       if (ordersErr) throw ordersErr;
 
       const phoneMap = new Map<string, SubmittedNumberRecord>();
-      (orders || [])
-        .filter((ord) => {
+      const rawOrders: any[] = (orders as any[]) || [];
+      rawOrders
+        .filter((ord: any) => {
           const reason = (ord.failure_reason || "").toLowerCase();
           return reason.includes("beneficiary") || reason.includes("not added") || reason.includes("whitelist");
         })
-        .forEach((ord) => {
+        .forEach((ord: any) => {
           if (!ord.customer_phone) return;
           const clean = ord.customer_phone.replace(/\D/g, "");
           const formatted = clean.startsWith("233") && clean.length === 12 ? "0" + clean.slice(3) : clean;

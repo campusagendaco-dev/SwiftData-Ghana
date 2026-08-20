@@ -409,20 +409,20 @@ serve(async (req: Request) => {
       });
     }
 
-    // Check 3-Strike Unpaid/Failed Rate Limit (15-Minute Window)
+    // Autonomous Dynamic Fraud Detection: Auto-Block Any Number with >= 2 Unpaid/Failed Attempts
     if (cleanPhone9.length >= 9) {
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
       const { data: recentFailures } = await supabaseAdmin
         .from("orders")
-        .select("id")
+        .select("id, amount, status, failure_reason")
         .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
         .eq("status", "fulfillment_failed")
         .gte("created_at", fifteenMinsAgo);
 
-      if (recentFailures && recentFailures.length >= 3) {
-        console.warn(`[ANTI_FRAUD] 3-Strike rate limit triggered for ${rawTargetPhone} (${recentFailures.length} recent failed attempts).`);
+      if (recentFailures && recentFailures.length >= 2) {
+        console.warn(`[ANTI_FRAUD] Dynamic Auto-Block triggered for ${rawTargetPhone} (${recentFailures.length} recent uncompleted transactions).`);
         return new Response(JSON.stringify({
-          error: "Your phone number has been temporarily restricted due to repeated uncompleted transactions. Please try again after 15 minutes."
+          error: "Security Alert: This phone number has been temporarily auto-blocked due to repeated uncompleted transactions. Please wait 15 minutes or contact support."
         }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

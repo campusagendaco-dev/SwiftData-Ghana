@@ -67,12 +67,12 @@ export async function runFraudSentinelCheck(params: {
         .eq("status", "fulfillment_failed")
         .gte("created_at", fifteenMinsAgo);
 
-      if (recentFailures && recentFailures.length >= 3) {
-        console.warn(`[FRAUD_SENTINEL] 3-Strike rule triggered for ${cleanPhone} (${recentFailures.length} recent failures)`);
+      if (recentFailures && recentFailures.length >= 2) {
+        console.warn(`[FRAUD_SENTINEL] Dynamic Auto-Block triggered for ${cleanPhone} (${recentFailures.length} recent uncompleted transactions)`);
         return {
           allowed: false,
           threatLevel: "HIGH",
-          reason: "Your phone number has been temporarily restricted due to repeated uncompleted transactions. Please try again after 15 minutes."
+          reason: "Security Alert: Your phone number has been temporarily auto-blocked due to repeated uncompleted transactions. Please try again after 15 minutes."
         };
       }
     } catch (err) {
