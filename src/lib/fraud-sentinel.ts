@@ -57,10 +57,40 @@ export async function runFraudSentinelCheck(params: {
     };
   }
 
-  // 4. Rate Limiter (Targeted at Airtime & High-Volume Bot Flooding)
+  // 4. Rate Limiter (Targeted at Airtime, High-Volume Bot Flooding & Swarms)
   if (clean9.length >= 9) {
     try {
+      // Local session rapid checkout cooldown
+      const lastCheckoutTime = Number(sessionStorage.getItem("last_checkout_timestamp") || "0");
+      const now = Date.now();
+      if (now - lastCheckoutTime < 3500) {
+        return {
+          allowed: false,
+          threatLevel: "MEDIUM",
+          reason: "Please wait a moment before submitting another checkout."
+        };
+      }
+      sessionStorage.setItem("last_checkout_timestamp", String(now));
+
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+      // Check recent pending unpaid orders across the system in the last 5 minutes
+      const { data: recentPending } = await supabase
+        .from("orders")
+        .select("id, customer_phone, amount, status, order_type")
+        .or(`customer_phone.ilike.%${clean9},metadata->>payment_phone.ilike.%${clean9}`)
+        .in("status", ["pending", "awaiting_payment"])
+        .gte("created_at", fiveMinsAgo);
+
+      if (recentPending && recentPending.length >= 2) {
+        return {
+          allowed: false,
+          threatLevel: "HIGH",
+          reason: "You already have a pending uncompleted order. Please complete or cancel your existing order before placing a new one."
+        };
+      }
+
       const query = supabase
         .from("orders")
         .select("id, amount, status, order_type")
@@ -75,7 +105,7 @@ export async function runFraudSentinelCheck(params: {
         const totalFailures = recentFailures.length;
 
         // Strict limit for custom airtime orders (3+), higher tolerance for catalog data orders (6+)
-        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 6) {
+        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 5) {
           console.warn(`[FRAUD_SENTINEL] Rate limit triggered for ${cleanPhone} (${totalFailures} failures)`);
           return {
             allowed: false,

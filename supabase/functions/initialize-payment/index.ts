@@ -388,6 +388,25 @@ serve(async (req: Request) => {
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
     // --- 🛡️ ANTI-FRAUD & SCAMMER SHIELD ---
+    const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "").trim();
+    if (clientIp) {
+      const { data: blacklistedIp } = await supabaseAdmin
+        .from("security_blacklist")
+        .select("id, reason")
+        .eq("ip_address", clientIp)
+        .maybeSingle();
+
+      if (blacklistedIp) {
+        console.warn(`[ANTI_FRAUD] Blocked blacklisted IP: ${clientIp}`);
+        return new Response(JSON.stringify({
+          error: "Access Denied: Your IP address has been temporarily restricted due to excessive uncompleted requests."
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
     const cleanPhone9 = rawTargetPhone.slice(-9);
 
@@ -410,6 +429,25 @@ serve(async (req: Request) => {
       });
     }
 
+    // Velocity Limiter: Cap rapid uncompleted checkouts from the same IP/Phone
+    const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: recentPendingOrders } = await supabaseAdmin
+      .from("orders")
+      .select("id, customer_phone, amount, status, order_type")
+      .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
+      .in("status", ["pending", "awaiting_payment"])
+      .gte("created_at", fiveMinsAgo);
+
+    if (recentPendingOrders && recentPendingOrders.length >= 2) {
+      console.warn(`[ANTI_FRAUD] Guest ${rawTargetPhone} already has ${recentPendingOrders.length} uncompleted pending orders.`);
+      return new Response(JSON.stringify({
+        error: "You already have a pending uncompleted order. Please complete or wait for your existing order before creating a new one."
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Rate Limiter: Protect against custom airtime spam and high-frequency bot loops
     if (cleanPhone9.length >= 9) {
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
@@ -424,10 +462,19 @@ serve(async (req: Request) => {
         const airtimeFailures = recentFailures.filter((o: any) => o.order_type === "airtime").length;
         const totalFailures = recentFailures.length;
 
-        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 6) {
+        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 5) {
           console.warn(`[ANTI_FRAUD] Rate limit triggered for ${rawTargetPhone} (${totalFailures} failures).`);
+          if (clientIp && totalFailures >= 6) {
+            // Auto-blacklist malicious spammer IP
+            await supabaseAdmin.from("security_blacklist").insert({
+              ip_address: clientIp,
+              reason: `Automated Checkout Spam Bot (${totalFailures} rapid failed checkouts)`,
+              threat_level: "HIGH"
+            }).catch(() => {});
+          }
+
           return new Response(JSON.stringify({
-            error: "Security Alert: This phone number has been temporarily restricted due to repeated uncompleted transactions. Please wait 15 minutes or contact support."
+            error: "Security Alert: This phone number/session has been temporarily restricted due to repeated uncompleted transactions. Please wait 15 minutes or contact support."
           }), {
             status: 429,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
