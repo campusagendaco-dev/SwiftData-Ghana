@@ -205,7 +205,7 @@ export default function AdminOrders() {
 
     let q = supabase
       .from("orders")
-      .select("*", { count: "exact" })
+      .select("*", { count: "estimated" })
       .order("created_at", { ascending: false });
 
     // Search filter
@@ -280,35 +280,39 @@ export default function AdminOrders() {
 
     setTotalCount(count || 0);
 
-    // Resolve profile and wallet info
-    const agentIds = [...new Set((data || []).map((o: any) => o.agent_id).filter(Boolean))];
-    const profileMap: Record<string, AgentProfile> = { ...profiles };
+    // Resolve profile and wallet info for only valid UUIDs
+    const validAgentIds = [...new Set((data || [])
+      .map((o: any) => o.agent_id)
+      .filter((id: string) => id && id !== "00000000-0000-0000-0000-000000000000" && id.length > 10))];
     
-    if (agentIds.length > 0) {
+    let currentProfiles: Record<string, AgentProfile> = {};
+
+    if (validAgentIds.length > 0) {
       const [profRes, walletRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("user_id, full_name, email, phone, is_agent, agent_approved, is_sub_agent, sub_agent_approved, parent_agent_id, created_at")
-          .in("user_id", agentIds),
+          .in("user_id", validAgentIds),
         supabase
           .from("wallets")
           .select("agent_id, balance")
-          .in("agent_id", agentIds)
+          .in("agent_id", validAgentIds)
       ]);
 
       const walletMap = new Map((walletRes.data || []).map((w: any) => [w.agent_id, w.balance]));
       
       (profRes.data || []).forEach(p => {
-        profileMap[p.user_id] = {
+        currentProfiles[p.user_id] = {
           ...(p as any),
           wallet_balance: walletMap.get(p.user_id) ?? 0
         };
       });
-      setProfiles(profileMap);
+
+      setProfiles(prev => ({ ...prev, ...currentProfiles }));
     }
 
     const enriched: OrderRow[] = (data || []).map((o: any) => {
-      const profile = profileMap[o.agent_id];
+      const profile = currentProfiles[o.agent_id] || profiles[o.agent_id];
       const isPlaceholder = o.agent_id === "00000000-0000-0000-0000-000000000000" || !o.agent_id;
       
       return {
@@ -323,10 +327,10 @@ export default function AdminOrders() {
 
     setAllOrders(enriched);
     setLoading(false);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, toast, profiles]);
+  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, toast]);
 
   useEffect(() => {
-    const timer = setTimeout(() => fetchOrders(), 300);
+    const timer = setTimeout(() => fetchOrders(), 200);
     return () => clearTimeout(timer);
   }, [fetchOrders]);
 
