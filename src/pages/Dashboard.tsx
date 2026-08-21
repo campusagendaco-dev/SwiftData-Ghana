@@ -45,7 +45,6 @@ const getGreeting = () => {
 };
 
 import FrequentCustomersReorder from "@/components/FrequentCustomersReorder";
-import NetworkSpeedPulse from "@/components/NetworkSpeedPulse";
 import LowBalanceAlertDrawer from "@/components/LowBalanceAlertDrawer";
 import StoreShareCard from "@/components/StoreShareCard";
 
@@ -250,9 +249,6 @@ const Dashboard = () => {
           </Button>
         </div>
       </div>
-
-      {/* ── Live Network Carrier Delivery Speed ── */}
-      <NetworkSpeedPulse />
 
       {/* ── MTN Live Status Widget ── */}
       <LastMtnOrderWidget variant="pill" />
