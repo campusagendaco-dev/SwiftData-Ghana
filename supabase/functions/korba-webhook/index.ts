@@ -344,15 +344,21 @@ serve(async (req: Request) => {
       }
     }
 
-    // Handle payment failures
+    // Handle payment collection failures (prompt timeout / cancellation by customer)
     if (status !== "SUCCESS") {
-      console.warn(`[korba-webhook] Transaction failed on Korba: ${message}`);
+      const isDeclinedOrTimeout = !message || message.toUpperCase().includes("FAILED") || message.toUpperCase().includes("CANCEL") || message.toUpperCase().includes("TIMEOUT") || message.toUpperCase().includes("EXPIRED");
+      const cleanReason = isDeclinedOrTimeout 
+        ? "MoMo Prompt Expired / Not Approved on Customer Phone" 
+        : (message || "Payment not completed via Korba");
+      
+      console.warn(`[korba-webhook] Payment collection failed on Korba: ${message}`);
       await supabaseAdmin.from("orders").update({
         status: "fulfillment_failed",
-        failure_reason: message || "Payment failed via Korba"
+        failure_reason: cleanReason,
+        updated_at: new Date().toISOString()
       }).eq("id", cleanedTransactionId);
 
-      return json({ received: true, status: "failed" });
+      return json({ received: true, status: "failed", reason: cleanReason });
     }
 
     const orderType = existingOrder.order_type || "data";

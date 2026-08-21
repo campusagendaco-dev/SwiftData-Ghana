@@ -1034,34 +1034,34 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
                 <p className="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider animate-pulse my-0.5">WAITING FOR APPROVAL...</p>
                 
-                <p className="text-[9.5px] text-muted-foreground font-medium px-2 leading-tight">
-                  No prompt? Dial <span className="font-bold text-foreground">*170#</span> &rarr; 6 (My Approvals) for MTN, or <span className="font-bold text-foreground">*110#</span> for Telecel.
-                </p>
+                <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-left space-y-1.5 w-full max-w-[280px]">
+                  <p className="text-[10px] font-black uppercase text-amber-400">If no popup on your screen:</p>
+                  <p className="text-[10px] text-slate-300 leading-snug">
+                    <span className="font-bold text-white">MTN:</span> Dial <span className="font-mono font-black text-amber-400">*170#</span> &rarr; 6 (My Wallet) &rarr; 3 (My Approvals) &rarr; Enter PIN.
+                  </p>
+                  <p className="text-[10px] text-slate-300 leading-snug">
+                    <span className="font-bold text-white">Telecel:</span> Dial <span className="font-mono font-black text-red-400">*110#</span> &rarr; 4 (Make Payments) &rarr; Approvals.
+                  </p>
+                </div>
 
-                <div className="flex w-full gap-1.5 mt-2">
+                <div className="flex flex-col w-full gap-2 mt-2">
                   <button
+                    type="button"
+                    onClick={handleFallbackCheckout}
+                    className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-md"
+                  >
+                    🌐 Open Online Payment Page
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => {
                       setStep('payment_number');
                       setErrorMessage(null);
                     }}
-                    className="flex-1 py-2 bg-transparent hover:bg-foreground/5 border border-border rounded-xl text-[9px] font-extrabold uppercase tracking-wider text-foreground/70 transition-all active:scale-95"
+                    className="w-full py-2 bg-transparent hover:bg-foreground/5 border border-border rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground transition-all active:scale-95"
                   >
-                    Change Number
-                  </button>
-                  <button
-                    onClick={() => onSuccess(reference)}
-                    className="flex-1 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-extrabold rounded-xl text-[9px] uppercase tracking-wider shadow-md transition-all active:scale-95 flex justify-center items-center gap-1"
-                  >
-                    Verify Now <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-                
-                <div className="w-full mt-1">
-                  <button
-                    onClick={handleFallbackCheckout}
-                    className="w-full py-2 hover:bg-foreground/5 border border-border rounded-xl text-[9px] font-bold uppercase tracking-widest text-foreground/60 transition-all active:scale-95 flex justify-center items-center gap-1"
-                  >
-                    <ShieldCheck className="w-3 h-3 text-amber-400" /> Standard Checkout
+                    Change Payment Phone Number
                   </button>
                 </div>
               </motion.div>
