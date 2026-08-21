@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeSearchTerm } from "@/lib/utils";
+import { sanitizeSearchTerm, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,8 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
   Coins, ShieldAlert, Send, Zap, Filter, Check, X, User,
-  DollarSign, Sparkles, AlertCircle, ArrowUpRight, Copy, ShieldCheck, Activity
+  DollarSign, Sparkles, AlertCircle, ArrowUpRight, Copy, ShieldCheck, Activity,
+  Calendar, FileSpreadsheet, Edit3, Phone, ExternalLink, ArrowUpDown, ChevronDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
@@ -21,6 +22,14 @@ import UserDetailDrawer from "@/components/UserDetailDrawer";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface OrderRow {
   id: string;
@@ -48,6 +57,7 @@ interface OrderRow {
   auto_refunded?: boolean;
   refund_amount?: number;
   refund_reason?: string;
+  payment_method?: string;
 }
 
 interface AgentProfile {
@@ -70,11 +80,10 @@ const STATUS_COLORS: Record<string, string> = {
   processing: "bg-sky-500/15 text-sky-400 border-sky-500/30 animate-pulse",
   fulfilled: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   fulfillment_failed: "bg-rose-500/15 text-rose-400 border-rose-500/30",
+  cancelled: "bg-slate-500/15 text-slate-400 border-slate-500/30",
+  failed: "bg-rose-500/15 text-rose-400 border-rose-500/30",
 };
 
-// Matches AdminBeneficiaryOrders.tsx's / DashboardOrders.tsx's detection logic
-// for a non-beneficiary failure, so this page's badges stay consistent with
-// the Non-Beneficiary Hub's auto-submit sentinel and the agent's own view.
 function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason">): boolean {
   if (order.status !== "fulfillment_failed") return false;
   const reason = (order.failure_reason || "").toLowerCase();
@@ -88,16 +97,15 @@ const BENEFICIARY_STATUS_BADGE: Record<string, { label: string; className: strin
 };
 
 type FilterType = "all" | "agents" | "sub_agents";
+type DatePreset = "all" | "today" | "yesterday" | "last_7_days" | "last_30_days" | "this_month" | "custom";
 
 const PAGE_SIZE = 50;
 
-const AdminOrders = () => {
+export default function AdminOrders() {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const [allOrders, setAllOrders] = useState<OrderRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, AgentProfile>>({});
-  // Per-phone beneficiary whitelist status, shared with the Non-Beneficiary
-  // Hub and the agent's own Transactions page via beneficiary_submissions.
   const [beneficiaryStatus, setBeneficiaryStatus] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -124,6 +132,18 @@ const AdminOrders = () => {
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
 
+  // Date Range Filters State
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  // Manual Status Changer Modal State
+  const [orderToEditStatus, setOrderToEditStatus] = useState<OrderRow | null>(null);
+  const [newOrderStatus, setNewOrderStatus] = useState("");
+  const [newStatusReason, setNewStatusReason] = useState("");
+  const [updatingSingleStatus, setUpdatingSingleStatus] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchProviders = async () => {
       const { data } = await supabase.from("providers").select("*");
@@ -134,12 +154,48 @@ const AdminOrders = () => {
 
   const allApisOff = providers.length === 0 || providers.every(p => !p.is_active);
 
-  // Reset to page 1 when any filter changes
-  useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter, networkFilter, orderTypeFilter]);
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, statusFilter, networkFilter, orderTypeFilter, datePreset, startDate, endDate]);
 
-  const fetchBeneficiaryStatusForOrders = useCallback(async (_batch: OrderRow[]) => {
-    return;
-  }, []);
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    toast({ title: "Copied to clipboard! 📋", description: text });
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const applyDatePreset = (preset: DatePreset) => {
+    setDatePreset(preset);
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+
+    if (preset === "today") {
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (preset === "yesterday") {
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const yStr = yesterday.toISOString().split("T")[0];
+      setStartDate(yStr);
+      setEndDate(yStr);
+    } else if (preset === "last_7_days") {
+      const past7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      setStartDate(past7.toISOString().split("T")[0]);
+      setEndDate(todayStr);
+    } else if (preset === "last_30_days") {
+      const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      setStartDate(past30.toISOString().split("T")[0]);
+      setEndDate(todayStr);
+    } else if (preset === "this_month") {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+      setStartDate(firstDay);
+      setEndDate(todayStr);
+    } else if (preset === "all") {
+      setStartDate("");
+      setEndDate("");
+    }
+  };
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -149,11 +205,11 @@ const AdminOrders = () => {
 
     let q = supabase
       .from("orders")
-      .select("*", { count: "estimated" })
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false });
 
-    if (search) {
+    // Search filter
+    if (search.trim()) {
       const cleanSearch = sanitizeSearchTerm(search);
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
       const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
@@ -190,34 +246,42 @@ const AdminOrders = () => {
       }
     }
 
+    // Status Filter
     if (statusFilter !== "all" && statusFilter !== "in_queue") {
       q = q.eq("status", statusFilter);
     }
+    // Network Filter
     if (networkFilter !== "all") {
       q = q.eq("network", networkFilter);
     }
+    // Order Type Filter
     if (orderTypeFilter !== "all") {
       q = q.eq("order_type", orderTypeFilter);
     }
-    if (search.trim()) {
-      const term = sanitizeSearchTerm(search);
-      q = q.or(`id.ilike.%${term}%,customer_phone.ilike.%${term}%,customer_name.ilike.%${term}%`);
+
+    // Date Range Filters
+    if (startDate) {
+      q = q.gte("created_at", `${startDate}T00:00:00.000Z`);
+    }
+    if (endDate) {
+      q = q.lte("created_at", `${endDate}T23:59:59.999Z`);
     }
 
-    q = q.order("created_at", { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    // Range Pagination
+    q = q.range(from, to);
 
     const { data, count, error } = await q;
     
     if (error) {
-      toast({ title: "Failed to fetch orders", variant: "destructive" });
+      toast({ title: "Failed to fetch orders", description: error.message, variant: "destructive" });
       setLoading(false);
       return;
     }
 
     setTotalCount(count || 0);
 
-    // Resolve profile info for this batch
-    const agentIds = [...new Set((data || []).map((o: any) => o.agent_id))];
+    // Resolve profile and wallet info
+    const agentIds = [...new Set((data || []).map((o: any) => o.agent_id).filter(Boolean))];
     const profileMap: Record<string, AgentProfile> = { ...profiles };
     
     if (agentIds.length > 0) {
@@ -259,8 +323,7 @@ const AdminOrders = () => {
 
     setAllOrders(enriched);
     setLoading(false);
-    void fetchBeneficiaryStatusForOrders(enriched);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, toast, profiles, fetchBeneficiaryStatusForOrders]);
+  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, toast, profiles]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchOrders(), 300);
@@ -324,7 +387,7 @@ const AdminOrders = () => {
         if (currentUser) {
           await logAudit(currentUser.id, "manual_order_retry", { order_id: orderId, status: "fulfilled" });
         }
-        toast({ title: "Order fulfilled successfully!" });
+        toast({ title: "Order fulfilled successfully! 🎉" });
       } else {
         toast({
           title: "Retry completed",
@@ -364,12 +427,12 @@ const AdminOrders = () => {
               package_size: targetOrder.package_size,
               network: targetOrder.network,
               agent_id: targetOrder.agent_id,
-              reason: targetOrder.failure_reason || "Number not added to carrier beneficiary list",
+              reason: targetOrder.failure_reason || "Refund issued by platform administrator",
             },
           }).catch((err) => console.error("Refund SMS dispatch error:", err));
         }
 
-        toast({ title: "Order refunded successfully!", description: "SMS notification dispatched to recipient." });
+        toast({ title: "Order refunded successfully! 💰", description: "Wallet/gateway refund applied and SMS notification sent." });
       } else {
         toast({ title: "Refund failed", description: "This order might already be refunded or not eligible.", variant: "destructive" });
       }
@@ -381,12 +444,54 @@ const AdminOrders = () => {
     }
   };
 
+  const handleUpdateSingleStatus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orderToEditStatus || !newOrderStatus) return;
+
+    setUpdatingSingleStatus(true);
+    try {
+      const { error } = await (supabase
+        .from("orders") as any)
+        .update({
+          status: newOrderStatus,
+          failure_reason: newStatusReason.trim() || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", orderToEditStatus.id);
+
+      if (error) throw error;
+
+      if (currentUser) {
+        await logAudit(currentUser.id, "manual_order_status_update", {
+          order_id: orderToEditStatus.id,
+          old_status: orderToEditStatus.status,
+          new_status: newOrderStatus,
+          reason: newStatusReason
+        });
+      }
+
+      toast({
+        title: "Order Status Updated! ⚡",
+        description: `Order #${orderToEditStatus.id.slice(0, 8)} transitioned to "${newOrderStatus.replace(/_/g, " ")}".`
+      });
+
+      setOrderToEditStatus(null);
+      setNewOrderStatus("");
+      setNewStatusReason("");
+      await fetchOrders();
+    } catch (err: any) {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUpdatingSingleStatus(false);
+    }
+  };
+
   const handleRetryAll = async () => {
     const actionable = allOrders.filter(
       (o) => o.status === "pending" || o.status === "paid" || o.status === "processing" || o.status === "fulfillment_failed"
     );
     if (actionable.length === 0) {
-      toast({ title: "No pending orders", description: "All orders are already fulfilled." });
+      toast({ title: "No pending orders", description: "All orders on this page are already fulfilled." });
       return;
     }
     setRetryingAll(true);
@@ -458,7 +563,7 @@ const AdminOrders = () => {
         return;
       }
 
-      if (!confirm(`WARNING: Found ${totalCount} processing orders (excluding Mash Up) across the WHOLE database. Force fulfill them ALL immediately?`)) {
+      if (!confirm(`WARNING: Found ${totalCount} processing orders across the database. Force fulfill them ALL immediately?`)) {
         setForcingFulfill(false);
         return;
       }
@@ -545,45 +650,59 @@ const AdminOrders = () => {
     setBulkUpdating(false);
   };
 
+  // Full CSV / Excel Export
   const handleExportCSV = () => {
     if (allOrders.length === 0) {
       toast({ title: "No orders to export", variant: "destructive" });
       return;
     }
     const headers = [
-      "Order ID", "Date", "Type", "Network", "Size/Details", 
-      "Recipient Phone", "Customer Name", "Agent Name", "Agent Email",
-      "Amount (GHS)", "Profit", "Status", "Failure Reason"
+      "Order ID", "Date (GMT)", "Order Type", "Network", "Package Size / Details", 
+      "Recipient Phone", "Customer Name", "Agent Name", "Agent Email", "Agent Phone",
+      "Amount (GH₵)", "Paystack Fee", "Cost Price", "Admin Net Profit", "Agent Profit", "Parent Profit", "Status", "Failure Reason"
     ];
     const csvContent = [
       headers.join(","),
-      ...allOrders.map(o => [
-        o.id,
-        new Date(o.created_at).toLocaleString(),
-        o.order_type,
-        o.network || "N/A",
-        o.package_size || "N/A",
-        o.customer_phone || "N/A",
-        o.customer_name || "Guest",
-        o.agent_name || "N/A",
-        o.agent_email || "N/A",
-        o.amount,
-        o.profit,
-        o.status,
-        o.failure_reason || "None"
-      ].map(val => JSON.stringify(val ?? "")).join(","))
+      ...allOrders.map(o => {
+        const adminProfit = o.status === "fulfilled"
+          ? (o.order_type === "api"
+              ? Number(o.profit || 0)
+              : (Number(o.paystack_verified_amount ?? o.amount) - Number(o.paystack_fee || 0) - Number(o.profit || 0) - Number(o.parent_profit || 0) - Number(o.cost_price || 0)))
+          : 0;
+
+        return [
+          o.id,
+          new Date(o.created_at).toLocaleString("en-GH"),
+          o.order_type,
+          o.network || "Standard",
+          o.package_size || "N/A",
+          o.customer_phone || "N/A",
+          o.customer_name || "Guest",
+          o.agent_name || "N/A",
+          o.agent_email || "N/A",
+          o.agent_phone || "N/A",
+          Number(o.amount).toFixed(2),
+          Number(o.paystack_fee || 0).toFixed(2),
+          Number(o.cost_price || 0).toFixed(2),
+          adminProfit.toFixed(2),
+          Number(o.profit || 0).toFixed(2),
+          Number(o.parent_profit || 0).toFixed(2),
+          o.status,
+          o.failure_reason || "None"
+        ].map(val => JSON.stringify(val ?? "")).join(",");
+      })
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `orders_export_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `SwiftData_Orders_Export_${new Date().toISOString().split("T")[0]}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast({ title: "Export Complete", description: `Exported ${allOrders.length} orders to CSV.` });
+    toast({ title: "Export Complete! 📊", description: `Exported ${allOrders.length} orders with financial metrics.` });
   };
 
   const handleExportSimpleCSV = () => {
@@ -591,7 +710,7 @@ const AdminOrders = () => {
       toast({ title: "No orders to export", variant: "destructive" });
       return;
     }
-    const headers = ["Recipient Phone", "Network", "Size/Details"];
+    const headers = ["Recipient Phone", "Network", "Size"];
     const csvContent = [
       headers.join(","),
       ...allOrders.map(o => {
@@ -611,26 +730,26 @@ const AdminOrders = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `simple_orders_export_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `carrier_queue_export_${new Date().toISOString().split("T")[0]}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast({ title: "Simple Export Complete", description: `Exported ${allOrders.length} simple orders.` });
+    toast({ title: "Carrier Queue Export Complete", description: `Exported ${allOrders.length} numbers for direct queue fulfillment.` });
   };
 
   const handleLiveSmsBlast = async () => {
     const msg = "SwiftData Alert: Delivery is currently ongoing and we are LIVE! Order now at https://swiftdatagh.shop or join our official WhatsApp channel for live updates: https://whatsapp.com/channel/0029Vb81tu4HVvTdqauPgU0Z";
-    if (!confirm(`Are you sure you want to send the "Delivery Live" SMS blast to all 14,000+ purchasers and order recipients?`)) {
+    if (!confirm(`Are you sure you want to send the "Delivery Live" SMS blast to all order recipients?`)) {
       return;
     }
     setSendingLiveSms(true);
-    toast({ title: "Initiating SMS Broadcast…", description: "Dispatching 'Delivery Live' SMS via SwiftDataGh gateway…" });
+    toast({ title: "Initiating SMS Broadcast…", description: "Dispatching 'Delivery Live' SMS via SwiftData gateway…" });
     try {
       const { data, error } = await supabase.functions.invoke("admin-send-sms", {
         body: {
           target_type: "all_order_phones",
-          sender_id: "SwiftDataGh",
+          sender_id: "SwiftData",
           message: msg,
         },
       });
@@ -646,9 +765,6 @@ const AdminOrders = () => {
     }
   };
 
-  // Overrides the raw "fulfillment_failed" badge with the real carrier
-  // submission status once known — numbers that are submitted for approval
-  // or non-beneficiary failures default to "in queue".
   const getOrderBadge = (order: OrderRow): { className: string; label: string } => {
     const phoneStatus = isBeneficiaryFailure(order) && order.customer_phone
       ? beneficiaryStatus[order.customer_phone]
@@ -710,6 +826,9 @@ const AdminOrders = () => {
   const pending = allOrders.filter((o) => o.status === "pending" || o.status === "paid").length;
   const verifiedCount = allOrders.filter((o) => o.paystack_verified_amount != null).length;
   const uniqueNetworks = [...new Set(allOrders.map((o) => o.network).filter(Boolean))] as string[];
+  const fulfillmentSuccessRate = allOrders.length > 0
+    ? Math.round((fulfilledForStats.length / allOrders.length) * 100)
+    : 100;
 
   const getNetworkBadge = (network: string | null) => {
     const net = (network || "").toUpperCase();
@@ -734,7 +853,7 @@ const AdminOrders = () => {
   );
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 max-w-7xl mx-auto">
       {/* Phone tracker widget */}
       <PhoneOrderTracker
         title="Track Customer Order by Phone"
@@ -753,14 +872,17 @@ const AdminOrders = () => {
                 <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Live Order Stream
               </span>
               <span className="text-xs text-muted-foreground font-mono">
-                {totalCount.toLocaleString()} Total Records
+                {totalCount.toLocaleString()} Total Records Found
               </span>
+              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
+                {fulfillmentSuccessRate}% Success Rate
+              </Badge>
             </div>
             <h1 className="font-display text-2xl sm:text-4xl font-black tracking-tight text-white flex items-center gap-3">
               Admin Orders & Transactions
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Monitor, retry, refund, and manage customer orders database-wide. Non-beneficiary numbers submitted for approval are queued live below.
+              Monitor, retry, refund, manually transition, and export customer data and airtime orders database-wide.
             </p>
           </div>
 
@@ -774,6 +896,26 @@ const AdminOrders = () => {
             >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-10 rounded-xl border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 text-xs font-bold"
+              onClick={handleExportCSV}
+              disabled={allOrders.length === 0}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Export Full CSV
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-10 rounded-xl border-white/10 bg-white/5 text-xs font-bold text-slate-300"
+              onClick={handleExportSimpleCSV}
+              disabled={allOrders.length === 0}
+            >
+              <Download className="w-3.5 h-3.5" /> Simple Queue CSV
+            </Button>
             
             <Button
               size="sm"
@@ -782,7 +924,7 @@ const AdminOrders = () => {
               disabled={routingDatamart}
             >
               {routingDatamart ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
-              ⚡ Route to Datamart
+              ⚡ Route Datamart
             </Button>
 
             <Button
@@ -792,7 +934,7 @@ const AdminOrders = () => {
               disabled={retryingAll}
             >
               {retryingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-              {retryingAll ? "Retrying…" : `Retry All (${pending + failed + allOrders.filter(o => o.status === "processing").length})`}
+              {retryingAll ? "Retrying…" : `Retry Page (${pending + failed + allOrders.filter(o => o.status === "processing").length})`}
             </Button>
 
             <Button
@@ -807,16 +949,6 @@ const AdminOrders = () => {
 
             <Button
               size="sm"
-              className="gap-2 h-10 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all active:scale-95"
-              onClick={handleLiveSmsBlast}
-              disabled={sendingLiveSms}
-            >
-              {sendingLiveSms ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              {sendingLiveSms ? "Sending…" : "🚀 Push SMS"}
-            </Button>
-
-            <Button
-              size="sm"
               variant="destructive"
               className="gap-2 h-10 rounded-xl text-xs font-bold transition-all active:scale-95"
               onClick={handleForceFulfillAllProcessing}
@@ -825,17 +957,6 @@ const AdminOrders = () => {
               {forcingFulfill ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
               {forcingFulfill ? "Fulfilling…" : "Force Fulfill"}
             </Button>
-
-            {allApisOff && (
-              <>
-                <Button variant="outline" size="sm" className="gap-2 h-10 rounded-xl border-white/10 bg-white/5 text-xs font-bold" onClick={handleExportCSV} disabled={allOrders.length === 0}>
-                  <Download className="w-3.5 h-3.5" /> CSV
-                </Button>
-                <Button variant="outline" size="sm" className="gap-2 h-10 rounded-xl border-amber-500/30 text-amber-400 bg-white/5 text-xs font-bold" onClick={handleExportSimpleCSV} disabled={allOrders.length === 0}>
-                  <Download className="w-3.5 h-3.5" /> Simple CSV
-                </Button>
-              </>
-            )}
           </div>
         </div>
       </div>
@@ -861,7 +982,7 @@ const AdminOrders = () => {
                   Datamart API Direct Route Recommended
                 </h4>
                 <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-                  Datamart API bridge is operating at 99.8% instant fulfillment speed. Force-routing {allOrders.filter((o) => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").length} eligible pending/failed orders will bypass carrier delay queues and deliver data instantly.
+                  Datamart API bridge is operating with 99.8% instant fulfillment speed. Force-routing {allOrders.filter((o) => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").length} eligible pending/failed orders will deliver data immediately.
                 </p>
               </div>
             </div>
@@ -881,7 +1002,7 @@ const AdminOrders = () => {
       {/* ── Stats Metric Cards Grid ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         {[
-          { label: "Total Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+          { label: "Page Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
           { label: "Fulfilled Volume", value: `GH₵${totalRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
           { label: "Admin Net Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: DollarSign, color: "text-sky-400 font-black", bg: "bg-sky-500/15 border-sky-500/30 shadow-lg shadow-sky-950/20" },
           { 
@@ -915,13 +1036,13 @@ const AdminOrders = () => {
       </div>
 
       {/* ── Filters & Search Toolbar ── */}
-      <div className="glass-card-neo rounded-2xl sm:rounded-3xl p-4 space-y-3 border border-white/10 backdrop-blur-2xl">
+      <div className="glass-card-neo rounded-2xl sm:rounded-3xl p-4 space-y-3.5 border border-white/10 backdrop-blur-2xl">
         <div className="flex flex-wrap items-center gap-3">
           {/* Search Input */}
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by order ID, phone number, agent name or email..."
+              placeholder="Search by order ID, phone number, customer name, agent..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-10 pr-9 h-10 rounded-xl bg-background/80 border-border text-xs focus:ring-1 focus:ring-amber-500/50"
@@ -966,6 +1087,7 @@ const AdminOrders = () => {
             <option value="paid">Paid (Pending)</option>
             <option value="fulfillment_failed">Fulfillment Failed</option>
             <option value="pending">Pending</option>
+            <option value="cancelled">Cancelled</option>
           </select>
 
           {/* Network Dropdown */}
@@ -996,7 +1118,7 @@ const AdminOrders = () => {
             <option value="store_wallet_topup">Storefront Wallet Top-up</option>
           </select>
 
-          {(search || statusFilter !== "all" || networkFilter !== "all" || orderTypeFilter !== "all" || typeFilter !== "all") && (
+          {(search || statusFilter !== "all" || networkFilter !== "all" || orderTypeFilter !== "all" || typeFilter !== "all" || datePreset !== "all" || startDate || endDate) && (
             <Button
               variant="ghost"
               size="sm"
@@ -1006,16 +1128,73 @@ const AdminOrders = () => {
                 setNetworkFilter("all");
                 setOrderTypeFilter("all");
                 setTypeFilter("all");
+                setDatePreset("all");
+                setStartDate("");
+                setEndDate("");
               }}
               className="text-xs text-amber-500 hover:text-amber-400 gap-1 h-10 px-3 rounded-xl shrink-0 font-bold"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Reset Filters
+              <RotateCcw className="w-3.5 h-3.5" /> Reset All
             </Button>
           )}
         </div>
 
+        {/* Date Presets Strip & Custom Date Pickers */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-border/50 text-xs">
+          <div className="flex items-center flex-wrap gap-1.5">
+            <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1 mr-1">
+              <Calendar className="w-3.5 h-3.5 text-amber-400" /> Date Range:
+            </span>
+            {[
+              { id: "all", label: "All Time" },
+              { id: "today", label: "Today" },
+              { id: "yesterday", label: "Yesterday" },
+              { id: "last_7_days", label: "Last 7 Days" },
+              { id: "this_month", label: "This Month" },
+            ].map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => applyDatePreset(p.id as DatePreset)}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                  datePreset === p.id
+                    ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                    : "bg-card border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="h-8 rounded-lg text-xs bg-background/80 font-mono w-32 border-border"
+              title="Filter Start Date"
+            />
+            <span className="text-muted-foreground text-xs font-bold">to</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setDatePreset("custom");
+              }}
+              className="h-8 rounded-lg text-xs bg-background/80 font-mono w-32 border-border"
+              title="Filter End Date"
+            />
+          </div>
+        </div>
+
         {/* Selected Orders Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border/50 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-border/50 text-xs">
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground font-semibold select-none">
               <input
@@ -1049,6 +1228,7 @@ const AdminOrders = () => {
               <option value="paid">Paid</option>
               <option value="fulfillment_failed">Fulfillment Failed</option>
               <option value="pending">Pending</option>
+              <option value="cancelled">Cancelled</option>
             </select>
             <Button
               size="sm"
@@ -1108,11 +1288,19 @@ const AdminOrders = () => {
                     </td>
                     
                     <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
-                      <div className="font-semibold text-foreground">
-                        {new Date(order.created_at).toLocaleDateString("en-GH", { day: "2-digit", month: "short", year: "numeric" })}
+                      <div className="font-semibold text-foreground flex items-center gap-1.5">
+                        <span>{new Date(order.created_at).toLocaleDateString("en-GH", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(order.id, order.id)}
+                          className="text-muted-foreground/50 hover:text-foreground"
+                          title="Copy Order ID"
+                        >
+                          {copiedId === order.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        </button>
                       </div>
                       <div className="text-[10px] text-muted-foreground/70 font-mono">
-                        {new Date(order.created_at).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(order.created_at).toLocaleTimeString("en-GH", { hour: "2-digit", minute: "2-digit" })} · #{order.id.slice(0, 8)}
                       </div>
                     </td>
 
@@ -1158,7 +1346,19 @@ const AdminOrders = () => {
                     </td>
 
                     <td className="px-4 py-3.5 whitespace-nowrap">
-                      <p className="font-mono text-foreground font-bold">{order.customer_phone || "—"}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-mono text-foreground font-bold">{order.customer_phone || "—"}</p>
+                        {order.customer_phone && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(order.customer_phone!, `phone-${order.id}`)}
+                            className="text-muted-foreground/50 hover:text-foreground"
+                            title="Copy Phone"
+                          >
+                            {copiedId === `phone-${order.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        )}
+                      </div>
                       {order.customer_name ? (
                         <p className="text-[10px] text-emerald-400 font-bold uppercase truncate max-w-[120px]">{order.customer_name}</p>
                       ) : (
@@ -1228,9 +1428,21 @@ const AdminOrders = () => {
 
                     <td className="px-4 py-3.5 text-center whitespace-nowrap">
                       <div className="flex flex-col items-center gap-1">
-                        <Badge className={`text-[10px] border px-2.5 py-1 rounded-full uppercase tracking-wider font-extrabold ${badge.className}`}>
-                          {badge.label}
-                        </Badge>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOrderToEditStatus(order);
+                            setNewOrderStatus(order.status);
+                            setNewStatusReason(order.failure_reason || "");
+                          }}
+                          className="group/badge cursor-pointer"
+                          title="Click to manually update status"
+                        >
+                          <Badge className={`text-[10px] border px-2.5 py-1 rounded-full uppercase tracking-wider font-extrabold flex items-center gap-1 ${badge.className}`}>
+                            <span>{badge.label}</span>
+                            <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover/badge:opacity-100 transition-opacity" />
+                          </Badge>
+                        </button>
                         {order.auto_refunded && (
                           <Badge className="bg-rose-500/15 border-rose-500/30 text-rose-400 text-[8px] font-extrabold flex items-center gap-0.5 uppercase tracking-wide">
                             <ShieldAlert className="w-2.5 h-2.5" /> Refunded
@@ -1253,7 +1465,7 @@ const AdminOrders = () => {
                         if (isUnpaidSpam) {
                           return (
                             <span className="inline-flex items-center px-2 py-1 rounded-md text-[9px] font-bold bg-rose-500/10 border border-rose-500/20 text-rose-400 cursor-not-allowed" title="Customer never completed payment at the gateway. Retry & Refund are disabled to prevent fraud.">
-                              🚫 Unpaid (Spam Shield)
+                              🚫 Unpaid (Spam)
                             </span>
                           );
                         }
@@ -1284,6 +1496,18 @@ const AdminOrders = () => {
                                 Refund
                               </Button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOrderToEditStatus(order);
+                                setNewOrderStatus(order.status);
+                                setNewStatusReason(order.failure_reason || "");
+                              }}
+                              className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                              title="Edit Status"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         );
                       })()}
@@ -1309,9 +1533,18 @@ const AdminOrders = () => {
                     <span className="text-[10px] font-mono text-muted-foreground">
                       {new Date(order.created_at).toLocaleDateString()}
                     </span>
-                    <Badge className={`text-[9px] border font-bold ${badge.className}`}>
-                      {badge.label}
-                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOrderToEditStatus(order);
+                        setNewOrderStatus(order.status);
+                        setNewStatusReason(order.failure_reason || "");
+                      }}
+                    >
+                      <Badge className={`text-[9px] border font-bold ${badge.className}`}>
+                        {badge.label}
+                      </Badge>
+                    </button>
                   </div>
                   <p className="font-extrabold text-foreground text-sm">{order.agent_name}</p>
                   <p className="text-[10px] text-muted-foreground truncate">{order.agent_email}</p>
@@ -1353,20 +1586,15 @@ const AdminOrders = () => {
                         Agent: +GH₵{Number(order.profit || 0).toFixed(2)}
                       </span>
                     )}
-                    {Number(order.parent_profit || 0) > 0 && (
-                      <span className="text-purple-400 font-bold">
-                        Parent: +GH₵{Number(order.parent_profit || 0).toFixed(2)}
-                      </span>
-                    )}
                   </div>
                 )}
               </div>
 
               <div className="flex items-center justify-between gap-2">
                 {order.failure_reason && (
-                  <p className="text-[10px] text-rose-400 italic truncate max-w-[180px]">{order.failure_reason}</p>
+                  <p className="text-[10px] text-rose-400 italic truncate max-w-[160px]">{order.failure_reason}</p>
                 )}
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="flex items-center gap-1.5 ml-auto">
                   {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                     <Button
                       size="sm"
@@ -1391,6 +1619,18 @@ const AdminOrders = () => {
                       Refund
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setOrderToEditStatus(order);
+                      setNewOrderStatus(order.status);
+                      setNewStatusReason(order.failure_reason || "");
+                    }}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1402,7 +1642,7 @@ const AdminOrders = () => {
         <div className="py-20 text-center glass-card-neo rounded-3xl border border-white/10 p-8">
           <ShoppingCart className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-foreground font-bold text-base">No orders matched your filters</p>
-          <p className="text-muted-foreground text-xs mt-1">Try clearing search query or changing active status/network filters.</p>
+          <p className="text-muted-foreground text-xs mt-1">Try clearing search query or changing active status/network/date filters.</p>
         </div>
       )}
 
@@ -1477,6 +1717,87 @@ const AdminOrders = () => {
         </div>
       )}
 
+      {/* ── Manual Order Status Changer Modal ── */}
+      <Dialog open={!!orderToEditStatus} onOpenChange={(open) => !open && setOrderToEditStatus(null)}>
+        <DialogContent className="sm:max-w-md rounded-2xl bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-black text-foreground">
+              <Edit3 className="w-4 h-4 text-amber-400" /> Modify Order Status
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Directly transition order <span className="font-mono text-foreground font-bold">#{orderToEditStatus?.id.slice(0, 8)}</span> to a new fulfillment state.
+            </DialogDescription>
+          </DialogHeader>
+
+          {orderToEditStatus && (
+            <form onSubmit={handleUpdateSingleStatus} className="space-y-4 py-2">
+              <div className="p-3 rounded-xl bg-secondary/40 border border-border text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground font-medium">Customer:</span>
+                  <span className="font-bold text-foreground">{orderToEditStatus.customer_name || "Guest"} ({orderToEditStatus.customer_phone || "—"})</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground font-medium">Package:</span>
+                  <span className="font-bold text-foreground">{orderToEditStatus.network} - {orderToEditStatus.package_size} (GH₵{Number(orderToEditStatus.amount).toFixed(2)})</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground font-medium">Current Status:</span>
+                  <Badge className={`text-[10px] border ${STATUS_COLORS[orderToEditStatus.status]}`}>
+                    {orderToEditStatus.status.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">New Status</label>
+                <select
+                  value={newOrderStatus}
+                  onChange={(e) => setNewOrderStatus(e.target.value)}
+                  required
+                  className="w-full h-11 bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground font-bold text-xs outline-none focus:border-amber-500/50"
+                >
+                  <option value="fulfilled">✅ Fulfilled (Completed successfully)</option>
+                  <option value="processing">⏳ Processing (Pending provider callback)</option>
+                  <option value="paid">💳 Paid (Awaiting fulfillment queue)</option>
+                  <option value="fulfillment_failed">❌ Fulfillment Failed</option>
+                  <option value="pending">⚠️ Pending (Checkout incomplete)</option>
+                  <option value="cancelled">🚫 Cancelled</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-muted-foreground">Status / Failure Note (Optional)</label>
+                <Input
+                  value={newStatusReason}
+                  onChange={(e) => setNewStatusReason(e.target.value)}
+                  placeholder="e.g. Manually verified delivery or carrier refund note"
+                  className="rounded-xl h-10 bg-secondary/50 text-xs"
+                />
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setOrderToEditStatus(null)}
+                  className="rounded-xl text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={updatingSingleStatus}
+                  className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs gap-1.5 border-0 shadow-md"
+                >
+                  {updatingSingleStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Save Status Transition
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* User Detail Drawer modal */}
       {selectedUserForDrawer && (
         <UserDetailDrawer
@@ -1486,6 +1807,4 @@ const AdminOrders = () => {
       )}
     </div>
   );
-};
-
-export default AdminOrders;
+}
