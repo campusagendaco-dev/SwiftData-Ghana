@@ -639,6 +639,45 @@ const AdminSecurity = () => {
     } catch (e: any) { toast({ title: "Update Failed", description: e.message, variant: "destructive" }); }
   };
 
+  const [purgingSpam, setPurgingSpam] = useState(false);
+  const handlePurgeBotSpam = async () => {
+    if (!confirm("Are you sure you want to purge uncompleted/unpaid bot spam orders from the queue?")) return;
+    setPurgingSpam(true);
+    try {
+      const { data: spamOrders, error: findError } = await supabase
+        .from("orders")
+        .select("id")
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+        .is("paystack_verified_amount", null)
+        .or("failure_reason.ilike.%FAILED%,failure_reason.ilike.%Prompt Expired%,failure_reason.eq.TRANSACTION_NOT_FOUND,failure_reason.ilike.%not approved%");
+
+      if (findError) throw findError;
+
+      if (!spamOrders || spamOrders.length === 0) {
+        toast({ title: "No Spam Found", description: "Your orders queue is already clean." });
+        return;
+      }
+
+      const ids = spamOrders.map(o => o.id);
+      const { error: delError } = await supabase
+        .from("orders")
+        .delete()
+        .in("id", ids);
+
+      if (delError) throw delError;
+
+      toast({ 
+        title: "Spam Orders Purged", 
+        description: `Successfully cleaned ${ids.length} unpaid spam attempt(s) from database.` 
+      });
+      void fetchData(true);
+    } catch (e: any) {
+      toast({ title: "Purge Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setPurgingSpam(false);
+    }
+  };
+
   const copyText = (t: string, label = "Copied") => {
     void navigator.clipboard.writeText(t);
     toast({ title: label, description: t });
@@ -720,8 +759,18 @@ const AdminSecurity = () => {
           </div>
         </div>
 
-        {/* auto-mode toggle */}
-        <div className="flex flex-col items-end gap-1.5 sm:border-l border-zinc-800 sm:pl-4">
+        {/* auto-mode & purge spam buttons */}
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 sm:border-l border-zinc-800 sm:pl-4">
+          <button
+            type="button"
+            onClick={handlePurgeBotSpam}
+            disabled={purgingSpam}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-mono text-xs font-black uppercase tracking-wider transition-all disabled:opacity-50"
+          >
+            {purgingSpam ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+            Purge Bot Spam
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -736,7 +785,6 @@ const AdminSecurity = () => {
           >
             {autoMode ? <><Pulse color="bg-red-500" /> AUTO-RESPONSE ON</> : <><Play className="w-3 h-3" /> AUTO-RESPONSE OFF</>}
           </button>
-          <p className="text-[9px] text-zinc-600 font-mono">{autoMode ? "AI will act automatically on confirmed threats" : "Manual review required"}</p>
         </div>
       </div>
 

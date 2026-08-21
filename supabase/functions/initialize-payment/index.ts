@@ -388,6 +388,16 @@ serve(async (req: Request) => {
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
     // --- 🛡️ ANTI-FRAUD & SCAMMER SHIELD ---
+    // 🪤 1. Honeypot Trap Check (Instantly rejects automated bots that fill hidden fields)
+    const honeypot = String(payload?.honeypot || payload?.company_tax_id || metadata?.honeypot || "").trim();
+    if (honeypot.length > 0) {
+      console.warn(`[ANTI_FRAUD] Honeypot trap triggered by bot! Value: "${honeypot}"`);
+      return new Response(JSON.stringify({ error: "Invalid form submission" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "").trim();
     if (clientIp) {
       const { data: blacklistedIp } = await supabaseAdmin
@@ -399,7 +409,33 @@ serve(async (req: Request) => {
       if (blacklistedIp) {
         console.warn(`[ANTI_FRAUD] Blocked blacklisted IP: ${clientIp}`);
         return new Response(JSON.stringify({
-          error: "Access Denied: Your IP address has been temporarily restricted due to excessive uncompleted requests."
+          error: "Access Denied: Your IP address has been restricted due to automated spam violations."
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // 🚨 2. Aggressive 3-Strike IP Blacklist (Auto-blacklists after 3 uncompleted checkouts)
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      const { data: ipUnpaidOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id")
+        .eq("metadata->>client_ip", clientIp)
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+        .is("paystack_verified_amount", null)
+        .gte("created_at", fifteenMinsAgo);
+
+      if (ipUnpaidOrders && ipUnpaidOrders.length >= 3) {
+        console.warn(`[ANTI_FRAUD] IP ${clientIp} triggered 3-strike rule (${ipUnpaidOrders.length} unpaid checkouts). Auto-blacklisting.`);
+        await supabaseAdmin.from("security_blacklist").insert({
+          ip_address: clientIp,
+          reason: `Auto-blacklisted after ${ipUnpaidOrders.length} unapproved bot checkout attempts`,
+          threat_level: "CRITICAL"
+        }).catch(() => {});
+
+        return new Response(JSON.stringify({
+          error: "Access Denied: Your IP address has been restricted due to repeated automated bot attempts."
         }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

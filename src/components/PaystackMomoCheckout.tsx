@@ -49,6 +49,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const [countdown, setCountdown] = useState(60);
   const [reference, setReference] = useState<string>("");
   const [otpError, setOtpError] = useState<string | null>(null);
+  const [honeypot, setHoneypot] = useState("");
   
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countdownTimer = useRef<NodeJS.Timeout | null>(null);
@@ -328,6 +329,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           reference: orderId,
           network_code: "CRD",
           payment_method: "card",
+          honeypot,
           callback_url: metadata?.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
           metadata: {
             ...metadata,
@@ -528,6 +530,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           amount,
           base_price: metadata.base_price || amount,
           reference: orderId,
+          honeypot,
           callback_url: metadata.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
           metadata: {
             ...metadata,
@@ -716,6 +719,17 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       placeholder="0XX XXXXXXX"
                       maxLength={12}
                       className="w-full h-11 bg-background border border-border rounded-xl px-3.5 text-foreground text-sm font-bold tracking-wide focus:outline-none focus:border-amber-400/50 focus:bg-accent/5 transition-all"
+                    />
+                    {/* Invisible Bot Honeypot Trap */}
+                    <input
+                      type="text"
+                      name="company_tax_id"
+                      value={honeypot}
+                      onChange={(e) => setHoneypot(e.target.value)}
+                      tabIndex={-1}
+                      autoComplete="off"
+                      style={{ display: "none", opacity: 0, position: "absolute", left: "-9999px" }}
+                      aria-hidden="true"
                     />
                   </div>
 
