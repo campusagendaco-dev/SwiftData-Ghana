@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,12 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Search, RotateCcw, Loader2, RefreshCw,
-  TrendingUp, ShoppingCart, AlertTriangle, Clock,
+  TrendingUp, ShoppingCart, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
-  Coins, ShieldAlert, Send, Zap, Filter, Check, X, User,
-  DollarSign, Sparkles, AlertCircle, ArrowUpRight, Copy, ShieldCheck, Activity,
-  Calendar, FileSpreadsheet, Edit3, Phone, ExternalLink, ArrowUpDown, ChevronDown
+  Coins, ShieldAlert, Zap, Check, X,
+  DollarSign, Sparkles, AlertCircle, Copy, Activity,
+  Calendar, FileSpreadsheet, Edit3
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
@@ -789,6 +790,18 @@ export default function AdminOrders() {
     };
   };
 
+  const getStatusIcon = (order: OrderRow) => {
+    if (isBeneficiaryFailure(order)) return Clock;
+    switch (order.status) {
+      case "fulfilled": return CheckCircle2;
+      case "processing": return RefreshCw;
+      case "fulfillment_failed":
+      case "failed": return AlertCircle;
+      case "cancelled": return X;
+      default: return Clock;
+    }
+  };
+
   // Client-side filtering
   const filtered = useMemo(() => {
     return allOrders.filter(o => {
@@ -839,13 +852,18 @@ export default function AdminOrders() {
     if (net.includes("MTN")) return "bg-amber-500/20 text-amber-400 border-amber-500/30";
     if (net.includes("VODA") || net.includes("TELECEL")) return "bg-red-500/20 text-red-400 border-red-500/30";
     if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-    return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+    return "bg-slate-500/20 text-slate-500 dark:text-slate-300 border-slate-500/30";
   };
 
   if (loading && allOrders.length === 0) return (
     <div className="flex flex-col items-center justify-center py-32 gap-4">
-      <div className="relative">
-        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center animate-pulse">
+      <div className="relative w-14 h-14">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "linear" }}
+          className="absolute inset-0 rounded-2xl border-2 border-dashed border-amber-500/25"
+        />
+        <div className="absolute inset-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
         </div>
       </div>
@@ -865,29 +883,51 @@ export default function AdminOrders() {
       />
 
       {/* ── Header Hero Section ── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900/90 via-slate-900/50 to-amber-950/20 p-6 sm:p-8 border border-white/10 backdrop-blur-2xl shadow-2xl">
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900/90 via-slate-900/50 to-amber-950/20 p-6 sm:p-8 border border-white/10 backdrop-blur-2xl shadow-2xl"
+      >
         <div className="absolute top-0 right-0 -mt-16 -mr-16 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-0 left-1/3 -mb-16 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="relative z-10 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2.5">
-              <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Live Order Stream
+          <div className="flex items-start gap-4">
+            <div className="relative shrink-0 hidden sm:block">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 11, repeat: Infinity, ease: "linear" }}
+                className="w-14 h-14 rounded-2xl border-2 border-dashed border-amber-500/25 flex items-center justify-center"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
+                  <ShoppingCart className="w-5 h-5 text-slate-950" />
+                </div>
+              </motion.div>
+              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               </span>
-              <span className="text-xs text-muted-foreground font-mono">
-                {totalCount.toLocaleString()} Total Records Found
-              </span>
-              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
-                {fulfillmentSuccessRate}% Success Rate
-              </Badge>
             </div>
-            <h1 className="font-display text-2xl sm:text-4xl font-black tracking-tight text-white flex items-center gap-3">
-              Admin Orders & Transactions
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Monitor, retry, refund, manually transition, and export customer data and airtime orders database-wide.
-            </p>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Live Order Stream
+                </span>
+                <span className="text-xs text-muted-foreground font-mono">
+                  {totalCount.toLocaleString()} Total Records Found
+                </span>
+                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] font-bold">
+                  {fulfillmentSuccessRate}% Success Rate
+                </Badge>
+              </div>
+              <h1 className="font-display text-2xl sm:text-4xl font-black tracking-tight text-white flex items-center gap-3">
+                Admin Orders & Transactions
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+                Monitor, retry, refund, manually transition, and export customer data and airtime orders database-wide.
+              </p>
+            </div>
           </div>
 
           {/* Quick Action Grid */}
@@ -963,11 +1003,16 @@ export default function AdminOrders() {
             </Button>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* ── AI Provider & Carrier Routing Recommendation Banner ── */}
+      <AnimatePresence>
       {allOrders.filter((o) => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").length > 0 && (
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-purple-500/15 p-4 border border-amber-500/30 backdrop-blur-xl shadow-lg">
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-purple-500/15 p-4 border border-amber-500/30 backdrop-blur-xl shadow-lg">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <div className="p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 shrink-0 mt-0.5">
@@ -1000,33 +1045,39 @@ export default function AdminOrders() {
               Apply Smart Provider Reroute
             </Button>
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ── Stats Metric Cards Grid ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         {[
-          { label: "Page Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-          { label: "Fulfilled Volume", value: `GH₵${totalRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-          { label: "Admin Net Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: DollarSign, color: "text-sky-400 font-black", bg: "bg-sky-500/15 border-sky-500/30 shadow-lg shadow-sky-950/20" },
-          { 
-            label: "In Queue / Approval", 
-            value: inQueueCount.toString(), 
-            icon: Clock, 
-            color: "text-emerald-400 font-extrabold", 
+          { label: "Page Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", grad: "from-blue-500 to-cyan-500" },
+          { label: "Fulfilled Volume", value: `GH₵${totalRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", grad: "from-emerald-500 to-teal-500" },
+          { label: "Admin Net Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: DollarSign, color: "text-sky-400 font-black", bg: "bg-sky-500/15 border-sky-500/30 shadow-lg shadow-sky-950/20", grad: "from-sky-500 to-blue-500" },
+          {
+            label: "In Queue / Approval",
+            value: inQueueCount.toString(),
+            icon: Clock,
+            color: "text-emerald-400 font-extrabold",
             bg: "bg-emerald-500/15 border-emerald-500/30 cursor-pointer hover:bg-emerald-500/25 transition-all",
+            grad: "from-emerald-500 to-green-500",
             onClick: () => setStatusFilter("in_queue")
           },
-          { label: "Agent Profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}`, icon: Sparkles, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
-          { label: "Paystack Fees", value: `GH₵${totalPaystackFees.toFixed(2)}`, icon: TrendingUp, color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/20" },
-          { label: "Platform Costs", value: `GH₵${totalCosts.toFixed(2)}`, icon: TrendingUp, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
-          { label: "Paystack Verified", value: verifiedCount.toLocaleString(), icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/10 border-green-500/20" },
-        ].map(({ label, value, icon: Icon, color, bg, onClick }) => (
-          <div 
-            key={label} 
+          { label: "Agent Profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}`, icon: Sparkles, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", grad: "from-purple-500 to-fuchsia-500" },
+          { label: "Paystack Fees", value: `GH₵${totalPaystackFees.toFixed(2)}`, icon: TrendingUp, color: "text-rose-400", bg: "bg-rose-500/10 border-rose-500/20", grad: "from-rose-500 to-red-500" },
+          { label: "Platform Costs", value: `GH₵${totalCosts.toFixed(2)}`, icon: TrendingUp, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", grad: "from-amber-500 to-orange-500" },
+          { label: "Paystack Verified", value: verifiedCount.toLocaleString(), icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/10 border-green-500/20", grad: "from-green-500 to-emerald-500" },
+        ].map(({ label, value, icon: Icon, color, bg, grad, onClick }, i) => (
+          <motion.div
+            key={label}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, delay: i * 0.04 }}
             onClick={onClick}
-            className={`rounded-2xl p-3.5 flex flex-col justify-between border backdrop-blur-xl ${bg}`}
+            className={`relative overflow-hidden rounded-2xl p-3.5 flex flex-col justify-between border backdrop-blur-xl hover:-translate-y-0.5 hover:shadow-md transition-all duration-300 ${bg}`}
           >
+            <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${grad}`} />
             <div className="flex items-center justify-between gap-1 mb-2">
               <Icon className={`w-4 h-4 ${color}`} />
               {onClick && <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/20 px-1.5 py-0.5 rounded">Filter</span>}
@@ -1035,7 +1086,7 @@ export default function AdminOrders() {
               <p className={`text-base font-black truncate text-foreground ${color}`}>{value}</p>
               <p className="text-[10px] text-muted-foreground truncate uppercase tracking-wider font-semibold mt-0.5">{label}</p>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
 
@@ -1249,10 +1300,10 @@ export default function AdminOrders() {
 
       {/* ── Desktop Orders Table ── */}
       <div className="hidden md:block glass-card-neo rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[75vh] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border/80 bg-muted/40 backdrop-blur-md">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-border/80 bg-background/95 backdrop-blur-md">
                 <th className="px-4 py-3.5 w-8 text-center" aria-label="Select row"></th>
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Date / Time</th>
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Agent Account</th>
@@ -1269,12 +1320,16 @@ export default function AdminOrders() {
             <tbody className="divide-y divide-border/40">
               {paginated.map((order) => {
                 const badge = getOrderBadge(order);
+                const StatusIcon = getStatusIcon(order);
                 const isSelected = selectedIds.has(order.id);
 
                 return (
-                  <tr 
-                    key={order.id} 
-                    className={`hover:bg-muted/30 transition-colors ${isSelected ? "bg-amber-500/5" : ""}`}
+                  <tr
+                    key={order.id}
+                    className={cn(
+                      "hover:bg-muted/30 transition-colors border-l-2 border-l-transparent hover:border-l-amber-500/40",
+                      isSelected && "bg-amber-500/5 border-l-amber-500/60"
+                    )}
                   >
                     <td className="px-4 py-3.5 text-center">
                       <input
@@ -1443,6 +1498,7 @@ export default function AdminOrders() {
                           title="Click to manually update status"
                         >
                           <Badge className={`text-[10px] border px-2.5 py-1 rounded-full uppercase tracking-wider font-extrabold flex items-center gap-1 ${badge.className}`}>
+                            <StatusIcon className="w-2.5 h-2.5" />
                             <span>{badge.label}</span>
                             <Edit3 className="w-2.5 h-2.5 opacity-0 group-hover/badge:opacity-100 transition-opacity" />
                           </Badge>
@@ -1528,6 +1584,7 @@ export default function AdminOrders() {
       <div className="md:hidden space-y-3">
         {paginated.map((order) => {
           const badge = getOrderBadge(order);
+          const StatusIcon = getStatusIcon(order);
 
           return (
             <div key={order.id} className="glass-card-neo rounded-2xl p-4 space-y-3 border border-white/10">
@@ -1545,7 +1602,8 @@ export default function AdminOrders() {
                         setNewStatusReason(order.failure_reason || "");
                       }}
                     >
-                      <Badge className={`text-[9px] border font-bold ${badge.className}`}>
+                      <Badge className={`text-[9px] border font-bold flex items-center gap-1 ${badge.className}`}>
+                        <StatusIcon className="w-2.5 h-2.5" />
                         {badge.label}
                       </Badge>
                     </button>
@@ -1643,8 +1701,10 @@ export default function AdminOrders() {
       </div>
 
       {allOrders.length === 0 && !loading && (
-        <div className="py-20 text-center glass-card-neo rounded-3xl border border-white/10 p-8">
-          <ShoppingCart className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+        <div className="py-20 text-center glass-card-neo rounded-3xl border border-white/10 p-8 space-y-3">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-400/70">
+            <ShoppingCart className="w-7 h-7" />
+          </div>
           <p className="text-foreground font-bold text-base">No orders matched your filters</p>
           <p className="text-muted-foreground text-xs mt-1">Try clearing search query or changing active status/network/date filters.</p>
         </div>
@@ -1692,7 +1752,7 @@ export default function AdminOrders() {
                   onClick={() => setPage(p)}
                   className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${
                     p === safePage
-                      ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-950/20"
+                      ? "bg-gradient-to-br from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-950/20"
                       : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                   }`}
                 >

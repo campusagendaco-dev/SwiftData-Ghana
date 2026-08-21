@@ -44,6 +44,11 @@ const getGreeting = () => {
   return "Good evening";
 };
 
+import FrequentCustomersReorder from "@/components/FrequentCustomersReorder";
+import NetworkSpeedPulse from "@/components/NetworkSpeedPulse";
+import LowBalanceAlertDrawer from "@/components/LowBalanceAlertDrawer";
+import StoreShareCard from "@/components/StoreShareCard";
+
 const Dashboard = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
@@ -202,6 +207,7 @@ const Dashboard = () => {
     <div className="space-y-6 pb-12">
       <FreeDataClaimBanner />
       <CompleteProfileBanner />
+      <LowBalanceAlertDrawer balance={stats.walletBalance} />
 
       {/* ── Top Greeting Bar ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card-neo p-4 sm:p-5 rounded-3xl">
@@ -244,6 +250,9 @@ const Dashboard = () => {
           </Button>
         </div>
       </div>
+
+      {/* ── Live Network Carrier Delivery Speed ── */}
+      <NetworkSpeedPulse />
 
       {/* ── MTN Live Status Widget ── */}
       <LastMtnOrderWidget variant="pill" />
@@ -333,6 +342,12 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* ── Frequent Customers Quick Re-Order ── */}
+      <FrequentCustomersReorder />
+
+      {/* ── Online Storefront Promotion Card ── */}
+      <StoreShareCard />
 
       <ReferAndEarn />
 

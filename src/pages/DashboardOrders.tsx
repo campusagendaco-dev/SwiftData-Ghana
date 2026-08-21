@@ -11,12 +11,13 @@ import {
   Wallet, ChevronDown, Phone, Package, Calendar, Receipt, Copy, Check,
   Smartphone, Zap, Download, Search, RotateCcw, Send, ArrowRight,
   TrendingUp, ShieldCheck, X, Sparkles, Filter, AlertCircle, FileText,
-  Activity, ExternalLink
+  Activity, ExternalLink, MessageCircle
 } from "lucide-react";
 import { cn, escapeHtml, sanitizeSearchTerm } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
+import WhatsAppReceiptModal from "@/components/WhatsAppReceiptModal";
 
 interface Order {
   id: string;
@@ -152,6 +153,7 @@ const DashboardOrders = () => {
   const { toast } = useToast();
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<any | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
@@ -848,17 +850,28 @@ const DashboardOrders = () => {
                         </button>
 
                         {order.status === "fulfilled" && order.customer_phone && (
-                          <a
-                            href={`sms:${order.customer_phone.replace(/\D+/g, "")}?body=${encodeURIComponent(
-                              `Hi! Your ${order.network || ""} ${order.package_size || "bundle"} order from SwiftData Ghana is delivered! Need a refill? Order again at https://swiftdatagh.shop`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold border transition-all bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 active:scale-95 shadow-sm"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            💬 Send Customer Refill Nudge SMS
-                          </a>
+                          <div className="col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderForReceipt({ ...order, store_name: profile?.store_name })}
+                              className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black border transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow-md active:scale-95"
+                            >
+                              <MessageCircle className="w-4 h-4 fill-white" />
+                              📲 Send WhatsApp Receipt
+                            </button>
+
+                            <a
+                              href={`sms:${order.customer_phone.replace(/\D+/g, "")}?body=${encodeURIComponent(
+                                `Hi! Your ${order.network || ""} ${order.package_size || "bundle"} order from SwiftData Ghana is delivered! Need a refill? Order again at https://swiftdatagh.shop`
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold border transition-all bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 active:scale-95 shadow-sm"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              💬 Refill Nudge SMS
+                            </a>
+                          </div>
                         )}
 
                         {order.status !== "fulfilled" && order.status !== "refunded" && (
@@ -936,6 +949,13 @@ const DashboardOrders = () => {
           </div>
         )}
       </div>
+
+      {/* WhatsApp Proof of Delivery Receipt Modal */}
+      <WhatsAppReceiptModal
+        order={selectedOrderForReceipt}
+        isOpen={!!selectedOrderForReceipt}
+        onClose={() => setSelectedOrderForReceipt(null)}
+      />
     </div>
   );
 };
