@@ -317,23 +317,36 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     }
 
     setStep('initiating');
+    const orderId = metadata?.order_id || crypto.randomUUID();
     
     try {
-      const { data, error } = await supabase.functions.invoke("wallet-topup", {
+      const { data, error } = await supabase.functions.invoke("initialize-payment", {
         body: {
-          amount: amount,
-          wallet_credit: metadata?.wallet_credit || amount,
-          callback_url: metadata?.callback_url || window.location.href,
-          wallet_type: metadata?.wallet_type || "main"
+          email: email.trim() || `${paymentPhone || recipientPhone || 'customer'}@swiftdata.gh`,
+          amount,
+          base_price: metadata?.base_price || amount,
+          reference: orderId,
+          network_code: "CRD",
+          payment_method: "card",
+          callback_url: metadata?.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
+          metadata: {
+            ...metadata,
+            order_id: orderId,
+            payment_phone: paymentPhone || recipientPhone,
+            payment_network: paymentNetwork || recipientNetwork,
+            is_fallback: true,
+            bypass_beneficiary: (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true" || !isBeneficiaryVerified) ? true : undefined,
+          },
         }
       });
       
       if (error || !data?.authorization_url) {
-        throw new Error(data?.error || "Could not initialize Paystack checkout.");
+        throw new Error(data?.error || error?.message || "Could not initialize Paystack checkout.");
       }
       
       window.location.href = data.authorization_url;
     } catch (err: any) {
+      console.error("Paystack fallback checkout error:", err);
       setErrorMessage(err.message || "Failed to launch Paystack checkout.");
       setStep('payment_number');
     }

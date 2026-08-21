@@ -1331,7 +1331,7 @@ serve(async (req: Request) => {
       currency: "GHS",
     };
 
-    const isMomoCharge = paystackPhone && paystackProvider;
+    const isMomoCharge = paystackPhone && paystackProvider && !isCardPayment && metadata.is_fallback !== true && enrichedMetadata.is_fallback !== true;
     if (isMomoCharge) {
       paystackUrl = "https://api.paystack.co/charge";
       requestBody = {
