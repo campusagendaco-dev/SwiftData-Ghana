@@ -439,7 +439,15 @@ serve(async (req: Request) => {
       });
     };
 
-    // 🪤 1. Honeypot Trap Check (Instantly catches automated scrapers that fill hidden inputs)
+    // 🚫 1. Hard Automated Script Blocker (Intercepts Python, Curl, Scrapy, Postman, Headless bots)
+    const userAgent = (req.headers.get("user-agent") || "").toLowerCase();
+    const isScriptBot = /python|curl|postman|scrapy|aiohttp|httpclient|urllib|go-http|axios|node-fetch|headless|selenium|puppeteer|phantomjs/i.test(userAgent);
+    if (isScriptBot || (userAgent.length < 15 && !userAgent.includes("okhttp") && !userAgent.includes("mozilla"))) {
+      console.warn(`[ANTI_FRAUD] Blocked automated script tool: ${userAgent}`);
+      return await executeTarpitSinkhole("Automated Script Engine Blocked", { userAgent, phone: rawTargetPhone });
+    }
+
+    // 🪤 2. Honeypot Trap Check (Instantly catches automated scrapers that fill hidden inputs)
     const honeypot = String(payload?.honeypot || payload?.company_tax_id || metadata?.honeypot || "").trim();
     if (honeypot.length > 0) {
       return await executeTarpitSinkhole("Honeypot Bot Trap Triggered", { honeypot, phone: rawTargetPhone });
