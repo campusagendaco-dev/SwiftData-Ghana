@@ -641,14 +641,40 @@ const AdminSecurity = () => {
 
   const [purgingSpam, setPurgingSpam] = useState(false);
   const handlePurgeBotSpam = async () => {
-    if (!confirm("Are you sure you want to purge uncompleted/unpaid bot spam orders from the queue?")) return;
+    if (!confirm("Are you sure you want to clean out uncompleted/unpaid bot spam orders from the active queue?")) return;
     setPurgingSpam(true);
     try {
-      const data = await invoke({ action: "purge_bot_spam" });
+      const { data: spamOrders, error: findError } = await (supabase
+        .from("orders") as any)
+        .select("id")
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+        .is("paystack_verified_amount", null)
+        .or("failure_reason.ilike.%FAILED%,failure_reason.ilike.%Prompt Expired%,failure_reason.eq.TRANSACTION_NOT_FOUND,failure_reason.ilike.%not approved%,failure_reason.ilike.%Payment failed%,failure_reason.ilike.%LOW_BALANCE_OR_PAYEE_LIMIT%");
+
+      if (findError) throw findError;
+
+      if (!spamOrders || spamOrders.length === 0) {
+        toast({ title: "No Spam Found", description: "Your orders queue is already clean." });
+        return;
+      }
+
+      const ids = spamOrders.map((o: any) => o.id);
+
+      // Update their status to cancelled so they vanish from active queues
+      const { error: updError } = await (supabase
+        .from("orders") as any)
+        .update({
+          status: "cancelled",
+          failure_reason: "BOT_SPAM_PURGED",
+          updated_at: new Date().toISOString()
+        })
+        .in("id", ids);
+
+      if (updError) throw updError;
 
       toast({ 
         title: "Spam Orders Purged", 
-        description: data?.message || `Successfully purged ${data?.count ?? 0} unpaid spam attempt(s) from database.` 
+        description: `Successfully cleared ${ids.length} unpaid spam attempt(s) from your active dashboard.` 
       });
       void fetchData(true);
     } catch (e: any) {
