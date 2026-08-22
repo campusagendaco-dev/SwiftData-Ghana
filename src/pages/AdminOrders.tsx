@@ -1378,9 +1378,15 @@ export default function AdminOrders() {
                         <p className="text-[10px] text-muted-foreground truncate">{order.agent_email}</p>
                       </button>
                       <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${order.is_sub_agent ? "border-purple-500/30 text-purple-400 bg-purple-500/10" : "border-amber-500/30 text-amber-400 bg-amber-500/10"}`}>
-                          {order.is_sub_agent ? "Sub-Agent" : "Agent"}
-                        </span>
+                        {order.agent_id === "00000000-0000-0000-0000-000000000000" || !order.agent_id ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded border border-slate-700/50 text-slate-400 bg-slate-800/40">
+                            Guest / Direct
+                          </span>
+                        ) : (
+                          <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${order.is_sub_agent ? "border-purple-500/30 text-purple-400 bg-purple-500/10" : "border-amber-500/30 text-amber-400 bg-amber-500/10"}`}>
+                            {order.is_sub_agent ? "Sub-Agent" : "Agent"}
+                          </span>
+                        )}
                         {order.metadata?.wallet_balance !== undefined && (
                           <span className="text-[9px] font-mono font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.2 rounded">
                             ₵{Number(order.metadata.wallet_balance).toFixed(2)}
