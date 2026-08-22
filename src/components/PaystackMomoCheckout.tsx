@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { runFraudSentinelCheck } from "@/lib/fraud-sentinel";
+import { getProofOfHumanityToken } from "@/lib/device-fingerprint";
 
 interface PaystackMomoCheckoutProps {
   isOpen: boolean;
@@ -330,6 +331,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           network_code: "CRD",
           payment_method: "card",
           honeypot,
+          device_fingerprint: getProofOfHumanityToken().deviceFingerprint,
+          poh_token: getProofOfHumanityToken(),
           callback_url: metadata?.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
           metadata: {
             ...metadata,
@@ -531,6 +534,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           base_price: metadata.base_price || amount,
           reference: orderId,
           honeypot,
+          device_fingerprint: getProofOfHumanityToken().deviceFingerprint,
+          poh_token: getProofOfHumanityToken(),
           callback_url: metadata.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
           metadata: {
             ...metadata,

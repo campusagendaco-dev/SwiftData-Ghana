@@ -391,6 +391,7 @@ serve(async (req: Request) => {
     const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "").trim();
     const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
     const cleanPhone9 = rawTargetPhone.slice(-9);
+    const deviceFp = String(payload?.device_fingerprint || metadata?.device_fingerprint || "").trim();
 
     // Tarpit Bot-Freezer & Shadow-Ban Sinkhole Handler
     const executeTarpitSinkhole = async (reason: string, details: Record<string, any>) => {
@@ -404,6 +405,7 @@ serve(async (req: Request) => {
         metadata: {
           ...details,
           client_ip: clientIp,
+          device_fingerprint: deviceFp,
           timestamp: new Date().toISOString()
         }
       }).catch(() => {});
@@ -430,6 +432,43 @@ serve(async (req: Request) => {
       return await executeTarpitSinkhole("Honeypot Bot Trap Triggered", { honeypot, phone: rawTargetPhone });
     }
 
+    // 📱 2. Hardware Device Fingerprint Check
+    if (deviceFp) {
+      const { data: blacklistedFp } = await supabaseAdmin
+        .from("security_blacklist")
+        .select("id, reason")
+        .eq("ip_address", deviceFp)
+        .maybeSingle();
+
+      if (blacklistedFp) {
+        return await executeTarpitSinkhole("Blacklisted Device Hardware Signature", { deviceFp, phone: rawTargetPhone });
+      }
+
+      // Check device velocity across multiple numbers
+      const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: deviceOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id, customer_phone")
+        .eq("metadata->>device_fingerprint", deviceFp)
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+        .is("paystack_verified_amount", null)
+        .gte("created_at", tenMinsAgo);
+
+      if (deviceOrders && deviceOrders.length >= 3) {
+        const uniquePhones = new Set(deviceOrders.map((o: any) => o.customer_phone).filter(Boolean));
+        if (uniquePhones.size >= 2) {
+          await supabaseAdmin.from("security_blacklist").insert({
+            ip_address: deviceFp,
+            reason: `Hardware Device Auto-Blacklisted (Multi-number bot sweep across ${uniquePhones.size} numbers)`,
+            threat_level: "CRITICAL"
+          }).catch(() => {});
+
+          return await executeTarpitSinkhole("Hardware Multi-Number Bot Sweep Intercepted", { deviceFp, uniqueNumbersCount: uniquePhones.size });
+        }
+      }
+    }
+
+    // 🌐 3. IP Blacklist & 3-Strike Rule
     if (clientIp) {
       const { data: blacklistedIp } = await supabaseAdmin
         .from("security_blacklist")
@@ -441,11 +480,11 @@ serve(async (req: Request) => {
         return await executeTarpitSinkhole("Blacklisted IP Block", { clientIp, reason: blacklistedIp.reason, phone: rawTargetPhone });
       }
 
-      // 🚨 2. Aggressive 3-Strike IP Blacklist (Auto-blacklists after 3 uncompleted checkouts)
+      // 🚨 Aggressive 3-Strike IP Blacklist (Auto-blacklists after 3 uncompleted checkouts)
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
       const { data: ipUnpaidOrders } = await supabaseAdmin
         .from("orders")
-        .select("id")
+        .select("id, customer_phone")
         .eq("metadata->>client_ip", clientIp)
         .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
         .is("paystack_verified_amount", null)
@@ -459,6 +498,32 @@ serve(async (req: Request) => {
         }).catch(() => {});
 
         return await executeTarpitSinkhole("3-Strike Bot Threshold Reached", { clientIp, phone: rawTargetPhone, count: ipUnpaidOrders.length });
+      }
+
+      // 🔢 4. Sequential Number Range Sweep Detection
+      if (ipUnpaidOrders && ipUnpaidOrders.length >= 2 && cleanPhone9.length === 9) {
+        const prefix6 = cleanPhone9.slice(0, 6);
+        const last3 = parseInt(cleanPhone9.slice(-3), 10);
+        
+        const isSequentialMatch = ipUnpaidOrders.some((o: any) => {
+          const other9 = String(o.customer_phone || "").replace(/\D+/g, "").slice(-9);
+          if (other9.length === 9 && other9.slice(0, 6) === prefix6) {
+            const otherLast3 = parseInt(other9.slice(-3), 10);
+            return Math.abs(last3 - otherLast3) <= 5 && otherLast3 !== last3;
+          }
+          return false;
+        });
+
+        if (isSequentialMatch) {
+          console.warn(`[ANTI_FRAUD] Sequential number bot sweep detected on prefix ${prefix6} from IP ${clientIp}`);
+          await supabaseAdmin.from("security_blacklist").insert({
+            ip_address: clientIp,
+            reason: `Auto-blacklisted: Sequential number bot sweep on ${prefix6}xxx`,
+            threat_level: "CRITICAL"
+          }).catch(() => {});
+
+          return await executeTarpitSinkhole("Sequential Number Bot Sweep Intercepted", { clientIp, phone: rawTargetPhone, prefix: prefix6 });
+        }
       }
     }
 
