@@ -644,17 +644,11 @@ const AdminSecurity = () => {
     if (!confirm("Are you sure you want to purge uncompleted/unpaid bot spam orders from the queue?")) return;
     setPurgingSpam(true);
     try {
-      const { data, error } = await supabase.functions.invoke("admin-user-actions", {
-        body: { action: "purge_bot_spam" }
-      });
-
-      if (error || !data?.success) {
-        throw new Error(data?.error || error?.message || "Failed to purge spam orders");
-      }
+      const data = await invoke({ action: "purge_bot_spam" });
 
       toast({ 
         title: "Spam Orders Purged", 
-        description: data.message || `Successfully purged ${data.count} unpaid spam attempt(s) from database.` 
+        description: data?.message || `Successfully purged ${data?.count ?? 0} unpaid spam attempt(s) from database.` 
       });
       void fetchData(true);
     } catch (e: any) {
