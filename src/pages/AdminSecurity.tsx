@@ -660,17 +660,23 @@ const AdminSecurity = () => {
 
       const ids = spamOrders.map((o: any) => o.id);
 
-      // Update their status to cancelled so they vanish from active queues
-      const { error: updError } = await (supabase
-        .from("orders") as any)
-        .update({
-          status: "cancelled",
-          failure_reason: "BOT_SPAM_PURGED",
-          updated_at: new Date().toISOString()
-        })
-        .in("id", ids);
+      // Update in safe chunks of 20 to prevent PostgREST HTTP 400 URL length overflow
+      const chunkSize = 20;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const { error: chunkErr } = await (supabase
+          .from("orders") as any)
+          .update({
+            status: "cancelled",
+            failure_reason: "BOT_SPAM_PURGED",
+            updated_at: new Date().toISOString()
+          })
+          .in("id", chunk);
 
-      if (updError) throw updError;
+        if (chunkErr) {
+          console.warn("[PurgeBotSpam] Chunk update warning:", chunkErr.message);
+        }
+      }
 
       toast({ 
         title: "Spam Orders Purged", 
