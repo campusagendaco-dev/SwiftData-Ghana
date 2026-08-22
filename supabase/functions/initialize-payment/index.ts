@@ -387,18 +387,49 @@ serve(async (req: Request) => {
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
-    // --- 🛡️ ANTI-FRAUD & SCAMMER SHIELD ---
-    // 🪤 1. Honeypot Trap Check (Instantly rejects automated bots that fill hidden fields)
-    const honeypot = String(payload?.honeypot || payload?.company_tax_id || metadata?.honeypot || "").trim();
-    if (honeypot.length > 0) {
-      console.warn(`[ANTI_FRAUD] Honeypot trap triggered by bot! Value: "${honeypot}"`);
-      return new Response(JSON.stringify({ error: "Invalid form submission" }), {
-        status: 400,
+    // --- 🛡️ ANTI-FRAUD, TARPIT BOT-FREEZER & SHADOW-BAN SINKHOLE ---
+    const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "").trim();
+    const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
+    const cleanPhone9 = rawTargetPhone.slice(-9);
+
+    // Tarpit Bot-Freezer & Shadow-Ban Sinkhole Handler
+    const executeTarpitSinkhole = async (reason: string, details: Record<string, any>) => {
+      console.warn(`[TARPIT_SINKHOLE] Intercepted bot/spammer attempt: ${reason}`, details);
+      
+      // Asynchronously log to sentinel actions table
+      await supabaseAdmin.from("sentinel_actions").insert({
+        action_type: "TARPIT_SINKHOLE_TRAP",
+        status: "TRAPPED",
+        reasoning: reason,
+        metadata: {
+          ...details,
+          client_ip: clientIp,
+          timestamp: new Date().toISOString()
+        }
+      }).catch(() => {});
+
+      // ⏱️ Artificial Tarpit Delay: Freeze the bot script by stalling the HTTP socket
+      await new Promise((resolve) => setTimeout(resolve, 8000));
+
+      // 🕳️ Fake Success Response: Bot thinks it succeeded, but 0 orders are placed & 0 money touched
+      const fakeRef = `SWD-TRAP-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+      return new Response(JSON.stringify({
+        status: "success",
+        message: "Payment prompt dispatched to handset.",
+        reference: fakeRef,
+        authorization_url: `https://swiftdatagh.shop/order-status?reference=${fakeRef}`
+      }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    };
+
+    // 🪤 1. Honeypot Trap Check (Instantly catches automated scrapers that fill hidden inputs)
+    const honeypot = String(payload?.honeypot || payload?.company_tax_id || metadata?.honeypot || "").trim();
+    if (honeypot.length > 0) {
+      return await executeTarpitSinkhole("Honeypot Bot Trap Triggered", { honeypot, phone: rawTargetPhone });
     }
 
-    const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "").trim();
     if (clientIp) {
       const { data: blacklistedIp } = await supabaseAdmin
         .from("security_blacklist")
@@ -407,13 +438,7 @@ serve(async (req: Request) => {
         .maybeSingle();
 
       if (blacklistedIp) {
-        console.warn(`[ANTI_FRAUD] Blocked blacklisted IP: ${clientIp}`);
-        return new Response(JSON.stringify({
-          error: "Access Denied: Your IP address has been restricted due to automated spam violations."
-        }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return await executeTarpitSinkhole("Blacklisted IP Block", { clientIp, reason: blacklistedIp.reason, phone: rawTargetPhone });
       }
 
       // 🚨 2. Aggressive 3-Strike IP Blacklist (Auto-blacklists after 3 uncompleted checkouts)
@@ -427,24 +452,15 @@ serve(async (req: Request) => {
         .gte("created_at", fifteenMinsAgo);
 
       if (ipUnpaidOrders && ipUnpaidOrders.length >= 3) {
-        console.warn(`[ANTI_FRAUD] IP ${clientIp} triggered 3-strike rule (${ipUnpaidOrders.length} unpaid checkouts). Auto-blacklisting.`);
         await supabaseAdmin.from("security_blacklist").insert({
           ip_address: clientIp,
           reason: `Auto-blacklisted after ${ipUnpaidOrders.length} unapproved bot checkout attempts`,
           threat_level: "CRITICAL"
         }).catch(() => {});
 
-        return new Response(JSON.stringify({
-          error: "Access Denied: Your IP address has been restricted due to repeated automated bot attempts."
-        }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return await executeTarpitSinkhole("3-Strike Bot Threshold Reached", { clientIp, phone: rawTargetPhone, count: ipUnpaidOrders.length });
       }
     }
-
-    const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
-    const cleanPhone9 = rawTargetPhone.slice(-9);
 
     const KNOWN_SCAMMERS = [
       "0557061663", "233557061663", "557061663",
@@ -456,13 +472,7 @@ serve(async (req: Request) => {
     ];
 
     if (cleanPhone9 && KNOWN_SCAMMERS.some(p => p.endsWith(cleanPhone9))) {
-      console.warn(`[ANTI_FRAUD] Blocked blacklisted scammer phone attempt: ${rawTargetPhone}`);
-      return new Response(JSON.stringify({
-        error: "This phone number has been restricted due to suspicious activity. Please contact customer support."
-      }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return await executeTarpitSinkhole("Blacklisted Scammer Phone Intercept", { phone: rawTargetPhone });
     }
 
     // Velocity Limiter: Cap rapid uncompleted checkouts from the same IP/Phone
