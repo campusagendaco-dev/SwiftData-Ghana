@@ -87,6 +87,6 @@ Allow: /
 Sitemap: https://swiftdatagh.com/sitemap.xml
 Sitemap: https://swiftdatagh.shop/sitemap.xml
 
-# LLM Metadata Specification
-# See: https://llmstxt.org
-llms-txt: https://swiftdatagh.com/llms.txt
+# LLM Metadata Specification (https://llmstxt.org)
+# llms.txt location: https://swiftdatagh.shop/llms.txt
+# llms.txt location: https://swiftdatagh.com/llms.txt
