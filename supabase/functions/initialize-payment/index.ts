@@ -387,6 +387,19 @@ serve(async (req: Request) => {
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
+    // 🌙 Night Guard Rule: Automatically disable guest airtime purchases from 11:00 PM to 6:00 AM (Ghana Time / UTC)
+    const currentUtcHour = new Date().getUTCHours();
+    const isNightHours = currentUtcHour >= 23 || currentUtcHour < 6;
+    if (orderType === "airtime" && !isAgentLinkedOrder && isNightHours) {
+      console.warn(`[NIGHT_GUARD] Blocked guest airtime order at hour ${currentUtcHour}:00 GMT`);
+      return new Response(JSON.stringify({
+        error: "Night Guard Protection: Guest airtime purchases are restricted between 11:00 PM and 6:00 AM. Please log in or create an account to purchase airtime during night hours."
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // --- 🛡️ ANTI-FRAUD, TARPIT BOT-FREEZER & SHADOW-BAN SINKHOLE ---
     const clientIp = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "").trim();
     const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");

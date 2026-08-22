@@ -39,21 +39,33 @@ export async function runFraudSentinelCheck(params: {
     };
   }
 
-  // 2. Airtime Purchase Cap (Max GHS 200)
+  // 2. 🌙 Night Guard Rule: Restrict guest airtime purchases between 11:00 PM and 6:00 AM (Ghana Time / UTC)
+  if (orderType === "airtime") {
+    const currentUtcHour = new Date().getUTCHours();
+    const isNightHours = currentUtcHour >= 23 || currentUtcHour < 6;
+    
+    try {
+      const { data: authData } = await supabase.auth.getSession();
+      const isAuthenticated = !!authData?.session?.user;
+
+      if (!isAuthenticated && isNightHours) {
+        return {
+          allowed: false,
+          threatLevel: "HIGH",
+          reason: "Night Guard Protection: Guest airtime purchases are restricted between 11:00 PM and 6:00 AM. Please log in or create an account to purchase airtime during night hours."
+        };
+      }
+    } catch {
+      // ignore auth check error
+    }
+  }
+
+  // 3. Airtime Purchase Cap (Max GHS 200)
   if (orderType === "airtime" && amount > 200) {
     return {
       allowed: false,
       threatLevel: "MEDIUM",
       reason: "Maximum single airtime purchase is GH₵200.00. Please enter a lower amount."
-    };
-  }
-
-  // 3. Escalating Amount Spammer Shield (Airtime > 500 GHS)
-  if (orderType === "airtime" && amount > 500) {
-    return {
-      allowed: false,
-      threatLevel: "HIGH",
-      reason: "Security Guard: Large airtime amounts require an authenticated account. Please log in or enter an amount under GH₵200.00."
     };
   }
 
