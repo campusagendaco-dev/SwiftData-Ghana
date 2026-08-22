@@ -644,31 +644,17 @@ const AdminSecurity = () => {
     if (!confirm("Are you sure you want to purge uncompleted/unpaid bot spam orders from the queue?")) return;
     setPurgingSpam(true);
     try {
-      const { data: spamOrders, error: findError } = await supabase
-        .from("orders")
-        .select("id")
-        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
-        .is("paystack_verified_amount", null)
-        .or("failure_reason.ilike.%FAILED%,failure_reason.ilike.%Prompt Expired%,failure_reason.eq.TRANSACTION_NOT_FOUND,failure_reason.ilike.%not approved%");
+      const { data, error } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "purge_bot_spam" }
+      });
 
-      if (findError) throw findError;
-
-      if (!spamOrders || spamOrders.length === 0) {
-        toast({ title: "No Spam Found", description: "Your orders queue is already clean." });
-        return;
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || "Failed to purge spam orders");
       }
-
-      const ids = spamOrders.map(o => o.id);
-      const { error: delError } = await supabase
-        .from("orders")
-        .delete()
-        .in("id", ids);
-
-      if (delError) throw delError;
 
       toast({ 
         title: "Spam Orders Purged", 
-        description: `Successfully cleaned ${ids.length} unpaid spam attempt(s) from database.` 
+        description: data.message || `Successfully purged ${data.count} unpaid spam attempt(s) from database.` 
       });
       void fetchData(true);
     } catch (e: any) {

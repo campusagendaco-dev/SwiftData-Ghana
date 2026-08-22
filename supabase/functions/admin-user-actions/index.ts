@@ -114,7 +114,8 @@ type AdminUserAction =
   | "refund_order"
   | "force_fulfill_order"
   | "heal_stuck_orders"
-  | "bulk_update_order_status";
+  | "bulk_update_order_status"
+  | "purge_bot_spam";
 
 
 
@@ -1754,6 +1755,44 @@ serve(async (req: Request) => {
         });
 
         return new Response(JSON.stringify({ success: true, message: `Successfully updated ${validIds.length} orders to ${status}` }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "purge_bot_spam": {
+        const { data: spamOrders, error: findError } = await supabaseAdmin
+          .from("orders")
+          .select("id")
+          .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+          .is("paystack_verified_amount", null)
+          .or("failure_reason.ilike.%FAILED%,failure_reason.ilike.%Prompt Expired%,failure_reason.eq.TRANSACTION_NOT_FOUND,failure_reason.ilike.%not approved%,failure_reason.ilike.%Payment failed%,failure_reason.ilike.%LOW_BALANCE_OR_PAYEE_LIMIT%");
+
+        if (findError) throw findError;
+
+        if (!spamOrders || spamOrders.length === 0) {
+          return new Response(JSON.stringify({ success: true, count: 0, message: "No uncompleted spam orders found." }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const ids = spamOrders.map((o: any) => o.id);
+        const { error: delError } = await supabaseAdmin
+          .from("orders")
+          .delete()
+          .in("id", ids);
+
+        if (delError) throw delError;
+
+        await supabaseAdmin.from("admin_action_log").insert({
+          admin_email: actor.email || "system",
+          action: "purge_bot_spam",
+          target_email: actor.id,
+          metadata: { count: ids.length, order_ids: ids }
+        }).catch(() => {});
+
+        return new Response(JSON.stringify({ success: true, count: ids.length, message: `Successfully purged ${ids.length} unpaid spam order(s).` }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
