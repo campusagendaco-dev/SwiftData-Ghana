@@ -1023,6 +1023,18 @@ const AgentStore = () => {
         toast({ title: "Invalid amount", description: "Minimum airtime purchase is GHS 1.00", variant: "destructive" });
         return;
       }
+
+      // 🌙 Night Guard Rule: Restrict guest airtime from 11pm to 6am
+      const currentUtcHour = new Date().getUTCHours();
+      const isNightHours = currentUtcHour >= 23 || currentUtcHour < 6;
+      if (isNightHours && !isRegisteredUser) {
+        toast({
+          title: "Night Guard Protection",
+          description: "Guest airtime purchases are restricted between 11:00 PM and 6:00 AM. Please log in to purchase airtime during night hours.",
+          variant: "destructive"
+        });
+        return;
+      }
     }
     if (selectedService === "utility") {
       const amt = Number(utilityAmount);

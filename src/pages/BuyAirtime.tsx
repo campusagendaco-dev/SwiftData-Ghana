@@ -155,6 +155,21 @@ const BuyAirtime = () => {
       return;
     }
 
+    // 🌙 Night Guard Rule: Restrict guest airtime from 11pm to 6am
+    const currentUtcHour = new Date().getUTCHours();
+    const isNightHours = currentUtcHour >= 23 || currentUtcHour < 6;
+    if (isNightHours) {
+      const { data: authData } = await supabase.auth.getSession();
+      if (!authData?.session?.user) {
+        toast({
+          title: "Night Guard Protection",
+          description: "Guest airtime purchases are restricted between 11:00 PM and 6:00 AM. Please log in or create an account to purchase airtime during night hours.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     setBuying(true);
     const orderId = crypto.randomUUID();
     const callbackParams = new URLSearchParams({
