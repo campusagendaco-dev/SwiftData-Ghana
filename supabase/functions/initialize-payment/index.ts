@@ -387,13 +387,13 @@ serve(async (req: Request) => {
     const agentId = metadata.agent_id || "00000000-0000-0000-0000-000000000000";
     const isAgentLinkedOrder = hasValidAgentId(agentId);
 
-    // 🌙 Night Guard Rule: Automatically disable guest airtime purchases from 11:00 PM to 6:00 AM (Ghana Time / UTC)
+    // 🌙 Night Guard Rule: Automatically disable guest airtime purchases from 10:00 PM to 7:00 AM (Ghana Time / UTC)
     const currentUtcHour = new Date().getUTCHours();
-    const isNightHours = currentUtcHour >= 23 || currentUtcHour < 6;
+    const isNightHours = currentUtcHour >= 22 || currentUtcHour < 7;
     if (orderType === "airtime" && !isAgentLinkedOrder && isNightHours) {
       console.warn(`[NIGHT_GUARD] Blocked guest airtime order at hour ${currentUtcHour}:00 GMT`);
       return new Response(JSON.stringify({
-        error: "Night Guard Protection: Guest airtime purchases are restricted between 11:00 PM and 6:00 AM. Please log in or create an account to purchase airtime during night hours."
+        error: "Night Guard Protection: Guest airtime purchases are restricted between 10:00 PM and 7:00 AM. Please log in or create an account to purchase airtime during night hours."
       }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -405,6 +405,21 @@ serve(async (req: Request) => {
     const rawTargetPhone = String(metadata?.customer_phone || payload?.customer_phone || payload?.phone || "").trim().replace(/\D+/g, "");
     const cleanPhone9 = rawTargetPhone.slice(-9);
     const deviceFp = String(payload?.device_fingerprint || metadata?.device_fingerprint || "").trim();
+
+    // Helper to blacklist entities safely in security_blacklist table
+    const blacklistEntity = async (type: "ip" | "domain", value: string, reason: string) => {
+      if (!value) return;
+      try {
+        await supabaseAdmin.from("security_blacklist").upsert({
+          type,
+          value,
+          reason,
+        }, { onConflict: "value" });
+        console.warn(`[BLACKLIST] Successfully added ${value} (${type}) to security_blacklist: ${reason}`);
+      } catch (bErr) {
+        console.error("[BLACKLIST_UPSERT_ERR]", bErr);
+      }
+    };
 
     // Tarpit Bot-Freezer & Shadow-Ban Sinkhole Handler
     const executeTarpitSinkhole = async (reason: string, details: Record<string, any>) => {
@@ -444,89 +459,104 @@ serve(async (req: Request) => {
     const isScriptBot = /python|curl|postman|scrapy|aiohttp|httpclient|urllib|go-http|axios|node-fetch|headless|selenium|puppeteer|phantomjs/i.test(userAgent);
     if (isScriptBot || (userAgent.length < 15 && !userAgent.includes("okhttp") && !userAgent.includes("mozilla"))) {
       console.warn(`[ANTI_FRAUD] Blocked automated script tool: ${userAgent}`);
+      if (clientIp) await blacklistEntity("ip", clientIp, `Automated Script Bot User-Agent: ${userAgent.slice(0, 50)}`);
       return await executeTarpitSinkhole("Automated Script Engine Blocked", { userAgent, phone: rawTargetPhone });
     }
 
     // 🪤 2. Honeypot Trap Check (Instantly catches automated scrapers that fill hidden inputs)
     const honeypot = String(payload?.honeypot || payload?.company_tax_id || metadata?.honeypot || "").trim();
     if (honeypot.length > 0) {
+      if (clientIp) await blacklistEntity("ip", clientIp, "Triggered Honeypot Bot Trap");
       return await executeTarpitSinkhole("Honeypot Bot Trap Triggered", { honeypot, phone: rawTargetPhone });
     }
 
-    // 📱 2. Hardware Device Fingerprint Check
-    if (deviceFp) {
-      const { data: blacklistedFp } = await supabaseAdmin
+    // 🤖 3. Proof-of-Humanity (PoH) Verification
+    if (payload?.poh_token) {
+      const poh = payload.poh_token;
+      if (poh.isHuman === false) {
+        return await executeTarpitSinkhole("Proof-of-Humanity Failed", { phone: rawTargetPhone });
+      }
+    }
+
+    // 📱 4. Hardware Device & IP Blacklist Check
+    if (clientIp || deviceFp) {
+      const checkValues = [clientIp, deviceFp].filter(Boolean);
+      const { data: blacklisted } = await supabaseAdmin
         .from("security_blacklist")
-        .select("id, reason")
-        .eq("ip_address", deviceFp)
+        .select("value, reason")
+        .in("value", checkValues)
         .maybeSingle();
 
-      if (blacklistedFp) {
-        return await executeTarpitSinkhole("Blacklisted Device Hardware Signature", { deviceFp, phone: rawTargetPhone });
+      if (blacklisted) {
+        return await executeTarpitSinkhole("Blacklisted Entity Block", { value: blacklisted.value, reason: blacklisted.reason, phone: rawTargetPhone });
       }
+    }
 
-      // Check device velocity across multiple numbers
+    // 📱 5. Hardware Device Velocity Check across multiple numbers
+    if (deviceFp) {
       const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data: deviceOrders } = await supabaseAdmin
         .from("orders")
         .select("id, customer_phone")
         .eq("metadata->>device_fingerprint", deviceFp)
-        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment", "failed"])
         .is("paystack_verified_amount", null)
         .gte("created_at", tenMinsAgo);
 
       if (deviceOrders && deviceOrders.length >= 3) {
         const uniquePhones = new Set(deviceOrders.map((o: any) => o.customer_phone).filter(Boolean));
         if (uniquePhones.size >= 2) {
-          await supabaseAdmin.from("security_blacklist").insert({
-            ip_address: deviceFp,
-            reason: `Hardware Device Auto-Blacklisted (Multi-number bot sweep across ${uniquePhones.size} numbers)`,
-            threat_level: "CRITICAL"
-          }).catch(() => {});
-
+          await blacklistEntity("ip", deviceFp, `Hardware Device Auto-Blacklisted (Multi-number bot sweep across ${uniquePhones.size} numbers)`);
+          if (clientIp) await blacklistEntity("ip", clientIp, `Multi-number device bot sweep from IP`);
           return await executeTarpitSinkhole("Hardware Multi-Number Bot Sweep Intercepted", { deviceFp, uniqueNumbersCount: uniquePhones.size });
         }
       }
     }
 
-    // 🌐 3. IP Blacklist & 3-Strike Rule
+    // 🌐 6. Global IP Velocity & 3-Strike Rule (Applies across all numbers & order types)
     if (clientIp) {
-      const { data: blacklistedIp } = await supabaseAdmin
-        .from("security_blacklist")
-        .select("id, reason")
-        .eq("ip_address", clientIp)
-        .maybeSingle();
-
-      if (blacklistedIp) {
-        return await executeTarpitSinkhole("Blacklisted IP Block", { clientIp, reason: blacklistedIp.reason, phone: rawTargetPhone });
-      }
-
-      // 🚨 Aggressive 3-Strike IP Blacklist (Auto-blacklists after 3 uncompleted checkouts)
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
       const { data: ipUnpaidOrders } = await supabaseAdmin
         .from("orders")
-        .select("id, customer_phone")
+        .select("id, customer_phone, status, order_type")
         .eq("metadata->>client_ip", clientIp)
-        .in("status", ["fulfillment_failed", "pending", "awaiting_payment"])
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment", "failed"])
         .is("paystack_verified_amount", null)
         .gte("created_at", fifteenMinsAgo);
 
       if (ipUnpaidOrders && ipUnpaidOrders.length >= 3) {
-        await supabaseAdmin.from("security_blacklist").insert({
-          ip_address: clientIp,
-          reason: `Auto-blacklisted after ${ipUnpaidOrders.length} unapproved bot checkout attempts`,
-          threat_level: "CRITICAL"
-        }).catch(() => {});
-
+        await blacklistEntity("ip", clientIp, `Auto-blacklisted after ${ipUnpaidOrders.length} unapproved bot checkout attempts`);
         return await executeTarpitSinkhole("3-Strike Bot Threshold Reached", { clientIp, phone: rawTargetPhone, count: ipUnpaidOrders.length });
       }
 
-      // 🔢 4. Sequential Number Range Sweep Detection
-      if (ipUnpaidOrders && ipUnpaidOrders.length >= 2 && cleanPhone9.length === 9) {
-        const prefix6 = cleanPhone9.slice(0, 6);
-        const last3 = parseInt(cleanPhone9.slice(-3), 10);
-        
-        const isSequentialMatch = ipUnpaidOrders.some((o: any) => {
+      // High-Frequency Burst IP Limiter (Max 2 unpaid attempts within 3 minutes)
+      const recentIpBurst = (ipUnpaidOrders || []).filter((o: any) => new Date(o.created_at || Date.now()).getTime() >= Date.now() - 3 * 60 * 1000);
+      if (recentIpBurst.length >= 2) {
+        return new Response(JSON.stringify({
+          error: "Too many uncompleted checkout attempts from this connection. Please wait a few minutes before trying again."
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // 🔢 7. Sequential Number Swarm Detection (Detects +xx04, +xx05, etc.)
+    if (cleanPhone9.length === 9) {
+      const prefix6 = cleanPhone9.slice(0, 6);
+      const last3 = parseInt(cleanPhone9.slice(-3), 10);
+      const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+      const { data: recentSwarmOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id, customer_phone")
+        .in("status", ["fulfillment_failed", "pending", "awaiting_payment", "failed"])
+        .is("paystack_verified_amount", null)
+        .gte("created_at", tenMinsAgo)
+        .limit(25);
+
+      if (recentSwarmOrders && recentSwarmOrders.length >= 2) {
+        const isSequentialMatch = recentSwarmOrders.some((o: any) => {
           const other9 = String(o.customer_phone || "").replace(/\D+/g, "").slice(-9);
           if (other9.length === 9 && other9.slice(0, 6) === prefix6) {
             const otherLast3 = parseInt(other9.slice(-3), 10);
@@ -536,13 +566,10 @@ serve(async (req: Request) => {
         });
 
         if (isSequentialMatch) {
-          console.warn(`[ANTI_FRAUD] Sequential number bot sweep detected on prefix ${prefix6} from IP ${clientIp}`);
-          await supabaseAdmin.from("security_blacklist").insert({
-            ip_address: clientIp,
-            reason: `Auto-blacklisted: Sequential number bot sweep on ${prefix6}xxx`,
-            threat_level: "CRITICAL"
-          }).catch(() => {});
-
+          console.warn(`[ANTI_FRAUD] Sequential number bot swarm detected on prefix ${prefix6} from IP ${clientIp}`);
+          if (clientIp) {
+            await blacklistEntity("ip", clientIp, `Auto-blacklisted: Sequential number bot sweep on ${prefix6}xxx`);
+          }
           return await executeTarpitSinkhole("Sequential Number Bot Sweep Intercepted", { clientIp, phone: rawTargetPhone, prefix: prefix6 });
         }
       }
@@ -594,15 +621,11 @@ serve(async (req: Request) => {
         const airtimeFailures = recentFailures.filter((o: any) => o.order_type === "airtime").length;
         const totalFailures = recentFailures.length;
 
-        if ((orderType === "airtime" && airtimeFailures >= 3) || totalFailures >= 5) {
+        if ((orderType === "airtime" && airtimeFailures >= 2) || totalFailures >= 4) {
           console.warn(`[ANTI_FRAUD] Rate limit triggered for ${rawTargetPhone} (${totalFailures} failures).`);
-          if (clientIp && totalFailures >= 6) {
+          if (clientIp && totalFailures >= 4) {
             // Auto-blacklist malicious spammer IP
-            await supabaseAdmin.from("security_blacklist").insert({
-              ip_address: clientIp,
-              reason: `Automated Checkout Spam Bot (${totalFailures} rapid failed checkouts)`,
-              threat_level: "HIGH"
-            }).catch(() => {});
+            await blacklistEntity("ip", clientIp, `Automated Checkout Spam Bot (${totalFailures} rapid failed checkouts)`);
           }
 
           return new Response(JSON.stringify({
@@ -645,7 +668,12 @@ serve(async (req: Request) => {
     let resolvedPaystackFee = 0;
     let resolvedCostPrice = 0;
     let resolvedWalletCredit: number | null = null;
-    let enrichedMetadata: Record<string, unknown> = { ...metadata };
+    // Always persist client IP and device fingerprint in metadata for security auditing & fraud defense
+    let enrichedMetadata: Record<string, unknown> = {
+      ...metadata,
+      client_ip: clientIp || metadata?.client_ip || "",
+      device_fingerprint: deviceFp || metadata?.device_fingerprint || "",
+    };
 
     if (orderType === "data") {
       const network = typeof metadata.network === "string" ? metadata.network : "";
@@ -1117,6 +1145,17 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      // Security: Unauthenticated guest airtime single purchase cap
+      if (!isAgentLinkedOrder && amount > 100) {
+        return new Response(JSON.stringify({
+          error: "Guest airtime purchases are capped at GH₵100.00 per transaction for security. Please sign in or create an account for larger amounts."
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       if (amount > 200) {
         return new Response(JSON.stringify({ error: "Maximum single airtime purchase is GHS 200.00." }), {
           status: 400,
@@ -1135,7 +1174,11 @@ serve(async (req: Request) => {
       }
       resolvedPaystackFee = 0;
       resolvedAmount = airtimeBase;
-      enrichedMetadata = { ...metadata, base_price: airtimeBase, profit: 0 };
+      enrichedMetadata = {
+        ...enrichedMetadata,
+        base_price: airtimeBase,
+        profit: 0,
+      };
     }
 
     if (orderType === "utility") {
@@ -1157,12 +1200,15 @@ serve(async (req: Request) => {
       const utilityBase = basePriceVal ? Number(basePriceVal) : Number(amount.toFixed(2));
       resolvedPaystackFee = 0;
       resolvedAmount = utilityBase;
-      enrichedMetadata = { ...metadata, base_price: utilityBase, profit: 0 };
+      enrichedMetadata = {
+        ...enrichedMetadata,
+        base_price: utilityBase,
+        profit: 0,
+      };
     }
 
-    // ── Phone rate limiting for direct anonymous purchases ───────────────────
-    // Block the same phone from spamming orders (max 2 pending within 2 min).
-    if (orderType === "data" && !isAgentLinkedOrder) {
+    // ── Phone rate limiting for direct anonymous purchases (Applies to all order types) ─────────
+    if (!isAgentLinkedOrder) {
       const customerPhone = (metadata.customer_phone || "").trim();
       if (customerPhone) {
         const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
@@ -1170,8 +1216,7 @@ serve(async (req: Request) => {
           .from("orders")
           .select("id", { count: "exact", head: true })
           .eq("customer_phone", customerPhone)
-          .eq("order_type", "data")
-          .eq("status", "pending")
+          .in("status", ["pending", "awaiting_payment"])
           .gte("created_at", twoMinutesAgo);
         if ((recentPending ?? 0) >= 2) {
           return new Response(JSON.stringify({
@@ -1183,26 +1228,31 @@ serve(async (req: Request) => {
 
     // ── Anti-Duplicate Protection (60 Minutes to prevent double checkouts for identical details) ──
     const allowDuplicateSetting = settings?.allow_duplicate_purchases === true;
-    if (!allowDuplicateSetting && orderType === "data") {
+    if (!allowDuplicateSetting) {
       const customerPhone = (metadata.customer_phone || "").trim();
       const network = (metadata.network || "").trim();
       const packageSize = (metadata.package_size || "").trim();
-      if (customerPhone && network && packageSize) {
+      if (customerPhone && network) {
         const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const { data: existingDuplicate } = await supabaseAdmin
+        let dupQuery = supabaseAdmin
           .from("orders")
           .select("id, status")
           .eq("customer_phone", customerPhone)
           .eq("network", network)
-          .eq("package_size", packageSize)
           .eq("amount", resolvedAmount)
-          .in("status", ["paid", "processing", "fulfilled", "completed"])
-          .gte("created_at", sixtyMinutesAgo)
-          .limit(1)
-          .maybeSingle();
+          .in("status", ["paid", "processing", "fulfilled", "completed", "pending", "awaiting_payment"])
+          .gte("created_at", sixtyMinutesAgo);
+
+        if (orderType === "data" && packageSize) {
+          dupQuery = dupQuery.eq("package_size", packageSize);
+        } else if (orderType === "airtime") {
+          dupQuery = dupQuery.eq("order_type", "airtime");
+        }
+
+        const { data: existingDuplicate } = await dupQuery.limit(1).maybeSingle();
 
         if (existingDuplicate) {
-          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone}`);
+          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone} (${orderType})`);
           return new Response(JSON.stringify({ 
             error: "An order with identical details was recently placed. Please wait 60 minutes before trying again." 
           }), {

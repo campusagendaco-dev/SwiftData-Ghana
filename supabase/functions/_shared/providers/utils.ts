@@ -106,6 +106,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
                technicalStatus === "1" || 
                technicalStatus === "200" || 
                technicalStatus === "completed" || 
+               technicalStatus === "delivered" || 
                technicalStatus === "processing" || 
                technicalStatus === "pending" || 
                parsed?.success === true || 

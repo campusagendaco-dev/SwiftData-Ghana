@@ -18,7 +18,14 @@ function buildStatusUrl(baseUrl: string, handlerType: string): string {
   if (handlerType === "datahub") return `${clean}/order-status`;
   if (handlerType === "datamart") return `${clean}/api/order-status`;
   if (handlerType === "qhowmenzconsult") return `${clean}/orders`;
-  if (handlerType === "skdataplug") return `${clean}/status`;
+  if (handlerType === "skdataplug") {
+    let cleanBase = clean.replace(/\/order\/?$/, "").replace(/\/status\/?$/, "").replace(/\/balance\/?$/, "").replace(/\/bundles\/?$/, "");
+    if (!cleanBase.endsWith("/api/v1")) {
+      if (cleanBase.endsWith("/api")) cleanBase += "/v1";
+      else cleanBase += "/api/v1";
+    }
+    return `${cleanBase}/status`;
+  }
   return `${clean}/api/status`;
 }
 
@@ -38,13 +45,15 @@ async function pollProviderStatus(provider: any, orderId: string, providerOrderI
   });
 
   try {
+    const apiKey = (handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) : provider.api_key) || "";
+
     const res = await fetch(finalUrl, {
       method: isGet ? "GET" : "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        ...(handlerType === "qhowmenzconsult" ? {} : { "Authorization": `Bearer ${provider.api_key}` }),
-        "X-API-Key": provider.api_key,
+        ...(handlerType === "qhowmenzconsult" ? {} : { "Authorization": `Bearer ${apiKey}` }),
+        "X-API-Key": apiKey,
       },
       body: isGet ? undefined : body,
       signal: AbortSignal.timeout(10000),
@@ -58,7 +67,7 @@ async function pollProviderStatus(provider: any, orderId: string, providerOrderI
     const dataStatus = String(json?.data?.status ?? json?.data?.orderStatus ?? "").toLowerCase();
     const effective = dataStatus || techStatus;
 
-    const isSuccess = techStatus === "success" || techStatus === "true" || json?.success === true || json?.ok === true;
+    const isSuccess = techStatus === "success" || techStatus === "true" || techStatus === "delivered" || techStatus === "processing" || techStatus === "pending" || techStatus === "failed" || json?.success === true || json?.ok === true || Boolean(json?.order_id);
     if (!isSuccess) return { ok: false };
 
     return { ok: true, status: effective || techStatus };

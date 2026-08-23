@@ -1727,6 +1727,16 @@ serve(async (req) => {
         if (pkgMapping?.raw_data) {
           skPlugNetwork = pkgMapping.raw_data.network || skPlugNetwork;
           skPlugGbSize = String(pkgMapping.raw_data.gb_size || skPlugGbSize);
+        } else {
+          const upperNet = (network || "").toUpperCase();
+          if (upperNet.includes("VOD") || upperNet.includes("TELECEL")) {
+            skPlugNetwork = "TELECEL";
+          } else if (upperNet.includes("AT") || upperNet.includes("AIRTEL")) {
+            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(packageSize || "");
+            skPlugNetwork = isNoExpiry ? "AT_NOEXPIRY" : "AT_EXPIRY";
+          } else {
+            skPlugNetwork = "MTN";
+          }
         }
       } catch (e) {
         console.error("[skdataplug-webhook-resolve] Error:", e);

@@ -51,7 +51,7 @@ serve(async (req: Request) => {
     if (providerError || !provider) throw new Error("Provider not found");
 
     const handlerType = provider.handler_type || "standard";
-    const apiKey = (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) || provider.api_key;
+    const apiKey = (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : (handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") : null)) || provider.api_key;
     const baseUrl = (provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
 
     if (!apiKey) throw new Error("Provider API key missing");
@@ -582,17 +582,37 @@ serve(async (req: Request) => {
       }
     } else if (handlerType === "skdataplug") {
       console.log(`Syncing SKPlug provider: ${provider.name}`);
+      let cleanBase = baseUrl.trim().replace(/\/+$/, "");
+      cleanBase = cleanBase.replace(/\/order\/?$/, "").replace(/\/status\/?$/, "").replace(/\/balance\/?$/, "").replace(/\/bundles\/?$/, "");
+      if (!cleanBase.endsWith("/api/v1")) {
+        if (cleanBase.endsWith("/api")) cleanBase += "/v1";
+        else cleanBase += "/api/v1";
+      }
 
-      const bundlesUrl = `${baseUrl}/bundles/`;
-      console.log(`[sync:skdataplug] Fetching bundles from: ${bundlesUrl}`);
-      const bundlesRes = await fetch(bundlesUrl, {
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Accept": "application/json"
+      const bundleCandidates = [
+        `${cleanBase}/bundles/`,
+        `${cleanBase}/bundles`
+      ];
+
+      let bundlesRes;
+      for (const url of bundleCandidates) {
+        console.log(`[sync:skdataplug] Fetching bundles from: ${url}`);
+        const res = await fetch(url, {
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Accept": "application/json"
+          }
+        });
+        if (res.ok) {
+          bundlesRes = res;
+          break;
+        } else if (res.status === 401 || res.status === 403) {
+          bundlesRes = res;
+          break;
         }
-      });
+      }
 
-      if (bundlesRes.ok) {
+      if (bundlesRes && bundlesRes.ok) {
         const bundles = await bundlesRes.json();
         const allPackages = [];
 
@@ -612,6 +632,8 @@ serve(async (req: Request) => {
           let pkgName = `${bundle.gb_size}GB`;
           if (rawNet === "AT_EXPIRY") {
             pkgName = `${bundle.gb_size}GB Expiry`;
+          } else if (rawNet === "AT_NOEXPIRY") {
+            pkgName = `${bundle.gb_size}GB Non-Expiry`;
           }
 
           allPackages.push({
@@ -619,8 +641,8 @@ serve(async (req: Request) => {
             network: dbNetwork,
             package_name: pkgName,
             capacity_gb: Number(bundle.gb_size),
-            cost_price: 0,
-            external_id: String(bundle.id),
+            cost_price: Number(bundle.price || bundle.cost || 0),
+            external_id: String(bundle.id || bundle.gb_size),
             raw_data: bundle,
             is_active: true
           });
@@ -635,12 +657,37 @@ serve(async (req: Request) => {
           console.log(`[sync:skdataplug] Synced ${packagesSynced} packages`);
         }
       } else {
-        const errText = await bundlesRes.text().catch(() => "");
-        console.error(`[sync:skdataplug] Bundles fetch failed (HTTP ${bundlesRes.status}):`, errText);
-        throw new Error(`SKPlug bundles fetch failed: HTTP ${bundlesRes.status}`);
+        const status = bundlesRes ? bundlesRes.status : 404;
+        const errText = bundlesRes ? await bundlesRes.text().catch(() => "") : "No response";
+        console.error(`[sync:skdataplug] Bundles fetch failed (HTTP ${status}):`, errText);
+        throw new Error(`SKPlug bundles fetch failed: HTTP ${status}`);
       }
 
-      balance = provider.balance || 0;
+      // Fetch wallet balance from GET /api/v1/balance/
+      const balanceCandidates = [
+        `${cleanBase}/balance/`,
+        `${cleanBase}/balance`
+      ];
+
+      for (const bUrl of balanceCandidates) {
+        console.log(`[sync:skdataplug] Fetching balance from: ${bUrl}`);
+        const balanceRes = await fetch(bUrl, {
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Accept": "application/json"
+          }
+        });
+
+        if (balanceRes.ok) {
+          const balData = await balanceRes.json();
+          const rawBal = balData?.wallet_balance ?? balData?.balance;
+          if (rawBal !== undefined) {
+            balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
+            console.log(`[sync:skdataplug] Fetched balance: GHS ${balance}`);
+            break;
+          }
+        }
+      }
     } else if (handlerType === "korba") {
       console.log(`Syncing Korba provider: ${provider.name}`);
 

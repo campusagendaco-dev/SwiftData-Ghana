@@ -26,14 +26,18 @@ export class StandardAdapter implements ProviderAdapter {
       return [`${clean}/purchase`, `${clean}/order`, clean];
     }
     if (handlerType === "skdataplug") {
+      let cleanBase = clean.replace(/\/order\/?$/, "").replace(/\/status\/?$/, "").replace(/\/balance\/?$/, "").replace(/\/bundles\/?$/, "");
+      if (!cleanBase.endsWith("/api/v1")) {
+        if (cleanBase.endsWith("/api")) cleanBase += "/v1";
+        else cleanBase += "/api/v1";
+      }
+
       if (endpoint === "status") {
         const ref = String(data.transaction_id || data.reference || data.order_id || "");
-        return [`${clean}/status/${ref}/`];
+        return [`${cleanBase}/status/${ref}/`, `${cleanBase}/status/${ref}`];
       }
       if (endpoint === "purchase") {
-        return clean.endsWith("/order/") || clean.endsWith("/order")
-          ? [clean.endsWith("/") ? clean : clean + "/"]
-          : [`${clean}/order/`];
+        return [`${cleanBase}/order/`, `${cleanBase}/order`];
       }
     }
     if (handlerType === "superbdatafy" && endpoint === "status") {
@@ -211,7 +215,8 @@ export class StandardAdapter implements ProviderAdapter {
           if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
             providerNetwork = "TELECEL";
           } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL")) {
-            providerNetwork = "AT_EXPIRY";
+            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(String(data.package_size || data.plan || ""));
+            providerNetwork = isNoExpiry ? "AT_NOEXPIRY" : "AT_EXPIRY";
           } else {
             providerNetwork = "MTN";
           }
@@ -493,7 +498,7 @@ export class StandardAdapter implements ProviderAdapter {
     data: any
   ): Promise<ProviderResponse> {
     const handlerType = String(provider.handler_type || "standard").toLowerCase();
-    const apiKey = provider.api_key || "";
+    const apiKey = (handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) : provider.api_key) || "";
     const baseUrl = provider.base_url || "";
 
     const urls = this.buildProviderUrls(baseUrl, endpoint, handlerType, data);
