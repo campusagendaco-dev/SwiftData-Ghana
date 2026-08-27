@@ -476,14 +476,13 @@ serve(async (req: any) => {
 
     const isServiceRole = authHeader.includes(SUPABASE_SERVICE_ROLE_KEY || "nevermatch_placeholder");
 
-    // Client restriction: Leave the payment verification/fulfillment trigger to the webhook confirmation,
-    // but if the order is older than 8 seconds, allow client-side verification as a fallback in case webhooks are slow/delayed.
+    // Client restriction: Allow client-side verification fallback or instant verification when force is requested
     const orderAgeMs = Date.now() - new Date(existingOrder?.created_at || Date.now()).getTime();
-    if (!isServiceRole && !force && orderAgeMs < 8000 && (existingOrder?.status === "pending" || existingOrder?.status === "awaiting_payment")) {
-      console.log(`[verify-payment] Client request for pending order ${targetReference} under 8s age. Awaiting webhook confirmation.`);
+    if (!isServiceRole && !force && orderAgeMs < 2000 && (existingOrder?.status === "pending" || existingOrder?.status === "awaiting_payment")) {
+      console.log(`[verify-payment] Client request for pending order ${targetReference} under 2s age. Awaiting initial charge broadcast.`);
       return new Response(JSON.stringify({ 
         status: "pending", 
-        message: "Awaiting payment confirmation webhook."
+        message: "Awaiting payment confirmation."
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

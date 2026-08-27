@@ -51,7 +51,7 @@ const StoreDepositFlow = ({
     }
   }, [isOpen, initialPhone]);
 
-  // Polling logic
+  // Fast polling logic (1.5s interval)
   useEffect(() => {
     if (!pollingId || step !== "processing") return;
     
@@ -76,7 +76,7 @@ const StoreDepositFlow = ({
       } catch (err) {
         // Silently continue polling on network errors
       }
-    }, 5000);
+    }, 1500);
     
     return () => clearInterval(pollInterval);
   }, [pollingId, step, onSuccess, toast]);

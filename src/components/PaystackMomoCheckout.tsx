@@ -213,16 +213,36 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     };
   }, [step, countdown]);
 
-  // Polling for success verification
+  // Real-time listener & fast polling for instant success verification
   useEffect(() => {
     let isPolling = true;
     let pollTimer: NodeJS.Timeout | null = null;
+    let channel: any = null;
     
     if (step === 'success' && reference) {
+      // 1. Supabase Realtime DB listener for instant webhook response
+      const channelId = `momo_verify_${reference}_${Math.random().toString(36).substring(7)}`;
+      channel = supabase.channel(channelId)
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${reference}` }, (payload) => {
+          if (!isPolling) return;
+          const status = payload.new?.status;
+          if (status === "fulfilled" || status === "paid" || status === "processing") {
+            toast({ title: "Payment Verified", description: "Your transaction was successful!" });
+            onSuccess(reference);
+          } else if (status === "failed" || status === "error" || status === "fulfillment_failed") {
+            const failMsg = payload.new?.failure_reason || "The transaction was unsuccessful.";
+            toast({ title: "Payment Failed", description: failMsg, variant: "destructive" });
+            setErrorMessage(failMsg);
+            setStep('payment_number');
+          }
+        })
+        .subscribe();
+
+      // 2. Active Fast-Polling (1.5s interval) with force: true to check Paystack directly
       const pollVerification = async () => {
         try {
           const { data, error } = await supabase.functions.invoke("verify-payment", {
-            body: { reference }
+            body: { reference, force: true }
           });
           
           if (!isPolling) return;
@@ -230,8 +250,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           if (error) {
             const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
             if (isRateLimit) {
-              console.warn("[PaystackMomoCheckout] 429 rate limited, backing off polling for 12 seconds.");
-              pollTimer = setTimeout(pollVerification, 12000);
+              console.warn("[PaystackMomoCheckout] 429 rate limited, backing off polling for 8 seconds.");
+              pollTimer = setTimeout(pollVerification, 8000);
               return;
             }
           }
@@ -245,13 +265,12 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             setErrorMessage(failMsg);
             setStep('payment_number');
           } else {
-            // Still pending, poll again after 5 seconds
-            pollTimer = setTimeout(pollVerification, 5000);
+            // Fast poll every 1.5s while waiting for approval
+            pollTimer = setTimeout(pollVerification, 1500);
           }
         } catch (err) {
           if (!isPolling) return;
-          // on error, wait and try again
-          pollTimer = setTimeout(pollVerification, 8000);
+          pollTimer = setTimeout(pollVerification, 3000);
         }
       };
       
@@ -261,6 +280,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     return () => {
       isPolling = false;
       if (pollTimer) clearTimeout(pollTimer);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [step, reference, onSuccess, toast]);
 
