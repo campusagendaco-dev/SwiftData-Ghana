@@ -97,6 +97,7 @@ const OrderStatus = () => {
   const [orderPackageSize, setOrderPackageSize] = useState<string>("");
   const [orderPhone, setOrderPhone] = useState<string>("");
   const [orderType, setOrderType] = useState<string>("");
+  const [orderData, setOrderData] = useState<any>(null);
 
   const network = searchParams.get("network") || orderNetwork || "";
   const packageSize = searchParams.get("package") || orderPackageSize || "";
@@ -229,6 +230,7 @@ const OrderStatus = () => {
         const rpcList = rpcData as any[];
         if (rpcList && rpcList.length > 0) {
           const data = rpcList[0];
+          setOrderData(data);
           handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
           if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
             redirectedRef.current = true;
@@ -255,6 +257,7 @@ const OrderStatus = () => {
         throw error;
       }
       if (!data) throw new Error("Failed to fetch status");
+      if (data.order) setOrderData(data.order);
       handleStatusUpdate(data.status, data.message || data.error);
       
       // Stop polling if we reached a terminal state
@@ -408,8 +411,9 @@ const OrderStatus = () => {
             }
             window.location.reload();
           }
-        } else if (rpcData && (rpcData as any[]).length > 0) {
+        } else if (rpcData && (rpcData as any[])[0]) {
           const data = (rpcData as any[])[0];
+          setOrderData(data);
           setResolvedOrderId(data.id);
           setCreatedAt(data.created_at);
           if (data.network) setOrderNetwork(data.network);
