@@ -906,7 +906,8 @@ serve(async (req: Request) => {
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
       requestPayload = payload;
 
-      let { phone, amount, package_id, request_id } = payload;
+      const { phone, amount, package_id } = payload;
+      let { request_id } = payload;
       let { network, package_size } = payload;
 
       // Map parameters from Agent API docs compatibility
