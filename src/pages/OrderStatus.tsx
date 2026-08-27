@@ -68,13 +68,13 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
     return { color: "#EF4444", glow: "rgba(239,68,68,0.15)", label: "Delivery Failed", sub: translateFailureReason(message) || "Something went wrong with your order", badge: "Failed" };
   }
   if (status === "fulfilled") {
-    return { color: "#10B981", glow: "rgba(16,185,129,0.12)", label: "Purchase Successful", sub: "Order proceed. Will be delivered between 10min to 60min.", badge: "Success" };
+    return { color: "#10B981", glow: "rgba(16,185,129,0.12)", label: "Purchase Successful", sub: "Data bundle delivered successfully to your line!", badge: "Delivered" };
   }
   if (status === "processing") {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Tracking Order", sub: translateFailureReason(message) || "Order is being transmitted to network", badge: "Live" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.12)", label: "Delivering Data Bundle", sub: translateFailureReason(message) || "Payment confirmed. Transmitting data bundle to carrier network (10 - 60 mins).", badge: "Processing" };
   }
   if (status === "paid") {
-    return { color: "#F59E0B", glow: "rgba(245,158,11,0.12)", label: "Tracking Order", sub: "Preparing your order for fulfillment", badge: "Queued" };
+    return { color: "#F59E0B", glow: "rgba(245,158,11,0.12)", label: "Payment Confirmed", sub: "Payment received. Queuing order for carrier fulfillment.", badge: "Queued" };
   }
   if (status === "not_paid") {
     return { color: "#FBBF24", glow: "rgba(251,191,36,0.10)", label: "Payment Not Found", sub: translateFailureReason(message) || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
@@ -620,7 +620,8 @@ const OrderStatus = () => {
               </div>
               <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pt-1">
                 {STEPS.map((s, i) => {
-                  const isActive = step >= i + 1;
+                  const activeStep = orderStatus === "fulfilled" ? 3 : (orderStatus === "processing" ? 2 : (["paid", "pending"].includes(orderStatus) ? 1 : 0));
+                  const isActive = activeStep >= i + 1;
                   return (
                     <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? "text-emerald-400 font-extrabold" : "text-slate-600")}>
                       <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-700")} />
