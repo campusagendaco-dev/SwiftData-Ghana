@@ -176,7 +176,7 @@ async function callProviderApi(
           providerNetwork = pkgMapping.raw_data.network || providerNetwork;
           gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
         } else {
-          const rawNet = (data.networkRaw || data.network || "").toUpperCase();
+          const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
           if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
             providerNetwork = "TELECEL";
           } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL")) {
@@ -725,7 +725,7 @@ serve(async (req: Request) => {
 
         const resText = await dhRes.text();
         let parsed: any = null;
-        try { parsed = JSON.parse(resText); } catch {}
+        try { parsed = JSON.parse(resText); } catch (e) { /* ignore parse error */ }
 
         if (dhRes.ok) {
           const resData = parsed?.data || {
@@ -827,7 +827,7 @@ serve(async (req: Request) => {
 
       // Trigger webhook if API wallet was funded
       if (to === "api") {
-        await notifyWalletCredit(supabase, currentUserId, Number(amount), "api");
+        await notifyWalletCredit(supabase, currentUserId || "", Number(amount), "api");
       }
 
       return json(result);
@@ -857,16 +857,16 @@ serve(async (req: Request) => {
       if (mappingsErr) console.error("Error fetching Korba package mappings:", mappingsErr);
 
       const korbaSet = new Set(
-        (korbaMappings ?? []).map(m => `${m.network.toLowerCase()}-${String(m.package_name).replace(/\s+/g, "").toLowerCase()}`)
+        (korbaMappings ?? []).map((m: any) => `${m.network.toLowerCase()}-${String(m.package_name).replace(/\s+/g, "").toLowerCase()}`)
       );
 
-      const filteredPlans = (plans ?? []).filter(p => {
+      const filteredPlans = (plans ?? []).filter((p: any) => {
         const net = p.network.toLowerCase();
         const sizeKey = `${net}-${String(p.package_size).replace(/\s+/g, "").toLowerCase()}`;
         return !korbaSet.has(sizeKey);
       });
 
-      const plansWithId = filteredPlans.map(p => {
+      const plansWithId = filteredPlans.map((p: any) => {
         let prefix = "pkg_";
         let displayNet = p.network;
         const net = String(p.network).toLowerCase();
@@ -887,7 +887,7 @@ serve(async (req: Request) => {
 
       // Group into categories
       const categories: Record<string, any[]> = {};
-      plansWithId.forEach(p => {
+      plansWithId.forEach((p: any) => {
         const cat = p.network;
         if (!categories[cat]) categories[cat] = [];
         categories[cat].push({
@@ -906,7 +906,7 @@ serve(async (req: Request) => {
       if (!payload) return json({ success: false, error: "Invalid JSON body" }, 400);
       requestPayload = payload;
 
-      let { phone, amount, package_id, request_id } = payload;
+      const { phone, amount, package_id, request_id } = payload;
       let { network, package_size } = payload;
 
       // Map parameters from Agent API docs compatibility
@@ -934,7 +934,7 @@ serve(async (req: Request) => {
       if (package_id) {
         const { data: plans, error: pErr } = await supabase.from("global_package_settings").select("*").eq("is_unavailable", false);
         if (pErr) console.error("Error fetching packages:", pErr);
-        const match = (plans ?? []).find(p => {
+        const match = (plans ?? []).find((p: any) => {
           let prefix = "pkg_";
           const net = String(p.network).toLowerCase();
           if (net === "mtn") prefix = "yellow_";
@@ -999,17 +999,15 @@ serve(async (req: Request) => {
 
         // 1. Strict Idempotency Check (if client provided a reference)
         if (clientRef) {
-           // We use textSearch or raw eq if we can't do json path easily, but PostgREST supports metadata->>client_reference 
-           // However, let's just check the last 1 hour of orders for this agent to be safe and fast
            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
            const { data } = await supabase
              .from("orders")
              .select("id, status, metadata")
-             .eq("agent_id", currentUserId)
+             .eq("agent_id", currentUserId ?? "")
              .gte("created_at", oneHourAgo)
              .limit(100);
              
-           duplicateOrder = data?.find(o => o.metadata?.client_reference === clientRef);
+           duplicateOrder = data?.find((o: any) => o.metadata?.client_reference === clientRef);
         }
 
         // 2. Fallback Time-Window Check (60 Minutes for exact same parameters)
@@ -1018,13 +1016,13 @@ serve(async (req: Request) => {
           const { data: recentOrders } = await supabase
             .from("orders")
             .select("id, status, network, package_size, amount, created_at")
-            .eq("agent_id", currentUserId)
+            .eq("agent_id", currentUserId ?? "")
             .eq("customer_phone", normalizedPhone)
             .gte("created_at", oneHourAgo);
 
           if (recentOrders && recentOrders.length > 0) {
             const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
-            const match = recentOrders.find(o => {
+            const match = recentOrders.find((o: any) => {
               if (!statusesToCheck.includes(o.status)) return false;
 
               // Compare network case-insensitively with alias support

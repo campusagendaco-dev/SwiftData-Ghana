@@ -116,7 +116,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
                parsed?.ok === true;
 
     if (ok) {
-      return { ok: true, id: orderId || reference, status: effectiveStatus || "processing" };
+      return { ok: true, id: orderId || undefined, status: effectiveStatus || "processing" };
     }
     
     const isFailed = technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";

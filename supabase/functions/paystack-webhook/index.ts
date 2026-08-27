@@ -345,6 +345,7 @@ type ProviderResult = {
   reason: string;
   url: string | null;
   id?: string;
+  deliveryStatus?: string;
 };
 
 async function callProviderApi(
@@ -475,7 +476,7 @@ async function notifyFailureAndRefund(
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { 
       headers: corsHeaders,
@@ -1610,8 +1611,8 @@ serve(async (req) => {
 
       // Use Airtime-specific credentials and format
       const { apiKey: fallbackKey, baseUrl: fallbackBase } = await getAirtimeCredentials(supabaseAdmin);
-      const AIRTIME_KEY = activeProviders[0]?.api_key || fallbackKey;
-      const AIRTIME_BASE = (activeProviders[0]?.base_url || fallbackBase || "").replace(/\/+$/, "");
+      const AIRTIME_KEY = fallbackKey;
+      const AIRTIME_BASE = (fallbackBase || "").replace(/\/+$/, "");
       
       const airtimeNetworkKey = mapAirtimeNetworkKey(network);
       const airtimeRecipient = normalizeRecipient(customerPhone);
@@ -1700,7 +1701,6 @@ serve(async (req) => {
         const { data: pkgMapping } = await supabaseAdmin
           .from("provider_packages")
           .select("external_id")
-          .eq("provider_id", primaryProvider.id)
           .eq("network", network)
           .eq("package_name", packageSize)
           .maybeSingle();
@@ -1720,7 +1720,6 @@ serve(async (req) => {
         const { data: pkgMapping } = await supabaseAdmin
           .from("provider_packages")
           .select("raw_data")
-          .eq("provider_id", primaryProvider.id)
           .eq("network", network)
           .eq("package_name", packageSize)
           .maybeSingle();
@@ -1836,11 +1835,17 @@ serve(async (req) => {
 
     let lastResult: any = null;
     let chosenProvider: any = null;
+    let lastProviderId: string | null = null;
+    let lastProviderName = "Provider";
+    let lastProviderDuration = 0;
+    let isTimeoutOrNetworkError = false;
 
     for (const provider of candidateProviders) {
       chosenProvider = provider;
       const providerId = chosenProvider?.id || null;
       const providerName = chosenProvider?.name || "Provider";
+      lastProviderId = providerId;
+      lastProviderName = providerName;
 
       const providerCallStart = Date.now();
       const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
@@ -1891,14 +1896,21 @@ serve(async (req) => {
         };
       }
 
-      const result = await callProviderApi(
-        targetBaseUrl,
-        targetApiKey,
-        "purchase",
-        currentPayload,
-        DATA_PROVIDER_WEBHOOK_URL,
-      );
+      let result: any;
+      try {
+        result = await callProviderApi(
+          targetBaseUrl,
+          targetApiKey,
+          "purchase",
+          currentPayload,
+          DATA_PROVIDER_WEBHOOK_URL,
+        );
+      } catch (callErr: any) {
+        isTimeoutOrNetworkError = true;
+        result = { ok: false, reason: callErr?.message || "Network timeout connecting to provider" };
+      }
       const providerDuration = Date.now() - providerCallStart;
+      lastProviderDuration = providerDuration;
 
       console.log("Webhook fulfillment response:", {
         orderId,
@@ -2005,11 +2017,11 @@ serve(async (req) => {
       level: "error", 
       source: "paystack-webhook", 
       event: "provider.rejected", 
-      message: `${providerName} rejected: ${result.reason}`, 
+      message: `${lastProviderName} rejected: ${result.reason}`, 
       order_id: orderId, 
-      provider_id: providerId, 
-      duration_ms: providerDuration, 
-      data: { provider: providerName, reason: result.reason } 
+      provider_id: lastProviderId, 
+      duration_ms: lastProviderDuration, 
+      data: { provider: lastProviderName, reason: result.reason } 
     });
 
     log(supabaseAdmin, { 
