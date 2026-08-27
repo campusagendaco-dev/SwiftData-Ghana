@@ -286,7 +286,7 @@ export default function AdminOrders() {
       .map((o: any) => o.agent_id)
       .filter((id: string) => id && id !== "00000000-0000-0000-0000-000000000000" && id.length > 10))];
     
-    let currentProfiles: Record<string, AgentProfile> = {};
+    const currentProfiles: Record<string, AgentProfile> = {};
 
     if (validAgentIds.length > 0) {
       const [profRes, walletRes] = await Promise.all([
@@ -328,7 +328,7 @@ export default function AdminOrders() {
 
     setAllOrders(enriched);
     setLoading(false);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, toast]);
+  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, profiles, toast]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchOrders(), 200);

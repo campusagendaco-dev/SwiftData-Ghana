@@ -1,3 +1,5 @@
+declare const Deno: any;
+
 export function getFirstEnv(...keys: string[]): string {
   for (const key of keys) {
     const v = Deno.env.get(key)?.trim();
