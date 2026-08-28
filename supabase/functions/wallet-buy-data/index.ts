@@ -77,7 +77,7 @@ serve(async (req: Request) => {
 
     // Maintenance mode check and active payment gateway fetch
     const { data: sysSettings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("maintenance_mode, maintenance_message, active_payment_gateway").eq("id", 1).maybeSingle();
+      .from("v_system_settings_with_secrets").select("maintenance_mode, maintenance_message, active_payment_gateway, allow_duplicate_purchases").eq("id", 1).maybeSingle();
     if (sysSettings?.maintenance_mode) {
       return new Response(JSON.stringify({
         error: sysSettings.maintenance_message || "System is under maintenance. Please try again shortly."
@@ -351,52 +351,58 @@ serve(async (req: Request) => {
 
     const amountNum = resolvedChargeAmount;
 
-    // Anti-Duplicate Protection (60 Minutes to prevent double purchases, strictly scoped to this agent)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    let duplicateOrder = null;
+    // Anti-Duplicate Protection (60 Minutes to prevent double purchases, unless allowed by system settings or payload flag)
+    const allowDuplicateSetting = sysSettings?.allow_duplicate_purchases === true;
+    const clientAllowDuplicate = payload?.allow_duplicate === true || payload?.allow_duplicate === "true";
+    const skipDuplicateCheck = allowDuplicateSetting || clientAllowDuplicate;
 
-    const { data: recentOrders } = await supabaseAdmin
-      .from("orders")
-      .select("id, status, network, package_size, amount, created_at")
-      .eq("agent_id", user.id)
-      .eq("customer_phone", normalizedPhone)
-      .gte("created_at", oneHourAgo);
+    if (!skipDuplicateCheck) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      let duplicateOrder = null;
 
-    if (recentOrders && recentOrders.length > 0) {
-      const statusesToCheck = ["paid", "processing", "fulfilled", "completed"];
-      const match = recentOrders.find(o => {
-        if (!statusesToCheck.includes(o.status)) return false;
+      const { data: recentOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id, status, network, package_size, amount, created_at")
+        .eq("agent_id", user.id)
+        .eq("customer_phone", normalizedPhone)
+        .gte("created_at", oneHourAgo);
 
-        // Compare network case-insensitively with alias support
-        const n1 = String(o.network || "").trim().toUpperCase();
-        const n2 = String(normalizedNet || "").trim().toUpperCase();
-        const networksMatch = n1 === n2 ||
-          ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
-          ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
-          ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
-        if (!networksMatch) return false;
+      if (recentOrders && recentOrders.length > 0) {
+        const statusesToCheck = ["paid", "processing", "fulfilled", "completed"];
+        const match = recentOrders.find(o => {
+          if (!statusesToCheck.includes(o.status)) return false;
 
-        // Compare package size (whitespace & case insensitive)
-        const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
-        const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
-        if (p1 !== p2) return false;
+          // Compare network case-insensitively with alias support
+          const n1 = String(o.network || "").trim().toUpperCase();
+          const n2 = String(normalizedNet || "").trim().toUpperCase();
+          const networksMatch = n1 === n2 ||
+            ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
+            ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
+            ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
+          if (!networksMatch) return false;
 
-        return true;
-      });
+          // Compare package size (whitespace & case insensitive)
+          const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
+          const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
+          if (p1 !== p2) return false;
 
-      if (match) {
-        duplicateOrder = match;
+          return true;
+        });
+
+        if (match) {
+          duplicateOrder = match;
+        }
       }
-    }
 
-    if (duplicateOrder) {
-      console.warn(`[DUPLICATE] Rejected duplicate order for ${normalizedPhone} within 60 minutes`);
-      return new Response(JSON.stringify({ 
-        error: "Duplicate order detected. Please wait 60 minutes before placing the same order again." 
-      }), {
-        status: 409,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (duplicateOrder) {
+        console.warn(`[DUPLICATE] Rejected duplicate order for ${normalizedPhone} within 60 minutes`);
+        return new Response(JSON.stringify({ 
+          error: "Duplicate order detected. Please wait 60 minutes before placing the same order again." 
+        }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // 1. ATOMIC DEBIT (wallet first, credit fallback)
