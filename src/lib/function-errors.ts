@@ -55,6 +55,13 @@ export const getFunctionErrorMessage = async (
     return msg;
   }
 
+  // Rate limit error (HTTP 429 Too Many Requests)
+  const is429 = (isFunctionsHttpError(error) && error.context?.status === 429) ||
+                (error instanceof Error && (error.message.includes("429") || error.message.toLowerCase().includes("too many requests")));
+  if (is429) {
+    return "Rate limit reached. Too many requests sent in a short period. Please wait 10–15 seconds before trying again.";
+  }
+
   if (isFunctionsHttpError(error) && error.context) {
     try {
       const payload = await error.context.json();

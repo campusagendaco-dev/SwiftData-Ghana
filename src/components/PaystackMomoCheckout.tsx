@@ -492,6 +492,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   };
 
   const initiatePayment = async () => {
+    if (step === 'initiating' || step === 'otp_verifying') return;
+
     if (!paymentPhone || paymentPhone.length < 9) {
       toast({ title: "Check Payment Phone", description: "Please enter a valid mobile money number", variant: "destructive" });
       return;
