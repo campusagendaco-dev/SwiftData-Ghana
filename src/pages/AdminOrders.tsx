@@ -129,6 +129,7 @@ export default function AdminOrders() {
   const [orderTypeFilter, setOrderTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [providers, setProviders] = useState<any[]>([]);
+  const [syncingBalances, setSyncingBalances] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
@@ -145,13 +146,42 @@ export default function AdminOrders() {
   const [updatingSingleStatus, setUpdatingSingleStatus] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchProviders = async () => {
-      const { data } = await supabase.from("providers").select("*");
-      setProviders(data || []);
-    };
-    fetchProviders();
+  const fetchProviders = useCallback(async () => {
+    const { data } = await supabase.from("providers").select("*").order("name", { ascending: true });
+    setProviders(data || []);
   }, []);
+
+  useEffect(() => {
+    fetchProviders();
+  }, [fetchProviders]);
+
+  const syncAllProviderBalances = async () => {
+    setSyncingBalances(true);
+    try {
+      const { data: updatedProviders } = await supabase.from("providers").select("*").order("name", { ascending: true });
+      if (updatedProviders) setProviders(updatedProviders);
+
+      const activeDataProviders = (updatedProviders || []).filter((p: any) => p.is_active && p.handler_type);
+      for (const prov of activeDataProviders) {
+        try {
+          await supabase.functions.invoke("sync-provider-data", {
+            body: { provider_id: prov.id },
+          });
+        } catch {
+          /* continue */
+        }
+      }
+
+      const { data: finalProviders } = await supabase.from("providers").select("*").order("name", { ascending: true });
+      if (finalProviders) setProviders(finalProviders);
+
+      toast({ title: "Balances Updated 🔄", description: "Provider API gateway balances have been refreshed." });
+    } catch (err: any) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncingBalances(false);
+    }
+  };
 
   const allApisOff = providers.length === 0 || providers.every(p => !p.is_active);
 
@@ -1005,49 +1035,101 @@ export default function AdminOrders() {
         </div>
       </motion.div>
 
-      {/* ── AI Provider & Carrier Routing Recommendation Banner ── */}
-      <AnimatePresence>
-      {allOrders.filter((o) => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-purple-500/15 p-4 border border-amber-500/30 backdrop-blur-xl shadow-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 shrink-0 mt-0.5">
-                <Sparkles className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    AI Smart Routing Advice
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    Provider Performance Optimization
-                  </span>
-                </div>
-                <h4 className="text-sm font-black text-foreground mt-1">
-                  Datamart API Direct Route Recommended
-                </h4>
-                <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-                  Datamart API bridge is operating with 99.8% instant fulfillment speed. Force-routing {allOrders.filter((o) => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").length} eligible pending/failed orders will deliver data immediately.
-                </p>
-              </div>
+      {/* ── Provider API Gateway Balances Display Card ── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-indigo-950/80 p-4 border border-amber-500/30 backdrop-blur-xl shadow-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 text-amber-400 shrink-0">
+              <Coins className="w-5 h-5 animate-pulse" />
             </div>
-
-            <Button
-              onClick={handleRouteAllToDatamart}
-              disabled={routingDatamart}
-              className="h-10 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md border border-amber-400/40 gap-2 shrink-0"
-            >
-              {routingDatamart ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 fill-current text-slate-950" />}
-              Apply Smart Provider Reroute
-            </Button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  DataHub & Provider Balances
+                </span>
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  Live Gateway Monitoring
+                </span>
+              </div>
+              <h4 className="text-sm font-black text-white mt-0.5">
+                Active Provider API Balances
+              </h4>
+            </div>
           </div>
-        </motion.div>
-      )}
-      </AnimatePresence>
+
+          <Button
+            onClick={syncAllProviderBalances}
+            disabled={syncingBalances}
+            variant="outline"
+            className="h-9 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs gap-2 shrink-0 transition-all shadow-sm"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", syncingBalances && "animate-spin text-amber-400")} />
+            {syncingBalances ? "Syncing API Balances..." : "Refresh Balances"}
+          </Button>
+        </div>
+
+        {/* Provider Balance Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+          {providers.length === 0 ? (
+            <div className="col-span-full py-4 text-center text-xs text-muted-foreground font-mono">
+              No API providers configured.
+            </div>
+          ) : (
+            providers.map((prov) => {
+              const balanceNum = Number(prov.balance || 0);
+              const isHealthy = prov.is_active && balanceNum > 50;
+              const isLow = prov.is_active && balanceNum <= 50 && balanceNum > 0;
+              const isDepleted = !prov.is_active || balanceNum <= 0;
+
+              return (
+                <div
+                  key={prov.id}
+                  className={cn(
+                    "flex items-center justify-between p-3 rounded-xl border backdrop-blur-md transition-all",
+                    isHealthy
+                      ? "bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50"
+                      : isLow
+                      ? "bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50"
+                      : "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
+                  )}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn(
+                        "w-2 h-2 rounded-full",
+                        isHealthy ? "bg-emerald-400 animate-pulse" : isLow ? "bg-amber-400 animate-pulse" : "bg-rose-500"
+                      )} />
+                      <span className="text-xs font-black text-white truncate max-w-[120px]">
+                        {prov.name}
+                      </span>
+                      {prov.handler_type && (
+                        <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-white/10 text-white/70">
+                          {prov.handler_type}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-mono font-bold text-white/60">
+                      {prov.is_active ? "Active" : "Inactive"}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <div className={cn(
+                      "text-sm font-black font-mono tracking-tight",
+                      isHealthy ? "text-emerald-400" : isLow ? "text-amber-400" : "text-rose-400"
+                    )}>
+                      GH₵ {balanceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <span className="text-[10px] font-mono text-muted-foreground uppercase">
+                      API Balance
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
 
       {/* ── Stats Metric Cards Grid ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
