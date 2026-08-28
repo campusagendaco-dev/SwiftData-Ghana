@@ -369,7 +369,7 @@ serve(async (req: Request) => {
 
       if (recentOrders && recentOrders.length > 0) {
         const statusesToCheck = ["paid", "processing", "fulfilled", "completed"];
-        const match = recentOrders.find(o => {
+        const match = recentOrders.find((o: any) => {
           if (!statusesToCheck.includes(o.status)) return false;
 
           // Compare network case-insensitively with alias support
@@ -445,7 +445,7 @@ serve(async (req: Request) => {
         .eq("is_active", true);
       
       const hasMapping = (mappings || []).some(
-        m => m.network === dbNet || m.network === queryNetwork
+        (m: any) => m.network === dbNet || m.network === queryNetwork
       );
       if (hasMapping) {
         finalIsKorba = true;

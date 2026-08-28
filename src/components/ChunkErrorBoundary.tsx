@@ -79,7 +79,7 @@ export class ChunkErrorBoundary extends Component<Props, State> {
       return (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-6 bg-[#030407]/95 backdrop-blur-md overflow-y-auto">
           <div className="text-left space-y-4 max-w-xl w-full bg-red-900/50 p-6 rounded-xl border border-red-500/50">
-            <h2 className="text-white font-black text-xl text-red-400">Application Crashed!</h2>
+            <h2 className="font-black text-xl text-red-400">Application Crashed!</h2>
             <pre className="text-white/80 text-xs whitespace-pre-wrap font-mono bg-black/50 p-4 rounded-lg overflow-x-auto">
               {(this.state as any).error?.stack || (this.state as any).error?.message || "Unknown Error"}
             </pre>
