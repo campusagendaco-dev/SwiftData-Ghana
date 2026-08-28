@@ -475,8 +475,10 @@ const AdminOverview = () => {
   useEffect(() => {
     safeFetchData();
 
+    const rand = Math.random().toString(36).substring(7);
+
     const ordersChannel = supabase
-      .channel("admin-live-orders")
+      .channel(`admin_live_orders_${rand}`)
       .on("postgres_changes", { event: "*", table: "orders", schema: "public" }, (payload) => {
         refreshChart();
         if (payload.eventType === "INSERT") {
@@ -491,7 +493,7 @@ const AdminOverview = () => {
       .subscribe();
 
     const profilesChannel = supabase
-      .channel("admin-live-profiles")
+      .channel(`admin_live_profiles_${rand}`)
       .on("postgres_changes", { event: "*", table: "profiles", schema: "public" }, () => {
         safeFetchData();
         setUpdatedKeys(new Set(["Pending Agents", "Active Users"]));

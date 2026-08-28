@@ -120,8 +120,9 @@ export default function AdminRefundedOrders() {
 
   // Real-time subscription for live refunds
   useEffect(() => {
+    const channelId = `admin_refunds_live_${Math.random().toString(36).substring(7)}`;
     const channel = supabase
-      .channel("admin-refunds-live")
+      .channel(channelId)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },

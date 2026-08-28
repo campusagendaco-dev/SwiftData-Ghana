@@ -153,8 +153,11 @@ const Dashboard = () => {
   useEffect(() => {
     fetchData();
 
+    const uid = user?.id || "guest";
+    const rand = Math.random().toString(36).substring(7);
+
     const walletChannel = supabase
-      .channel("dashboard-wallet")
+      .channel(`dash_wallet_${uid}_${rand}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `agent_id=eq.${user?.id}` }, (p: any) => {
         if (p.new?.balance !== undefined) setStats(prev => ({ ...prev, walletBalance: Number(p.new.balance) }));
         if (p.new?.loyalty_balance !== undefined) setStats(prev => ({ ...prev, loyaltyBalance: Number(p.new.loyalty_balance) }));
@@ -162,21 +165,21 @@ const Dashboard = () => {
       .subscribe();
 
     const ordersChannel = supabase
-      .channel("dashboard-orders")
+      .channel(`dash_orders_${uid}_${rand}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `agent_id=eq.${user?.id}` }, () => {
         fetchData(true);
       })
       .subscribe();
     
     const parentOrdersChannel = supabase
-      .channel("dashboard-parent-orders")
+      .channel(`dash_parent_orders_${uid}_${rand}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `parent_agent_id=eq.${user?.id}` }, () => {
         fetchData(true);
       })
       .subscribe();
 
     const settingsChannel = supabase
-      .channel("dashboard-settings")
+      .channel(`dash_settings_${uid}_${rand}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "system_settings", filter: "id=eq.1" }, (p: any) => {
         if (p.new?.world_cup_predictor_enabled !== undefined) {
           setPredictorEnabled(p.new.world_cup_predictor_enabled);

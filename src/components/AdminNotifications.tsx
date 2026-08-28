@@ -59,8 +59,10 @@ const AdminNotifications = () => {
       }
     };
 
+    const rand = Math.random().toString(36).substring(7);
+
     const ordersChannel = supabase
-      .channel("admin-orders-notify")
+      .channel(`admin_orders_notify_${rand}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "orders" }, (payload) => {
         const o = payload.new as any;
         notify(
@@ -71,7 +73,7 @@ const AdminNotifications = () => {
       .subscribe();
 
     const withdrawalsChannel = supabase
-      .channel("admin-withdrawals-notify")
+      .channel(`admin_withdrawals_notify_${rand}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "withdrawals" }, (payload) => {
         const w = payload.new as any;
         notify("New Withdrawal Request", `Amount: GH₵${Number(w.amount).toFixed(2)}`);
@@ -79,7 +81,7 @@ const AdminNotifications = () => {
       .subscribe();
 
     const agentsChannel = supabase
-      .channel("admin-agents-notify")
+      .channel(`admin_agents_notify_${rand}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles",
         filter: "is_agent=eq.true" }, (payload) => {
         const p = payload.new as any;

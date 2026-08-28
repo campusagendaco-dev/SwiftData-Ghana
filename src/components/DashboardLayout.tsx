@@ -80,8 +80,9 @@ const DashboardLayout = () => {
     };
     fetchAiRecs();
 
+    const channelId = `wallet_header_${user.id}_${Math.random().toString(36).substring(7)}`;
     const channel = supabase
-      .channel("wallet-balance-header")
+      .channel(channelId)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `agent_id=eq.${user.id}` }, (payload: any) => {
         if (payload.new?.balance !== undefined) {
           const newBal = Number(payload.new.balance);

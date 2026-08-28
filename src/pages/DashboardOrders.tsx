@@ -294,8 +294,9 @@ const DashboardOrders = () => {
   // Live realtime updates for all current orders
   useEffect(() => {
     if (!user) return;
+    const channelId = `dash_orders_live_${user.id}_${Math.random().toString(36).substring(7)}`;
     const ch = supabase
-      .channel("dashboard-orders-live")
+      .channel(channelId)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "orders" },
