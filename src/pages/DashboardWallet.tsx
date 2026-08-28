@@ -5,7 +5,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
-import { getAppBaseUrl } from "@/lib/app-base-url";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
 import { invokePublicFunction, invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,15 +12,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { 
   Wallet, Loader2, Send, CreditCard, Gift, 
-  ArrowRightLeft, History, RefreshCw, PlusCircle, 
-  ChevronRight, ArrowUpRight, Zap, ShieldCheck, CheckCircle2, X 
+  ArrowRightLeft, History, RefreshCw, 
+  ArrowUpRight, Zap, ShieldCheck, CheckCircle2, X,
+  Coins, Smartphone, PieChart
 } from "lucide-react";
 import { basePackages, networks, getPublicPrice } from "@/lib/data";
 import { WalletStatement } from "@/components/WalletStatement";
 import { OfflineQueueWidget } from "@/components/OfflineQueueWidget";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
+import { cn } from "@/lib/utils";
 
 interface WalletTopupRow {
   id: string;
@@ -77,6 +79,8 @@ const DashboardWallet = () => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  
+  const [activeTab, setActiveTab] = useState<"overview" | "buy" | "history">("overview");
   const [balance, setBalance] = useState(0);
   const [apiBalance, setApiBalance] = useState(0);
   const [availableProfit, setAvailableProfit] = useState(0);
@@ -96,9 +100,11 @@ const DashboardWallet = () => {
   const [syncingDeposits, setSyncingDeposits] = useState(false);
   const [recentTopups, setRecentTopups] = useState<WalletTopupRow[]>([]);
   const [topupAmount, setTopupAmount] = useState("");
-  const [toppingUp, setToppingUp] = useState(false);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  // Quick preset buttons for topup
+  const PRESET_AMOUNTS = [20, 50, 100, 200, 500];
 
   // Fetch global package settings
   useEffect(() => {
@@ -223,9 +229,9 @@ const DashboardWallet = () => {
       invokePublicFunctionAsUser("verify-payment", { body: { reference } }).then(async (res) => {
         const status = res.data?.status;
         if (status === "fulfilled") {
-          toast({ title: "Wallet topped up successfully!" });
+          toast({ title: "Wallet topped up successfully! 🎉" });
         } else {
-          toast({ title: "Deposit received", description: "If balance is not updated yet, tap Verify Pending Deposit." });
+          toast({ title: "Deposit received", description: "If balance is not updated yet, tap Verify Deposits." });
         }
         await fetchBalance();
         await fetchRecentTopups();
@@ -238,7 +244,7 @@ const DashboardWallet = () => {
         }, 3000);
         window.history.replaceState({}, "", window.location.pathname);
       }).catch(async () => {
-        toast({ title: "Could not auto-verify", description: "Tap Verify Pending Deposit or paste your reference below.", variant: "destructive" });
+        toast({ title: "Could not auto-verify", description: "Tap Verify Deposits or paste reference.", variant: "destructive" });
         await fetchBalance();
         window.history.replaceState({}, "", window.location.pathname);
       });
@@ -246,19 +252,17 @@ const DashboardWallet = () => {
   }, [fetchBalance, fetchRecentTopups, toast]);
 
   const handlePaystackTopup = async () => {
-    console.log("Top Up Clicked, Amount:", topupAmount);
     const requestedCredit = Number(topupAmount);
     if (!Number.isFinite(requestedCredit) || requestedCredit < 10) {
-      toast({ title: "Enter a valid top-up amount (minimum GHS 10)", variant: "destructive" });
+      toast({ title: "Check Top-Up Amount", description: "Minimum wallet top-up is GH₵ 10.00", variant: "destructive" });
       return;
     }
-    console.log("Opening Checkout modal...");
     setCheckoutOpen(true);
   };
 
   const handleCheckoutSuccess = async (ref: string) => {
     setCheckoutOpen(false);
-    toast({ title: "Deposit received", description: "Verifying top-up..." });
+    toast({ title: "Deposit Received", description: "Verifying and updating wallet balance..." });
     setTopupAmount("");
     try {
       await invokePublicFunctionAsUser("verify-payment", { body: { reference: ref } });
@@ -291,12 +295,12 @@ const DashboardWallet = () => {
 
   const handleBuyData = async () => {
     if (!selectedNetwork || !selectedPackage || !customerPhone || !selectedPkg) {
-      toast({ title: "Fill in all fields", variant: "destructive" });
+      toast({ title: "Incomplete selection", description: "Please choose network, plan, and phone number.", variant: "destructive" });
       return;
     }
 
     if (balance < selectedPkg.price) {
-      toast({ title: "Insufficient wallet balance", variant: "destructive" });
+      toast({ title: "Insufficient Balance", description: `You need GH₵ ${selectedPkg.price.toFixed(2)}. Please top up your wallet.`, variant: "destructive" });
       return;
     }
 
@@ -312,11 +316,11 @@ const DashboardWallet = () => {
 
     if (error || data?.error) {
       const description = data?.error || await getFunctionErrorMessage(error, "Could not complete wallet purchase.");
-      toast({ title: "Purchase failed", description, variant: "destructive" });
+      toast({ title: "Purchase Failed", description, variant: "destructive" });
     } else if (data?.queued) {
       toast({
         title: "Order Queued Offline 📶",
-        description: "No network connection. Order queued locally and will be processed when online.",
+        description: "Order queued locally and will process when online.",
       });
       setCustomerPhone("");
       setSelectedPackage("");
@@ -327,9 +331,9 @@ const DashboardWallet = () => {
       setShowSuccessOverlay(true);
       setCustomerPhone("");
       setSelectedPackage("");
-      toast({ title: "Success", description: "Order processed successfully." });
+      toast({ title: "Purchase Completed! 🎉", description: "Data bundle sent to recipient." });
     } else {
-      toast({ title: "Order placed", description: data?.failure_reason || "Fulfillment pending", variant: "destructive" });
+      toast({ title: "Order Placed", description: data?.failure_reason || "Fulfillment in progress", variant: "destructive" });
     }
     await fetchBalance();
     setBuying(false);
@@ -337,7 +341,7 @@ const DashboardWallet = () => {
 
   const handleConvertPoints = async () => {
     if (loyaltyBalance < 100) {
-      toast({ title: "Minimum 100 points required", description: "100 points = GHS 1.00", variant: "destructive" });
+      toast({ title: "Minimum 100 SwiftPoints required", description: "100 points = GH₵ 1.00", variant: "destructive" });
       return;
     }
     setConvertingPoints(true);
@@ -346,9 +350,9 @@ const DashboardWallet = () => {
       points_to_convert: loyaltyBalance
     });
     if (error || !data?.success) {
-      toast({ title: "Conversion failed", description: data?.error || error?.message, variant: "destructive" });
+      toast({ title: "Conversion Failed", description: data?.error || error?.message, variant: "destructive" });
     } else {
-      toast({ title: "Points Converted!", description: `GHS ${data.cash_added} has been added to your wallet.` });
+      toast({ title: "Points Converted! 🪙", description: `GH₵ ${data.cash_added} added to your main wallet balance.` });
       await fetchBalance();
     }
     setConvertingPoints(false);
@@ -380,7 +384,7 @@ const DashboardWallet = () => {
       await fetchBalance();
       await fetchRecentTopups();
       toast({
-        title: "Deposit check completed",
+        title: "Deposit Check Complete",
         description: fulfilledCount > 0 ? `${fulfilledCount} deposit(s) credited to your wallet.` : "No new successful deposits found yet.",
       });
     } catch (syncError) {
@@ -391,248 +395,460 @@ const DashboardWallet = () => {
   };
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-      <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-      <p className="text-sm font-medium text-muted-foreground animate-pulse">Loading wallet balance...</p>
+    <div className="flex flex-col items-center justify-center min-h-[500px] gap-3">
+      <div className="relative">
+        <div className="absolute inset-0 bg-amber-500/20 rounded-full blur-xl animate-pulse" />
+        <Loader2 className="w-10 h-10 animate-spin text-amber-500 relative z-10" />
+      </div>
+      <p className="text-xs font-black uppercase tracking-widest text-muted-foreground animate-pulse">Securing Wallet Context...</p>
     </div>
   );
 
   return (
-    <div className="space-y-8 p-4 md:p-8 max-w-5xl mx-auto">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-black tracking-tight text-foreground flex items-center gap-3">
-            <Wallet className="w-8 h-8 text-amber-500 dark:text-amber-400" /> Account Balance
+    <div className="space-y-6 p-4 sm:p-6 md:p-8 max-w-6xl mx-auto text-foreground">
+      {/* ── Page Header ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-amber-500/10 via-slate-900/40 to-indigo-500/10 p-6 rounded-3xl border border-amber-500/20 backdrop-blur-xl shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Agent Capital Hub
+            </span>
+            {profile?.is_agent && (
+              <Badge variant="outline" className="bg-emerald-500/10 border-emerald-500/30 text-emerald-400 font-bold text-[10px]">
+                Verified Partner
+              </Badge>
+            )}
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+            <Wallet className="w-7 h-7 text-amber-400" /> Account Wallet & Capital
           </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-md">
-            Manage your account balance, top up instantly with Paystack, and track your loyalty points.
+          <p className="text-xs text-muted-foreground max-w-md font-medium">
+            Instant Mobile Money & Card top-ups, profit withdrawals, and SwiftPoints rewards.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Button 
-            variant="outline" size="sm" className="bg-muted/50 border-border hover:bg-muted text-foreground/70 h-10 px-4 rounded-xl gap-2"
-            onClick={handleSyncPendingDeposits} disabled={syncingDeposits}
+            variant="outline" 
+            size="sm" 
+            className="h-10 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30 font-bold text-xs gap-2 transition-all shadow-md"
+            onClick={handleSyncPendingDeposits} 
+            disabled={syncingDeposits}
           >
-            <RefreshCw className={`w-4 h-4 ${syncingDeposits ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline text-xs font-bold uppercase tracking-widest">Verify Deposits</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${syncingDeposits ? "animate-spin text-amber-400" : ""}`} />
+            <span>{syncingDeposits ? "Checking..." : "Verify Deposits"}</span>
           </Button>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="relative overflow-hidden border-none bg-gradient-to-br from-amber-500 to-amber-600 shadow-2xl shadow-amber-500/20 group">
-          <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform duration-500">
-            <Wallet className="w-24 h-24 text-white" />
-          </div>
-          <CardHeader className="pb-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Main Balance</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-4xl font-black text-white leading-none">GHS {balance.toFixed(2)}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 border border-white/10">
-                  <ShieldCheck className="w-3 h-3 text-white" />
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">Secured</span>
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-white/10 flex justify-between items-center">
-               <p className="text-[10px] font-bold text-white/60 uppercase">Available Profit</p>
-               <p className="text-sm font-black text-white">GHS {availableProfit.toFixed(2)}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden bg-card/70 backdrop-blur-2xl border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)] group">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">SwiftPoints</p>
-            <Gift className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-3xl font-black text-foreground">{loyaltyBalance.toLocaleString()} <span className="text-sm text-amber-500 dark:text-amber-400">pts</span></p>
-              <p className="text-[10px] text-muted-foreground mt-1 font-medium uppercase tracking-widest">Est. Value: GHS {(loyaltyBalance / 100).toFixed(2)}</p>
-            </div>
-            <Button 
-              variant="outline" className="w-full h-11 bg-amber-400 text-black border-none font-black text-xs uppercase tracking-widest hover:bg-amber-300 shadow-lg shadow-amber-400/10 disabled:opacity-30 rounded-xl"
-              onClick={handleConvertPoints} disabled={convertingPoints || loyaltyBalance < 100}
+          {profile?.is_agent && (
+            <Button
+              size="sm"
+              className="h-10 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs gap-2 shadow-lg shadow-emerald-500/20 border border-emerald-400/40"
+              onClick={() => navigate("/dashboard/withdraw")}
             >
-              {convertingPoints ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowRightLeft className="w-4 h-4 mr-2" />}
-              Convert to Cash
+              <ArrowUpRight className="w-4 h-4" /> Withdraw Profit
             </Button>
-          </CardContent>
-        </Card>
-
-        <div className="flex flex-col gap-4">
-          <Card className="bg-card/70 backdrop-blur-2xl border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)] flex-1">
-            <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">Quick Top Up</p>
-              <Zap className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="relative group">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-blue-500 transition-colors">
-                  <span className="text-xs font-bold">GHS</span>
-                </div>
-                <Input
-                  type="number" placeholder="0.00" value={topupAmount}
-                  onChange={(e) => setTopupAmount(e.target.value)}
-                  className="h-10 pl-12 bg-muted/30 border-border focus:border-blue-500/50 rounded-xl text-lg font-black text-foreground"
-                />
-              </div>
-              <Button 
-                onClick={handlePaystackTopup} 
-                className="w-full h-10 bg-blue-500 hover:bg-blue-600 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-blue-500/10"
-              >
-                <CreditCard className="w-4 h-4 mr-2" /> Top Up Now
-              </Button>
-              <p className="text-[10px] text-muted-foreground text-center mt-2 font-medium">Accepts MoMo directly or Card</p>
-            </CardContent>
-          </Card>
-
-          {profile?.credit_enabled ? (
-             <Card className="border-green-500/20 bg-green-500/5 backdrop-blur-xl shadow-sm flex-1 relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 w-16 h-16 bg-green-500/20 rounded-full blur-xl" />
-                <CardHeader className="pb-1">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-green-500/80">Active Float Limit</p>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-black text-green-500">GHS {(profile?.credit_limit || 0).toFixed(2)}</p>
-                  <p className="text-[10px] text-green-500/60 font-medium uppercase tracking-widest mt-1">Available for automatic overdrafts</p>
-                </CardContent>
-             </Card>
-          ) : (
-             <Card className="border-amber-500/20 bg-amber-500/5 backdrop-blur-xl shadow-sm flex-1 relative overflow-hidden group">
-                <div className="absolute -right-4 -top-4 w-16 h-16 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-all duration-500" />
-                <CardHeader className="pb-1 flex flex-row items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500/80">Swift Float</p>
-                  <History className="w-3.5 h-3.5 text-amber-500/60" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-xs text-amber-500/80 font-medium">Out of funds? Apply for a micro-credit float to keep selling.</p>
-                  <Button 
-                    variant="outline"
-                    onClick={async () => {
-                      if (!user) return;
-                      await supabase.from("user_notifications").insert({
-                         user_id: user.id, // Using user's own ID as a hack, but realistically admin sees this in tickets
-                         title: "Float Request",
-                         message: `${profile?.full_name || 'Agent'} is requesting a Swift Float limit increase.`,
-                         type: "info"
-                      });
-                      toast({ title: "Application Sent!", description: "An admin will review your account history." });
-                    }}
-                    className="w-full h-8 bg-transparent border-amber-500/30 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400 font-black text-[10px] uppercase tracking-widest rounded-lg"
-                  >
-                    Apply for Float
-                  </Button>
-                </CardContent>
-             </Card>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-        <div className="lg:col-span-3 space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-1 h-6 bg-amber-500 rounded-full" />
-            <h2 className="text-lg font-black text-foreground uppercase tracking-wider">Purchase Service</h2>
+      {/* ── Top Hero Cards Grid ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Card 1: Main Balance & Profits */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 p-6 text-slate-950 shadow-2xl shadow-amber-500/25 border border-amber-400/50 flex flex-col justify-between group">
+          <div className="absolute top-0 right-0 p-8 opacity-15 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-500 pointer-events-none">
+            <Wallet className="w-32 h-32 text-slate-950" />
           </div>
-          <Card className="bg-card/70 backdrop-blur-2xl border-border shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] transition-all duration-300 hover:border-amber-500/30 hover:shadow-[0_12px_40px_-10px_rgba(245,158,11,0.2)] overflow-hidden rounded-[2rem]">
-            <CardContent className="p-8 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Network</Label>
-                  <Select value={selectedNetwork} onValueChange={(v) => { setSelectedNetwork(v); setSelectedPackage(""); }}>
-                    <SelectTrigger className="h-12 bg-muted/30 border-border rounded-xl text-foreground">
-                      <SelectValue placeholder="Select Network" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background border-border text-foreground">
-                       {networks.map((n) => (<SelectItem key={n.name} value={n.name}>{n.name}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Package</Label>
-                  <Select value={selectedPackage} onValueChange={setSelectedPackage} disabled={!selectedNetwork}>
-                    <SelectTrigger className="h-12 bg-muted/30 border-border rounded-xl text-foreground">
-                      <SelectValue placeholder="Choose Plan" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background border-border text-foreground max-h-[300px]">
-                      {agentPackages.map((p) => (
-                        <SelectItem key={p.size} value={p.size} className="focus:bg-amber-400 focus:text-black">
-                          {p.size} — GHS {p.price.toFixed(2)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Recipient Number</Label>
-                <div className="relative">
-                  <Input placeholder="e.g. 024XXXXXXX" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} className="h-12 bg-muted/30 border-border rounded-xl pl-11 text-foreground font-mono" />
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/40"><CreditCard className="w-4 h-4" /></div>
-                </div>
-              </div>
-              <Button onClick={handleBuyData} disabled={buying || !selectedPkg || !customerPhone} className="w-full h-14 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-black text-base shadow-xl shadow-amber-500/10 group">
-                {buying ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Send className="w-5 h-5 mr-2 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" /> Buy with Wallet</>}
-              </Button>
-            </CardContent>
-          </Card>
-          <OfflineQueueWidget />
-        </div>
 
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-1 h-6 bg-blue-500 rounded-full" />
-            <h2 className="text-lg font-black text-foreground uppercase tracking-wider">Statement</h2>
-          </div>
-          {user && <WalletStatement userId={user.id} />}
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6 flex gap-4">
-            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0"><ArrowUpRight className="w-5 h-5 text-blue-600 dark:text-blue-400" /></div>
-            <div className="space-y-1">
-               <p className="text-xs font-black text-foreground uppercase tracking-wider">Statement Proof</p>
-               <p className="text-[10px] text-muted-foreground leading-relaxed font-medium">Your account statement above shows every deposit and purchase. Use this to track your spending and verify your balance.</p>
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full bg-slate-950/20 text-slate-950 border border-slate-950/30">
+                Primary Wallet Balance
+              </span>
+              <ShieldCheck className="w-5 h-5 text-slate-950/80" />
+            </div>
+
+            <div className="mt-4">
+              <p className="text-xs font-bold text-slate-950/70 uppercase tracking-widest">Available Working Capital</p>
+              <h2 className="text-4xl font-black tracking-tight text-slate-950 mt-1">
+                GH₵ {balance.toFixed(2)}
+              </h2>
             </div>
           </div>
+
+          <div className="mt-6 pt-4 border-t border-slate-950/20 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-bold text-slate-950/70 uppercase tracking-wider block">Available Profit Balance</span>
+              <span className="text-base font-black text-slate-950">GH₵ {availableProfit.toFixed(2)}</span>
+            </div>
+            {apiBalance > 0 && (
+              <div className="text-right">
+                <span className="text-[10px] font-bold text-slate-950/70 uppercase tracking-wider block">API Balance</span>
+                <span className="text-base font-black text-slate-950">GH₵ {apiBalance.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Quick MoMo Top-Up Form */}
+        <div className="relative overflow-hidden rounded-3xl bg-slate-900/80 border border-blue-500/30 p-6 backdrop-blur-2xl shadow-xl flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                <Zap className="w-4 h-4 fill-current" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">Instant Paystack Top Up</h3>
+                <p className="text-[10px] text-muted-foreground font-mono">MoMo (MTN, Telecel, AT) or Card</p>
+              </div>
+            </div>
+            <Badge variant="outline" className="bg-blue-500/10 border-blue-500/30 text-blue-400 font-mono text-[9px] uppercase">
+              Auto Credit
+            </Badge>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1.5">
+                Amount (GH₵)
+              </label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground font-bold text-sm">
+                  GH₵
+                </div>
+                <Input
+                  type="number" 
+                  placeholder="50.00" 
+                  value={topupAmount}
+                  onChange={(e) => setTopupAmount(e.target.value)}
+                  className="h-11 pl-12 bg-slate-950/60 border-slate-800 text-white font-mono font-bold text-base rounded-xl focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Quick Amount Presets */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {PRESET_AMOUNTS.map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setTopupAmount(amt.toString())}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all",
+                    topupAmount === amt.toString()
+                      ? "bg-blue-500 text-white border-blue-400 shadow-md"
+                      : "bg-slate-950/40 border-slate-800 text-muted-foreground hover:text-white hover:border-slate-700"
+                  )}
+                >
+                  +{amt}
+                </button>
+              ))}
+            </div>
+
+            {topupRequestedAmount > 0 && (
+              <div className="flex items-center justify-between text-[11px] font-mono px-3 py-2 rounded-xl bg-blue-950/30 border border-blue-500/20 text-blue-300">
+                <span>Fee ({ (feeRate * 100).toFixed(1) }%): GH₵ {topupFee.toFixed(2)}</span>
+                <span className="font-extrabold text-white">Total: GH₵ {topupChargeTotal.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+
+          <Button
+            onClick={handlePaystackTopup}
+            className="w-full h-11 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 border border-blue-400/30 gap-2"
+          >
+            <CreditCard className="w-4 h-4" /> Top Up Wallet Now
+          </Button>
+        </div>
+
+        {/* Card 3: SwiftPoints & Swift Float */}
+        <div className="relative overflow-hidden rounded-3xl bg-slate-900/80 border border-amber-500/30 p-6 backdrop-blur-2xl shadow-xl flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <Gift className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">SwiftPoints Rewards</h3>
+                <p className="text-[10px] text-muted-foreground font-mono">100 Points = GH₵ 1.00 Cash</p>
+              </div>
+            </div>
+            <Coins className="w-4 h-4 text-amber-400" />
+          </div>
+
+          <div className="space-y-2 p-3 rounded-2xl bg-amber-950/20 border border-amber-500/20">
+            <div className="flex items-baseline justify-between">
+              <span className="text-2xl font-black text-white">{loyaltyBalance.toLocaleString()}</span>
+              <span className="text-xs font-bold text-amber-400 uppercase font-mono">pts</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
+              <span>Est. Cash Value:</span>
+              <span className="font-extrabold text-emerald-400">GH₵ {(loyaltyBalance / 100).toFixed(2)}</span>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleConvertPoints}
+            disabled={convertingPoints || loyaltyBalance < 100}
+            variant="outline"
+            className="w-full h-10 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30 font-black text-xs uppercase tracking-widest gap-2 disabled:opacity-30"
+          >
+            {convertingPoints ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4 text-amber-400" />}
+            Convert Points to Cash
+          </Button>
+
+          {/* Micro-Credit Float Status */}
+          {profile?.credit_enabled ? (
+            <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between">
+              <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase">Active Overdraft Float</span>
+              <span className="text-xs font-black font-mono text-white">GH₵ {(profile?.credit_limit || 0).toFixed(2)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground px-1">
+              <span>Need sales credit?</span>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!user) return;
+                  await supabase.from("user_notifications").insert({
+                     user_id: user.id,
+                     title: "Float Request",
+                     message: `${profile?.full_name || 'Agent'} requested Swift Float credit limit.`,
+                     type: "info"
+                  });
+                  toast({ title: "Application Submitted", description: "Admin will review your agent sales volume." });
+                }}
+                className="text-amber-400 font-extrabold hover:underline"
+              >
+                Apply for Float &rarr;
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* ── Navigation Tabs ── */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur-xl w-fit">
+        <button
+          onClick={() => setActiveTab("overview")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === "overview"
+              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md"
+              : "text-muted-foreground hover:text-white"
+          )}
+        >
+          <PieChart className="w-3.5 h-3.5" /> Capital Overview
+        </button>
+        <button
+          onClick={() => setActiveTab("buy")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === "buy"
+              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md"
+              : "text-muted-foreground hover:text-white"
+          )}
+        >
+          <Send className="w-3.5 h-3.5" /> Buy Data with Wallet
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === "history"
+              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md"
+              : "text-muted-foreground hover:text-white"
+          )}
+        >
+          <History className="w-3.5 h-3.5" /> Wallet Statement & Deposits
+        </button>
+      </div>
+
+      {/* ── Tab Content 1: Overview & Recent Deposits ── */}
+      {activeTab === "overview" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Recent Top-ups List */}
+            <Card className="bg-slate-900/80 border-slate-800 backdrop-blur-2xl shadow-xl rounded-3xl overflow-hidden">
+              <CardHeader className="border-b border-slate-800/80 pb-4 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-black text-white flex items-center gap-2">
+                    <History className="w-4 h-4 text-amber-400" /> Recent Wallet Deposits
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground font-mono mt-0.5">Paystack Mobile Money & Card top-up history</p>
+                </div>
+                <Button variant="ghost" size="sm" onClick={fetchRecentTopups} className="h-8 text-xs font-mono text-amber-400 hover:text-amber-300">
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" /> Reload
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {recentTopups.length === 0 ? (
+                  <div className="p-8 text-center text-xs font-mono text-muted-foreground">
+                    No recent deposits recorded.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-800/60">
+                    {recentTopups.map((topup) => {
+                      const isFulfilled = topup.status === "fulfilled" || topup.status === "paid";
+                      const isPending = topup.status === "pending" || topup.status === "processing";
+                      
+                      return (
+                        <div key={topup.id} className="p-4 flex items-center justify-between hover:bg-slate-800/30 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-9 h-9 rounded-xl flex items-center justify-center border shrink-0",
+                              isFulfilled ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : isPending ? "bg-amber-500/10 border-amber-500/30 text-amber-400" : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                            )}>
+                              {isFulfilled ? <CheckCircle2 className="w-4 h-4" /> : isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-white font-mono">GH₵ {Number(topup.amount).toFixed(2)}</span>
+                                <Badge variant="outline" className={cn(
+                                  "text-[9px] font-mono uppercase px-1.5 py-0",
+                                  isFulfilled ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : isPending ? "bg-amber-500/10 border-amber-500/30 text-amber-400" : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                                )}>
+                                  {topup.status}
+                                </Badge>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground font-mono block mt-0.5">
+                                {new Date(topup.created_at).toLocaleString("en-GH")} · Ref: {topup.id.slice(0, 8)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {isPending && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-[10px] font-mono font-bold bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20"
+                              onClick={async () => {
+                                toast({ title: "Verifying deposit..." });
+                                await invokePublicFunctionAsUser("verify-payment", { body: { reference: topup.id } });
+                                await fetchBalance();
+                                await fetchRecentTopups();
+                              }}
+                            >
+                              Verify
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <OfflineQueueWidget />
+          </div>
+
+          <div className="space-y-6">
+            {/* Wallet Statement Component */}
+            {user && <WalletStatement userId={user.id} />}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab Content 2: Buy Data with Wallet ── */}
+      {activeTab === "buy" && (
+        <Card className="bg-slate-900/80 border-slate-800 backdrop-blur-2xl shadow-xl rounded-3xl overflow-hidden max-w-2xl mx-auto">
+          <CardHeader className="border-b border-slate-800/80 pb-4">
+            <CardTitle className="text-base font-black text-white flex items-center gap-2">
+              <Send className="w-4 h-4 text-amber-400" /> Instant Data Bundle Purchase
+            </CardTitle>
+            <p className="text-xs text-muted-foreground font-mono">Deducted instantly from your main wallet balance (GH₵ {balance.toFixed(2)})</p>
+          </CardHeader>
+
+          <CardContent className="p-6 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Telecom Network</Label>
+                <Select value={selectedNetwork} onValueChange={(v) => { setSelectedNetwork(v); setSelectedPackage(""); }}>
+                  <SelectTrigger className="h-12 bg-slate-950/60 border-slate-800 text-white rounded-xl font-bold">
+                    <SelectValue placeholder="Select Network" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-950 border-slate-800 text-white">
+                    {networks.map((n) => (<SelectItem key={n.name} value={n.name}>{n.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Data Package</Label>
+                <Select value={selectedPackage} onValueChange={setSelectedPackage} disabled={!selectedNetwork}>
+                  <SelectTrigger className="h-12 bg-slate-950/60 border-slate-800 text-white rounded-xl font-bold">
+                    <SelectValue placeholder="Choose Plan" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-950 border-slate-800 text-white max-h-[300px]">
+                    {agentPackages.map((p) => (
+                      <SelectItem key={p.size} value={p.size} className="focus:bg-amber-400 focus:text-black">
+                        {p.size} — GH₵ {p.price.toFixed(2)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Recipient Phone Number</Label>
+              <div className="relative">
+                <Input
+                  placeholder="e.g. 0241234567" 
+                  value={customerPhone} 
+                  onChange={(e) => setCustomerPhone(e.target.value)} 
+                  className="h-12 bg-slate-950/60 border-slate-800 text-white font-mono font-bold rounded-xl pl-11"
+                />
+                <Smartphone className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            {selectedPkg && (
+              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/20 text-xs font-mono">
+                <span className="text-muted-foreground">Order Total:</span>
+                <span className="text-sm font-black text-amber-400">GH₵ {selectedPkg.price.toFixed(2)}</span>
+              </div>
+            )}
+
+            <Button 
+              onClick={handleBuyData} 
+              disabled={buying || !selectedPkg || !customerPhone} 
+              className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs uppercase tracking-widest shadow-xl shadow-amber-500/10 gap-2"
+            >
+              {buying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {buying ? "Processing Order..." : "Confirm & Pay from Wallet"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Tab Content 3: Full Statement ── */}
+      {activeTab === "history" && (
+        <div className="space-y-6">
+          {user && <WalletStatement userId={user.id} />}
+        </div>
+      )}
+
+      {/* ── Success Modal Overlay ── */}
       {showSuccessOverlay && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 animate-in fade-in duration-500">
           <div className="absolute inset-0 bg-black/90 backdrop-blur-3xl" />
           <div className="relative max-w-sm w-full bg-[#0A0A0C] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 animate-in zoom-in-95 duration-300 shadow-3xl">
-            {/* SVG Illustration */}
             <div className="relative mx-auto w-36 h-36">
               <div className="absolute inset-0 bg-emerald-500 rounded-full blur-3xl opacity-10 animate-pulse" />
               <svg className="w-full h-full drop-shadow-[0_8px_24px_rgba(16,185,129,0.2)] animate-bounce-subtle relative z-10" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Phone Body */}
                 <rect x="55" y="25" width="90" height="150" rx="16" fill="url(#phoneGradOverlay)" stroke="rgba(255,255,255,0.15)" strokeWidth="2"/>
-                {/* Phone Screen */}
                 <rect x="62" y="32" width="76" height="136" rx="10" fill="#0A0A0C"/>
-                {/* Phone Notch */}
                 <rect x="90" y="35" width="20" height="4" rx="2" fill="rgba(255,255,255,0.2)"/>
-                
-                {/* Decorative Data Waves/Grid */}
                 <path d="M 65 100 Q 100 85 135 100" stroke="rgba(16,185,129,0.3)" strokeWidth="2" fill="none"/>
                 <path d="M 65 120 Q 100 105 135 120" stroke="rgba(16,185,129,0.15)" strokeWidth="2" fill="none"/>
-                
-                {/* Success Badge */}
                 <circle cx="100" cy="90" r="32" fill="url(#badgeGradOverlay)" />
                 <circle cx="100" cy="90" r="26" fill="#0A0A0C"/>
-                
-                {/* Success Checkmark */}
                 <path d="M 90 90 L 97 97 L 112 82" stroke="#10B981" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-                
-                {/* Sparkles/Stars */}
                 <path d="M 45 60 L 48 65 L 53 66 L 49 70 L 50 75 L 45 72 L 40 75 L 41 70 L 37 66 L 42 65 Z" fill="#ffd43b" opacity="0.8"/>
                 <path d="M 155 120 L 157 123 L 161 124 L 158 127 L 159 131 L 155 129 L 151 131 L 152 127 L 149 124 L 153 123 Z" fill="#ff9f1c" opacity="0.8"/>
                 <circle cx="145" cy="55" r="4" fill="#0ea5e9"/>
                 <circle cx="50" cy="130" r="3" fill="#10B981"/>
-                
-                {/* Gradients */}
                 <defs>
                   <linearGradient id="phoneGradOverlay" x1="55" y1="25" x2="145" y2="175" gradientUnits="userSpaceOnUse">
                     <stop stopColor="rgba(255,255,255,0.08)"/>
@@ -647,7 +863,7 @@ const DashboardWallet = () => {
             </div>
             <div className="space-y-3">
               <h2 className="text-4xl font-black tracking-tighter text-white uppercase">Delivered!</h2>
-              <p className="text-white/40 text-sm font-medium leading-relaxed">Your bundle has been processed successfully. Your balance has been updated.</p>
+              <p className="text-white/40 text-sm font-medium leading-relaxed">Your data bundle has been processed successfully. Your wallet balance has been updated.</p>
             </div>
             <div className="pt-4">
               <button onClick={() => setShowSuccessOverlay(false)} className="w-full bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black py-4 rounded-2xl transition-all uppercase tracking-widest text-xs">Continue</button>
@@ -665,6 +881,7 @@ const DashboardWallet = () => {
         </div>
       )}
 
+      {/* ── Checkout Modal ── */}
       <PaystackMomoCheckout
         isOpen={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
