@@ -44,20 +44,23 @@ window.addEventListener("error", (e) => {
     msg.includes("failed to fetch dynamically imported module") ||
     msg.includes("expected a javascript-or-wasm module script") ||
     msg.includes("error loading dynamically imported module") ||
+    msg.includes("postgres_changes") ||
+    msg.includes("wallet-balance-header") ||
+    msg.includes("subscribe()") ||
     isScriptError
   ) {
-    // Only trigger for modules/scripts to avoid unrelated UI errors
-    if (msg.includes("module") || isScriptError) {
-      forceAssetRecovery(`ErrorEvent: ${msg || "Script failed to load"}`);
-    }
+    forceAssetRecovery(`ErrorEvent: ${msg || "Script failed to load"}`);
   }
 }, true);
 
 window.addEventListener("unhandledrejection", (e) => {
-  const msg = e.reason?.message?.toLowerCase() || "";
+  const msg = e.reason?.message?.toLowerCase() || String(e.reason || "").toLowerCase();
   if (
     msg.includes("failed to fetch dynamically imported module") ||
-    msg.includes("expected a javascript-or-wasm module script")
+    msg.includes("expected a javascript-or-wasm module script") ||
+    msg.includes("postgres_changes") ||
+    msg.includes("wallet-balance-header") ||
+    msg.includes("subscribe()")
   ) {
     forceAssetRecovery(`UnhandledRejection: ${msg}`);
   }
