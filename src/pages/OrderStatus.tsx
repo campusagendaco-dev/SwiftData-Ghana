@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -761,22 +762,22 @@ const OrderStatus = () => {
             </button>
           </div>
 
-          {/* Receipt Modal */}
+          {/* Receipt Modal (Portal to document.body for top z-index stacking above all page elements & footer) */}
           <AnimatePresence>
-            {showReceipt && (
-              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            {showReceipt && createPortal(
+              <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
                 <motion.div 
                   initial={{ opacity: 0 }} 
                   animate={{ opacity: 1 }} 
                   exit={{ opacity: 0 }}
                   onClick={() => setShowReceipt(false)}
-                  className="fixed inset-0 bg-black/90 backdrop-blur-md" 
+                  className="fixed inset-0 bg-black/95 backdrop-blur-xl" 
                 />
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.95, y: 15 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                  className="relative w-full max-w-sm bg-[#090a0f] border border-amber-500/25 rounded-3xl overflow-hidden shadow-2xl z-10"
+                  className="relative w-full max-w-sm bg-[#090a0f] border border-amber-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] z-10"
                 >
                   {/* Top Bar Accent */}
                   <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
@@ -903,7 +904,8 @@ const OrderStatus = () => {
                     </p>
                   </div>
                 </motion.div>
-              </div>
+              </div>,
+              document.body
             )}
           </AnimatePresence>
         </div>
