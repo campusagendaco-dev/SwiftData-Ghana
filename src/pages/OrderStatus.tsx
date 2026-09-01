@@ -865,9 +865,9 @@ const OrderStatus = () => {
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
                         <div className={cn(
                           "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
-                          (orderStatus === "fulfilled" || orderStatus === "processing" || orderStatus === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
-                          (orderStatus === "pending" || orderStatus === "awaiting_payment") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
-                          (orderStatus === "failed" || orderStatus === "fulfillment_failed") && "bg-red-500/15 text-red-400 border border-red-500/30"
+                          (String(orderStatus) === "fulfilled" || String(orderStatus) === "processing" || String(orderStatus) === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+                          (String(orderStatus) === "pending" || String(orderStatus) === "awaiting_payment" || String(orderStatus) === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                          (String(orderStatus) === "failed" || String(orderStatus) === "fulfillment_failed" || String(orderStatus) === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
                         )}>
                           <ShieldCheck className="w-3.5 h-3.5" />
                           {orderStatus}
