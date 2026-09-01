@@ -60,6 +60,27 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     if (!reference || isManualVerifying) return;
     setIsManualVerifying(true);
     try {
+      // 1. Instant check via DB RPC
+      const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
+        p_reference: reference
+      });
+      const rpcList = rpcData as any[];
+      if (rpcList && rpcList.length > 0) {
+        const status = rpcList[0].status;
+        if (status === "fulfilled" || status === "paid" || status === "processing") {
+          toast({ title: "Payment Verified!", description: "Your transaction was confirmed successfully." });
+          onSuccess(reference);
+          return;
+        } else if (status === "failed" || status === "error" || status === "fulfillment_failed") {
+          const failMsg = rpcList[0].failure_reason || "The payment failed or was declined.";
+          toast({ title: "Payment Failed", description: failMsg, variant: "destructive" });
+          setErrorMessage(failMsg);
+          setStep('payment_number');
+          return;
+        }
+      }
+
+      // 2. Invoke verify-payment Edge Function with force: true
       const { data, error } = await supabase.functions.invoke("verify-payment", {
         body: { reference, force: true }
       });
@@ -72,7 +93,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         setErrorMessage(failMsg);
         setStep('payment_number');
       } else {
-        toast({ title: "Payment Pending", description: "Still awaiting your MoMo PIN authorization. Please check your phone." });
+        toast({ title: "Verification in Progress", description: "Gateway is processing your MoMo PIN entry. Retrying check..." });
       }
     } catch (err: any) {
       toast({ title: "Verification Error", description: "Could not reach gateway. Retrying automatically...", variant: "destructive" });
@@ -267,6 +288,28 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       // 2. Active Fast-Polling (1.5s interval) with force: true to check Paystack directly
       const pollVerification = async () => {
         try {
+          // Instant check via DB RPC
+          const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
+            p_reference: reference
+          });
+          if (!isPolling) return;
+
+          const rpcList = rpcData as any[];
+          if (rpcList && rpcList.length > 0) {
+            const status = rpcList[0].status;
+            if (status === "fulfilled" || status === "paid" || status === "processing") {
+              toast({ title: "Payment Verified", description: "Your transaction was successful!" });
+              onSuccess(reference);
+              return;
+            } else if (status === "failed" || status === "error" || status === "fulfillment_failed") {
+              const failMsg = rpcList[0].failure_reason || "The transaction was unsuccessful.";
+              toast({ title: "Payment Failed", description: failMsg, variant: "destructive" });
+              setErrorMessage(failMsg);
+              setStep('payment_number');
+              return;
+            }
+          }
+
           const { data, error } = await supabase.functions.invoke("verify-payment", {
             body: { reference, force: true }
           });
@@ -276,8 +319,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           if (error) {
             const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
             if (isRateLimit) {
-              console.warn("[PaystackMomoCheckout] 429 rate limited, backing off polling for 8 seconds.");
-              pollTimer = setTimeout(pollVerification, 8000);
+              console.warn("[PaystackMomoCheckout] 429 rate limited, backing off polling for 4 seconds.");
+              pollTimer = setTimeout(pollVerification, 4000);
               return;
             }
           }
@@ -296,7 +339,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           }
         } catch (err) {
           if (!isPolling) return;
-          pollTimer = setTimeout(pollVerification, 3000);
+          pollTimer = setTimeout(pollVerification, 2500);
         }
       };
       
