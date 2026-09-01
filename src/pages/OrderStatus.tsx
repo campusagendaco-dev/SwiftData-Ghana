@@ -543,12 +543,12 @@ const OrderStatus = () => {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchPhone) return;
-    const sanitized = searchPhone.replace(/\D+/g, "");
-    if (sanitized.length < 9) {
-      toast.error("Please enter a valid phone number");
+    const sanitized = searchPhone.trim();
+    if (sanitized.length < 5) {
+      toast.error("Please enter a valid phone number or order reference");
       return;
     }
-    navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/my-orders?phone=${sanitized}` : `/my-orders?phone=${sanitized}`);
+    navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/my-orders?phone=${encodeURIComponent(sanitized)}` : `/my-orders?phone=${encodeURIComponent(sanitized)}`);
   };
 
   const step = orderStatus === "fulfilled" ? 3 : orderStatus === "processing" ? 2 : orderStatus === "paid" ? 1 : 0;

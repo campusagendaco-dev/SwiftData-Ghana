@@ -75,40 +75,43 @@ serve(async (req: Request) => {
       });
     }
 
-    // Normalize phone for searching
-    const digits = phone.replace(/\D+/g, "");
-    const searchPhones = [digits];
-    if (digits.startsWith("0") && digits.length === 10) {
-      searchPhones.push("233" + digits.slice(1));
-    } else if (digits.startsWith("233") && digits.length === 12) {
-      searchPhones.push("0" + digits.slice(3));
-    }
-
-    // SECURITY: Scope to the authenticated user's orders only
-    // Admin users can look up any phone; regular users only their own agent orders
-    let isAdmin = false;
-    if (user) {
-      const authResult = await verifyAdmin(req, supabaseAdmin);
-      isAdmin = authResult.success;
-    }
+    const rawInput = phone.trim();
+    const isReference = rawInput.length >= 15 || rawInput.includes("-") || rawInput.toLowerCase().startsWith("trx") || rawInput.toLowerCase().startsWith("sdg");
 
     let query = supabaseAdmin
       .from("orders")
-      .select("id, customer_phone, network, package_size, amount, status, created_at, order_type")
-      .in("customer_phone", searchPhones)
+      .select("id, customer_phone, network, package_size, amount, status, created_at, order_type, paystack_reference, reference")
       .order("created_at", { ascending: false });
 
-    if (isGuest) {
-      // Guests can only see recent orders (last 7 days) and max 5 results to prevent data scraping
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      query = query.gte("created_at", sevenDaysAgo.toISOString()).limit(5);
-    } else if (!isAdmin) {
-      // Non-admin agents can see all their own orders
-      query = query.eq("agent_id", user.id).limit(20);
+    if (isReference) {
+      // Search directly by order ID, internal reference, or Paystack reference
+      query = query.or(`id.eq.${rawInput},reference.eq.${rawInput},paystack_reference.eq.${rawInput}`);
     } else {
-      query = query.limit(20);
+      // Normalize all Ghana phone number format permutations
+      const digits = rawInput.replace(/\D+/g, "");
+      const searchPhones = [digits, `+${digits}`];
+      
+      if (digits.startsWith("0") && digits.length === 10) {
+        searchPhones.push("233" + digits.slice(1));
+        searchPhones.push("+233" + digits.slice(1));
+        searchPhones.push(digits.slice(1));
+      } else if (digits.startsWith("233") && digits.length === 12) {
+        searchPhones.push("0" + digits.slice(3));
+        searchPhones.push(digits.slice(3));
+        searchPhones.push("+" + digits);
+      } else if (digits.length === 9) {
+        searchPhones.push("0" + digits);
+        searchPhones.push("233" + digits);
+        searchPhones.push("+233" + digits);
+      }
+
+      query = query.in("customer_phone", searchPhones);
     }
+
+    // Allow fetching up to 30 days of recent orders (max 50 items)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    query = query.gte("created_at", thirtyDaysAgo.toISOString()).limit(50);
 
     const { data: orders, error } = await query;
     if (error) throw error;
