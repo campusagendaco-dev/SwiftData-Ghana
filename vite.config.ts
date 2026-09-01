@@ -16,9 +16,6 @@ export default defineConfig(({ mode }) => ({
   build: {
     sourcemap: false, // Ensures source code cannot be reconstructed from the bundle
     minify: "esbuild",
-    modulePreload: {
-      polyfill: false,
-    },
   },
   esbuild: {
     drop: ["console", "debugger"], // Removes all console.logs to prevent leaking sensitive info

@@ -55,6 +55,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countdownTimer = useRef<NodeJS.Timeout | null>(null);
+  const inFlightRef = useRef(false);
 
   const handleManualVerify = async () => {
     if (!reference || isManualVerifying) return;
@@ -287,6 +288,11 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
       // 2. Active Fast-Polling (1.5s interval) with force: true to check Paystack directly
       const pollVerification = async () => {
+        if (inFlightRef.current) {
+          if (isPolling) pollTimer = setTimeout(pollVerification, 1500);
+          return;
+        }
+        inFlightRef.current = true;
         try {
           // Instant check via DB RPC
           const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
@@ -340,6 +346,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         } catch (err) {
           if (!isPolling) return;
           pollTimer = setTimeout(pollVerification, 2500);
+        } finally {
+          inFlightRef.current = false;
         }
       };
       

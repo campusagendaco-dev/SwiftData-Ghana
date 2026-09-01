@@ -127,6 +127,7 @@ const OrderStatus = () => {
   const [showReceipt, setShowReceipt] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const inFlightRef = useRef<boolean>(false);
 
   const { slug: routeSlug } = useParams<{ slug?: string }>();
   const storeParam = searchParams.get("store") || searchParams.get("slug") || routeSlug || "";
@@ -219,66 +220,71 @@ const OrderStatus = () => {
 
   // --- SINGLE ORDER LOGIC ---
   const pollStatus = useCallback(async (force = false) => {
-    if (!reference || redirectedRef.current) return;
+    if (!reference || redirectedRef.current || inFlightRef.current) return;
+    inFlightRef.current = true;
 
     let shouldInvokeEdgeFunction = force;
 
-    // Direct DB RPC status query first (lightweight, zero edge function rate-limit cost)
     try {
-      const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
-        p_reference: reference
-      });
-      const rpcList = rpcData as any[];
-      if (rpcList && rpcList.length > 0) {
-        const data = rpcList[0];
-        setOrderData(data);
-        handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
-        
-        if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
-          redirectedRef.current = true;
-          return;
-        }
+      // Direct DB RPC status query first (lightweight, zero edge function rate-limit cost)
+      try {
+        const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
+          p_reference: reference
+        });
+        const rpcList = rpcData as any[];
+        if (rpcList && rpcList.length > 0) {
+          const data = rpcList[0];
+          setOrderData(data);
+          handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
+          
+          if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
+            redirectedRef.current = true;
+            return;
+          }
 
-        // If status in DB is pending or awaiting_payment or not_paid, force-verify via Edge Function
-        if (["pending", "awaiting_payment", "not_paid"].includes(data.status)) {
+          // If status in DB is pending or awaiting_payment or not_paid, force-verify via Edge Function
+          if (["pending", "awaiting_payment", "not_paid"].includes(data.status)) {
+            shouldInvokeEdgeFunction = true;
+          }
+        } else {
           shouldInvokeEdgeFunction = true;
         }
-      } else {
+      } catch (err) {
+        console.error("Direct RPC polling error:", err);
         shouldInvokeEdgeFunction = true;
       }
-    } catch (err) {
-      console.error("Direct RPC polling error:", err);
-      shouldInvokeEdgeFunction = true;
-    }
 
-    if (!shouldInvokeEdgeFunction && !force) return;
+      if (!shouldInvokeEdgeFunction && !force) return;
 
-    setIsRefreshing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("verify-payment", {
-        body: { reference: resolvedOrderId || reference, force: true },
-      });
+      setIsRefreshing(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("verify-payment", {
+          body: { reference: resolvedOrderId || reference, force: true },
+        });
 
-      if (error) {
-        const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
-        if (isRateLimit) {
-          console.warn("[OrderStatus] verify-payment 429 rate limited. Relying on DB status RPC polling.");
-          return;
+        if (error) {
+          const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
+          if (isRateLimit) {
+            console.warn("[OrderStatus] verify-payment 429 rate limited. Relying on DB status RPC polling.");
+            return;
+          }
+          throw error;
         }
-        throw error;
+        if (!data) throw new Error("Failed to fetch status");
+        if (data.order) setOrderData(data.order);
+        handleStatusUpdate(data.status, data.message || data.error);
+        
+        // Stop polling if we reached a terminal state
+        if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
+          redirectedRef.current = true; // reuse this ref as a 'stop polling' flag
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      } finally {
+        setIsRefreshing(false);
       }
-      if (!data) throw new Error("Failed to fetch status");
-      if (data.order) setOrderData(data.order);
-      handleStatusUpdate(data.status, data.message || data.error);
-      
-      // Stop polling if we reached a terminal state
-      if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
-        redirectedRef.current = true; // reuse this ref as a 'stop polling' flag
-      }
-    } catch (err) {
-      console.error("Polling error:", err);
     } finally {
-      setIsRefreshing(false);
+      inFlightRef.current = false;
     }
   }, [reference, resolvedOrderId, handleStatusUpdate]);
 
