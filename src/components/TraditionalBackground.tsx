@@ -27,7 +27,7 @@ const SLIDESHOW_BACKGROUNDS = [
   "/assets/backgrounds/bg_world_cup_abstract.png",
 ];
 
-export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opacity-[0.15] dark:opacity-[0.25]" }: { className?: string }) => {
+export const TraditionalBackground = memo(({ className = "fixed inset-0 z-0 opacity-[0.35] dark:opacity-[0.45] pointer-events-none" }: { className?: string }) => {
   const [enabled, setEnabled] = useState(true);
   const [customBgUrl, setCustomBgUrl] = useState<string | null>(null);
   const [brightness, setBrightness] = useState(1.0);

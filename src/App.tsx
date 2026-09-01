@@ -364,7 +364,7 @@ const AppContent = () => {
 
   return (
     <>
-      {location.pathname !== "/" && <TraditionalBackground />}
+      <TraditionalBackground />
       <div className="relative z-10 min-h-screen flex flex-col">
         {!isDashboard && !isAgentStore && !isAdmin && <Navbar />}
         <ChunkErrorBoundary>
