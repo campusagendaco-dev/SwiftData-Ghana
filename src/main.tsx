@@ -10,24 +10,20 @@ const forceAssetRecovery = async (sourceMsg?: string) => {
   const lastReload = localStorage.getItem("asset-failure-reload");
   const now = Date.now();
   
-  // Debounce reload to prevent infinite reload loops (minimum 15 seconds interval)
-  if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
+  // Debounce reload to prevent infinite reload loops (2 seconds interval)
+  if (!lastReload || now - parseInt(lastReload, 10) > 2000) {
     localStorage.setItem("asset-failure-reload", now.toString());
     
     try {
-      // 1. Clear only Workbox/asset caches — do NOT unregister service workers.
-      //    Unregistering would destroy push subscriptions on devices that have
-      //    already granted notification permission, causing silent notification loss.
       if ("caches" in window) {
         const cacheKeys = await caches.keys();
         await Promise.all(cacheKeys.map(key => caches.delete(key)));
-        console.log("Cleared all cache storages.");
+        console.log("Cleared all cache storages for fresh deployment.");
       }
     } catch (err) {
       console.error("Asset recovery cleanup failed:", err);
     }
     
-    // 3. Reload the page cleanly
     window.location.reload();
   }
 };

@@ -31,8 +31,8 @@ export class ChunkErrorBoundary extends Component<Props, State> {
       const lastRetry = sessionStorage.getItem(retryKey);
       const now = Date.now();
 
-      // Attempt to recover automatically if we haven't retried in the last 15 seconds
-      if (!lastRetry || now - parseInt(lastRetry, 10) > 15000) {
+      // Attempt to recover automatically if we haven't retried in the last 2 seconds
+      if (!lastRetry || now - parseInt(lastRetry, 10) > 2000) {
         sessionStorage.setItem(retryKey, now.toString());
         
         if (typeof (window as any).forceAssetRecovery === "function") {
