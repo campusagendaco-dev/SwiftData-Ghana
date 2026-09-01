@@ -781,6 +781,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               {activeGateway === "korba" ? "Secure Checkout" : "MoMo Direct Pay"}
             </span>
             <h3 className="text-2xl font-black tracking-tight text-foreground drop-shadow-sm">GH₵{amount.toFixed(2)}</h3>
+            {(metadata?.package_size || recipientNetwork) && (
+              <div className="mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider font-mono">
+                <span>{metadata?.package_size || "Bundle"}</span>
+                <span>&bull;</span>
+                <span>{metadata?.network || recipientNetwork}</span>
+              </div>
+            )}
           </div>
         </div>
 

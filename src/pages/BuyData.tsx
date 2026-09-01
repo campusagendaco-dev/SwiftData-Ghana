@@ -1186,7 +1186,7 @@ const BuyData = () => {
                     {isFreePromo ? (
                       <button
                         onClick={handleClaimFree}
-                        disabled={claiming || !isPhoneValid || !resolvedName}
+                        disabled={claiming || !isPhoneValid}
                         className="w-full h-14 font-black text-sm tracking-wider rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black shadow-sm transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 uppercase"
                       >
                         {claiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
@@ -1195,7 +1195,7 @@ const BuyData = () => {
                     ) : (
                       <button
                         onClick={handlePay}
-                        disabled={buying || !resolvedName}
+                        disabled={buying || !isPhoneValid}
                         className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-black font-black uppercase text-xs tracking-wider shadow-sm flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-105 disabled:opacity-30"
                       >
                         {buying ? (
