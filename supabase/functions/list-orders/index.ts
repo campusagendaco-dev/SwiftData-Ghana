@@ -51,31 +51,14 @@ serve(async (req: Request) => {
       }
     }
 
-    if (!phone) {
-      return new Response(JSON.stringify({ error: "Phone number required" }), {
-        status: 400,
+    if (!phone && isGuest) {
+      return new Response(JSON.stringify({ orders: [] }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
-    const rateLimitKey = isGuest ? `list_orders_ip:${clientIp}` : `list_orders_user:${user.id}`;
-    const rateLimit = isGuest ? 60 : 180; // guests get 60/min, users get 180/min
-
-    // SECURITY: Rate limit (prevents scraping multiple phone numbers)
-    const { data: withinLimit } = await supabaseAdmin.rpc("check_generic_rate_limit", {
-      p_key: rateLimitKey,
-      p_rate_limit: rateLimit
-    });
-
-    if (withinLimit === false) {
-      return new Response(JSON.stringify({ error: "Too many requests. Please wait." }), {
-        status: 429,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const rawInput = phone.trim();
+    const rawInput = (phone || "").trim();
     const isReference = rawInput.length >= 15 || rawInput.includes("-") || rawInput.toLowerCase().startsWith("trx") || rawInput.toLowerCase().startsWith("sdg");
 
     let query = supabaseAdmin
@@ -83,7 +66,10 @@ serve(async (req: Request) => {
       .select("id, customer_phone, network, package_size, amount, status, created_at, order_type, paystack_reference, reference")
       .order("created_at", { ascending: false });
 
-    if (isReference) {
+    if (!rawInput && user) {
+      // Logged-in reseller/agent with no filter: fetch their own recent orders
+      query = query.eq("agent_id", user.id);
+    } else if (isReference) {
       // Search directly by order ID, internal reference, or Paystack reference
       query = query.or(`id.eq.${rawInput},reference.eq.${rawInput},paystack_reference.eq.${rawInput}`);
     } else {
