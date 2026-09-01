@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, CheckCircle2, Clock, Sparkles, Check, Search, Smartphone, ArrowRight, Lock } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, CheckCircle2, Clock, Sparkles, Check, Search, Smartphone, ArrowRight, Lock, Package } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { cn, getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
