@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart3, TrendingUp, Users, Smartphone, Loader2, RefreshCw, DollarSign, ShoppingCart, Target, Award, Sparkles, Activity } from "lucide-react";
 import {
@@ -66,7 +66,7 @@ const AdminAnalytics = () => {
     return () => { isMounted.current = false; };
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     
     let allOrders: OrderRecord[] = [];
@@ -105,9 +105,9 @@ const AdminAnalytics = () => {
     setOrders(allOrders);
     setAgents((agentsData as AgentRecord[]) || []);
     setLoading(false);
-  };
+  }, [daysFilter]);
 
-  useEffect(() => { fetchData(); }, [daysFilter]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const fulfilledOrders = useMemo(() => orders.filter(o => o.status === "fulfilled"), [orders]);
 
