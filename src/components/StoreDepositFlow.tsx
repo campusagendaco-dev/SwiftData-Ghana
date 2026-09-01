@@ -55,14 +55,13 @@ const StoreDepositFlow = ({
   useEffect(() => {
     if (!pollingId || step !== "processing") return;
     
-    const pollInterval = setInterval(async () => {
+    const checkDepositStatus = async () => {
       try {
         const { data } = await invokePublicFunctionAsUser("paystack-store-deposit", {
           body: { action: "check-status", transaction_id: pollingId }
         });
         
         if (data?.status === "successful" || data?.status === "failed") {
-          clearInterval(pollInterval);
           setPollingId("");
           
           if (data.status === "successful") {
@@ -76,9 +75,24 @@ const StoreDepositFlow = ({
       } catch (err) {
         // Silently continue polling on network errors
       }
-    }, 1500);
+    };
+
+    const pollInterval = setInterval(checkDepositStatus, 1500);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[StoreDepositFlow] Tab focused, checking deposit status instantly.");
+        checkDepositStatus();
+      }
+    };
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleVisibilityChange);
     
-    return () => clearInterval(pollInterval);
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
+    };
   }, [pollingId, step, onSuccess, toast]);
 
   if (!isOpen) return null;

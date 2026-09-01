@@ -328,7 +328,7 @@ const DashboardOrders = () => {
   const retryOrder = useCallback(async (orderId: string) => {
     setRetryingIds((prev) => new Set(prev).add(orderId));
     try {
-      await invokePublicFunctionAsUser("verify-payment", { body: { reference: orderId } });
+      await invokePublicFunctionAsUser("verify-payment", { body: { reference: orderId, force: true } });
       await fetchOrders();
     } catch {
       // silent — real-time will handle the update
@@ -344,7 +344,7 @@ const DashboardOrders = () => {
 
     const runAutoRetry = async () => {
       const stuck = orders.filter(
-        (o) => o.status === "pending" || o.status === "paid"
+        (o) => o.status === "pending" || o.status === "paid" || o.status === "awaiting_payment"
       );
       if (stuck.length === 0) return;
 
@@ -354,7 +354,7 @@ const DashboardOrders = () => {
         if (attempts >= 5) continue;
         retryCountRef.current[o.id] = attempts + 1;
         try {
-          const res = await invokePublicFunctionAsUser("verify-payment", { body: { reference: o.id } });
+          const res = await invokePublicFunctionAsUser("verify-payment", { body: { reference: o.id, force: true } });
           if (res?.error?.status === 429 || String(res?.error?.message).includes("429")) {
             console.warn("[DashboardOrders] Auto-retry hit 429 rate limit. Pausing batch retry.");
             break; // Pause batch if rate limited!

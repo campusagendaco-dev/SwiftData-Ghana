@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Loader2, KeyRound, AlertTriangle, ShieldCheck, RefreshCw, CheckCircle2, ArrowRight } from "lucide-react";
+import { X, Loader2, KeyRound, AlertTriangle, ShieldCheck, RefreshCw, CheckCircle2, ArrowRight, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAppTheme } from "@/contexts/ThemeContext";
@@ -51,9 +51,35 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const [reference, setReference] = useState<string>("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [honeypot, setHoneypot] = useState("");
+  const [isManualVerifying, setIsManualVerifying] = useState(false);
   
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countdownTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const handleManualVerify = async () => {
+    if (!reference || isManualVerifying) return;
+    setIsManualVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-payment", {
+        body: { reference, force: true }
+      });
+      if (data?.status === "fulfilled" || data?.status === "paid" || data?.status === "processing") {
+        toast({ title: "Payment Verified!", description: "Your transaction was confirmed successfully." });
+        onSuccess(reference);
+      } else if (data?.status === "failed" || data?.status === "error" || data?.status === "fulfillment_failed") {
+        const failMsg = data?.error || data?.reason || "The payment failed or was declined.";
+        toast({ title: "Payment Failed", description: failMsg, variant: "destructive" });
+        setErrorMessage(failMsg);
+        setStep('payment_number');
+      } else {
+        toast({ title: "Payment Pending", description: "Still awaiting your MoMo PIN authorization. Please check your phone." });
+      }
+    } catch (err: any) {
+      toast({ title: "Verification Error", description: "Could not reach gateway. Retrying automatically...", variant: "destructive" });
+    } finally {
+      setIsManualVerifying(false);
+    }
+  };
 
   // Initialize network and pre-fill the payment phone number from the recipient if available
   useEffect(() => {
@@ -274,7 +300,25 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         }
       };
       
+      // Instant check when user returns to browser tab after typing PIN on phone
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          console.log("[PaystackMomoCheckout] Tab focused, running immediate payment verification");
+          pollVerification();
+        }
+      };
+      window.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("focus", handleVisibilityChange);
+
       pollVerification();
+
+      return () => {
+        isPolling = false;
+        if (pollTimer) clearTimeout(pollTimer);
+        if (channel) supabase.removeChannel(channel);
+        window.removeEventListener("visibilitychange", handleVisibilityChange);
+        window.removeEventListener("focus", handleVisibilityChange);
+      };
     }
     
     return () => {
@@ -1101,8 +1145,27 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 <div className="flex flex-col w-full gap-2 mt-2">
                   <button
                     type="button"
+                    onClick={handleManualVerify}
+                    disabled={isManualVerifying}
+                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isManualVerifying ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Verifying Gateway...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 shrink-0 text-slate-950" />
+                        <span>Instant Verify (I Entered PIN)</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleFallbackCheckout}
-                    className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-md"
+                    className="w-full py-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95"
                   >
                     🌐 Open Online Payment Page
                   </button>

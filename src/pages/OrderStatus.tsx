@@ -221,31 +221,42 @@ const OrderStatus = () => {
   const pollStatus = useCallback(async (force = false) => {
     if (!reference || redirectedRef.current) return;
 
+    let shouldInvokeEdgeFunction = force;
+
     // Direct DB RPC status query first (lightweight, zero edge function rate-limit cost)
-    if (!force) {
-      try {
-        const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
-          p_reference: reference
-        });
-        const rpcList = rpcData as any[];
-        if (rpcList && rpcList.length > 0) {
-          const data = rpcList[0];
-          setOrderData(data);
-          handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
-          if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
-            redirectedRef.current = true;
-            return;
-          }
+    try {
+      const { data: rpcData } = await (supabase.rpc as any)("get_public_order_status", {
+        p_reference: reference
+      });
+      const rpcList = rpcData as any[];
+      if (rpcList && rpcList.length > 0) {
+        const data = rpcList[0];
+        setOrderData(data);
+        handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
+        
+        if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
+          redirectedRef.current = true;
+          return;
         }
-      } catch (err) {
-        console.error("Direct RPC polling error:", err);
+
+        // If status in DB is pending or awaiting_payment or not_paid, force-verify via Edge Function
+        if (["pending", "awaiting_payment", "not_paid"].includes(data.status)) {
+          shouldInvokeEdgeFunction = true;
+        }
+      } else {
+        shouldInvokeEdgeFunction = true;
       }
+    } catch (err) {
+      console.error("Direct RPC polling error:", err);
+      shouldInvokeEdgeFunction = true;
     }
+
+    if (!shouldInvokeEdgeFunction && !force) return;
 
     setIsRefreshing(true);
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
-        body: { reference: resolvedOrderId || reference, force },
+        body: { reference: resolvedOrderId || reference, force: true },
       });
 
       if (error) {
@@ -479,12 +490,27 @@ const OrderStatus = () => {
         });
     }
     
-    const interval = setInterval(() => pollStatus(false), 8000);
+    const isPending = ["pending", "awaiting_payment", "not_paid"].includes(orderStatus);
+    const pollDelay = isPending ? 2500 : 8000;
+    const interval = setInterval(() => pollStatus(isPending), pollDelay);
+
+    // Instant verification when user returns to browser tab after approving MoMo
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && ["pending", "awaiting_payment", "not_paid"].includes(orderStatus)) {
+        console.log("[OrderStatus] Tab focused, triggering instant force payment verification.");
+        pollStatus(true);
+      }
+    };
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleVisibilityChange);
+
     return () => { 
       safeRemoveChannel(channel); 
       clearInterval(interval); 
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
     };
-  }, [reference, resolvedOrderId, pollStatus, handleStatusUpdate]);
+  }, [reference, resolvedOrderId, orderStatus, pollStatus, handleStatusUpdate]);
 
   // --- GLOBAL TRACKER LOGIC ---
   const fetchTrackerData = async () => {
