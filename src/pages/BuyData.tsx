@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, CheckCircle2, Clock, Sparkles, Check, Search, Smartphone, ArrowRight, Lock, Package } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { cn, getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,21 +19,24 @@ import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 
-const NETWORK_GLASS_ACTIVE: Record<string, Record<string, string>> = {
+const NETWORK_ACCENT: Record<string, { dot: string; text: string; soft: string; hex: string }> = {
   MTN: {
-    background: "linear-gradient(135deg, rgba(251,191,36,0.95) 0%, rgba(245,158,11,0.90) 100%)",
-    boxShadow: "0 8px 25px rgba(251,191,36,0.45), inset 0 1px 0 rgba(255,255,255,0.4)",
-    color: "#000",
+    dot: "bg-amber-500",
+    text: "text-amber-600 dark:text-amber-400",
+    soft: "bg-amber-500/10",
+    hex: "#F59E0B",
   },
   Telecel: {
-    background: "linear-gradient(135deg, rgba(239,68,68,0.95) 0%, rgba(185,28,28,0.90) 100%)",
-    boxShadow: "0 8px 25px rgba(239,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-    color: "#fff",
+    dot: "bg-red-500",
+    text: "text-red-600 dark:text-red-400",
+    soft: "bg-red-500/10",
+    hex: "#EF4444",
   },
   AirtelTigo: {
-    background: "linear-gradient(135deg, rgba(59,130,246,0.95) 0%, rgba(29,78,216,0.90) 100%)",
-    boxShadow: "0 8px 25px rgba(59,130,246,0.4), inset 0 1px 0 rgba(255,255,255,0.25)",
-    color: "#fff",
+    dot: "bg-blue-500",
+    text: "text-blue-600 dark:text-blue-400",
+    soft: "bg-blue-500/10",
+    hex: "#3B82F6",
   },
 };
 
@@ -91,9 +94,9 @@ const getPackageDetails = (pkg: any): string => {
   if (productId.includes("Kokrokoo") || category.toLowerCase().includes("kokrokoo")) {
     return "400MB + 20 Mins Call (5am - 8am)";
   }
-  
-  if (category.toLowerCase().includes("midnight") || 
-      String(rawData.category).toLowerCase().includes("midnight") || 
+
+  if (category.toLowerCase().includes("midnight") ||
+      String(rawData.category).toLowerCase().includes("midnight") ||
       String(rawData.category).toLowerCase().includes("night")) {
     const val = rawData.validity || "Midnight (12am - 5am)";
     return `Midnight Bundle (${val})`;
@@ -220,9 +223,9 @@ const BuyData = () => {
         supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
       ]);
       const map: Record<string, GlobalPkgSetting> = {};
-      (data || []).forEach((r: any) => { 
+      (data || []).forEach((r: any) => {
         const normSize = r.package_size.replace(/\s+/g, "").toUpperCase();
-        map[`${r.network}-${normSize}`] = r; 
+        map[`${r.network}-${normSize}`] = r;
       });
       setGlobalSettings(map);
       if (mappings) {
@@ -249,7 +252,7 @@ const BuyData = () => {
   useEffect(() => {
     const fetchCustomPrices = async () => {
       if (!profile) return;
-      
+
       if (profile.is_sub_agent && profile.parent_agent_id) {
         try {
           const { data: parentProfile, error } = await supabase
@@ -257,20 +260,20 @@ const BuyData = () => {
             .select("sub_agent_prices, agent_prices")
             .eq("user_id", profile.parent_agent_id)
             .maybeSingle();
-            
+
           if (error) {
             console.error("[BuyData] Error fetching parent sub-agent prices:", error);
             return;
           }
-            
+
           if (parentProfile) {
             const subPrices = (parentProfile.sub_agent_prices || {}) as Record<string, Record<string, string | number>>;
             const agentPrices = (parentProfile.agent_prices || {}) as Record<string, Record<string, string | number>>;
             const hasSubPrices = Object.keys(subPrices).length > 0;
-            
+
             const resolved: Record<string, Record<string, number>> = {};
             const sourceMap = hasSubPrices ? subPrices : agentPrices;
-            
+
             for (const [net, items] of Object.entries(sourceMap)) {
               resolved[net] = {};
               for (const [size, val] of Object.entries(items)) {
@@ -284,14 +287,14 @@ const BuyData = () => {
         }
       }
     };
-    
+
     fetchCustomPrices();
   }, [profile]);
 
-  useEffect(() => { 
-    setSelectedPkg(null); 
-    setPhone(""); 
-    setEmail(""); 
+  useEffect(() => {
+    setSelectedPkg(null);
+    setPhone("");
+    setEmail("");
     setResolvedName(null);
     setSelectedTypeOrCategory("affordable");
   }, [selectedNetwork]);
@@ -364,10 +367,10 @@ const BuyData = () => {
         const normSize = gs.package_size.replace(/\s+/g, "").toUpperCase();
         if (!addedSizes.has(normSize)) {
           const mapping = korbaMappings.find(
-            m => m.package_name === gs.package_size && 
+            m => m.package_name === gs.package_size &&
                  (m.network === gs.network)
           );
-          
+
           list.push({
             size: gs.package_size,
             price: gs.public_price ?? 0,
@@ -383,14 +386,14 @@ const BuyData = () => {
     const processed = list
       .map((pkg) => {
         const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
-        
+
         let gs = globalSettings[`${dbNetwork}-${normSize}`];
         if (!gs && dbNetwork === "MTN") {
           gs = globalSettings[`MTN Mash Up-${normSize}`];
         }
 
         if (gs?.is_unavailable) return null;
-        
+
         let base = gs?.public_price ?? getPublicPrice(pkg.price);
         if (profile) {
           const isApprovedAgent = !!(profile.is_agent && profile.agent_approved);
@@ -403,8 +406,8 @@ const BuyData = () => {
             if (custom && custom > 0) {
               base = custom;
             } else {
-              base = Number(gs?.sub_agent_price) > 0 
-                ? Number(gs!.sub_agent_price) 
+              base = Number(gs?.sub_agent_price) > 0
+                ? Number(gs!.sub_agent_price)
                 : (Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : base);
             }
           }
@@ -413,7 +416,7 @@ const BuyData = () => {
         const price = applyPriceMultiplier(base, multiplier);
 
         const mapping = korbaMappings.find(
-          m => m.package_name === pkg.size && 
+          m => m.package_name === pkg.size &&
                (m.network === dbNetwork || (dbNetwork === "MTN" && m.network === "MTN Mash Up"))
         );
         const isInstant = !!mapping;
@@ -459,22 +462,22 @@ const BuyData = () => {
   const filteredPackages = useMemo(() => {
     if (selectedTypeOrCategory === "affordable") {
       return displayPackages.filter(
-        p => !p.isInstant && 
-             p.validity !== "MTN Mash Up" && 
+        p => !p.isInstant &&
+             p.validity !== "MTN Mash Up" &&
              p.category !== "Mash Up Bundles"
       );
     }
-    
+
     if (selectedTypeOrCategory === "mashup") {
       return displayPackages.filter(
         p => p.validity === "MTN Mash Up" || p.category === "Mash Up Bundles"
       );
     }
-    
+
     return displayPackages.filter(
-      p => p.isInstant && 
-           p.category === selectedTypeOrCategory && 
-           p.validity !== "MTN Mash Up" && 
+      p => p.isInstant &&
+           p.category === selectedTypeOrCategory &&
+           p.validity !== "MTN Mash Up" &&
            p.category !== "Mash Up Bundles"
     );
   }, [displayPackages, selectedTypeOrCategory]);
@@ -566,7 +569,7 @@ const BuyData = () => {
       toast({ title: "Ordering disabled", description: holidayMessage, variant: "destructive" });
       return;
     }
-    
+
     let netKey = selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : selectedNetwork.toUpperCase();
     if (selectedNetwork.toUpperCase().includes("MTN")) netKey = "MTN";
     if (networkStatusMap[netKey] === "down") {
@@ -613,14 +616,14 @@ const BuyData = () => {
     setPromoCode("");
     setPromoResult(null);
     setPromoOpen(false);
-    
+
     const callbackParams = new URLSearchParams({
       reference: ref,
       network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork,
       package: selectedPkg?.size || "",
       phone: phoneDigits,
     });
-    
+
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
   };
 
@@ -631,15 +634,15 @@ const BuyData = () => {
   const memoizedGrid = useMemo(() => {
     if (packages.length === 0) {
       return (
-        <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-amber-500/30 bg-amber-500/5 rounded-3xl backdrop-blur-xl">
+        <div className="flex flex-col items-center justify-center py-16 px-4 text-center border-2 border-dashed border-amber-500/30 bg-amber-500/5 rounded-3xl">
           <div className="relative flex items-center justify-center mb-4">
-            <span className="absolute inline-flex h-16 w-16 rounded-full bg-amber-500/20 animate-ping" />
-            <div className="relative w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center border border-amber-500/30 shadow-lg">
-              <Clock className="w-7 h-7 text-amber-400 animate-spin" />
+            <span className="absolute inline-flex h-16 w-16 rounded-full bg-amber-500/15 animate-ping" />
+            <div className="relative w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center border border-amber-500/30">
+              <Clock className="w-7 h-7 text-amber-500 animate-spin" />
             </div>
           </div>
-          <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">{selectedNetwork} Packages Updating</h3>
-          <p className="text-xs text-slate-400 max-w-md leading-relaxed">
+          <h3 className="text-lg font-black text-foreground mb-2 uppercase tracking-wide">{selectedNetwork} Packages Updating</h3>
+          <p className="text-xs text-muted-foreground max-w-md leading-relaxed">
             All {selectedNetwork} packages are currently being updated. Stock will resume shortly. Thank you for your patience!
           </p>
         </div>
@@ -652,71 +655,166 @@ const BuyData = () => {
           const isSelected = selectedPkg?.size === pkg.size;
           const display = formatPackageDisplay(pkg.size);
           const details = getPackageDetails(pkg);
-          
+          const isTelecel = selectedNetwork === "Telecel";
+          const isAirtelTigo = selectedNetwork === "AirtelTigo";
+          const isMTN = selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up";
+
+          if (isTelecel) {
+            return (
+              <button
+                key={pkg.size}
+                onClick={() => handleCardClick(pkg.size, pkg.price)}
+                className={cn(
+                  "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between text-left transition-all duration-300 overflow-hidden group shadow-xl border-2 text-white",
+                  isSelected
+                    ? "bg-[#E60000] border-white shadow-[0_12px_35px_rgba(230,0,0,0.6)] scale-[1.03] ring-4 ring-red-400/50"
+                    : "bg-[#DC2626] border-red-700/50 hover:border-red-400 hover:scale-[1.02] shadow-[0_8px_25px_rgba(220,38,38,0.35)]"
+                )}
+              >
+                {/* Top Row: Package Size on Left, Telecel Logo Badge on Right */}
+                <div className="flex items-start justify-between mb-4">
+                  <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono leading-none">
+                    {display.main}
+                  </p>
+                  <div className="px-2.5 py-1 rounded-xl bg-black/30 border border-white/20 backdrop-blur-md flex flex-col items-center">
+                    <span className="font-black text-[9px] text-white uppercase tracking-widest leading-none">TELECEL</span>
+                    <span className="text-[7px] text-white/70 uppercase tracking-tighter">Ghana</span>
+                  </div>
+                </div>
+
+                {/* Subtitle / Details */}
+                {details && (
+                  <p className="text-[10px] font-black text-yellow-300 uppercase tracking-wide mb-3 leading-tight">
+                    {details}
+                  </p>
+                )}
+
+                {/* 3-Column Metadata Bar matching user screenshot */}
+                <div className="grid grid-cols-3 gap-1 pt-3 border-t border-white/20 text-center">
+                  <div className="flex flex-col items-start border-r border-white/20 pr-1">
+                    <span className="text-sm sm:text-base font-black text-white font-mono leading-tight">₵{pkg.price.toFixed(2)}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">PRICE</span>
+                  </div>
+                  <div className="flex flex-col items-center border-r border-white/20 px-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase leading-tight">Yes</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">ROLLOVER</span>
+                  </div>
+                  <div className="flex flex-col items-end pl-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase truncate leading-tight">{pkg.validity || "60 Days"}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">DURATION</span>
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          if (isAirtelTigo) {
+            return (
+              <button
+                key={pkg.size}
+                onClick={() => handleCardClick(pkg.size, pkg.price)}
+                className={cn(
+                  "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between text-left transition-all duration-300 overflow-hidden group shadow-xl border-2 text-white",
+                  isSelected
+                    ? "bg-[#00529B] border-white shadow-[0_12px_35px_rgba(0,82,155,0.6)] scale-[1.03] ring-4 ring-blue-400/50"
+                    : "bg-[#004080] border-blue-700/50 hover:border-blue-400 hover:scale-[1.02] shadow-[0_8px_25px_rgba(0,64,128,0.35)]"
+                )}
+              >
+                {/* Top Row: AirtelTigo Badge + Action Indicator */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/30 border border-white/20 backdrop-blur-md">
+                    <span className="font-black text-[10px] text-white uppercase tracking-widest font-mono">AIRTELTIGO</span>
+                  </div>
+                  <div className={cn(
+                    "w-7 h-7 rounded-full flex items-center justify-center transition-transform",
+                    isSelected ? "bg-white text-blue-900 font-bold" : "bg-white/20 text-white group-hover:translate-y-0.5"
+                  )}>
+                    {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </div>
+
+                {/* Main Size & Subtitle */}
+                <div className="space-y-0.5 mb-4">
+                  <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono leading-none">
+                    {display.main}
+                  </p>
+                  <p className="text-xs font-black text-white/80 uppercase tracking-wider">
+                    AirtelTigo Bundle {display.sub ? `• ${display.sub}` : ""}
+                  </p>
+                  {details && (
+                    <p className="text-[10px] font-black text-yellow-300 uppercase tracking-wide pt-1 leading-tight">
+                      {details}
+                    </p>
+                  )}
+                </div>
+
+                {/* 3-Column Metadata Bar */}
+                <div className="grid grid-cols-3 gap-1 pt-3 border-t border-white/20 text-center">
+                  <div className="flex flex-col items-start border-r border-white/20 pr-1">
+                    <span className="text-sm sm:text-base font-black text-white font-mono leading-tight">₵{pkg.price.toFixed(2)}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">PRICE</span>
+                  </div>
+                  <div className="flex flex-col items-center border-r border-white/20 px-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase leading-tight">Yes</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">ROLLOVER</span>
+                  </div>
+                  <div className="flex flex-col items-end pl-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase truncate leading-tight">{pkg.validity || "No Expiry"}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">DURATION</span>
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          // Default / MTN Yellow Card Style matching user screenshot
           return (
             <button
               key={pkg.size}
               onClick={() => handleCardClick(pkg.size, pkg.price)}
               className={cn(
-                "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between border text-left transition-all duration-300 backdrop-blur-xl overflow-hidden group shadow-xl",
+                "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between text-left transition-all duration-300 overflow-hidden group shadow-xl border-2 text-black",
                 isSelected
-                  ? "bg-slate-900 border-amber-400 shadow-[0_10px_35px_rgba(245,158,11,0.25)] scale-[1.03] ring-2 ring-amber-400/50"
-                  : "bg-[#0b0c12]/90 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900/90 hover:scale-[1.02]"
+                  ? "bg-[#FFCC00] border-black shadow-[0_12px_35px_rgba(255,204,0,0.6)] scale-[1.03] ring-4 ring-amber-300/50"
+                  : "bg-[#FFC000] border-amber-500/40 hover:border-amber-400 hover:scale-[1.02] shadow-[0_8px_25px_rgba(255,192,0,0.35)]"
               )}
             >
-              {/* Dynamic Glow Orb for Selected Card */}
-              {isSelected && (
-                <div className="absolute -top-12 -right-12 w-28 h-28 bg-amber-500/30 rounded-full blur-2xl pointer-events-none" />
-              )}
-
-              {/* Badges */}
-              <div className="flex items-center justify-between gap-1 mb-3 relative z-10">
-                <span className={cn(
-                  "text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border",
-                  selectedNetwork === "MTN" && "bg-amber-500/20 text-amber-300 border-amber-500/30",
-                  selectedNetwork === "Telecel" && "bg-red-500/20 text-red-300 border-red-500/30",
-                  selectedNetwork === "AirtelTigo" && "bg-blue-500/20 text-blue-300 border-blue-500/30"
+              {/* Top Row: MTN Oval Badge + Action Indicator */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black text-amber-400 border border-amber-500/50 shadow-md">
+                  <span className="font-black text-[11px] font-mono tracking-tighter">MTN</span>
+                </div>
+                <div className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center transition-transform",
+                  isSelected ? "bg-black text-amber-400" : "bg-black/15 text-black group-hover:translate-y-0.5"
                 )}>
-                  {selectedNetwork}
-                </span>
-
-                {isSelected ? (
-                  <span className="w-5 h-5 rounded-full bg-amber-400 text-black flex items-center justify-center font-bold text-xs shadow-md">
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  </span>
-                ) : pkg.popular ? (
-                  <span className="text-[9px] font-black bg-gradient-to-r from-amber-500 to-yellow-400 text-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
-                    HOT
-                  </span>
-                ) : null}
+                  {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
               </div>
 
-              {/* Package Content */}
-              <div className="space-y-1 relative z-10">
-                <p className="text-xl sm:text-2xl font-black tracking-tight text-white font-mono group-hover:text-amber-300 transition-colors">
+              {/* Main Size & Subtitle */}
+              <div className="space-y-0.5 mb-4">
+                <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono leading-none">
                   {display.main}
                 </p>
-                
-                {display.sub && (
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider truncate">
-                    Official: {display.sub}
-                  </p>
-                )}
-                
+                <p className="text-xs font-black text-black/75 uppercase tracking-wider">
+                  MTN Bundle {display.sub ? `• ${display.sub}` : ""}
+                </p>
                 {details && (
-                  <p className="text-[10px] font-bold text-emerald-400 mt-1 leading-snug uppercase tracking-wide">
+                  <p className="text-[10px] font-black text-emerald-950 uppercase tracking-wide pt-1 leading-tight">
                     {details}
                   </p>
                 )}
+              </div>
 
-                <div className="pt-3 flex items-baseline justify-between border-t border-slate-800/60 mt-3">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">
-                    {pkg.validity || "No Expiry"}
-                  </span>
-                  <span className="text-base sm:text-lg font-black text-amber-400 font-mono">
-                    GH₵{pkg.price.toFixed(2)}
-                  </span>
-                </div>
+              {/* Bottom Row */}
+              <div className="flex items-baseline justify-between pt-3 border-t border-black/15">
+                <span className="text-xl sm:text-2xl font-black text-black font-mono tracking-tight">
+                  ₵{pkg.price.toFixed(2)}
+                </span>
+                <span className="text-[11px] font-black text-black/75 uppercase tracking-wider font-mono">
+                  {pkg.validity || "No Expiry"}
+                </span>
               </div>
             </button>
           );
@@ -726,111 +824,104 @@ const BuyData = () => {
   }, [packages, selectedPkg?.size, handleCardClick, selectedNetwork]);
 
   return (
-    <div className="min-h-screen bg-[#05060a] text-slate-100 selection:bg-amber-500/30 pt-16 md:pt-24 pb-24 font-sans antialiased relative overflow-hidden">
-      <SEO 
+    <div className="min-h-screen bg-background text-foreground pt-16 md:pt-24 pb-24 font-sans antialiased">
+      <SEO
         title="Buy Cheap Data Bundles Ghana 2026 | #1 Best Data Site ★★★★★ — SwiftData"
         description="Buy cheapest non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana with instant MoMo delivery. 5.0/5 stars rated, no account required. Cheaper than Datamart."
         keywords="mtnupu, mtn upu, mtn up2u, mtnupu sites, mtn upu sites, mtn up2u sites, cheapest data bundle in ghana, buy cheap data in ghana, mtn cheap data bundle code, how to buy cheap mtn data, telecel cheap data bundles, airteltigo cheap data bundles, non expiry data ghana, best data site in ghana, buy MTN data Ghana, buy Telecel data, buy AirtelTigo data, cheap data bundles, non-expiry data, datamart alternative"
         canonical="https://swiftdatagh.com/buy-data"
       />
 
-      {/* Dynamic Ambient Background Orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-amber-500/10 rounded-full blur-[180px] pointer-events-none" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-blue-500/10 rounded-full blur-[160px] pointer-events-none" />
-      </div>
-
       {/* Hero Banner Section */}
-      <div className="relative z-10 max-w-5xl mx-auto px-4 mb-8">
-        <div className="rounded-3xl bg-[#0b0c12]/90 border border-slate-800 p-6 sm:p-8 backdrop-blur-2xl shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-3 max-w-xl">
-              <div className="flex items-center gap-2">
-                <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+      <div className="max-w-5xl mx-auto px-4 mb-8">
+        <div className="rounded-3xl bg-card border border-border p-6 sm:p-10">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+            <div className="space-y-4 max-w-xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1">
+                <span className="flex h-1.5 w-1.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500" />
                 </span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 font-mono">Instant MoMo Delivery • No Signup</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Instant MoMo Delivery &middot; No Signup</span>
               </div>
 
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight">
-                Buy <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500">Data Bundles</span>
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-foreground tracking-tight">
+                Buy <span className="text-amber-500">Data Bundles</span>
               </h1>
-              
-              <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
+
+              <p className="text-sm text-muted-foreground font-medium leading-relaxed">
                 Select your mobile network, pick a package size &amp; complete payment instantly with Mobile Money or Card.
               </p>
 
-              <div className="flex flex-wrap items-center gap-3 pt-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 bg-slate-900/90 px-3 py-1 rounded-full border border-slate-800">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground/80 bg-muted px-3 py-1.5 rounded-full border border-border">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                   <span>256-Bit SSL Encrypted</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 bg-slate-900/90 px-3 py-1 rounded-full border border-slate-800">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground/80 bg-muted px-3 py-1.5 rounded-full border border-border">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
                   <span>Instant Delivery</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 bg-slate-900/90 px-3 py-1 rounded-full border border-slate-800">
-                  <Package className="w-3.5 h-3.5 text-blue-400" />
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground/80 bg-muted px-3 py-1.5 rounded-full border border-border">
+                  <Package className="w-3.5 h-3.5 text-blue-500" />
                   <span>Non-Expiry Data</span>
                 </div>
               </div>
             </div>
 
             <div className="shrink-0 w-full md:w-auto">
-              <LiveDeliveryBadge />
+              <div className="inline-block rounded-full bg-[#0b0c12] p-0.5">
+                <LiveDeliveryBadge className="mt-0" />
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="relative z-10 max-w-5xl mx-auto px-4">
+      <div className="max-w-5xl mx-auto px-4">
         {/* Warning Bar */}
-        <div className="mb-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5 flex items-center justify-between text-xs font-bold text-amber-300 backdrop-blur-md">
+        <div className="mb-6 rounded-2xl bg-muted/60 border border-border p-3.5 flex items-center justify-between text-xs font-semibold text-foreground/80">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
             <span>Delivery times vary &bull; Double check recipient phone number</span>
           </div>
-          <Link to="/order-status" className="px-3 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-extrabold transition-all text-[11px] flex items-center gap-1 shrink-0">
+          <Link to="/order-status" className="px-3 py-1 rounded-xl bg-foreground text-background hover:opacity-80 font-bold transition-all text-[11px] flex items-center gap-1 shrink-0">
             Track Order <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
 
         {holidayMode && (
-          <div className="mb-6 rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm font-bold text-yellow-300">
+          <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-700 dark:text-amber-300">
             {holidayMessage}
           </div>
         )}
 
         {/* Network Selector Tabs */}
-        <div className="flex gap-2 p-1.5 mb-6 rounded-2xl bg-[#0b0c12]/90 border border-slate-800 backdrop-blur-xl shadow-xl">
+        <div className="flex gap-1.5 p-1.5 mb-6 rounded-2xl bg-muted border border-border">
           {NETWORKS.filter(n => !(activeGateway === "korba" && n === "MTN Mash Up")).map((n) => {
             const active = selectedNetwork === n;
+            const accent = NETWORK_ACCENT[n];
             return (
               <button
                 key={n}
                 onClick={() => setSelectedNetwork(n)}
                 className={cn(
-                  "flex-1 py-3 rounded-xl text-xs sm:text-sm font-black transition-all duration-300 relative overflow-hidden",
+                  "flex-1 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2",
                   active
-                    ? "text-black shadow-lg scale-[1.02]"
-                    : "text-slate-400 hover:text-white hover:bg-slate-900/60"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
-                style={active ? NETWORK_GLASS_ACTIVE[n] : undefined}
               >
-                <span className="relative z-10 flex items-center justify-center gap-2">
-                  <span>{n}</span>
-                  {networkStatusMap[n.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : (n.toUpperCase().includes("MTN") ? "MTN" : n.toUpperCase())] === "down" && (
-                    <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" title="Offline" />
-                  )}
-                </span>
+                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", accent.dot)} />
+                <span>{n}</span>
+                {networkStatusMap[n.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : (n.toUpperCase().includes("MTN") ? "MTN" : n.toUpperCase())] === "down" && (
+                  <span className="w-2 h-2 rounded-full bg-red-500" title="Offline" />
+                )}
               </button>
             );
           })}
         </div>
-        
+
         {/* Dropdown Selector for Package Type / Category */}
         <div className="mb-6 relative z-50">
           <BundleSelectorDropdown
@@ -840,23 +931,23 @@ const BuyData = () => {
               setSelectedTypeOrCategory(val);
               setSelectedPkg(null);
             }}
-            accentColor={selectedNetwork === "MTN" ? "#F59E0B" : selectedNetwork === "Telecel" ? "#EF4444" : "#3B82F6"}
-            isDark={true}
+            accentColor={NETWORK_ACCENT[selectedNetwork]?.hex}
+            isDark={isDark}
           />
         </div>
 
         {/* Dedicated Category Header */}
         {selectedTypeOrCategory !== "affordable" && selectedTypeOrCategory !== "mashup" && (
-          <div className="mb-6 p-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 flex items-center justify-between gap-4">
+          <div className="mb-6 p-4 rounded-2xl border border-border bg-muted/50 flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-xs font-black text-white uppercase tracking-wider">
+              <h2 className="text-xs font-black text-foreground uppercase tracking-wider">
                 {selectedNetwork} Instant: {selectedTypeOrCategory}
               </h2>
-              <p className="text-[11px] text-slate-400 font-medium">
+              <p className="text-[11px] text-muted-foreground font-medium">
                 Official retail bundles routed instantly via carrier API.
               </p>
             </div>
-            <div className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">
+            <div className="px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
               Official API
             </div>
           </div>
@@ -864,19 +955,19 @@ const BuyData = () => {
 
         {/* Network Offline Barrier */}
         {networkStatusMap[selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : (selectedNetwork.toUpperCase().includes("MTN") ? "MTN" : selectedNetwork.toUpperCase())] === "down" ? (
-          <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-red-500/30 bg-red-500/10 rounded-3xl backdrop-blur-xl">
-            <div className="w-14 h-14 bg-red-500/20 rounded-2xl flex items-center justify-center mb-4 border border-red-500/40">
-               <AlertTriangle className="w-7 h-7 text-red-400" />
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-red-500/30 bg-red-500/5 rounded-3xl">
+            <div className="w-14 h-14 bg-red-500/10 rounded-2xl flex items-center justify-center mb-4 border border-red-500/20">
+               <AlertTriangle className="w-7 h-7 text-red-500" />
             </div>
-            <h3 className="text-lg font-black text-white mb-2 uppercase tracking-wide">{selectedNetwork} Maintenance</h3>
-            <p className="text-xs text-slate-300 max-w-md leading-relaxed">
+            <h3 className="text-lg font-black text-foreground mb-2 uppercase tracking-wide">{selectedNetwork} Maintenance</h3>
+            <p className="text-xs text-muted-foreground max-w-md leading-relaxed">
               {selectedNetwork} delivery is undergoing brief maintenance. Please try another network or check back shortly.
             </p>
           </div>
         ) : (
           pkgLoading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[140px] rounded-3xl bg-slate-900/80" />)}
+              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[140px] rounded-2xl" />)}
             </div>
           ) : (
             memoizedGrid
@@ -884,14 +975,14 @@ const BuyData = () => {
         )}
 
         {/* Reseller Banner */}
-        <div className="mt-10 rounded-3xl border border-slate-800 bg-[#0b0c12]/90 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-xl shadow-xl">
+        <div className="mt-10 rounded-3xl border border-border bg-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <p className="font-extrabold text-sm text-white mb-1">Want wholesale agent rates &amp; your own website store?</p>
-            <p className="text-slate-400 text-xs font-medium">Join our reseller program to start your data business today.</p>
+            <p className="font-black text-sm text-foreground mb-1">Want wholesale agent rates &amp; your own website store?</p>
+            <p className="text-muted-foreground text-xs font-medium">Join our reseller program to start your data business today.</p>
           </div>
           <Link
             to="/agent-program"
-            className="shrink-0 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-400 px-5 py-3 text-xs font-black text-black hover:brightness-110 transition-all shadow-lg active:scale-95"
+            className="shrink-0 inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 text-xs font-black text-black hover:bg-amber-400 transition-all active:scale-95"
           >
             Become an Agent <ArrowRight className="w-4 h-4" />
           </Link>
@@ -904,48 +995,48 @@ const BuyData = () => {
           {selectedPkg && (
             <div className="fixed inset-0 z-[99999] flex flex-col items-center justify-center p-4 overflow-y-auto">
               {/* Backdrop */}
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => { setSelectedPkg(null); setPhone(""); setEmail(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-                className="fixed inset-0 bg-black/95 backdrop-blur-xl"
+                className="fixed inset-0 bg-black/70 backdrop-blur-sm"
               />
-              
+
               {/* Modal Card */}
               <motion.div
                 onClick={(e) => e.stopPropagation()}
                 initial={{ opacity: 0, scale: 0.95, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                className="relative w-full max-w-[370px] bg-[#090a0f] border border-amber-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] z-10"
+                className="relative w-full max-w-[380px] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10"
               >
                 {/* Accent Top Bar */}
                 <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
 
                 {/* Close Button */}
-                <button 
+                <button
                   onClick={() => { setSelectedPkg(null); setPhone(""); setEmail(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-                  className="absolute top-4 right-4 z-30 w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                  className="absolute top-4 right-4 z-30 w-8 h-8 rounded-xl bg-muted hover:bg-muted/70 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
 
                 {/* Modal Header */}
                 <div className="p-6 pb-4 text-center space-y-3 relative z-20">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                     {selectedNetwork} Network
                   </div>
 
-                  <h3 className="text-3xl font-black text-white font-mono tracking-tight">
+                  <h3 className="text-3xl font-black text-foreground font-mono tracking-tight">
                     {selectedPkg.size}
                   </h3>
 
                   {/* Cultural Centerpiece Icon */}
                   <div className="flex items-center justify-center my-1 h-9 w-9 mx-auto">
                     <AnimatePresence mode="wait">
-                      <motion.div 
+                      <motion.div
                         key={adinkraIndex}
                         initial={{ scale: 0.5, opacity: 0, rotate: -45 }}
                         animate={{ scale: 1, opacity: 1, rotate: 0 }}
@@ -953,10 +1044,10 @@ const BuyData = () => {
                         transition={{ duration: 0.4 }}
                         className="flex items-center justify-center"
                       >
-                        <svg 
-                          width="32" height="32" viewBox="0 0 24 24" 
-                          fill="currentColor" 
-                          className="text-amber-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.5)]"
+                        <svg
+                          width="32" height="32" viewBox="0 0 24 24"
+                          fill="currentColor"
+                          className="text-amber-500"
                         >
                           <path d={adinkraSymbols[adinkraIndex].path} />
                         </svg>
@@ -966,20 +1057,20 @@ const BuyData = () => {
 
                   {/* Price Tag */}
                   {isFreePromo ? (
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-black text-[10px] font-black uppercase tracking-wider shadow-lg">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-black text-[10px] font-black uppercase tracking-wider">
                       <Gift className="w-3.5 h-3.5" /> Free Reward
                     </div>
                   ) : (
-                    <div className="inline-flex items-center gap-2 text-slate-200 text-xs font-bold bg-slate-900 border border-slate-800 rounded-full px-3.5 py-1">
+                    <div className="inline-flex items-center gap-2 text-foreground text-xs font-bold bg-muted border border-border rounded-full px-3.5 py-1">
                       {validPromo ? (
                         <>
-                          <span className="opacity-40 line-through">GH₵{selectedPkg.price.toFixed(2)}</span> 
-                          <span className="text-amber-400 font-black">GH₵{discountedPkgPrice.toFixed(2)}</span>
+                          <span className="opacity-40 line-through">GH₵{selectedPkg.price.toFixed(2)}</span>
+                          <span className="text-amber-500 font-black">GH₵{discountedPkgPrice.toFixed(2)}</span>
                         </>
                       ) : (
-                        <span className="text-amber-400 font-black">GH₵{selectedPkg.price.toFixed(2)}</span>
+                        <span className="text-amber-500 font-black">GH₵{selectedPkg.price.toFixed(2)}</span>
                       )}
-                      <span className="text-[10px] text-slate-400 font-medium">+GH₵{fee.toFixed(2)} fee</span>
+                      <span className="text-[10px] text-muted-foreground font-medium">+GH₵{fee.toFixed(2)} fee</span>
                     </div>
                   )}
                 </div>
@@ -987,44 +1078,44 @@ const BuyData = () => {
                 {/* Form Fields */}
                 <div className="p-6 pt-2 space-y-4 relative z-20">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block font-mono">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block font-mono">
                       Recipient Phone Number
                     </label>
 
                     <div className="relative">
                       <input
                         ref={phoneInputRef}
-                        type="tel" 
+                        type="tel"
                         inputMode="numeric"
                         placeholder="0XX XXXXXXX"
-                        value={phone} 
+                        value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         maxLength={12}
-                        className="w-full h-13 bg-[#0e0f17] border border-slate-800 rounded-2xl pl-4 pr-11 text-white placeholder:text-slate-600 text-base font-bold tracking-wider font-mono focus:outline-none focus:border-amber-500/50 transition-all shadow-inner"
+                        className="w-full h-14 bg-muted/50 border border-border rounded-2xl pl-4 pr-11 text-foreground placeholder:text-muted-foreground/60 text-base font-bold tracking-wider font-mono focus:outline-none focus:border-amber-500/60 transition-all"
                       />
-                      
+
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-7 h-7">
                         {resolvingName ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                          <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
                         ) : resolvedName ? (
-                          <div className="bg-emerald-500 rounded-full p-1 shadow-md">
+                          <div className="bg-emerald-500 rounded-full p-1">
                             <Check className="w-3 h-3 text-black stroke-[3]" />
                           </div>
                         ) : (
-                          <ShieldCheck className="w-4 h-4 text-slate-600" />
+                          <ShieldCheck className="w-4 h-4 text-muted-foreground/50" />
                         )}
                       </div>
                     </div>
 
                     {/* Auto Resolved Name Badge */}
                     {resolvedName && (
-                      <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-2.5 animate-in fade-in duration-200">
-                        <div className="shrink-0 w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-xs">
+                      <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5 animate-in fade-in duration-200">
+                        <div className="shrink-0 w-6 h-6 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-xs">
                           {resolvedName.charAt(0)}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400/80 leading-none mb-0.5">Verified Recipient</p>
-                          <p className="text-xs font-black text-emerald-300 uppercase truncate leading-tight tracking-wide">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-600/80 dark:text-emerald-400/80 leading-none mb-0.5">Verified Recipient</p>
+                          <p className="text-xs font-black text-emerald-700 dark:text-emerald-300 uppercase truncate leading-tight tracking-wide">
                             {resolvedName}
                           </p>
                         </div>
@@ -1035,16 +1126,16 @@ const BuyData = () => {
                   {/* Email Optional Field */}
                   {isPhoneValid && !isFreePromo && (
                     <div className="space-y-1.5 pt-1">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block font-mono">
-                        Email Address <span className="text-slate-500 font-normal">(Optional)</span>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground block font-mono">
+                        Email Address <span className="text-muted-foreground/60 font-normal">(Optional)</span>
                       </label>
                       <input
-                        type="email" 
+                        type="email"
                         inputMode="email"
                         placeholder="For receipt..."
-                        value={email} 
+                        value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full h-11 bg-[#0e0f17] border border-slate-800 rounded-xl px-3.5 text-white placeholder:text-slate-600 text-xs font-mono focus:outline-none focus:border-amber-500/50 transition-all"
+                        className="w-full h-11 bg-muted/50 border border-border rounded-xl px-3.5 text-foreground placeholder:text-muted-foreground/60 text-xs font-mono focus:outline-none focus:border-amber-500/60 transition-all"
                       />
                     </div>
                   )}
@@ -1052,18 +1143,18 @@ const BuyData = () => {
                   {/* Promo Code Drawer */}
                   <div className="pt-1">
                     {!promoOpen && !validPromo ? (
-                      <button 
+                      <button
                         onClick={() => { setPromoOpen(true); setTimeout(() => promoInputRef.current?.focus(), 80); }}
-                        className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-amber-400 transition-colors"
+                        className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground hover:text-amber-500 transition-colors"
                       >
-                        <Tag className="w-3.5 h-3.5 text-amber-400" /> Have a Promo Code?
+                        <Tag className="w-3.5 h-3.5 text-amber-500" /> Have a Promo Code?
                       </button>
                     ) : (
                       <div className="space-y-1.5">
                         {validPromo ? (
-                          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-black bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-black bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
                             <span className="text-[10px] font-mono">{validPromo.is_free ? "FREE CODE ACTIVATED" : `${validPromo.discount_percentage}% DISCOUNT APPLIED`}</span>
-                            <button onClick={() => { setPromoResult(null); setPromoCode(""); setPromoOpen(true); }} className="text-slate-400 hover:text-white">
+                            <button onClick={() => { setPromoResult(null); setPromoCode(""); setPromoOpen(true); }} className="text-muted-foreground hover:text-foreground">
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1071,14 +1162,14 @@ const BuyData = () => {
                           <div className="flex gap-2">
                             <input
                               ref={promoInputRef}
-                              type="text" 
+                              type="text"
                               placeholder="PROMO CODE"
-                              value={promoCode} 
+                              value={promoCode}
                               onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); }}
-                              className="flex-1 h-9 bg-[#0e0f17] border border-slate-800 rounded-xl px-3 text-white placeholder:text-slate-600 text-xs font-mono font-bold uppercase focus:outline-none focus:border-amber-500/50"
+                              className="flex-1 h-9 bg-muted/50 border border-border rounded-xl px-3 text-foreground placeholder:text-muted-foreground/60 text-xs font-mono font-bold uppercase focus:outline-none focus:border-amber-500/60"
                             />
-                            <button 
-                              onClick={handleApplyPromo} 
+                            <button
+                              onClick={handleApplyPromo}
                               disabled={promoValidating || !promoCode.trim()}
                               className="h-9 px-3 rounded-xl text-[10px] font-black bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-30 transition-all active:scale-95"
                             >
@@ -1093,19 +1184,19 @@ const BuyData = () => {
                   {/* Checkout Button */}
                   <div className="pt-2">
                     {isFreePromo ? (
-                      <button 
-                        onClick={handleClaimFree} 
+                      <button
+                        onClick={handleClaimFree}
                         disabled={claiming || !isPhoneValid || !resolvedName}
-                        className="w-full h-13 font-black text-sm tracking-wider rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 uppercase"
+                        className="w-full h-14 font-black text-sm tracking-wider rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black shadow-sm transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 uppercase"
                       >
                         {claiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
                         <span>Claim Free Data</span>
                       </button>
                     ) : (
-                      <button 
-                        onClick={handlePay} 
+                      <button
+                        onClick={handlePay}
                         disabled={buying || !resolvedName}
-                        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-black font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-110 disabled:opacity-30"
+                        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-black font-black uppercase text-xs tracking-wider shadow-sm flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-105 disabled:opacity-30"
                       >
                         {buying ? (
                           <div className="flex items-center gap-2">
@@ -1122,8 +1213,8 @@ const BuyData = () => {
                     )}
 
                     <div className="flex items-center justify-center gap-1.5 mt-3">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest font-mono">
                         Safe &amp; Encrypted MoMo Payment
                       </p>
                     </div>
