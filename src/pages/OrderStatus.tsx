@@ -764,98 +764,143 @@ const OrderStatus = () => {
           {/* Receipt Modal */}
           <AnimatePresence>
             {showReceipt && (
-              <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
                 <motion.div 
                   initial={{ opacity: 0 }} 
                   animate={{ opacity: 1 }} 
                   exit={{ opacity: 0 }}
                   onClick={() => setShowReceipt(false)}
-                  className="absolute inset-0 bg-black/80 backdrop-blur-sm" 
+                  className="fixed inset-0 bg-black/90 backdrop-blur-md" 
                 />
                 <motion.div 
-                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                  className="relative w-full max-w-sm bg-[#0F0F12] border border-white/10 rounded-[2.5rem] overflow-hidden shadow-3xl"
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="relative w-full max-w-sm bg-[#090a0f] border border-amber-500/25 rounded-3xl overflow-hidden shadow-2xl z-10"
                 >
-                  <div className="p-8 space-y-6">
-                    <div className="flex justify-between items-center">
+                  {/* Top Bar Accent */}
+                  <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
+
+                  <div className="p-5 sm:p-6 space-y-5">
+                    {/* Header */}
+                    <div className="flex justify-between items-center pb-1">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: brandColor }}>
-                          <CheckCircle2 className="w-5 h-5 text-black" />
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-500/20 border border-amber-500/40">
+                          <ReceiptText className="w-4 h-4 text-amber-400" />
                         </div>
-                        <span className="text-xs font-black uppercase tracking-widest text-white/90">E-Receipt</span>
+                        <div>
+                          <span className="text-xs font-black uppercase tracking-widest text-white block">Digital E-Receipt</span>
+                          <span className="text-[9px] text-slate-400 font-mono">Verified Order</span>
+                        </div>
                       </div>
-                      <button onClick={() => setShowReceipt(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-colors">
-                        <XCircle className="w-5 h-5" />
+                      <button 
+                        onClick={() => setShowReceipt(false)} 
+                        className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                      >
+                        <XCircle className="w-4 h-4" />
                       </button>
                     </div>
 
-                    <div ref={receiptRef} className="bg-[#0F0F12] border border-white/5 rounded-3xl p-6 space-y-4 font-mono">
-                      <div className="text-center pb-4 border-b border-dashed border-white/10">
-                        <p className="text-sm font-black text-white mb-1 uppercase tracking-widest">{storeName}</p>
-                        <p className="text-[10px] text-white/30">{new Date().toLocaleString()}</p>
+                    {/* Receipt Canvas Box (Captured by html2canvas) */}
+                    <div ref={receiptRef} className="bg-[#0e0f17] border border-slate-800 rounded-2xl p-5 space-y-4 font-mono shadow-inner text-slate-100">
+                      {/* Store Header */}
+                      <div className="text-center pb-3.5 border-b border-dashed border-slate-700/80 space-y-1">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-5 h-5 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                          </div>
+                          <p className="text-xs font-black text-white uppercase tracking-wider">{storeName}</p>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-mono">{new Date().toLocaleString()}</p>
                       </div>
                       
-                      <div className="space-y-3">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-white/20 uppercase">Reference</span>
-                          <span className="text-white/60 truncate max-w-[120px]">{reference.toUpperCase()}</span>
+                      {/* Key-Value Details */}
+                      <div className="space-y-2.5 text-[11px]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Reference</span>
+                          <span className="text-amber-400 font-bold font-mono text-[10px] bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 max-w-[150px] truncate">
+                            {reference.toUpperCase()}
+                          </span>
                         </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-white/20 uppercase">Service</span>
-                          <span className="text-white/60">{orderType === "utility" ? "Bill Payment" : "Data Bundle"}</span>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Service</span>
+                          <span className="text-slate-200 font-bold">{orderType === "utility" ? "Bill Payment" : "Data Bundle"}</span>
                         </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-white/20 uppercase">Network</span>
-                          <span className="text-white/60">{network || "MTN"}</span>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Network</span>
+                          <span className={cn(
+                            "font-black text-[10px] px-2 py-0.5 rounded uppercase",
+                            (network || "").includes("MTN") && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+                            (network || "").includes("Telecel") && "bg-red-500/20 text-red-300 border border-red-500/30",
+                            (network || "").includes("Airtel") && "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                          )}>
+                            {network || "MTN"}
+                          </span>
                         </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-white/20 uppercase">Plan</span>
-                          <span className="text-white/60">{packageSize || "—"}</span>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Plan / Size</span>
+                          <span className="text-white font-bold">{packageSize || "—"}</span>
                         </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-white/20 uppercase">Recipient</span>
-                          <span className="text-white/60">{phoneParam || "—"}</span>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Recipient</span>
+                          <span className="text-white font-mono font-bold tracking-wider">{phoneParam || "—"}</span>
                         </div>
+
                         {statusMessage && statusMessage.startsWith("Token:") && (
-                          <div className="flex justify-between text-[11px] pt-2 border-t border-white/5">
-                            <span className="text-emerald-500/70 uppercase">Token</span>
-                            <span className="text-emerald-400 font-bold font-mono">{statusMessage.replace("Token:", "").trim()}</span>
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-800">
+                            <span className="text-emerald-400 uppercase text-[10px] font-bold">Meter Token</span>
+                            <span className="text-emerald-300 font-black font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                              {statusMessage.replace("Token:", "").trim()}
+                            </span>
                           </div>
                         )}
                       </div>
 
-                      <div className="pt-4 border-t border-dashed border-white/10 flex justify-between items-center">
-                        <span className="text-[10px] font-black text-white/40 uppercase">Status</span>
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase">
-                          <ShieldCheck className="w-3 h-3" />
+                      {/* Status Badge */}
+                      <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
+                        <div className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
+                          (orderStatus === "fulfilled" || orderStatus === "processing" || orderStatus === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+                          (orderStatus === "pending" || orderStatus === "awaiting_payment") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                          (orderStatus === "failed" || orderStatus === "fulfillment_failed") && "bg-red-500/15 text-red-400 border border-red-500/30"
+                        )}>
+                          <ShieldCheck className="w-3.5 h-3.5" />
                           {orderStatus}
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* Action Buttons */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
                       <button 
                         onClick={copyReceipt}
-                        className="h-12 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/60 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95"
+                        className="h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
                       >
-                        <Copy className="w-4 h-4" />
+                        <Copy className="w-3.5 h-3.5" />
                         Copy Text
                       </button>
                       <button 
                         onClick={downloadReceipt}
                         disabled={isDownloading}
-                        className="h-12 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white/60 font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                        className="h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
                       >
-                        {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+                        {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Package className="w-3.5 h-3.5" />}
                         Save Image
                       </button>
                     </div>
                   </div>
                   
-                  <div className="border-t border-white/5 py-3 text-center" style={{ backgroundColor: `${brandColor}1a` }}>
-                    <p className="text-[8px] font-black uppercase tracking-[0.3em]" style={{ color: brandColor }}>Verified Transaction</p>
+                  {/* Card Footer */}
+                  <div className="border-t border-white/10 py-2.5 text-center bg-black/60">
+                    <p className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400/90 flex items-center justify-center gap-1.5">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      VERIFIED TRANSACTION • 256-BIT ENCRYPTED
+                    </p>
                   </div>
                 </motion.div>
               </div>
