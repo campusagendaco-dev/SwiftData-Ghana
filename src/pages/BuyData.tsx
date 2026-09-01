@@ -605,6 +605,7 @@ const BuyData = () => {
     };
 
     setCheckoutMetadata(meta);
+    setSelectedPkg(null);
     setCheckoutOpen(true);
   };
 
