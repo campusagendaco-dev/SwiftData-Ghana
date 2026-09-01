@@ -737,8 +737,7 @@ const OrderStatus = () => {
           <div className="flex items-center gap-2">
             <button 
               onClick={() => setShowReceipt(true)} 
-              disabled={orderStatus !== "fulfilled" && orderStatus !== "paid" && orderStatus !== "processing"}
-              className="flex-1 h-12 rounded-2xl text-slate-950 font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-30"
+              className="flex-1 h-12 rounded-2xl text-slate-950 font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-110"
               style={{ backgroundColor: brandColor }}
             >
               <ReceiptText className="w-4 h-4" /> View Digital Receipt
