@@ -21,10 +21,13 @@ export class ChunkErrorBoundary extends Component<Props, State> {
       msg.includes("expected a javascript-or-wasm module script") ||
       msg.includes("importing a module script failed") ||
       msg.includes("error loading dynamically imported module") ||
+      msg.includes("referenceerror") ||
+      msg.includes("is not defined") ||
       msg.includes("postgres_changes") ||
       msg.includes("wallet-balance-header") ||
       msg.includes("subscribe()") ||
-      error?.name === "ChunkLoadError";
+      error?.name === "ChunkLoadError" ||
+      error?.name === "ReferenceError";
 
     if (isStaleOrChunkError) {
       const retryKey = "chunk_boundary_retry_timestamp";
