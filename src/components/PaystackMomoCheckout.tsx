@@ -340,12 +340,12 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             setErrorMessage(failMsg);
             setStep('payment_number');
           } else {
-            // Fast poll every 1.5s while waiting for approval
-            pollTimer = setTimeout(pollVerification, 1500);
+            // Poll every 3.0s while waiting for approval (Realtime handles instant updates)
+            pollTimer = setTimeout(pollVerification, 3000);
           }
         } catch (err) {
           if (!isPolling) return;
-          pollTimer = setTimeout(pollVerification, 2500);
+          pollTimer = setTimeout(pollVerification, 3500);
         } finally {
           inFlightRef.current = false;
         }

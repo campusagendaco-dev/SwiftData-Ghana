@@ -497,7 +497,7 @@ const OrderStatus = () => {
     }
     
     const isPending = ["pending", "awaiting_payment", "not_paid"].includes(orderStatus);
-    const pollDelay = isPending ? 2500 : 8000;
+    const pollDelay = isPending ? 3500 : 8000;
     const interval = setInterval(() => pollStatus(isPending), pollDelay);
 
     // Instant verification when user returns to browser tab after approving MoMo
