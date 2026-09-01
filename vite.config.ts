@@ -80,8 +80,9 @@ export default defineConfig(({ mode }) => ({
         importScripts: ["push-sw.js"],
         skipWaiting: true,
         clientsClaim: true,
+        cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 10000000,
-        globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
+        globPatterns: ["**/*.{ico,png,svg,html}"],
         // Never serve cached HTML for JS/CSS asset requests — prevents stale chunk errors
         navigateFallback: "index.html",
         navigateFallbackDenylist: [
@@ -93,6 +94,20 @@ export default defineConfig(({ mode }) => ({
           /^\/sub-agent\/pending/
         ],
         runtimeCaching: [
+          {
+            urlPattern: /\/assets\/.*\.js$/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "js-assets-cache",
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: "CacheFirst",
