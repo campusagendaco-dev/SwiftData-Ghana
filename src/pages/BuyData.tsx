@@ -175,6 +175,7 @@ const BuyData = () => {
   const [resolvingName, setResolvingName] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
+  const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
 
   // Traditional Adinkra symbols cycling state
   const adinkraSymbols = useMemo(() => [
@@ -604,6 +605,7 @@ const BuyData = () => {
       } : {}),
     };
 
+    setCheckoutAmount(total);
     setCheckoutMetadata(meta);
     setSelectedPkg(null);
     setCheckoutOpen(true);
@@ -1231,7 +1233,7 @@ const BuyData = () => {
       <PaystackMomoCheckout
         isOpen={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
-        amount={total}
+        amount={checkoutAmount || total}
         email={email}
         recipientPhone={phoneDigits}
         recipientNetwork={selectedNetwork}
