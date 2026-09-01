@@ -605,7 +605,7 @@ serve(async (req: any) => {
     // Optimization: Skip checking provider status for freshly paid/pending orders if they haven't been submitted yet (no provider_order_id)
     // AND they are less than 20 seconds old. This avoids slow and redundant API status check calls.
     const orderAgeSec = (Date.now() - new Date(existingOrder?.created_at || 0).getTime()) / 1000;
-    const shouldCheckProvider = existingOrder?.provider_order_id || orderAgeSec > 20 || force;
+    const shouldCheckProvider = !!existingOrder?.provider_order_id;
 
     if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed") && isProviderOrder && shouldCheckProvider) {
       const providers = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
