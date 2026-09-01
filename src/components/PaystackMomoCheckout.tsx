@@ -735,56 +735,64 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
   if (!isOpen) return null;
 
+  const getNetworkGlow = () => {
+    const net = (paymentNetwork || recipientNetwork || "").toUpperCase();
+    if (net.includes("VODA") || net.includes("TELECEL")) return "from-red-600/30 via-red-900/20 to-transparent";
+    if (net.includes("AIRTEL") || net.includes("TIGO") || net.includes("AT")) return "from-blue-600/30 via-blue-900/20 to-transparent";
+    return "from-amber-500/30 via-yellow-600/20 to-transparent";
+  };
+
   return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-start pt-8 sm:pt-16 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-start pt-6 sm:pt-14 p-4 overflow-y-auto">
       {/* High Definition Backdrop with deep blur */}
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={step !== 'initiating' && step !== 'otp_verifying' && step !== 'success' ? onClose : undefined}
-        className="absolute inset-0 bg-[#030407]/90 backdrop-blur-[8px] cursor-pointer"
+        className="absolute inset-0 bg-[#020305]/90 backdrop-blur-xl cursor-pointer"
       />
       
-      {/* Premium Checkout Modal enclosure */}
+      {/* Premium Glassmorphic Checkout Modal enclosure */}
       <motion.div
         onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: 20 }}
-        className="relative w-full max-w-[340px] bg-card border border-white/10 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.85)] rounded-[1.75rem] overflow-hidden flex flex-col select-none text-card-foreground"
+        className="relative w-full max-w-[360px] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl"
       >
-        {/* Adinkra Ambient Header */}
-        <div className="relative w-full pt-5 pb-3.5 text-center bg-gradient-to-b from-black/40 to-card/20 rounded-b-[1.75rem] overflow-hidden border-b border-white/5">
+        {/* Dynamic Carrier Ambient Header */}
+        <div className="relative w-full pt-6 pb-4 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">
           <div 
-            className="absolute inset-0 opacity-[0.08] pointer-events-none mix-blend-overlay"
+            className="absolute inset-0 opacity-[0.06] pointer-events-none mix-blend-overlay"
             style={{ 
               backgroundImage: "url('/assets/adinkra_pattern.png')",
               backgroundSize: "120px"
             }}
           />
           <div 
-            className="absolute inset-0 opacity-30 blur-2xl"
-            style={{ background: `radial-gradient(circle at 50% 20%, hsl(${theme.primary}), transparent 70%)` }} 
+            className={`absolute inset-0 bg-gradient-to-b ${getNetworkGlow()} opacity-80 blur-2xl`}
           />
           
           <button 
             disabled={step === 'initiating' || step === 'otp_verifying'}
             onClick={onClose}
-            className="absolute top-3 right-3 p-1 rounded-full bg-foreground/5 border border-border text-foreground/40 hover:text-foreground transition-all disabled:opacity-20 active:scale-90"
+            className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/60 text-slate-400 hover:text-white transition-all flex items-center justify-center disabled:opacity-20 active:scale-90 z-20"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
 
           <div className="relative z-10 flex flex-col items-center px-4">
-            <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-amber-400 mb-0.5">
+            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400/90 mb-1">
               {activeGateway === "korba" ? "Secure Checkout" : "MoMo Direct Pay"}
             </span>
-            <h3 className="text-2xl font-black tracking-tight text-foreground drop-shadow-sm">GH₵{amount.toFixed(2)}</h3>
+            <h3 className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 drop-shadow-md">
+              GH₵{amount.toFixed(2)}
+            </h3>
             {(metadata?.package_size || recipientNetwork) && (
-              <div className="mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider font-mono">
+              <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 border border-amber-500/30 text-amber-300 text-[10px] font-black uppercase tracking-wider font-mono shadow-md backdrop-blur-md">
                 <span>{metadata?.package_size || "Bundle"}</span>
-                <span>&bull;</span>
+                <span className="text-amber-500/60">&bull;</span>
                 <span>{metadata?.network || recipientNetwork}</span>
               </div>
             )}
@@ -792,16 +800,16 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         </div>
 
         {/* Modal content viewport */}
-        <div className="p-5 space-y-4 relative bg-card">
+        <div className="p-5 space-y-4 relative bg-[#0b0c12]/90">
           {step === 'payment_number' && (
-            <div className="grid grid-cols-2 gap-1.5 bg-muted/60 p-1 rounded-xl">
+            <div className="grid grid-cols-2 gap-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800/80">
               <button
                 type="button"
                 onClick={() => setSelectedMethod('momo')}
-                className={`py-1.5 text-[11px] font-extrabold uppercase rounded-lg transition-all ${
+                className={`py-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all ${
                   selectedMethod === 'momo'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-amber-400 text-black shadow-md'
+                    : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Mobile Money
@@ -809,10 +817,10 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedMethod('card')}
-                className={`py-1.5 text-[11px] font-extrabold uppercase rounded-lg transition-all ${
+                className={`py-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all ${
                   selectedMethod === 'card'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                    ? 'bg-amber-400 text-black shadow-md'
+                    : 'text-slate-400 hover:text-white'
                 }`}
               >
                 Card Payment
@@ -829,17 +837,17 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 initial={{ opacity: 0, x: -15 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 15 }}
-                className="space-y-3.5"
+                className="space-y-4"
               >
                 <div className="space-y-0.5">
-                  <h4 className="text-xs font-black text-foreground uppercase tracking-wide">Enter Payment Number</h4>
-                  <p className="text-[11px] text-muted-foreground">Receive instant Mobile Money PIN prompt on your phone.</p>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wide">Enter Payment Number</h4>
+                  <p className="text-[11px] text-slate-400 leading-tight">Receive instant Mobile Money PIN prompt on your phone.</p>
                 </div>
 
-                <div className="space-y-3 pt-1">
+                <div className="space-y-3.5 pt-1">
                   {/* Phone input */}
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80 block px-0.5">MoMo Number</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block px-0.5 font-mono">MoMo Number</label>
                     <input
                       type="tel"
                       inputMode="numeric"
@@ -847,7 +855,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       onChange={(e) => setPaymentPhone(e.target.value.replace(/\D/g, ""))}
                       placeholder="0XX XXXXXXX"
                       maxLength={12}
-                      className="w-full h-11 bg-background border border-border rounded-xl px-3.5 text-foreground text-sm font-bold tracking-wide focus:outline-none focus:border-amber-400/50 focus:bg-accent/5 transition-all"
+                      className="w-full h-12 bg-slate-900/90 border border-slate-800 rounded-2xl px-4 text-white text-base font-bold tracking-wider font-mono focus:outline-none focus:border-amber-400/80 transition-all shadow-inner"
                     />
                     {/* Invisible Bot Honeypot Trap */}
                     <input
@@ -862,24 +870,31 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     />
                   </div>
 
-                  {/* Network selection */}
+                  {/* Network selection with Carrier Branded Active Pills */}
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80 block px-0.5">Momo Provider</label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {["MTN", "Telecel", "AirtelTigo"].map((net) => (
-                        <button
-                          key={net}
-                          type="button"
-                          onClick={() => setPaymentNetwork(net)}
-                          className={`h-9 rounded-xl border text-[11px] font-bold transition-all ${
-                            paymentNetwork === net
-                              ? "bg-primary border-primary/20 text-primary-foreground font-black shadow-md"
-                              : "border-border bg-background text-muted-foreground hover:border-foreground/20 hover:text-foreground"
-                          }`}
-                        >
-                          {net}
-                        </button>
-                      ))}
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block px-0.5 font-mono">MoMo Provider</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "MTN", label: "MTN", activeClass: "bg-[#FFCC00] text-black font-black shadow-[0_0_15px_rgba(255,204,0,0.4)] border-amber-300" },
+                        { id: "Telecel", label: "Telecel", activeClass: "bg-[#DC2626] text-white font-black shadow-[0_0_15px_rgba(220,38,38,0.4)] border-red-400" },
+                        { id: "AirtelTigo", label: "AirtelTigo", activeClass: "bg-[#00529B] text-white font-black shadow-[0_0_15px_rgba(0,82,155,0.4)] border-blue-400" }
+                      ].map((net) => {
+                        const active = paymentNetwork === net.id;
+                        return (
+                          <button
+                            key={net.id}
+                            type="button"
+                            onClick={() => setPaymentNetwork(net.id)}
+                            className={`h-10 rounded-2xl border text-xs font-extrabold transition-all duration-200 ${
+                              active
+                                ? net.activeClass
+                                : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-white"
+                            }`}
+                          >
+                            {net.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -887,27 +902,29 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   {(isVerifyingName || verifiedName || nameResolveError) && paymentPhone.replace(/\D/g, "").length >= 9 && (
                     <motion.div 
                       initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                      className={`flex items-start gap-1.5 p-2.5 rounded-xl text-[11px] font-semibold leading-snug border ${
+                      className={`flex items-center gap-2 p-3 rounded-2xl text-xs font-bold leading-snug border ${
                         isVerifyingName 
-                          ? "bg-primary/5 border-primary/10 text-primary/80" 
+                          ? "bg-amber-500/10 border-amber-500/20 text-amber-300" 
                           : verifiedName 
-                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
-                            : "bg-red-500/10 border-red-500/20 text-red-400"
+                            ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400" 
+                            : "bg-red-500/10 border-red-500/25 text-red-400"
                       }`}
                     >
                       {isVerifyingName ? (
                         <>
-                          <Loader2 className="w-3.5 h-3.5 shrink-0 mt-0.5 animate-spin" />
+                          <Loader2 className="w-4 h-4 shrink-0 animate-spin text-amber-400" />
                           <span>Verifying account...</span>
                         </>
                       ) : verifiedName ? (
                         <>
-                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                          <span>Verified: <span className="font-bold tracking-wide">{verifiedName}</span></span>
+                          <div className="w-5 h-5 rounded-full bg-emerald-500 text-black flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="w-3.5 h-3.5 stroke-[3]" />
+                          </div>
+                          <span>Verified: <span className="font-black uppercase tracking-wide text-white">{verifiedName}</span></span>
                         </>
                       ) : (
                         <>
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
                           <span>{nameResolveError || "Account not found"}</span>
                         </>
                       )}
@@ -918,16 +935,16 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   {!isBeneficiaryVerified && (
                     <motion.div
                       initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                      className="flex items-start gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 p-2.5 rounded-xl text-[11px] font-semibold leading-snug"
+                      className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug"
                     >
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
                       <span>{recipientPhone} is not in beneficiary list</span>
                     </motion.div>
                   )}
 
                   {errorMessage && (
-                    <div className="flex items-start gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 p-2.5 rounded-xl text-[11px] font-semibold leading-snug">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
                       <span>{errorMessage}</span>
                     </div>
                   )}
@@ -935,26 +952,24 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   {/* Submit trigger button */}
                   <button
                     onClick={initiatePayment}
-                    className="w-full h-11 mt-2 relative overflow-hidden rounded-xl shadow-md transition-all active:scale-[0.97] hover:-translate-y-0.5 flex items-center justify-center gap-1 text-xs font-extrabold uppercase tracking-wider text-black"
-                    style={{ background: `linear-gradient(135deg, #F59E0B 0%, #D97706 100%)` }}
+                    className="w-full h-12 mt-2 relative overflow-hidden rounded-2xl shadow-[0_8px_30px_rgba(251,191,36,0.35)] transition-all active:scale-[0.98] hover:brightness-110 flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider text-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500"
                   >
                     <span>Send MoMo Prompt</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <ArrowRight className="w-4 h-4 stroke-[3]" />
                   </button>
 
                   {/* Fallback Checkout Button */}
                   <div className="pt-1 text-center">
                     <button
                       onClick={handleFallbackCheckout}
-                      className="w-full h-9 border border-border hover:bg-foreground/5 rounded-xl transition-all active:scale-[0.97] flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-foreground/70"
+                      className="w-full h-10 bg-slate-900/60 border border-slate-800 hover:border-slate-700 rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300"
                     >
-                      <ShieldCheck className="w-3 h-3 text-amber-400" /> Standard Checkout
+                      <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Standard Checkout
                     </button>
                   </div>
                 </div>
               </motion.div>
             )}
-
 
             {selectedMethod === 'card' && step === 'payment_number' && (
               <motion.div
@@ -965,30 +980,32 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 className="space-y-4 py-1"
               >
                 <div className="space-y-0.5 text-center">
-                  <h4 className="text-xs font-black text-foreground uppercase tracking-wide">Pay with Card</h4>
-                  <p className="text-[11px] text-muted-foreground">Local & international cards via Paystack.</p>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wide">Pay with Card</h4>
+                  <p className="text-[11px] text-slate-400">Local &amp; international cards via Paystack.</p>
                 </div>
 
                 {/* Styled Card Graphic */}
-                <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-amber-600 p-4 text-white shadow-md select-none border border-white/10">
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-yellow-600 p-5 text-black shadow-xl border border-amber-300/30 select-none">
                   <div className="flex items-start justify-between relative z-10 mb-6">
                     <div>
-                      <p className="text-[8px] font-bold uppercase tracking-widest opacity-80">Partner Wallet</p>
-                      <h4 className="text-[11px] font-black uppercase tracking-wider">SwiftData Collections</h4>
+                      <p className="text-[8px] font-black uppercase tracking-widest opacity-80">Partner Wallet</p>
+                      <h4 className="text-xs font-black uppercase tracking-wider">SwiftData Collections</h4>
                     </div>
-                    <div className="w-7 h-5 bg-yellow-200/80 rounded border border-yellow-300 shadow-xs" />
+                    <div className="w-8 h-6 bg-black/80 rounded-md border border-white/20 shadow-xs flex items-center justify-center text-[8px] font-bold text-amber-400">
+                      VISA
+                    </div>
                   </div>
 
                   <div className="space-y-2 relative z-10">
-                    <p className="font-mono text-base tracking-[0.2em] font-semibold">•••• •••• •••• ••••</p>
-                    <div className="flex justify-between items-end text-[9px]">
+                    <p className="font-mono text-lg tracking-[0.2em] font-black">•••• •••• •••• ••••</p>
+                    <div className="flex justify-between items-end text-[10px]">
                       <div>
-                        <p className="opacity-60 text-[6px] font-bold uppercase">Card Holder</p>
-                        <p className="font-bold uppercase tracking-wider">{email ? email.split('@')[0] : "CUSTOMER"}</p>
+                        <p className="opacity-70 text-[7px] font-black uppercase">Card Holder</p>
+                        <p className="font-black uppercase tracking-wider">{email ? email.split('@')[0] : "CUSTOMER"}</p>
                       </div>
                       <div className="text-right">
-                        <p className="opacity-60 text-[6px] font-bold uppercase">Expires</p>
-                        <p className="font-bold font-mono">12/29</p>
+                        <p className="opacity-70 text-[7px] font-black uppercase">Expires</p>
+                        <p className="font-black font-mono">12/29</p>
                       </div>
                     </div>
                   </div>
@@ -998,15 +1015,15 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <button
                     type="button"
                     onClick={initiatePaystackCardPay}
-                    className="w-full h-11 bg-amber-500 hover:bg-amber-600 text-black font-extrabold rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 text-xs uppercase"
+                    className="w-full h-12 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-black font-black rounded-2xl transition-all shadow-[0_8px_25px_rgba(251,191,36,0.35)] flex items-center justify-center gap-2 text-xs uppercase active:scale-[0.98]"
                   >
-                    Proceed with Card (₵{amount.toFixed(2)})
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>Proceed with Card (GH₵{amount.toFixed(2)})</span>
+                    <ArrowRight className="w-4 h-4 stroke-[3]" />
                   </button>
 
                   {errorMessage && (
-                    <div className="flex items-start gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 p-2.5 rounded-xl text-[11px] font-semibold leading-snug text-left">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug text-left">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
                       <span>{errorMessage}</span>
                     </div>
                   )}
@@ -1021,21 +1038,21 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.05 }}
-                className="py-6 flex flex-col items-center justify-center text-center space-y-3"
+                className="py-8 flex flex-col items-center justify-center text-center space-y-4"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 bg-amber-500/20 rounded-full blur-xl animate-pulse" />
+                  <div className="absolute inset-0 bg-amber-500/30 rounded-full blur-2xl animate-pulse" />
                   <motion.img
                     src="/assets/golden_ghana_coin.png"
                     alt="Golden Ghanaian Coin"
-                    className="w-11 h-11 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]"
                     animate={{ rotateY: 360 }}
                     transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
-                <div className="space-y-0.5 px-3">
-                  <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider animate-pulse">Contacting Operator</h4>
-                  <p className="text-[11px] text-muted-foreground">Requesting direct payment prompt for {paymentPhone}...</p>
+                <div className="space-y-1 px-3">
+                  <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider animate-pulse">Contacting Operator</h4>
+                  <p className="text-xs text-slate-400">Requesting direct payment prompt for {paymentPhone}...</p>
                 </div>
               </motion.div>
             )}
@@ -1047,18 +1064,18 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 initial={{ opacity: 0, x: 15 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -15 }}
-                className="space-y-3"
+                className="space-y-4"
               >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-amber-400">
-                    <KeyRound className="w-3 h-3" /> Security Code
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400">
+                    <KeyRound className="w-3.5 h-3.5" /> Security Code
                   </div>
-                  <h4 className="text-xs font-black text-foreground uppercase tracking-wide">Enter OTP Code</h4>
-                  <p className="text-[11px] text-muted-foreground">Enter the 6-digit code sent to your wallet phone.</p>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wide">Enter OTP Code</h4>
+                  <p className="text-xs text-slate-400">Enter the 6-digit code sent to your wallet phone.</p>
                 </div>
 
-                <div className="space-y-3 pt-1">
-                  <div className="flex justify-between gap-1">
+                <div className="space-y-4 pt-1">
+                  <div className="flex justify-between gap-1.5">
                     {otp.map((digit, idx) => (
                       <input
                         key={idx}
@@ -1070,34 +1087,34 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                         onChange={(e) => handleOtpChange(e.target.value, idx)}
                         onKeyDown={(e) => handleKeyDown(e, idx)}
                         onPaste={idx === 0 ? handlePaste : undefined}
-                        className="w-10 h-11 bg-background border border-border rounded-xl text-center text-lg font-extrabold text-foreground focus:outline-none focus:border-amber-400/50 focus:bg-foreground/5 transition-all"
+                        className="w-11 h-12 bg-slate-900 border border-slate-800 rounded-2xl text-center text-xl font-black text-white focus:outline-none focus:border-amber-400 transition-all shadow-inner"
                       />
                     ))}
                   </div>
 
                   {otpError && (
-                    <div className="flex items-start gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 p-2 rounded-xl text-[11px] font-semibold leading-snug">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-2xl text-xs font-semibold leading-snug">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
                       <span>{otpError}</span>
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between px-1 text-[11px]">
+                  <div className="flex items-center justify-between px-1 text-xs">
                     {countdown > 0 ? (
-                      <span className="text-muted-foreground/60 font-medium">
-                        Resend in <span className="text-foreground font-mono font-bold">{countdown}s</span>
+                      <span className="text-slate-400 font-medium">
+                        Resend in <span className="text-amber-400 font-mono font-black">{countdown}s</span>
                       </span>
                     ) : (
                       <button
                         onClick={handleResendOtp}
-                        className="text-amber-400 hover:text-amber-300 font-bold uppercase tracking-wider flex items-center gap-1 select-none cursor-pointer"
+                        className="text-amber-400 hover:text-amber-300 font-black uppercase tracking-wider flex items-center gap-1 select-none cursor-pointer"
                       >
-                        <RefreshCw className="w-3 h-3 animate-spin-reverse" /> Resend Code
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin-reverse" /> Resend Code
                       </button>
                     )}
                     <button
                       onClick={() => setStep('payment_number')}
-                      className="text-muted-foreground hover:text-foreground font-bold tracking-wide select-none"
+                      className="text-slate-400 hover:text-white font-bold tracking-wide select-none"
                     >
                       Change Number
                     </button>
@@ -1106,8 +1123,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <button
                     onClick={() => verifyOtp()}
                     disabled={otp.join("").length < 6}
-                    className="w-full h-10 relative overflow-hidden rounded-xl shadow-md transition-all active:scale-[0.97] hover:-translate-y-0.5 flex items-center justify-center gap-1 text-xs font-extrabold uppercase tracking-wider text-black disabled:opacity-20 disabled:pointer-events-none"
-                    style={{ background: `linear-gradient(135deg, #F59E0B 0%, #D97706 100%)` }}
+                    className="w-full h-12 relative overflow-hidden rounded-2xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider text-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 disabled:opacity-30"
                   >
                     <span>Verify and Approve</span>
                   </button>
@@ -1122,21 +1138,21 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.05 }}
-                className="py-6 flex flex-col items-center justify-center text-center space-y-3"
+                className="py-8 flex flex-col items-center justify-center text-center space-y-4"
               >
                 <div className="relative">
-                  <div className="absolute inset-0 bg-amber-500/20 rounded-full blur-xl animate-pulse" />
+                  <div className="absolute inset-0 bg-amber-500/30 rounded-full blur-2xl animate-pulse" />
                   <motion.img
                     src="/assets/golden_ghana_coin.png"
                     alt="Golden Ghanaian Coin"
-                    className="w-11 h-11 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]"
                     animate={{ rotateY: 360 }}
                     transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
-                <div className="space-y-0.5 px-3">
-                  <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider animate-pulse">Securing Verification</h4>
-                  <p className="text-[11px] text-muted-foreground">Confirming OTP signature...</p>
+                <div className="space-y-1 px-3">
+                  <h4 className="text-sm font-black text-amber-400 uppercase tracking-wider animate-pulse">Securing Verification</h4>
+                  <p className="text-xs text-slate-400">Confirming OTP signature...</p>
                 </div>
               </motion.div>
             )}
@@ -1147,32 +1163,32 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                 key="success"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="py-5 flex flex-col items-center text-center space-y-4"
+                className="py-4 flex flex-col items-center text-center space-y-4"
               >
-                {/* Compact Photorealistic 3D Ghana Gold Coin */}
+                {/* 3D Ghana Gold Coin with Aura */}
                 <div className="relative">
-                  <div className="absolute inset-0 rounded-full blur-xl opacity-30 animate-pulse bg-amber-500/30" />
+                  <div className="absolute inset-0 rounded-full blur-2xl opacity-40 animate-pulse bg-amber-500/40" />
                   <motion.img
                     src="/assets/golden_ghana_coin.png"
                     alt="Golden Ghanaian Coin"
-                    className="w-12 h-12 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_18px_rgba(245,158,11,0.6)]"
+                    className="w-14 h-14 object-contain select-none inline-block relative z-10 rounded-full drop-shadow-[0_0_22px_rgba(245,158,11,0.75)]"
                     animate={{ rotateY: 360 }}
                     transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <h4 className="text-lg font-black text-foreground uppercase tracking-wide drop-shadow-sm">AUTHORIZE PAYMENT</h4>
-                  <p className="text-xs text-emerald-400 font-extrabold max-w-[220px] mx-auto leading-relaxed px-1">
+                  <h4 className="text-xl font-black text-white uppercase tracking-wide drop-shadow-md">AUTHORIZE PAYMENT</h4>
+                  <p className="text-xs text-emerald-400 font-black max-w-[240px] mx-auto leading-relaxed px-1">
                     Please check your phone now and enter your Mobile Money PIN to approve.
                   </p>
                 </div>
 
-                {/* Sleek Compact Golden Cedi Progress Track */}
-                <div className="w-full max-w-[200px] h-2 bg-black/60 border border-amber-500/25 rounded-full mt-1 relative overflow-visible shadow-inner">
-                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-yellow-500/20 to-emerald-500/20 rounded-full" />
+                {/* Sleek Golden Cedi Progress Track */}
+                <div className="w-full max-w-[220px] h-2.5 bg-slate-900 border border-slate-800 rounded-full mt-1 relative overflow-visible shadow-inner">
+                  <div className="absolute inset-0 bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-emerald-500/30 rounded-full" />
                   <motion.div 
-                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 rounded-full"
+                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-400 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)]"
                     initial={{ width: "0%" }}
                     animate={{ width: "100%" }}
                     transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
@@ -1180,7 +1196,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <motion.img 
                     src="/assets/golden_ghana_coin.png"
                     alt="Golden Ghanaian Coin"
-                    className="absolute -top-2 w-6 h-6 object-contain select-none rounded-full drop-shadow-[0_2px_8px_rgba(245,158,11,0.8)]"
+                    className="absolute -top-2 w-6 h-6 object-contain select-none rounded-full drop-shadow-[0_2px_10px_rgba(245,158,11,0.9)]"
                     initial={{ left: "0%", rotate: 0 }}
                     animate={{ left: "100%", rotate: 720 }}
                     style={{ transform: "translateX(-50%)" }}
@@ -1188,15 +1204,15 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   />
                 </div>
 
-                <p className="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider animate-pulse my-0.5">WAITING FOR APPROVAL...</p>
+                <p className="text-[11px] font-black text-amber-400 uppercase tracking-widest animate-pulse my-0.5">WAITING FOR APPROVAL...</p>
                 
-                <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-left space-y-1.5 w-full max-w-[280px]">
-                  <p className="text-[10px] font-black uppercase text-amber-400">If no popup on your screen:</p>
-                  <p className="text-[10px] text-slate-300 leading-snug">
-                    <span className="font-bold text-white">MTN:</span> Dial <span className="font-mono font-black text-amber-400">*170#</span> &rarr; 6 (My Wallet) &rarr; 3 (My Approvals) &rarr; Enter PIN.
+                <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800/90 text-left space-y-1.5 w-full max-w-[290px] shadow-md">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-400">If no popup on your screen:</p>
+                  <p className="text-[11px] text-slate-300 leading-snug">
+                    <span className="font-bold text-white">MTN:</span> Dial <span className="font-mono font-black text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">*170#</span> &rarr; 6 (My Wallet) &rarr; 3 (My Approvals) &rarr; Enter PIN.
                   </p>
-                  <p className="text-[10px] text-slate-300 leading-snug">
-                    <span className="font-bold text-white">Telecel:</span> Dial <span className="font-mono font-black text-red-400">*110#</span> &rarr; 4 (Make Payments) &rarr; Approvals.
+                  <p className="text-[11px] text-slate-300 leading-snug">
+                    <span className="font-bold text-white">Telecel:</span> Dial <span className="font-mono font-black text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">*110#</span> &rarr; 4 (Make Payments) &rarr; Approvals.
                   </p>
                 </div>
 
@@ -1205,7 +1221,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                     type="button"
                     onClick={handleManualVerify}
                     disabled={isManualVerifying}
-                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    className="w-full h-12 bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-[0.98] shadow-[0_8px_25px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {isManualVerifying ? (
                       <>
@@ -1214,7 +1230,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       </>
                     ) : (
                       <>
-                        <Zap className="w-4 h-4 shrink-0 text-slate-950" />
+                        <Zap className="w-4 h-4 shrink-0 text-black stroke-[3]" />
                         <span>Instant Verify (I Entered PIN)</span>
                       </>
                     )}
@@ -1223,7 +1239,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <button
                     type="button"
                     onClick={handleFallbackCheckout}
-                    className="w-full py-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/30 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95"
+                    className="w-full h-11 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-[0.98]"
                   >
                     🌐 Open Online Payment Page
                   </button>
@@ -1234,7 +1250,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                       setStep('payment_number');
                       setErrorMessage(null);
                     }}
-                    className="w-full py-2 bg-transparent hover:bg-foreground/5 border border-border rounded-xl text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground transition-all active:scale-95"
+                    className="w-full h-10 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800 rounded-2xl text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-white transition-all active:scale-[0.98]"
                   >
                     Change Payment Phone Number
                   </button>
@@ -1246,8 +1262,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         </div>
 
         {/* Secure transaction lock footer */}
-        <div className="py-3 bg-[#0a0a0d] border-t border-white/5 flex items-center justify-center gap-1 text-[8.5px] font-bold uppercase tracking-widest text-amber-500/70">
-          <ShieldCheck className="w-3 h-3 text-amber-400" /> Secure 256-Bit SSL Payment &bull; SwiftData
+        <div className="py-3 bg-[#05060a] border-t border-slate-800/60 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400/80">
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Secure 256-Bit SSL Payment &bull; SwiftData
         </div>
       </motion.div>
     </div>
