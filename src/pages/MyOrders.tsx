@@ -346,141 +346,143 @@ const MyOrders = () => {
         )}
 
         {/* Receipt Modal (Portal to document.body for top z-index stacking above all page elements & footer) */}
-        <AnimatePresence>
-          {showReceipt && createPortal(
-            <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-              <motion.div 
-                initial={{ opacity: 0 }} 
-                animate={{ opacity: 1 }} 
-                exit={{ opacity: 0 }}
-                onClick={() => setShowReceipt(null)}
-                className="fixed inset-0 bg-black/95 backdrop-blur-xl" 
-              />
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                className="relative w-full max-w-sm bg-[#090a0f] border border-amber-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] z-10"
-              >
-                {/* Top Bar Accent */}
-                <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
+        {createPortal(
+          <AnimatePresence>
+            {showReceipt && (
+              <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowReceipt(null)}
+                  className="fixed inset-0 bg-black/95 backdrop-blur-xl" 
+                />
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="relative w-full max-w-sm bg-[#090a0f] border border-amber-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] z-10"
+                >
+                  {/* Top Bar Accent */}
+                  <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
 
-                <div className="p-5 sm:p-6 space-y-5">
-                  {/* Header */}
-                  <div className="flex justify-between items-center pb-1">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-500/20 border border-amber-500/40">
-                        <ReceiptText className="w-4 h-4 text-amber-400" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-black uppercase tracking-widest text-white block">Digital E-Receipt</span>
-                        <span className="text-[9px] text-slate-400 font-mono">Verified Order</span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => setShowReceipt(null)} 
-                      className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
-                    >
-                      <XCircle className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Receipt Canvas Box */}
-                  <div className="bg-[#0e0f17] border border-slate-800 rounded-2xl p-5 space-y-4 font-mono shadow-inner text-slate-100">
-                    {/* Store Header */}
-                    <div className="text-center pb-3.5 border-b border-dashed border-slate-700/80 space-y-1">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-5 h-5 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                  <div className="p-5 sm:p-6 space-y-5">
+                    {/* Header */}
+                    <div className="flex justify-between items-center pb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-500/20 border border-amber-500/40">
+                          <ReceiptText className="w-4 h-4 text-amber-400" />
                         </div>
-                        <p className="text-xs font-black text-white uppercase tracking-wider">{storeName}</p>
+                        <div>
+                          <span className="text-xs font-black uppercase tracking-widest text-white block">Digital E-Receipt</span>
+                          <span className="text-[9px] text-slate-400 font-mono">Verified Order</span>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 font-mono">{new Date(showReceipt.created_at).toLocaleString()}</p>
+                      <button 
+                        onClick={() => setShowReceipt(null)} 
+                        className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
                     </div>
-                    
-                    {/* Key-Value Details */}
-                    <div className="space-y-2.5 text-[11px]">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 uppercase text-[10px] tracking-wider">Reference</span>
-                        <span className="text-amber-400 font-bold font-mono text-[10px] bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 max-w-[150px] truncate">
-                          {showReceipt.id.toUpperCase()}
-                        </span>
+
+                    {/* Receipt Canvas Box */}
+                    <div className="bg-[#0e0f17] border border-slate-800 rounded-2xl p-5 space-y-4 font-mono shadow-inner text-slate-100">
+                      {/* Store Header */}
+                      <div className="text-center pb-3.5 border-b border-dashed border-slate-700/80 space-y-1">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-5 h-5 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
+                          </div>
+                          <p className="text-xs font-black text-white uppercase tracking-wider">{storeName}</p>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-mono">{new Date(showReceipt.created_at).toLocaleString()}</p>
+                      </div>
+                      
+                      {/* Key-Value Details */}
+                      <div className="space-y-2.5 text-[11px]">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Reference</span>
+                          <span className="text-amber-400 font-bold font-mono text-[10px] bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 max-w-[150px] truncate">
+                            {showReceipt.id.toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Service</span>
+                          <span className="text-slate-200 font-bold">{showReceipt.order_type || "Data Bundle"}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Network</span>
+                          <span className={cn(
+                            "font-black text-[10px] px-2 py-0.5 rounded uppercase",
+                            (showReceipt.network || "").includes("MTN") && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+                            (showReceipt.network || "").includes("Telecel") && "bg-red-500/20 text-red-300 border border-red-500/30",
+                            (showReceipt.network || "").includes("Airtel") && "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                          )}>
+                            {showReceipt.network || "MTN"}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Plan / Size</span>
+                          <span className="text-white font-bold">{showReceipt.package_size || "—"}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400 uppercase text-[10px] tracking-wider">Recipient</span>
+                          <span className="text-white font-mono font-bold tracking-wider">{showReceipt.customer_phone}</span>
+                        </div>
                       </div>
 
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 uppercase text-[10px] tracking-wider">Service</span>
-                        <span className="text-slate-200 font-bold">{showReceipt.order_type || "Data Bundle"}</span>
-                      </div>
-
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 uppercase text-[10px] tracking-wider">Network</span>
-                        <span className={cn(
-                          "font-black text-[10px] px-2 py-0.5 rounded uppercase",
-                          (showReceipt.network || "").includes("MTN") && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
-                          (showReceipt.network || "").includes("Telecel") && "bg-red-500/20 text-red-300 border border-red-500/30",
-                          (showReceipt.network || "").includes("Airtel") && "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                      {/* Status Badge */}
+                      <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
+                        <div className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
+                          (showReceipt.status === "fulfilled" || showReceipt.status === "processing" || showReceipt.status === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+                          (showReceipt.status === "pending" || showReceipt.status === "awaiting_payment" || showReceipt.status === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                          (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed" || showReceipt.status === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
                         )}>
-                          {showReceipt.network || "MTN"}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 uppercase text-[10px] tracking-wider">Plan / Size</span>
-                        <span className="text-white font-bold">{showReceipt.package_size || "—"}</span>
-                      </div>
-
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-400 uppercase text-[10px] tracking-wider">Recipient</span>
-                        <span className="text-white font-mono font-bold tracking-wider">{showReceipt.customer_phone}</span>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          {showReceipt.status}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Status Badge */}
-                    <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
-                      <div className={cn(
-                        "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
-                        (showReceipt.status === "fulfilled" || showReceipt.status === "processing" || showReceipt.status === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
-                        (showReceipt.status === "pending" || showReceipt.status === "awaiting_payment" || showReceipt.status === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
-                        (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed" || showReceipt.status === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
-                      )}>
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        {showReceipt.status}
-                      </div>
+                    {/* Action Buttons */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <button 
+                        onClick={() => copyReceipt(showReceipt)}
+                        className="h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Copy Text
+                      </button>
+                      <button 
+                        onClick={() => window.print()}
+                        className="h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+                      >
+                        <Package className="w-3.5 h-3.5" />
+                        Print PDF
+                      </button>
                     </div>
                   </div>
-
-                  {/* Action Buttons */}
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <button 
-                      onClick={() => copyReceipt(showReceipt)}
-                      className="h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy Text
-                    </button>
-                    <button 
-                      onClick={() => window.print()}
-                      className="h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
-                    >
-                      <Package className="w-3.5 h-3.5" />
-                      Print PDF
-                    </button>
+                  
+                  {/* Card Footer */}
+                  <div className="border-t border-white/10 py-2.5 text-center bg-black/60">
+                    <p className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400/90 flex items-center justify-center gap-1.5">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      VERIFIED TRANSACTION • 256-BIT ENCRYPTED
+                    </p>
                   </div>
-                </div>
-                
-                {/* Card Footer */}
-                <div className="border-t border-white/10 py-2.5 text-center bg-black/60">
-                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400/90 flex items-center justify-center gap-1.5">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                    VERIFIED TRANSACTION • 256-BIT ENCRYPTED
-                  </p>
-                </div>
-              </motion.div>
-            </div>,
-            document.body
-          )}
-        </AnimatePresence>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
       </div>
     </div>
   );
