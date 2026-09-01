@@ -56,6 +56,7 @@ const CustomTooltip = ({ active, payload, label, isDark }: any) => {
 const AdminAnalytics = () => {
   const { isDark } = useAppTheme();
   const [loading, setLoading] = useState(true);
+  const [daysFilter, setDaysFilter] = useState<number>(30);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [agents, setAgents] = useState<AgentRecord[]>([]);
 
@@ -72,9 +73,9 @@ const AdminAnalytics = () => {
     let from = 0;
     let hasMore = true;
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const dateLimit = thirtyDaysAgo.toISOString();
+    const limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() - daysFilter);
+    const dateLimit = limitDate.toISOString();
 
     while (hasMore && isMounted.current) {
       const { data, error } = await supabase
@@ -106,7 +107,7 @@ const AdminAnalytics = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [daysFilter]);
 
   const fulfilledOrders = useMemo(() => orders.filter(o => o.status === "fulfilled"), [orders]);
 
@@ -136,7 +137,8 @@ const AdminAnalytics = () => {
   const dailyData = useMemo(() => {
     const days: Record<string, { date: string; Revenue: number; Profit: number; Orders: number }> = {};
     const now = new Date();
-    for (let i = 13; i >= 0; i--) {
+    const count = Math.min(daysFilter, 30);
+    for (let i = count - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
@@ -151,7 +153,7 @@ const AdminAnalytics = () => {
       }
     });
     return Object.values(days);
-  }, [fulfilledOrders]);
+  }, [fulfilledOrders, daysFilter]);
 
   const networkPieData = useMemo(() =>
     Object.entries(networkCounts).map(([name, val]) => ({ name, value: val.orders, revenue: val.revenue })),
@@ -196,20 +198,38 @@ const AdminAnalytics = () => {
               <BarChart3 className="w-3.5 h-3.5" /> Intelligence Center
             </span>
             <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px] font-mono uppercase">
-              Last 30 Days
+              Last {daysFilter} Days
             </Badge>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">Platform Sales Intelligence</h1>
         </div>
 
-        <Button
-          onClick={fetchData}
-          disabled={loading}
-          variant="outline"
-          className="h-10 px-5 rounded-xl border-border bg-background/80 font-bold text-xs uppercase tracking-wider gap-2 self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${loading ? "animate-spin" : ""}`} /> Refresh Intelligence
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center bg-background/60 p-1 rounded-xl border border-border">
+            {[7, 30, 90].map((d) => (
+              <button
+                key={d}
+                onClick={() => setDaysFilter(d)}
+                className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg transition-all ${
+                  daysFilter === d
+                    ? "bg-amber-400 text-black shadow-md"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {d}D
+              </button>
+            ))}
+          </div>
+
+          <Button
+            onClick={fetchData}
+            disabled={loading}
+            variant="outline"
+            className="h-9 px-4 rounded-xl border-border bg-background/80 font-bold text-xs uppercase tracking-wider gap-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+        </div>
       </div>
 
       {loading ? (
