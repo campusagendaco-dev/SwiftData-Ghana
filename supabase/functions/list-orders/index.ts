@@ -59,19 +59,23 @@ serve(async (req: Request) => {
     }
 
     const rawInput = (phone || "").trim();
-    const isReference = rawInput.length >= 15 || rawInput.includes("-") || rawInput.toLowerCase().startsWith("trx") || rawInput.toLowerCase().startsWith("sdg");
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawInput);
+    const isReference = isUuid || rawInput.length >= 15 || rawInput.includes("-") || rawInput.toLowerCase().startsWith("trx") || rawInput.toLowerCase().startsWith("sdg");
 
     let query = supabaseAdmin
       .from("orders")
-      .select("id, customer_phone, network, package_size, amount, status, created_at, order_type, paystack_reference, reference")
+      .select("id, customer_phone, network, package_size, amount, status, created_at, order_type, metadata")
       .order("created_at", { ascending: false });
 
     if (!rawInput && user) {
       // Logged-in reseller/agent with no filter: fetch their own recent orders
       query = query.eq("agent_id", user.id);
     } else if (isReference) {
-      // Search directly by order ID, internal reference, or Paystack reference
-      query = query.or(`id.eq.${rawInput},reference.eq.${rawInput},paystack_reference.eq.${rawInput}`);
+      if (isUuid) {
+        query = query.eq("id", rawInput);
+      } else {
+        query = query.filter("metadata->>client_reference", "eq", rawInput);
+      }
     } else {
       // Normalize all Ghana phone number format permutations
       const digits = rawInput.replace(/\D+/g, "");
