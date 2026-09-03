@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "logo.png"],
       manifest: {
         name: "SwiftData Ghana — Cheapest Data Bundles",
