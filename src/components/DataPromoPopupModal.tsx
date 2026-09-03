@@ -18,6 +18,7 @@ import {
   CreditCard, Wallet, Smartphone, Loader2, ArrowRight, Flame, ShieldCheck, Mail
 } from "lucide-react";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
+import { getActiveStoreDomain } from "@/lib/app-base-url";
 
 export interface DataPromoPopup {
   id: string;
@@ -125,8 +126,18 @@ export const DataPromoPopupModal = () => {
     }
   }, [user]);
 
+  const activeDomain = getActiveStoreDomain();
+  const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+  const isAgentStorefront = Boolean(
+    activeDomain ||
+    currentPath.startsWith("/store") ||
+    currentPath.includes("/store/")
+  );
+
   // Fetch active data promo popup (works for both guests & logged in users)
   useEffect(() => {
+    if (isAgentStorefront) return;
+
     const fetchActivePromo = async () => {
       try {
         const { data, error } = await supabase
@@ -296,7 +307,7 @@ export const DataPromoPopupModal = () => {
     }
   };
 
-  if (!activePromo) return null;
+  if (isAgentStorefront || !activePromo) return null;
 
   const theme = NETWORK_THEMES[activePromo.network] || NETWORK_THEMES.MTN;
   const discountPercent = activePromo.original_price > activePromo.promo_price
