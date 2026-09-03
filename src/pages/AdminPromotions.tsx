@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Ticket, Plus, Loader2, Trash2, Zap, AlertTriangle,
   Gift, Wifi, ToggleLeft, ToggleRight, RefreshCw, Users,
-  Download, Copy, CheckCircle, Flame, Sparkles, Clock, Eye, Smartphone
+  Download, Copy, CheckCircle, Flame, Sparkles, Clock, Eye, Smartphone, Send
 } from "lucide-react";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
@@ -160,6 +160,8 @@ const AdminPromotions = () => {
     expires_hours: "24",
     max_claims: "100",
     per_user_limit: "1",
+    send_sms: true,
+    sender_id: "swiftupdate",
   });
 
   const fetchDataPromoPopups = useCallback(async () => {
@@ -222,9 +224,67 @@ const AdminPromotions = () => {
         await logAudit(currentUser.id, "create_data_promo_popup", { title: newPromoPopup.title, network: newPromoPopup.network, package_size: newPromoPopup.package_size, promo_price: promoPrice });
       }
       toast({ title: "Data Traffic Promo Popup created & LIVE!" });
+
+      // Send SMS broadcast with Sender ID swiftupdate if enabled
+      if (newPromoPopup.send_sms) {
+        const discountPct = isNaN(origPrice) || origPrice <= promoPrice
+          ? 0
+          : Math.round(((origPrice - promoPrice) / origPrice) * 100);
+
+        const smsTarget = newPromoPopup.target_audience === "agents"
+          ? "agents"
+          : newPromoPopup.target_audience === "customers"
+          ? "users"
+          : "all";
+
+        const smsMessage = `${newPromoPopup.title.trim()}\n${newPromoPopup.description.trim() || `Special ${newPromoPopup.network} ${newPromoPopup.package_size} bundle deal!`}\nOnly GH₵ ${promoPrice.toFixed(2)}${discountPct > 0 ? ` (Save ${discountPct}%)` : ""}.\nBuy on Pop-up now: https://swiftdatagh.shop`;
+
+        supabase.functions.invoke("admin-send-sms", {
+          body: {
+            target_type: smsTarget,
+            message: smsMessage,
+            sender_id: newPromoPopup.sender_id.trim() || "swiftupdate"
+          }
+        }).then(({ error: smsErr }) => {
+          if (smsErr) {
+            console.error("SMS Broadcast trigger error:", smsErr);
+          } else {
+            toast({ title: "📢 SMS Broadcast Triggered!", description: `Sender ID: ${newPromoPopup.sender_id || 'swiftupdate'}` });
+          }
+        }).catch(err => console.error("SMS Trigger failed:", err));
+      }
+
       fetchDataPromoPopups();
     }
     setCreatingDataPromo(false);
+  };
+
+  const handleTriggerPromoSMS = async (promo: any) => {
+    if (!confirm(`Trigger SMS announcement to users for "${promo.title}" using Sender ID: swiftupdate?`)) return;
+
+    const promoPrice = Number(promo.promo_price) || 0;
+    const smsTarget = promo.target_audience === "agents"
+      ? "agents"
+      : promo.target_audience === "customers"
+      ? "users"
+      : "all";
+
+    const smsMessage = `${promo.title}\n${promo.description || `Special ${promo.network} ${promo.package_size} bundle deal!`}\nOnly GH₵ ${promoPrice.toFixed(2)}.\nBuy on Pop-up now: https://swiftdatagh.shop`;
+
+    try {
+      const { error } = await supabase.functions.invoke("admin-send-sms", {
+        body: {
+          target_type: smsTarget,
+          message: smsMessage,
+          sender_id: "swiftupdate"
+        }
+      });
+
+      if (error) throw error;
+      toast({ title: "📢 Promo SMS Broadcast Dispatched!", description: "Sender ID: swiftupdate" });
+    } catch (err: any) {
+      toast({ title: "Failed to dispatch SMS", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleToggleDataPromoPopup = async (id: string, current: boolean) => {
@@ -844,13 +904,41 @@ const AdminPromotions = () => {
                 </div>
               </div>
 
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                      <Send className="w-3.5 h-3.5" /> Trigger SMS Broadcast on Publish
+                    </p>
+                    <p className="text-[10px] text-white/50">Sends SMS announcement to target users</p>
+                  </div>
+                  <Switch
+                    checked={newPromoPopup.send_sms}
+                    onCheckedChange={(v) => setNewPromoPopup(prev => ({ ...prev, send_sms: v }))}
+                    className="data-[state=checked]:bg-amber-400"
+                  />
+                </div>
+
+                {newPromoPopup.send_sms && (
+                  <div>
+                    <Label className="text-[10px] text-white/60 mb-1 block">Sender ID</Label>
+                    <Input
+                      placeholder="swiftupdate"
+                      value={newPromoPopup.sender_id}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, sender_id: e.target.value }))}
+                      className="bg-white/5 border-amber-500/30 text-amber-400 rounded-xl text-xs font-mono font-bold h-9"
+                    />
+                  </div>
+                )}
+              </div>
+
               <Button
                 onClick={handleCreateDataPromoPopup}
                 disabled={creatingDataPromo}
                 className="w-full bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-black font-black rounded-xl h-11 text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20"
               >
                 {creatingDataPromo ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Flame className="w-4 h-4 mr-2" />}
-                Launch Promo Popup Deal LIVE
+                Launch Promo Popup Deal LIVE & Send SMS
               </Button>
             </div>
 
@@ -920,6 +1008,15 @@ const AdminPromotions = () => {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleTriggerPromoSMS(p)}
+                        className="text-xs border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-xl h-8 gap-1 font-bold"
+                        title="Send SMS announcement using Sender ID swiftupdate"
+                      >
+                        <Send className="w-3.5 h-3.5" /> SMS (swiftupdate)
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
