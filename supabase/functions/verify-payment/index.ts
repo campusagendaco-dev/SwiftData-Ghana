@@ -1,6 +1,6 @@
 declare const Deno: any;
 
-import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";

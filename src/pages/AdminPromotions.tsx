@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Ticket, Plus, Loader2, Trash2, Zap, AlertTriangle,
   Gift, Wifi, ToggleLeft, ToggleRight, RefreshCw, Users,
-  Download, Copy, CheckCircle
+  Download, Copy, CheckCircle, Flame, Sparkles, Clock, Eye, Smartphone
 } from "lucide-react";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
@@ -142,10 +142,120 @@ const AdminPromotions = () => {
     setTotalFreeDataCost(cost);
   }, []);
 
+  // Data Traffic Promo Popups state
+  const [dataPromoPopups, setDataPromoPopups] = useState<any[]>([]);
+  const [loadingDataPromoPopups, setLoadingDataPromoPopups] = useState(false);
+  const [creatingDataPromo, setCreatingDataPromo] = useState(false);
+
+  const [newPromoPopup, setNewPromoPopup] = useState({
+    title: "⚡ Flash Data Traffic Deal!",
+    description: "Get high-speed data at an unbeatable promotional price!",
+    network: "MTN",
+    package_size: "5GB",
+    original_price: "25.00",
+    promo_price: "18.00",
+    badge_text: "🔥 28% OFF",
+    theme_color: "amber",
+    target_audience: "all",
+    expires_hours: "24",
+    max_claims: "100",
+    per_user_limit: "1",
+  });
+
+  const fetchDataPromoPopups = useCallback(async () => {
+    setLoadingDataPromoPopups(true);
+    const { data, error } = await supabase
+      .from("data_promo_popups")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setDataPromoPopups(data);
+    }
+    setLoadingDataPromoPopups(false);
+  }, []);
+
+  const handleCreateDataPromoPopup = async () => {
+    if (!newPromoPopup.title.trim()) {
+      toast({ title: "Title is required", variant: "destructive" });
+      return;
+    }
+
+    const origPrice = parseFloat(newPromoPopup.original_price);
+    const promoPrice = parseFloat(newPromoPopup.promo_price);
+
+    if (isNaN(promoPrice) || promoPrice <= 0) {
+      toast({ title: "Invalid promo price", variant: "destructive" });
+      return;
+    }
+
+    setCreatingDataPromo(true);
+
+    let expiresAt: string | null = null;
+    if (newPromoPopup.expires_hours && parseFloat(newPromoPopup.expires_hours) > 0) {
+      const hours = parseFloat(newPromoPopup.expires_hours);
+      expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+    }
+
+    const { error } = await supabase
+      .from("data_promo_popups")
+      .insert({
+        title: newPromoPopup.title.trim(),
+        description: newPromoPopup.description.trim() || null,
+        network: newPromoPopup.network,
+        package_size: newPromoPopup.package_size.trim(),
+        original_price: isNaN(origPrice) ? promoPrice : origPrice,
+        promo_price: promoPrice,
+        badge_text: newPromoPopup.badge_text.trim() || null,
+        theme_color: newPromoPopup.theme_color,
+        target_audience: newPromoPopup.target_audience,
+        expires_at: expiresAt,
+        max_claims: parseInt(newPromoPopup.max_claims) || 0,
+        per_user_limit: parseInt(newPromoPopup.per_user_limit) || 1,
+        is_active: true,
+      });
+
+    if (error) {
+      toast({ title: "Failed to create promo popup", description: error.message, variant: "destructive" });
+    } else {
+      if (currentUser) {
+        await logAudit(currentUser.id, "create_data_promo_popup", { title: newPromoPopup.title, network: newPromoPopup.network, package_size: newPromoPopup.package_size, promo_price: promoPrice });
+      }
+      toast({ title: "Data Traffic Promo Popup created & LIVE!" });
+      fetchDataPromoPopups();
+    }
+    setCreatingDataPromo(false);
+  };
+
+  const handleToggleDataPromoPopup = async (id: string, current: boolean) => {
+    await supabase.from("data_promo_popups").update({ is_active: !current }).eq("id", id);
+    if (currentUser) {
+      await logAudit(currentUser.id, "toggle_data_promo_popup", { id, is_active: !current });
+    }
+    fetchDataPromoPopups();
+  };
+
+  const handleDeleteDataPromoPopup = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this promo popup deal?")) return;
+    await supabase.from("data_promo_popups").delete().eq("id", id);
+    if (currentUser) {
+      await logAudit(currentUser.id, "delete_data_promo_popup", { id });
+    }
+    fetchDataPromoPopups();
+  };
+
+  const handleResetDataPromoPopupClaims = async (id: string) => {
+    if (!confirm("Reset claim counter to 0 for this promo deal?")) return;
+    await supabase.from("data_promo_popups").update({ claimed_count: 0 }).eq("id", id);
+    fetchDataPromoPopups();
+    toast({ title: "Claim counter reset to 0!" });
+  };
+
   useEffect(() => {
     fetchPromos();
     fetchFreeDataSettings();
-  }, [fetchPromos, fetchFreeDataSettings]);
+    fetchDataPromoPopups();
+  }, [fetchPromos, fetchFreeDataSettings, fetchDataPromoPopups]);
 
   const handleSaveFreeData = async () => {
     setSavingFreeData(true);
@@ -585,6 +695,261 @@ const AdminPromotions = () => {
             <Button variant="ghost" size="sm" onClick={fetchFreeDataSettings} className="text-white/40 hover:text-white">
               <RefreshCw className="w-3.5 h-3.5" />
             </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Data Traffic Promo Popups ── */}
+      <div className="rounded-2xl overflow-hidden border border-amber-500/20 bg-gradient-to-b from-amber-500/5 to-transparent">
+        {/* Header */}
+        <div className="p-6 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-transparent border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
+              <Flame className="w-5 h-5 text-amber-400 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="font-bold text-white text-lg flex items-center gap-2">
+                Data Traffic Promo Popups <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">NEW</Badge>
+              </h2>
+              <p className="text-xs text-white/50">Create interactive promo pop-up deals where users can purchase data directly inside the modal.</p>
+            </div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={fetchDataPromoPopups} className="text-white/40 hover:text-white">
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Create Form */}
+            <div className="lg:col-span-2 rounded-2xl bg-white/[0.02] border border-white/5 p-5 space-y-4">
+              <h3 className="font-bold text-white text-base flex items-center gap-2">
+                <Plus className="w-4 h-4 text-amber-400" /> Create New Promo Deal Popup
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Headline / Title</Label>
+                  <Input
+                    placeholder="e.g. ⚡ Flash Weekend Data Deal!"
+                    value={newPromoPopup.title}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, title: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-sm"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Subtitle / Description</Label>
+                  <Input
+                    placeholder="e.g. Get 5GB High-Speed MTN Data for only GH₵ 18.00!"
+                    value={newPromoPopup.description}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, description: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Network</Label>
+                  <select
+                    value={newPromoPopup.network}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, network: e.target.value }))}
+                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-10 px-3 text-xs font-bold"
+                  >
+                    <option value="MTN">MTN</option>
+                    <option value="Telecel">Telecel</option>
+                    <option value="AirtelTigo">AirtelTigo</option>
+                    <option value="MTN Mash Up">MTN Mash Up</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Package Size</Label>
+                  <Input
+                    placeholder="e.g. 5GB"
+                    value={newPromoPopup.package_size}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, package_size: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs font-bold"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Regular Price (GH₵)</Label>
+                  <Input
+                    type="number"
+                    placeholder="25.00"
+                    value={newPromoPopup.original_price}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, original_price: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Promo Price (GH₵)</Label>
+                  <Input
+                    type="number"
+                    placeholder="18.00"
+                    value={newPromoPopup.promo_price}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, promo_price: e.target.value }))}
+                    className="bg-white/5 border-white/10 rounded-xl text-xs font-bold text-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Badge Tag</Label>
+                  <Input
+                    placeholder="e.g. 🔥 28% OFF"
+                    value={newPromoPopup.badge_text}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, badge_text: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Expiry (Hours from now)</Label>
+                  <Input
+                    type="number"
+                    placeholder="24"
+                    value={newPromoPopup.expires_hours}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, expires_hours: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Max Claims (0 = Unlimited)</Label>
+                  <Input
+                    type="number"
+                    placeholder="100"
+                    value={newPromoPopup.max_claims}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, max_claims: e.target.value }))}
+                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-white/60 mb-1.5 block">Target Audience</Label>
+                  <select
+                    value={newPromoPopup.target_audience}
+                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, target_audience: e.target.value }))}
+                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-10 px-3 text-xs"
+                  >
+                    <option value="all">All Users</option>
+                    <option value="agents">Reseller Agents Only</option>
+                    <option value="customers">Direct Buyers Only</option>
+                  </select>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleCreateDataPromoPopup}
+                disabled={creatingDataPromo}
+                className="w-full bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-black font-black rounded-xl h-11 text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20"
+              >
+                {creatingDataPromo ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Flame className="w-4 h-4 mr-2" />}
+                Launch Promo Popup Deal LIVE
+              </Button>
+            </div>
+
+            {/* Live Card Preview */}
+            <div className="rounded-2xl bg-black/40 border border-amber-500/30 p-5 relative overflow-hidden flex flex-col justify-between">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs px-2.5 py-0.5">
+                    {newPromoPopup.network}
+                  </Badge>
+                  <span className="text-[10px] text-amber-400 font-mono font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> {newPromoPopup.expires_hours ? `${newPromoPopup.expires_hours}h left` : "No Expiry"}
+                  </span>
+                </div>
+
+                <h4 className="font-black text-white text-lg leading-tight mb-1">{newPromoPopup.title || "Flash Data Deal"}</h4>
+                <p className="text-xs text-white/60 mb-4">{newPromoPopup.description || "Special package promotion"}</p>
+
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10 flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-white/40 uppercase font-black">Deal Bundle</p>
+                    <p className="text-xl font-black text-white">{newPromoPopup.package_size || "5GB"}</p>
+                  </div>
+                  <div className="text-right">
+                    {parseFloat(newPromoPopup.original_price) > parseFloat(newPromoPopup.promo_price) && (
+                      <p className="text-[10px] line-through text-white/40">GH₵ {parseFloat(newPromoPopup.original_price).toFixed(2)}</p>
+                    )}
+                    <p className="text-xl font-black text-amber-400">GH₵ {parseFloat(newPromoPopup.promo_price || "0").toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-white/5 text-center">
+                <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Pop-up Direct 1-Click Purchase Active</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Promo Popups List */}
+          <div className="space-y-3">
+            <h3 className="font-bold text-white text-sm flex items-center gap-2">
+              <Eye className="w-4 h-4 text-amber-400" /> Existing Promo Popups ({dataPromoPopups.length})
+            </h3>
+
+            {loadingDataPromoPopups ? (
+              <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-white/30" /></div>
+            ) : dataPromoPopups.length === 0 ? (
+              <p className="text-xs text-white/40 text-center py-6 border border-dashed border-white/10 rounded-xl">No active promo popups created yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {dataPromoPopups.map((p) => (
+                  <div key={p.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-white text-sm">{p.title}</span>
+                        <Badge className={p.is_active ? "bg-green-500/20 text-green-400 text-[10px]" : "bg-white/10 text-white/40 text-[10px]"}>
+                          {p.is_active ? "LIVE" : "PAUSED"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-white/50">
+                        {p.network} {p.package_size} @ <span className="text-amber-400 font-bold">GH₵ {Number(p.promo_price).toFixed(2)}</span>
+                      </p>
+                      <p className="text-[10px] text-white/40 mt-1">
+                        Claims: {p.claimed_count} {p.max_claims > 0 ? `/ ${p.max_claims}` : "(Unlimited)"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleToggleDataPromoPopup(p.id, p.is_active)}
+                        className="text-xs border-white/10 text-white/60 hover:text-white rounded-xl h-8"
+                      >
+                        {p.is_active ? "Pause" : "Enable"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleResetDataPromoPopupClaims(p.id)}
+                        className="text-amber-400 hover:text-amber-300 h-8"
+                        title="Reset claims counter to 0"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteDataPromoPopup(p.id)}
+                        className="text-red-400 hover:text-red-300 h-8"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
