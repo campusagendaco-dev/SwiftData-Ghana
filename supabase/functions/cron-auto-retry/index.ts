@@ -2,6 +2,7 @@ import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { log } from "../_shared/logger.ts";
+import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,32 +25,46 @@ serve(async (req) => {
   try {
     console.log("[cron-auto-retry] Running hybrid self-healing background worker...");
 
-    // Find stuck paid orders older than 2 minutes that were not dispatched
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    const { data: stuckOrders, error: fetchErr } = await supabaseAdmin
+    // 1. Find stuck paid/pending orders
+    const { data: stuckOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .in("status", ["paid", "pending"])
       .neq("network", "MTN Mash Up")
       .lte("created_at", twoMinutesAgo)
-      .gte("created_at", oneDayAgo)
-      .limit(20);
+      .gte("created_at", twoDaysAgo)
+      .limit(15);
 
-    if (fetchErr) {
-      throw fetchErr;
-    }
+    // 2. Find failed orders whose failure_reason indicates No Provider
+    const { data: noProviderOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .in("status", ["fulfillment_failed", "failed"])
+      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%")
+      .gte("created_at", twoDaysAgo)
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    // Deduplicate candidate orders by ID
+    const orderMap = new Map<string, any>();
+    (stuckOrders || []).forEach(o => orderMap.set(o.id, o));
+    (noProviderOrders || []).forEach(o => orderMap.set(o.id, o));
+
+    const candidateOrders = Array.from(orderMap.values());
 
     const results = {
-      attempted: (stuckOrders || []).length,
+      attempted: candidateOrders.length,
       fulfilled: 0,
       processing: 0,
       failed: 0,
+      smsSent: 0,
     };
 
-    for (const order of stuckOrders || []) {
-      console.log(`[cron-auto-retry] Auto-healing order ${order.id} (${order.network} ${order.package_size})...`);
+    for (const order of candidateOrders) {
+      console.log(`[cron-auto-retry] Auto-healing order ${order.id} (${order.network} ${order.package_size}, previous status: ${order.status})...`);
       
       const dispatch = await dispatchOrderWithFailover(supabaseAdmin, order);
 
@@ -62,8 +77,28 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         }).eq("id", order.id);
 
-        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
+        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id }).catch(() => {});
         results.fulfilled++;
+
+        // 📲 Trigger SMS Notification upon successful retry
+        const rawPhone = order.customer_phone || (order.metadata as any)?.payment_phone || (order.metadata as any)?.customer_phone;
+        const recipientPhone = normalizePhone(rawPhone);
+        const shortId = order.id ? String(order.id).slice(0, 8).toUpperCase() : "";
+        const pkgText = order.network && order.package_size ? `${order.network} ${order.package_size}` : "Bundle";
+
+        if (recipientPhone) {
+          const smsMessage = `SwiftData Alert: Order #${shortId} for ${recipientPhone} (${pkgText}) has been retried & delivered successfully! Thank you for your patience.`;
+          try {
+            const smsRes = await sendPaymentSms(supabaseAdmin, recipientPhone, "custom", { message: smsMessage }, order.agent_id);
+            if (smsRes) {
+              results.smsSent++;
+              console.log(`[cron-auto-retry] Successfully sent fulfillment SMS to ${recipientPhone} for order ${order.id}`);
+            }
+          } catch (smsErr) {
+            console.error(`[cron-auto-retry] Failed to send SMS for order ${order.id}:`, smsErr);
+          }
+        }
+
       } else if (dispatch.status === "processing") {
         await supabaseAdmin.from("orders").update({
           status: "processing",
@@ -82,17 +117,19 @@ serve(async (req) => {
       }
     }
 
-    log(supabaseAdmin, {
-      level: "info",
-      source: "cron-auto-retry",
-      event: "self_heal.completed",
-      message: `Self-heal worker processed ${results.attempted} orders (Fulfilled: ${results.fulfilled}, Processing: ${results.processing}, Failed: ${results.failed})`,
-      data: results
-    });
+    if (results.attempted > 0) {
+      log(supabaseAdmin, {
+        level: "info",
+        source: "cron-auto-retry",
+        event: "self_heal.completed",
+        message: `Self-heal worker processed ${results.attempted} orders (Fulfilled: ${results.fulfilled}, Processing: ${results.processing}, Failed: ${results.failed}, SMS Sent: ${results.smsSent})`,
+        data: results
+      });
+    }
 
     return new Response(JSON.stringify({
       success: true,
-      message: "Hybrid background self-healing cycle executed successfully.",
+      message: "Background self-healing cycle executed successfully.",
       summary: results
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

@@ -331,10 +331,18 @@ const AppContent = () => {
 
     const interval = window.setInterval(loadMaintenance, 30000);
 
+    // Continuous 10-second background heartbeat for self-healing & "No Provider" order retries
+    const autoRetryInterval = window.setInterval(() => {
+      if (typeof window !== "undefined" && window.navigator.onLine) {
+        invokePublicFunction("cron-auto-retry").catch(() => {});
+      }
+    }, 10000);
+
     return () => {
       mounted = false;
       window.clearTimeout(firstLoadSafetyTimeout);
       window.clearInterval(interval);
+      window.clearInterval(autoRetryInterval);
     };
   }, []);
 
