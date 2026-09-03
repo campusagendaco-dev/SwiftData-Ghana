@@ -317,6 +317,25 @@ serve(async (req: Request) => {
       agentProfit = 0; // Regular reseller/agent profit is collected offline as cash
     }
 
+    // Server-Side Data Traffic Promo Popup Price Override
+    if (customMetadata?.is_data_traffic_promo && customMetadata?.promo_id) {
+      const { data: promoRow } = await supabaseAdmin
+        .from("data_promo_popups")
+        .select("promo_price, is_active, expires_at, max_claims, claimed_count")
+        .eq("id", customMetadata.promo_id)
+        .maybeSingle();
+
+      if (promoRow && promoRow.is_active) {
+        const now = new Date();
+        const isExpired = promoRow.expires_at && new Date(promoRow.expires_at) <= now;
+        const isMaxClaimed = promoRow.max_claims > 0 && promoRow.claimed_count >= promoRow.max_claims;
+
+        if (!isExpired && !isMaxClaimed && Number(promoRow.promo_price) > 0) {
+          resolvedChargeAmount = Number(promoRow.promo_price);
+        }
+      }
+    }
+
     if (resolvedChargeAmount <= 0) {
       console.error(`[SECURITY] Blocked order: Could not resolve valid wholesale price for ${normalizedNet} ${package_size}.`);
       return new Response(JSON.stringify({ error: "Pricing configuration error. Please contact support." }), {
