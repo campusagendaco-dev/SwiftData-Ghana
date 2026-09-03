@@ -85,23 +85,7 @@ export async function runFraudSentinelCheck(params: {
       sessionStorage.setItem("last_checkout_timestamp", String(now));
 
       const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-
-      // Check recent pending unpaid orders across the system in the last 5 minutes
-      const { data: recentPending } = await supabase
-        .from("orders")
-        .select("id, customer_phone, amount, status, order_type")
-        .or(`customer_phone.ilike.%${clean9},metadata->>payment_phone.ilike.%${clean9}`)
-        .in("status", ["pending", "awaiting_payment"])
-        .gte("created_at", fiveMinsAgo);
-
-      if (recentPending && recentPending.length >= 2) {
-        return {
-          allowed: false,
-          threatLevel: "HIGH",
-          reason: "You already have a pending uncompleted order. Please complete or cancel your existing order before placing a new one."
-        };
-      }
+      // Allow user retries by auto-cancelling older pending orders on backend
 
       const query = supabase
         .from("orders")

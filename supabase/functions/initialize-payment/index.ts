@@ -588,23 +588,21 @@ serve(async (req: Request) => {
       return await executeTarpitSinkhole("Blacklisted Scammer Phone Intercept", { phone: rawTargetPhone });
     }
 
-    // Velocity Limiter: Cap rapid uncompleted checkouts from the same IP/Phone
-    const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { data: recentPendingOrders } = await supabaseAdmin
-      .from("orders")
-      .select("id, customer_phone, amount, status, order_type")
-      .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
-      .in("status", ["pending", "awaiting_payment"])
-      .gte("created_at", fiveMinsAgo);
+    // Auto-cancel stale uncompleted pending orders for this phone so new checkout proceeds smoothly
+    if (cleanPhone9.length >= 9) {
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: recentPendingOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id")
+        .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
+        .in("status", ["pending", "awaiting_payment"])
+        .gte("created_at", fiveMinsAgo);
 
-    if (recentPendingOrders && recentPendingOrders.length >= 2) {
-      console.warn(`[ANTI_FRAUD] Guest ${rawTargetPhone} already has ${recentPendingOrders.length} uncompleted pending orders.`);
-      return new Response(JSON.stringify({
-        error: "You already have a pending uncompleted order. Please complete or wait for your existing order before creating a new one."
-      }), {
-        status: 429,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (recentPendingOrders && recentPendingOrders.length > 0) {
+        const pendingIds = recentPendingOrders.map((o: any) => o.id);
+        await supabaseAdmin.from("orders").update({ status: "cancelled" }).in("id", pendingIds);
+        console.log(`[AUTO_CANCEL] Cancelled ${pendingIds.length} stale pending orders for ${rawTargetPhone}`);
+      }
     }
 
     // Rate Limiter: Protect against custom airtime spam and high-frequency bot loops
