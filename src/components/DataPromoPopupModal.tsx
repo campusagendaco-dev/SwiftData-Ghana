@@ -318,6 +318,8 @@ export const DataPromoPopupModal = () => {
 
   const resolvedEmail = user?.email || guestEmail.trim() || `guest_${phone.replace(/\D/g, "")}@swiftdatagh.shop`;
 
+  if (isAgentStorefront) return null;
+
   return (
     <>
       {/* Floating MTN-Ghana Style Re-open Pill (when dismissed) */}

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
+import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { MessageCircle, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,8 +23,19 @@ function loadSavedPos(): { x: number; y: number } | null {
 }
 
 const WhatsAppButton = () => {
+  const location = useLocation();
+  const activeDomain = getActiveStoreDomain();
+  const currentPath = location?.pathname || (typeof window !== "undefined" ? window.location.pathname : "");
+  const isAgentStorefront = Boolean(
+    activeDomain ||
+    currentPath.startsWith("/store") ||
+    currentPath.includes("/store")
+  );
+
   const [pos, setPos] = useState<{ x: number; y: number } | null>(loadSavedPos);
   const [isHovered, setIsHovered] = useState(false);
+
+  if (isAgentStorefront) return null;
   
   const buttonRef = useRef<HTMLAnchorElement>(null);
   const dragging = useRef(false);
