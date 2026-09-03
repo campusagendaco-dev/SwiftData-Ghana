@@ -612,38 +612,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     const orderId = metadata.order_id || crypto.randomUUID();
     
     try {
-      // 1. Verify the MoMo number via Paystack
-      let bankCode = "";
-      if (paymentNetwork === "MTN" || paymentNetwork === "MTN Mash Up") bankCode = "MTN";
-      else if (paymentNetwork === "Telecel") bankCode = "VOD";
-      else if (paymentNetwork === "AirtelTigo") bankCode = "ATL";
-
-      let resolvePhone = paymentPhone;
-      if (resolvePhone.startsWith("233") && resolvePhone.length === 12) {
-        resolvePhone = "0" + resolvePhone.slice(3);
-      } else if (resolvePhone.length === 9) {
-        resolvePhone = "0" + resolvePhone;
-      }
-
-      if (bankCode) {
-        try {
-          const { data: resolveData, error: resolveError } = await supabase.functions.invoke("paystack-resolve", {
-            body: { account_number: resolvePhone, bank_code: bankCode }
-          });
-          
-          if (!resolveError && resolveData?.success) {
-            if (resolveData.account_name && resolveData.account_name !== "TESTING ACCOUNT NAME") {
-              toast({ title: "Account Verified", description: resolveData.account_name, duration: 3000 });
-            }
-          } else {
-            console.warn("Mobile Money verification failed or returned failure:", resolveError || resolveData?.error);
-          }
-        } catch (e) {
-          console.warn("Mobile Money verification failed with exception:", e);
-        }
-      }
-
-      // 2. Initiate Payment
+      // 1. Initiate Payment
       const { data, error } = await supabase.functions.invoke("initialize-payment", {
         body: {
           email: email.trim() || `${paymentPhone}@customer.swiftdata.gh`,
