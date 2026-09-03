@@ -84,10 +84,27 @@ export async function invokePublicFunction(functionName: string, options?: { bod
   while (retries <= maxRetries) {
     try {
       const result = await publicFunctionClient.functions.invoke(finalFunctionName, finalOptions);
+      
+      const isFetchError = result.error && (
+        result.error.name === "FunctionsFetchError" ||
+        String(result.error.message).includes("Failed to send a request") ||
+        String(result.error.message).includes("Failed to fetch") ||
+        String(result.error.message).includes("ERR_CONNECTION_CLOSED") ||
+        String(result.error.message).includes("NetworkError")
+      );
+
+      if (isFetchError && retries < maxRetries) {
+        retries++;
+        const delay = baseDelay * Math.pow(2, retries - 1);
+        console.warn(`[Resilience] ${functionName} fetch error (retry ${retries}/${maxRetries} after ${delay}ms):`, result.error?.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
       if (result.error && (result.error.status === 429 || String(result.error.message).includes("429"))) {
         console.warn(`[PublicFunctionClient] ${functionName} hit rate limit (429).`);
       }
-      // If we got a result (even an error), return it
+      // If we got a result (or non-retryable error), return it
       return result;
     } catch (error: any) {
       const isConnectionError = 
