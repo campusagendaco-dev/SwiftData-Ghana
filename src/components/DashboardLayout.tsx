@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import NotificationPopup from "@/components/NotificationPopup";
-import { DataPromoPopupModal } from "@/components/DataPromoPopupModal";
 import { Menu, User, Wallet, Bell, Search, PlusCircle, AlertTriangle, X, Sun, Moon, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { NotificationCenter } from "./NotificationCenter";
@@ -343,7 +342,6 @@ const DashboardLayout = () => {
 
       <CommandPalette open={commandOpen} setOpen={setCommandOpen} />
       <NotificationPopup />
-      <DataPromoPopupModal />
     </div>
   );
 };
