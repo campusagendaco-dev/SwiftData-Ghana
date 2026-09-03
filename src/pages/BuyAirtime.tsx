@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { 
-  ShieldCheck, Zap, Loader2, AlertTriangle, Phone, Wallet, CheckCircle2, 
-  ArrowRight, Sparkles, Clock, RefreshCw, Smartphone, CreditCard, Flame, Gift
+import {
+  ShieldCheck, Zap, Loader2, AlertTriangle, Phone, CheckCircle2,
+  ArrowRight, Gift
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -23,45 +23,33 @@ const NETWORK_THEMES: Record<NetworkName, {
   name: NetworkName;
   Logo: React.FC<{ size?: number }>;
   color: string;
-  glow: string;
   border: string;
-  bgGradient: string;
-  buttonGradient: string;
-  buttonTextColor: string;
+  softBg: string;
   badgeBg: string;
 }> = {
   MTN: {
     name: "MTN",
     Logo: MTNLogo,
-    color: "#FFCC00",
-    glow: "rgba(255,204,0,0.25)",
-    border: "border-amber-400/40",
-    bgGradient: "from-amber-400/20 via-amber-500/10 to-transparent",
-    buttonGradient: "linear-gradient(135deg, #FFCC00 0%, #FF8C00 100%)",
-    buttonTextColor: "#000000",
-    badgeBg: "bg-amber-400/15 text-amber-400 border-amber-400/30",
+    color: "#EAB308",
+    border: "border-amber-400",
+    softBg: "bg-amber-50",
+    badgeBg: "bg-amber-100 text-amber-700 border-amber-200",
   },
   Telecel: {
     name: "Telecel",
     Logo: TelecelLogo,
     color: "#EF4444",
-    glow: "rgba(239,68,68,0.25)",
-    border: "border-red-500/40",
-    bgGradient: "from-red-600/20 via-red-500/10 to-transparent",
-    buttonGradient: "linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)",
-    buttonTextColor: "#ffffff",
-    badgeBg: "bg-red-500/15 text-red-400 border-red-500/30",
+    border: "border-red-400",
+    softBg: "bg-red-50",
+    badgeBg: "bg-red-100 text-red-700 border-red-200",
   },
   AirtelTigo: {
     name: "AirtelTigo",
     Logo: AirtelTigoLogo,
     color: "#3B82F6",
-    glow: "rgba(59,130,246,0.25)",
-    border: "border-blue-500/40",
-    bgGradient: "from-blue-600/20 via-blue-500/10 to-transparent",
-    buttonGradient: "linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)",
-    buttonTextColor: "#ffffff",
-    badgeBg: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    border: "border-blue-400",
+    softBg: "bg-blue-50",
+    badgeBg: "bg-blue-100 text-blue-700 border-blue-200",
   },
 };
 
@@ -223,30 +211,24 @@ const BuyAirtime = () => {
   const currentTheme = NETWORK_THEMES[selectedNetwork];
 
   return (
-    <div className="min-h-screen bg-[#070907] text-white flex flex-col font-sans selection:bg-amber-400 selection:text-black">
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <Navbar />
 
-      <main className="flex-1 relative pt-24 pb-20 overflow-hidden">
-        {/* Dynamic Ambient Color Mesh Glow */}
-        <div 
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-6xl h-[600px] pointer-events-none transition-all duration-1000 blur-[130px] opacity-40"
-          style={{ background: `radial-gradient(ellipse 80% 60% at 50% 10%, ${currentTheme.color} 0%, transparent 80%)` }}
-        />
+      <main className="flex-1 pt-24 pb-20">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8">
 
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 relative z-10 space-y-8">
-          
           {/* Header Banner */}
           <div className="text-center space-y-3">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-xs font-black uppercase tracking-widest text-emerald-400">INSTANT AIRTIME RECHARGE ⚡</span>
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-bold uppercase tracking-widest text-emerald-700">Instant Airtime Recharge</span>
             </div>
 
-            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white">
-              Buy Airtime <span className="text-amber-400">Instantly</span>
+            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-foreground">
+              Buy Airtime <span className="text-amber-500">Instantly</span>
             </h1>
-            <p className="text-white/60 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
-              Top up MTN, Telecel, and AirtelTigo airtime with 0 hassle. Instant delivery directly to any Ghana mobile line.
+            <p className="text-muted-foreground text-sm md:text-base max-w-xl mx-auto leading-relaxed">
+              Top up MTN, Telecel, and AirtelTigo airtime with zero hassle. Instant delivery directly to any Ghana mobile line.
             </p>
 
             <div className="pt-2">
@@ -256,31 +238,31 @@ const BuyAirtime = () => {
 
           {/* Holiday Mode / System Status Warning Banner */}
           {(holidayMode || orderingDisabled) && (
-            <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 backdrop-blur-xl flex items-start gap-4">
-              <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0 mt-0.5" />
+            <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-4">
+              <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <h4 className="font-black text-amber-400 text-sm uppercase tracking-wider">Ordering Paused Notice</h4>
-                <p className="text-xs text-white/70 mt-1 leading-relaxed">{holidayMessage || "System maintenance in progress. Airtime orders are temporarily paused."}</p>
+                <h4 className="font-black text-amber-700 text-sm uppercase tracking-wider">Ordering Paused Notice</h4>
+                <p className="text-xs text-amber-700/80 mt-1 leading-relaxed">{holidayMessage || "System maintenance in progress. Airtime orders are temporarily paused."}</p>
               </div>
             </div>
           )}
 
           {/* Main Card Grid Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
-            {/* Left Column: Form Controls (8 cols) */}
-            <div className="lg:col-span-7 space-y-6">
-              
+
+            {/* Left Column: Form Controls (7 cols) */}
+            <div className="lg:col-span-7 space-y-5">
+
               {/* Step 1: Select Network */}
-              <div className="p-6 md:p-8 rounded-[2.5rem] bg-white/[0.03] border border-white/10 backdrop-blur-2xl space-y-5 shadow-2xl">
+              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-2xl bg-amber-400/20 text-amber-400 border border-amber-400/30 flex items-center justify-center font-black text-xs">
+                    <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs">
                       1
                     </div>
-                    <h3 className="font-black text-white text-base tracking-wide uppercase">Select Network Carrier</h3>
+                    <h3 className="font-bold text-foreground text-sm tracking-wide">Select Network Carrier</h3>
                   </div>
-                  <span className="text-[10px] text-white/40 font-mono font-bold">AUTO-DETECTS</span>
+                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Auto-detects</span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">
@@ -294,29 +276,22 @@ const BuyAirtime = () => {
                         key={netName}
                         type="button"
                         onClick={() => setSelectedNetwork(netName)}
-                        className={`relative p-4 rounded-3xl border transition-all duration-300 flex flex-col items-center gap-2 group overflow-hidden ${
+                        className={`relative p-4 rounded-2xl border-2 transition-all duration-200 flex flex-col items-center gap-2 ${
                           isSelected
-                            ? `${netTheme.border} bg-white/10 shadow-2xl scale-[1.03]`
-                            : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20"
+                            ? `${netTheme.border} ${netTheme.softBg} shadow-md`
+                            : "border-border bg-background hover:border-muted-foreground/30"
                         }`}
                       >
-                        {isSelected && (
-                          <div 
-                            className="absolute inset-0 pointer-events-none opacity-20"
-                            style={{ background: `radial-gradient(circle at center, ${netTheme.color}, transparent)` }}
-                          />
-                        )}
-
-                        <div className="w-12 h-12 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center transition-transform group-hover:scale-110">
-                          <LogoComponent size={36} />
+                        <div className="w-12 h-12 rounded-xl bg-white border border-border flex items-center justify-center shadow-sm">
+                          <LogoComponent size={34} />
                         </div>
 
-                        <span className={`text-xs font-black tracking-wide ${isSelected ? "text-white" : "text-white/50"}`}>
+                        <span className={`text-xs font-bold tracking-wide ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
                           {netName}
                         </span>
 
                         {isSelected && (
-                          <div className="w-2 h-2 rounded-full bg-amber-400 shadow-lg shadow-amber-400" />
+                          <CheckCircle2 className="w-4 h-4 absolute top-2 right-2" style={{ color: netTheme.color }} />
                         )}
                       </button>
                     );
@@ -325,14 +300,12 @@ const BuyAirtime = () => {
               </div>
 
               {/* Step 2: Recipient Phone Number */}
-              <div className="p-6 md:p-8 rounded-[2.5rem] bg-white/[0.03] border border-white/10 backdrop-blur-2xl space-y-4 shadow-2xl">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-2xl bg-amber-400/20 text-amber-400 border border-amber-400/30 flex items-center justify-center font-black text-xs">
-                      2
-                    </div>
-                    <h3 className="font-black text-white text-base tracking-wide uppercase">Recipient Phone Number</h3>
+              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-sm space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs">
+                    2
                   </div>
+                  <h3 className="font-bold text-foreground text-sm tracking-wide">Recipient Phone Number</h3>
                 </div>
 
                 <div className="relative">
@@ -342,13 +315,13 @@ const BuyAirtime = () => {
                     placeholder="e.g. 0244123456"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="h-16 pl-13 pr-12 rounded-2xl bg-black/40 border-white/15 text-white font-mono text-xl font-bold placeholder:text-white/20 focus:border-amber-400 focus:ring-amber-400/20 transition-all"
+                    className="h-14 pl-12 pr-12 rounded-2xl bg-background border-border text-foreground font-mono text-lg font-bold placeholder:text-muted-foreground/40 focus-visible:border-amber-400 focus-visible:ring-amber-400/20 transition-all"
                   />
-                  <Phone className="w-5 h-5 text-amber-400 absolute left-4 top-5" />
+                  <Phone className="w-5 h-5 text-amber-500 absolute left-4 top-1/2 -translate-y-1/2" />
 
                   {resolvingName && (
-                    <div className="absolute right-4 top-5">
-                      <Loader2 className="w-5 h-5 animate-spin text-amber-400" />
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <Loader2 className="w-5 h-5 animate-spin text-amber-500" />
                     </div>
                   )}
                 </div>
@@ -360,28 +333,28 @@ const BuyAirtime = () => {
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
-                      className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs text-emerald-400 font-bold"
+                      className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-700 font-semibold"
                     >
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>Recipient: <span className="text-white font-black">{resolvedName || "Verified Ghana Line"}</span></span>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Recipient: <span className="text-foreground font-bold">{resolvedName || "Verified Ghana Line"}</span></span>
                       </div>
-                      <Badge className="bg-emerald-500/20 text-emerald-400 text-[10px] font-mono">VERIFIED</Badge>
+                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] font-mono">VERIFIED</Badge>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
 
               {/* Step 3: Enter Amount & Quick Presets */}
-              <div className="p-6 md:p-8 rounded-[2.5rem] bg-white/[0.03] border border-white/10 backdrop-blur-2xl space-y-5 shadow-2xl">
+              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-2xl bg-amber-400/20 text-amber-400 border border-amber-400/30 flex items-center justify-center font-black text-xs">
+                    <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs">
                       3
                     </div>
-                    <h3 className="font-black text-white text-base tracking-wide uppercase">Select or Enter Amount</h3>
+                    <h3 className="font-bold text-foreground text-sm tracking-wide">Select or Enter Amount</h3>
                   </div>
-                  <span className="text-[10px] text-amber-400 font-mono font-bold">GH₵ 1.00 – GH₵ 500.00</span>
+                  <span className="text-[10px] text-muted-foreground font-semibold">GH₵ 1.00 – GH₵ 500.00</span>
                 </div>
 
                 {/* Quick Amount Chips */}
@@ -393,10 +366,10 @@ const BuyAirtime = () => {
                         key={amt}
                         type="button"
                         onClick={() => setAmount(String(amt))}
-                        className={`py-3 rounded-2xl font-black text-xs transition-all border ${
+                        className={`py-2.5 rounded-xl font-bold text-xs transition-all border ${
                           isSelected
-                            ? "bg-amber-400 text-black border-amber-400 shadow-lg shadow-amber-400/30 scale-105"
-                            : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                            ? "bg-amber-400 text-black border-amber-400 shadow-sm"
+                            : "bg-background border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40"
                         }`}
                       >
                         GH₵ {amt}
@@ -412,22 +385,20 @@ const BuyAirtime = () => {
                     placeholder="Enter custom amount (e.g. 15)"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="h-14 pl-12 rounded-2xl bg-black/40 border-white/15 text-amber-400 font-black text-lg placeholder:text-white/20 focus:border-amber-400 focus:ring-amber-400/20 transition-all"
+                    className="h-14 pl-14 rounded-2xl bg-background border-border text-amber-600 font-black text-lg placeholder:text-muted-foreground/40 placeholder:font-normal focus-visible:border-amber-400 focus-visible:ring-amber-400/20 transition-all"
                   />
-                  <span className="absolute left-4 top-4 font-black text-amber-400 text-sm">GH₵</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-amber-600 text-sm">GH₵</span>
                 </div>
               </div>
             </div>
 
             {/* Right Column: Order Summary & Checkout Card (5 cols) */}
-            <div className="lg:col-span-5 space-y-6 sticky top-28">
-              
-              <div className="p-6 md:p-8 rounded-[2.5rem] bg-gradient-to-b from-white/10 via-white/[0.04] to-black/80 border border-white/15 backdrop-blur-2xl space-y-6 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="lg:col-span-5 space-y-5 sticky top-28">
 
-                <div className="flex items-center justify-between pb-4 border-b border-white/10">
-                  <h3 className="font-black text-white text-lg tracking-tight flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-amber-400 fill-amber-400" /> Order Summary
+              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-md space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-border">
+                  <h3 className="font-black text-foreground text-lg tracking-tight flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-amber-500 fill-amber-400" /> Order Summary
                   </h3>
                   <Badge className={`${currentTheme.badgeBg} text-[10px] font-black uppercase tracking-wider`}>
                     {selectedNetwork}
@@ -435,28 +406,28 @@ const BuyAirtime = () => {
                 </div>
 
                 {/* Summary Lines */}
-                <div className="space-y-3 font-mono text-xs">
+                <div className="space-y-3 text-xs">
                   <div className="flex justify-between items-center">
-                    <span className="text-white/60">Selected Network</span>
-                    <span className="font-bold text-amber-400">{selectedNetwork}</span>
+                    <span className="text-muted-foreground">Selected Network</span>
+                    <span className="font-bold text-foreground">{selectedNetwork}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-white/60">Recipient Line</span>
-                    <span className="font-bold text-white">{phone || "—"}</span>
+                    <span className="text-muted-foreground">Recipient Line</span>
+                    <span className="font-bold text-foreground">{phone || "—"}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-white/60">Airtime Amount</span>
-                    <span className="font-bold text-white">GH₵ {numAmount > 0 ? numAmount.toFixed(2) : "0.00"}</span>
+                    <span className="text-muted-foreground">Airtime Amount</span>
+                    <span className="font-bold text-foreground">GH₵ {numAmount > 0 ? numAmount.toFixed(2) : "0.00"}</span>
                   </div>
-                  <div className="flex justify-between items-center text-white/50">
+                  <div className="flex justify-between items-center text-muted-foreground">
                     <span>Payment Processing Fee</span>
                     <span>GH₵ {fee.toFixed(2)}</span>
                   </div>
 
-                  <div className="pt-3 border-t border-white/10 flex justify-between items-baseline">
-                    <span className="text-sm font-black font-sans uppercase text-white">Total Payable</span>
+                  <div className="pt-3 border-t border-border flex justify-between items-baseline">
+                    <span className="text-sm font-black uppercase text-foreground">Total Payable</span>
                     <div className="text-right">
-                      <span className="text-2xl font-black text-amber-400">GH₵ {total > 0 ? total.toFixed(2) : "0.00"}</span>
+                      <span className="text-2xl font-black text-amber-600">GH₵ {total > 0 ? total.toFixed(2) : "0.00"}</span>
                     </div>
                   </div>
                 </div>
@@ -469,7 +440,7 @@ const BuyAirtime = () => {
                       placeholder="Email address for receipt (optional)"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="h-12 bg-black/40 border-white/10 text-white rounded-xl text-xs placeholder:text-white/30"
+                      className="h-12 bg-background border-border text-foreground rounded-xl text-xs placeholder:text-muted-foreground/50"
                     />
                   </div>
                 )}
@@ -478,7 +449,7 @@ const BuyAirtime = () => {
                 <button
                   onClick={handlePay}
                   disabled={buying || !canPay}
-                  className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-yellow-300 disabled:opacity-30 text-black font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-amber-400/20 group"
+                  className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 disabled:opacity-30 text-black font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md shadow-amber-400/30 group"
                 >
                   {buying ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -490,21 +461,21 @@ const BuyAirtime = () => {
                   )}
                 </button>
 
-                <div className="flex items-center justify-center gap-2 text-[10px] text-white/40 font-bold uppercase tracking-widest pt-2">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground font-semibold uppercase tracking-widest pt-2">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                   Secured 256-Bit MoMo Payment
                 </div>
               </div>
 
               {/* Agent Program Perk Promo Banner */}
-              <div className="p-5 rounded-3xl bg-amber-400/5 border border-amber-400/15 backdrop-blur-xl flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-400 border border-amber-400/30 flex items-center justify-center shrink-0">
+              <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
                   <Gift className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">Want Agent Wholesale Rates?</h4>
-                  <p className="text-[11px] text-white/60 mt-0.5">
-                    Become a reseller agent on SwiftData and buy airtime at wholesale prices! <Link to="/agent-program" className="text-amber-400 underline font-bold">Join Agent Program</Link>
+                  <h4 className="text-xs font-black text-amber-700 uppercase tracking-wider">Want Agent Wholesale Rates?</h4>
+                  <p className="text-[11px] text-amber-700/70 mt-0.5">
+                    Become a reseller agent on SwiftData and buy airtime at wholesale prices! <Link to="/agent-program" className="text-amber-700 underline font-bold">Join Agent Program</Link>
                   </p>
                 </div>
               </div>
