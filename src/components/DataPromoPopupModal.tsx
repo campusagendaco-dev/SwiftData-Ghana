@@ -112,7 +112,7 @@ export const DataPromoPopupModal = () => {
         const { data: wallet } = await supabase
           .from("wallets")
           .select("balance")
-          .eq("user_id", user.id)
+          .eq("agent_id", user.id)
           .maybeSingle();
 
         if (wallet) {
