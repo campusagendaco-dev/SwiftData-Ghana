@@ -145,10 +145,6 @@ export const DataPromoPopupModal = () => {
 
           // Audience check: if target_audience is "agents" and user is guest, skip
           if (p.target_audience === "agents" && !user) return false;
-          
-          // Check local storage for recent dismiss
-          const dismissed = localStorage.getItem(`swift_promo_dismissed_${p.id}`);
-          if (dismissed) return false;
 
           return true;
         });
@@ -174,9 +170,16 @@ export const DataPromoPopupModal = () => {
           };
 
           setActivePromo(promoItem);
-          // Show popup after 1s for smooth initial page view UX
-          const timer = setTimeout(() => setIsOpen(true), 1000);
-          return () => clearTimeout(timer);
+
+          // Clear any legacy permanent localStorage locks
+          localStorage.removeItem(`swift_promo_dismissed_${validPromo.id}`);
+
+          // Check if dismissed in current browser tab session
+          const sessionDismissed = sessionStorage.getItem(`swift_promo_dismissed_${validPromo.id}`);
+          if (!sessionDismissed) {
+            const timer = setTimeout(() => setIsOpen(true), 800);
+            return () => clearTimeout(timer);
+          }
         }
       } catch (err) {
         console.error("Error fetching promo popup:", err);
@@ -217,7 +220,7 @@ export const DataPromoPopupModal = () => {
 
   const handleDismiss = () => {
     if (activePromo) {
-      localStorage.setItem(`swift_promo_dismissed_${activePromo.id}`, "true");
+      sessionStorage.setItem(`swift_promo_dismissed_${activePromo.id}`, "true");
     }
     setIsOpen(false);
   };
@@ -335,17 +338,17 @@ export const DataPromoPopupModal = () => {
       {/* Main MTN Ghana Inspired Promo Dialog */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="sm:max-w-[490px] p-0 overflow-hidden border-none bg-transparent shadow-2xl z-[150]">
-          <div className={`relative overflow-hidden rounded-[2.5rem] bg-[#0A0E0A] border-2 ${theme.cardBorder} shadow-2xl`}>
-            
+          <div className={`relative overflow-hidden rounded-[2.5rem] bg-card border-2 ${theme.cardBorder} shadow-2xl`}>
+
             {/* Ambient Background Glows */}
-            <div className={`absolute top-0 right-0 w-80 h-80 ${theme.accentGlow} rounded-full blur-[110px] -translate-y-1/2 translate-x-1/2 pointer-events-none animate-pulse`} />
-            <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[110px] translate-y-1/2 -translate-x-1/2 pointer-events-none" />
+            <div className={`absolute top-0 right-0 w-80 h-80 ${theme.accentGlow} rounded-full blur-[110px] -translate-y-1/2 translate-x-1/2 pointer-events-none animate-pulse opacity-40 dark:opacity-100`} />
+            <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[110px] translate-y-1/2 -translate-x-1/2 pointer-events-none opacity-40 dark:opacity-100" />
 
             {/* Top Brand Banner Header */}
             {activePromo.banner_image_url ? (
               <div className="relative h-48 w-full overflow-hidden">
                 <img src={activePromo.banner_image_url} alt={activePromo.title} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0A0E0A] via-[#0A0E0A]/50 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-card via-card/50 to-transparent" />
               </div>
             ) : (
               <div className={`py-6 px-6 bg-gradient-to-r ${theme.headerBg} relative overflow-hidden flex items-center justify-between`}>
@@ -380,13 +383,13 @@ export const DataPromoPopupModal = () => {
                   <Badge className={`${theme.badgeBg} text-xs px-3 py-1 rounded-xl shadow-md uppercase tracking-wider`}>
                     {activePromo.badge_text || `${activePromo.network} DEAL`}
                   </Badge>
-                  <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400" /> Instant Delivery
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-500" /> Instant Delivery
                   </span>
                 </div>
 
                 {timeRemaining && (
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold shadow-sm">
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-600 dark:text-amber-400 text-xs font-mono font-bold shadow-sm">
                     <Clock className="w-3.5 h-3.5 animate-spin" />
                     <span>{timeRemaining}</span>
                   </div>
@@ -395,31 +398,31 @@ export const DataPromoPopupModal = () => {
 
               {/* Title & Subtitle */}
               <DialogHeader className="text-left space-y-1">
-                <DialogTitle className="text-2xl font-black text-white tracking-tight leading-snug">
+                <DialogTitle className="text-2xl font-black text-foreground tracking-tight leading-snug">
                   {activePromo.title}
                 </DialogTitle>
-                <DialogDescription className="text-white/70 text-sm leading-relaxed">
+                <DialogDescription className="text-muted-foreground text-sm leading-relaxed">
                   {activePromo.description || `Get high-speed non-expiry ${activePromo.network} data bundle sent directly to your phone number.`}
                 </DialogDescription>
               </DialogHeader>
 
               {/* Deal Pricing Showcase Box */}
-              <div className="rounded-3xl bg-gradient-to-br from-white/10 to-white/[0.02] border border-white/15 p-5 flex items-center justify-between shadow-2xl relative overflow-hidden">
+              <div className="rounded-3xl bg-muted/60 border border-border p-5 flex items-center justify-between shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-amber-400/10 rounded-full blur-xl pointer-events-none" />
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-0.5">Special Bundle</p>
-                  <p className="text-3xl font-black text-white tracking-tight">{activePromo.package_size}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-0.5">Special Bundle</p>
+                  <p className="text-3xl font-black text-foreground tracking-tight">{activePromo.package_size}</p>
                 </div>
 
                 <div className="text-right">
                   {activePromo.original_price > activePromo.promo_price && (
-                    <p className="text-xs line-through text-white/40 font-bold mb-0.5">
+                    <p className="text-xs line-through text-muted-foreground font-bold mb-0.5">
                       GH₵ {activePromo.original_price.toFixed(2)}
                     </p>
                   )}
                   <div className="flex items-baseline gap-1">
-                    <span className="text-xs font-bold text-amber-400">GH₵</span>
-                    <span className="text-3xl font-black text-amber-400 tracking-tight">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">GH₵</span>
+                    <span className="text-3xl font-black text-amber-600 dark:text-amber-400 tracking-tight">
                       {activePromo.promo_price.toFixed(2)}
                     </span>
                   </div>
@@ -429,13 +432,13 @@ export const DataPromoPopupModal = () => {
               {/* Purchase Form or Success State */}
               {purchaseSuccess ? (
                 <div className="text-center py-6 space-y-4 animate-in zoom-in-95 duration-300">
-                  <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto text-emerald-400 shadow-xl">
+                  <div className="w-16 h-16 rounded-3xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center mx-auto text-emerald-500 shadow-xl">
                     <CheckCircle2 className="w-10 h-10 animate-bounce" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-white mb-1">Data Delivered! 🎉</h3>
-                    <p className="text-xs text-white/70">
-                      Your promotional <span className="text-amber-400 font-bold">{activePromo.package_size}</span> bundle has been dispatched to <span className="text-amber-400 font-mono font-bold">{phone}</span>.
+                    <h3 className="text-2xl font-black text-foreground mb-1">Data Delivered! 🎉</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Your promotional <span className="text-amber-600 dark:text-amber-400 font-bold">{activePromo.package_size}</span> bundle has been dispatched to <span className="text-amber-600 dark:text-amber-400 font-mono font-bold">{phone}</span>.
                     </p>
                   </div>
                   <Button
@@ -449,7 +452,7 @@ export const DataPromoPopupModal = () => {
                 <div className="space-y-4">
                   {/* Recipient Phone Input */}
                   <div>
-                    <Label className="text-xs font-bold text-white/80 mb-1.5 block uppercase tracking-wider">
+                    <Label className="text-xs font-bold text-foreground/80 mb-1.5 block uppercase tracking-wider">
                       Recipient Mobile Number
                     </Label>
                     <div className="relative">
@@ -458,15 +461,15 @@ export const DataPromoPopupModal = () => {
                         placeholder="e.g. 0244123456"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="bg-white/5 border-white/15 text-white rounded-2xl h-12 font-mono text-base pl-11 focus:border-amber-400 focus:ring-amber-400/20"
+                        className="bg-muted/50 border-border text-foreground rounded-2xl h-12 font-mono text-base pl-11 focus-visible:border-amber-400 focus-visible:ring-amber-400/20"
                       />
-                      <Smartphone className="w-5 h-5 text-amber-400 absolute left-3.5 top-3.5" />
+                      <Smartphone className="w-5 h-5 text-amber-500 absolute left-3.5 top-3.5" />
                     </div>
                   </div>
 
                   {/* Payment Method Selection */}
                   <div>
-                    <Label className="text-xs font-bold text-white/80 mb-1.5 block uppercase tracking-wider">
+                    <Label className="text-xs font-bold text-foreground/80 mb-1.5 block uppercase tracking-wider">
                       Payment Method
                     </Label>
                     <div className="grid grid-cols-2 gap-2.5">
@@ -476,15 +479,15 @@ export const DataPromoPopupModal = () => {
                           onClick={() => setPaymentMethod("wallet")}
                           className={`p-3.5 rounded-2xl border text-left transition-all flex items-center gap-3 ${
                             paymentMethod === "wallet"
-                              ? "border-amber-400 bg-amber-400/10 text-white shadow-lg shadow-amber-500/10"
-                              : "border-white/10 bg-white/5 text-white/50 hover:text-white"
+                              ? "border-amber-400 bg-amber-400/10 text-foreground shadow-lg shadow-amber-500/10"
+                              : "border-border bg-muted/40 text-muted-foreground hover:text-foreground"
                           }`}
                         >
-                          <Wallet className={`w-5 h-5 ${paymentMethod === "wallet" ? "text-amber-400" : ""}`} />
+                          <Wallet className={`w-5 h-5 ${paymentMethod === "wallet" ? "text-amber-500" : ""}`} />
                           <div>
                             <p className="text-xs font-bold leading-tight">Wallet Balance</p>
                             {walletBalance !== null && (
-                              <p className="text-[10px] text-amber-400 font-mono font-bold mt-0.5">GH₵ {walletBalance.toFixed(2)}</p>
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-mono font-bold mt-0.5">GH₵ {walletBalance.toFixed(2)}</p>
                             )}
                           </div>
                         </button>
@@ -497,14 +500,14 @@ export const DataPromoPopupModal = () => {
                           !user ? "col-span-2" : ""
                         } ${
                           paymentMethod === "momo"
-                            ? "border-amber-400 bg-amber-400/10 text-white shadow-lg shadow-amber-500/10"
-                            : "border-white/10 bg-white/5 text-white/50 hover:text-white"
+                            ? "border-amber-400 bg-amber-400/10 text-foreground shadow-lg shadow-amber-500/10"
+                            : "border-border bg-muted/40 text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        <CreditCard className={`w-5 h-5 ${paymentMethod === "momo" ? "text-amber-400" : ""}`} />
+                        <CreditCard className={`w-5 h-5 ${paymentMethod === "momo" ? "text-amber-500" : ""}`} />
                         <div>
                           <p className="text-xs font-bold leading-tight">Mobile Money (MoMo / Card)</p>
-                          <p className="text-[10px] text-white/40 mt-0.5">MTN MoMo, Telecel Cash, AT Money</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">MTN MoMo, Telecel Cash, AT Money</p>
                         </div>
                       </button>
                     </div>
