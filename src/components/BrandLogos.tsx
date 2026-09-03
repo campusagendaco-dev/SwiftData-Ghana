@@ -19,7 +19,7 @@ export const TelecelLogo = ({ size = 40 }: { size?: number }) => (
 
 export const AirtelTigoLogo = ({ size = 40 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="40" height="40" rx="9" fill="#E2001A"/>
+    <rect width="40" height="40" rx="9" fill="#0055FF"/>
     {/* Airtel-style arc swoosh */}
     <path d="M10 28 Q20 8 30 28" stroke="white" strokeWidth="4" fill="none" strokeLinecap="round"/>
     <path d="M13 28 Q20 13 27 28" stroke="white" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.5"/>
