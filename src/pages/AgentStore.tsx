@@ -1749,35 +1749,39 @@ const AgentStore = () => {
                         if (selectedNetwork === "Telecel") LogoComponent = TelecelLogo;
                         if (selectedNetwork === "AirtelTigo") LogoComponent = AirtelTigoLogo;
 
+                        const isDarkText = selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up";
+                        const cardBgColor = netConf.color;
+
                         return (
                           <button
                             type="button"
                             key={pkg.size}
                             onClick={() => handleCardClick(pkg.size, pkg.price)}
-                            className={`relative rounded-[24px] p-4 sm:p-5 text-left transition-all duration-300 border overflow-hidden group flex flex-col justify-between ${
+                            className={`relative rounded-[24px] p-4.5 sm:p-5 text-left transition-all duration-300 border overflow-hidden group flex flex-col justify-between ${
                               isSelected
-                                ? "scale-[1.03] shadow-2xl border-white ring-4 ring-white/40 z-20"
-                                : "border-black/10 hover:scale-[1.02] hover:shadow-xl active:scale-[0.97]"
+                                ? "scale-[1.03] shadow-2xl border-white ring-4 ring-white/50 z-20"
+                                : "border-white/10 hover:scale-[1.02] hover:shadow-2xl active:scale-[0.97]"
                             }`}
                             style={{
-                              background: `linear-gradient(145deg, ${netConf.color}, ${netConf.color}dd)`,
-                              boxShadow: isSelected ? `0 16px 36px ${netConf.color}60` : `0 8px 24px ${netConf.color}25`,
-                              color: netConf.textColor === "text-black" ? "#000000" : "#FFFFFF"
+                              backgroundColor: cardBgColor,
+                              backgroundImage: `linear-gradient(145deg, ${cardBgColor}, ${cardBgColor}ee)`,
+                              boxShadow: isSelected ? `0 16px 40px ${cardBgColor}80` : `0 8px 24px ${cardBgColor}35`,
+                              color: isDarkText ? "#000000" : "#FFFFFF"
                             }}
                           >
                             {/* Inner Highlight for depth */}
-                            <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/10" />
+                            <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/20" />
 
                             {/* Top Header Row */}
-                            <div className="flex items-center justify-between mb-3 w-full relative z-10">
-                              <div className="w-8 h-8 rounded-xl bg-white/90 p-1 flex items-center justify-center shadow-sm shrink-0">
+                            <div className="flex items-center justify-between mb-3.5 w-full relative z-10">
+                              <div className={`w-8 h-8 rounded-xl p-1 flex items-center justify-center shadow-sm shrink-0 ${isDarkText ? "bg-black/10" : "bg-white/20 backdrop-blur-md"}`}>
                                 <LogoComponent size={24} />
                               </div>
 
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
                                 isSelected 
                                   ? "bg-white text-black shadow-md" 
-                                  : (netConf.textColor === "text-black" ? "bg-black/10 text-black hover:bg-black/20" : "bg-white/20 text-white hover:bg-white/30")
+                                  : (isDarkText ? "bg-black/10 text-black hover:bg-black/20" : "bg-white/20 text-white hover:bg-white/30")
                               }`}>
                                 {isSelected ? (
                                   <CheckCircle2 className="w-4 h-4 text-black stroke-[3]" />
@@ -1789,31 +1793,31 @@ const AgentStore = () => {
 
                             {/* Main Capacity Display */}
                             <div className="mb-4 relative z-10">
-                              <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1 ${netConf.textColor}`}>
+                              <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1 ${isDarkText ? "text-black" : "text-white"}`}>
                                 {display.main}
                               </p>
-                              <p className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${netConf.labelColor}`}>
+                              <p className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${isDarkText ? "text-black/70" : "text-white/80"}`}>
                                 {display.sub ? display.sub : `${selectedNetwork} Bundle`}
                               </p>
                             </div>
 
                             {/* Bottom 3-Column Stats Bar */}
-                            <div className={`pt-3 border-t grid grid-cols-3 gap-1 text-center font-sans relative z-10 ${netConf.dividerColor}`}>
+                            <div className={`pt-3 border-t grid grid-cols-3 gap-1 text-center font-sans relative z-10 ${isDarkText ? "border-black/20" : "border-white/20"}`}>
                               <div>
-                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${netConf.labelColor}`}>PRICE</p>
-                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${netConf.textColor}`}>
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>PRICE</p>
+                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
                                   ₵{pkg.price.toFixed(2)}
                                 </p>
                               </div>
-                              <div className="border-x px-1" style={{ borderColor: "inherit" }}>
-                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${netConf.labelColor}`}>ROLLOVER</p>
-                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${netConf.textColor}`}>
+                              <div className="border-x px-1" style={{ borderColor: isDarkText ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.2)" }}>
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>ROLLOVER</p>
+                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
                                   {pkg.isInstant ? "Instant" : "Yes"}
                                 </p>
                               </div>
                               <div>
-                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${netConf.labelColor}`}>DURATION</p>
-                                <p className={`text-[10px] sm:text-xs font-black tracking-tight truncate ${netConf.textColor}`}>
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>DURATION</p>
+                                <p className={`text-[10px] sm:text-xs font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
                                   {pkg.validity === "MTN Mash Up" ? "Mash Up" : (pkg.validity || "No Expiry")}
                                 </p>
                               </div>
