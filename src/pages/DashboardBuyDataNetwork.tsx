@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, AlertTriangle } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, AlertTriangle, ChevronDown } from "lucide-react";
+import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -1421,51 +1422,92 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {packages.map((item) => {
-                const isSelected = selectedSize === item.size;
-                return (
-                  <button
-                    key={item.size}
-                    type="button"
-                    onClick={() => {
-                      setSelectedSize(isSelected ? "" : item.size);
-                      setPayMethod("wallet");
-                      // Scroll to top of panel if on mobile
-                      if (!isSelected) window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className={`${cardColors.card} rounded-2xl p-3.5 sm:p-4 flex flex-col gap-2 border-2 text-left transition-all duration-200 relative ${
-                      isSelected
-                        ? "border-white shadow-2xl scale-[1.05] z-10"
-                        : "border-transparent hover:border-white/20 hover:scale-[1.02] opacity-80 hover:opacity-100"
-                    }`}
-                  >
-                    {isSelected && (
-                      <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-xl border border-black/10">
-                        <CheckCircle2 className="w-4 h-4 text-black" />
-                      </span>
-                    )}
-                    <span className={`${cardColors.label} text-[10px] font-black uppercase tracking-widest opacity-60`}>{network}</span>
-                    {(() => {
-                      const display = formatPackageDisplay(item.size);
-                      return (
-                        <div className="flex flex-col gap-0.5">
-                          <span className={`${cardColors.size} text-lg sm:text-xl font-black leading-tight tracking-tight break-words`}>
-                            {display.main}
-                          </span>
-                          {display.sub && (
-                            <span className={`${cardColors.label} text-[9px] font-bold opacity-75 uppercase tracking-wide`}>
-                              Official: {display.sub}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    <div className="flex items-end justify-between mt-auto pt-1">
-                      <span className={`${cardColors.size} text-base font-black`}>₵{item.price.toFixed(2)}</span>
-                      <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>{item.validity || "No Expiry"}</span>
+              const isSelected = selectedSize === item.size;
+              const display = formatPackageDisplay(item.size);
+
+              let LogoComponent = MTNLogo;
+              if (network === "Telecel") LogoComponent = TelecelLogo;
+              if (network === "AirtelTigo") LogoComponent = AirtelTigoLogo;
+
+              const isDarkText = network === "MTN" || network === "MTN Mash Up";
+              const cardBgColor = network === "Telecel" ? "#E60000" : (network === "AirtelTigo" ? "#0055FF" : "#FFCC00");
+
+              return (
+                <button
+                  key={item.size}
+                  type="button"
+                  onClick={() => {
+                    setSelectedSize(isSelected ? "" : item.size);
+                    setPayMethod("wallet");
+                    if (!isSelected) window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className={`relative rounded-[24px] p-4 text-left transition-all duration-300 border overflow-hidden group flex flex-col justify-between ${
+                    isSelected
+                      ? "scale-[1.04] shadow-2xl border-white ring-4 ring-white/50 z-10"
+                      : "border-white/10 hover:scale-[1.02] hover:shadow-xl active:scale-[0.97]"
+                  }`}
+                  style={{
+                    backgroundColor: cardBgColor,
+                    backgroundImage: `linear-gradient(145deg, ${cardBgColor}, ${cardBgColor}ee)`,
+                    boxShadow: isSelected ? `0 16px 40px ${cardBgColor}80` : `0 8px 24px ${cardBgColor}35`,
+                    color: isDarkText ? "#000000" : "#FFFFFF"
+                  }}
+                >
+                  <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/20" />
+
+                  {/* Top Header Row */}
+                  <div className="flex items-center justify-between mb-3.5 w-full relative z-10">
+                    <div className={`w-8 h-8 rounded-xl p-1 flex items-center justify-center shadow-sm shrink-0 ${isDarkText ? "bg-black/10" : "bg-white/20 backdrop-blur-md"}`}>
+                      <LogoComponent size={24} />
                     </div>
-                  </button>
-                );
-              })}
+
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                      isSelected 
+                        ? "bg-white text-black shadow-md" 
+                        : (isDarkText ? "bg-black/10 text-black hover:bg-black/20" : "bg-white/20 text-white hover:bg-white/30")
+                    }`}>
+                      {isSelected ? (
+                        <CheckCircle2 className="w-4 h-4 text-black stroke-[3]" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 stroke-[2.5]" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main Capacity Display */}
+                  <div className="mb-4 relative z-10">
+                    <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1 ${isDarkText ? "text-black" : "text-white"}`}>
+                      {display.main}
+                    </p>
+                    <p className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${isDarkText ? "text-black/70" : "text-white/80"}`}>
+                      {display.sub ? display.sub : `${network} Bundle`}
+                    </p>
+                  </div>
+
+                  {/* Bottom 3-Column Stats Bar */}
+                  <div className={`pt-3 border-t grid grid-cols-3 gap-1 text-center font-sans relative z-10 ${isDarkText ? "border-black/20" : "border-white/20"}`}>
+                    <div>
+                      <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>PRICE</p>
+                      <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
+                        ₵{item.price.toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="border-x px-1" style={{ borderColor: isDarkText ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.2)" }}>
+                      <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>ROLLOVER</p>
+                      <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
+                        {item.isInstant ? "Instant" : "Yes"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>DURATION</p>
+                      <p className={`text-[10px] sm:text-xs font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
+                        {item.validity === "MTN Mash Up" ? "Mash Up" : (item.validity || "No Expiry")}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
