@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "react-router-dom";
 import { 
   Dialog, 
   DialogContent, 
@@ -126,12 +127,13 @@ export const DataPromoPopupModal = () => {
     }
   }, [user]);
 
+  const location = useLocation();
   const activeDomain = getActiveStoreDomain();
-  const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+  const currentPath = location?.pathname || (typeof window !== "undefined" ? window.location.pathname : "");
   const isAgentStorefront = Boolean(
     activeDomain ||
     currentPath.startsWith("/store") ||
-    currentPath.includes("/store/")
+    currentPath.includes("/store")
   );
 
   // Fetch active data promo popup (works for both guests & logged in users)

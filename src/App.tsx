@@ -550,6 +550,9 @@ const AppContent = () => {
         <AudioUnlocker />
         <NotificationPopup />
         <AIConcierge />
+        {!isAgentStore && <WhatsAppButton />}
+        {!isAgentStore && <FreeDataButton />}
+        {!isAgentStore && <DataPromoPopupModal />}
       </div>
     </>
   );
@@ -617,9 +620,6 @@ const App = () => {
               <SecurityGuard>
                 <AppContent />
               </SecurityGuard>
-              <WhatsAppButton />
-              <FreeDataButton />
-              <DataPromoPopupModal />
               <InstallPrompt />
             </AuthProvider>
           </BrowserRouter>
