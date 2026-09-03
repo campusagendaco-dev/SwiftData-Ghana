@@ -322,94 +322,92 @@ export const DataPromoPopupModal = () => {
         </button>
       )}
 
-      {/* Main MTN Ghana Inspired Promo Dialog */}
+      {/* Main Cute Promo Dialog */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-[490px] p-0 overflow-hidden border-none bg-transparent shadow-2xl z-[150]">
-          <div className={`relative overflow-hidden rounded-[2.5rem] bg-[#0A0E0A] border-2 ${theme.cardBorder} shadow-2xl`}>
+        <DialogContent className="sm:max-w-[365px] p-0 overflow-hidden border-none bg-transparent shadow-2xl z-[150]">
+          <div className={`relative overflow-hidden rounded-[1.75rem] bg-[#0C0F0E] border border-amber-400/40 shadow-2xl shadow-amber-500/15`}>
 
             {/* Ambient Background Glows */}
-            <div className={`absolute top-0 right-0 w-80 h-80 ${theme.accentGlow} rounded-full blur-[110px] -translate-y-1/2 translate-x-1/2 pointer-events-none animate-pulse`} />
-            <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[110px] translate-y-1/2 -translate-x-1/2 pointer-events-none" />
+            <div className={`absolute top-0 right-0 w-48 h-48 ${theme.accentGlow} rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2 pointer-events-none animate-pulse`} />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2 pointer-events-none" />
 
-            {/* Top Brand Banner Header */}
+            {/* Top Brand Banner Header (Cute & Compact) */}
             {activePromo.banner_image_url ? (
-              <div className="relative h-48 w-full overflow-hidden">
+              <div className="relative h-32 w-full overflow-hidden">
                 <img src={activePromo.banner_image_url} alt={activePromo.title} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0A0E0A] via-[#0A0E0A]/50 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0C0F0E] via-[#0C0F0E]/50 to-transparent" />
               </div>
             ) : (
-              <div className={`py-6 px-6 bg-gradient-to-r ${theme.headerBg} relative overflow-hidden flex items-center justify-between`}>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-black/90 border border-white/20 flex items-center justify-center shadow-lg shrink-0">
-                    <Zap className="w-6 h-6 text-amber-400 fill-amber-400 animate-pulse" />
+              <div className={`py-3 px-4 bg-gradient-to-r ${theme.headerBg} relative overflow-hidden flex items-center justify-between pr-10`}>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-black/90 border border-white/20 flex items-center justify-center shadow-md shrink-0">
+                    <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400 animate-pulse" />
                   </div>
                   <div>
-                    <Badge className="bg-black/90 text-amber-400 border border-amber-400/40 text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 mb-0.5">
-                      MTN GHANA PROMO DEAL 🚀
-                    </Badge>
-                    <h3 className="font-black text-black text-lg tracking-tight leading-none">
-                      {activePromo.network} High-Speed Data
+                    <h3 className="font-black text-black text-xs tracking-tight leading-none">
+                      {activePromo.network} Special Deal 🚀
                     </h3>
                   </div>
                 </div>
 
                 {discountPercent > 0 && (
-                  <div className="bg-black text-amber-400 font-black text-xs px-3 py-1.5 rounded-xl border border-amber-400/40 shadow-lg shrink-0">
-                    SAVE {discountPercent}%
+                  <div className="bg-black text-amber-400 font-black text-[10px] px-2 py-0.5 rounded-full border border-amber-400/40 shadow-sm shrink-0">
+                    {discountPercent}% OFF
                   </div>
                 )}
               </div>
             )}
 
             {/* Modal Body */}
-            <div className="p-6 md:p-7 relative z-10 space-y-5">
+            <div className="p-4 relative z-10 space-y-3.5">
               
               {/* Badges & Timer Strip */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge className={`${theme.badgeBg} text-xs px-3 py-1 rounded-xl shadow-md uppercase tracking-wider`}>
-                    {activePromo.badge_text || `${activePromo.network} DEAL`}
+              <div className="flex items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Badge className={`${theme.badgeBg} text-[10px] px-2.5 py-0.5 rounded-full shadow-sm uppercase tracking-wider`}>
+                    {activePromo.badge_text || `${activePromo.network} PROMO`}
                   </Badge>
-                  <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-400" /> Instant Delivery
+                  <span className="text-[9px] font-bold text-white/50 uppercase tracking-widest flex items-center gap-1">
+                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" /> Instant
                   </span>
                 </div>
 
                 {timeRemaining && (
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-400 text-xs font-mono font-bold shadow-sm">
-                    <Clock className="w-3.5 h-3.5 animate-spin" />
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-400/10 border border-amber-400/30 text-amber-400 text-[10px] font-mono font-bold shadow-sm">
+                    <Clock className="w-3 h-3 animate-spin" />
                     <span>{timeRemaining}</span>
                   </div>
                 )}
               </div>
 
               {/* Title & Subtitle */}
-              <DialogHeader className="text-left space-y-1">
-                <DialogTitle className="text-2xl font-black text-white tracking-tight leading-snug">
-                  {activePromo.title}
+              <DialogHeader className="text-left space-y-0.5">
+                <DialogTitle className="text-base font-black text-white tracking-tight leading-tight flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
+                  <span>{activePromo.title}</span>
                 </DialogTitle>
-                <DialogDescription className="text-white/70 text-sm leading-relaxed">
-                  {activePromo.description || `Get high-speed non-expiry ${activePromo.network} data bundle sent directly to your phone number.`}
+                <DialogDescription className="text-white/60 text-[11px] leading-snug">
+                  {activePromo.description || `Get high-speed non-expiry ${activePromo.network} data bundle sent directly to your phone.`}
                 </DialogDescription>
               </DialogHeader>
 
-              {/* Deal Pricing Showcase Box */}
-              <div className="rounded-3xl bg-gradient-to-br from-white/10 to-white/[0.02] border border-white/15 p-5 flex items-center justify-between shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-amber-400/10 rounded-full blur-xl pointer-events-none" />
+              {/* Deal Pricing Showcase Box (Cute Compact Pill) */}
+              <div className="rounded-2xl bg-gradient-to-br from-white/10 to-white/[0.02] border border-white/15 p-3 flex items-center justify-between shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-16 h-16 bg-amber-400/10 rounded-full blur-lg pointer-events-none" />
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-0.5">Special Bundle</p>
-                  <p className="text-3xl font-black text-white tracking-tight">{activePromo.package_size}</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-amber-400 mb-0.5">Special Bundle</p>
+                  <p className="text-2xl font-black text-white tracking-tight leading-none">{activePromo.package_size}</p>
                 </div>
 
                 <div className="text-right">
                   {activePromo.original_price > activePromo.promo_price && (
-                    <p className="text-xs line-through text-white/40 font-bold mb-0.5">
+                    <p className="text-[10px] line-through text-white/40 font-bold leading-none mb-0.5">
                       GH₵ {activePromo.original_price.toFixed(2)}
                     </p>
                   )}
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-xs font-bold text-amber-400">GH₵</span>
-                    <span className="text-3xl font-black text-amber-400 tracking-tight">
+                  <div className="flex items-baseline gap-0.5">
+                    <span className="text-[10px] font-bold text-amber-400">GH₵</span>
+                    <span className="text-2xl font-black text-amber-400 tracking-tight leading-none">
                       {activePromo.promo_price.toFixed(2)}
                     </span>
                   </div>
@@ -418,28 +416,28 @@ export const DataPromoPopupModal = () => {
 
               {/* Purchase Form or Success State */}
               {purchaseSuccess ? (
-                <div className="text-center py-6 space-y-4 animate-in zoom-in-95 duration-300">
-                  <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto text-emerald-400 shadow-xl">
-                    <CheckCircle2 className="w-10 h-10 animate-bounce" />
+                <div className="text-center py-4 space-y-3 animate-in zoom-in-95 duration-300">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto text-emerald-400 shadow-lg">
+                    <CheckCircle2 className="w-7 h-7 animate-bounce" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-white mb-1">Data Delivered! 🎉</h3>
-                    <p className="text-xs text-white/70">
-                      Your promotional <span className="text-amber-400 font-bold">{activePromo.package_size}</span> bundle has been dispatched to <span className="text-amber-400 font-mono font-bold">{phone}</span>.
+                    <h3 className="text-lg font-black text-white mb-0.5">Data Delivered! 🎉</h3>
+                    <p className="text-[11px] text-white/70">
+                      Promotional <span className="text-amber-400 font-bold">{activePromo.package_size}</span> sent to <span className="text-amber-400 font-mono font-bold">{phone}</span>.
                     </p>
                   </div>
                   <Button
                     onClick={() => { setPurchaseSuccess(false); setIsOpen(false); }}
-                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-black rounded-2xl h-12 text-sm uppercase tracking-wider shadow-xl shadow-emerald-500/20"
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-black rounded-xl h-10 text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20"
                   >
                     Awesome, Thank You!
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {/* Recipient Phone Input */}
                   <div>
-                    <Label className="text-xs font-bold text-white/80 mb-1.5 block uppercase tracking-wider">
+                    <Label className="text-[10px] font-bold text-white/80 mb-1 block uppercase tracking-wider">
                       Recipient Mobile Number
                     </Label>
                     <div className="relative">
@@ -448,33 +446,33 @@ export const DataPromoPopupModal = () => {
                         placeholder="e.g. 0244123456"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="bg-white/5 border-white/15 text-white rounded-2xl h-12 font-mono text-base pl-11 focus:border-amber-400 focus:ring-amber-400/20"
+                        className="bg-white/5 border-white/15 text-white rounded-xl h-10 font-mono text-xs pl-9 focus:border-amber-400 focus:ring-amber-400/20"
                       />
-                      <Smartphone className="w-5 h-5 text-amber-400 absolute left-3.5 top-3.5" />
+                      <Smartphone className="w-4 h-4 text-amber-400 absolute left-3 top-3" />
                     </div>
                   </div>
 
                   {/* Payment Method Selection */}
                   <div>
-                    <Label className="text-xs font-bold text-white/80 mb-1.5 block uppercase tracking-wider">
+                    <Label className="text-[10px] font-bold text-white/80 mb-1 block uppercase tracking-wider">
                       Payment Method
                     </Label>
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-2 gap-2">
                       {user && (
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("wallet")}
-                          className={`p-3.5 rounded-2xl border text-left transition-all flex items-center gap-3 ${
+                          className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 ${
                             paymentMethod === "wallet"
-                              ? "border-amber-400 bg-amber-400/10 text-white shadow-lg shadow-amber-500/10"
+                              ? "border-amber-400 bg-amber-400/10 text-white shadow-md shadow-amber-500/10"
                               : "border-white/10 bg-white/5 text-white/50 hover:text-white"
                           }`}
                         >
-                          <Wallet className={`w-5 h-5 ${paymentMethod === "wallet" ? "text-amber-400" : ""}`} />
-                          <div>
-                            <p className="text-xs font-bold leading-tight">Wallet Balance</p>
+                          <Wallet className={`w-4 h-4 shrink-0 ${paymentMethod === "wallet" ? "text-amber-400" : ""}`} />
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold leading-tight truncate">Wallet</p>
                             {walletBalance !== null && (
-                              <p className="text-[10px] text-amber-400 font-mono font-bold mt-0.5">GH₵ {walletBalance.toFixed(2)}</p>
+                              <p className="text-[9px] text-amber-400 font-mono font-bold mt-0.5 truncate">GH₵ {walletBalance.toFixed(2)}</p>
                             )}
                           </div>
                         </button>
@@ -483,35 +481,35 @@ export const DataPromoPopupModal = () => {
                       <button
                         type="button"
                         onClick={() => setPaymentMethod("momo")}
-                        className={`p-3.5 rounded-2xl border text-left transition-all flex items-center gap-3 ${
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 ${
                           !user ? "col-span-2" : ""
                         } ${
                           paymentMethod === "momo"
-                            ? "border-amber-400 bg-amber-400/10 text-white shadow-lg shadow-amber-500/10"
+                            ? "border-amber-400 bg-amber-400/10 text-white shadow-md shadow-amber-500/10"
                             : "border-white/10 bg-white/5 text-white/50 hover:text-white"
                         }`}
                       >
-                        <CreditCard className={`w-5 h-5 ${paymentMethod === "momo" ? "text-amber-400" : ""}`} />
-                        <div>
-                          <p className="text-xs font-bold leading-tight">Mobile Money (MoMo / Card)</p>
-                          <p className="text-[10px] text-white/40 mt-0.5">MTN MoMo, Telecel Cash, AT Money</p>
+                        <CreditCard className={`w-4 h-4 shrink-0 ${paymentMethod === "momo" ? "text-amber-400" : ""}`} />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold leading-tight truncate">MoMo / Card</p>
+                          <p className="text-[9px] text-white/40 mt-0.5 truncate">Instant Payment</p>
                         </div>
                       </button>
                     </div>
                   </div>
 
-                  {/* Submit 1-Click Purchase Action Button */}
+                  {/* Submit Action Button */}
                   {paymentMethod === "wallet" && user ? (
                     <Button
                       onClick={handleBuyWithWallet}
                       disabled={loading || !phone}
-                      className="w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black h-13 rounded-2xl text-sm uppercase tracking-wider shadow-xl shadow-amber-500/25 gap-2 transition-all active:scale-98"
+                      className="w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black h-11 rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 gap-1.5 transition-all active:scale-95"
                     >
                       {loading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <>
-                          <Zap className="w-5 h-5 fill-black" /> Buy Now for GH₵ {activePromo.promo_price.toFixed(2)}
+                          <Zap className="w-4 h-4 fill-black" /> Buy Now • GH₵ {activePromo.promo_price.toFixed(2)}
                         </>
                       )}
                     </Button>
@@ -519,22 +517,22 @@ export const DataPromoPopupModal = () => {
                     <Button
                       onClick={handleBuyWithMomo}
                       disabled={!phone}
-                      className="w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black h-13 rounded-2xl text-sm uppercase tracking-wider shadow-xl shadow-amber-500/25 gap-2 transition-all active:scale-98"
+                      className="w-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black h-11 rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 gap-1.5 transition-all active:scale-95"
                     >
-                      <CreditCard className="w-5 h-5" /> Pay with MoMo (GH₵ {activePromo.promo_price.toFixed(2)})
+                      <CreditCard className="w-4 h-4" /> Pay with MoMo • GH₵ {activePromo.promo_price.toFixed(2)}
                     </Button>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Close Button Override */}
+            {/* Cute Small Close Button */}
             <button
               onClick={handleDismiss}
-              className="absolute top-4 right-4 p-2 rounded-full bg-black/60 hover:bg-black transition-all border border-white/20 text-white/70 hover:text-white z-30"
+              className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full bg-black/70 hover:bg-black flex items-center justify-center border border-white/20 text-white/80 hover:text-white transition-all z-30"
               title="Close"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </DialogContent>
