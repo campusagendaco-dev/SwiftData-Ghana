@@ -90,11 +90,11 @@ const StoreNavbar = ({
       ref={menuRef}
       className="sticky top-0 z-50 transition-all duration-300"
       style={{
-        background: scrolled ? "rgba(4,4,8,0.94)" : "rgba(8,8,16,0.82)",
+        background: scrolled ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.88)",
         backdropFilter: "blur(28px)",
         WebkitBackdropFilter: "blur(28px)",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: scrolled ? `0 12px 40px -10px rgba(0,0,0,0.8), 0 0 0 1px ${networkAccent || "#f59e0b"}25` : "none",
+        borderBottom: "1px solid rgba(15,23,42,0.08)",
+        boxShadow: scrolled ? `0 12px 32px -14px rgba(15,23,42,0.25), 0 0 0 1px ${networkAccent || "#f59e0b"}20` : "none",
       }}
     >
       {/* Thin ambient gradient accent bar */}
@@ -108,14 +108,14 @@ const StoreNavbar = ({
           {backMode && backHref ? (
             <button
               onClick={() => navigate(backHref)}
-              className="flex items-center gap-1.5 text-white/50 hover:text-white transition-colors text-sm font-medium shrink-0 mr-1"
+              className="flex items-center gap-1.5 text-slate-400 hover:text-slate-900 transition-colors text-sm font-medium shrink-0 mr-1"
             >
               <ArrowLeft className="w-4 h-4" />
               <span className="hidden sm:inline text-xs">{backLabel || "Back"}</span>
             </button>
           ) : (
             agentSlug && (
-              <Link to={`/store/${agentSlug}`} className="text-white/30 hover:text-white/70 transition-colors shrink-0">
+              <Link to={`/store/${agentSlug}`} className="text-slate-300 hover:text-slate-600 transition-colors shrink-0">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
             )
@@ -136,10 +136,10 @@ const StoreNavbar = ({
                   <Store className="w-4.5 h-4.5" style={{ color: networkAccent }} />
                 )}
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#040408] bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
             </div>
             <div className="leading-tight min-w-0">
-              <p className="text-white font-black text-sm tracking-tight truncate max-w-[140px] sm:max-w-[240px] group-hover:text-amber-300 transition-colors">
+              <p className="text-slate-900 font-black text-sm tracking-tight truncate max-w-[140px] sm:max-w-[240px] group-hover:text-amber-600 transition-colors">
                 {storeName}
               </p>
               <p className="text-[10px] font-extrabold uppercase tracking-widest mt-0.5 leading-none opacity-80" style={{ color: networkAccent }}>
@@ -155,13 +155,13 @@ const StoreNavbar = ({
             <>
               {isCustomerLoggedIn ? (
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 border border-white/10 bg-white/5 backdrop-blur-xl rounded-2xl px-3.5 py-1.5 shrink-0 shadow-inner">
-                    <span className="text-[10px] text-white/40 font-black uppercase tracking-wider">Wallet:</span>
-                    <span className="text-xs font-mono font-black text-emerald-400">GHS {Number(customerBalance || 0).toFixed(2)}</span>
+                  <div className="flex items-center gap-2 border border-slate-200 bg-slate-50 rounded-2xl px-3.5 py-1.5 shrink-0">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Wallet:</span>
+                    <span className="text-xs font-mono font-black text-emerald-600">GHS {Number(customerBalance || 0).toFixed(2)}</span>
                   </div>
-                  <button 
-                    onClick={onSignOut} 
-                    className="text-xs font-black text-red-400/80 hover:text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-xl transition-all"
+                  <button
+                    onClick={onSignOut}
+                    className="text-xs font-black text-red-500/80 hover:text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all"
                   >
                     Sign Out
                   </button>
@@ -181,19 +181,19 @@ const StoreNavbar = ({
               )}
 
               <Link to={agentSlug ? `/store/${agentSlug}/order-status` : "/order-status"}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold text-white/60 hover:text-white hover:bg-white/8 transition-all border border-transparent hover:border-white/10">
-                <MapPin className="w-3.5 h-3.5 text-white/40" /> Track Order
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200">
+                <MapPin className="w-3.5 h-3.5 text-slate-400" /> Track Order
               </Link>
               {showSubAgentLink && agentSlug && (
                 <Link to={`/store/${agentSlug}/sub-agent`}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all hover:scale-105 backdrop-blur-xl shadow-inner"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all hover:scale-105"
                   style={{ color: networkAccent, background: `${networkAccent}12`, border: `1px solid ${networkAccent}30` }}>
                   <TrendingUp className="w-3.5 h-3.5" /> Become Sub-Agent
                 </Link>
               )}
               <button onClick={openTutorial}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold text-white/60 hover:text-white hover:bg-white/8 transition-all">
-                <HelpCircle className="w-3.5 h-3.5 text-white/40" /> Help
+                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all">
+                <HelpCircle className="w-3.5 h-3.5 text-slate-400" /> Help
               </button>
               {waHref && (
                 <a href={waHref} target="_blank" rel="noopener noreferrer"
@@ -215,9 +215,9 @@ const StoreNavbar = ({
         {/* Mobile right */}
         <div className="md:hidden flex items-center gap-2">
           {isCustomerLoggedIn && (
-            <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 shrink-0">
-              <span className="text-[8px] text-white/40 font-black uppercase">Bal:</span>
-              <span className="text-[10px] font-black text-white">GHS {Number(customerBalance || 0).toFixed(0)}</span>
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shrink-0">
+              <span className="text-[8px] text-slate-400 font-black uppercase">Bal:</span>
+              <span className="text-[10px] font-black text-slate-900">GHS {Number(customerBalance || 0).toFixed(0)}</span>
             </div>
           )}
           {waHref && (
@@ -230,7 +230,7 @@ const StoreNavbar = ({
           {!backMode && (
             <button
               onClick={() => setOpen(true)}
-              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all shrink-0 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white"
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900"
             >
               <Menu className="w-5 h-5" />
             </button>
