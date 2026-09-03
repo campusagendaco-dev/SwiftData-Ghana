@@ -14,6 +14,8 @@ import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 type NetworkName = "MTN" | "Telecel" | "AirtelTigo";
 
