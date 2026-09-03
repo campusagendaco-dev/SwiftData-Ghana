@@ -1955,9 +1955,12 @@ serve(async (req: Request) => {
 
       lastResult = result;
       if (chosenProvider?.id) {
-        const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
-        const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
-        await supabaseAdmin.from("providers").update({ consecutive_failures: newFailures }).eq("id", chosenProvider.id);
+        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+        if (!isBeneficiaryErr) {
+          const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
+          const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
+          await supabaseAdmin.from("providers").update({ consecutive_failures: newFailures }).eq("id", chosenProvider.id);
+        }
       }
     }
 

@@ -625,6 +625,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           callback_url: metadata.callback_url || `${window.location.origin}/order-status?reference=${orderId}`,
           metadata: {
             ...metadata,
+            network: metadata?.network || recipientNetwork || paymentNetwork,
+            package_size: metadata?.package_size,
             base_price: metadata.base_price || amount,
             order_id: orderId,
             payment_phone: paymentPhone,

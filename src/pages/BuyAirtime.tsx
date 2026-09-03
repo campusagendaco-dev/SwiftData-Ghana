@@ -7,7 +7,6 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { getAppBaseUrl } from "@/lib/app-base-url";
-import { useAppTheme } from "@/contexts/ThemeContext";
 import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
@@ -61,8 +60,7 @@ const calcFee = (amount: number) => Math.min(amount * PAYSTACK_FEE_RATE, PAYSTAC
 
 const BuyAirtime = () => {
   const { toast } = useToast();
-  const { isDark } = useAppTheme();
-  
+
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>("MTN");
   const [phone, setPhone] = useState("");
   const [amount, setAmount] = useState("");
@@ -211,7 +209,7 @@ const BuyAirtime = () => {
   const currentTheme = NETWORK_THEMES[selectedNetwork];
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       <Navbar />
 
       <main className="flex-1 pt-24 pb-20">
@@ -224,10 +222,10 @@ const BuyAirtime = () => {
               <span className="text-xs font-bold uppercase tracking-widest text-emerald-700">Instant Airtime Recharge</span>
             </div>
 
-            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-foreground">
+            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">
               Buy Airtime <span className="text-amber-500">Instantly</span>
             </h1>
-            <p className="text-muted-foreground text-sm md:text-base max-w-xl mx-auto leading-relaxed">
+            <p className="text-slate-500 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
               Top up MTN, Telecel, and AirtelTigo airtime with zero hassle. Instant delivery directly to any Ghana mobile line.
             </p>
 
@@ -254,15 +252,15 @@ const BuyAirtime = () => {
             <div className="lg:col-span-7 space-y-5">
 
               {/* Step 1: Select Network */}
-              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-sm space-y-5">
+              <div className="p-6 md:p-7 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs">
                       1
                     </div>
-                    <h3 className="font-bold text-foreground text-sm tracking-wide">Select Network Carrier</h3>
+                    <h3 className="font-bold text-slate-900 text-sm tracking-wide">Select Network Carrier</h3>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Auto-detects</span>
+                  <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Auto-detects</span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">
@@ -279,14 +277,14 @@ const BuyAirtime = () => {
                         className={`relative p-4 rounded-2xl border-2 transition-all duration-200 flex flex-col items-center gap-2 ${
                           isSelected
                             ? `${netTheme.border} ${netTheme.softBg} shadow-md`
-                            : "border-border bg-background hover:border-muted-foreground/30"
+                            : "border-slate-200 bg-slate-50 hover:border-slate-300"
                         }`}
                       >
-                        <div className="w-12 h-12 rounded-xl bg-white border border-border flex items-center justify-center shadow-sm">
+                        <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shadow-sm">
                           <LogoComponent size={34} />
                         </div>
 
-                        <span className={`text-xs font-bold tracking-wide ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
+                        <span className={`text-xs font-bold tracking-wide ${isSelected ? "text-slate-900" : "text-slate-500"}`}>
                           {netName}
                         </span>
 
@@ -300,12 +298,12 @@ const BuyAirtime = () => {
               </div>
 
               {/* Step 2: Recipient Phone Number */}
-              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-sm space-y-4">
+              <div className="p-6 md:p-7 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs">
                     2
                   </div>
-                  <h3 className="font-bold text-foreground text-sm tracking-wide">Recipient Phone Number</h3>
+                  <h3 className="font-bold text-slate-900 text-sm tracking-wide">Recipient Phone Number</h3>
                 </div>
 
                 <div className="relative">
@@ -315,7 +313,7 @@ const BuyAirtime = () => {
                     placeholder="e.g. 0244123456"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="h-14 pl-12 pr-12 rounded-2xl bg-background border-border text-foreground font-mono text-lg font-bold placeholder:text-muted-foreground/40 focus-visible:border-amber-400 focus-visible:ring-amber-400/20 transition-all"
+                    className="h-14 pl-12 pr-12 rounded-2xl bg-slate-50 border-slate-200 text-slate-900 font-mono text-lg font-bold placeholder:text-slate-500/40 focus-visible:border-amber-400 focus-visible:ring-amber-400/20 transition-all"
                   />
                   <Phone className="w-5 h-5 text-amber-500 absolute left-4 top-1/2 -translate-y-1/2" />
 
@@ -337,7 +335,7 @@ const BuyAirtime = () => {
                     >
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span>Recipient: <span className="text-foreground font-bold">{resolvedName || "Verified Ghana Line"}</span></span>
+                        <span>Recipient: <span className="text-slate-900 font-bold">{resolvedName || "Verified Ghana Line"}</span></span>
                       </div>
                       <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] font-mono">VERIFIED</Badge>
                     </motion.div>
@@ -346,15 +344,15 @@ const BuyAirtime = () => {
               </div>
 
               {/* Step 3: Enter Amount & Quick Presets */}
-              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-sm space-y-5">
+              <div className="p-6 md:p-7 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-black text-xs">
                       3
                     </div>
-                    <h3 className="font-bold text-foreground text-sm tracking-wide">Select or Enter Amount</h3>
+                    <h3 className="font-bold text-slate-900 text-sm tracking-wide">Select or Enter Amount</h3>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-semibold">GH₵ 1.00 – GH₵ 500.00</span>
+                  <span className="text-[10px] text-slate-500 font-semibold">GH₵ 1.00 – GH₵ 500.00</span>
                 </div>
 
                 {/* Quick Amount Chips */}
@@ -369,7 +367,7 @@ const BuyAirtime = () => {
                         className={`py-2.5 rounded-xl font-bold text-xs transition-all border ${
                           isSelected
                             ? "bg-amber-400 text-black border-amber-400 shadow-sm"
-                            : "bg-background border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/40"
+                            : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-900 hover:border-slate-300"
                         }`}
                       >
                         GH₵ {amt}
@@ -385,7 +383,7 @@ const BuyAirtime = () => {
                     placeholder="Enter custom amount (e.g. 15)"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="h-14 pl-14 rounded-2xl bg-background border-border text-amber-600 font-black text-lg placeholder:text-muted-foreground/40 placeholder:font-normal focus-visible:border-amber-400 focus-visible:ring-amber-400/20 transition-all"
+                    className="h-14 pl-14 rounded-2xl bg-slate-50 border-slate-200 text-amber-600 font-black text-lg placeholder:text-slate-500/40 placeholder:font-normal focus-visible:border-amber-400 focus-visible:ring-amber-400/20 transition-all"
                   />
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-amber-600 text-sm">GH₵</span>
                 </div>
@@ -395,9 +393,9 @@ const BuyAirtime = () => {
             {/* Right Column: Order Summary & Checkout Card (5 cols) */}
             <div className="lg:col-span-5 space-y-5 sticky top-28">
 
-              <div className="p-6 md:p-7 rounded-3xl bg-card border border-border shadow-md space-y-6">
-                <div className="flex items-center justify-between pb-4 border-b border-border">
-                  <h3 className="font-black text-foreground text-lg tracking-tight flex items-center gap-2">
+              <div className="p-6 md:p-7 rounded-3xl bg-white border border-slate-200 shadow-md space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+                  <h3 className="font-black text-slate-900 text-lg tracking-tight flex items-center gap-2">
                     <Zap className="w-5 h-5 text-amber-500 fill-amber-400" /> Order Summary
                   </h3>
                   <Badge className={`${currentTheme.badgeBg} text-[10px] font-black uppercase tracking-wider`}>
@@ -408,24 +406,24 @@ const BuyAirtime = () => {
                 {/* Summary Lines */}
                 <div className="space-y-3 text-xs">
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Selected Network</span>
-                    <span className="font-bold text-foreground">{selectedNetwork}</span>
+                    <span className="text-slate-500">Selected Network</span>
+                    <span className="font-bold text-slate-900">{selectedNetwork}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Recipient Line</span>
-                    <span className="font-bold text-foreground">{phone || "—"}</span>
+                    <span className="text-slate-500">Recipient Line</span>
+                    <span className="font-bold text-slate-900">{phone || "—"}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Airtime Amount</span>
-                    <span className="font-bold text-foreground">GH₵ {numAmount > 0 ? numAmount.toFixed(2) : "0.00"}</span>
+                    <span className="text-slate-500">Airtime Amount</span>
+                    <span className="font-bold text-slate-900">GH₵ {numAmount > 0 ? numAmount.toFixed(2) : "0.00"}</span>
                   </div>
-                  <div className="flex justify-between items-center text-muted-foreground">
+                  <div className="flex justify-between items-center text-slate-500">
                     <span>Payment Processing Fee</span>
                     <span>GH₵ {fee.toFixed(2)}</span>
                   </div>
 
-                  <div className="pt-3 border-t border-border flex justify-between items-baseline">
-                    <span className="text-sm font-black uppercase text-foreground">Total Payable</span>
+                  <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline">
+                    <span className="text-sm font-black uppercase text-slate-900">Total Payable</span>
                     <div className="text-right">
                       <span className="text-2xl font-black text-amber-600">GH₵ {total > 0 ? total.toFixed(2) : "0.00"}</span>
                     </div>
@@ -440,7 +438,7 @@ const BuyAirtime = () => {
                       placeholder="Email address for receipt (optional)"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="h-12 bg-background border-border text-foreground rounded-xl text-xs placeholder:text-muted-foreground/50"
+                      className="h-12 bg-slate-50 border-slate-200 text-slate-900 rounded-xl text-xs placeholder:text-slate-500/50"
                     />
                   </div>
                 )}
@@ -461,7 +459,7 @@ const BuyAirtime = () => {
                   )}
                 </button>
 
-                <div className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground font-semibold uppercase tracking-widest pt-2">
+                <div className="flex items-center justify-center gap-2 text-[10px] text-slate-500 font-semibold uppercase tracking-widest pt-2">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                   Secured 256-Bit MoMo Payment
                 </div>

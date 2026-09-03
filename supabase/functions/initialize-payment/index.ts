@@ -674,10 +674,10 @@ serve(async (req: Request) => {
     };
 
     if (orderType === "data") {
-      const network = typeof metadata.network === "string" ? metadata.network : "";
-      const packageSize = typeof metadata.package_size === "string" ? metadata.package_size : "";
+      const network = (typeof metadata.network === "string" && metadata.network ? metadata.network : (typeof payload.network === "string" ? payload.network : "")).trim();
+      const packageSize = (typeof metadata.package_size === "string" && metadata.package_size ? metadata.package_size : (typeof payload.package_size === "string" ? payload.package_size : "")).trim();
       if (!network || !packageSize) {
-        return new Response(JSON.stringify({ error: "Missing data order metadata" }), {
+        return new Response(JSON.stringify({ error: "Missing data order metadata (network or package size)" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
