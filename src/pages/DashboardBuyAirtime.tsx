@@ -54,7 +54,12 @@ const NETWORKS = [
 ];
 
 const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100, 200];
-const calcFee = (amount: number) => 0;
+const PAYSTACK_FEE_RATE = 0.03;
+const PAYSTACK_FEE_CAP = 100;
+const calcFee = (amount: number, method: PayMethod) => {
+  if (method === "wallet") return 0;
+  return Math.min(amount * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
+};
 
 const DashboardBuyAirtime = () => {
   const { user, profile } = useAuth();
@@ -82,6 +87,8 @@ const DashboardBuyAirtime = () => {
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
   const numAmount = Number(amount);
+  const fee = calcFee(numAmount, payMethod);
+  const total = numAmount + fee;
   const canPay = isPhoneValid && numAmount >= 1 && numAmount <= 500;
 
   const fetchBalance = async () => {
@@ -551,11 +558,15 @@ const DashboardBuyAirtime = () => {
                 <span className="text-white/60">Payment Method</span>
                 <span className="font-bold text-amber-400">{payMethod === "wallet" ? "Wallet Balance" : "MoMo / Card"}</span>
               </div>
+              <div className="flex justify-between items-center text-white/60">
+                <span>Processing Fee</span>
+                <span className="font-bold font-mono text-white">GH₵ {fee.toFixed(2)}</span>
+              </div>
 
               <div className="pt-3 border-t border-white/10 flex justify-between items-baseline">
                 <span className="text-sm font-black font-sans uppercase text-white">Total Payable</span>
                 <div className="text-right">
-                  <span className="text-2xl font-black text-amber-400">GH₵ {numAmount > 0 ? numAmount.toFixed(2) : "0.00"}</span>
+                  <span className="text-2xl font-black text-amber-400">GH₵ {total > 0 ? total.toFixed(2) : "0.00"}</span>
                 </div>
               </div>
             </div>
@@ -570,7 +581,7 @@ const DashboardBuyAirtime = () => {
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  Confirm & Pay GH₵ {numAmount > 0 ? numAmount.toFixed(2) : "0.00"}
+                  Confirm & Pay GH₵ {total > 0 ? total.toFixed(2) : "0.00"}
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </>
               )}
@@ -591,7 +602,7 @@ const DashboardBuyAirtime = () => {
         <PaystackMomoCheckout
           isOpen={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
-          amount={numAmount}
+          amount={total}
           email={user?.email || `airtime_${phoneDigits}@swiftdatagh.shop`}
           recipientPhone={phoneDigits}
           recipientNetwork={network}

@@ -148,7 +148,7 @@ const AdminPromotions = () => {
   const [creatingDataPromo, setCreatingDataPromo] = useState(false);
 
   const [newPromoPopup, setNewPromoPopup] = useState({
-    title: "⚡ Flash Data Traffic Deal!",
+    title: "⚡ Swift Data Traffic Deal!",
     description: "Get high-speed data at an unbeatable promotional price!",
     network: "MTN",
     package_size: "5GB",
