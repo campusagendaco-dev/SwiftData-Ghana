@@ -1467,18 +1467,18 @@ const AgentStore = () => {
 
         {/* ── Ultra-Modern Storefront Hero Card ── */}
         <div
-          className="rounded-[36px] p-7 relative overflow-hidden border border-slate-200 shadow-[0_20px_50px_-20px_rgba(15,23,42,0.25)] group transition-all duration-500"
-          style={{
-            background: storeBannerUrl
-              ? `url(${storeBannerUrl}) center/cover no-repeat`
-              : "#ffffff",
+          className="rounded-[36px] p-7 relative overflow-hidden border border-white/15 backdrop-blur-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] group transition-all duration-500"
+          style={{ 
+            background: storeBannerUrl 
+              ? `url(${storeBannerUrl}) center/cover no-repeat` 
+              : resolvedGradient 
           }}
         >
           {/* Ambient Glow Aura */}
           {!storeBannerUrl && (
             <>
-              <div className="absolute -top-12 -right-12 w-52 h-52 rounded-full blur-3xl opacity-25 pointer-events-none transition-all duration-700 group-hover:opacity-40" style={{ backgroundColor: accentColor }} />
-              <div className="absolute -bottom-12 -left-12 w-52 h-52 rounded-full blur-3xl opacity-15 pointer-events-none transition-all duration-700 group-hover:opacity-25" style={{ backgroundColor: accentColor }} />
+              <div className="absolute -top-12 -right-12 w-52 h-52 rounded-full blur-3xl opacity-45 pointer-events-none transition-all duration-700 group-hover:opacity-70" style={{ backgroundColor: accentColor }} />
+              <div className="absolute -bottom-12 -left-12 w-52 h-52 rounded-full blur-3xl opacity-35 pointer-events-none transition-all duration-700 group-hover:opacity-60" style={{ backgroundColor: accentColor }} />
             </>
           )}
 
@@ -1486,67 +1486,55 @@ const AgentStore = () => {
           {storeBannerUrl && (
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30 backdrop-blur-[1px] transition-all group-hover:opacity-90 z-0" />
           )}
-
+          
           <div className="flex items-center justify-between mb-4 relative z-10">
             <div className="flex items-center gap-2">
-              <span className={`px-3.5 py-1 text-[10px] font-black tracking-widest rounded-full uppercase ${storeBannerUrl ? "text-amber-300 bg-amber-400/10 border border-amber-400/25 backdrop-blur-md" : "text-amber-700 bg-amber-50 border border-amber-200"}`}>
+              <span className="px-3.5 py-1 text-[10px] font-black tracking-widest text-amber-300 bg-amber-400/10 border border-amber-400/25 rounded-full uppercase shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] backdrop-blur-md">
                 {greeting}
               </span>
-              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full ${storeBannerUrl ? "bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md" : "bg-emerald-50 border border-emerald-200"}`}>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#34d399]" />
-                <span className={`text-[9px] font-black uppercase tracking-widest ${storeBannerUrl ? "text-emerald-400" : "text-emerald-600"}`}>Store Online</span>
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-md">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_#34d399]" />
+                <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Store Online</span>
               </div>
             </div>
 
             {/* Quick Track Order Link */}
             <a
               href="#track-section"
-              className={`flex items-center gap-1.5 text-[10px] font-bold transition-colors px-3 py-1 rounded-full border ${
-                storeBannerUrl
-                  ? "text-white/50 hover:text-white bg-white/5 hover:bg-white/10 border-white/10"
-                  : "text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border-slate-200"
-              }`}
+              className="flex items-center gap-1.5 text-[10px] font-bold text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1 rounded-full border border-white/10"
             >
-              <Clock className="w-3 h-3 text-amber-500" />
+              <Clock className="w-3 h-3 text-amber-400" />
               <span>Track Order</span>
             </a>
           </div>
 
-          <h2 className={`text-3xl sm:text-4xl font-black tracking-tight leading-[1.05] mb-3 relative z-10 ${
-            storeBannerUrl
-              ? "text-transparent bg-clip-text bg-gradient-to-r from-white via-white/95 to-white/70 drop-shadow-sm"
-              : "text-slate-900"
-          }`}>
+          <h2 className="text-3xl sm:text-4xl font-black tracking-tight leading-[1.05] mb-3 relative z-10 text-transparent bg-clip-text bg-gradient-to-r from-white via-white/95 to-white/70 drop-shadow-sm">
             Instant Data <br/> &amp; Connectivity.
           </h2>
-          <p className={`text-[13px] font-semibold leading-relaxed mb-4 max-w-[340px] relative z-10 ${storeBannerUrl ? "text-white/70" : "text-slate-500"}`}>
+          <p className="text-white/70 text-[13px] font-semibold leading-relaxed mb-4 max-w-[340px] relative z-10">
             {storeDescription || "Purchase ultra-fast internet bundles for MTN, Telecel, and AirtelTigo. Instant delivery guaranteed."}
           </p>
           <LiveDeliveryBadge className="mb-5 relative z-10 shadow-lg" />
 
           {/* Store Info & WhatsApp Support Bar */}
-          <div className={`flex items-center justify-between p-4 rounded-[26px] relative z-10 group/card transition-all ${
-            storeBannerUrl
-              ? "bg-white/[0.07] border border-white/15 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:border-white/30"
-              : "bg-slate-50 border border-slate-200 hover:border-slate-300"
-          }`}>
+          <div className="flex items-center justify-between p-4 rounded-[26px] bg-white/[0.07] border border-white/15 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] relative z-10 group/card hover:border-white/30 transition-all">
             <div className="flex items-center gap-3 min-w-0">
               {agent.store_logo_url ? (
-                <img src={agent.store_logo_url} alt="logo" className={`w-11 h-11 rounded-[16px] object-cover shrink-0 shadow-xl group-hover/card:scale-105 transition-transform border ${storeBannerUrl ? "border-white/20" : "border-slate-200"}`} />
+                <img src={agent.store_logo_url} alt="logo" className="w-11 h-11 rounded-[16px] object-cover border border-white/20 shrink-0 shadow-xl group-hover/card:scale-105 transition-transform" />
               ) : (
-                <div className="w-11 h-11 rounded-[16px] flex items-center justify-center shrink-0 shadow-inner group-hover/card:scale-105 transition-transform border" style={{ backgroundColor: `${accentColor}20`, borderColor: `${accentColor}40` }}>
+                <div className="w-11 h-11 rounded-[16px] flex items-center justify-center border border-white/20 shrink-0 shadow-inner group-hover/card:scale-105 transition-transform" style={{ backgroundColor: `${accentColor}25` }}>
                   <Store className="w-5 h-5" style={{ color: accentColor }} />
                 </div>
               )}
               <div className="leading-tight min-w-0">
-                <p className={`font-black text-sm truncate max-w-[140px] tracking-tight ${storeBannerUrl ? "text-white" : "text-slate-900"}`}>{agent.store_name}</p>
+                <p className="font-black text-sm text-white truncate max-w-[140px] tracking-tight">{agent.store_name}</p>
                 <div className="flex items-center gap-1 mt-0.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#25D366]" />
-                  <p className={`text-[9px] font-black uppercase tracking-widest ${storeBannerUrl ? "text-emerald-400" : "text-emerald-600"}`}>Verified Reseller</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Verified Reseller</p>
                 </div>
               </div>
             </div>
-
+            
             {agent.whatsapp_number && (
               <a
                 href={`https://wa.me/${agent.whatsapp_number.replace(/\D+/g, "")}`}
@@ -1594,7 +1582,7 @@ const AgentStore = () => {
         )}
 
         {/* ── Service Tabs Switcher ── */}
-        <div className="flex gap-2 p-2 rounded-[24px] bg-white border border-slate-200 shadow-sm relative z-10">
+        <div className="flex gap-2 p-2 rounded-[24px] bg-white/[0.04] border border-white/12 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] relative z-10">
           {[
             { id: "data",    label: "Data Bundles", icon: Wifi },
             { id: "airtime", label: "Airtime",      icon: Smartphone },
@@ -1608,12 +1596,12 @@ const AgentStore = () => {
                 onClick={() => { setSelectedService(s.id as ServiceType); setSelectedPkg(null); setAirtimeAmount(""); setUtilityAmount(""); }}
                 className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-[18px] text-xs font-black uppercase tracking-wider transition-all duration-300 active:scale-[0.97] ${
                   active
-                    ? "text-black shadow-md scale-[1.02]"
-                    : "text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                    ? "text-black shadow-[0_6px_20px_rgba(0,0,0,0.4)] scale-[1.02]"
+                    : "text-white/50 hover:text-white/80 hover:bg-white/5"
                 }`}
-                style={active ? {
+                style={active ? { 
                   background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)`,
-                  boxShadow: `0 6px 20px ${accentColor}35`
+                  boxShadow: `0 6px 20px ${accentColor}40`
                 } : {}}
               >
                 <s.icon className={`w-4 h-4 ${active ? "drop-shadow-sm" : ""}`} />
@@ -1635,13 +1623,13 @@ const AgentStore = () => {
                   key={n}
                   onClick={() => { setSelectedNetwork(n); setSelectedPkg(null); setSelectedTypeOrCategory("affordable"); }}
                   className={`flex-1 py-3.5 rounded-[20px] text-[11px] font-black uppercase tracking-widest border transition-all duration-300 active:scale-[0.96] ${
-                    active
-                      ? `${nc.bg} ${nc.textClass} border-transparent shadow-lg scale-[1.02]`
-                      : "bg-white border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-700 shadow-sm"
+                    active 
+                      ? `${nc.bg} ${nc.textClass} border-white/30 shadow-2xl scale-[1.02]` 
+                      : "bg-white/[0.04] border-white/10 text-white/60 hover:bg-white/10 hover:text-white backdrop-blur-xl shadow-inner"
                   }`}
-                  style={active ? {
-                    boxShadow: `0 10px 24px ${nc.color}35`,
-                    textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none"
+                  style={active ? { 
+                    boxShadow: `0 10px 28px ${nc.color}45`, 
+                    textShadow: nc.textClass === "text-white" ? "0 2px 4px rgba(0,0,0,0.3)" : "none" 
                   } : {}}
                 >
                   {n}
@@ -1761,39 +1749,35 @@ const AgentStore = () => {
                         if (selectedNetwork === "Telecel") LogoComponent = TelecelLogo;
                         if (selectedNetwork === "AirtelTigo") LogoComponent = AirtelTigoLogo;
 
-                        const isDarkText = selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up";
-                        const cardBgColor = netConf.color;
-
                         return (
                           <button
                             type="button"
                             key={pkg.size}
                             onClick={() => handleCardClick(pkg.size, pkg.price)}
-                            className={`relative rounded-[24px] p-4.5 sm:p-5 text-left transition-all duration-300 border overflow-hidden group flex flex-col justify-between ${
+                            className={`relative rounded-[24px] p-4 sm:p-5 text-left transition-all duration-300 border overflow-hidden group flex flex-col justify-between ${
                               isSelected
-                                ? "scale-[1.03] shadow-2xl border-white ring-4 ring-white/50 z-20"
-                                : "border-white/10 hover:scale-[1.02] hover:shadow-2xl active:scale-[0.97]"
+                                ? "scale-[1.03] shadow-2xl border-white ring-4 ring-white/40 z-20"
+                                : "border-black/10 hover:scale-[1.02] hover:shadow-xl active:scale-[0.97]"
                             }`}
                             style={{
-                              backgroundColor: cardBgColor,
-                              backgroundImage: `linear-gradient(145deg, ${cardBgColor}, ${cardBgColor}ee)`,
-                              boxShadow: isSelected ? `0 16px 40px ${cardBgColor}80` : `0 8px 24px ${cardBgColor}35`,
-                              color: isDarkText ? "#000000" : "#FFFFFF"
+                              background: `linear-gradient(145deg, ${netConf.color}, ${netConf.color}dd)`,
+                              boxShadow: isSelected ? `0 16px 36px ${netConf.color}60` : `0 8px 24px ${netConf.color}25`,
+                              color: netConf.textColor === "text-black" ? "#000000" : "#FFFFFF"
                             }}
                           >
                             {/* Inner Highlight for depth */}
-                            <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/20" />
+                            <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/10" />
 
                             {/* Top Header Row */}
-                            <div className="flex items-center justify-between mb-3.5 w-full relative z-10">
-                              <div className={`w-8 h-8 rounded-xl p-1 flex items-center justify-center shadow-sm shrink-0 ${isDarkText ? "bg-black/10" : "bg-white/20 backdrop-blur-md"}`}>
+                            <div className="flex items-center justify-between mb-3 w-full relative z-10">
+                              <div className="w-8 h-8 rounded-xl bg-white/90 p-1 flex items-center justify-center shadow-sm shrink-0">
                                 <LogoComponent size={24} />
                               </div>
 
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
                                 isSelected 
                                   ? "bg-white text-black shadow-md" 
-                                  : (isDarkText ? "bg-black/10 text-black hover:bg-black/20" : "bg-white/20 text-white hover:bg-white/30")
+                                  : (netConf.textColor === "text-black" ? "bg-black/10 text-black hover:bg-black/20" : "bg-white/20 text-white hover:bg-white/30")
                               }`}>
                                 {isSelected ? (
                                   <CheckCircle2 className="w-4 h-4 text-black stroke-[3]" />
@@ -1805,31 +1789,31 @@ const AgentStore = () => {
 
                             {/* Main Capacity Display */}
                             <div className="mb-4 relative z-10">
-                              <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1 ${isDarkText ? "text-black" : "text-white"}`}>
+                              <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1 ${netConf.textColor}`}>
                                 {display.main}
                               </p>
-                              <p className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${isDarkText ? "text-black/70" : "text-white/80"}`}>
+                              <p className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${netConf.labelColor}`}>
                                 {display.sub ? display.sub : `${selectedNetwork} Bundle`}
                               </p>
                             </div>
 
                             {/* Bottom 3-Column Stats Bar */}
-                            <div className={`pt-3 border-t grid grid-cols-3 gap-1 text-center font-sans relative z-10 ${isDarkText ? "border-black/20" : "border-white/20"}`}>
+                            <div className={`pt-3 border-t grid grid-cols-3 gap-1 text-center font-sans relative z-10 ${netConf.dividerColor}`}>
                               <div>
-                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>PRICE</p>
-                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${netConf.labelColor}`}>PRICE</p>
+                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${netConf.textColor}`}>
                                   ₵{pkg.price.toFixed(2)}
                                 </p>
                               </div>
-                              <div className="border-x px-1" style={{ borderColor: isDarkText ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.2)" }}>
-                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>ROLLOVER</p>
-                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
+                              <div className="border-x px-1" style={{ borderColor: "inherit" }}>
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${netConf.labelColor}`}>ROLLOVER</p>
+                                <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${netConf.textColor}`}>
                                   {pkg.isInstant ? "Instant" : "Yes"}
                                 </p>
                               </div>
                               <div>
-                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>DURATION</p>
-                                <p className={`text-[10px] sm:text-xs font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${netConf.labelColor}`}>DURATION</p>
+                                <p className={`text-[10px] sm:text-xs font-black tracking-tight truncate ${netConf.textColor}`}>
                                   {pkg.validity === "MTN Mash Up" ? "Mash Up" : (pkg.validity || "No Expiry")}
                                 </p>
                               </div>

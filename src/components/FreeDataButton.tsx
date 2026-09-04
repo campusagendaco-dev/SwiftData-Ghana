@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLocation } from "react-router-dom";
-import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { supabase } from "@/integrations/supabase/client";
 import { Gift, X, Loader2, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -32,15 +30,6 @@ const NETWORK_COLORS: Record<string, string> = {
 };
 
 const FreeDataButton = () => {
-  const location = useLocation();
-  const activeDomain = getActiveStoreDomain();
-  const currentPath = location?.pathname || (typeof window !== "undefined" ? window.location.pathname : "");
-  const isAgentStorefront = Boolean(
-    activeDomain ||
-    currentPath.startsWith("/store") ||
-    currentPath.includes("/store")
-  );
-
   const { toast } = useToast();
   const [campaign, setCampaign] = useState<{
     enabled: boolean;
@@ -203,8 +192,6 @@ const FreeDataButton = () => {
   const posStyle: React.CSSProperties = pos
     ? { left: pos.x, top: pos.y }
     : { bottom: 90, right: 20 }; // Moved up so it doesn't collide with lower elements
-
-  if (isAgentStorefront) return null;
 
   return (
     <>

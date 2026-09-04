@@ -159,9 +159,11 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "datahub" || handlerType === "spendless") {
+      const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
+      const netKey = mapDataNetworkKey(rawNet);
       return {
-        networkKey: String(data.networkKey || data.networkRaw || ""),
-        recipient: String(data.recipient || data.phoneNumber || ""),
+        networkKey: netKey,
+        recipient: String(data.recipient || data.phoneNumber || data.phone || ""),
         capacity: String(data.capacity || data.package_size || data.plan || ""),
         reference: String(data.reference || data.order_id || ""),
       };

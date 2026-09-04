@@ -18,12 +18,24 @@ function getEnv(...keys: string[]): string {
 }
 
 function mapNetworkKey(network: string): string {
-  const n = network.trim().toUpperCase();
-  if (n === "MTN" || n === "YELLO" || n === "MTN_XPRESS") return "YELLO";
-  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "TELECEL";
-  if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AT_PREMIUM";
-  if (n === "GLO") return "GLO";
-  return n;
+  const raw = (network || "").trim().toUpperCase();
+  const cleaned = raw.replace(/[\s\-_]+/g, "_");
+
+  if (cleaned.includes("MTN") && cleaned.includes("XPRESS")) return "MTN_XPRESS";
+  if (cleaned === "MTN_XPRESS" || cleaned === "XPRESS") return "MTN_XPRESS";
+
+  if (cleaned.includes("BIGTIME") || cleaned.includes("BIG_TIME")) return "AT_BIGTIME";
+  if (cleaned === "AT_BIGTIME" || cleaned === "BIGTIME") return "AT_BIGTIME";
+
+  if (cleaned === "YELLO" || cleaned.includes("MTN")) return "YELLO";
+
+  if (cleaned.includes("TELECEL") || cleaned.includes("VODAFONE") || cleaned === "VOD") return "TELECEL";
+
+  if (cleaned.includes("AIRTEL") || cleaned.includes("TIGO") || cleaned === "AT" || cleaned.includes("AT_PREMIUM")) return "AT_PREMIUM";
+
+  if (cleaned === "GLO") return "GLO";
+
+  return raw;
 }
 
 function parseCapacity(pkg: string | null | undefined): number {

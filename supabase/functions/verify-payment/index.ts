@@ -26,11 +26,22 @@ function getFirstEnv(...keys: string[]): string {
 
 // Maps network names to the keys the data provider API expects (must match wallet-buy-data)
 function mapDataNetworkKey(network: string): string {
-  const n = (network || "").trim().toUpperCase();
-  if (n === "AIRTELTIGO" || n === "AIRTEL TIGO" || n === "AIRTEL-TIGO" || n === "AT") return "AT_PREMIUM";
-  if (n === "TELECEL" || n === "VODAFONE" || n === "VOD") return "TELECEL";
-  if (n === "MTN" || n === "YELLO" || n === "MTN_XPRESS") return "YELLO";
-  return n;
+  const raw = (network || "").trim().toUpperCase();
+  const cleaned = raw.replace(/[\s\-_]+/g, "_");
+
+  if (cleaned.includes("MTN") && cleaned.includes("XPRESS")) return "MTN_XPRESS";
+  if (cleaned === "MTN_XPRESS" || cleaned === "XPRESS") return "MTN_XPRESS";
+
+  if (cleaned.includes("BIGTIME") || cleaned.includes("BIG_TIME")) return "AT_BIGTIME";
+  if (cleaned === "AT_BIGTIME" || cleaned === "BIGTIME") return "AT_BIGTIME";
+
+  if (cleaned === "YELLO" || cleaned.includes("MTN")) return "YELLO";
+
+  if (cleaned.includes("TELECEL") || cleaned.includes("VODAFONE") || cleaned === "VOD") return "TELECEL";
+
+  if (cleaned.includes("AIRTEL") || cleaned.includes("TIGO") || cleaned === "AT" || cleaned.includes("AT_PREMIUM")) return "AT_PREMIUM";
+
+  return raw;
 }
 
 // Maps network names to the keys the airtime provider API expects (must match wallet-pay-airtime)

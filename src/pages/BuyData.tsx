@@ -2,8 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, CheckCircle2 } from "lucide-react";
-import { MTNLogo, TelecelLogo, AirtelTigoLogo } from "@/components/BrandLogos";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { cn, getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -658,82 +657,167 @@ const BuyData = () => {
         {packages.map((pkg) => {
           const isSelected = selectedPkg?.size === pkg.size;
           const display = formatPackageDisplay(pkg.size);
-          const isDarkText = selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up";
+          const details = getPackageDetails(pkg);
+          const isTelecel = selectedNetwork === "Telecel";
+          const isAirtelTigo = selectedNetwork === "AirtelTigo";
+          const isMTN = selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up";
 
-          let LogoComponent = MTNLogo;
-          if (selectedNetwork === "Telecel") LogoComponent = TelecelLogo;
-          if (selectedNetwork === "AirtelTigo") LogoComponent = AirtelTigoLogo;
+          if (isTelecel) {
+            return (
+              <button
+                key={pkg.size}
+                onClick={() => handleCardClick(pkg.size, pkg.price)}
+                className={cn(
+                  "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between text-left transition-all duration-300 overflow-hidden group shadow-xl border-2 text-white",
+                  isSelected
+                    ? "bg-[#E60000] border-white shadow-[0_12px_35px_rgba(230,0,0,0.6)] scale-[1.03] ring-4 ring-red-400/50"
+                    : "bg-[#DC2626] border-red-700/50 hover:border-red-400 hover:scale-[1.02] shadow-[0_8px_25px_rgba(220,38,38,0.35)]"
+                )}
+              >
+                {/* Top Row: Package Size on Left, Telecel Logo Badge on Right */}
+                <div className="flex items-start justify-between mb-4">
+                  <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono leading-none">
+                    {display.main}
+                  </p>
+                  <div className="px-2.5 py-1 rounded-xl bg-black/30 border border-white/20 backdrop-blur-md flex flex-col items-center">
+                    <span className="font-black text-[9px] text-white uppercase tracking-widest leading-none">TELECEL</span>
+                    <span className="text-[7px] text-white/70 uppercase tracking-tighter">Ghana</span>
+                  </div>
+                </div>
 
-          const cardBgColor = selectedNetwork === "Telecel" ? "#E60000" : (selectedNetwork === "AirtelTigo" ? "#0055FF" : "#FFCC00");
+                {/* Subtitle / Details */}
+                {details && (
+                  <p className="text-[10px] font-black text-yellow-300 uppercase tracking-wide mb-3 leading-tight">
+                    {details}
+                  </p>
+                )}
 
+                {/* 3-Column Metadata Bar matching user screenshot */}
+                <div className="grid grid-cols-3 gap-1 pt-3 border-t border-white/20 text-center">
+                  <div className="flex flex-col items-start border-r border-white/20 pr-1">
+                    <span className="text-sm sm:text-base font-black text-white font-mono leading-tight">₵{pkg.price.toFixed(2)}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">PRICE</span>
+                  </div>
+                  <div className="flex flex-col items-center border-r border-white/20 px-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase leading-tight">Yes</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">ROLLOVER</span>
+                  </div>
+                  <div className="flex flex-col items-end pl-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase truncate leading-tight">{pkg.validity || "60 Days"}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">DURATION</span>
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          if (isAirtelTigo) {
+            return (
+              <button
+                key={pkg.size}
+                onClick={() => handleCardClick(pkg.size, pkg.price)}
+                className={cn(
+                  "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between text-left transition-all duration-300 overflow-hidden group shadow-xl border-2 text-white",
+                  isSelected
+                    ? "bg-[#00529B] border-white shadow-[0_12px_35px_rgba(0,82,155,0.6)] scale-[1.03] ring-4 ring-blue-400/50"
+                    : "bg-[#004080] border-blue-700/50 hover:border-blue-400 hover:scale-[1.02] shadow-[0_8px_25px_rgba(0,64,128,0.35)]"
+                )}
+              >
+                {/* Top Row: AirtelTigo Badge + Action Indicator */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/30 border border-white/20 backdrop-blur-md">
+                    <span className="font-black text-[10px] text-white uppercase tracking-widest font-mono">AIRTELTIGO</span>
+                  </div>
+                  <div className={cn(
+                    "w-7 h-7 rounded-full flex items-center justify-center transition-transform",
+                    isSelected ? "bg-white text-blue-900 font-bold" : "bg-white/20 text-white group-hover:translate-y-0.5"
+                  )}>
+                    {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </div>
+
+                {/* Main Size & Subtitle */}
+                <div className="space-y-0.5 mb-4">
+                  <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono leading-none">
+                    {display.main}
+                  </p>
+                  <p className="text-xs font-black text-white/80 uppercase tracking-wider">
+                    AirtelTigo Bundle {display.sub ? `• ${display.sub}` : ""}
+                  </p>
+                  {details && (
+                    <p className="text-[10px] font-black text-yellow-300 uppercase tracking-wide pt-1 leading-tight">
+                      {details}
+                    </p>
+                  )}
+                </div>
+
+                {/* 3-Column Metadata Bar */}
+                <div className="grid grid-cols-3 gap-1 pt-3 border-t border-white/20 text-center">
+                  <div className="flex flex-col items-start border-r border-white/20 pr-1">
+                    <span className="text-sm sm:text-base font-black text-white font-mono leading-tight">₵{pkg.price.toFixed(2)}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">PRICE</span>
+                  </div>
+                  <div className="flex flex-col items-center border-r border-white/20 px-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase leading-tight">Yes</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">ROLLOVER</span>
+                  </div>
+                  <div className="flex flex-col items-end pl-1">
+                    <span className="text-xs sm:text-sm font-black text-white uppercase truncate leading-tight">{pkg.validity || "No Expiry"}</span>
+                    <span className="text-[8px] font-black text-white/70 uppercase tracking-widest mt-0.5">DURATION</span>
+                  </div>
+                </div>
+              </button>
+            );
+          }
+
+          // Default / MTN Yellow Card Style matching user screenshot
           return (
             <button
               key={pkg.size}
-              type="button"
               onClick={() => handleCardClick(pkg.size, pkg.price)}
-              className={`relative rounded-[24px] p-4.5 sm:p-5 text-left transition-all duration-300 border overflow-hidden group flex flex-col justify-between ${
+              className={cn(
+                "relative rounded-3xl p-4 sm:p-5 flex flex-col justify-between text-left transition-all duration-300 overflow-hidden group shadow-xl border-2 text-black",
                 isSelected
-                  ? "scale-[1.03] shadow-2xl border-white ring-4 ring-white/50 z-10"
-                  : "border-white/10 hover:scale-[1.02] hover:shadow-2xl active:scale-[0.97]"
-              }`}
-              style={{
-                backgroundColor: cardBgColor,
-                backgroundImage: `linear-gradient(145deg, ${cardBgColor}, ${cardBgColor}ee)`,
-                boxShadow: isSelected ? `0 16px 40px ${cardBgColor}80` : `0 8px 24px ${cardBgColor}35`,
-                color: isDarkText ? "#000000" : "#FFFFFF"
-              }}
+                  ? "bg-[#FFCC00] border-black shadow-[0_12px_35px_rgba(255,204,0,0.6)] scale-[1.03] ring-4 ring-amber-300/50"
+                  : "bg-[#FFC000] border-amber-500/40 hover:border-amber-400 hover:scale-[1.02] shadow-[0_8px_25px_rgba(255,192,0,0.35)]"
+              )}
             >
-              <div className="absolute inset-0 rounded-[24px] pointer-events-none ring-1 ring-inset ring-white/20" />
-
-              {/* Top Header Row */}
-              <div className="flex items-center justify-between mb-3.5 w-full relative z-10">
-                <div className={`w-8 h-8 rounded-xl p-1 flex items-center justify-center shadow-sm shrink-0 ${isDarkText ? "bg-black/10" : "bg-white/20 backdrop-blur-md"}`}>
-                  <LogoComponent size={24} />
+              {/* Top Row: MTN Oval Badge + Action Indicator */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black text-amber-400 border border-amber-500/50 shadow-md">
+                  <span className="font-black text-[11px] font-mono tracking-tighter">MTN</span>
                 </div>
-
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-                  isSelected 
-                    ? "bg-white text-black shadow-md" 
-                    : (isDarkText ? "bg-black/10 text-black hover:bg-black/20" : "bg-white/20 text-white hover:bg-white/30")
-                }`}>
-                  {isSelected ? (
-                    <CheckCircle2 className="w-4 h-4 text-black stroke-[3]" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 stroke-[2.5]" />
-                  )}
+                <div className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center transition-transform",
+                  isSelected ? "bg-black text-amber-400" : "bg-black/15 text-black group-hover:translate-y-0.5"
+                )}>
+                  {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
               </div>
 
-              {/* Main Capacity Display */}
-              <div className="mb-4 relative z-10">
-                <p className={`text-2xl sm:text-3xl font-black tracking-tight leading-none mb-1 ${isDarkText ? "text-black" : "text-white"}`}>
+              {/* Main Size & Subtitle */}
+              <div className="space-y-0.5 mb-4">
+                <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono leading-none">
                   {display.main}
                 </p>
-                <p className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-wider ${isDarkText ? "text-black/70" : "text-white/80"}`}>
-                  {display.sub ? display.sub : `${selectedNetwork} Bundle`}
+                <p className="text-xs font-black text-black/75 uppercase tracking-wider">
+                  MTN Bundle {display.sub ? `• ${display.sub}` : ""}
                 </p>
+                {details && (
+                  <p className="text-[10px] font-black text-emerald-950 uppercase tracking-wide pt-1 leading-tight">
+                    {details}
+                  </p>
+                )}
               </div>
 
-              {/* Bottom 3-Column Stats Bar */}
-              <div className={`pt-3 border-t grid grid-cols-3 gap-1 text-center font-sans relative z-10 ${isDarkText ? "border-black/20" : "border-white/20"}`}>
-                <div>
-                  <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>PRICE</p>
-                  <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
-                    ₵{pkg.price.toFixed(2)}
-                  </p>
-                </div>
-                <div className="border-x px-1" style={{ borderColor: isDarkText ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.2)" }}>
-                  <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>ROLLOVER</p>
-                  <p className={`text-xs sm:text-sm font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
-                    {pkg.isInstant ? "Instant" : "Yes"}
-                  </p>
-                </div>
-                <div>
-                  <p className={`text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isDarkText ? "text-black/60" : "text-white/70"}`}>DURATION</p>
-                  <p className={`text-[10px] sm:text-xs font-black tracking-tight truncate ${isDarkText ? "text-black" : "text-white"}`}>
-                    {pkg.validity === "MTN Mash Up" ? "Mash Up" : (pkg.validity || "No Expiry")}
-                  </p>
-                </div>
+              {/* Bottom Row */}
+              <div className="flex items-baseline justify-between pt-3 border-t border-black/15">
+                <span className="text-xl sm:text-2xl font-black text-black font-mono tracking-tight">
+                  ₵{pkg.price.toFixed(2)}
+                </span>
+                <span className="text-[11px] font-black text-black/75 uppercase tracking-wider font-mono">
+                  {pkg.validity || "No Expiry"}
+                </span>
               </div>
             </button>
           );
