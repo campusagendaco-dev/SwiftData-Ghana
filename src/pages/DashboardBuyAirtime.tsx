@@ -54,6 +54,7 @@ const NETWORKS = [
 ];
 
 const calcFee = (_amount: number, _method?: PayMethod) => 0;
+const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100, 200];
 
 const DashboardBuyAirtime = () => {
   const { user, profile } = useAuth();
