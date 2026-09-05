@@ -124,43 +124,24 @@ export const GBCTVLogo = ({ size = 40 }: { size?: number }) => (
   </svg>
 );
 
-export const WAECLogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Dark Blue Base Badge */}
-    <rect width="100" height="100" rx="22" fill="#061A40"/>
-    <circle cx="50" cy="50" r="42" fill="none" stroke="#FFC000" strokeWidth="4"/>
-    <circle cx="50" cy="50" r="36" fill="#0B2545"/>
-    
-    {/* WAEC Main Text */}
-    <text x="50" y="44" textAnchor="middle" fill="#FFC000" fontSize="22" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" letterSpacing="1">
-      WAEC
-    </text>
-    
-    {/* WASSCE Subtext */}
-    <rect x="23" y="52" width="54" height="16" rx="4" fill="#FFC000"/>
-    <text x="50" y="64" textAnchor="middle" fill="#061A40" fontSize="10" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" letterSpacing="0.5">
-      WASSCE
-    </text>
-
-    {/* Decorative Star */}
-    <polygon points="50,72 52,76 57,76 53,79 55,84 50,81 45,84 47,79 43,76 48,76" fill="#FFC000" />
-  </svg>
+export const WAECLogo = ({ size = 40, className = "" }: { size?: number; className?: string }) => (
+  <img
+    src="/assets/waec_logo.png"
+    alt="WAEC Official Logo"
+    width={size}
+    height={size}
+    className={`object-contain ${className}`}
+    style={{ width: size, height: size }}
+  />
 );
 
-export const BECELogo = ({ size = 40 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="100" height="100" rx="22" fill="#0F4C81"/>
-    <circle cx="50" cy="50" r="42" fill="none" stroke="#E5C158" strokeWidth="3.5" strokeDasharray="6 3"/>
-    
-    <text x="50" y="44" textAnchor="middle" fill="#FFFFFF" fontSize="20" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900">
-      BECE
-    </text>
-    
-    <rect x="22" y="52" width="56" height="16" rx="4" fill="#E5C158"/>
-    <text x="50" y="64" textAnchor="middle" fill="#0F4C81" fontSize="9.5" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900">
-      CHECKER
-    </text>
-
-    <polygon points="50,73 52,77 56,77 53,80 54,84 50,81 46,84 47,80 44,77 48,77" fill="#E5C158" />
-  </svg>
+export const BECELogo = ({ size = 40, className = "" }: { size?: number; className?: string }) => (
+  <img
+    src="/assets/waec_logo.png"
+    alt="BECE / WAEC Logo"
+    width={size}
+    height={size}
+    className={`object-contain ${className}`}
+    style={{ width: size, height: size }}
+  />
 );
