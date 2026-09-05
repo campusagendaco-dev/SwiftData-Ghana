@@ -18,8 +18,8 @@ interface SmsTemplate {
 }
 
 const VARIABLES: Record<string, string[]> = {
-  payment_success:    ["{amount}", "{package}", "{phone}", "{network}"],
-  order_fulfilled:    ["{network}", "{package}", "{phone}"],
+  payment_success:    ["{amount}", "{package}", "{phone}", "{network}", "{est_delivery}"],
+  order_fulfilled:    ["{network}", "{package}", "{phone}", "{est_delivery}"],
   order_failed:       ["{package}", "{phone}", "{amount}"],
   order_refunded:     ["{amount}"],
   low_balance:        [],

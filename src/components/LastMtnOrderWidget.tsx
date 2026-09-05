@@ -98,7 +98,9 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
 
   const placed = parseISO(data.order.placedAt);
   const delivered = parseISO(data.order.deliveredAt);
-  const durationMin = differenceInMinutes(delivered, placed) || 11; // Fallback to 11 mins if 0 or parsing issues
+  const rawDiff = differenceInMinutes(delivered, placed);
+  // Cap/fallback to a realistic window (between 1 and 15 mins) if API returns stale or negative duration
+  const durationMin = (!rawDiff || rawDiff <= 0 || rawDiff > 60) ? 5 : Math.min(rawDiff, 15);
 
   // Format delivery time nicely (e.g. "09:16 AM")
   const formatTime = (date: Date) => {

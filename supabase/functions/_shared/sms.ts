@@ -60,7 +60,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
     apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY") || (hasKorba ? "korba" : null),
     senderId: finalSenderId,
     templates: {
-      payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} has been processed.",
+      payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} ({package}) has been processed. ⚡ Est. Delivery: {est_delivery}.",
       utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed.",
       wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
       withdrawal_request: settings?.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
@@ -401,6 +401,15 @@ export async function sendPaymentSms(
     if (!apiKey || !recipient) {
       console.warn(`[SMS] Missing config or recipient: to=${customerPhone}, hasApiKey=${!!apiKey}`);
       return;
+    }
+
+    if (!vars.est_delivery) {
+      const net = String(vars.network || "").toUpperCase();
+      if (net.includes("TELECEL") || net.includes("VODAFONE") || net.includes("AIRTEL") || net.includes("AT")) {
+        vars.est_delivery = "Instant - 5 mins";
+      } else {
+        vars.est_delivery = "1 - 15 mins";
+      }
     }
 
     const message = type === "custom" && vars.message
