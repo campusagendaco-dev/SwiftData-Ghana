@@ -1245,6 +1245,7 @@ export default function AdminOrders() {
           >
             <option value="all">All Order Types</option>
             <option value="data">Data Bundles</option>
+            <option value="voucher">Result Checkers</option>
             <option value="api">API Purchases</option>
             <option value="airtime">Airtime</option>
             <option value="utility">Utility Bills</option>

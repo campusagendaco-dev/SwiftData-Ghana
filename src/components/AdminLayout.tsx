@@ -9,7 +9,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall
+  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -106,6 +106,7 @@ const NAV_SECTIONS = [
       { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders" },
       { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders" },
       { label: "Standard Orders", icon: Package,     path: "/admin/standard-orders" },
+      { label: "Checker Orders",  icon: GraduationCap, path: "/admin/checker-orders" },
       { label: "Packages",     icon: Package,      path: "/admin/packages" },
       { label: "Korba Hub",    icon: Activity,     path: "/admin/korba" },
       { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages" },
