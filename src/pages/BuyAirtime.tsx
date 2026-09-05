@@ -54,9 +54,9 @@ const NETWORK_THEMES: Record<NetworkName, {
 
 const NETWORKS: NetworkName[] = ["MTN", "Telecel", "AirtelTigo"];
 const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100, 200];
-const PAYSTACK_FEE_RATE = 0.03;
-const PAYSTACK_FEE_CAP = 100;
-const calcFee = (amount: number) => Math.min(amount * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
+const PAYSTACK_FEE_RATE = 0;
+const PAYSTACK_FEE_CAP = 0;
+const calcFee = (_amount: number) => 0;
 
 const BuyAirtime = () => {
   const { toast } = useToast();
@@ -419,7 +419,7 @@ const BuyAirtime = () => {
                   </div>
                   <div className="flex justify-between items-center text-slate-500">
                     <span>Payment Processing Fee</span>
-                    <span>GH₵ {fee.toFixed(2)}</span>
+                    <span className="font-bold text-emerald-600">GH₵ 0.00 (FREE)</span>
                   </div>
 
                   <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline">

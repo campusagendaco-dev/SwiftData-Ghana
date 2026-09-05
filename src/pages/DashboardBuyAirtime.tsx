@@ -53,13 +53,7 @@ const NETWORKS = [
   },
 ];
 
-const QUICK_AMOUNTS = [2, 5, 10, 20, 50, 100, 200];
-const PAYSTACK_FEE_RATE = 0.03;
-const PAYSTACK_FEE_CAP = 100;
-const calcFee = (amount: number, method: PayMethod) => {
-  if (method === "wallet") return 0;
-  return Math.min(amount * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP);
-};
+const calcFee = (_amount: number, _method?: PayMethod) => 0;
 
 const DashboardBuyAirtime = () => {
   const { user, profile } = useAuth();
@@ -560,7 +554,7 @@ const DashboardBuyAirtime = () => {
               </div>
               <div className="flex justify-between items-center text-white/60">
                 <span>Processing Fee</span>
-                <span className="font-bold font-mono text-white">GH₵ {fee.toFixed(2)}</span>
+                <span className="font-bold font-mono text-emerald-400">GH₵ 0.00 (FREE)</span>
               </div>
 
               <div className="pt-3 border-t border-white/10 flex justify-between items-baseline">

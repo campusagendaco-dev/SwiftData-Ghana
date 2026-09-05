@@ -24,6 +24,7 @@ const SEGMENTS: { value: Segment; label: string; desc: string }[] = [
 ];
 
 const TEMPLATES = [
+  { label: "WASSCE 2026 Checkers", title: "🎓 WASSCE 2026 Results Checkers In Stock! 📜", body: "WASSCE 2026 Results are officially out! WAEC Results Checker serials & PINs are now live and in stock on SwiftData at wholesale rates. Buy instantly for yourself or your customers now at https://swiftdatagh.shop!\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0540309637" },
   { label: "Withdrawal Info",    title: "Profit Withdrawals Active 💸", body: "Good news! You can now withdraw your earned profits. Navigate to the Withdrawals tab on your dashboard to request a payout. Minimum withdrawal is GHS 25.00. Please try your withdrawal again.\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0540309637" },
   { label: "Maintenance Notice",  title: "Scheduled Maintenance", body: "We will be performing scheduled maintenance on {date}. Services may be temporarily unavailable. We apologize for any inconvenience.\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0540309637" },
   { label: "New Feature",         title: "New Feature Available!",body: "We've just launched a new feature! Log in to your SwiftData dashboard to check it out.\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0540309637" },
@@ -235,6 +236,13 @@ export default function AdminBroadcast() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {[
+                  {
+                    title: "🎓 WASSCE 2026 Checkers In Stock",
+                    badge: "WASSCE 2026 Live",
+                    body: "🎓 WASSCE 2026 Results are OUT! WAEC Results Checker serials & PINs are now IN STOCK at wholesale rates. Buy & check instantly at https://swiftdatagh.shop or sell to students for quick profit! 📲",
+                    channel: "both" as Channel,
+                    segment: "all_agents" as Segment,
+                  },
                   {
                     title: "⚡ System Delivery Restored",
                     badge: "All Networks Active",

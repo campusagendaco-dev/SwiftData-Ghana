@@ -322,6 +322,9 @@ serve(async (req: Request) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    const agentUserIds = recipients.filter((r) => r.isAgent && r.userId).map((r) => r.userId);
+    const balanceMap = hasTokens(smsBody) ? await fetchBalanceMap(supabaseAdmin, agentUserIds) : new Map<string, number>();
+
     // For large broadcasts (> 150 recipients), dispatch asynchronously to prevent HTTP 546 execution timeout
     if (recipients.length > 150) {
       const dispatchPromise = sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap)

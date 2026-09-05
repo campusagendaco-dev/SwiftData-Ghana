@@ -143,15 +143,8 @@ serve(async (req: Request) => {
 
     const adminBase = Number(pkgRow?.agent_price);
     if (!pkgRow || !adminBase || adminBase <= 0) {
-      console.error(`[SECURITY] Blocked order: No valid global wholesale price defined for ${normalizedNet} ${package_size}.`);
-      
-      await supabaseAdmin.rpc("log_security_violation", {
-        p_user_id: user.id,
-        p_reason: `Attempted to purchase unpriced package: ${normalizedNet} ${package_size}`,
-        p_details: { network: networkRaw, package_size }
-      });
-
-      return new Response(JSON.stringify({ error: "This package is currently unavailable for purchase. Please try another bundle." }), {
+      console.warn(`[WARNING] Order blocked: No valid global wholesale price defined for ${normalizedNet} ${package_size}.`);
+      return new Response(JSON.stringify({ error: "This package size is currently unavailable or unpriced. Please try another bundle." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
