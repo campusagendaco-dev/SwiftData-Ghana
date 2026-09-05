@@ -16,18 +16,15 @@ declare module "https://*" {
   export const verifyAdmin: any;
   export const log: any;
   export const fetchViaDb: any;
-  export const [key: string]: any;
 }
 
 declare module "http://*" {
   const content: any;
   export default content;
-  export const [key: string]: any;
 }
 
 declare module "npm:*" {
   const content: any;
   export default content;
   export const HttpsProxyAgent: any;
-  export const [key: string]: any;
 }
