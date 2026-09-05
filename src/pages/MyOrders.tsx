@@ -437,18 +437,27 @@ const MyOrders = () => {
                       </div>
 
                       {/* Status Badge */}
-                      <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
-                        <div className={cn(
-                          "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
-                          (showReceipt.status === "fulfilled" || showReceipt.status === "processing" || showReceipt.status === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
-                          (showReceipt.status === "pending" || showReceipt.status === "awaiting_payment" || showReceipt.status === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
-                          (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed" || showReceipt.status === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
-                        )}>
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          {showReceipt.status}
-                        </div>
-                      </div>
+                      {(() => {
+                        const reason = (showReceipt.failure_reason || "").toLowerCase();
+                        const isBen = (showReceipt.status === "fulfillment_failed" || showReceipt.status === "failed") && (
+                          reason.includes("beneficiary") || reason.includes("whitelist") || reason.includes("not added") || reason.includes("not on") || reason.includes("unregistered") || reason.includes("not registered")
+                        );
+                        return (
+                          <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
+                            <div className={cn(
+                              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
+                              (showReceipt.status === "fulfilled" || showReceipt.status === "processing" || showReceipt.status === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+                              isBen && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                              !isBen && (showReceipt.status === "pending" || showReceipt.status === "awaiting_payment" || showReceipt.status === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                              !isBen && (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed" || showReceipt.status === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
+                            )}>
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              {isBen ? "In Queue for Verification ⏳" : showReceipt.status}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Action Buttons */}

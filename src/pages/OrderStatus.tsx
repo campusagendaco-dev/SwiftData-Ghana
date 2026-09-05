@@ -400,7 +400,13 @@ const OrderStatus = () => {
       logs.push({ time: dTimeStr, text: "🟢 Network callback verified. Data delivered successfully!", status: "success" });
     } else if (orderStatus === "fulfillment_failed") {
       const dTimeStr = new Date().toLocaleTimeString("en-GH", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      logs.push({ time: dTimeStr, text: `🔴 Delivery failed: ${statusMessage || "Rejected by carrier"}`, status: "warn" });
+      const r = (statusMessage || "").toLowerCase();
+      const isBen = r.includes("beneficiary") || r.includes("whitelist") || r.includes("not added") || r.includes("not on") || r.includes("unregistered") || r.includes("not registered");
+      if (isBen) {
+        logs.push({ time: dTimeStr, text: "⏳ Number queued for MTN Whitelist Verification. Bundle will deliver automatically after approval!", status: "warn" });
+      } else {
+        logs.push({ time: dTimeStr, text: `🔴 Delivery failed: ${statusMessage || "Rejected by carrier"}`, status: "warn" });
+      }
     }
 
     return logs;

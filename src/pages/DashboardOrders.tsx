@@ -37,7 +37,14 @@ interface Order {
 function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason">): boolean {
   if (order.status !== "fulfillment_failed") return false;
   const reason = (order.failure_reason || "").toLowerCase();
-  return reason.includes("beneficiary") || reason.includes("not added");
+  return (
+    reason.includes("beneficiary") ||
+    reason.includes("whitelist") ||
+    reason.includes("not added") ||
+    reason.includes("not on") ||
+    reason.includes("unregistered") ||
+    reason.includes("not registered")
+  );
 }
 
 const networkBadgeStyles: Record<string, { bg: string; text: string; border: string }> = {
@@ -684,12 +691,12 @@ const DashboardOrders = () => {
               const isBeneficiary = isBeneficiaryFailure(order);
               const effectiveDs: DisplayStatus = isBeneficiary
                 ? {
-                    label: "Whitelisted — In Queue for Retry",
-                    shortLabel: "In Queue",
+                    label: "In Queue for Verification ⏳",
+                    shortLabel: "In Queue ⏳",
                     icon: Clock,
-                    dot: "bg-emerald-500",
-                    badge: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400 font-extrabold",
-                    text: "text-emerald-400",
+                    dot: "bg-amber-400 animate-pulse",
+                    badge: "bg-amber-500/15 border-amber-500/30 text-amber-400 font-extrabold",
+                    text: "text-amber-400",
                   }
                 : ds;
 
@@ -709,9 +716,9 @@ const DashboardOrders = () => {
                   spinning: order.status === "processing" || order.status === "paid" 
                 },
                 {
-                  label: order.status === "fulfillment_failed" ? "Failed" : "Success",
+                  label: isBeneficiary ? "In Queue ⏳" : order.status === "fulfillment_failed" ? "Failed" : "Success",
                   done: order.status === "fulfilled" || order.status === "fulfillment_failed",
-                  failed: order.status === "fulfillment_failed",
+                  failed: order.status === "fulfillment_failed" && !isBeneficiary,
                   time: (order.status === "fulfilled" || order.status === "fulfillment_failed") && order.updated_at
                     ? fmt(order.updated_at).time : undefined,
                 },
@@ -727,9 +734,11 @@ const DashboardOrders = () => {
                 <div key={order.id} className="rounded-2xl border border-white/10 overflow-hidden transition-all bg-card/60 hover:bg-card/90">
                   {/* Action Banner for pending/failed status */}
                   {isStuck && (
-                    <div className={`flex items-center justify-between px-4 py-2 border-b ${order.status === "fulfillment_failed" ? "bg-rose-500/10 border-rose-500/20" : "bg-amber-500/10 border-amber-500/20"}`}>
-                      <span className={`flex items-center gap-1.5 text-xs font-bold ${order.status === "fulfillment_failed" ? "text-rose-400" : "text-amber-400"}`}>
-                        {order.status === "fulfillment_failed" ? (
+                    <div className={`flex items-center justify-between px-4 py-2 border-b ${isBeneficiary ? "bg-amber-500/10 border-amber-500/20" : order.status === "fulfillment_failed" ? "bg-rose-500/10 border-rose-500/20" : "bg-amber-500/10 border-amber-500/20"}`}>
+                      <span className={`flex items-center gap-1.5 text-xs font-bold ${isBeneficiary ? "text-amber-400" : order.status === "fulfillment_failed" ? "text-rose-400" : "text-amber-400"}`}>
+                        {isBeneficiary ? (
+                          <><Clock className="w-3.5 h-3.5 shrink-0 text-amber-400 animate-pulse" /> ⏳ In Queue for Whitelist Verification</>
+                        ) : order.status === "fulfillment_failed" ? (
                           <><XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" /> Delivery Failed &mdash; Click Retry</>
                         ) : order.status === "paid" || order.status === "processing" ? (
                           <><Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-sky-400" /> Delivering Order…</>
@@ -739,15 +748,17 @@ const DashboardOrders = () => {
                         {retryCount > 0 && <span className="opacity-75 font-mono text-[10px]">(Attempt #{retryCount})</span>}
                       </span>
                       <button
-                        onClick={() => retryOrder(order.id)}
+                        onClick={() => isBeneficiary ? navigate("/submit-numbers") : retryOrder(order.id)}
                         disabled={isRetrying}
                         className={`text-xs font-extrabold px-3 py-1 rounded-lg transition-all border disabled:opacity-50 ${
-                          order.status === "fulfillment_failed" 
+                          isBeneficiary
+                            ? "text-amber-400 hover:text-amber-300 bg-amber-500/20 border-amber-500/30"
+                            : order.status === "fulfillment_failed" 
                             ? "text-rose-400 hover:text-rose-300 bg-rose-500/20 border-rose-500/30"
                             : "text-amber-400 hover:text-amber-300 bg-amber-500/20 border-amber-500/30"
                         }`}
                       >
-                        {isRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : order.status === "fulfillment_failed" ? "Retry Fulfillment" : "Check Status"}
+                        {isRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isBeneficiary ? "Verify Number 🚀" : order.status === "fulfillment_failed" ? "Retry Fulfillment" : "Check Status"}
                       </button>
                     </div>
                   )}
