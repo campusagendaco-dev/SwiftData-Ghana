@@ -14,10 +14,22 @@ DECLARE
   v_sms_api_key TEXT;
   v_sms_sender_id TEXT;
 BEGIN
-  -- Retrieve Supabase Service Role Key from Vault
-  SELECT decrypted_secret INTO v_service_key 
-  FROM vault.decrypted_secrets
-  WHERE name = 'supabase_service_role' LIMIT 1;
+  -- Retrieve Supabase Service Role Key from Vault or system settings fallback
+  BEGIN
+    SELECT decrypted_secret INTO v_service_key 
+    FROM vault.decrypted_secrets
+    WHERE name = 'supabase_service_role' LIMIT 1;
+  EXCEPTION WHEN OTHERS THEN
+    v_service_key := NULL;
+  END;
+
+  IF v_service_key IS NULL OR v_service_key = '' THEN
+    BEGIN
+      SELECT current_setting('app.settings.service_role_key', true) INTO v_service_key;
+    EXCEPTION WHEN OTHERS THEN
+      v_service_key := NULL;
+    END;
+  END IF;
 
   -- 1. Insert in-app notifications
   INSERT INTO public.user_notifications (user_id, title, message, type, link, data)
