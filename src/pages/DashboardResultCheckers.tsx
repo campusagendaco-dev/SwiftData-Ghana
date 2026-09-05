@@ -15,6 +15,7 @@ import { useConnectivity } from "@/hooks/useConnectivity";
 import { WifiOff } from "lucide-react";
 import { playSuccessSound } from "@/lib/sound";
 import { Link } from "react-router-dom";
+import { WAECLogo, BECELogo } from "@/components/BrandLogos";
 
 type VoucherType = "WASSCE" | "BECE";
 
@@ -482,7 +483,10 @@ const DashboardResultCheckers = () => {
               <Sparkles className="w-3.5 h-3.5 animate-spin-slow" />
               WASSCE 2026 Ready · Instant Delivery
             </div>
-            <h1 className="font-black text-3xl md:text-4xl tracking-tight text-foreground">Result Checkers Portal</h1>
+            <div className="flex items-center gap-3">
+              <WAECLogo size={44} />
+              <h1 className="font-black text-3xl md:text-4xl tracking-tight text-foreground">Result Checkers Portal</h1>
+            </div>
             <p className="text-muted-foreground text-sm max-w-xl">
               Purchase WAEC WASSCE & BECE result checker pins individually or in bulk with instant SMS dispatch and printable cards.
             </p>
@@ -555,11 +559,12 @@ const DashboardResultCheckers = () => {
                     )}
 
                     <div className="flex items-center gap-3.5 mb-3">
-                      <div className={cn(
-                        "w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors",
-                        isSelected ? "bg-primary text-primary-foreground shadow-sm" : "bg-secondary text-muted-foreground"
-                      )}>
-                        <GraduationCap className="w-6 h-6" />
+                      <div className="shrink-0">
+                        {v.id === "WASSCE" ? (
+                          <WAECLogo size={46} />
+                        ) : (
+                          <BECELogo size={46} />
+                        )}
                       </div>
                       <div>
                         <h4 className="font-black text-base text-foreground leading-tight">{v.label}</h4>

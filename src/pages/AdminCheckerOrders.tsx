@@ -27,6 +27,7 @@ import { getFunctionErrorMessage } from "@/lib/function-errors";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
+import { WAECLogo, BECELogo } from "@/components/BrandLogos";
 
 interface OrderRow {
   id: string;
@@ -342,7 +343,10 @@ export default function AdminCheckerOrders() {
             <GraduationCap className="w-3.5 h-3.5" />
             Result Checkers Master Logs
           </div>
-          <h1 className="font-black text-3xl tracking-tight text-foreground">Checker Purchases</h1>
+          <div className="flex items-center gap-3">
+            <WAECLogo size={42} />
+            <h1 className="font-black text-3xl tracking-tight text-foreground">Checker Purchases</h1>
+          </div>
           <p className="text-muted-foreground text-sm">View, track, and export all WAEC WASSCE and BECE voucher orders across the platform.</p>
         </div>
 
@@ -546,8 +550,12 @@ export default function AdminCheckerOrders() {
                       </td>
 
                       <td className="p-4 font-bold text-foreground">
-                        <div className="flex items-center gap-1.5">
-                          <GraduationCap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <div className="flex items-center gap-2">
+                          {(order.package_size || "").toUpperCase().includes("BECE") ? (
+                            <BECELogo size={24} />
+                          ) : (
+                            <WAECLogo size={24} />
+                          )}
                           <span>{order.package_size}</span>
                         </div>
                       </td>
