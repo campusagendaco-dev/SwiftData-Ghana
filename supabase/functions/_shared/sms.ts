@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { fetchViaDb } from "./db_proxy.ts";
 
+declare const Deno: any;
+
 export function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const clean = raw.trim().replace(/[^\d+]/g, "");
@@ -160,11 +162,12 @@ export async function sendSmsViaKorba(
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
     // Generate Signature
-    const sortedKeys = Object.keys(payload).sort();
+    const pMap = payload as Record<string, string>;
+    const sortedKeys = Object.keys(pMap).sort();
     const messageParts = [];
     for (const key of sortedKeys) {
-      if (payload[key] !== undefined) {
-        messageParts.push(`${key}=${payload[key]}`);
+      if (pMap[key] !== undefined) {
+        messageParts.push(`${key}=${pMap[key]}`);
       }
     }
     const message = messageParts.join("&");
@@ -432,9 +435,10 @@ export async function sendPaymentSms(
       }
     }
 
+    const tMap = templates as Record<string, string>;
     const message = type === "custom" && vars.message
       ? String(vars.message)
-      : formatTemplate(templates[type as any] || templates.payment_success, vars);
+      : formatTemplate(tMap[type] || templates.payment_success, vars);
 
     const activeSenderId = vars.senderId ? String(vars.senderId) : senderId;
     console.log(`[SMS] Sending ${type} to ${recipient} (Sender: ${activeSenderId})...`);
