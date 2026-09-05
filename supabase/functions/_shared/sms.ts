@@ -436,7 +436,9 @@ export async function sendPaymentSms(
     }
 
     const rLower = String(vars.reason || "").toLowerCase();
-    const isBenReason = rLower.includes("beneficiary") || rLower.includes("whitelist") || rLower.includes("not added") || rLower.includes("not on") || rLower.includes("unregistered");
+    const netUpper = String(vars.network || "").toUpperCase();
+    const isMtn = !vars.network || netUpper.includes("MTN");
+    const isBenReason = isMtn && (rLower.includes("beneficiary") || rLower.includes("whitelist") || rLower.includes("not added") || rLower.includes("not on") || rLower.includes("unregistered"));
 
     let message = "";
     if (type === "custom" && vars.message) {

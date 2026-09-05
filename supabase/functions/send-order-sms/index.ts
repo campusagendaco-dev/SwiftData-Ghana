@@ -22,11 +22,15 @@ serve(async (req: Request) => {
     let message = "";
 
     const rLower = String(reason || "").toLowerCase();
-    const isBeneficiaryReason = rLower.includes("beneficiary") ||
+    const netUpper = String(network || "").toUpperCase();
+    const isMtn = !network || netUpper.includes("MTN");
+    const isBeneficiaryReason = isMtn && (
+      rLower.includes("beneficiary") ||
       rLower.includes("not on") ||
       rLower.includes("whitelist") ||
       rLower.includes("not added") ||
-      rLower.includes("unregistered");
+      rLower.includes("unregistered")
+    );
 
     if (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) {
       const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)})` : "";

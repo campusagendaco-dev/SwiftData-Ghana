@@ -401,7 +401,9 @@ const OrderStatus = () => {
     } else if (orderStatus === "fulfillment_failed") {
       const dTimeStr = new Date().toLocaleTimeString("en-GH", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const r = (statusMessage || "").toLowerCase();
-      const isBen = r.includes("beneficiary") || r.includes("whitelist") || r.includes("not added") || r.includes("not on") || r.includes("unregistered") || r.includes("not registered");
+      const net = (orderNetwork || "").toUpperCase();
+      const isMtn = !net || net.includes("MTN");
+      const isBen = isMtn && (r.includes("beneficiary") || r.includes("whitelist") || r.includes("not added") || r.includes("not on") || r.includes("unregistered") || r.includes("not registered"));
       if (isBen) {
         logs.push({ time: dTimeStr, text: "⏳ Number queued for MTN Whitelist Verification. Bundle will deliver automatically after approval!", status: "warn" });
       } else {

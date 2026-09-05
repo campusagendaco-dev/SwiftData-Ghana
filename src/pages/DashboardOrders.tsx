@@ -34,8 +34,10 @@ interface Order {
   updated_at: string | null;
 }
 
-function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason">): boolean {
+function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason" | "network">): boolean {
   if (order.status !== "fulfillment_failed") return false;
+  const net = (order.network || "").toUpperCase();
+  if (net && !net.includes("MTN")) return false; // Only for MTN packages
   const reason = (order.failure_reason || "").toLowerCase();
   return (
     reason.includes("beneficiary") ||

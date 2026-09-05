@@ -439,7 +439,9 @@ const MyOrders = () => {
                       {/* Status Badge */}
                       {(() => {
                         const reason = (showReceipt.failure_reason || "").toLowerCase();
-                        const isBen = (showReceipt.status === "fulfillment_failed" || showReceipt.status === "failed") && (
+                        const net = (showReceipt.network || "").toUpperCase();
+                        const isMtn = !net || net.includes("MTN");
+                        const isBen = isMtn && (showReceipt.status === "fulfillment_failed" || showReceipt.status === "failed") && (
                           reason.includes("beneficiary") || reason.includes("whitelist") || reason.includes("not added") || reason.includes("not on") || reason.includes("unregistered") || reason.includes("not registered")
                         );
                         return (
