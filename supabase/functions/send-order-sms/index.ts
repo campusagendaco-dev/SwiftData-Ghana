@@ -30,9 +30,10 @@ serve(async (req: Request) => {
 
     if (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) {
       const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)})` : "";
-      message = `SwiftData Notice: Order #${shortId} for ${phone || "recipient"} is IN QUEUE ⏳ for MTN Whitelist Approval${amtPart}.\n\n` +
-        `Your bundle will deliver automatically after approval. No action needed!\n` +
-        `Track status: https://swiftdatagh.shop/submit-numbers`;
+      message = `SwiftData Notice: Order #${shortId} for ${phone || "recipient"} is IN QUEUE ⏳.\n\n` +
+        `Your number is not verified on the MTN beneficiary list. Please submit your number for verification at:\n` +
+        `https://swiftdatagh.shop/submit-numbers\n\n` +
+        `After verification (which takes 1 to 4 days), your order will be delivered automatically! No panic!`;
     } else if (action === "refund") {
       const reasonPart = reason ? ` Reason: ${reason}.` : "";
       message = `SwiftData Alert: Order #${shortId} for ${phone || "recipient"} (GHS ${Number(amount || 0).toFixed(2)}) has been refunded to your wallet balance.${reasonPart}`;

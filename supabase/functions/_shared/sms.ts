@@ -435,10 +435,21 @@ export async function sendPaymentSms(
       }
     }
 
-    const tMap = templates as Record<string, string>;
-    const message = type === "custom" && vars.message
-      ? String(vars.message)
-      : formatTemplate(tMap[type] || templates.payment_success, vars);
+    const rLower = String(vars.reason || "").toLowerCase();
+    const isBenReason = rLower.includes("beneficiary") || rLower.includes("whitelist") || rLower.includes("not added") || rLower.includes("not on") || rLower.includes("unregistered");
+
+    let message = "";
+    if (type === "custom" && vars.message) {
+      message = String(vars.message);
+    } else if (type === "order_failed" && isBenReason) {
+      message = `SwiftData Notice: Your number (${recipient}) is not verified on the MTN beneficiary list.\n\n` +
+        `Please submit your number for verification at:\n` +
+        `https://swiftdatagh.shop/submit-numbers\n\n` +
+        `After verification (which takes 1 to 4 days), your order will be delivered automatically! No panic!`;
+    } else {
+      const tMap = templates as Record<string, string>;
+      message = formatTemplate(tMap[type] || templates.payment_success, vars);
+    }
 
     const activeSenderId = vars.senderId ? String(vars.senderId) : senderId;
     console.log(`[SMS] Sending ${type} to ${recipient} (Sender: ${activeSenderId})...`);
