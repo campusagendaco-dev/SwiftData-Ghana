@@ -308,7 +308,7 @@ const DashboardResultCheckers = () => {
             Voucher Purchased Successfully!
           </div>
 
-          <h1 className="font-black text-3xl tracking-tight text-foreground">Voucher Purchased Successfully!</h1>
+          <h1 className="font-black text-3xl tracking-tight text-slate-900">Voucher Purchased Successfully!</h1>
           
           {isTestModePurchase && (
             <div className="inline-flex items-center gap-1.5 bg-violet-500/15 text-violet-400 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-violet-500/20 mx-auto">
@@ -319,21 +319,21 @@ const DashboardResultCheckers = () => {
         </div>
 
         {/* Voucher Meta Overview Grid */}
-        <div className="bg-card border border-border rounded-3xl p-5 grid grid-cols-2 md:grid-cols-4 gap-4 shadow-sm text-sm">
+        <div className="bg-white border border-slate-200 rounded-3xl p-5 grid grid-cols-2 md:grid-cols-4 gap-4 shadow-sm text-sm">
           <div>
-            <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider block mb-1">Voucher Type</span>
-            <span className="font-black text-foreground">{voucherType === "WASSCE" ? "WASSCE Results Checker" : `${voucherType} Results Checker`}</span>
+            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block mb-1">Voucher Type</span>
+            <span className="font-black text-slate-900">{voucherType === "WASSCE" ? "WASSCE Results Checker" : `${voucherType} Results Checker`}</span>
           </div>
           <div>
-            <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider block mb-1">Recipient</span>
-            <span className="font-black text-foreground font-mono">{recipient}</span>
+            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block mb-1">Recipient</span>
+            <span className="font-black text-slate-900 font-mono">{recipient}</span>
           </div>
           <div>
-            <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider block mb-1">Quantity</span>
-            <span className="font-black text-foreground">{qtyNum}</span>
+            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block mb-1">Quantity</span>
+            <span className="font-black text-slate-900">{qtyNum}</span>
           </div>
           <div>
-            <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider block mb-1">Amount</span>
+            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider block mb-1">Amount</span>
             <span className="font-black text-emerald-500 text-base">₵{totalCost.toFixed(2)}</span>
           </div>
         </div>
@@ -341,7 +341,7 @@ const DashboardResultCheckers = () => {
         {/* Bulk Copy All Bar */}
         {vouchersList.length > 1 && (
           <div className="flex items-center justify-between p-3.5 rounded-2xl bg-primary/10 border border-primary/20">
-            <span className="text-xs font-bold text-foreground">Got multiple vouchers? Copy all at once:</span>
+            <span className="text-xs font-bold text-slate-900">Got multiple vouchers? Copy all at once:</span>
             <button
               onClick={() => copyAllVouchers(vouchersList)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground font-black text-xs hover:opacity-90 transition-all shadow-sm"
@@ -355,8 +355,8 @@ const DashboardResultCheckers = () => {
         {/* Generated Voucher Cards Container */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-black text-xs uppercase tracking-wider text-muted-foreground">Voucher Codes:</h3>
-            <span className="text-xs text-muted-foreground font-bold">{vouchersList.length} Voucher{vouchersList.length > 1 ? "s" : ""} Available</span>
+            <h3 className="font-black text-xs uppercase tracking-wider text-slate-500">Voucher Codes:</h3>
+            <span className="text-xs text-slate-500 font-bold">{vouchersList.length} Voucher{vouchersList.length > 1 ? "s" : ""} Available</span>
           </div>
 
           {vouchersList.length > 0 ? (
@@ -364,17 +364,17 @@ const DashboardResultCheckers = () => {
               {vouchersList.map((v: any, i: number) => {
                 const combinedStr = `SERIAL: ${v.serial} | PIN: ${v.pin}`;
                 return (
-                  <div key={i} className="p-4 rounded-2xl bg-secondary/40 border border-border space-y-2.5 group hover:border-emerald-500/40 transition-all">
-                    <div className="flex items-center justify-between text-[11px] font-black text-muted-foreground uppercase tracking-widest">
+                  <div key={i} className="p-4 rounded-2xl bg-slate-100/40 border border-slate-200 space-y-2.5 group hover:border-emerald-500/40 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-black text-slate-500 uppercase tracking-widest">
                       <span>Voucher {i + 1}</span>
                       <span className="text-[10px] text-emerald-500 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md">Valid</span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
-                      <div className="flex items-center justify-between bg-card p-3 rounded-xl border border-border">
+                      <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
                         <div className="truncate mr-2">
-                          <span className="font-sans text-[10px] font-bold text-muted-foreground uppercase mr-2 block text-muted-foreground/70">SERIAL:</span>
-                          <span className="font-black text-foreground tracking-wider text-sm">{v.serial}</span>
+                          <span className="font-sans text-[10px] font-bold text-slate-500 uppercase mr-2 block text-slate-500/70">SERIAL:</span>
+                          <span className="font-black text-slate-900 tracking-wider text-sm">{v.serial}</span>
                         </div>
                         <button
                           onClick={() => copyToClipboard(v.serial, "Serial Number")}
@@ -384,10 +384,10 @@ const DashboardResultCheckers = () => {
                         </button>
                       </div>
 
-                      <div className="flex items-center justify-between bg-card p-3 rounded-xl border border-border">
+                      <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
                         <div className="truncate mr-2">
-                          <span className="font-sans text-[10px] font-bold text-muted-foreground uppercase mr-2 block text-muted-foreground/70">PIN:</span>
-                          <span className="font-black text-foreground tracking-wider text-sm">{v.pin}</span>
+                          <span className="font-sans text-[10px] font-bold text-slate-500 uppercase mr-2 block text-slate-500/70">PIN:</span>
+                          <span className="font-black text-slate-900 tracking-wider text-sm">{v.pin}</span>
                         </div>
                         <button
                           onClick={() => copyToClipboard(v.pin, "PIN Code")}
@@ -398,10 +398,10 @@ const DashboardResultCheckers = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between bg-card p-3 rounded-xl border border-border text-xs font-mono">
+                    <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 text-xs font-mono">
                       <div className="truncate mr-2">
-                        <span className="font-sans text-[10px] font-bold text-muted-foreground uppercase mr-2">COMBINED:</span>
-                        <span className="font-black text-foreground tracking-wide text-xs">{combinedStr}</span>
+                        <span className="font-sans text-[10px] font-bold text-slate-500 uppercase mr-2">COMBINED:</span>
+                        <span className="font-black text-slate-900 tracking-wide text-xs">{combinedStr}</span>
                       </div>
                       <button
                         onClick={() => copyToClipboard(combinedStr, "Combined Serial & PIN")}
@@ -441,14 +441,14 @@ const DashboardResultCheckers = () => {
         </div>
 
         {/* New Balance & Delivery Status */}
-        <div className="flex flex-col sm:flex-row items-center justify-between p-4 rounded-2xl bg-secondary/30 border border-border text-xs font-bold gap-2">
+        <div className="flex flex-col sm:flex-row items-center justify-between p-4 rounded-2xl bg-slate-100/30 border border-slate-200 text-xs font-bold gap-2">
           <div>
-            <span className="text-muted-foreground mr-1">New Balance:</span>
-            <span className="font-black text-foreground text-sm font-mono">₵{formattedBalance}</span>
+            <span className="text-slate-500 mr-1">New Balance:</span>
+            <span className="font-black text-slate-900 text-sm font-mono">₵{formattedBalance}</span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">Delivery Status:</span>
+            <span className="text-slate-500">Delivery Status:</span>
             <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-500 px-2.5 py-1 rounded-lg border border-emerald-500/20 text-[11px] font-black uppercase">
               <Check className="w-3.5 h-3.5" /> SMS Sent
             </span>
@@ -475,7 +475,7 @@ const DashboardResultCheckers = () => {
     <div className="p-4 md:p-8 max-w-6xl space-y-8 animate-in fade-in duration-500 mx-auto">
       
       {/* Modern Hero Header */}
-      <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-card via-card to-amber-500/5 p-6 md:p-8 shadow-sm">
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-white to-amber-500/5 p-6 md:p-8 shadow-sm">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
@@ -485,31 +485,31 @@ const DashboardResultCheckers = () => {
             </div>
             <div className="flex items-center gap-3">
               <WAECLogo size={44} />
-              <h1 className="font-black text-3xl md:text-4xl tracking-tight text-foreground">Result Checkers Portal</h1>
+              <h1 className="font-black text-3xl md:text-4xl tracking-tight text-slate-900">Result Checkers Portal</h1>
             </div>
-            <p className="text-muted-foreground text-sm max-w-xl">
+            <p className="text-slate-500 text-sm max-w-xl">
               Purchase WAEC WASSCE & BECE result checker pins individually or in bulk with instant SMS dispatch and printable cards.
             </p>
           </div>
 
           {/* Quick Wallet Summary Badge in Header */}
-          <div className="bg-card/90 border border-border rounded-2xl p-4 flex items-center gap-4 shrink-0 shadow-sm backdrop-blur-md">
+          <div className="bg-white/90 border border-slate-200 rounded-2xl p-4 flex items-center gap-4 shrink-0 shadow-sm backdrop-blur-md">
             <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-black">
               <Wallet className="w-6 h-6" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block">Wallet Balance</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Wallet Balance</span>
               {walletLoading ? (
-                <div className="h-6 w-24 bg-secondary animate-pulse rounded mt-1" />
+                <div className="h-6 w-24 bg-slate-100 animate-pulse rounded mt-1" />
               ) : (
-                <span className="font-black text-xl text-foreground font-mono">
+                <span className="font-black text-xl text-slate-900 font-mono">
                   ₵{(walletBalance ?? 0).toFixed(2)}
                 </span>
               )}
             </div>
             <Link
               to="/dashboard/wallet"
-              className="p-2 rounded-xl bg-secondary hover:bg-primary/10 hover:text-primary transition-colors text-muted-foreground"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-primary/10 hover:text-primary transition-colors text-slate-500"
               title="Top up wallet"
             >
               <Plus className="w-4 h-4" />
@@ -521,16 +521,16 @@ const DashboardResultCheckers = () => {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
         
         {/* Main Procurement Form Card */}
-        <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-6 md:p-8 space-y-8 shadow-sm">
+        <div className="rounded-3xl border border-slate-200 bg-white/60 backdrop-blur-sm p-6 md:p-8 space-y-8 shadow-sm">
           
           {/* Step 1: Select Checker Type */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-muted-foreground flex items-center">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500 flex items-center">
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-black mr-2">1</span>
                 Select Checker Type
               </p>
-              {pricesLoading && <span className="text-xs text-muted-foreground animate-pulse">Loading live prices...</span>}
+              {pricesLoading && <span className="text-xs text-slate-500 animate-pulse">Loading live prices...</span>}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -543,8 +543,8 @@ const DashboardResultCheckers = () => {
                     className={cn(
                       "relative flex flex-col justify-between p-5 rounded-2xl border text-left transition-all duration-200 hover:scale-[1.01]",
                       isSelected
-                        ? "border-primary bg-primary/10 text-foreground shadow-lg shadow-primary/10 ring-1 ring-primary/40"
-                        : "border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border/80"
+                        ? "border-primary bg-primary/10 text-slate-900 shadow-lg shadow-primary/10 ring-1 ring-primary/40"
+                        : "border-slate-200 bg-white/40 text-slate-500 hover:text-slate-900 hover:border-slate-200/80"
                     )}
                   >
                     {v.badge && (
@@ -567,17 +567,17 @@ const DashboardResultCheckers = () => {
                         )}
                       </div>
                       <div>
-                        <h4 className="font-black text-base text-foreground leading-tight">{v.label}</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">{v.description}</p>
+                        <h4 className="font-black text-base text-slate-900 leading-tight">{v.label}</h4>
+                        <p className="text-xs text-slate-500 mt-0.5">{v.description}</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-3 border-t border-border/50">
-                      <span className="text-xs text-muted-foreground font-bold">Unit Price</span>
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-200/50">
+                      <span className="text-xs text-slate-500 font-bold">Unit Price</span>
                       {pricesLoading ? (
-                        <span className="w-16 h-6 rounded bg-secondary animate-pulse" />
+                        <span className="w-16 h-6 rounded bg-slate-100 animate-pulse" />
                       ) : (
-                        <span className="font-black text-base text-foreground bg-background px-3 py-1 rounded-xl border border-border font-mono">
+                        <span className="font-black text-base text-slate-900 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200 font-mono">
                           ₵{v.price.toFixed(2)}
                         </span>
                       )}
@@ -591,7 +591,7 @@ const DashboardResultCheckers = () => {
           {/* Step 2: Recipient Number */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-muted-foreground flex items-center">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500 flex items-center">
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-black mr-2">2</span>
                 Recipient Phone Number
               </p>
@@ -608,26 +608,26 @@ const DashboardResultCheckers = () => {
             </div>
 
             <div className="relative">
-              <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 type="tel"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder="Enter 10-digit phone number (e.g. 0592366289)"
-                className="w-full h-13 pl-11 pr-4 bg-secondary/40 border border-border rounded-2xl text-sm font-black focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-mono"
+                className="w-full h-13 pl-11 pr-4 bg-slate-100/40 border border-slate-200 rounded-2xl text-sm font-black focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-mono"
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">Voucher serial & PIN will be delivered via instant SMS to this recipient.</p>
+            <p className="text-[11px] text-slate-500">Voucher serial & PIN will be delivered via instant SMS to this recipient.</p>
           </div>
 
           {/* Step 3: Quantity & Quick Presets */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-muted-foreground flex items-center">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500 flex items-center">
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-black mr-2">3</span>
                 Quantity (Bulk Purchase Supported)
               </p>
-              <span className="text-xs text-muted-foreground font-bold">Max 100 per transaction</span>
+              <span className="text-xs text-slate-500 font-bold">Max 100 per transaction</span>
             </div>
 
             {/* Quick Quantity Preset Chips */}
@@ -641,7 +641,7 @@ const DashboardResultCheckers = () => {
                     "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border",
                     parseInt(quantity, 10) === q
                       ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                      : "bg-secondary/60 text-muted-foreground border-border hover:bg-secondary hover:text-foreground"
+                      : "bg-slate-100/60 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
                   {q === 1 ? "Single (1)" : `Bulk (${q})`}
@@ -657,20 +657,20 @@ const DashboardResultCheckers = () => {
                   const current = Math.max(1, (parseInt(quantity, 10) || 1) - 1);
                   setQuantity(current.toString());
                 }}
-                className="w-13 h-13 rounded-2xl bg-secondary border border-border flex items-center justify-center text-foreground hover:bg-secondary/80 font-black text-lg transition-colors shrink-0"
+                className="w-13 h-13 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-100/80 font-black text-lg transition-colors shrink-0"
               >
                 <Minus className="w-5 h-5" />
               </button>
 
               <div className="relative flex-1">
-                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="number"
                   min="1"
                   max="100"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  className="w-full h-13 pl-11 pr-4 bg-secondary/40 border border-border rounded-2xl text-base font-black text-center focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-mono"
+                  className="w-full h-13 pl-11 pr-4 bg-slate-100/40 border border-slate-200 rounded-2xl text-base font-black text-center focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-mono"
                 />
               </div>
 
@@ -680,7 +680,7 @@ const DashboardResultCheckers = () => {
                   const current = Math.min(100, (parseInt(quantity, 10) || 1) + 1);
                   setQuantity(current.toString());
                 }}
-                className="w-13 h-13 rounded-2xl bg-secondary border border-border flex items-center justify-center text-foreground hover:bg-secondary/80 font-black text-lg transition-colors shrink-0"
+                className="w-13 h-13 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-100/80 font-black text-lg transition-colors shrink-0"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -759,8 +759,8 @@ const DashboardResultCheckers = () => {
         <div className="space-y-6">
           
           {/* Summary Breakdown */}
-          <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-6 space-y-5 shadow-sm">
-            <h3 className="font-black text-foreground text-lg border-b border-border/50 pb-3">Order Summary</h3>
+          <div className="rounded-3xl border border-slate-200 bg-white/60 backdrop-blur-sm p-6 space-y-5 shadow-sm">
+            <h3 className="font-black text-slate-900 text-lg border-b border-slate-200/50 pb-3">Order Summary</h3>
             
             <div className="space-y-3 text-sm">
               <SummaryRow label="Selected Voucher" value={voucherType ? (voucherType === "WASSCE" ? "WASSCE 2026" : "BECE Result") : "—"} />
@@ -768,9 +768,9 @@ const DashboardResultCheckers = () => {
               <SummaryRow label="Quantity" value={`${qtyNum} Voucher${qtyNum > 1 ? "s" : ""}`} />
               <SummaryRow label="SMS Delivery" value="FREE (GH₵ 0.00)" />
               
-              <div className="pt-4 border-t border-border flex items-center justify-between">
-                <span className="text-muted-foreground font-bold">Total Cost</span>
-                <span className="font-black text-foreground text-2xl font-mono text-emerald-500">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
+                <span className="text-slate-500 font-bold">Total Cost</span>
+                <span className="font-black text-slate-900 text-2xl font-mono text-emerald-500">
                   ₵{totalCost.toFixed(2)}
                 </span>
               </div>
@@ -778,20 +778,20 @@ const DashboardResultCheckers = () => {
           </div>
 
           {/* Wallet Balance Status Card */}
-          <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-5 space-y-3">
+          <div className="rounded-2xl border border-slate-200 bg-white/60 backdrop-blur-sm p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-emerald-500/10 text-emerald-500 rounded-xl flex items-center justify-center shrink-0">
                   <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Available Wallet</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Available Wallet</p>
                   {walletLoading ? (
-                    <span className="inline-block w-20 h-5 rounded bg-secondary animate-pulse" />
+                    <span className="inline-block w-20 h-5 rounded bg-slate-100 animate-pulse" />
                   ) : (
                     <p className={cn(
                       "font-black text-base font-mono",
-                      insufficientBalance ? "text-red-500" : "text-foreground"
+                      insufficientBalance ? "text-red-500" : "text-slate-900"
                     )}>
                       ₵{(walletBalance ?? 0).toFixed(2)}
                     </p>
@@ -801,7 +801,7 @@ const DashboardResultCheckers = () => {
 
               <button
                 onClick={fetchWalletBalance}
-                className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
                 title="Refresh balance"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -809,8 +809,8 @@ const DashboardResultCheckers = () => {
             </div>
 
             {totalCost > 0 && walletBalance !== null && !walletLoading && (
-              <div className="pt-3 border-t border-border/50 flex items-center justify-between text-xs font-bold">
-                <span className="text-muted-foreground">Balance After Purchase:</span>
+              <div className="pt-3 border-t border-slate-200/50 flex items-center justify-between text-xs font-bold">
+                <span className="text-slate-500">Balance After Purchase:</span>
                 <span className={cn(
                   "font-mono font-black",
                   insufficientBalance ? "text-red-500" : "text-emerald-500"
@@ -822,19 +822,19 @@ const DashboardResultCheckers = () => {
           </div>
 
           {/* Security & Instant Delivery Guarantee */}
-          <div className="bg-card/40 border border-border rounded-2xl p-4 flex items-center gap-3">
+          <div className="bg-white/40 border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
             <div className="w-9 h-9 bg-primary/10 text-primary rounded-xl flex items-center justify-center shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-xs font-black text-foreground">Instant SMS Delivery</p>
-              <p className="text-[11px] text-muted-foreground">Serial & PIN codes are sent directly to the recipient phone.</p>
+              <p className="text-xs font-black text-slate-900">Instant SMS Delivery</p>
+              <p className="text-[11px] text-slate-500">Serial & PIN codes are sent directly to the recipient phone.</p>
             </div>
           </div>
 
           <button
             onClick={reset}
-            className="w-full flex items-center justify-center gap-2 text-muted-foreground text-xs font-bold hover:text-foreground transition-colors py-2"
+            className="w-full flex items-center justify-center gap-2 text-slate-500 text-xs font-bold hover:text-slate-900 transition-colors py-2"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Reset Form
@@ -844,19 +844,19 @@ const DashboardResultCheckers = () => {
       </div>
 
       {/* Recent Purchases & Re-View Past Vouchers Table */}
-      <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-6 md:p-8 space-y-5 shadow-sm">
+      <div className="rounded-3xl border border-slate-200 bg-white/60 backdrop-blur-sm p-6 md:p-8 space-y-5 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-black text-foreground text-xl flex items-center gap-2">
+            <h3 className="font-black text-slate-900 text-xl flex items-center gap-2">
               <Clock className="w-5 h-5 text-primary" />
               Recent Voucher Purchases
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Click "View Pins" on any order to re-view or reprint vouchers.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Click "View Pins" on any order to re-view or reprint vouchers.</p>
           </div>
 
           <button
             onClick={fetchRecentOrders}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-secondary text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
@@ -865,23 +865,23 @@ const DashboardResultCheckers = () => {
         {ordersLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-secondary/30 animate-pulse">
-                <div className="w-10 h-10 rounded-xl bg-secondary" />
+              <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-slate-100/30 animate-pulse">
+                <div className="w-10 h-10 rounded-xl bg-slate-100" />
                 <div className="flex-1 space-y-2">
-                  <div className="w-32 h-3.5 rounded bg-secondary" />
-                  <div className="w-24 h-3 rounded bg-secondary" />
+                  <div className="w-32 h-3.5 rounded bg-slate-100" />
+                  <div className="w-24 h-3 rounded bg-slate-100" />
                 </div>
-                <div className="w-16 h-5 rounded bg-secondary" />
+                <div className="w-16 h-5 rounded bg-slate-100" />
               </div>
             ))}
           </div>
         ) : recentOrders.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-14 h-14 bg-secondary/50 rounded-full flex items-center justify-center mx-auto mb-3 text-muted-foreground">
+            <div className="w-14 h-14 bg-slate-100/50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-500">
               <GraduationCap className="w-7 h-7 opacity-50" />
             </div>
-            <p className="text-base font-bold text-foreground">No recent voucher purchases</p>
-            <p className="text-xs text-muted-foreground mt-1">Your generated serials and PINs will be saved here.</p>
+            <p className="text-base font-bold text-slate-900">No recent voucher purchases</p>
+            <p className="text-xs text-slate-500 mt-1">Your generated serials and PINs will be saved here.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -893,7 +893,7 @@ const DashboardResultCheckers = () => {
               const timeAgo = getTimeAgo(orderDate);
 
               return (
-                <div key={order.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-secondary/20 border border-border/50 hover:border-border transition-all">
+                <div key={order.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-100/20 border border-slate-200/50 hover:border-slate-200 transition-all">
                   <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                     <div className={cn(
                       "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 sm:mt-0",
@@ -904,22 +904,22 @@ const DashboardResultCheckers = () => {
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-black text-sm text-foreground truncate">{order.package_size}</p>
+                        <p className="font-black text-sm text-slate-900 truncate">{order.package_size}</p>
                         {isTest && (
                           <span className="inline-flex items-center gap-1 bg-violet-500/15 text-violet-400 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-violet-500/20 shrink-0">
                             Test
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground font-mono">
+                      <p className="text-xs text-slate-500 font-mono">
                         Recipient: {order.customer_phone} · {timeAgo}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-border/40">
+                  <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200/40">
                     <div className="text-left sm:text-right">
-                      <p className="font-black text-sm text-foreground font-mono">₵{Number(order.amount).toFixed(2)}</p>
+                      <p className="font-black text-sm text-slate-900 font-mono">₵{Number(order.amount).toFixed(2)}</p>
                       <p className={cn(
                         "text-[10px] font-bold uppercase tracking-wider",
                         order.status === "fulfilled" ? "text-emerald-500" : "text-amber-500"
@@ -951,16 +951,16 @@ const DashboardResultCheckers = () => {
 
       {/* Re-View Past Vouchers Modal */}
       {selectedPastVouchers && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-3xl p-6 max-w-2xl w-full space-y-5 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-50/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-2xl w-full space-y-5 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div>
-                <h3 className="font-black text-lg text-foreground">{selectedPastVouchers.type} Vouchers</h3>
-                <p className="text-xs text-muted-foreground font-mono">Recipient: {selectedPastVouchers.phone}</p>
+                <h3 className="font-black text-lg text-slate-900">{selectedPastVouchers.type} Vouchers</h3>
+                <p className="text-xs text-slate-500 font-mono">Recipient: {selectedPastVouchers.phone}</p>
               </div>
               <button
                 onClick={() => setSelectedPastVouchers(null)}
-                className="p-1 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary"
+                className="p-1 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100"
               >
                 <XCircle className="w-5 h-5" />
               </button>
@@ -971,15 +971,15 @@ const DashboardResultCheckers = () => {
               {selectedPastVouchers.vouchers.map((v: any, i: number) => {
                 const combinedStr = `SERIAL: ${v.serial} | PIN: ${v.pin}`;
                 return (
-                  <div key={i} className="p-4 rounded-2xl bg-secondary/40 border border-border space-y-2 text-xs font-mono">
-                    <div className="text-[10px] font-bold text-muted-foreground uppercase">Voucher {i + 1}</div>
-                    <div className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
+                  <div key={i} className="p-4 rounded-2xl bg-slate-100/40 border border-slate-200 space-y-2 text-xs font-mono">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Voucher {i + 1}</div>
+                    <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-200">
                       <span><strong>SERIAL:</strong> {v.serial}</span>
                       <button onClick={() => copyToClipboard(v.serial)} className="text-primary font-bold hover:underline text-[11px] flex items-center gap-1">
                         <Copy className="w-3 h-3" /> Copy
                       </button>
                     </div>
-                    <div className="flex justify-between items-center bg-card p-2.5 rounded-xl border border-border">
+                    <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-200">
                       <span><strong>PIN:</strong> {v.pin}</span>
                       <button onClick={() => copyToClipboard(v.pin)} className="text-primary font-bold hover:underline text-[11px] flex items-center gap-1">
                         <Copy className="w-3 h-3" /> Copy
@@ -1015,8 +1015,8 @@ const DashboardResultCheckers = () => {
 
 const SummaryRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between gap-2">
-    <span className="text-muted-foreground font-medium">{label}</span>
-    <span className="font-bold text-foreground text-right">{value}</span>
+    <span className="text-slate-500 font-medium">{label}</span>
+    <span className="font-bold text-slate-900 text-right">{value}</span>
   </div>
 );
 
