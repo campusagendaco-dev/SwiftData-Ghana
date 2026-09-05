@@ -518,6 +518,7 @@ serve(async (req: Request) => {
     // 3. TRIGGER SMS (NON-BLOCKING)
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
+      network: normalizedNet,
       package: `${networkRaw} ${package_size}`,
       amount: amountNum,
       id: orderId

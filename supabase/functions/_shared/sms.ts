@@ -25,15 +25,26 @@ export function normalizePhone(raw: string | null | undefined): string | null {
 }
 
 export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
-  const { data: settings } = await supabaseAdmin
-    .from("system_settings")
-    .select("*")
-    .eq("id", 1)
-    .maybeSingle();
+  const [{ data: settings }, { data: dbTemplates }] = await Promise.all([
+    supabaseAdmin
+      .from("system_settings")
+      .select("*")
+      .eq("id", 1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("sms_templates")
+      .select("key, body, is_active")
+      .eq("is_active", true)
+      .catch(() => ({ data: null }))
+  ]);
 
   const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY");
   const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY");
   const hasKorba = !!(korbaClientKey && korbaSecretKey);
+
+  const rawKey = (settings?.txtconnect_api_key || "").trim();
+  const envKey = (Deno.env.get("TXTCONNECT_API_KEY") || "").trim();
+  const resolvedApiKey = rawKey || envKey || (hasKorba ? "korba" : null);
 
   const defaultSenderId = settings?.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
   let finalSenderId = defaultSenderId;
@@ -56,17 +67,24 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string) {
     }
   }
 
+  const tMap: Record<string, string> = {};
+  if (Array.isArray(dbTemplates)) {
+    for (const t of dbTemplates) {
+      if (t?.key && t?.body) tMap[t.key] = t.body;
+    }
+  }
+
   return {
-    apiKey: settings?.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY") || (hasKorba ? "korba" : null),
+    apiKey: resolvedApiKey,
     senderId: finalSenderId,
     templates: {
-      payment_success: settings?.payment_success_sms_message || "Success! Your order for {phone} ({package}) has been processed. ⚡ Est. Delivery: {est_delivery}.",
-      utility_paid: settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed.",
-      wallet_topup: settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
-      withdrawal_request: settings?.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
-      withdrawal_completed: settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed.",
-      order_failed: settings?.order_failed_sms_message || "Order for {package} to {phone} failed.{reason} GHS {amount} has been refunded to your wallet. No panic, your refund is completed.",
-      manual_credit: settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount}.",
+      payment_success: tMap.payment_success || settings?.payment_success_sms_message || "Success! Your order for {phone} ({package}) has been processed. ⚡ Est. Delivery: {est_delivery}.",
+      utility_paid: tMap.utility_paid || settings?.utility_paid_sms_message || "Payment received! Your {utility_type} bill for {account} is being processed.",
+      wallet_topup: tMap.wallet_topup || settings?.wallet_topup_sms_message || "Your wallet has been credited with GHS {amount}. New balance: GHS {balance}.",
+      withdrawal_request: tMap.withdrawal_request || settings?.withdrawal_request_sms_message || "Withdrawal request of GHS {amount} received. It will be processed shortly.",
+      withdrawal_completed: tMap.withdrawal_completed || settings?.withdrawal_completed_sms_message || "Your withdrawal of GHS {amount} has been completed.",
+      order_failed: tMap.order_failed || settings?.order_failed_sms_message || "Order for {package} to {phone} failed.{reason} GHS {amount} has been refunded to your wallet. No panic, your refund is completed.",
+      manual_credit: tMap.manual_credit || settings?.manual_credit_sms_message || "Your account has been manually credited with GHS {amount}.",
     }
   };
 }
@@ -382,8 +400,10 @@ export async function sendBulkSmsViaTxtConnect(
 export function formatTemplate(template: string, vars: Record<string, string | number>) {
   let result = template;
   for (const [key, value] of Object.entries(vars)) {
-    result = result.replace(new RegExp(`{${key}}`, 'g'), String(value));
+    result = result.replace(new RegExp(`{${key}}`, 'gi'), String(value ?? ""));
   }
+  // Clean up any unreplaced template variables cleanly
+  result = result.replace(/\{[a-z0-9_]+\}/gi, "").replace(/\s+/g, " ").trim();
   return result;
 }
 
