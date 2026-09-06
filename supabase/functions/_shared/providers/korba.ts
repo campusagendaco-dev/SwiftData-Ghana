@@ -254,7 +254,7 @@ export class KorbaAdapter implements ProviderAdapter {
           "Authorization": `HMAC ${clientKey}:${signatureHex}`,
         },
         body: JSON.stringify(payload),
-        disableFallback: !isStatusCheck,
+        disableFallback: false,
       }, 20);
 
       resText = await res.text();

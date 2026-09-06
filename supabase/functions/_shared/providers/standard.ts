@@ -546,7 +546,7 @@ export class StandardAdapter implements ProviderAdapter {
             method: isGet ? "GET" : "POST",
             headers,
             body: isGet ? undefined : JSON.stringify(payload),
-            disableFallback: !isStatus,
+            disableFallback: false,
             allowMutationFallback: isStatus,
           }, isStatus ? 25 : 35);
 
