@@ -94,7 +94,7 @@ serve(async (req) => {
       },
       {
         key: "SITE_URL",
-        present: !!Deno.env.get("SITE_URL"),
+        present: !!(Deno.env.get("SITE_URL") || dbSettings?.site_url || "https://swiftdatagh.shop"),
         required_for: ["stable reset-password redirect links"],
       },
     ];
