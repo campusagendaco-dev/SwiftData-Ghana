@@ -54,6 +54,18 @@ app.post("/api/proxy-pass", async (req, res) => {
   }
 });
 
+app.get("/", (_req, res) => {
+  const mongoStatus = mongoose.connection.readyState === 1 ? "connected" : "connecting";
+  res.json({
+    ok: true,
+    service: "SwiftData Auth & Proxy Backend",
+    status: "healthy",
+    mongo: mongoStatus,
+    proxy_enabled: true,
+    health_check: "/health"
+  });
+});
+
 app.get("/health", (_req, res) => {
   const mongoStatus = mongoose.connection.readyState === 1 ? "connected" : "connecting";
   res.json({ ok: true, status: "healthy", mongo: mongoStatus, proxy_enabled: true });
