@@ -28,9 +28,35 @@ app.use("/api", authRoutes);
 app.use("/auth", authRoutes);
 app.use("/api/v1/auth", authRoutes);
 
+app.post("/api/proxy-pass", async (req, res) => {
+  try {
+    const { url, method = "GET", headers = {}, body } = req.body || {};
+    if (!url) return res.status(400).json({ error: "Missing target url parameter" });
+
+    console.log(`[Render/ProxyPass] Forwarding ${method} -> ${url}`);
+    const cleanHeaders = { ...headers };
+    delete cleanHeaders.host;
+
+    const fetchOptions = {
+      method,
+      headers: cleanHeaders,
+    };
+    if (body && ["POST", "PUT", "PATCH"].includes(method.toUpperCase())) {
+      fetchOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
+    const text = await response.text();
+    res.status(response.status).send(text);
+  } catch (err) {
+    console.error("[Render/ProxyPass] Proxy error:", err.message);
+    res.status(502).json({ error: `Render proxy error: ${err.message}` });
+  }
+});
+
 app.get("/health", (_req, res) => {
   const mongoStatus = mongoose.connection.readyState === 1 ? "connected" : "connecting";
-  res.json({ ok: true, status: "healthy", mongo: mongoStatus });
+  res.json({ ok: true, status: "healthy", mongo: mongoStatus, proxy_enabled: true });
 });
 
 const port = Number(process.env.PORT || 3000);

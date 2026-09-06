@@ -130,6 +130,9 @@ export async function fetchViaDb(
         }
       }
       const textVal = await directRes.text();
+      if (!directRes.ok && directRes.status >= 500) {
+        return await performRenderFallback({ status: directRes.status, body: textVal });
+      }
       return {
         ok: directRes.ok,
         status: directRes.status,
@@ -144,14 +147,51 @@ export async function fetchViaDb(
         headers: directRes.headers,
       };
     } catch (directErr: any) {
-      console.error("[db_proxy] Direct fetch fallback failed:", directErr);
-      const errMsg = `DB Proxy failed and Direct Fallback failed: ${directErr?.message || directErr}`;
+      console.error("[db_proxy] Direct fetch fallback failed. Trying Render backup proxy...", directErr);
+      return await performRenderFallback(directErr);
+    }
+  };
+
+  const performRenderFallback = async (originalErr: any) => {
+    const renderUrl = (Deno.env.get("RENDER_BACKEND_URL") || "https://swiftdata-auth-backend.onrender.com").replace(/\/$/, "");
+    console.warn(`[db_proxy] Attempting backup proxy fetch via Render service (${renderUrl})...`);
+    try {
+      const renderRes = await fetch(`${renderUrl}/api/proxy-pass`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          url: url,
+          method: options.method || "GET",
+          headers: options.headers || {},
+          body: options.body
+        })
+      });
+
+      const resText = await renderRes.text();
+      return {
+        ok: renderRes.ok,
+        status: renderRes.status,
+        text: async () => resText,
+        json: async () => {
+          try {
+            return JSON.parse(resText);
+          } catch {
+            return resText;
+          }
+        },
+        headers: renderRes.headers
+      };
+    } catch (renderErr: any) {
+      console.error("[db_proxy] Render fallback failed:", renderErr);
+      const errMsg = `DB Proxy, Direct Fetch & Render Fallback failed: ${renderErr?.message || renderErr}`;
       return {
         ok: false,
         status: 502,
         text: async () => JSON.stringify({ error: errMsg }),
         json: async () => ({ error: errMsg }),
-        headers: new Headers({ "content-type": "application/json" }),
+        headers: new Headers({ "content-type": "application/json" })
       };
     }
   };
