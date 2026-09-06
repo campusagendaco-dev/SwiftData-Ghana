@@ -1,4 +1,7 @@
-import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+/// <reference path="../deno.d.ts" />
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+declare const Deno: any;
 
 /**
  * Routes an HTTP request through the database using the pg_net RPC proxy,
