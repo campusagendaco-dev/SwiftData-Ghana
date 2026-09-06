@@ -154,12 +154,14 @@ export async function fetchViaDb(
 
   const performRenderFallback = async (originalErr: any) => {
     const renderUrl = (Deno.env.get("RENDER_BACKEND_URL") || "https://swiftdata-auth-backend.onrender.com").replace(/\/$/, "");
+    const proxySecret = Deno.env.get("PROXY_SECRET") || "swiftdata-proxy-secret-2026";
     console.warn(`[db_proxy] Attempting backup proxy fetch via Render service (${renderUrl})...`);
     try {
       const renderRes = await fetch(`${renderUrl}/api/proxy-pass`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "x-proxy-secret": proxySecret
         },
         body: JSON.stringify({
           url: url,

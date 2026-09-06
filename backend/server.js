@@ -30,6 +30,14 @@ app.use("/api/v1/auth", authRoutes);
 
 app.post("/api/proxy-pass", async (req, res) => {
   try {
+    const expectedSecret = process.env.PROXY_SECRET || "swiftdata-proxy-secret-2026";
+    const providedSecret = req.headers["x-proxy-secret"];
+
+    if (!providedSecret || providedSecret !== expectedSecret) {
+      console.warn("[Render/ProxyPass] Unauthorized proxy attempt");
+      return res.status(401).json({ error: "Unauthorized proxy access" });
+    }
+
     const { url, method = "GET", headers = {}, body } = req.body || {};
     if (!url) return res.status(400).json({ error: "Missing target url parameter" });
 
