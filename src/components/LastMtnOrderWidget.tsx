@@ -117,7 +117,7 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
   let placedStr = display?.placedAt;
   let deliveredStr = display?.deliveredAt;
   let durationStr = display?.duration;
-  let estDeliveryStr = display?.estimatedDelivery || "1 - 15 minutes.";
+  const estDeliveryStr = display?.estimatedDelivery || "1 - 15 minutes.";
 
   if (!placedStr && order?.placedAt) {
     try {
