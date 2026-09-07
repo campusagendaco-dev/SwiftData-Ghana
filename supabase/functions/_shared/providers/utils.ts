@@ -48,19 +48,13 @@ export function mapDataNetworkKey(network: string): string {
   const raw = (network || "").trim().toUpperCase();
   const cleaned = raw.replace(/[\s\-_]+/g, "_");
 
-  if (cleaned.includes("MTN") && cleaned.includes("XPRESS")) return "MTN_XPRESS";
-  if (cleaned === "MTN_XPRESS" || cleaned === "XPRESS") return "MTN_XPRESS";
-
+  if (cleaned.includes("XPRESS") || cleaned.includes("EXPRESS")) return "MTN_XPRESS";
   if (cleaned.includes("BIGTIME") || cleaned.includes("BIG_TIME")) return "AT_BIGTIME";
-  if (cleaned === "AT_BIGTIME" || cleaned === "BIGTIME") return "AT_BIGTIME";
+  if (cleaned.includes("TELECEL") || cleaned.includes("VODA") || cleaned.includes("RED") || cleaned === "VOD") return "TELECEL";
+  if (cleaned.includes("AIRTEL") || cleaned.includes("TIGO") || cleaned.includes("AT") || cleaned.includes("PREMIUM") || cleaned.includes("BLUE")) return "AT_PREMIUM";
+  if (cleaned === "YELLO" || cleaned.includes("MTN") || cleaned.includes("KOKRO") || cleaned.includes("MASH") || cleaned.includes("DATA")) return "YELLO";
 
-  if (cleaned === "YELLO" || cleaned.includes("MTN")) return "YELLO";
-
-  if (cleaned.includes("TELECEL") || cleaned.includes("VODAFONE") || cleaned === "VOD") return "TELECEL";
-
-  if (cleaned.includes("AIRTEL") || cleaned.includes("TIGO") || cleaned === "AT" || cleaned.includes("AT_PREMIUM")) return "AT_PREMIUM";
-
-  return raw;
+  return raw || "YELLO";
 }
 
 export function mapAirtimeNetworkKey(network: string): string {

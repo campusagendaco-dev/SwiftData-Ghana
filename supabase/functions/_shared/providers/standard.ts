@@ -452,7 +452,7 @@ export class StandardAdapter implements ProviderAdapter {
     data: PurchaseData
   ): Promise<ProviderResponse> {
     const handlerType = String(provider.handler_type || "").toLowerCase();
-    const network = String(data.networkKey || data.networkRaw || "").toUpperCase();
+    const network = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
     const category = String(data.category || "").toLowerCase();
     const isAffordable = category === "affordable" || category === "affordable sme" || category.includes("sme");
 
