@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
-import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { normalizePhone, getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -21,8 +21,8 @@ serve(async (req: Request) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    const { apiKey: txtApiKey } = await getSmsConfig(supabaseAdmin);
-    if (!txtApiKey) {
+    const smsConfig = await getSmsConfig(supabaseAdmin);
+    if (!smsConfig.apiKey || !smsConfig.senderId) {
       return new Response(JSON.stringify({ error: "SMS not configured" }), {
         status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -53,7 +53,7 @@ serve(async (req: Request) => {
       const msg = `Hey ${name}, you have GHS ${balance} in your SwiftData wallet! Top up your data or send to customers today at https://swiftdatagh.shop`;
 
       try {
-        await sendSmsViaTxtConnect(txtApiKey, "SwiftDataGh", targetPhone, msg);
+        await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, targetPhone, msg, "winback");
         sent++;
         userIdsSent.push(r.user_id);
       } catch (err: any) {

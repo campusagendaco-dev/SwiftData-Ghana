@@ -59,11 +59,13 @@ const DashboardResultCheckers = () => {
 
   // Fetch live prices from system settings
   useEffect(() => {
-    supabase
-      .from("public_system_settings")
-      .select("wassce_price, bece_price")
-      .eq("id", 1)
-      .maybeSingle()
+    Promise.resolve(
+      supabase
+        .from("public_system_settings")
+        .select("wassce_price, bece_price")
+        .eq("id", 1)
+        .maybeSingle()
+    )
       .then(({ data }) => {
         if (data) {
           setVouchers([
@@ -183,7 +185,9 @@ const DashboardResultCheckers = () => {
               const parsed = await errContext.json();
               if (parsed?.error) msg = parsed.error;
             }
-          } catch {}
+          } catch {
+            // Ignore JSON parse failure
+          }
           if (!msg) {
             msg = error.message?.includes("non-2xx")
               ? "Unable to complete purchase. Please ensure you have sufficient wallet balance or try again later."

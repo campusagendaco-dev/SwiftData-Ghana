@@ -25,8 +25,11 @@ export function parseCapacity(packageSize: string | null | undefined): number {
   if (cleaned === "MTNDLY20MB" || cleaned === "AIRDLY20MB" || cleaned.includes("20MB") || cleaned.includes("20 MB")) {
     return 20 / 1024;
   }
-  if (cleaned === "MTNMIDNIGHT" || cleaned === "MTNMIDNGT3G" || cleaned === "AIRMIDNGT3G" || cleaned === "AIRMIDNIGHT") {
+  if (cleaned === "MTNMIDNIGHT" || cleaned === "MTNMIDNGT3G" || cleaned === "AIRMIDNGT3G" || cleaned === "AIRMIDNIGHT" || cleaned.includes("MIDNIGHT") || cleaned.includes("MIDNGT")) {
     return 3;
+  }
+  if (cleaned === "MTNMTH200GB" || cleaned === "AIRMTH200GB" || cleaned.includes("200GB")) {
+    return 200;
   }
   
   let parseTarget = cleaned;
@@ -38,6 +41,9 @@ export function parseCapacity(packageSize: string | null | undefined): number {
   const match = parseTarget.match(/([\d.]+)/);
   if (!match) return 0;
   const num = parseFloat(match[1]);
+  if (parseTarget.includes("TB")) {
+    return num * 1024;
+  }
   if (parseTarget.includes("MB") && !parseTarget.includes("GB")) {
     return num / 1024;
   }
@@ -59,10 +65,10 @@ export function mapDataNetworkKey(network: string): string {
 
 export function mapAirtimeNetworkKey(network: string): string {
   const n = (network || "").trim().toUpperCase();
-  if (n === "MTN" || n === "YELLO") return "MTN";
-  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "VOD";
-  if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AT";
-  if (n === "GLO") return "GLO";
+  if (n.includes("MTN") || n === "YELLO") return "MTN";
+  if (n.includes("VOD") || n.includes("TELECEL") || n === "RED") return "VOD";
+  if (n.includes("AT") || n.includes("AIRTEL") || n.includes("TIGO") || n.includes("BLUE")) return "AT";
+  if (n.includes("GLO")) return "GLO";
   return n;
 }
 

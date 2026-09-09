@@ -33,6 +33,17 @@ const forceAssetRecovery = async (sourceMsg?: string) => {
 
 window.addEventListener("error", (e) => {
   const msg = e.message?.toLowerCase() || "";
+
+  // 1. Suppress harmless browser extension / DevTools injected VM script errors (e.g. Chrome Web Vitals extension reportAllChanges bug)
+  if (
+    msg.includes("reportallchanges") ||
+    (msg.includes("starttime") && (e.filename?.includes("VM") || !e.filename))
+  ) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+
   const target = e.target as HTMLElement;
   const isScriptError = target && target.tagName === "SCRIPT";
   
@@ -51,6 +62,13 @@ window.addEventListener("error", (e) => {
 
 window.addEventListener("unhandledrejection", (e) => {
   const msg = e.reason?.message?.toLowerCase() || String(e.reason || "").toLowerCase();
+
+  // Suppress harmless browser extension / Web Vitals rejections
+  if (msg.includes("reportallchanges") || msg.includes("starttime")) {
+    e.preventDefault();
+    return;
+  }
+
   if (
     msg.includes("failed to fetch dynamically imported module") ||
     msg.includes("expected a javascript-or-wasm module script") ||

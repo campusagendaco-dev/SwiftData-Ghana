@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, sendBulkSmsViaTxtConnect } from "../_shared/sms.ts";
+import { normalizePhone, getSmsConfig, dispatchUnifiedSms, dispatchUnifiedBulkSms, sendSmsViaTxtConnect, sendBulkSmsViaTxtConnect } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 
 type TargetType = "all" | "agents" | "sub_agents" | "parent_agents" | "users" | "pending_orders" | "all_order_phones";
@@ -184,12 +184,13 @@ async function sendToRecipients(
   messageTemplate: string,
   balanceMap: Map<string, number>,
   concurrency = 5,
+  gateway?: string
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
   const needsTokens = hasTokens(messageTemplate);
 
   if (!needsTokens) {
     const phones = recipients.map((r) => r.phone);
-    return await sendBulkSmsViaTxtConnect(apiKey, senderId, phones, messageTemplate);
+    return await dispatchUnifiedBulkSms(gateway || "txtconnect", apiKey, senderId, phones, messageTemplate, "broadcast");
   }
 
   let sent = 0;
@@ -200,7 +201,7 @@ async function sendToRecipients(
     await Promise.all(chunk.map(async (r) => {
       try {
         const body = personalizeMessage(messageTemplate, r, balanceMap.get(r.userId));
-        await sendSmsViaTxtConnect(apiKey, senderId, r.phone, body);
+        await dispatchUnifiedSms(gateway || "txtconnect", apiKey, senderId, r.phone, body, "broadcast");
         sent++;
       } catch (e) {
         failures.push({ phone: r.phone, reason: e instanceof Error ? e.message : "Unknown" });
@@ -208,7 +209,7 @@ async function sendToRecipients(
     }));
     
     if (i + concurrency < recipients.length) {
-      await delay(350); // safety pacing delay to prevent API IP rate-limiting
+      await delay(800); // safety pacing delay to prevent API IP rate-limiting
     }
   }
   return { sent, failures };
@@ -236,10 +237,10 @@ serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const { apiKey: txtApiKey, senderId: txtSenderId } = await getSmsConfig(supabaseAdmin);
+  const { apiKey: txtApiKey, senderId: txtSenderId, gateway: activeGateway } = await getSmsConfig(supabaseAdmin);
   if (!txtApiKey || !txtSenderId) {
     return new Response(JSON.stringify({
-      error: "SMS not configured. Please add your TxtConnect API Key in Admin → Settings.",
+      error: `SMS not configured for active gateway (${activeGateway}). Please configure your credentials in Admin → Settings.`,
     }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
@@ -282,8 +283,8 @@ serve(async (req: Request) => {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      await sendSmsViaTxtConnect(txtApiKey, effectiveSenderId, normalized, smsBody);
-      return new Response(JSON.stringify({ success: true, sent: 1, target_type: "test", to: normalized }), {
+      await dispatchUnifiedSms(activeGateway, txtApiKey, effectiveSenderId, normalized, smsBody, "broadcast");
+      return new Response(JSON.stringify({ success: true, sent: 1, target_type: "test", to: normalized, gateway: activeGateway }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -295,10 +296,11 @@ serve(async (req: Request) => {
         .filter((p): p is string => !!p)
         .map((p) => ({ phone: p, name: "Customer", userId: "", isAgent: false }));
 
-      const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, retryRecipients, smsBody, new Map());
+      const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, retryRecipients, smsBody, new Map(), 5, activeGateway);
       return new Response(JSON.stringify({
         success: true,
         target_type: "retry",
+        gateway: activeGateway,
         total_recipients: retryRecipients.length,
         valid_numbers: retryRecipients.length,
         sent, failed: failures.length,
@@ -317,6 +319,7 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({
         success: true,
         dry_run: true,
+        gateway: activeGateway,
         estimated_recipients: recipients.length,
         opt_out_count: optOutCount,
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -327,9 +330,9 @@ serve(async (req: Request) => {
 
     // For large broadcasts (> 150 recipients), dispatch asynchronously to prevent HTTP 546 execution timeout
     if (recipients.length > 150) {
-      const dispatchPromise = sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap)
+      const dispatchPromise = sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap, 5, activeGateway)
         .then(({ sent, failures }) => {
-          console.log(`[admin-send-sms] Async broadcast complete. Sent: ${sent}, Failures: ${failures.length}`);
+          console.log(`[admin-send-sms] Async broadcast complete. Gateway: ${activeGateway}, Sent: ${sent}, Failures: ${failures.length}`);
         })
         .catch((err) => {
           console.error("[admin-send-sms] Async broadcast error:", err);
@@ -342,6 +345,7 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({
         success: true,
         target_type,
+        gateway: activeGateway,
         total_recipients: recipients.length,
         valid_numbers: recipients.length,
         sent: recipients.length,
@@ -352,11 +356,12 @@ serve(async (req: Request) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap);
+    const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap, 5, activeGateway);
 
     return new Response(JSON.stringify({
       success: true,
       target_type,
+      gateway: activeGateway,
       total_recipients: recipients.length,
       valid_numbers: recipients.length,
       sent,

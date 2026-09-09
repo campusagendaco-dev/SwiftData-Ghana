@@ -61,6 +61,7 @@ interface AgentProfile {
   agent_approved: boolean;
   is_sub_agent: boolean;
   sub_agent_approved: boolean;
+  parent_agent_id: string | null;
   created_at: string;
   wallet_balance?: number;
 }
@@ -212,7 +213,7 @@ export default function AdminCheckerOrders() {
       const [profRes, walletRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("user_id, full_name, email, phone, is_agent, agent_approved, is_sub_agent, sub_agent_approved, created_at")
+          .select("user_id, full_name, email, phone, is_agent, agent_approved, is_sub_agent, sub_agent_approved, parent_agent_id, created_at")
           .in("user_id", agentIds),
         supabase
           .from("wallets")
@@ -247,6 +248,7 @@ export default function AdminCheckerOrders() {
 
     setAllOrders(enriched);
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, search, statusFilter, checkerTypeFilter, startDate, endDate, toast]);
 
   useEffect(() => {
@@ -722,7 +724,7 @@ export default function AdminCheckerOrders() {
       {/* User Detail Drawer when clicking on agent name */}
       {selectedUserForDrawer && (
         <UserDetailDrawer
-          user={selectedUserForDrawer}
+          user={selectedUserForDrawer as any}
           onClose={() => setSelectedUserForDrawer(null)}
         />
       )}

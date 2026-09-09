@@ -34,6 +34,7 @@ serve(async (req) => {
       .select("*")
       .in("status", ["paid", "pending"])
       .neq("network", "MTN Mash Up")
+      .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
       .lte("created_at", twoMinutesAgo)
       .gte("created_at", twoDaysAgo)
       .limit(15);
@@ -43,6 +44,7 @@ serve(async (req) => {
       .from("orders")
       .select("*")
       .in("status", ["fulfillment_failed", "failed"])
+      .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
       .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%")
       .gte("created_at", twoDaysAgo)
       .order("created_at", { ascending: false })
@@ -64,7 +66,39 @@ serve(async (req) => {
     };
 
     for (const order of candidateOrders) {
-      console.log(`[cron-auto-retry] Auto-healing order ${order.id} (${order.network} ${order.package_size}, previous status: ${order.status})...`);
+      const currentRetry = Number(order.retry_count || 0);
+      if (currentRetry >= 3) {
+        console.log(`[cron-auto-retry] Order ${order.id} has reached max retries (${currentRetry}/3). Skipping.`);
+        continue;
+      }
+
+      const orderType = String(order.order_type || "data").toLowerCase();
+      const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(orderType);
+
+      if (!isTelecomOrder) {
+        console.log(`[cron-auto-retry] Order ${order.id} is non-telecom type (${orderType}). Skipping telecom dispatch.`);
+        continue;
+      }
+
+      // Atomically claim the order to prevent concurrent runners from double-purchasing
+      const { data: claimed, error: claimErr } = await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "processing",
+          retry_count: currentRetry + 1,
+          last_retry_at: new Date().toISOString()
+        })
+        .eq("id", order.id)
+        .in("status", ["paid", "pending", "fulfillment_failed", "failed"])
+        .select("id")
+        .maybeSingle();
+
+      if (claimErr || !claimed) {
+        console.log(`[cron-auto-retry] Order ${order.id} was already claimed or updated by another worker. Skipping.`);
+        continue;
+      }
+
+      console.log(`[cron-auto-retry] Auto-healing claimed order ${order.id} (${order.network} ${order.package_size}, attempt ${currentRetry + 1}/3)...`);
       
       const dispatch = await dispatchOrderWithFailover(supabaseAdmin, order);
 
@@ -77,7 +111,7 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         }).eq("id", order.id);
 
-        await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id }).catch(() => {});
+        await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
         results.fulfilled++;
 
         // 📲 Trigger SMS Notification upon successful retry
@@ -108,9 +142,14 @@ serve(async (req) => {
         }).eq("id", order.id);
         results.processing++;
       } else {
+        const isTerminal = currentRetry + 1 >= 3;
+        const failReason = isTerminal
+          ? `Max retries (3) reached: ${dispatch.reason || "Unable to fulfill across providers"}`
+          : (dispatch.reason || "Auto-retry failed across available providers");
+
         await supabaseAdmin.from("orders").update({
           status: "fulfillment_failed",
-          failure_reason: dispatch.reason || "Auto-retry failed across available providers",
+          failure_reason: failReason,
           updated_at: new Date().toISOString()
         }).eq("id", order.id);
         results.failed++;

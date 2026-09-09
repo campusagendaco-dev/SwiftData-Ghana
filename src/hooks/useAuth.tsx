@@ -35,6 +35,8 @@ export interface Profile {
   api_key_prefix: string | null;
   api_key_hash: string | null;
   is_suspended?: boolean;
+  credit_enabled?: boolean;
+  credit_limit?: number;
 }
 
 interface AuthContextType {

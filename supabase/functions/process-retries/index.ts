@@ -176,7 +176,7 @@ serve(async (req: Request) => {
 
   try {
     console.log("[retry-orders] Starting maintenance cycle...");
-    const results = [];
+    const results: any[] = [];
 
     // ── PHASE 1: VERIFY PENDING PAYMENTS ──────────────────────────────────────
     // Check orders stuck in 'pending' from the last 24 hours

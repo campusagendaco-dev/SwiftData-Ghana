@@ -59,6 +59,8 @@ interface GlobalPkgSetting {
   network: string;
   package_size: string;
   public_price: number | null;
+  agent_price?: number | null;
+  sub_agent_price?: number | null;
   is_unavailable: boolean;
 }
 
@@ -217,7 +219,7 @@ const BuyData = () => {
     const load = async () => {
       setPkgLoading(true);
       const [{ data }, { data: sys }, pricingCtx, { data: svc }, { data: mappings }] = await Promise.all([
-        supabase.from("global_package_settings").select("network, package_size, public_price, is_unavailable"),
+        supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, is_unavailable"),
         supabase.functions.invoke("system-settings", { body: { action: "get" } }),
         fetchApiPricingContext(),
         supabase.from("service_status").select("network, status"),
@@ -436,7 +438,7 @@ const BuyData = () => {
 
     processed.sort((a, b) => a.price - b.price);
     return processed;
-  }, [basePackages, selectedNetwork, globalSettings, priceMultipliers, korbaMappings, profile, customPrices]);
+  }, [selectedNetwork, globalSettings, priceMultipliers, korbaMappings, profile, customPrices]);
 
   const dropdownOptions = useMemo(() => {
     const options: { value: string; label: string }[] = [

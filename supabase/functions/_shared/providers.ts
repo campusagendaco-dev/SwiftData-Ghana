@@ -26,13 +26,22 @@ export async function getActiveProviders(supabaseAdmin: any, type: string): Prom
 
   const { data, error } = await query
     .order("priority", { ascending: true })
-    .order("handler_type", { ascending: true }); // Prioritize 'datamart' (d) over 'standard' (s)
+    .order("handler_type", { ascending: true });
 
   if (error) {
     console.error("Error fetching providers:", error);
     return [];
   }
-  return data || [];
+
+  // Self-Healing Dynamic Routing: Temporarily prioritize healthy providers ahead of degraded ones
+  const sorted = (data || []).sort((a: any, b: any) => {
+    const aDegraded = (a.consecutive_failures || 0) >= 3 ? 1 : 0;
+    const bDegraded = (b.consecutive_failures || 0) >= 3 ? 1 : 0;
+    if (aDegraded !== bDegraded) return aDegraded - bDegraded;
+    return (a.priority || 99) - (b.priority || 99);
+  });
+
+  return sorted;
 }
 
 export async function logProviderError(supabaseAdmin: any, providerId: string, orderId: string, error: string) {

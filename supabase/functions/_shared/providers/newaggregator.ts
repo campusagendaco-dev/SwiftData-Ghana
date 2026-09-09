@@ -33,8 +33,8 @@ export class NewAggregatorAdapter implements ProviderAdapter {
     }
 
     const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
-    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || ""));
-    const transactionId = `${data.reference || data.order_id || ""}_${String(Date.now()).slice(-6)}`;
+    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
+    const transactionId = `${data.reference || data.orderReference || data.order_id || data.id || ""}_${String(Date.now()).slice(-6)}`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/provider-webhook`);
 
     const orderType = String(data.order_type || "data").toLowerCase();

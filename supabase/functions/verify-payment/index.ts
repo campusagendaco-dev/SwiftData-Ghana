@@ -41,10 +41,10 @@ function mapDataNetworkKey(network: string): string {
 // Maps network names to the keys the airtime provider API expects (must match wallet-pay-airtime)
 function mapAirtimeNetworkKey(network: string): string {
   const n = (network || "").trim().toUpperCase();
-  if (n === "MTN" || n === "YELLO") return "MTN";
-  if (n === "VOD" || n === "VODAFONE" || n === "TELECEL") return "VOD";
-  if (n === "AT" || n === "AIRTELTIGO" || n === "AIRTEL TIGO") return "AT";
-  if (n === "GLO") return "GLO";
+  if (n.includes("MTN") || n === "YELLO") return "MTN";
+  if (n.includes("VOD") || n.includes("TELECEL") || n === "RED") return "VOD";
+  if (n.includes("AT") || n.includes("AIRTEL") || n.includes("TIGO") || n.includes("BLUE")) return "AT";
+  if (n.includes("GLO")) return "GLO";
   return n;
 }
 

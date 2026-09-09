@@ -16,7 +16,7 @@ import {
 import { cn, escapeHtml, sanitizeSearchTerm } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import WhatsAppReceiptModal from "@/components/WhatsAppReceiptModal";
 
 interface Order {
@@ -151,6 +151,7 @@ function fmt(dateStr: string) {
 }
 
 const DashboardOrders = () => {
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const { isDark } = useAppTheme();
   const [orders, setOrders] = useState<Order[]>([]);

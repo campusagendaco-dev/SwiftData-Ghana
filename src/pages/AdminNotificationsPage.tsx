@@ -279,7 +279,7 @@ const AdminNotificationsPage = () => {
     if (error || data?.error) {
       toast({ title: "Test SMS failed", description: data?.error || error?.message, variant: "destructive" });
     } else {
-      toast({ title: `Test SMS sent to ${testPhone}` });
+      toast({ title: `Test SMS sent via ${data?.gateway?.toUpperCase() || "SMS gateway"} to ${testPhone}` });
     }
   };
 
@@ -332,7 +332,7 @@ const AdminNotificationsPage = () => {
         toast({ title: "Notification saved, SMS failed", description: smsError.message, variant: "destructive" });
       } else if (smsData?.success) {
         setLastResult(smsData as SmsResult);
-        toast({ title: `SMS sent to ${smsData.sent} of ${smsData.total_recipients} recipients` });
+        toast({ title: `SMS sent via ${smsData.gateway?.toUpperCase() || "active gateway"} to ${smsData.sent} of ${smsData.total_recipients} recipients` });
         fetchSmsLogs();
       } else if (smsData?.error) {
         toast({ title: "SMS error", description: smsData.error, variant: "destructive" });
@@ -671,7 +671,7 @@ const AdminNotificationsPage = () => {
                     <p className="text-sm font-black text-white flex items-center gap-1.5">
                       <MessageSquare className="w-4 h-4 text-amber-500" /> Also Dispatch as SMS
                     </p>
-                    <p className="text-xs text-white/40 mt-1">Automatically send standard SMS via TxtConnect gateway to all active recipients</p>
+                    <p className="text-xs text-white/40 mt-1">Automatically dispatch SMS via active gateway to all active recipients</p>
                   </div>
                   <Switch checked={sendSms} onCheckedChange={setSendSms} className="data-[state=checked]:bg-amber-500" />
                 </div>

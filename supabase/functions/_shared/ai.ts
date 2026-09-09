@@ -1,12 +1,23 @@
 // Shared AI Agent Client with Dynamic Routing & Self-Healing Failover
-// Supports both Anthropic Claude and Google Gemini models.
+// Supports both Google Gemini (3.6-flash / flash-latest) and Anthropic Claude models.
 
 declare const Deno: any;
 
 export interface AiAgentResult {
   text: string;
-  provider: "anthropic" | "google";
+  provider: "anthropic" | "google" | "heuristic";
   model: string;
+}
+
+export function normalizeModelName(rawModel: string): string {
+  const m = (rawModel || "").trim();
+  if (!m || m.includes("claude-haiku-4-5") || m.includes("gemini-1.5-flash") || m.includes("gemini-2.5-flash")) {
+    return "gemini-3.6-flash";
+  }
+  if (m === "claude-haiku") {
+    return "claude-3-5-haiku-20241022";
+  }
+  return m;
 }
 
 export async function callAiAgent(
@@ -17,7 +28,7 @@ export async function callAiAgent(
   maxTokens: number = 1500
 ): Promise<AiAgentResult> {
   // 1. Fetch active model from registry
-  let model = "claude-haiku-4-5-20251001"; // default safety backup
+  let rawModel = "gemini-3.6-flash"; // default high-speed intelligent model
   try {
     const { data: agent } = await supabaseAdmin
       .from("ai_agent_registry")
@@ -26,22 +37,23 @@ export async function callAiAgent(
       .maybeSingle();
 
     if (agent && agent.active_model) {
-      model = agent.active_model;
+      rawModel = agent.active_model;
     }
   } catch (err) {
     console.error(`[AI Router] Failed to load agent settings for ${agentName}:`, err);
   }
 
-  // 2. Perform the execution with self-healing fallback
+  const model = normalizeModelName(rawModel);
+
+  // 2. Perform execution with self-healing fallback cascade
   try {
     return await executeModelCall(model, systemPrompt, userMessage, maxTokens);
   } catch (err: any) {
-    const isClaude = model.startsWith("claude-");
-    const fallbackModel = isClaude ? "gemini-1.5-flash" : "claude-haiku-4-5-20251001";
+    const isGemini = model.startsWith("gemini-");
+    const fallbackModel = isGemini ? "gemini-flash-latest" : "gemini-3.6-flash";
     
-    console.warn(`[AI Failover] Agent "${agentName}" primary model "${model}" failed (${err.message || err}). Retrying with fallback model "${fallbackModel}"...`);
+    console.warn(`[AI Failover] Agent "${agentName}" primary model "${model}" failed (${err.message || err}). Retrying with fallback "${fallbackModel}"...`);
     
-    // Log the failover incident to system logs
     try {
       await supabaseAdmin.from("system_logs").insert({
         level: "warning",
@@ -57,8 +69,10 @@ export async function callAiAgent(
     try {
       return await executeModelCall(fallbackModel, systemPrompt, userMessage, maxTokens);
     } catch (fallbackErr: any) {
-      console.error(`[AI Failover Critical] Sibling fallback model "${fallbackModel}" also failed!`, fallbackErr);
-      throw new Error(`AI Agent execution failed for both primary and fallback models. Primary: ${err.message}, Fallback: ${fallbackErr.message}`);
+      console.error(`[AI Failover Critical] Sibling fallback model "${fallbackModel}" also failed! Engaging Local Heuristic Brain...`, fallbackErr);
+
+      // 3. Resilient Heuristic Tactical Fallback
+      return generateHeuristicFallback(agentName, systemPrompt, userMessage);
     }
   }
 }
@@ -78,8 +92,6 @@ async function executeModelCall(
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-    
-    // Auto-enable structured JSON output if prompts indicate JSON requirements
     const requiresJson = systemPrompt.toLowerCase().includes("json") || userMessage.toLowerCase().includes("json");
     
     const response = await fetch(url, {
@@ -88,16 +100,17 @@ async function executeModelCall(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: systemPrompt }]
+        },
         contents: [
           {
             role: "user",
-            parts: [
-              { text: `${systemPrompt}\n\nUser Input:\n${userMessage}` }
-            ]
+            parts: [{ text: userMessage }]
           }
         ],
         generationConfig: {
-          temperature: 0,
+          temperature: 0.1,
           maxOutputTokens: maxTokens,
           ...(requiresJson ? { responseMimeType: "application/json" } : {}),
         }
@@ -110,9 +123,12 @@ async function executeModelCall(
     }
 
     const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const text = parts.map((p: any) => p.text || "").filter(Boolean).join("\n");
+
     if (!text) {
-      throw new Error(`Empty response from Gemini model: ${JSON.stringify(data)}`);
+      const finishReason = data?.candidates?.[0]?.finishReason;
+      throw new Error(`Empty response from Gemini model (finishReason: ${finishReason}): ${JSON.stringify(data)}`);
     }
 
     return {
@@ -160,4 +176,71 @@ async function executeModelCall(
       model
     };
   }
+}
+
+/**
+ * Deterministic Heuristic Engine used as a zero-downtime safety net
+ * if all cloud LLM API calls are temporarily throttled or unavailable.
+ */
+function generateHeuristicFallback(agentName: string, systemPrompt: string, userMessage: string): AiAgentResult {
+  console.log(`[Heuristic Brain] Running autonomous rule engine for "${agentName}"...`);
+  
+  const actions: any[] = [];
+  const findings: string[] = [];
+  const insights: any[] = [];
+
+  try {
+    if (userMessage.includes("Networks:")) {
+      const netMatch = userMessage.match(/Networks:\s*(\[[^\]]+\])/);
+      if (netMatch) {
+        const networks = JSON.parse(netMatch[1]);
+        for (const net of networks) {
+          if (net.failure_rate >= 0.6 && net.total >= 5) {
+            findings.push(`Heuristic: Severe failure rate on ${net.network} (${Math.round(net.failure_rate * 100)}%)`);
+            actions.push({
+              type: "broadcast_outage",
+              target: null,
+              params: { network: net.network, reason: "Heuristic: Over 60% failure rate detected on network" }
+            });
+          }
+        }
+      }
+    }
+
+    if (userMessage.includes("Providers:")) {
+      const provMatch = userMessage.match(/Providers:\s*(\[[^\]]+\])/);
+      if (provMatch) {
+        const providers = JSON.parse(provMatch[1]);
+        const prio1 = providers.find((p: any) => p.priority === 1);
+        if (prio1 && (prio1.balance < 50 || prio1.status !== "active")) {
+          const alternative = providers
+            .filter((p: any) => p.status === "active" && p.id !== prio1.id)
+            .sort((a: any, b: any) => (b.balance || 0) - (a.balance || 0))[0];
+          
+          if (alternative && alternative.balance > 100) {
+            findings.push(`Heuristic: Priority 1 provider ${prio1.name} has low balance/inactive. Switching to ${alternative.name}.`);
+            actions.push({
+              type: "switch_priority",
+              target: alternative.id,
+              params: { provider_id: alternative.id, provider_name: alternative.name, new_priority: 1, reason: `Heuristic: Rebalancing to higher balance provider (${alternative.balance})` }
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[Heuristic Brain] Error in rule evaluation:", e);
+  }
+
+  const fallbackPayload = JSON.stringify({
+    findings: findings.length ? findings : ["All systems operating within normal parameters."],
+    actions,
+    insights: insights.length ? insights : [{ type: "system", text: "Autonomous Sentinel heuristic patrol completed." }]
+  });
+
+  return {
+    text: fallbackPayload,
+    provider: "heuristic",
+    model: "sentinel-heuristic-v1"
+  };
 }

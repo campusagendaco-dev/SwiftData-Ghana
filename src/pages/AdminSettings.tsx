@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock } from "lucide-react";
+import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock, Send } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
@@ -36,8 +36,14 @@ interface SystemSettings {
   customer_service_number: string;
   support_channel_link: string;
   sub_agent_base_fee: string;
+  active_sms_gateway?: string;
   txtconnect_api_key: string;
   txtconnect_sender_id: string;
+  mnotify_api_key: string;
+  mnotify_sender_id: string;
+  arkesel_api_key: string;
+  arkesel_sender_id: string;
+  hubtel_sms_sender_id: string;
   paystack_secret_key: string;
   hubtel_client_id: string;
   hubtel_client_secret: string;
@@ -131,8 +137,14 @@ const AdminSettings = () => {
     customer_service_number: "",
     support_channel_link: "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
     sub_agent_base_fee: "5.00",
+    active_sms_gateway: "txtconnect",
     txtconnect_api_key: "",
     txtconnect_sender_id: "",
+    mnotify_api_key: "",
+    mnotify_sender_id: "",
+    arkesel_api_key: "",
+    arkesel_sender_id: "",
+    hubtel_sms_sender_id: "",
     paystack_secret_key: "",
     hubtel_client_id: "",
     hubtel_client_secret: "",
@@ -387,6 +399,46 @@ const AdminSettings = () => {
     }
   };
 
+  const [testSmsPhone, setTestSmsPhone] = useState("");
+  const [testingSms, setTestingSms] = useState(false);
+
+  const handleTestSmsConnection = async () => {
+    if (!testSmsPhone.trim()) {
+      toast({ title: "Phone number required", description: "Please enter a test phone number to test SMS delivery.", variant: "destructive" });
+      return;
+    }
+    setTestingSms(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const gatewayName = settings.active_sms_gateway || "txtconnect";
+      const { data, error } = await supabase.functions.invoke("admin-send-sms", {
+        body: {
+          target_type: "test",
+          test_phone: testSmsPhone.trim(),
+          title: "SwiftData SMS Test",
+          message: `SwiftData Test SMS: Gateway [${gatewayName.toUpperCase()}] verified and working! 🚀 Time: ${new Date().toLocaleTimeString()}`,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || data?.error) {
+        toast({
+          title: "Test SMS Failed",
+          description: data?.error || error?.message || "Failed to dispatch test message.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "✅ Test SMS Sent Successfully!",
+          description: `Dispatched via ${data?.gateway?.toUpperCase() || gatewayName.toUpperCase()} to ${testSmsPhone}. Check your phone!`,
+        });
+      }
+    } catch (e: any) {
+      toast({ title: "Test Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setTestingSms(false);
+    }
+  };
+
   useEffect(() => {
     const fetchSettings = async () => {
       const { data, error } = await supabase
@@ -436,8 +488,14 @@ const AdminSettings = () => {
           customer_service_number: d.customer_service_number || "",
           support_channel_link: d.support_channel_link || "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
           sub_agent_base_fee: String(d.sub_agent_base_fee || "5.00"),
+          active_sms_gateway: d.active_sms_gateway || "txtconnect",
           txtconnect_api_key: String(secrets.txtconnect_api_key || ""),
           txtconnect_sender_id: String(secrets.txtconnect_sender_id || ""),
+          mnotify_api_key: String(secrets.mnotify_api_key || d.mnotify_api_key || ""),
+          mnotify_sender_id: String(secrets.mnotify_sender_id || ""),
+          arkesel_api_key: String(secrets.arkesel_api_key || ""),
+          arkesel_sender_id: String(secrets.arkesel_sender_id || ""),
+          hubtel_sms_sender_id: String(secrets.hubtel_sms_sender_id || ""),
           paystack_secret_key: String(secrets.paystack_secret_key || ""),
           hubtel_client_id: String(secrets.hubtel_client_id || ""),
           hubtel_client_secret: String(secrets.hubtel_client_secret || ""),
@@ -524,8 +582,14 @@ const AdminSettings = () => {
       customer_service_number: settings.customer_service_number.trim(),
       support_channel_link: settings.support_channel_link.trim(),
       sub_agent_base_fee: parseFloat(settings.sub_agent_base_fee) || 5.0,
+      active_sms_gateway: settings.active_sms_gateway || "txtconnect",
       txtconnect_api_key: settings.txtconnect_api_key.trim(),
       txtconnect_sender_id: settings.txtconnect_sender_id.trim(),
+      mnotify_api_key: settings.mnotify_api_key.trim(),
+      mnotify_sender_id: settings.mnotify_sender_id.trim(),
+      arkesel_api_key: settings.arkesel_api_key.trim(),
+      arkesel_sender_id: settings.arkesel_sender_id.trim(),
+      hubtel_sms_sender_id: settings.hubtel_sms_sender_id.trim(),
       paystack_secret_key: settings.paystack_secret_key.trim(),
       hubtel_client_id: settings.hubtel_client_id.trim(),
       hubtel_client_secret: settings.hubtel_client_secret.trim(),
@@ -2109,28 +2173,94 @@ const AdminSettings = () => {
           </Card>
 
 
-          <Card>
+          <Card className="border-border">
             <CardHeader>
-              <CardTitle className="text-lg">SMS Configuration (TxtConnect)</CardTitle>
-              <CardDescription>
-                Enter your TxtConnect credentials to enable SMS notifications. Get these from{" "}
-                <a href="https://txtconnect.net/" target="_blank" rel="noopener noreferrer" className="underline text-amber-500 hover:text-amber-400">txtconnect.net</a>.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="txtconnect-key">API Key</Label>
-                  <Input
-                    id="txtconnect-key"
-                    type="password"
-                    value={settings.txtconnect_api_key}
-                    onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_api_key: e.target.value }))}
-                    placeholder="Your TxtConnect API Key"
-                  />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-amber-500" />
+                    SMS Gateway Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Switch between active SMS gateways, configure per-gateway credentials, and test connectivity.
+                  </CardDescription>
                 </div>
-                
-                <div className="space-y-4">
+                <Badge variant="outline" className="w-fit text-xs font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border-amber-500/20">
+                  Active: {settings.active_sms_gateway?.toUpperCase() || "TXTCONNECT"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Active Gateway Selector */}
+              <div className="space-y-2 p-3.5 rounded-xl bg-slate-900/60 border border-white/5">
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Active SMS Gateway
+                </Label>
+                <Select
+                  value={settings.active_sms_gateway || "txtconnect"}
+                  onValueChange={(val) => setSettings((prev) => ({ ...prev, active_sms_gateway: val }))}
+                >
+                  <SelectTrigger className="w-full bg-slate-950 border-white/10 text-white font-medium">
+                    <SelectValue placeholder="Select Active SMS Gateway" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-950 border-white/10 text-white">
+                    <SelectItem value="txtconnect">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">TxtConnect</span>
+                        <span className="text-[11px] text-white/50">(api.txtconnect.net — Standard SMS)</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="mnotify">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">mNotify</span>
+                        <span className="text-[11px] text-white/50">(api.mnotify.com — Quick SMS & Voice)</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="korba">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">Korba SMS</span>
+                        <span className="text-[11px] text-white/50">(Korba 365 XChange Gateway)</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="arkesel">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">Arkesel</span>
+                        <span className="text-[11px] text-white/50">(sms.arkesel.com — High Delivery API)</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="hubtel">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">Hubtel SMS</span>
+                        <span className="text-[11px] text-white/50">(Hubtel SMS API v1)</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  The platform routes all customer order notifications, wallet updates, refunds, and broadcasts through this selected gateway.
+                </p>
+              </div>
+
+              {/* Conditional Configuration Forms for Selected Gateway */}
+              {/* 1. TxtConnect */}
+              {(settings.active_sms_gateway === "txtconnect" || !settings.active_sms_gateway) && (
+                <div className="space-y-4 rounded-xl border border-white/5 p-4 bg-slate-950/40 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-400">TxtConnect Credentials</span>
+                    <a href="https://txtconnect.net/" target="_blank" rel="noopener noreferrer" className="text-xs text-amber-500 hover:text-amber-400 underline flex items-center gap-1">
+                      txtconnect.net <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="txtconnect-key">TxtConnect API Key</Label>
+                    <Input
+                      id="txtconnect-key"
+                      type="password"
+                      value={settings.txtconnect_api_key}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_api_key: e.target.value }))}
+                      placeholder="Your TxtConnect API Key"
+                    />
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="txtconnect-sender-select">SMS Sender ID Option</Label>
                     <Select
@@ -2158,7 +2288,6 @@ const AdminSettings = () => {
                       </SelectContent>
                     </Select>
                   </div>
-
                   {(!["Orderinfo", "SwiftDataGh", "AD Data Hub"].includes(settings.txtconnect_sender_id) || settings.txtconnect_sender_id === "") && (
                     <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                       <Label htmlFor="txtconnect-sender">Custom Sender ID</Label>
@@ -2166,23 +2295,152 @@ const AdminSettings = () => {
                         id="txtconnect-sender"
                         value={settings.txtconnect_sender_id}
                         onChange={(e) => setSettings((prev) => ({ ...prev, txtconnect_sender_id: e.target.value }))}
-                        placeholder="Type Approved Custom Sender ID"
+                        placeholder="Type Approved Custom Sender ID (max 11 chars)"
                         maxLength={11}
                       />
-                      <p className="text-xs text-muted-foreground">Must be an approved alphanumeric Sender ID (max 11 chars).</p>
                     </div>
                   )}
                 </div>
-              </div>
+              )}
 
-              {settings.txtconnect_api_key && settings.txtconnect_sender_id && (
-                <>
-                  <Alert className="bg-green-50 text-green-900 border-green-200 mt-4 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20">
-                    <AlertCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                    <AlertDescription className="text-xs font-medium">
-                      TxtConnect credentials configured — SMS sending is enabled.
+              {/* 2. mNotify */}
+              {settings.active_sms_gateway === "mnotify" && (
+                <div className="space-y-4 rounded-xl border border-white/5 p-4 bg-slate-950/40 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">mNotify Credentials</span>
+                    <a href="https://mnotify.com/" target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-500 hover:text-emerald-400 underline flex items-center gap-1">
+                      mnotify.com <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mnotify-key">mNotify API Key (v2)</Label>
+                    <Input
+                      id="mnotify-key"
+                      type="password"
+                      value={settings.mnotify_api_key}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, mnotify_api_key: e.target.value }))}
+                      placeholder="Enter mNotify API Key (found in Developer > API v2.0)"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mnotify-sender">mNotify Sender ID</Label>
+                    <Input
+                      id="mnotify-sender"
+                      value={settings.mnotify_sender_id}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, mnotify_sender_id: e.target.value }))}
+                      placeholder="e.g. SwiftData (must be registered on mNotify)"
+                      maxLength={11}
+                    />
+                    <p className="text-xs text-muted-foreground">Ensure this Sender ID is registered & approved on your mNotify dashboard.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Korba SMS */}
+              {settings.active_sms_gateway === "korba" && (
+                <div className="space-y-4 rounded-xl border border-white/5 p-4 bg-slate-950/40 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Korba SMS Gateway</span>
+                    <Badge variant="outline" className="bg-sky-500/10 text-sky-400 border-sky-500/20 text-[10px]">
+                      Korba 365 XChange
+                    </Badge>
+                  </div>
+                  <Alert className="bg-sky-500/10 text-sky-300 border-sky-500/20 text-xs">
+                    <AlertCircle className="h-4 w-4 text-sky-400" />
+                    <AlertDescription>
+                      Korba SMS uses your configured Korba API Client ID (2419) and Secret Key (managed via server secrets or environment variables). SMS messages will be authenticated and signed using HMAC-SHA256.
                     </AlertDescription>
                   </Alert>
+                </div>
+              )}
+
+              {/* 4. Arkesel */}
+              {settings.active_sms_gateway === "arkesel" && (
+                <div className="space-y-4 rounded-xl border border-white/5 p-4 bg-slate-950/40 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-purple-400">Arkesel SMS Credentials</span>
+                    <a href="https://arkesel.com/" target="_blank" rel="noopener noreferrer" className="text-xs text-purple-400 hover:text-purple-300 underline flex items-center gap-1">
+                      arkesel.com <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="arkesel-key">Arkesel API Key (v2)</Label>
+                    <Input
+                      id="arkesel-key"
+                      type="password"
+                      value={settings.arkesel_api_key}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, arkesel_api_key: e.target.value }))}
+                      placeholder="Enter Arkesel API Key"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="arkesel-sender">Arkesel Sender ID</Label>
+                    <Input
+                      id="arkesel-sender"
+                      value={settings.arkesel_sender_id}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, arkesel_sender_id: e.target.value }))}
+                      placeholder="e.g. SwiftData (max 11 chars)"
+                      maxLength={11}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Hubtel SMS */}
+              {settings.active_sms_gateway === "hubtel" && (
+                <div className="space-y-4 rounded-xl border border-white/5 p-4 bg-slate-950/40 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Hubtel SMS Credentials</span>
+                    <a href="https://hubtel.com/" target="_blank" rel="noopener noreferrer" className="text-xs text-rose-400 hover:text-rose-300 underline flex items-center gap-1">
+                      hubtel.com <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <Alert className="bg-rose-500/10 text-rose-300 border-rose-500/20 text-xs">
+                    <AlertCircle className="h-4 w-4 text-rose-400" />
+                    <AlertDescription>
+                      Hubtel SMS uses your configured Hubtel Client ID and Client Secret from your payment/provider settings.
+                    </AlertDescription>
+                  </Alert>
+                  <div className="space-y-2">
+                    <Label htmlFor="hubtel-sms-sender">Hubtel Sender ID</Label>
+                    <Input
+                      id="hubtel-sms-sender"
+                      value={settings.hubtel_sms_sender_id}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, hubtel_sms_sender_id: e.target.value }))}
+                      placeholder="e.g. SwiftData (max 11 chars)"
+                      maxLength={11}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Test SMS Widget */}
+              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Send className="w-3.5 h-3.5" /> Test Active SMS Gateway
+                  </p>
+                  <span className="text-[10px] text-muted-foreground">Target: {settings.active_sms_gateway?.toUpperCase() || "TXTCONNECT"}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter phone number (e.g. 0545091897)"
+                    value={testSmsPhone}
+                    onChange={(e) => setTestSmsPhone(e.target.value)}
+                    className="bg-slate-950 border-white/10 text-xs h-9"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleTestSmsConnection}
+                    disabled={testingSms}
+                    className="bg-amber-500 hover:bg-amber-600 text-black font-bold h-9 shrink-0 gap-1.5"
+                  >
+                    {testingSms ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    Send Test SMS
+                  </Button>
+                </div>
+              </div>
 
                   <div className="pt-4 border-t border-border mt-4 space-y-4">
                     <div className="flex items-center justify-between">
@@ -2277,11 +2535,8 @@ const AdminSettings = () => {
                         onChange={(e) => setSettings({ ...settings, scheduled_failed_sms_message: e.target.value })}
                         placeholder="Failed to renew your scheduled {package} bundle to {phone} due to insufficient wallet balance..."
                       />
-                      <p className="text-[10px] text-muted-foreground">Available variables: {"{package}, {phone}"}</p>
                     </div>
                   </div>
-                </>
-              )}
             </CardContent>
           </Card>
 

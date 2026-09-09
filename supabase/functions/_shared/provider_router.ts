@@ -79,6 +79,11 @@ export async function dispatchOrderWithFailover(
 
         console.log(`[HybridRouter] Provider ${provider.name} responded with status: ${res.status}`);
 
+        // Swift Relearning: Instantly reset consecutive failures upon successful fulfillment
+        if (provider.id) {
+          Promise.resolve(supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", provider.id)).catch(() => {});
+        }
+
         return {
           ok: true,
           status: isDelivered ? "fulfilled" : "processing",
@@ -93,9 +98,16 @@ export async function dispatchOrderWithFailover(
       lastFailureReason = res.reason || `Failed at provider ${provider.name}`;
       console.warn(`[HybridRouter] Provider ${provider.name} failed for order ${order.id}: ${lastFailureReason}`);
 
+      // Swift Relearning: Increment failure count if it's a provider infrastructure/balance error
+      const isProviderSideIssue = /balance|limit|maintenance|out of stock|server error|502|timeout|down/i.test(lastFailureReason);
+      if (isProviderSideIssue && provider.id) {
+        Promise.resolve(supabaseAdmin.from("providers").update({ consecutive_failures: (provider.consecutive_failures || 0) + 1 }).eq("id", provider.id)).catch(() => {});
+      }
+
       // Check if error is terminal (e.g. invalid phone number format), or if we should cascade failover
       const isTerminalError = /invalid phone|blacklisted|invalid msisdn/i.test(lastFailureReason);
-      if (isTerminalError && isLastProvider) {
+      if (isTerminalError) {
+        console.warn(`[HybridRouter] Terminal error encountered ("${lastFailureReason}"). Halting provider failover.`);
         break;
       }
 

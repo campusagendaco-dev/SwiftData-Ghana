@@ -278,7 +278,7 @@ export const DataPromoPopupModal = () => {
         throw new Error(resData?.error || invokeErr?.message || "Failed to process promo order");
       }
 
-      supabase.rpc("increment_data_promo_claim", { p_promo_id: activePromo.id }).catch(console.error);
+      Promise.resolve(supabase.rpc("increment_data_promo_claim", { p_promo_id: activePromo.id })).catch(console.error);
       setPurchaseSuccess(true);
       toast({ title: "🎉 Order Successful!", description: `Promotional ${activePromo.package_size} sent to ${phone.trim()}` });
     } catch (err: any) {

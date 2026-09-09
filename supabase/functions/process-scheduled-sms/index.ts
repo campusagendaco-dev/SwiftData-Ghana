@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, sendBulkSmsViaTxtConnect } from "../_shared/sms.ts";
+import { normalizePhone, getSmsConfig, dispatchUnifiedSms, dispatchUnifiedBulkSms } from "../_shared/sms.ts";
 
 declare const Deno: any;
 
@@ -32,8 +32,8 @@ serve(async (req: Request) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    const { apiKey: txtApiKey, senderId: txtSenderId } = await getSmsConfig(supabaseAdmin);
-    if (!txtApiKey || !txtSenderId) {
+    const smsConfig = await getSmsConfig(supabaseAdmin);
+    if (!smsConfig.apiKey || !smsConfig.senderId) {
       return new Response(JSON.stringify({ message: "SMS not configured, skipping." }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -126,7 +126,7 @@ serve(async (req: Request) => {
             await Promise.all(batch.map(async (r) => {
               const body = personalizeMessage(smsBody, r.name, balanceMap.get(r.userId));
               try {
-                await sendSmsViaTxtConnect(txtApiKey, txtSenderId, r.phone, body);
+                await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, r.phone, body, "broadcast");
                 sent++;
               } catch (e) {
                 failures.push({ phone: r.phone, reason: e instanceof Error ? e.message : "Unknown" });
@@ -134,9 +134,9 @@ serve(async (req: Request) => {
             }));
           }
         } else {
-          // Same message for all — use bulk API (100 recipients per HTTP call)
+          // Same message for all — use bulk API
           const phones = chunk.map((r) => r.phone);
-          const bulkResult = await sendBulkSmsViaTxtConnect(txtApiKey, txtSenderId, phones, smsBody);
+          const bulkResult = await dispatchUnifiedBulkSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, phones, smsBody, "broadcast");
           sent = bulkResult.sent;
           failures.push(...bulkResult.failures);
         }

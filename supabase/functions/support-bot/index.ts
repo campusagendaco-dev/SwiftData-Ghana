@@ -96,7 +96,7 @@ async function notifyAdmins(supabase: any, conversationId: string) {
       type: "warning",
       data: { conversation_id: conversationId, url: "/admin/support" },
     }));
-    await supabase.from("user_notifications").insert(notifications).catch(() => {});
+    await Promise.resolve(supabase.from("user_notifications").insert(notifications)).catch(() => {});
   } catch (_e) {
     // Non-critical — proceed
   }

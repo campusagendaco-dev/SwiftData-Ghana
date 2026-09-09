@@ -24,6 +24,7 @@ interface Order {
   status: string;
   created_at: string;
   order_type: string;
+  failure_reason?: string;
 }
 
 const MyOrders = () => {
@@ -99,6 +100,7 @@ const MyOrders = () => {
     };
 
     loadStoreDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeParam, activeDomain]);
 
   const storeName = isStoreRoute && storeInfo?.name ? storeInfo.name : "SwiftData Ghana";

@@ -902,7 +902,7 @@ serve(async (req: Request) => {
         // Define expected types for known sensitive settings
         const BOOLEAN_KEYS = new Set(["allow_duplicate_purchases", "disable_ordering", "maintenance_mode", "auto_failover_enabled", "holiday_mode_enabled", "show_scrolling_ad", "home_page_video_muted", "mashup_automation_enabled", "auto_refund_enabled", "beneficiary_verification_enabled", "allow_non_beneficiary_continue"]);
         const NUMERIC_KEYS = new Set(["min_order_amount", "max_order_amount", "agent_activation_fee", "sub_agent_activation_fee", "wassce_price", "bece_price", "wassce_cost_price", "bece_cost_price", "vendor_min_transaction", "background_brightness", "background_contrast", "background_blueness", "mashup_export_threshold", "mashup_delivery_delay_mins"]);
-        const STRING_KEYS = new Set(["holiday_message", "data_provider_base_url", "secondary_data_provider_base_url", "whatsapp_bot_prompt", "site_name", "scrolling_ad_text", "home_page_video_url", "mashup_whatsapp_number", "active_payment_gateway"]);
+        const STRING_KEYS = new Set(["holiday_message", "data_provider_base_url", "secondary_data_provider_base_url", "whatsapp_bot_prompt", "site_name", "scrolling_ad_text", "home_page_video_url", "mashup_whatsapp_number", "active_payment_gateway", "active_sms_gateway"]);
 
         const filteredSettings: Record<string, any> = {};
 
@@ -952,6 +952,9 @@ serve(async (req: Request) => {
         const SECRET_KEYS = new Set([
           "paystack_secret_key", "hubtel_client_id", "hubtel_client_secret", 
           "txtconnect_api_key", "txtconnect_sender_id", 
+          "mnotify_api_key", "mnotify_sender_id",
+          "arkesel_api_key", "arkesel_sender_id",
+          "hubtel_sms_sender_id",
           "data_provider_api_key", "data_provider_base_url", 
           "secondary_data_provider_api_key", "secondary_data_provider_base_url", 
           "airtime_provider_api_key", "airtime_provider_base_url"

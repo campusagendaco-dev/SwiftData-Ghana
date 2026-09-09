@@ -112,16 +112,18 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     // --- Purchase Payload Resolutions ---
+    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
+    const targetRef = String(data.reference || data.orderReference || data.order_id || data.id || "");
+    const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
+    const netKey = mapDataNetworkKey(rawNet);
+    const pkgSize = String(data.capacity || data.package_size || data.plan || "");
+    const capNum = parseCapacity(pkgSize);
+    const capacityStr = String(capNum > 0 ? capNum : pkgSize);
 
     if (handlerType === "datamart") {
-      const recipient = String(data.phoneNumber || data.recipient || data.phone || "");
-      const rawNet = String(data.network || data.networkRaw || data.networkKey || "").toUpperCase();
       const datamartNet = (rawNet.includes("MTN") || rawNet === "YELLO")
         ? "YELLO"
         : ((rawNet.includes("TELECEL") || rawNet.includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
-
-      const pkgSize = String(data.package_size || data.plan || data.capacity || "");
-      const capNum = parseCapacity(pkgSize);
 
       let externalId = data.planId || data.plan || data.bundle || pkgSize;
 
@@ -150,22 +152,20 @@ export class StandardAdapter implements ProviderAdapter {
         network: datamartNet,
         planId: String(externalId),
         plan: String(externalId),
-        capacity: String(capNum > 0 ? capNum : pkgSize),
-        orderReference: String(data.orderReference || data.reference || data.order_id || ""),
-        reference: String(data.reference || data.orderReference || data.order_id || ""),
+        capacity: capacityStr,
+        orderReference: targetRef,
+        reference: targetRef,
         gateway: "wallet",
         bypass_beneficiary: true
       };
     }
 
     if (handlerType === "datahub" || handlerType === "spendless") {
-      const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
-      const netKey = mapDataNetworkKey(rawNet);
       return {
         networkKey: netKey,
-        recipient: String(data.recipient || data.phoneNumber || data.phone || ""),
-        capacity: String(data.capacity || data.package_size || data.plan || ""),
-        reference: String(data.reference || data.order_id || ""),
+        recipient: recipient,
+        capacity: capacityStr,
+        reference: targetRef,
       };
     }
     
@@ -187,18 +187,19 @@ export class StandardAdapter implements ProviderAdapter {
       }
 
       return {
+        recipient: recipient,
         plan_id: packageId,
         package_id: packageId,
         product_id: packageId,
         external_id: packageId,
         amount: Number(data.amount || 0),
-        reference: String(data.reference || data.order_id || ""),
+        reference: targetRef,
       };
     }
 
     if (handlerType === "skdataplug") {
       let providerNetwork = "MTN";
-      let gbSize = String(parseCapacity(String(data.package_size || data.plan || "")));
+      let gbSize = capacityStr;
 
       try {
         const { data: pkgMapping } = await supabaseAdmin
@@ -213,7 +214,6 @@ export class StandardAdapter implements ProviderAdapter {
           providerNetwork = pkgMapping.raw_data.network || providerNetwork;
           gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
         } else {
-          const rawNet = (data.networkRaw || data.network || "").toUpperCase();
           if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
             providerNetwork = "TELECEL";
           } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL")) {
@@ -228,22 +228,21 @@ export class StandardAdapter implements ProviderAdapter {
       }
 
       return {
-        recipient: String(data.recipient || data.phoneNumber || ""),
+        recipient: recipient,
         network: providerNetwork,
         gb_size: gbSize,
-        reference: String(data.reference || data.order_id || data.orderReference || "")
+        reference: targetRef
       };
     }
 
     if (handlerType === "superbdatafy") {
-      const network = String(data.networkRaw || data.network || "").toLowerCase();
+      const network = rawNet.toLowerCase();
       let sbNetwork = network;
       if (network === "yello") sbNetwork = "mtn";
       if (network === "vod" || network === "vodafone") sbNetwork = "telecel";
       if (network === "airteltigo" || network === "at_premium") sbNetwork = "at";
       
-      const pkgSize = String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase();
-      const phone = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
+      const pkgKey = String(data.package_size || data.plan || data.package_key || "").replace(/\s+/g, "").toLowerCase();
 
       try {
         const bundleRes = await fetch(`${provider.base_url}/bundles?network=${sbNetwork}`, {
@@ -255,9 +254,9 @@ export class StandardAdapter implements ProviderAdapter {
         if (bundleRes.ok) {
           const bData = await bundleRes.json();
           const bundles = bData?.bundles || [];
-          const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgSize);
+          const match = bundles.find((b: any) => String(b.capacity).replace(/\s+/g, "").toLowerCase() === pkgKey);
           if (match) {
-            return { bundle_id: match.id, phone_number: phone };
+            return { bundle_id: match.id, phone_number: recipient };
           }
         }
       } catch (e: any) {
@@ -265,14 +264,13 @@ export class StandardAdapter implements ProviderAdapter {
       }
       
       // Fallback
-      return { phone_number: phone, bundle_id: pkgSize };
+      return { phone_number: recipient, bundle_id: pkgKey };
     }
 
     if (handlerType === "xcel") {
       const orderType = String(data.order_type || "data").toLowerCase();
-      const recipient = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
       const amount = String(Number(data.amount || 0).toFixed(2));
-      const extRef = String(data.orderReference || data.reference || "");
+      const extRef = targetRef;
       const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/provider-webhook`);
       
       let productId = String(data.plan || data.package_size || data.productId || "");
@@ -343,11 +341,13 @@ export class StandardAdapter implements ProviderAdapter {
 
     // Default Generic Payload Fallback
     return {
-      recipient: String(data.recipient || data.phoneNumber || ""),
+      recipient: recipient,
       amount: Number(data.amount || 0),
-      network: String(data.networkKey || data.networkRaw || ""),
-      package_size: String(data.package_size || data.plan || ""),
-      reference: String(data.reference || data.order_id || ""),
+      network: netKey,
+      networkKey: netKey,
+      package_size: capacityStr,
+      capacity: capacityStr,
+      reference: targetRef,
     };
   }
 
@@ -457,7 +457,7 @@ export class StandardAdapter implements ProviderAdapter {
     const isAffordable = category === "affordable" || category === "affordable sme" || category.includes("sme");
 
     if (handlerType === "datahub" && network.includes("MTN") && isAffordable && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
-      const recipient = String(data.recipient || data.phoneNumber || "");
+      const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
       const check = await this.verifyDataHubBeneficiary(supabaseAdmin, provider, recipient);
       if (!check.ok) {
         return {

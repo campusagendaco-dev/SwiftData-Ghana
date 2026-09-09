@@ -535,7 +535,7 @@ serve(async (req: Request) => {
 
     // 4. AUTO-BRIDGE CHECK (NON-BLOCKING)
     if (agentProfile?.is_sub_agent) {
-      supabaseAdmin.rpc("process_auto_bridges_for_agent", { p_sub_agent_id: user.id })
+      Promise.resolve(supabaseAdmin.rpc("process_auto_bridges_for_agent", { p_sub_agent_id: user.id }))
         .then(({ data, error }: any) => {
           if (error) console.error("[AUTO-BRIDGE-ERROR]", error);
           else if (data?.success) console.log("[AUTO-BRIDGE-SUCCESS]", data);

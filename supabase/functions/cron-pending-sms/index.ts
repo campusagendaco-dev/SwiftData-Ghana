@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
-import { normalizePhone, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { normalizePhone, getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -23,7 +23,7 @@ serve(async (req: Request) => {
   try {
     // 1. Check if auto SMS is enabled
     const { data: settings, error: settingsError } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("auto_pending_sms_enabled, auto_pending_sms_message, txtconnect_api_key, txtconnect_sender_id")
+      .from("v_system_settings_with_secrets").select("auto_pending_sms_enabled, auto_pending_sms_message")
       .eq("id", 1)
       .maybeSingle();
 
@@ -33,12 +33,11 @@ serve(async (req: Request) => {
       });
     }
 
-    const txtApiKey = settings.txtconnect_api_key || Deno.env.get("TXTCONNECT_API_KEY");
-    const txtSenderId = settings.txtconnect_sender_id || Deno.env.get("TXTCONNECT_SENDER_ID") || "SwiftDataGh";
+    const smsConfig = await getSmsConfig(supabaseAdmin);
     const smsMessage = settings.auto_pending_sms_message || "SwiftData Alert: Your payment prompt is pending. If Push PIN delayed, approve via *170# -> My Wallet -> My Approvals, or retry at https://swiftdatagh.shop";
 
-    if (!txtApiKey) {
-      return new Response(JSON.stringify({ error: "TxtConnect API Key missing." }), {
+    if (!smsConfig.apiKey || !smsConfig.senderId) {
+      return new Response(JSON.stringify({ error: "SMS Gateway credentials missing." }), {
         status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -72,7 +71,7 @@ serve(async (req: Request) => {
 
       if (targetPhone) {
         try {
-          await sendSmsViaTxtConnect(txtApiKey, txtSenderId, targetPhone, smsMessage);
+          await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, targetPhone, smsMessage, "reminder");
           sentCount++;
         } catch (error) {
           console.error(`Failed to send reminder to ${targetPhone} for order ${order.id}:`, error);
