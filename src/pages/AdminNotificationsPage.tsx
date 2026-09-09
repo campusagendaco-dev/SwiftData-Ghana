@@ -61,11 +61,14 @@ interface TargetFilters {
 
 interface SmsTemplate {
   id: string;
-  key: string;
-  label: string;
-  body: string;
-  is_active: boolean;
-  created_at: string;
+  key?: string;
+  name?: string;
+  label?: string;
+  title?: string;
+  message?: string;
+  body?: string;
+  is_active?: boolean;
+  created_at?: string;
 }
 
 interface ScheduledBroadcast {
@@ -400,9 +403,9 @@ const AdminNotificationsPage = () => {
   };
 
   const loadTemplate = (tmpl: SmsTemplate) => {
-    setTitle(tmpl.label ?? "");
-    setMessage(tmpl.body ?? "");
-    toast({ title: `Template "${tmpl.label}" loaded` });
+    setTitle(tmpl.title || tmpl.label || tmpl.name || "");
+    setMessage(tmpl.message || tmpl.body || "");
+    toast({ title: `Template "${tmpl.name || tmpl.label || "Custom"}" loaded` });
   };
 
   const resetEstimate = () => setEstimate(null);
@@ -710,11 +713,11 @@ const AdminNotificationsPage = () => {
                       onClick={() => loadTemplate(t)}
                       className="text-xs px-2.5 py-1 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 text-white/80 transition-colors font-medium"
                     >
-                      {t.name}
+                      {t.name || t.label || "Template"}
                     </button>
                     <button
                       type="button"
-                      aria-label={`Delete template ${t.name}`}
+                      aria-label={`Delete template ${t.name || t.label || ""}`}
                       onClick={() => handleDeleteTemplate(t.id)}
                       className="text-white/20 hover:text-red-400 transition-colors p-1 opacity-0 group-hover:opacity-100"
                     >
