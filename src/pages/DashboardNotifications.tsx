@@ -32,7 +32,7 @@ const DashboardNotifications = () => {
   const { user } = useAuth();
   const { isDark } = useAppTheme();
   const navigate = useNavigate();
-  const { supported, permissionState, subscribeUser, loading: subLoading } = usePushNotifications();
+  const { supported, permissionState, subscribeUser, unsubscribeUser, loading: subLoading } = usePushNotifications();
 
   // Notifications State
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
@@ -482,12 +482,73 @@ const DashboardNotifications = () => {
                   )}
                 </button>
               </div>
+
+              {supported && (
+                <div className={`flex items-center justify-between border-t pt-4 ${
+                  isDark ? "border-white/5" : "border-slate-100"
+                }`}>
+                  <div className="space-y-0.5">
+                    <span className={`text-xs font-bold block ${
+                      isDark ? "text-white/80" : "text-slate-800"
+                    }`}>Offline Push Alerts</span>
+                    <span className={`text-[9px] block leading-none ${
+                      permissionState === "granted" 
+                        ? "text-emerald-400 font-semibold" 
+                        : isDark ? "text-white/35" : "text-slate-500"
+                    }`}>
+                      {permissionState === "granted" ? "Active on this device" : "Receive alerts when offline"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (permissionState === "granted") {
+                        unsubscribeUser();
+                      } else {
+                        subscribeUser();
+                      }
+                    }}
+                    disabled={subLoading}
+                    className="focus:outline-none transition-colors"
+                  >
+                    {permissionState === "granted" ? (
+                      <ToggleRight className="w-9 h-9 text-emerald-400" />
+                    ) : (
+                      <ToggleLeft className={`w-9 h-9 ${isDark ? "text-white/20" : "text-slate-300"}`} />
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* RIGHT COLUMN: MAIN NOTIFICATION STREAM */}
         <div className="lg:col-span-2 space-y-6">
+          {supported && permissionState !== "granted" && (
+            <div className={`p-4 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg ${
+              isDark ? "bg-amber-500/10 border-amber-500/20 text-white" : "bg-amber-50 border-amber-200 text-slate-900"
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-extrabold">Receive Orders & Wallet Alerts on Lock Screen</h4>
+                  <p className={`text-[11px] ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                    Get instant push notifications the moment bundles deliver or your wallet is credited.
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => subscribeUser()}
+                disabled={subLoading}
+                size="sm"
+                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-sm shrink-0 w-full sm:w-auto"
+              >
+                {subLoading ? "Enabling..." : "Allow Push Alerts"}
+              </Button>
+            </div>
+          )}
           
           {/* SEARCH & FILTER CONTROLS */}
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">

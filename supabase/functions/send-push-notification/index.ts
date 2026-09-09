@@ -38,38 +38,61 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { user_id, title, body, url, icon, id, tag, requireInteraction } = await req.json();
+    const body = await req.json();
+    const { 
+      user_id, 
+      user_ids, 
+      broadcast, 
+      title, 
+      body: messageBody, 
+      url, 
+      icon, 
+      id, 
+      tag, 
+      requireInteraction 
+    } = body;
 
-    if (!user_id) {
-      return new Response(JSON.stringify({ error: "Missing user_id" }), {
+    const isBroadcast = Boolean(broadcast);
+    const hasMultipleUsers = Array.isArray(user_ids) && user_ids.length > 0;
+
+    if (!user_id && !hasMultipleUsers && !isBroadcast) {
+      return new Response(JSON.stringify({ error: "Missing user_id, user_ids or broadcast flag" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[Push] Processing request for user: ${user_id}`);
+    console.log(`[Push] Processing request. Broadcast: ${isBroadcast}, Multiple: ${hasMultipleUsers}, Single User: ${user_id || "none"}`);
 
-    // 1. Fetch all registered device subscriptions for this user
-    const { data: subscriptions, error: fetchError } = await supabaseAdmin
+    // 1. Fetch relevant subscriptions
+    let query = supabaseAdmin
       .from("push_subscriptions")
-      .select("endpoint, p256dh, auth")
-      .eq("user_id", user_id);
+      .select("endpoint, p256dh, auth, user_id");
 
+    if (isBroadcast) {
+      query = query.limit(5000);
+    } else if (hasMultipleUsers) {
+      query = query.in("user_id", user_ids);
+    } else if (user_id) {
+      query = query.eq("user_id", user_id);
+    }
+
+    const { data: subscriptions, error: fetchError } = await query;
     if (fetchError) throw fetchError;
 
     if (!subscriptions || subscriptions.length === 0) {
-      console.log(`[Push] No active subscriptions found for user ${user_id}. skipping.`);
+      console.log(`[Push] No active subscriptions found. Skipping.`);
       try {
         await supabaseAdmin.from("push_notification_logs").insert({
-          user_id,
+          user_id: user_id || null,
           title: title || "SwiftData Ghana",
-          body: body || "New update from SwiftData",
+          body: messageBody || "New update from SwiftData",
           url: url || "/dashboard",
           device_count: 0,
           success_count: 0,
           failure_count: 0,
           status: "no_devices",
-          error_details: "User has no active browser push subscriptions",
+          error_details: "No active browser push subscriptions found",
         });
       } catch (logErr) {
         console.warn("[Push] Failed to insert log:", logErr);
@@ -81,79 +104,97 @@ serve(async (req: Request) => {
       });
     }
 
-    // 2. Build universal JSON notification payload
+    // Deduplicate endpoints across subscriptions
+    const uniqueSubsMap = new Map<string, any>();
+    for (const s of subscriptions) {
+      if (s.endpoint && !uniqueSubsMap.has(s.endpoint)) {
+        uniqueSubsMap.set(s.endpoint, s);
+      }
+    }
+    const uniqueSubs = Array.from(uniqueSubsMap.values());
+
+    // 2. Universal JSON payload
     const payload = JSON.stringify({
       title: title || "SwiftData Ghana",
-      body: body || "New update from SwiftData",
+      body: messageBody || "New update from SwiftData",
       url: url || "/dashboard",
       icon: icon || "/logo.png",
       id: id || undefined,
-      tag: tag || (id ? `swiftdata-order-${id}` : undefined),
-      requireInteraction: requireInteraction !== undefined ? requireInteraction : true,
+      tag: tag || (id ? `swiftdata-order-${id}` : `swiftdata-alert-${Date.now()}`),
+      requireInteraction: requireInteraction !== undefined ? Boolean(requireInteraction) : true,
     });
 
     let sentCount = 0;
     const failedEndpoints: string[] = [];
 
-    // 3. Deliver to each device in parallel via standard webpush
-    console.log(`[Push] Broadcasting payload to ${subscriptions.length} device endpoints...`);
-    await Promise.all(
-      subscriptions.map(async (sub: any) => {
-        try {
-          const pushSubscription = {
-            endpoint: sub.endpoint,
-            keys: {
-              p256dh: sub.p256dh,
-              auth: sub.auth,
-            },
-          };
+    // 3. Batch send in chunks of 50 for optimal concurrency
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < uniqueSubs.length; i += CHUNK_SIZE) {
+      const chunk = uniqueSubs.slice(i, i + CHUNK_SIZE);
+      await Promise.allSettled(
+        chunk.map(async (sub: any) => {
+          try {
+            const pushSubscription = {
+              endpoint: sub.endpoint,
+              keys: {
+                p256dh: sub.p256dh,
+                auth: sub.auth,
+              },
+            };
 
-          await webpush.sendNotification(pushSubscription, payload, {
-            TTL: 86400, // 24 hours
-            urgency: "high"
-          });
-          sentCount++;
-          console.log(`[Push] Success to endpoint: ${sub.endpoint.substring(0, 40)}...`);
-        } catch (err: any) {
-          const errCode = err.statusCode || (err.message && err.message.match(/4[01][04]/));
-          console.error(`[Push] Failure for endpoint ${sub.endpoint.substring(0, 40)}:`, err.statusCode || err.message);
-          
-          // Handle stale subscriptions (410 Gone or 404 Not Found means user unsubscribed in browser settings)
-          if (err.statusCode === 410 || err.statusCode === 404 || (err.message && (err.message.includes("410") || err.message.includes("404")))) {
-            failedEndpoints.push(sub.endpoint);
+            await webpush.sendNotification(pushSubscription, payload, {
+              TTL: 86400, // 24 hours
+              urgency: "high"
+            });
+            sentCount++;
+          } catch (err: any) {
+            const errStr = String(err.statusCode || err.message || "");
+            if (err.statusCode === 410 || err.statusCode === 404 || errStr.includes("410") || errStr.includes("404")) {
+              failedEndpoints.push(sub.endpoint);
+            }
           }
-        }
-      })
-    );
+        })
+      );
+    }
 
-    // 4. Automatically clean up stale devices to keep DB optimized and fast
+    console.log(`[Push] Delivery summary: ${sentCount} sent, ${failedEndpoints.length} expired out of ${uniqueSubs.length} devices.`);
+
+    // 4. Clean up expired endpoints
     if (failedEndpoints.length > 0) {
-      console.log(`[Push] Cleaning up ${failedEndpoints.length} expired subscription tokens from database.`);
-      await supabaseAdmin
-        .from("push_subscriptions")
-        .delete()
-        .eq("user_id", user_id)
-        .in("endpoint", failedEndpoints);
+      console.log(`[Push] Cleaning up ${failedEndpoints.length} expired subscription tokens.`);
+      // Chunk deletions to prevent huge SQL queries
+      for (let i = 0; i < failedEndpoints.length; i += 200) {
+        const delChunk = failedEndpoints.slice(i, i + 200);
+        await supabaseAdmin
+          .from("push_subscriptions")
+          .delete()
+          .in("endpoint", delChunk);
+      }
     }
 
     // 5. Persist audit log
     try {
       await supabaseAdmin.from("push_notification_logs").insert({
-        user_id,
+        user_id: user_id || null,
         title: title || "SwiftData Ghana",
-        body: body || "New update from SwiftData",
+        body: messageBody || "New update from SwiftData",
         url: url || "/dashboard",
-        device_count: subscriptions.length,
+        device_count: uniqueSubs.length,
         success_count: sentCount,
         failure_count: failedEndpoints.length,
         status: sentCount > 0 ? "delivered" : (failedEndpoints.length > 0 ? "failed" : "no_devices"),
-        error_details: failedEndpoints.length > 0 ? `${failedEndpoints.length} device tokens expired` : null,
+        error_details: failedEndpoints.length > 0 ? `${failedEndpoints.length} device tokens expired and cleaned up` : null,
       });
     } catch (logErr) {
       console.warn("[Push] Failed to insert log:", logErr);
     }
 
-    return new Response(JSON.stringify({ success: true, sent: sentCount, cleaned: failedEndpoints.length }), {
+    return new Response(JSON.stringify({
+      success: true,
+      sent: sentCount,
+      devices: uniqueSubs.length,
+      cleaned: failedEndpoints.length
+    }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

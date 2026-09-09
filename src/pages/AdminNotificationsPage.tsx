@@ -158,7 +158,8 @@ const AdminNotificationsPage = () => {
   const [targetFilters, setTargetFilters] = useState<TargetFilters>({});
   const [showFilters, setShowFilters] = useState(false);
 
-  // SMS
+  // Web Push & SMS
+  const [sendWebPush, setSendWebPush] = useState(true);
   const [sendSms, setSendSms] = useState(false);
   const [testPhone, setTestPhone] = useState("");
 
@@ -479,6 +480,28 @@ const AdminNotificationsPage = () => {
       title: title.trim(), message: message.trim(), target_type: targetType, created_by: user?.id,
     });
 
+    // Web Push broadcast to offline devices
+    let pushResultText = "";
+    if (sendWebPush) {
+      try {
+        const { data: pushData, error: pushError } = await supabase.functions.invoke("send-push-notification", {
+          body: {
+            broadcast: true,
+            title: title.trim(),
+            body: message.trim(),
+            url: "/dashboard",
+          },
+        });
+        if (pushError) {
+          console.warn("[Admin Broadcast] Push broadcast failed:", pushError);
+        } else if (pushData?.sent !== undefined) {
+          pushResultText = ` Web push sent to ${pushData.sent} offline device(s).`;
+        }
+      } catch (pushErr) {
+        console.warn("[Admin Broadcast] Push invoke error:", pushErr);
+      }
+    }
+
     if (sendSms) {
       const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
         body: {
@@ -490,16 +513,16 @@ const AdminNotificationsPage = () => {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (smsError) {
-        toast({ title: "Notification saved, SMS failed", description: smsError.message, variant: "destructive" });
+        toast({ title: "Notification saved, SMS failed", description: smsError.message + pushResultText, variant: "destructive" });
       } else if (smsData?.success) {
         setLastResult(smsData as SmsResult);
-        toast({ title: `SMS sent via ${smsData.gateway?.toUpperCase() || "active gateway"} to ${smsData.sent} of ${smsData.total_recipients} recipients` });
+        toast({ title: `Broadcast launched!`, description: `SMS sent via ${smsData.gateway?.toUpperCase() || "gateway"} to ${smsData.sent} recipients.${pushResultText}` });
         fetchSmsLogs();
       } else if (smsData?.error) {
-        toast({ title: "SMS error", description: smsData.error, variant: "destructive" });
+        toast({ title: "SMS error", description: smsData.error + pushResultText, variant: "destructive" });
       }
     } else {
-      toast({ title: "Notification sent!" });
+      toast({ title: "Notification broadcast sent!", description: pushResultText || "Alert posted to all channels." });
     }
 
     setTitle(""); setMessage(""); resetEstimate();
@@ -843,6 +866,21 @@ const AdminNotificationsPage = () => {
                       {t.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Web Push Broadcast Switch */}
+              <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black text-white flex items-center gap-1.5">
+                      <Bell className="w-4 h-4 text-emerald-400" /> Send Native Web Push (Offline Devices)
+                    </p>
+                    <p className="text-xs text-white/40 mt-1">
+                      Deliver instant lock-screen push alerts to all 15,000+ registered offline mobile & desktop browsers
+                    </p>
+                  </div>
+                  <Switch checked={sendWebPush} onCheckedChange={setSendWebPush} className="data-[state=checked]:bg-emerald-500" />
                 </div>
               </div>
 

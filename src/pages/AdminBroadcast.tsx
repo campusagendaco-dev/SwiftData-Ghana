@@ -9,11 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   Send, Users, Filter, RefreshCw,
-  Megaphone, Bell, MessageSquare, BarChart3, Sparkles
+  Megaphone, Bell, MessageSquare, BarChart3, Sparkles, Smartphone
 } from "lucide-react";
 
 type Segment = "all_agents" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
-type Channel = "notification" | "sms" | "both";
+type Channel = "notification" | "push" | "sms" | "both";
 
 const SEGMENTS: { value: Segment; label: string; desc: string }[] = [
   { value: "all_agents",     label: "All Agents",         desc: "Every active agent on the platform" },
@@ -151,6 +151,18 @@ export default function AdminBroadcast() {
         for (let i = 0; i < notifications.length; i += 500) {
           await (supabase as any).from("user_notifications").insert(notifications.slice(i, i + 500));
         }
+      }
+
+      // Web push notifications (offline devices)
+      if (channel === "push" || channel === "both") {
+        supabase.functions.invoke("send-push-notification", {
+          body: {
+            user_ids: recipientIds,
+            title: title.trim(),
+            body: body.trim(),
+            url: "/dashboard",
+          },
+        }).catch((err) => console.warn("[Broadcast] Push notification error:", err));
       }
 
       // SMS via edge function (fire and forget for large batches)
@@ -403,8 +415,9 @@ export default function AdminBroadcast() {
             </div>
             {([
               ["notification", Bell, "In-App Notification", "Instant, free"],
-              ["sms", MessageSquare, "SMS Only", "Reaches offline agents"],
-              ["both", Send, "Both", "Maximum reach"],
+              ["push", Smartphone, "Web Push (Offline Devices)", "Hits lock-screens even when off-site"],
+              ["sms", MessageSquare, "SMS Only", "Reaches offline agents via telecom"],
+              ["both", Send, "All Channels (In-App + Push + SMS)", "Maximum reach across all devices"],
             ] as const).map(([val, Icon, label, desc]) => (
               <button type="button" key={val} onClick={() => setChannel(val)}
                 className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all",

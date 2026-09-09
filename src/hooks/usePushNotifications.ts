@@ -50,8 +50,8 @@ export function usePushNotifications() {
   }, []);
 
   const subscribeUser = async (silent = false) => {
-    if (!supported || !user) {
-      console.warn("[Push] Notifications are not supported or user not logged in.");
+    if (!supported) {
+      console.warn("[Push] Notifications are not supported in this browser.");
       return false;
     }
 
@@ -70,17 +70,15 @@ export function usePushNotifications() {
       console.log("[Push] Service Worker ready lookup...");
       const registration = await navigator.serviceWorker.ready;
       
-      // Unsubscribe existing to make sure we refresh token updates
-      const oldSub = await registration.pushManager.getSubscription();
-      if (oldSub) {
-        await oldSub.unsubscribe();
+      // Get existing subscription or create new
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        console.log("[Push] Subscribing through PushManager...");
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
       }
-
-      console.log("[Push] Subscribing through PushManager...");
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
 
       // Convert native JSON buffers into safe Base64/JSON tokens
       const p256dh = btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey("p256dh")!) as any));
@@ -88,19 +86,21 @@ export function usePushNotifications() {
       
       console.log("[Push] Saving device token to Supabase...");
       const { error } = await supabase.from("push_subscriptions" as any).upsert({
-        user_id: user.id,
+        user_id: user?.id || null,
         endpoint: subscription.endpoint,
         p256dh,
         auth,
-      }, { onConflict: "user_id,endpoint" });
+      }, { onConflict: "endpoint" });
 
-      if (error) throw error;
+      if (error) {
+        console.warn("[Push] Upsert warning:", error.message);
+      }
 
       console.log("[Push] Subscription complete & registered successfully.");
       if (!silent) {
         toast({
-          title: "Notifications enabled!",
-          description: "You'll receive real-time mobile alerts for your order updates.",
+          title: "Push Notifications Enabled! 🔔",
+          description: "You'll now receive instant lock-screen alerts for your orders and wallet updates.",
         });
       }
       setLoading(false);

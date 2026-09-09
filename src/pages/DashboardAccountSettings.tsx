@@ -286,6 +286,58 @@ const DashboardAccountSettings = () => {
               </div>
             </CardContent>
           </Card>
+
+          {pushSupported && (
+            <Card className="border-none bg-amber-500/5 border border-amber-500/20">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 shrink-0">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider">Lock-Screen Alerts</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {permissionState === "granted"
+                          ? "Device registered for offline notifications"
+                          : "Get alerts when your phone is locked"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                    permissionState === "granted"
+                      ? "bg-emerald-500/10 text-emerald-500"
+                      : permissionState === "denied"
+                      ? "bg-rose-500/10 text-rose-500"
+                      : "bg-amber-500/10 text-amber-500"
+                  }`}>
+                    {permissionState === "granted" ? "Active" : permissionState === "denied" ? "Blocked" : "Off"}
+                  </span>
+                </div>
+
+                {permissionState === "granted" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => unsubscribeUser()}
+                    disabled={subLoading}
+                    className="w-full text-xs font-bold rounded-xl h-8 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                  >
+                    {subLoading ? "Updating..." : "Disable On This Device"}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => subscribeUser()}
+                    disabled={subLoading || permissionState === "denied"}
+                    className="w-full text-xs font-black rounded-xl h-8 bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-sm"
+                  >
+                    {subLoading ? "Enabling..." : permissionState === "denied" ? "Unblock in Browser" : "Enable Lock-Screen Alerts"}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column: Form */}
