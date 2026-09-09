@@ -63,7 +63,31 @@ function translateFailureReason(reason?: string): string {
   return reason;
 }
 
+function isBeneficiaryFailure(status: OrderStatusType, message?: string, network?: string): boolean {
+  if (status !== "fulfillment_failed" && status !== "error") return false;
+  const net = (network || "").toUpperCase();
+  if (net && !net.includes("MTN")) return false;
+  const r = (message || "").toLowerCase();
+  return (
+    r.includes("beneficiary") ||
+    r.includes("whitelist") ||
+    r.includes("not added") ||
+    r.includes("not on") ||
+    r.includes("unregistered") ||
+    r.includes("not registered")
+  );
+}
+
 function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string) {
+  if (isBeneficiaryFailure(status, message, network)) {
+    return { 
+      color: "#F59E0B", 
+      glow: "rgba(245,158,11,0.25)", 
+      label: "In Queue for Whitelist Verification ⏳", 
+      sub: "Your MTN recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
+      badge: "In Queue ⏳" 
+    };
+  }
   if (failed || status === "fulfillment_failed") {
     return { color: "#EF4444", glow: "rgba(239,68,68,0.25)", label: "Delivery Failed", sub: translateFailureReason(message) || "Something went wrong with your order", badge: "Failed" };
   }
@@ -353,6 +377,7 @@ const OrderStatus = () => {
   };
 
   const getProgressPercentage = () => {
+    if (isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork)) return 65;
     if (orderStatus === "fulfilled" || orderStatus === "fulfillment_failed" || orderStatus === "error") return 100;
     if (orderStatus === "not_paid") return 0;
     const totalSecs = estMinutes * 60;
@@ -631,7 +656,11 @@ const OrderStatus = () => {
                   <div className="relative w-26 h-26 flex items-center justify-center">
                     <div className="absolute inset-0 blur-2xl opacity-25 animate-pulse" style={{ backgroundColor: meta.color }} />
                     <div className="relative z-10 w-22 h-22 rounded-3xl bg-[#090a10] border border-slate-800/90 flex items-center justify-center shadow-2xl">
-                      {failed ? (
+                      {isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork) ? (
+                        <div className="relative flex items-center justify-center">
+                          <Clock className="w-10 h-10 text-amber-400 animate-pulse drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]" />
+                        </div>
+                      ) : failed ? (
                         <XCircle className="w-10 h-10 text-red-400 drop-shadow-md" />
                       ) : (
                         <div className="relative flex items-center justify-center">
@@ -686,23 +715,54 @@ const OrderStatus = () => {
             <div className="px-6 pb-6 space-y-2 relative z-10">
               <div className="relative h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800/90 shadow-inner">
                 <div 
-                  className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500 shadow-md"
+                  className={cn(
+                    "absolute inset-y-0 left-0 transition-all duration-1000 ease-out shadow-md",
+                    isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork)
+                      ? "bg-gradient-to-r from-amber-500 to-amber-400"
+                      : "bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500"
+                  )}
                   style={{ width: `${getProgressPercentage()}%` }} 
                 />
               </div>
               <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pt-1">
                 {STEPS.map((s, i) => {
-                  const activeStep = orderStatus === "fulfilled" ? 3 : (orderStatus === "processing" ? 2 : (["paid", "pending"].includes(orderStatus) ? 1 : 0));
+                  const isBen = isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork);
+                  const activeStep = orderStatus === "fulfilled" ? 3 : isBen ? 2 : (orderStatus === "processing" ? 2 : (["paid", "pending"].includes(orderStatus) ? 1 : 0));
                   const isActive = activeStep >= i + 1;
+                  const stepLabel = (i === 2 && isBen) ? "In Queue ⏳" : s.label;
                   return (
-                    <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? "text-emerald-400 font-black" : "text-slate-600")}>
-                      <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? "bg-emerald-400 animate-pulse" : "bg-slate-700")} />
-                      <span>{s.label}</span>
+                    <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? (isBen && i === 2 ? "text-amber-400 font-black" : "text-emerald-400 font-black") : "text-slate-600")}>
+                      <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? (isBen && i === 2 ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-slate-700")} />
+                      <span>{stepLabel}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
+
+            {/* Whitelist In-Queue Callout Card */}
+            {isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork) && (
+              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
+                    MTN Carrier Whitelist Queue
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                  Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> is in queue for carrier beneficiary verification. The data bundle will deliver automatically once verified.
+                </p>
+                <div className="pt-1">
+                  <button
+                    onClick={() => navigate(`/submit-numbers?phone=${encodeURIComponent(phoneParam || orderPhone || "")}`)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Zap className="w-4 h-4 fill-slate-950" />
+                    Expedite / Verify Number Now 🚀
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Prepaid Token Display */}
             {orderStatus === "fulfilled" && (

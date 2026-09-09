@@ -267,7 +267,11 @@ const DashboardOrders = () => {
       .range(from, to);
 
     if (filter !== "all") {
-      if (filter === "data" || filter === "airtime" || filter === "utility") {
+      if (filter === "in_queue") {
+        q = q.eq("status", "fulfillment_failed").or("failure_reason.ilike.%beneficiary%,failure_reason.ilike.%not added%,failure_reason.ilike.%whitelist%");
+      } else if (filter === "fulfillment_failed") {
+        q = q.eq("status", "fulfillment_failed").not("failure_reason", "ilike", "%beneficiary%").not("failure_reason", "ilike", "%not added%").not("failure_reason", "ilike", "%whitelist%");
+      } else if (filter === "data" || filter === "airtime" || filter === "utility") {
         q = q.eq("order_type", filter);
       } else {
         q = q.eq("status", filter);
@@ -651,6 +655,7 @@ const DashboardOrders = () => {
               <option value="airtime">Airtime</option>
               <option value="utility">Utility Bills</option>
               <option value="processing">Processing</option>
+              <option value="in_queue">In Queue (Verification) ⏳</option>
               <option value="fulfilled">Delivered</option>
               <option value="refunded">Refunded Orders</option>
               <option value="fulfillment_failed">Delivery Failed</option>

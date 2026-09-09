@@ -199,14 +199,33 @@ const MyOrders = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'fulfilled': return 'text-emerald-400 bg-emerald-400/10';
-      case 'processing': return 'text-amber-400 bg-amber-400/10';
-      case 'paid': return 'text-blue-400 bg-blue-400/10';
+  const isBeneficiaryOrder = (order: Order): boolean => {
+    if (order.status !== "fulfillment_failed" && order.status !== "failed" && order.status !== "error") return false;
+    const net = (order.network || "").toUpperCase();
+    if (net && !net.includes("MTN")) return false;
+    const r = (order.failure_reason || "").toLowerCase();
+    return (
+      r.includes("beneficiary") ||
+      r.includes("whitelist") ||
+      r.includes("not added") ||
+      r.includes("not on") ||
+      r.includes("unregistered") ||
+      r.includes("not registered")
+    );
+  };
+
+  const getStatusBadge = (order: Order) => {
+    if (isBeneficiaryOrder(order)) {
+      return { label: "In Queue ⏳", className: "text-amber-400 bg-amber-400/15 border border-amber-400/30 font-bold" };
+    }
+    switch (order.status) {
+      case 'fulfilled': return { label: 'Delivered ✓', className: 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/20' };
+      case 'processing': return { label: 'Processing ⏳', className: 'text-sky-400 bg-sky-400/10 border border-sky-400/20' };
+      case 'paid': return { label: 'Paid', className: 'text-blue-400 bg-blue-400/10 border border-blue-400/20' };
+      case 'refunded': return { label: 'Refunded ↺', className: 'text-purple-400 bg-purple-400/10 border border-purple-400/20' };
       case 'fulfillment_failed': 
-      case 'error': return 'text-red-400 bg-red-400/10';
-      default: return 'text-white/40 bg-white/5';
+      case 'error': return { label: 'Delivery Failed', className: 'text-red-400 bg-red-400/10 border border-red-400/20' };
+      default: return { label: order.status, className: 'text-white/40 bg-white/5 border border-white/5' };
     }
   };
 
@@ -279,10 +298,34 @@ const MyOrders = () => {
                       <p className="text-[10px] font-bold text-white/30 uppercase tracking-tighter">{order.network} • {order.order_type || 'Data'}</p>
                     </div>
                   </div>
-                  <div className={cn("px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest", getStatusColor(order.status))}>
-                    {order.status}
-                  </div>
+                  {(() => {
+                    const badge = getStatusBadge(order);
+                    return (
+                      <div className={cn("px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest", badge.className)}>
+                        {badge.label}
+                      </div>
+                    );
+                  })()}
                 </div>
+
+                {isBeneficiaryOrder(order) && (
+                  <div className="mb-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                      <p className="text-[10px] text-amber-200 truncate font-semibold">Queued for MTN Whitelist Verification</p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/submit-numbers?phone=${encodeURIComponent(order.customer_phone || "")}`);
+                      }}
+                      className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[9px] uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1 shadow-sm"
+                    >
+                      <Zap className="w-3 h-3 fill-black" />
+                      Verify 🚀
+                    </button>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
                   <div className="flex items-center gap-2 text-[9px] font-bold text-white/20 uppercase tracking-widest">
