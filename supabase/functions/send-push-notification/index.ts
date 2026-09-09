@@ -33,7 +33,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { user_id, title, body, url, icon } = await req.json();
+    const { user_id, title, body, url, icon, id, tag, requireInteraction } = await req.json();
 
     if (!user_id) {
       return new Response(JSON.stringify({ error: "Missing user_id" }), {
@@ -66,6 +66,9 @@ serve(async (req: Request) => {
       body: body || "New update from SwiftData",
       url: url || "/dashboard",
       icon: icon || "/logo.png",
+      id: id || undefined,
+      tag: tag || (id ? `swiftdata-order-${id}` : undefined),
+      requireInteraction: requireInteraction !== undefined ? requireInteraction : true,
     });
 
     let sentCount = 0;

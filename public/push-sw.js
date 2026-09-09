@@ -2,38 +2,48 @@
 // Listens for push notification payloads from Deno/Supabase backend even when the tab is closed.
 
 self.addEventListener('push', function(event) {
-  console.log('[Push Worker] Push Received.');
+  console.log('[Push Worker] Background Push Received.');
   
   let data = {};
-  try {
-    data = event.data ? event.data.json() : {};
-  } catch (err) {
-    console.error('Error parsing push message JSON:', err);
-    // Fallback to text
-    data = {
-      title: 'SwiftData Update',
-      body: event.data ? event.data.text() : 'You have a new update available.'
-    };
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (err) {
+      console.warn('[Push Worker] Payload received as raw text:', err);
+      data = {
+        title: 'SwiftData Alert',
+        body: event.data.text() || 'You have a new update from SwiftData.'
+      };
+    }
   }
 
   const title = data.title || 'SwiftData Ghana';
+  const tag = data.tag || (data.id ? `swiftdata-order-${data.id}` : `swiftdata-alert-${Date.now()}`);
   
   const options = {
-    body: data.body || 'New alert received!',
+    body: data.body || 'You have a new transaction update.',
     icon: data.icon || '/logo.png',
     badge: '/logo.png',
-    vibrate: [200, 100, 200],
+    tag: tag,
+    renotify: true,
+    vibrate: [250, 100, 250, 100, 250],
     data: {
       url: data.url || '/dashboard',
-      id: data.id
+      id: data.id,
+      timestamp: Date.now()
     },
     actions: [
       {
         action: 'open',
-        title: 'Open SwiftData',
+        title: 'View Details 🚀'
+      },
+      {
+        action: 'close',
+        title: 'Dismiss'
       }
     ],
-    requireInteraction: false, // auto closes or stays until manually cleared depending on OS
+    // Keeps notification visible on lock screens and desktop until user explicitly interacts
+    requireInteraction: data.requireInteraction !== undefined ? Boolean(data.requireInteraction) : true
   };
 
   event.waitUntil(
@@ -42,25 +52,32 @@ self.addEventListener('push', function(event) {
 });
 
 self.addEventListener('notificationclick', function(event) {
-  console.log('[Push Worker] Notification Clicked.');
+  console.log('[Push Worker] Notification Clicked. Action:', event.action);
   
   event.notification.close();
 
-  const targetUrl = event.notification.data.url || '/dashboard';
+  // If user clicked the explicit 'close' action button, do not navigate
+  if (event.action === 'close') {
+    return;
+  }
 
-  // Focus on an existing client window if open, or open a new one
+  const targetUrl = event.notification?.data?.url || '/dashboard';
+  const fullTargetUrl = new URL(targetUrl, self.location.origin).href;
+
+  // Focus an existing client window if open, or open a fresh one
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // If there's an active client matching or just open, focus it
       for (const client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
           client.postMessage({ type: 'NAVIGATE', url: targetUrl });
+          if ('navigate' in client && client.url !== fullTargetUrl) {
+            client.navigate(fullTargetUrl);
+          }
           return client.focus();
         }
       }
-      // Otherwise, open it fresh
       if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
+        return clients.openWindow(fullTargetUrl);
       }
     })
   );
