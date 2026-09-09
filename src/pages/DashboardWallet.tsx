@@ -157,15 +157,28 @@ const DashboardWallet = () => {
     return basePkg ? applyPriceMultiplier(basePkg.price, priceMultiplier) : 0;
   };
 
+  // Load fee rate once on mount
+  useEffect(() => {
+    supabase
+      .from("system_settings")
+      .select("paystack_deposit_fee_percent")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.paystack_deposit_fee_percent !== undefined) {
+          setFeeRate(Number(data.paystack_deposit_fee_percent));
+        }
+      });
+  }, []);
+
   const fetchBalance = useCallback(async () => {
     if (!user) return;
 
-    const [walletRes, ordersRes, parentProfitRes, withdrawalsRes, settingsRes] = await Promise.all([
+    const [walletRes, ordersRes, parentProfitRes, withdrawalsRes] = await Promise.all([
       supabase.from("wallets").select("balance, loyalty_balance, api_balance").eq("agent_id", user.id).maybeSingle(),
       supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
       supabase.from("withdrawals").select("amount, status").eq("agent_id", user.id).in("status", ["completed", "pending", "processing"]),
-      supabase.from("system_settings").select("paystack_deposit_fee_percent").eq("id", 1).maybeSingle(),
     ]);
 
     const walletData = walletRes.data;
@@ -182,9 +195,6 @@ const DashboardWallet = () => {
     setApiBalance(apiBal);
     setLoyaltyBalance(Number(loyaltyPoints));
     setAvailableProfit(Math.max(0, profitBalance));
-    if (settingsRes.data?.paystack_deposit_fee_percent !== undefined) {
-      setFeeRate(Number(settingsRes.data.paystack_deposit_fee_percent));
-    }
     setLoading(false);
   }, [user]);
 

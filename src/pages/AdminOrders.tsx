@@ -228,8 +228,10 @@ export default function AdminOrders() {
     }
   };
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
+  const fetchOrders = useCallback(async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+    }
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -305,7 +307,7 @@ export default function AdminOrders() {
     
     if (error) {
       toast({ title: "Failed to fetch orders", description: error.message, variant: "destructive" });
-      setLoading(false);
+      if (!isSilent) setLoading(false);
       return;
     }
 
@@ -342,31 +344,37 @@ export default function AdminOrders() {
       setProfiles(prev => ({ ...prev, ...currentProfiles }));
     }
 
-    const enriched: OrderRow[] = (data || []).map((o: any) => {
-      const profile = currentProfiles[o.agent_id] || profiles[o.agent_id];
-      const isPlaceholder = o.agent_id === "00000000-0000-0000-0000-000000000000" || !o.agent_id;
-      
-      return {
-        ...o,
-        agent_name: profile?.full_name || (isPlaceholder ? (o.customer_name || "Guest (Direct Purchase)") : "Unknown Agent"),
-        agent_email: profile?.email || "",
-        agent_phone: profile?.phone || "",
-        is_sub_agent: profile?.is_sub_agent ?? false,
-        metadata: { ...o.metadata, wallet_balance: profile?.wallet_balance }
-      };
+    setAllOrders((prevOrders) => {
+      return (data || []).map((o: any) => {
+        const profile = currentProfiles[o.agent_id];
+        const isPlaceholder = o.agent_id === "00000000-0000-0000-0000-000000000000" || !o.agent_id;
+        
+        return {
+          ...o,
+          agent_name: profile?.full_name || (isPlaceholder ? (o.customer_name || "Guest (Direct Purchase)") : "Unknown Agent"),
+          agent_email: profile?.email || "",
+          agent_phone: profile?.phone || "",
+          is_sub_agent: profile?.is_sub_agent ?? false,
+          metadata: { ...o.metadata, wallet_balance: profile?.wallet_balance }
+        };
+      });
     });
 
-    setAllOrders(enriched);
-    setLoading(false);
-  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, profiles, toast]);
+    if (!isSilent) {
+      setLoading(false);
+    }
+  }, [page, search, statusFilter, networkFilter, orderTypeFilter, startDate, endDate, toast]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchOrders(), 200);
     return () => clearTimeout(timer);
   }, [fetchOrders]);
 
-  // Live updates — re-fetch current page whenever any order changes
-  useRealtimeRefresh({ tables: ["orders"], onRefresh: fetchOrders });
+  // Live updates — re-fetch current page silently whenever any order changes
+  useRealtimeRefresh({
+    tables: ["orders"],
+    onRefresh: (isSilent) => fetchOrders(isSilent ?? true),
+  });
 
   const handleRouteAllToDatamart = async () => {
     const candidateOrders = selectedOrders.length > 0

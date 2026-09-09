@@ -72,8 +72,8 @@ const AdminProfits = () => {
   const gridColor = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
   const tickColor = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.5)";
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     const [ordersRes, profilesRes] = await Promise.all([
       supabase
         .from("orders")
@@ -87,13 +87,16 @@ const AdminProfits = () => {
     ]);
     setOrders((ordersRes.data ?? []) as OrderRow[]);
     setProfiles((profilesRes.data ?? []) as Profile[]);
-    setLoading(false);
+    if (!isSilent) setLoading(false);
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Live updates — refresh profit leaderboard when orders are fulfilled
-  useRealtimeRefresh({ tables: ["orders"], onRefresh: fetchData });
+  // Live updates — refresh profit leaderboard when orders are fulfilled without unmounting UI
+  useRealtimeRefresh({
+    tables: ["orders"],
+    onRefresh: (isSilent) => fetchData(isSilent ?? true),
+  });
 
   // Filter by date range
   const filteredOrders = useMemo(() => {

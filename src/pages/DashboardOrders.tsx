@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -240,16 +241,16 @@ const DashboardOrders = () => {
     }
   };
 
-  const fetchOrders = useCallback(async (isLoadMore = false) => {
+  const fetchOrders = useCallback(async (isLoadMore = false, isSilent = false) => {
     if (!user) return;
-    if (!isLoadMore) {
+    if (!isLoadMore && !isSilent) {
       setLoading(true);
       setPage(0);
     }
 
-    const currentPage = isLoadMore ? page + 1 : 0;
-    const from = currentPage * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const currentPage = isLoadMore ? page + 1 : (isSilent ? page : 0);
+    const from = isSilent ? 0 : currentPage * PAGE_SIZE;
+    const to = isSilent ? (page + 1) * PAGE_SIZE - 1 : from + PAGE_SIZE - 1;
 
     const candidateAgentIds = Array.from(new Set([
       user.id,
@@ -286,12 +287,17 @@ const DashboardOrders = () => {
     const { data, count } = await q;
 
     if (data) {
-      setOrders(prev => isLoadMore ? [...prev, ...data] : data);
-      setHasMore(count ? (from + data.length < count) : data.length === PAGE_SIZE);
+      setOrders(prev => {
+        if (isSilent) return data;
+        return isLoadMore ? [...prev, ...data] : data;
+      });
+      setHasMore(count ? ((isSilent ? (page + 1) * PAGE_SIZE : from + data.length) < count) : data.length === PAGE_SIZE);
       if (isLoadMore) setPage(currentPage);
     }
 
-    setLoading(false);
+    if (!isSilent) {
+      setLoading(false);
+    }
   }, [filter, search, page, profile?.id, profile?.user_id, user]);
 
   useEffect(() => {
@@ -301,7 +307,7 @@ const DashboardOrders = () => {
     return () => clearTimeout(timer);
   }, [filter, search, user, profile?.id, fetchOrders]);
 
-  // Live realtime updates for all current orders
+  // Live realtime updates filtered specifically to current agent's orders
   useEffect(() => {
     if (!user) return;
     const channelId = `dash_orders_live_${user.id}_${Math.random().toString(36).substring(7)}`;
@@ -309,7 +315,7 @@ const DashboardOrders = () => {
       .channel(channelId)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "orders" },
+        { event: "UPDATE", schema: "public", table: "orders", filter: `agent_id=eq.${user.id}` },
         (payload: any) => {
           const updated = payload.new;
           if (!updated?.id) return;
@@ -320,18 +326,19 @@ const DashboardOrders = () => {
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "orders" },
+        { event: "INSERT", schema: "public", table: "orders", filter: `agent_id=eq.${user.id}` },
         (payload: any) => {
           const created = payload.new;
           if (!created?.id) return;
-          if (created.agent_id === user.id) {
-            setOrders((prev) => [created, ...prev]);
-          }
+          setOrders((prev) => {
+            if (prev.some((o) => o.id === created.id)) return prev;
+            return [created, ...prev];
+          });
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(ch); };
+    return () => { safeRemoveChannel(ch); };
   }, [user]);
 
   // Manual retry for a single order
@@ -339,7 +346,7 @@ const DashboardOrders = () => {
     setRetryingIds((prev) => new Set(prev).add(orderId));
     try {
       await invokePublicFunctionAsUser("verify-payment", { body: { reference: orderId, force: true } });
-      await fetchOrders();
+      await fetchOrders(false, true);
     } catch {
       // silent — real-time will handle the update
     } finally {

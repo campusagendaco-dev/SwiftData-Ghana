@@ -108,8 +108,10 @@ const AdminMashUpOrders = () => {
   // Reset to page 1 when any filter changes
   useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter, orderTypeFilter]);
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
+  const fetchOrders = useCallback(async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+    }
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -164,7 +166,7 @@ const AdminMashUpOrders = () => {
     
     if (error) {
       toast({ title: "Failed to fetch orders", variant: "destructive" });
-      setLoading(false);
+      if (!isSilent) setLoading(false);
       return;
     }
 
@@ -172,7 +174,7 @@ const AdminMashUpOrders = () => {
 
     // Resolve profile info for this batch
     const agentIds = [...new Set((data || []).map((o: any) => o.agent_id))];
-    const profileMap: Record<string, AgentProfile> = { ...profiles };
+    const profileMap: Record<string, AgentProfile> = {};
     
     if (agentIds.length > 0) {
       const [profRes, walletRes] = await Promise.all([
@@ -194,7 +196,7 @@ const AdminMashUpOrders = () => {
           wallet_balance: walletMap.get(p.user_id) ?? 0
         };
       });
-      setProfiles(profileMap);
+      setProfiles(prev => ({ ...prev, ...profileMap }));
     }
 
     const enriched: OrderRow[] = (data || []).map((o: any) => {
@@ -212,7 +214,9 @@ const AdminMashUpOrders = () => {
     });
 
     setAllOrders(enriched);
-    setLoading(false);
+    if (!isSilent) {
+      setLoading(false);
+    }
   }, [page, search, statusFilter, orderTypeFilter, toast]);
 
   useEffect(() => {
@@ -221,7 +225,10 @@ const AdminMashUpOrders = () => {
   }, [fetchOrders]);
 
   // Live updates
-  useRealtimeRefresh({ tables: ["orders"], onRefresh: fetchOrders });
+  useRealtimeRefresh({
+    tables: ["orders"],
+    onRefresh: (isSilent) => fetchOrders(isSilent ?? true),
+  });
 
   const handleRetry = async (orderId: string) => {
     setRetrying(orderId);

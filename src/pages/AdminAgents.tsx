@@ -80,15 +80,15 @@ const AdminAgents = () => {
   const { toast } = useToast();
   const { user: currentUser, session } = useAuth();
 
-  const fetchAgents = useCallback(async (isLoadMore = false) => {
-    if (!isLoadMore) {
+  const fetchAgents = useCallback(async (isLoadMore = false, isSilent = false) => {
+    if (!isLoadMore && !isSilent) {
       setLoading(true);
       setPage(0);
     }
     
-    const currentPage = isLoadMore ? page + 1 : 0;
-    const from = currentPage * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const currentPage = isLoadMore ? page + 1 : (isSilent ? page : 0);
+    const from = isSilent ? 0 : currentPage * PAGE_SIZE;
+    const to = isSilent ? (page + 1) * PAGE_SIZE - 1 : from + PAGE_SIZE - 1;
 
     let query = supabase
       .from("profiles")
@@ -151,8 +151,11 @@ const AdminAgents = () => {
       });
     }
 
-    setAgents(prev => isLoadMore ? [...prev, ...rows] : rows);
-    setHasMore(count ? (from + rows.length < count) : rows.length === PAGE_SIZE);
+    setAgents(prev => {
+      if (isSilent) return rows;
+      return isLoadMore ? [...prev, ...rows] : rows;
+    });
+    setHasMore(count ? ((isSilent ? (page + 1) * PAGE_SIZE : from + rows.length) < count) : rows.length === PAGE_SIZE);
     if (isLoadMore) setPage(currentPage);
 
     // Find agents who paid for activation but store is still not activated
@@ -212,7 +215,9 @@ const AdminAgents = () => {
       setPendingSenderIds([]);
     }
 
-    setLoading(false);
+    if (!isSilent) {
+      setLoading(false);
+    }
   }, [filter, page, search]);
 
   useEffect(() => {
@@ -221,7 +226,10 @@ const AdminAgents = () => {
   }, [fetchAgents]);
 
   // Live updates — refresh when profiles or wallets change (approvals, topups)
-  useRealtimeRefresh({ tables: ["profiles", "wallets"], onRefresh: () => fetchAgents(false) });
+  useRealtimeRefresh({
+    tables: ["profiles", "wallets"],
+    onRefresh: (isSilent) => fetchAgents(false, isSilent ?? true),
+  });
 
   const handleApprove = async (userId: string) => {
     setApprovingId(userId);

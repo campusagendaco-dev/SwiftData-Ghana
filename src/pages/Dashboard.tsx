@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Wallet, ShoppingCart, TrendingUp, ArrowDownToLine, ArrowUpRight,
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import FreeDataClaimBanner from "@/components/FreeDataClaimBanner";
@@ -150,6 +151,16 @@ const Dashboard = () => {
     }
   }, [user]);
 
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedFetchData = useCallback((silent = true) => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        fetchData(silent);
+      }
+    }, 1500);
+  }, [fetchData]);
+
   useEffect(() => {
     fetchData();
 
@@ -167,14 +178,14 @@ const Dashboard = () => {
     const ordersChannel = supabase
       .channel(`dash_orders_${uid}_${rand}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `agent_id=eq.${user?.id}` }, () => {
-        fetchData(true);
+        debouncedFetchData(true);
       })
       .subscribe();
     
     const parentOrdersChannel = supabase
       .channel(`dash_parent_orders_${uid}_${rand}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `parent_agent_id=eq.${user?.id}` }, () => {
-        fetchData(true);
+        debouncedFetchData(true);
       })
       .subscribe();
 
@@ -188,12 +199,13 @@ const Dashboard = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(walletChannel);
-      supabase.removeChannel(ordersChannel);
-      supabase.removeChannel(parentOrdersChannel);
-      supabase.removeChannel(settingsChannel);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      safeRemoveChannel(walletChannel);
+      safeRemoveChannel(ordersChannel);
+      safeRemoveChannel(parentOrdersChannel);
+      safeRemoveChannel(settingsChannel);
     };
-  }, [user, fetchData]);
+  }, [user, fetchData, debouncedFetchData]);
 
   const hasStore = !!(profile?.store_name && profile.store_name.trim() !== "");
 
