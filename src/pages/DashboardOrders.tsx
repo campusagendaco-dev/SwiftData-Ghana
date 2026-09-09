@@ -35,10 +35,8 @@ interface Order {
   updated_at: string | null;
 }
 
-function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason" | "network">): boolean {
-  if (order.status !== "fulfillment_failed") return false;
-  const net = (order.network || "").toUpperCase();
-  if (net && !net.includes("MTN")) return false; // Only for MTN packages
+function isBeneficiaryFailure(order: Partial<Order> & { metadata?: any }): boolean {
+  if (order.metadata?.in_beneficiary_queue === true) return true;
   const reason = (order.failure_reason || "").toLowerCase();
   return (
     reason.includes("beneficiary") ||
@@ -397,8 +395,10 @@ const DashboardOrders = () => {
   const copyReceipt = useCallback((order: Order) => {
     const { date, time } = fmt(order.created_at);
     const isWalletTopup = order.order_type === "wallet_topup";
+    const isBeneficiary = isBeneficiaryFailure(order);
     const statusLabel =
       order.status === "fulfilled" ? "✅ Delivered" :
+      isBeneficiary ? "⏳ In Queue (Verification)" :
       order.status === "fulfillment_failed" ? "❌ Failed" :
       order.status === "paid" || order.status === "processing" ? "⏳ Processing" :
       "🕐 Pending";
@@ -439,12 +439,15 @@ const DashboardOrders = () => {
     const isWalletTopup = order.order_type === "wallet_topup";
     const isAirtime = order.order_type === "airtime";
     const isUtility = order.order_type === "utility";
+    const isBeneficiary = isBeneficiaryFailure(order);
     const statusLabel =
       order.status === "fulfilled" ? "Delivered" :
+      isBeneficiary ? "In Queue ⏳" :
       order.status === "fulfillment_failed" ? "Failed" :
       order.status === "paid" || order.status === "processing" ? "Processing" : "Pending";
     const statusColor =
       order.status === "fulfilled" ? "#16a34a" :
+      isBeneficiary ? "#f59e0b" :
       order.status === "fulfillment_failed" ? "#dc2626" : "#d97706";
 
     const serviceLabel = escapeHtml(isWalletTopup ? "Wallet Top-up" :

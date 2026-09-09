@@ -247,7 +247,7 @@ serve(async (req: Request) => {
     const isCardPayment = payload?.network_code === "CRD" || payload?.payment_method === "card" || metadata?.payment_method === "card";
 
     const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("allow_duplicate_purchases, holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled")
+      .from("v_system_settings_with_secrets").select("allow_duplicate_purchases, holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled, auto_failover_non_beneficiary_to_datamart")
       .eq("id", 1)
       .maybeSingle();
 
@@ -636,16 +636,23 @@ serve(async (req: Request) => {
       }
     }
 
-    // --- Secure MTN Beneficiary Whitelist & Datamart Failover Routing ---
+    // --- Secure MTN Beneficiary Whitelist & Failover Routing ---
     if (orderType === "data" && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {
         const check = await checkBeneficiaryBackend(supabaseAdmin, customerPhone, networkName);
         if (!check.ok) {
-          console.warn(`[BENEFICIARY_FAILOVER] MTN number ${customerPhone} is not on DataHub list (${check.reason}). Flagging for Datamart API failover...`);
-          metadata.bypass_beneficiary = true;
-          metadata.route_via_datamart = true;
+          const autoRouteEnabled = settings?.auto_failover_non_beneficiary_to_datamart === true;
+          if (autoRouteEnabled) {
+            console.warn(`[BENEFICIARY_FAILOVER] MTN number ${customerPhone} is not on DataHub list (${check.reason}). Auto-route is ENABLED by admin. Flagging for alternate provider failover...`);
+            metadata.bypass_beneficiary = true;
+            metadata.route_via_datamart = true;
+          } else {
+            console.log(`[BENEFICIARY_QUEUE] MTN number ${customerPhone} is not on DataHub list (${check.reason}). Auto-route is OFF. Entering Whitelist Queue ⏳ for carrier verification.`);
+            metadata.bypass_beneficiary = false;
+            metadata.in_beneficiary_queue = true;
+          }
         }
       }
     }

@@ -161,7 +161,7 @@ const MyOrders = () => {
       `Network   : ${order.network}`,
       `Package   : ${order.package_size}`,
       `Recipient : ${order.customer_phone}`,
-      `Status    : ✅ ${order.status.toUpperCase()}`,
+      `Status    : ${isBeneficiaryOrder(order) ? "⏳ IN QUEUE (WHITELIST VERIFICATION)" : order.status === "fulfilled" ? "✅ DELIVERED" : order.status === "fulfillment_failed" ? "❌ FAILED" : "⏳ PROCESSING"}`,
       "─────────────────────────────────",
       `  ${brandDomain}`,
 
@@ -200,9 +200,6 @@ const MyOrders = () => {
   };
 
   const isBeneficiaryOrder = (order: Order): boolean => {
-    if (order.status !== "fulfillment_failed" && order.status !== "failed" && order.status !== "error") return false;
-    const net = (order.network || "").toUpperCase();
-    if (net && !net.includes("MTN")) return false;
     const r = (order.failure_reason || "").toLowerCase();
     return (
       r.includes("beneficiary") ||

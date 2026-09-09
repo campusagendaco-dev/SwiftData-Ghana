@@ -932,19 +932,57 @@ const AdminSettings = () => {
                 />
               </div>
 
-              <div className="flex items-start justify-between border-t border-white/5 pt-4">
-                <div className="space-y-0.5">
-                  <Label className="text-amber-400 font-semibold flex items-center gap-1.5">
-                    ⚡ Auto-Route Non-Beneficiary MTN Numbers to Datamart API
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Automatically route MTN orders for numbers NOT on the DataHub beneficiary list directly to Datamart API for instant delivery.
-                  </p>
+              <div className="flex flex-col gap-3 border-t border-white/5 pt-4">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-amber-400 font-semibold flex items-center gap-1.5">
+                      ⚡ Auto-Route Non-Beneficiary Orders to Fallback Provider
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {settings.auto_failover_non_beneficiary_to_datamart === true
+                        ? "Active: Orders for unverified MTN numbers will automatically route to the selected fallback provider for instant delivery."
+                        : "Disabled: Orders for unverified MTN numbers enter the Whitelist Queue ⏳ for carrier approval (default)."}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.auto_failover_non_beneficiary_to_datamart === true}
+                    onCheckedChange={(c) => setSettings({ ...settings, auto_failover_non_beneficiary_to_datamart: c })}
+                  />
                 </div>
-                <Switch
-                  checked={settings.auto_failover_non_beneficiary_to_datamart !== false}
-                  onCheckedChange={(c) => setSettings({ ...settings, auto_failover_non_beneficiary_to_datamart: c })}
-                />
+
+                {settings.auto_failover_non_beneficiary_to_datamart === true && (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+                    <div className="space-y-0.5">
+                      <Label className="text-xs font-bold text-amber-300">Selected Fallback Provider:</Label>
+                      <p className="text-[11px] text-muted-foreground">Carrier-blocked numbers will be dispatched through this provider.</p>
+                    </div>
+                    <select
+                      value={providers.find(p => p.settings?.is_beneficiary_fallback === true)?.id || providers.find(p => p.handler_type === "datamart")?.id || ""}
+                      onChange={async (e) => {
+                        const targetId = e.target.value;
+                        const updated = providers.map(p => ({
+                          ...p,
+                          settings: {
+                            ...(p.settings || {}),
+                            is_beneficiary_fallback: p.id === targetId
+                          }
+                        }));
+                        setProviders(updated);
+                        for (const p of updated) {
+                          await supabase.from("providers").update({ settings: p.settings }).eq("id", p.id);
+                        }
+                        toast({ title: "Fallback Provider Designated", description: "Designated fallback provider updated successfully." });
+                      }}
+                      className="text-xs h-9 bg-background/90 border border-border rounded-lg px-2.5 py-1 text-foreground font-bold outline-none focus:border-amber-500 min-w-[200px]"
+                    >
+                      {providers.filter(p => p.provider_type === "data" || p.handler_type === "datamart" || p.handler_type === "skdataplug" || p.handler_type === "spendless").map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.is_active ? `Active · GH₵${Number(p.balance || 0).toFixed(2)}` : 'Disabled'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-start justify-between p-3 bg-primary/5 border border-primary/20 rounded-xl">

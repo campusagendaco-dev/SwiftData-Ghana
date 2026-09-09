@@ -64,9 +64,6 @@ function translateFailureReason(reason?: string): string {
 }
 
 function isBeneficiaryFailure(status: OrderStatusType, message?: string, network?: string): boolean {
-  if (status !== "fulfillment_failed" && status !== "error") return false;
-  const net = (network || "").toUpperCase();
-  if (net && !net.includes("MTN")) return false;
   const r = (message || "").toLowerCase();
   return (
     r.includes("beneficiary") ||
@@ -78,13 +75,13 @@ function isBeneficiaryFailure(status: OrderStatusType, message?: string, network
   );
 }
 
-function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string) {
-  if (isBeneficiaryFailure(status, message, network)) {
+function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string, isBeneficiary?: boolean) {
+  if (isBeneficiary || isBeneficiaryFailure(status, message, network)) {
     return { 
       color: "#F59E0B", 
       glow: "rgba(245,158,11,0.25)", 
       label: "In Queue for Whitelist Verification ⏳", 
-      sub: "Your MTN recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
+      sub: "Your recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
       badge: "In Queue ⏳" 
     };
   }
@@ -223,7 +220,10 @@ const OrderStatus = () => {
   const brandColor = isStoreRoute ? (storeInfo?.color || "#f59e0b") : "#f59e0b";
   const brandDomain = isStoreRoute ? (activeDomain || (storeInfo?.custom_domain) || window.location.host) : "swiftdatagh.shop";
 
-  const meta = getStatusMeta(orderStatus, failed, network, statusMessage);
+  const isBeneficiaryOrder = orderData?.metadata?.in_beneficiary_queue === true ||
+    isBeneficiaryFailure(orderStatus, statusMessage || orderData?.failure_reason, network || orderData?.network);
+
+  const meta = getStatusMeta(orderStatus, failed && !isBeneficiaryOrder, network || orderData?.network, statusMessage || orderData?.failure_reason, isBeneficiaryOrder);
 
   const handleStatusUpdate = useCallback((status: OrderStatusType, message?: string) => {
     setOrderStatus(status);
@@ -258,6 +258,10 @@ const OrderStatus = () => {
         if (rpcList && rpcList.length > 0) {
           const data = rpcList[0];
           setOrderData(data);
+          if (data.network) setOrderNetwork(data.network);
+          if (data.package_size) setOrderPackageSize(data.package_size);
+          if (data.customer_phone) setOrderPhone(data.customer_phone);
+          if (data.order_type) setOrderType(data.order_type);
           handleStatusUpdate(data.status as OrderStatusType, data.failure_reason);
           
           if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
@@ -294,8 +298,14 @@ const OrderStatus = () => {
           throw error;
         }
         if (!data) throw new Error("Failed to fetch status");
-        if (data.order) setOrderData(data.order);
-        handleStatusUpdate(data.status, data.message || data.error);
+        if (data.order) {
+          setOrderData(data.order);
+          if (data.order.network) setOrderNetwork(data.order.network);
+          if (data.order.package_size) setOrderPackageSize(data.order.package_size);
+          if (data.order.customer_phone) setOrderPhone(data.order.customer_phone);
+          if (data.order.order_type) setOrderType(data.order.order_type);
+        }
+        handleStatusUpdate(data.status, data.message || data.reason || data.error);
         
         // Stop polling if we reached a terminal state
         if (data.status === "fulfilled" || data.status === "fulfillment_failed" || data.status === "error") {
@@ -323,7 +333,7 @@ const OrderStatus = () => {
       ...(network ? [`Network   : ${network}`] : []),
       ...(packageSize ? [`Package   : ${packageSize}`] : []),
       ...(phoneParam ? [`Recipient : ${phoneParam}`] : []),
-      `Status    : ✅ ${orderStatus.toUpperCase()}`,
+      `Status    : ${isBeneficiaryOrder ? "⏳ IN QUEUE (WHITELIST VERIFICATION)" : (failed || orderStatus === "fulfillment_failed") ? "❌ FAILED" : orderStatus === "fulfilled" ? "✅ DELIVERED" : "⏳ PROCESSING"}`,
       "─────────────────────────────────",
       `  ${brandDomain}`,
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -717,7 +727,7 @@ const OrderStatus = () => {
                 <div 
                   className={cn(
                     "absolute inset-y-0 left-0 transition-all duration-1000 ease-out shadow-md",
-                    isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork)
+                    isBeneficiaryOrder
                       ? "bg-gradient-to-r from-amber-500 to-amber-400"
                       : "bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500"
                   )}
@@ -726,13 +736,12 @@ const OrderStatus = () => {
               </div>
               <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pt-1">
                 {STEPS.map((s, i) => {
-                  const isBen = isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork);
-                  const activeStep = orderStatus === "fulfilled" ? 3 : isBen ? 2 : (orderStatus === "processing" ? 2 : (["paid", "pending"].includes(orderStatus) ? 1 : 0));
+                  const activeStep = orderStatus === "fulfilled" ? 3 : isBeneficiaryOrder ? 2 : (orderStatus === "processing" ? 2 : (["paid", "pending"].includes(orderStatus) ? 1 : 0));
                   const isActive = activeStep >= i + 1;
-                  const stepLabel = (i === 2 && isBen) ? "In Queue ⏳" : s.label;
+                  const stepLabel = (i === 2 && isBeneficiaryOrder) ? "In Queue ⏳" : s.label;
                   return (
-                    <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? (isBen && i === 2 ? "text-amber-400 font-black" : "text-emerald-400 font-black") : "text-slate-600")}>
-                      <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? (isBen && i === 2 ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-slate-700")} />
+                    <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? (isBeneficiaryOrder && i === 2 ? "text-amber-400 font-black" : "text-emerald-400 font-black") : "text-slate-600")}>
+                      <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? (isBeneficiaryOrder && i === 2 ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-slate-700")} />
                       <span>{stepLabel}</span>
                     </div>
                   );
@@ -741,7 +750,7 @@ const OrderStatus = () => {
             </div>
 
             {/* Whitelist In-Queue Callout Card */}
-            {isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork) && (
+            {isBeneficiaryOrder && (
               <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-center gap-2">
                   <Clock className="w-4 h-4 text-amber-400 animate-pulse" />

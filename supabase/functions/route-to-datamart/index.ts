@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { getProviderAdapter } from "../_shared/providers/registry.ts";
 
 function parseCapacity(packageSize: string | null | undefined): number {
   if (!packageSize) return 0;
@@ -32,28 +33,40 @@ serve(async (req) => {
       });
     }
 
-    const { order_ids, target } = await req.json().catch(() => ({ order_ids: null, target: "all_beneficiary" }));
+    const { order_ids, target, provider_id } = await req.json().catch(() => ({ order_ids: null, target: "all_beneficiary", provider_id: null }));
 
-    // 1. Fetch active Datamart provider credentials
-    const { data: dmProvider, error: provErr } = await supabaseAdmin
-      .from("providers")
-      .select("*")
-      .eq("handler_type", "datamart")
-      .maybeSingle();
-
-    if (provErr || !dmProvider) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Datamart provider configuration not found or disabled."
-      }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // 1. Resolve the target provider selected by admin (or marked as fallback)
+    let chosenProvider: any = null;
+    if (provider_id) {
+      const { data: prov } = await supabaseAdmin
+        .from("providers")
+        .select("*")
+        .eq("id", provider_id)
+        .maybeSingle();
+      if (prov) chosenProvider = prov;
     }
 
-    const apiKey = dmProvider.api_key || Deno.env.get("DATAMART_API_KEY") || "";
-    if (!apiKey) {
+    if (!chosenProvider) {
+      // Check for a provider marked in settings as is_beneficiary_fallback
+      const { data: allProv } = await supabaseAdmin.from("providers").select("*");
+      const designated = (allProv || []).find((p: any) => p.settings?.is_beneficiary_fallback === true);
+      if (designated) {
+        chosenProvider = designated;
+      } else {
+        const { data: dm } = await supabaseAdmin
+          .from("providers")
+          .select("*")
+          .eq("handler_type", "datamart")
+          .maybeSingle();
+        chosenProvider = dm || (allProv || []).find((p: any) => p.is_active && p.provider_type === "data");
+      }
+    }
+
+    if (!chosenProvider) {
       return new Response(JSON.stringify({
         success: false,
-        error: "Datamart API Key is missing in System Settings or Environment Variables."
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        error: "No telecom provider found to route non-beneficiary orders to."
+      }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // 2. Query target orders to route
@@ -89,8 +102,9 @@ serve(async (req) => {
     let failedCount = 0;
     let skippedCount = 0;
     const results: any[] = [];
+    const handler = String(chosenProvider.handler_type || "standard").toLowerCase();
 
-    // 3. Process orders to Datamart API
+    // 3. Process orders to the selected provider
     for (const ord of orders) {
       try {
         const phone = ord.customer_phone;
@@ -99,58 +113,91 @@ serve(async (req) => {
           continue;
         }
 
-        const netStr = String(ord.network || "MTN").toUpperCase();
-        let dmNetwork = "YELLO";
-        if (netStr.includes("TELECEL") || netStr.includes("VODA")) dmNetwork = "TELECEL";
-        if (netStr.includes("AT") || netStr.includes("AIRTEL")) dmNetwork = "AT_PREMIUM";
+        if (handler === "datamart") {
+          const apiKey = chosenProvider.api_key || Deno.env.get("DATAMART_API_KEY") || "";
+          const netStr = String(ord.network || "MTN").toUpperCase();
+          let dmNetwork = "YELLO";
+          if (netStr.includes("TELECEL") || netStr.includes("VODA")) dmNetwork = "TELECEL";
+          if (netStr.includes("AT") || netStr.includes("AIRTEL")) dmNetwork = "AT_PREMIUM";
 
-        const capNum = parseCapacity(ord.package_size);
-        const planId = `MTN_${capNum > 0 ? capNum : 1}`;
+          const capNum = parseCapacity(ord.package_size);
+          const planId = `MTN_${capNum > 0 ? capNum : 1}`;
 
-        const payload = {
-          phoneNumber: phone,
-          recipient: phone,
-          network: dmNetwork,
-          planId: planId,
-          plan: planId,
-          capacity: String(capNum > 0 ? capNum : 1),
-          orderReference: ord.id,
-          reference: ord.id,
-          gateway: "wallet",
-          bypass_beneficiary: true
-        };
+          const payload = {
+            phoneNumber: phone,
+            recipient: phone,
+            network: dmNetwork,
+            planId: planId,
+            plan: planId,
+            capacity: String(capNum > 0 ? capNum : 1),
+            orderReference: ord.id,
+            reference: ord.id,
+            gateway: "wallet",
+            bypass_beneficiary: true
+          };
 
-        const res = await fetch("https://api.datamartgh.shop/api/developer/purchase", {
-          method: "POST",
-          headers: {
-            "X-API-Key": apiKey,
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
+          const res = await fetch("https://api.datamartgh.shop/api/developer/purchase", {
+            method: "POST",
+            headers: {
+              "X-API-Key": apiKey,
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
 
-        const resData = await res.json().catch(() => null);
+          const resData = await res.json().catch(() => null);
 
-        if (res.ok && resData?.status === "success" && resData?.data?.purchaseId) {
-          const purchaseId = resData.data.purchaseId;
+          if (res.ok && resData?.status === "success" && resData?.data?.purchaseId) {
+            const purchaseId = resData.data.purchaseId;
+            await supabaseAdmin.from("orders").update({
+              provider_id: chosenProvider.id,
+              provider_order_id: purchaseId,
+              status: "processing",
+              failure_reason: null,
+              auto_refunded: false,
+              updated_at: new Date().toISOString()
+            }).eq("id", ord.id);
 
-          // Update database order record
-          await supabaseAdmin.from("orders").update({
-            provider_id: dmProvider.id,
-            provider_order_id: purchaseId,
-            status: "processing",
-            failure_reason: null,
-            auto_refunded: false,
-            updated_at: new Date().toISOString()
-          }).eq("id", ord.id);
-
-          routedCount++;
-          results.push({ id: ord.id, status: "success", purchaseId });
+            routedCount++;
+            results.push({ id: ord.id, status: "success", purchaseId });
+          } else {
+            failedCount++;
+            const reason = resData?.message || resData?.error || `HTTP ${res.status}`;
+            results.push({ id: ord.id, status: "failed", reason });
+          }
         } else {
-          failedCount++;
-          const reason = resData?.message || resData?.error || `HTTP ${res.status}`;
-          results.push({ id: ord.id, status: "failed", reason });
+          // Universal Adapter for SKPlug, Spendless, Superbdatafy, etc.
+          const adapter = getProviderAdapter(handler);
+          const purchaseData = {
+            recipient: phone,
+            amount: Number(ord.amount || 0),
+            reference: ord.id,
+            networkRaw: ord.network || "MTN",
+            networkKey: adapter.mapNetwork(ord.network || "MTN"),
+            package_size: ord.package_size,
+            bypass_beneficiary: true,
+          };
+
+          const res = await adapter.purchase(supabaseAdmin, chosenProvider, purchaseData);
+
+          if (res.ok) {
+            const purchaseId = res.id || res.raw?.id || res.raw?.order_id || res.raw?.purchaseId || "routed";
+            await supabaseAdmin.from("orders").update({
+              provider_id: chosenProvider.id,
+              provider_order_id: purchaseId,
+              status: "processing",
+              failure_reason: null,
+              auto_refunded: false,
+              updated_at: new Date().toISOString()
+            }).eq("id", ord.id);
+
+            routedCount++;
+            results.push({ id: ord.id, status: "success", purchaseId });
+          } else {
+            failedCount++;
+            results.push({ id: ord.id, status: "failed", reason: res.reason });
+          }
         }
       } catch (e: any) {
         failedCount++;
@@ -160,7 +207,8 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
-      message: `Successfully routed ${routedCount} beneficiary orders to Datamart API!`,
+      message: `Successfully routed ${routedCount} beneficiary orders to ${chosenProvider.name}!`,
+      provider: chosenProvider.name,
       routedCount,
       failedCount,
       skippedCount,

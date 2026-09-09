@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { invokePublicFunction } from "@/lib/public-function-client";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
+import { Switch } from "@/components/ui/switch";
 
 interface BeneficiaryOrder {
   id: string;
@@ -68,6 +69,13 @@ export default function AdminBeneficiaryOrders() {
   const [submittingPhone, setSubmittingPhone] = useState<string | null>(null);
   const [sendingSmsPhone, setSendingSmsPhone] = useState<string | null>(null);
   const [sendingBulkSms, setSendingBulkSms] = useState(false);
+
+  // Fallback Provider & Auto-Routing States
+  const [dataProviders, setDataProviders] = useState<Array<{ id: string; name: string; handler_type: string; is_active: boolean; settings?: any; balance?: number }>>([]);
+  const [selectedRouteProviderId, setSelectedRouteProviderId] = useState<string>("");
+  const [autoRouteEnabled, setAutoRouteEnabled] = useState<boolean>(false);
+  const [updatingAutoRoute, setUpdatingAutoRoute] = useState<boolean>(false);
+  const [routingPhone, setRoutingPhone] = useState<string | null>(null);
 
   // Auto-Submit Sentinel: newly-detected non-beneficiary numbers get submitted
   // for carrier approval automatically 5s after they first appear here, with no
@@ -475,40 +483,162 @@ export default function AdminBeneficiaryOrders() {
     setSendingBulkSms(false);
   };
 
-  const handleRouteAllToDatamart = async () => {
-    if (!confirm(`Are you sure you want to FORCE-ROUTE all ${allBeneficiaryOrders.length} non-beneficiary orders directly to Datamart API?`)) {
+  const loadProvidersAndSettings = useCallback(async () => {
+    try {
+      const { data: sysData } = await supabase
+        .from("system_settings")
+        .select("auto_failover_non_beneficiary_to_datamart")
+        .eq("id", 1)
+        .maybeSingle();
+      if (sysData) {
+        setAutoRouteEnabled(sysData.auto_failover_non_beneficiary_to_datamart === true);
+      }
+
+      const { data: provs } = await supabase
+        .from("providers")
+        .select("id, name, handler_type, is_active, settings, balance, provider_type")
+        .eq("provider_type", "data");
+
+      if (provs && provs.length > 0) {
+        setDataProviders(provs);
+        const designated = provs.find((p: any) => p.settings?.is_beneficiary_fallback === true);
+        if (designated) {
+          setSelectedRouteProviderId(designated.id);
+        } else {
+          const dm = provs.find((p: any) => p.handler_type === "datamart") || provs[0];
+          if (dm) setSelectedRouteProviderId(dm.id);
+        }
+      }
+    } catch (e) {
+      console.error("[AdminBeneficiaryOrders] Error loading providers/settings:", e);
+    }
+  }, []);
+
+  const handleToggleAutoRoute = async (enabled: boolean) => {
+    setUpdatingAutoRoute(true);
+    try {
+      const { error } = await supabase
+        .from("system_settings")
+        .update({ auto_failover_non_beneficiary_to_datamart: enabled })
+        .eq("id", 1);
+      if (error) throw error;
+      setAutoRouteEnabled(enabled);
+      toast({
+        title: enabled ? "⚡ Auto-Route Mode Activated" : "⏳ Whitelist Queue Mode Activated",
+        description: enabled
+          ? "Orders for non-beneficiary numbers will now auto-route to the selected fallback provider."
+          : "Orders for non-beneficiary numbers will now enter the Whitelist Queue.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Update Failed",
+        description: err.message || "Failed to update routing setting",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingAutoRoute(false);
+    }
+  };
+
+  const handleSelectFallbackProvider = async (providerId: string) => {
+    setSelectedRouteProviderId(providerId);
+    try {
+      for (const prov of dataProviders) {
+        const isTarget = prov.id === providerId;
+        const currentSettings = prov.settings || {};
+        if (currentSettings.is_beneficiary_fallback !== isTarget) {
+          await supabase.from("providers").update({
+            settings: { ...currentSettings, is_beneficiary_fallback: isTarget }
+          }).eq("id", prov.id);
+        }
+      }
+      const chosen = dataProviders.find(p => p.id === providerId);
+      toast({
+        title: "Fallback Provider Designated! 🎯",
+        description: `Target provider set to ${chosen?.name || "selected provider"}.`,
+      });
+      loadProvidersAndSettings();
+    } catch (err: any) {
+      console.error("Error setting fallback provider:", err);
+    }
+  };
+
+  const handleRouteAllOrders = async (targetProviderId?: string) => {
+    const provId = targetProviderId || selectedRouteProviderId;
+    const chosenProv = dataProviders.find(p => p.id === provId);
+    const provName = chosenProv?.name || "selected provider";
+
+    if (!confirm(`Are you sure you want to FORCE-ROUTE all ${allBeneficiaryOrders.length} non-beneficiary orders to ${provName}?`)) {
       return;
     }
 
     setRoutingDatamart(true);
-    toast({ title: "Routing Orders to Datamart API...", description: "Connecting to Datamart API and submitting orders..." });
+    toast({ title: `Routing Orders to ${provName}...`, description: `Connecting and submitting orders...` });
 
     try {
       const { data, error } = await supabase.functions.invoke("route-to-datamart", {
-        body: { target: "all_beneficiary" }
+        body: { target: "all_beneficiary", provider_id: provId }
       });
 
       if (error || !data?.success) {
         toast({
-          title: "Datamart Routing Failed",
-          description: error?.message || data?.error || "Could not route orders to Datamart API",
+          title: `${provName} Routing Failed`,
+          description: error?.message || data?.error || `Could not route orders to ${provName}`,
           variant: "destructive"
         });
       } else {
         toast({
-          title: "Datamart Routing Complete! ⚡",
-          description: data.message || `Successfully routed ${data.routedCount || 0} orders to Datamart API.`,
+          title: `Routing Complete! ⚡`,
+          description: data.message || `Successfully routed ${data.routedCount || 0} orders to ${provName}.`,
         });
         fetchBeneficiaryOrders();
       }
     } catch (err: any) {
       toast({
         title: "Routing Error",
-        description: err.message || "Failed to call Datamart API router",
+        description: err.message || `Failed to call router for ${provName}`,
         variant: "destructive"
       });
     } finally {
       setRoutingDatamart(false);
+    }
+  };
+
+  const handleRoutePhoneOrders = async (grp: GroupedBeneficiaryNumber, targetProviderId?: string) => {
+    const provId = targetProviderId || selectedRouteProviderId;
+    const chosenProv = dataProviders.find(p => p.id === provId);
+    const provName = chosenProv?.name || "selected provider";
+    const orderIds = grp.orders.map(o => o.id);
+
+    setRoutingPhone(grp.phone);
+    toast({ title: `Routing ${grp.phone}...`, description: `Submitting ${orderIds.length} orders to ${provName}...` });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("route-to-datamart", {
+        body: { order_ids: orderIds, provider_id: provId }
+      });
+
+      if (error || !data?.success) {
+        toast({
+          title: `Routing Failed`,
+          description: error?.message || data?.error || `Failed to route ${grp.phone}`,
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: `Routed ${grp.phone} ⚡`,
+          description: data.message || `Successfully routed orders to ${provName}.`,
+        });
+        fetchBeneficiaryOrders();
+      }
+    } catch (err: any) {
+      toast({
+        title: "Routing Error",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setRoutingPhone(null);
     }
   };
 
@@ -518,7 +648,7 @@ export default function AdminBeneficiaryOrders() {
       let q: any = supabase
         .from("orders")
         .select("id, agent_id, customer_phone, network, package_size, amount, status, failure_reason, auto_refunded, metadata, created_at")
-        .eq("status", "fulfillment_failed")
+        .or("failure_reason.ilike.%beneficiary%,failure_reason.ilike.%not added%,failure_reason.ilike.%whitelist%,status.eq.fulfillment_failed")
         .order("created_at", { ascending: false })
         .limit(500);
 
@@ -543,7 +673,8 @@ export default function AdminBeneficiaryOrders() {
       } else if (rawOrders && rawOrders.length > 0) {
         const filteredBeneficiaryOrders = rawOrders.filter((o) => {
           const reason = (o.failure_reason || "").toLowerCase();
-          return reason.includes("beneficiary") || reason.includes("not added");
+          const inQueue = o.metadata?.in_beneficiary_queue === true;
+          return inQueue || reason.includes("beneficiary") || reason.includes("not added") || reason.includes("whitelist");
         });
 
         const agentIds = Array.from(new Set(filteredBeneficiaryOrders.map((o) => o.agent_id).filter(Boolean)));
@@ -606,7 +737,8 @@ export default function AdminBeneficiaryOrders() {
 
   useEffect(() => {
     fetchBeneficiaryOrders();
-  }, [fetchBeneficiaryOrders]);
+    loadProvidersAndSettings();
+  }, [fetchBeneficiaryOrders, loadProvidersAndSettings]);
 
   // Keep a ref mirror of the latest orders so runAutoSubmit (fired from a
   // setTimeout closure) always sees fresh data instead of whatever was
@@ -927,11 +1059,11 @@ export default function AdminBeneficiaryOrders() {
               variant="default"
               size="lg"
               className="w-full sm:w-auto gap-2 h-11 px-4 sm:px-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-white font-extrabold rounded-2xl shadow-lg shadow-amber-950/30 transition-all active:scale-95 text-xs sm:text-sm border border-amber-400/40"
-              onClick={handleRouteAllToDatamart}
+              onClick={() => handleRouteAllOrders(selectedRouteProviderId)}
               disabled={routingDatamart || loading || allBeneficiaryOrders.length === 0}
             >
               {routingDatamart ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 fill-amber-200 text-amber-200 animate-pulse" />}
-              ⚡ Route All to Datamart API ({allBeneficiaryOrders.length})
+              ⚡ Route All to {dataProviders.find(p => p.id === selectedRouteProviderId)?.name || "Fallback Provider"} ({allBeneficiaryOrders.length})
             </Button>
 
             <Button
@@ -975,6 +1107,78 @@ export default function AdminBeneficiaryOrders() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Dynamic Whitelist Queue vs. Auto-Route Control Center */}
+      <div className={cn(
+        "rounded-3xl p-5 sm:p-6 border transition-all duration-300 shadow-xl",
+        autoRouteEnabled
+          ? "bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-emerald-500/10 border-amber-500/30 shadow-amber-950/20"
+          : "bg-gradient-to-r from-blue-500/15 via-indigo-500/10 to-slate-500/10 border-blue-500/30 shadow-blue-950/20"
+      )}>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+          <div className="space-y-1.5 max-w-xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider">
+              {autoRouteEnabled ? (
+                <span className="inline-flex items-center gap-1.5 text-amber-400 bg-amber-500/20 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
+                  <Zap className="w-3.5 h-3.5 fill-amber-400" /> Auto-Route Mode: Active ⚡
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-blue-400 bg-blue-500/20 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
+                  <Clock className="w-3.5 h-3.5" /> Whitelist Queue Mode: Active ⏳
+                </span>
+              )}
+            </div>
+            <h2 className="text-base sm:text-lg font-black text-foreground">
+              {autoRouteEnabled
+                ? "Auto-Routing Non-Beneficiary Orders to Fallback Provider"
+                : "Holding Non-Beneficiary Orders in Whitelist Queue"}
+            </h2>
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              {autoRouteEnabled
+                ? `Incoming orders for numbers not on DataHub's whitelist will automatically bypass and deliver through ${dataProviders.find(p => p.id === selectedRouteProviderId)?.name || "your designated fallback provider"}.`
+                : "Incoming orders for unverified numbers will cleanly enter the Whitelist Queue without failing. You can manually route them or submit them for carrier approval."}
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            {/* Fallback Provider Selector */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                Target Fallback Provider
+              </span>
+              <Select value={selectedRouteProviderId} onValueChange={handleSelectFallbackProvider}>
+                <SelectTrigger className="w-full sm:w-56 h-11 rounded-2xl text-xs font-bold bg-background/80 border-border">
+                  <SelectValue placeholder="Select Provider" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl">
+                  {dataProviders.map((p) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs font-bold">
+                      {p.name} {p.balance != null ? `(GH₵ ${Number(p.balance).toFixed(2)})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Mode Switch Toggle */}
+            <div className="flex flex-col justify-center items-start sm:items-center bg-background/50 border border-white/10 rounded-2xl p-3 px-4 gap-1.5 min-w-[140px]">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                Auto-Route Toggle
+              </span>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={autoRouteEnabled}
+                  onCheckedChange={handleToggleAutoRoute}
+                  disabled={updatingAutoRoute}
+                />
+                <span className={cn("text-xs font-black", autoRouteEnabled ? "text-amber-400" : "text-muted-foreground")}>
+                  {autoRouteEnabled ? "ON" : "OFF"}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1160,6 +1364,16 @@ export default function AdminBeneficiaryOrders() {
                             <Button
                               variant="outline"
                               size="sm"
+                              className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 transition-all"
+                              onClick={() => handleRoutePhoneOrders(grp, selectedRouteProviderId)}
+                              disabled={routingPhone === grp.phone || routingDatamart}
+                            >
+                              {routingPhone === grp.phone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />}
+                              Route to {dataProviders.find(p => p.id === selectedRouteProviderId)?.name || "Provider"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               className="h-9 px-3 rounded-xl text-xs font-bold gap-1.5 border-purple-500/30 hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 transition-all"
                               onClick={() => handleSendBeneficiarySms(grp.phone, grp.totalAmount)}
                               disabled={sendingSmsPhone === grp.phone}
@@ -1239,6 +1453,16 @@ export default function AdminBeneficiaryOrders() {
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <span className="text-[10px] text-muted-foreground shrink-0">{date} at {time}</span>
                       <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-2.5 rounded-xl text-xs font-bold gap-1 border-amber-500/30 hover:bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          onClick={() => handleRoutePhoneOrders(grp, selectedRouteProviderId)}
+                          disabled={routingPhone === grp.phone || routingDatamart}
+                        >
+                          {routingPhone === grp.phone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />}
+                          Route
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"

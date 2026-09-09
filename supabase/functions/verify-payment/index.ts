@@ -1614,9 +1614,9 @@ serve(async (req: any) => {
           }
         }
         
-        const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart !== false;
+        const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart === true;
         if (!autoApiSwitch && !datamartFailoverEnabled) {
-          console.log(`[verify-payment] Auto API switch is disabled. Not failing over from ${provider.name}.`);
+          console.log(`[verify-payment] Auto API switch and non-beneficiary auto-route are disabled. Not failing over from ${provider.name}.`);
           break;
         }
 
@@ -1719,7 +1719,17 @@ serve(async (req: any) => {
       return new Response(JSON.stringify({
         status: targetStatus,
         reason: targetFailureReason,
-        provider_order_id: targetProviderOrderId
+        message: targetFailureReason,
+        is_beneficiary: isBeneficiaryErr,
+        provider_order_id: targetProviderOrderId,
+        order: {
+          ...claimedOrder,
+          status: targetStatus,
+          failure_reason: targetFailureReason,
+          network,
+          package_size: packageSize,
+          customer_phone: customerPhone,
+        }
       }), { headers: corsHeaders });
     }
   } catch (error: any) {

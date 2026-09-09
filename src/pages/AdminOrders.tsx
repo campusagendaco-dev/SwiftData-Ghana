@@ -386,12 +386,12 @@ export default function AdminOrders() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to FORCE-ROUTE ${candidateOrders.length} orders directly to Datamart API?`)) {
+    if (!confirm(`Are you sure you want to FORCE-ROUTE ${candidateOrders.length} orders directly to the designated fallback provider?`)) {
       return;
     }
 
     setRoutingDatamart(true);
-    toast({ title: "Routing to Datamart API...", description: `Submitting ${candidateOrders.length} orders to Datamart API...` });
+    toast({ title: "Routing to Fallback Provider...", description: `Submitting ${candidateOrders.length} orders...` });
 
     try {
       const { data, error } = await supabase.functions.invoke("route-to-datamart", {
@@ -400,14 +400,14 @@ export default function AdminOrders() {
 
       if (error || !data?.success) {
         toast({
-          title: "Datamart Routing Failed",
-          description: error?.message || data?.error || "Could not route orders to Datamart API",
+          title: "Routing Failed",
+          description: error?.message || data?.error || "Could not route orders to fallback provider",
           variant: "destructive"
         });
       } else {
         toast({
-          title: "Datamart Routing Complete! ⚡",
-          description: data.message || `Successfully routed ${data.routedCount || 0} orders to Datamart API.`,
+          title: "Routing Complete! ⚡",
+          description: data.message || `Successfully routed ${data.routedCount || 0} orders to fallback provider.`,
         });
         await fetchOrders();
       }
@@ -1006,7 +1006,7 @@ export default function AdminOrders() {
               disabled={routingDatamart}
             >
               {routingDatamart ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
-              ⚡ Route Datamart
+              ⚡ Route Fallback
             </Button>
 
             <Button

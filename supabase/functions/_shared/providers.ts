@@ -156,9 +156,14 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   // EXCLUDE Korba from activeProviders for non-Korba orders!
   activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
 
-  // Prioritize Datamart API for non-beneficiary or bypass_beneficiary orders
-  const isForceDatamart = order?.metadata?.route_via_datamart === true || order?.metadata?.bypass_beneficiary === true;
-  if (isForceDatamart) {
+  // Prioritize designated fallback provider (or Datamart) for non-beneficiary or bypass_beneficiary orders
+  const isForceFallback = order?.metadata?.route_via_datamart === true || order?.metadata?.bypass_beneficiary === true;
+  if (isForceFallback) {
+    const designated = activeProviders.find((p: any) => p.settings?.is_beneficiary_fallback === true);
+    if (designated) {
+      console.log(`[resolveProvidersForOrder] Order ${order?.id} using admin-selected fallback provider ${designated.name}...`);
+      return [designated, ...activeProviders.filter((p: any) => p.id !== designated.id)];
+    }
     const datamartProv = activeProviders.find((p: any) => p.handler_type === "datamart");
     if (datamartProv) {
       console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary Datamart API. Prioritizing Datamart...`);
