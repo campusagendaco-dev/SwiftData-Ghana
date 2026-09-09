@@ -11,14 +11,45 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
 import {
   Bell, Send, Trash2, Loader2, MessageSquare, CheckCircle2,
   XCircle, Phone, BookTemplate, Save, Clock, RefreshCw,
   Users, Calendar, ChevronDown, ChevronUp, Sparkles, AlertCircle,
-  Search, ShieldAlert, Check, Terminal, ExternalLink
+  Search, ShieldAlert, Check, Terminal, ExternalLink,
+  Radio, Smartphone, Laptop, Globe
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface PushSubscriber {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  created_at: string;
+  full_name: string;
+  phone: string;
+  email: string;
+  is_agent?: boolean;
+  is_sub_agent?: boolean;
+  device_type: string;
+}
+
+export interface PushLog {
+  id: string;
+  user_id: string | null;
+  title: string;
+  body: string;
+  url: string | null;
+  device_count: number;
+  success_count: number;
+  failure_count: number;
+  status: "delivered" | "failed" | "no_devices";
+  error_details: string | null;
+  created_at: string;
+  user_name?: string;
+  user_phone?: string;
+}
 
 type TargetType = "all" | "agents" | "sub_agents" | "parent_agents" | "users" | "pending_orders" | "all_order_phones";
 
@@ -118,7 +149,7 @@ const AdminNotificationsPage = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<"compose" | "history" | "sms_logs">("compose");
+  const [activeTab, setActiveTab] = useState<"compose" | "history" | "sms_logs" | "web_push">("compose");
 
   // Compose
   const [title, setTitle] = useState("");
@@ -163,6 +194,13 @@ const AdminNotificationsPage = () => {
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
+  // Web Push State
+  const [pushSubscribers, setPushSubscribers] = useState<PushSubscriber[]>([]);
+  const [pushLogs, setPushLogs] = useState<PushLog[]>([]);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [sendingTestPushId, setSendingTestPushId] = useState<string | null>(null);
+  const [pushSearchQuery, setPushSearchQuery] = useState("");
+
   const smsBody = (title ?? "").trim() ? `${(title ?? "").trim()}\n${(message ?? "").trim()}` : (message ?? "").trim();
   const smsChars = smsBody.length;
   const smsSegments = Math.ceil(smsChars / SMS_LIMIT) || 1;
@@ -196,10 +234,116 @@ const AdminNotificationsPage = () => {
     setSmsLogsLoading(false);
   }, []);
 
+  const fetchPushData = useCallback(async () => {
+    setPushLoading(true);
+    try {
+      const [subsRes, logsRes] = await Promise.all([
+        supabase
+          .from("push_subscriptions" as any)
+          .select("id, user_id, endpoint, created_at")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("push_notification_logs" as any)
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(100),
+      ]);
+
+      const subsData = (subsRes.data || []) as any[];
+      const logsData = (logsRes.data || []) as any[];
+
+      const userIds = Array.from(new Set([
+        ...subsData.map((s: any) => s.user_id),
+        ...logsData.map((l: any) => l.user_id).filter(Boolean),
+      ]));
+
+      const profileMap = new Map<string, any>();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("user_id, full_name, phone, email, is_agent, is_sub_agent")
+          .in("user_id", userIds);
+        (profiles || []).forEach((p: any) => profileMap.set(p.user_id, p));
+      }
+
+      const enrichedSubs: PushSubscriber[] = subsData.map((s: any) => {
+        const prof = profileMap.get(s.user_id);
+        let device_type = "Web Browser";
+        const ep = s.endpoint || "";
+        if (ep.includes("fcm.googleapis.com")) device_type = "Android / Chrome";
+        else if (ep.includes("push.apple.com")) device_type = "iOS / Safari";
+        else if (ep.includes("mozilla.com")) device_type = "Firefox";
+        else if (ep.includes("microsoft.com")) device_type = "Windows / Edge";
+
+        return {
+          id: s.id,
+          user_id: s.user_id,
+          endpoint: s.endpoint,
+          created_at: s.created_at,
+          full_name: prof?.full_name || "Unknown User",
+          phone: prof?.phone || "—",
+          email: prof?.email || "—",
+          is_agent: prof?.is_agent,
+          is_sub_agent: prof?.is_sub_agent,
+          device_type,
+        };
+      });
+
+      const enrichedLogs: PushLog[] = logsData.map((l: any) => {
+        const prof = l.user_id ? profileMap.get(l.user_id) : null;
+        return {
+          ...l,
+          user_name: prof?.full_name || (l.user_id ? "Unknown User" : "Broadcast / System"),
+          user_phone: prof?.phone || "",
+        };
+      });
+
+      setPushSubscribers(enrichedSubs);
+      setPushLogs(enrichedLogs);
+    } catch (err: any) {
+      console.error("Failed to load push data:", err);
+    } finally {
+      setPushLoading(false);
+    }
+  }, []);
+
+  const handleSendTestPush = async (targetUserId: string, targetName: string) => {
+    setSendingTestPushId(targetUserId);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-push-notification", {
+        body: {
+          user_id: targetUserId,
+          title: "🔔 SwiftData Ghana — Push Test",
+          body: `Hi ${targetName || "there"}! Your device successfully received this live test notification off-site.`,
+          url: "/dashboard",
+        },
+      });
+
+      if (error || (data && !data.success)) {
+        toast({
+          title: "Push Delivery Failed",
+          description: error?.message || data?.error || "Device did not acknowledge notification.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Push Delivered! 🚀",
+          description: `Dispatched to ${data?.sent || 1} registered device(s).`,
+        });
+        await fetchPushData();
+      }
+    } catch (err: any) {
+      toast({ title: "Error sending test push", description: err.message, variant: "destructive" });
+    } finally {
+      setSendingTestPushId(null);
+    }
+  };
+
   useEffect(() => { 
     fetchAll(); 
     fetchSmsLogs();
-  }, [fetchAll, fetchSmsLogs]);
+    fetchPushData();
+  }, [fetchAll, fetchSmsLogs, fetchPushData]);
 
   // Real-time subscription to sms_logs
   useEffect(() => {
@@ -218,9 +362,26 @@ const AdminNotificationsPage = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      safeRemoveChannel(channel);
     };
   }, [toast]);
+
+  // Real-time subscription to push_notification_logs & push_subscriptions
+  useEffect(() => {
+    const channel = supabase
+      .channel("push-admin-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "push_notification_logs" }, () => {
+        fetchPushData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "push_subscriptions" }, () => {
+        fetchPushData();
+      })
+      .subscribe();
+
+    return () => {
+      safeRemoveChannel(channel);
+    };
+  }, [fetchPushData]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -485,6 +646,27 @@ const AdminNotificationsPage = () => {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab("web_push");
+            fetchPushData();
+          }}
+          className={cn(
+            "px-4 py-2.5 text-xs sm:text-sm font-bold border-b-2 transition-all gap-1.5 flex items-center relative shrink-0",
+            activeTab === "web_push" ? "border-amber-500 text-amber-500" : "border-transparent text-white/40 hover:text-white/70"
+          )}
+        >
+          <Radio className="w-4 h-4" /> Web Push (Offline Devices)
+          <span className="relative flex h-2 w-2 ml-1">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+          </span>
+          {pushSubscribers.length > 0 && (
+            <Badge className="ml-1 text-[10px] px-1.5 py-0 h-4 bg-white/10 text-white border-white/10">
+              {pushSubscribers.length}
+            </Badge>
+          )}
         </button>
       </div>
 
@@ -1029,6 +1211,266 @@ const AdminNotificationsPage = () => {
                           {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           <span className="hidden sm:inline">· {new Date(log.created_at).toLocaleDateString()}</span>
                         </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Tab 4: Web Push (Offline Devices & Delivery Audit) */}
+      {activeTab === "web_push" && (
+        <div className="space-y-6">
+          {/* Top Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
+              <div className="flex items-center justify-between text-white/40 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Reachable Devices</span>
+                <Smartphone className="w-4 h-4 text-cyan-400" />
+              </div>
+              <p className="text-2xl font-black text-white">{pushSubscribers.length}</p>
+              <p className="text-[10px] text-emerald-400 font-bold mt-1 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Off-site Ready
+              </p>
+            </div>
+
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
+              <div className="flex items-center justify-between text-white/40 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Subscribed Users</span>
+                <Users className="w-4 h-4 text-amber-400" />
+              </div>
+              <p className="text-2xl font-black text-white">
+                {new Set(pushSubscribers.map((s) => s.user_id)).size}
+              </p>
+              <p className="text-[10px] text-white/40 font-bold mt-1">Unique Accounts</p>
+            </div>
+
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
+              <div className="flex items-center justify-between text-white/40 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">Android / Chrome</span>
+                <Smartphone className="w-4 h-4 text-emerald-400" />
+              </div>
+              <p className="text-2xl font-black text-white">
+                {pushSubscribers.filter((s) => s.device_type.includes("Chrome") || s.device_type.includes("Android")).length}
+              </p>
+              <p className="text-[10px] text-white/40 font-bold mt-1">Google FCM</p>
+            </div>
+
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
+              <div className="flex items-center justify-between text-white/40 mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider">iOS & Desktop</span>
+                <Laptop className="w-4 h-4 text-purple-400" />
+              </div>
+              <p className="text-2xl font-black text-white">
+                {pushSubscribers.filter((s) => !s.device_type.includes("Chrome") && !s.device_type.includes("Android")).length}
+              </p>
+              <p className="text-[10px] text-white/40 font-bold mt-1">Safari, Firefox, Edge</p>
+            </div>
+          </div>
+
+          {/* Section 1: Active Registered Push Devices */}
+          <Card className="border-white/5 bg-[#0a0a0f] shadow-2xl rounded-3xl overflow-hidden">
+            <CardHeader className="pb-3 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                  <Radio className="w-4 h-4 text-cyan-400" /> Registered Offline Devices
+                  <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[10px] font-mono font-bold">
+                    {pushSubscribers.length} total
+                  </Badge>
+                </CardTitle>
+                <p className="text-white/40 text-xs mt-0.5">
+                  These devices receive instant web push alerts even when the browser or app is closed
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                  <Input
+                    value={pushSearchQuery}
+                    onChange={(e) => setPushSearchQuery(e.target.value)}
+                    placeholder="Search subscriber..."
+                    className="h-8 pl-8 pr-3 text-xs bg-white/5 border-white/10 text-white rounded-xl w-48 placeholder:text-white/30 focus-visible:ring-cyan-500"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchPushData}
+                  disabled={pushLoading}
+                  className="h-8 px-2.5 bg-white/5 border-white/10 hover:bg-white/10 text-white text-xs rounded-xl"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", pushLoading && "animate-spin")} />
+                </Button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              {pushSubscribers.length === 0 ? (
+                <div className="text-center py-12 text-white/30 text-xs flex flex-col items-center gap-2">
+                  <Radio className="w-8 h-8 opacity-20 text-cyan-400" />
+                  <span>No devices have registered for push notifications yet.</span>
+                  <span className="text-[10px] text-white/20">Users are prompted to enable notifications on the dashboard.</span>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {pushSubscribers
+                    .filter((s) => {
+                      const q = pushSearchQuery.toLowerCase();
+                      return (
+                        s.full_name.toLowerCase().includes(q) ||
+                        s.phone.toLowerCase().includes(q) ||
+                        s.email.toLowerCase().includes(q) ||
+                        s.device_type.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((sub) => (
+                      <div key={sub.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-white/[0.01] transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                            {sub.device_type.includes("Safari") || sub.device_type.includes("iOS") ? (
+                              <Smartphone className="w-4 h-4 text-purple-400" />
+                            ) : sub.device_type.includes("Chrome") || sub.device_type.includes("Android") ? (
+                              <Smartphone className="w-4 h-4 text-emerald-400" />
+                            ) : sub.device_type.includes("Firefox") ? (
+                              <Globe className="w-4 h-4 text-orange-400" />
+                            ) : (
+                              <Laptop className="w-4 h-4 text-cyan-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white">{sub.full_name}</span>
+                              <Badge className="text-[9px] h-4 font-black uppercase px-1 bg-white/5 text-white/50 border-white/5">
+                                {sub.is_sub_agent ? "Sub-Agent" : sub.is_agent ? "Agent" : "User"}
+                              </Badge>
+                              <Badge className="text-[9px] h-4 font-black uppercase px-1 bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
+                                {sub.device_type}
+                              </Badge>
+                            </div>
+                            <div className="text-[11px] text-white/40 flex items-center gap-2 mt-0.5">
+                              <span>{sub.phone}</span>
+                              {sub.email !== "—" && (
+                                <>
+                                  <span>·</span>
+                                  <span>{sub.email}</span>
+                                </>
+                              )}
+                              <span>·</span>
+                              <span className="text-[10px] text-white/25">Subscribed {new Date(sub.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSendTestPush(sub.user_id, sub.full_name)}
+                            disabled={sendingTestPushId === sub.user_id}
+                            className="h-8 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs border-white/10 font-bold gap-1.5"
+                          >
+                            {sendingTestPushId === sub.user_id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
+                                <span>Pinging Device...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Send className="w-3 h-3 text-cyan-400" />
+                                <span>Send Test Push</span>
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Section 2: Push Delivery History Audit Log */}
+          <Card className="border-white/5 bg-[#0a0a0f] shadow-2xl rounded-3xl overflow-hidden">
+            <CardHeader className="pb-3 border-b border-white/5 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-500" /> Push Delivery Audit Logs
+                </CardTitle>
+                <p className="text-white/40 text-xs mt-0.5">
+                  Historical tracking of all web push dispatches, delivery counts, and device acknowledgments
+                </p>
+              </div>
+              <Badge className="bg-white/5 text-white/50 border-white/5 text-[10px] font-mono">
+                {pushLogs.length} events
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              {pushLogs.length === 0 ? (
+                <div className="text-center py-12 text-white/30 text-xs flex flex-col items-center gap-2">
+                  <CheckCircle2 className="w-8 h-8 opacity-20 text-emerald-400" />
+                  <span>No push delivery logs recorded yet.</span>
+                  <span className="text-[10px] text-white/20">Automatic logs appear as orders, alerts, and tests are pushed.</span>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {pushLogs.map((log) => (
+                    <div key={log.id} className="p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3 hover:bg-white/[0.01] transition-colors">
+                      <div className="space-y-1.5 max-w-xl">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <Bell className="w-3 h-3 text-amber-400" />
+                            {log.title}
+                          </span>
+                          <span className="text-[10px] text-white/40 font-mono">
+                            To: <strong className="text-white/70">{log.user_name}</strong> {log.user_phone ? `(${log.user_phone})` : ""}
+                          </span>
+                        </div>
+
+                        <div className="bg-[#050508]/60 border border-white/5 rounded-xl px-3 py-2">
+                          <p className="text-xs text-white/70 whitespace-pre-wrap">{log.body}</p>
+                        </div>
+
+                        {log.error_details && (
+                          <div className="text-[10px] text-amber-400/80 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1">
+                            Info: {log.error_details}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1.5">
+                        <Badge
+                          className={cn(
+                            "text-[9px] font-black tracking-widest border uppercase h-5 px-2",
+                            log.status === "delivered"
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              : log.status === "no_devices"
+                              ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                              : "bg-red-500/10 text-red-400 border-red-500/20"
+                          )}
+                        >
+                          {log.status === "delivered" ? (
+                            <span className="flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5" /> Delivered ({log.success_count})
+                            </span>
+                          ) : log.status === "no_devices" ? (
+                            <span className="flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5" /> No Device
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1">
+                              <XCircle className="w-3.5 h-3.5" /> Failed
+                            </span>
+                          )}
+                        </Badge>
+                        <span className="text-[10px] text-white/30 font-mono">
+                          {new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ·{" "}
+                          {new Date(log.created_at).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
                   ))}

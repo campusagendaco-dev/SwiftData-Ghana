@@ -59,6 +59,22 @@ serve(async (req: Request) => {
 
     if (!subscriptions || subscriptions.length === 0) {
       console.log(`[Push] No active subscriptions found for user ${user_id}. skipping.`);
+      try {
+        await supabaseAdmin.from("push_notification_logs").insert({
+          user_id,
+          title: title || "SwiftData Ghana",
+          body: body || "New update from SwiftData",
+          url: url || "/dashboard",
+          device_count: 0,
+          success_count: 0,
+          failure_count: 0,
+          status: "no_devices",
+          error_details: "User has no active browser push subscriptions",
+        });
+      } catch (logErr) {
+        console.warn("[Push] Failed to insert log:", logErr);
+      }
+
       return new Response(JSON.stringify({ success: true, sent: 0, message: "No active subscriptions" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -118,6 +134,23 @@ serve(async (req: Request) => {
         .delete()
         .eq("user_id", user_id)
         .in("endpoint", failedEndpoints);
+    }
+
+    // 5. Persist audit log
+    try {
+      await supabaseAdmin.from("push_notification_logs").insert({
+        user_id,
+        title: title || "SwiftData Ghana",
+        body: body || "New update from SwiftData",
+        url: url || "/dashboard",
+        device_count: subscriptions.length,
+        success_count: sentCount,
+        failure_count: failedEndpoints.length,
+        status: sentCount > 0 ? "delivered" : (failedEndpoints.length > 0 ? "failed" : "no_devices"),
+        error_details: failedEndpoints.length > 0 ? `${failedEndpoints.length} device tokens expired` : null,
+      });
+    } catch (logErr) {
+      console.warn("[Push] Failed to insert log:", logErr);
     }
 
     return new Response(JSON.stringify({ success: true, sent: sentCount, cleaned: failedEndpoints.length }), {
