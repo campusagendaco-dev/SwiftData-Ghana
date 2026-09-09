@@ -4,6 +4,7 @@ import { CheckCircle2, Home, ReceiptText, Wallet, ShoppingBag, Copy, Check, Pack
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { playSuccessSound } from "@/lib/sound";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
 type ConfettiPiece = {
   id: number;
@@ -253,6 +254,14 @@ const PurchaseSuccess = () => {
                     Track Your Order Live
                   </Link>
                 </Button>
+
+                {/* Lock-Screen Alert Prompt */}
+                <PushNotificationPrompt 
+                  variant="inline"
+                  title="Turn On Lock-Screen Notifications"
+                  description="Get instant alerts on your lock screen for this and future order deliveries."
+                  buttonText="Enable Delivery Alerts"
+                />
 
                 <div className="grid grid-cols-2 gap-3">
                   <Button

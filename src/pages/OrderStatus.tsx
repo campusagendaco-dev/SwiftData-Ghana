@@ -18,6 +18,7 @@ import html2canvas from "html2canvas";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { playSuccessSound } from "@/lib/sound";
 import { Badge } from "@/components/ui/badge";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
 type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid";
 
@@ -770,6 +771,18 @@ const OrderStatus = () => {
                     Expedite / Verify Number Now 🚀
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Instant Lock-Screen Delivery Alert Prompt */}
+            {orderStatus !== "fulfilled" && orderStatus !== "fulfillment_failed" && (
+              <div className="mx-6 mb-6">
+                <PushNotificationPrompt 
+                  variant="inline"
+                  title="Get Lock-Screen Delivery Alerts 🔔"
+                  description="Don't keep refreshing this page. Get notified on your lock screen the exact second your bundle delivers."
+                  buttonText="Alert Me When Delivered"
+                />
               </div>
             )}
 

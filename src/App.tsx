@@ -30,6 +30,7 @@ import { SecurityGuard } from "@/components/SecurityGuard";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
 import AIConcierge from "@/components/AIConcierge";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
 
 // Route-level code splitting — each page chunk loads only when first visited
@@ -552,6 +553,7 @@ const AppContent = () => {
         <AudioUnlocker />
         <NotificationPopup />
         <AIConcierge />
+        <PushNotificationPrompt variant="floating" />
         {!isAgentStore && <WhatsAppButton />}
         {!isAgentStore && <FreeDataButton />}
         {!isAgentStore && <DataPromoPopupModal />}

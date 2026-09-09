@@ -20,7 +20,6 @@ import { Wifi, WifiOff, CloudOff, Eye, EyeOff } from "lucide-react";
 import { useMaskedBalance } from "@/hooks/useMaskedBalance";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import CommandPalette from "@/components/CommandPalette";
-import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -251,9 +250,6 @@ const DashboardLayout = () => {
             </button>
           </div>
         )}
-
-        {/* ── Offline Push Notification Prompt ── */}
-        <PushNotificationPrompt variant="floating" />
 
         {/* ── AI Recommendation Alert Banner ── */}
         {aiRecommendations.length > 0 && (
