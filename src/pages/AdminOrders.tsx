@@ -974,7 +974,7 @@ export default function AdminOrders() {
               variant="outline"
               size="sm"
               className="gap-2 h-10 rounded-xl border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-bold backdrop-blur-sm"
-              onClick={fetchOrders}
+              onClick={() => fetchOrders()}
             >
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </Button>
