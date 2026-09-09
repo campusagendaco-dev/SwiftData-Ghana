@@ -37,6 +37,11 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const START_TIME = Date.now();
+  // Supabase Edge Functions enforce strict CPU/wall-time limits.
+  // We cap processing to 2500ms to guarantee clean exit before WORKER_RESOURCE_LIMIT (546).
+  const MAX_EXECUTION_MS = 2500;
+
   try {
     const body = await req.json();
     const { 
@@ -70,11 +75,12 @@ serve(async (req: Request) => {
       .select("endpoint, p256dh, auth, user_id");
 
     if (isBroadcast) {
-      query = query.limit(5000);
+      // Prioritize most recent active devices up to a safe batch size
+      query = query.order("created_at", { ascending: false }).limit(200);
     } else if (hasMultipleUsers) {
-      query = query.in("user_id", user_ids);
+      query = query.in("user_id", user_ids).limit(100);
     } else if (user_id) {
-      query = query.eq("user_id", user_id);
+      query = query.eq("user_id", user_id).limit(20);
     }
 
     const { data: subscriptions, error: fetchError } = await query;
@@ -127,9 +133,15 @@ serve(async (req: Request) => {
     let sentCount = 0;
     const failedEndpoints: string[] = [];
 
-    // 3. Batch send in chunks of 50 for optimal concurrency
-    const CHUNK_SIZE = 50;
+    // 3. Batch send in chunks of 25 for controlled concurrency and CPU safety
+    const CHUNK_SIZE = 25;
     for (let i = 0; i < uniqueSubs.length; i += CHUNK_SIZE) {
+      // Check execution time budget before scheduling next chunk
+      if (Date.now() - START_TIME > MAX_EXECUTION_MS) {
+        console.warn(`[Push] Execution time budget reached (${Date.now() - START_TIME}ms). Yielding response.`);
+        break;
+      }
+
       const chunk = uniqueSubs.slice(i, i + CHUNK_SIZE);
       await Promise.allSettled(
         chunk.map(async (sub: any) => {
@@ -142,10 +154,16 @@ serve(async (req: Request) => {
               },
             };
 
-            await webpush.sendNotification(pushSubscription, payload, {
+            // Wrap each notification in a 2.5s individual timeout
+            const sendPromise = webpush.sendNotification(pushSubscription, payload, {
               TTL: 86400, // 24 hours
               urgency: "high"
             });
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error("Push send timeout")), 2500)
+            );
+
+            await Promise.race([sendPromise, timeoutPromise]);
             sentCount++;
           } catch (err: any) {
             const errStr = String(err.statusCode || err.message || "");
@@ -157,19 +175,18 @@ serve(async (req: Request) => {
       );
     }
 
-    console.log(`[Push] Delivery summary: ${sentCount} sent, ${failedEndpoints.length} expired out of ${uniqueSubs.length} devices.`);
+    console.log(`[Push] Delivery summary: ${sentCount} sent, ${failedEndpoints.length} expired out of ${uniqueSubs.length} devices in ${Date.now() - START_TIME}ms.`);
 
-    // 4. Clean up expired endpoints
+    // 4. Clean up expired endpoints asynchronously without blocking
     if (failedEndpoints.length > 0) {
       console.log(`[Push] Cleaning up ${failedEndpoints.length} expired subscription tokens.`);
-      // Chunk deletions to prevent huge SQL queries
-      for (let i = 0; i < failedEndpoints.length; i += 200) {
-        const delChunk = failedEndpoints.slice(i, i + 200);
-        await supabaseAdmin
-          .from("push_subscriptions")
-          .delete()
-          .in("endpoint", delChunk);
-      }
+      const delChunk = failedEndpoints.slice(0, 100);
+      supabaseAdmin
+        .from("push_subscriptions")
+        .delete()
+        .in("endpoint", delChunk)
+        .then(() => {})
+        .catch((delErr: any) => console.warn("[Push] Cleanup error:", delErr?.message));
     }
 
     // 5. Persist audit log
@@ -193,7 +210,8 @@ serve(async (req: Request) => {
       success: true,
       sent: sentCount,
       devices: uniqueSubs.length,
-      cleaned: failedEndpoints.length
+      cleaned: failedEndpoints.length,
+      duration_ms: Date.now() - START_TIME
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

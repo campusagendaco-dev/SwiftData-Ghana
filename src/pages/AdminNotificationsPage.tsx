@@ -245,7 +245,8 @@ const AdminNotificationsPage = () => {
         supabase
           .from("push_subscriptions" as any)
           .select("id, user_id, endpoint, created_at")
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .limit(100),
         supabase
           .from("push_notification_logs" as any)
           .select("*")
@@ -258,20 +259,25 @@ const AdminNotificationsPage = () => {
 
       const userIds = Array.from(new Set([
         ...subsData.map((s: any) => s.user_id),
-        ...logsData.map((l: any) => l.user_id).filter(Boolean),
-      ]));
+        ...logsData.map((l: any) => l.user_id),
+      ])).filter((id): id is string => typeof id === "string" && id.trim().length > 0 && id !== "null" && id !== "undefined");
 
       const profileMap = new Map<string, any>();
       if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("user_id, full_name, phone, email, is_agent, is_sub_agent")
-          .in("user_id", userIds);
-        (profiles || []).forEach((p: any) => profileMap.set(p.user_id, p));
+        // Chunk profile lookups to avoid huge URL lengths
+        const chunkSize = 50;
+        for (let i = 0; i < userIds.length; i += chunkSize) {
+          const chunk = userIds.slice(i, i + chunkSize);
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("user_id, full_name, phone, email, is_agent, is_sub_agent")
+            .in("user_id", chunk);
+          (profiles || []).forEach((p: any) => profileMap.set(p.user_id, p));
+        }
       }
 
       const enrichedSubs: PushSubscriber[] = subsData.map((s: any) => {
-        const prof = profileMap.get(s.user_id);
+        const prof = s.user_id ? profileMap.get(s.user_id) : null;
         let device_type = "Web Browser";
         const ep = s.endpoint || "";
         if (ep.includes("fcm.googleapis.com")) device_type = "Android / Chrome";
@@ -284,7 +290,7 @@ const AdminNotificationsPage = () => {
           user_id: s.user_id,
           endpoint: s.endpoint,
           created_at: s.created_at,
-          full_name: prof?.full_name || "Unknown User",
+          full_name: prof?.full_name || (s.user_id ? "Customer / Agent" : "Guest Storefront Visitor"),
           phone: prof?.phone || "—",
           email: prof?.email || "—",
           is_agent: prof?.is_agent,
