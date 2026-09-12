@@ -61,10 +61,13 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   // Prevent background page scrolling while modal is open
   useEffect(() => {
     if (!isOpen) return;
-    const prevOverflow = document.body.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = prevOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
     };
   }, [isOpen]);
 
@@ -725,28 +728,26 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] overflow-y-auto overscroll-contain">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 pointer-events-none">
       {/* High Definition Backdrop with deep blur */}
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={step !== 'initiating' && step !== 'otp_verifying' && step !== 'success' ? onClose : undefined}
-        className="fixed inset-0 bg-[#020305]/85 backdrop-blur-md cursor-pointer"
+        className="fixed inset-0 bg-[#020305]/85 backdrop-blur-md cursor-pointer pointer-events-auto"
       />
       
-      {/* Dynamic Centering Shell for Mobile & Desktop */}
-      <div className="min-h-full flex items-center justify-center p-3 sm:p-4 text-center">
-        {/* Premium Glassmorphic Checkout Modal enclosure */}
-        <motion.div
-          onClick={(e) => e.stopPropagation()}
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.97, y: 15 }}
-          className="relative my-auto w-full max-w-[360px] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl z-10 text-left"
-        >
+      {/* Premium Glassmorphic Checkout Modal enclosure */}
+      <motion.div
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 15 }}
+        className="relative w-full max-w-[360px] max-h-[92vh] max-h-[92dvh] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl z-10 text-left pointer-events-auto"
+      >
         {/* Dynamic Carrier Ambient Header */}
-        <div className="relative w-full pt-6 pb-4 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">
+        <div className="shrink-0 relative w-full pt-5 pb-3 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">
           <div 
             className="absolute inset-0 opacity-[0.06] pointer-events-none mix-blend-overlay"
             style={{ 
@@ -784,7 +785,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         </div>
 
         {/* Modal content viewport */}
-        <div className="p-5 space-y-4 relative bg-[#0b0c12]/90">
+        <div className="p-4 sm:p-5 space-y-4 relative bg-[#0b0c12]/90 overflow-y-auto flex-1 overscroll-contain">
           {step === 'payment_number' && (
             <div className="grid grid-cols-2 gap-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800/80">
               <button
@@ -1246,11 +1247,10 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         </div>
 
         {/* Secure transaction lock footer */}
-        <div className="py-3 bg-[#05060a] border-t border-slate-800/60 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400/80">
+        <div className="shrink-0 py-2.5 bg-[#05060a] border-t border-slate-800/60 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400/80">
           <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Secure 256-Bit SSL Payment &bull; SwiftData
         </div>
       </motion.div>
-      </div>
     </div>,
     document.body
   );

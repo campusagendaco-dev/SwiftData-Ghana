@@ -311,11 +311,14 @@ const BuyData = () => {
 
   useEffect(() => {
     if (selectedPkg) {
-      const prev = document.body.style.overflow;
+      const prevBody = document.body.style.overflow;
+      const prevHtml = document.documentElement.style.overflow;
       document.body.style.overflow = "hidden";
+      document.documentElement.style.overflow = "hidden";
       setTimeout(() => phoneInputRef.current?.focus(), 100);
       return () => {
-        document.body.style.overflow = prev;
+        document.body.style.overflow = prevBody;
+        document.documentElement.style.overflow = prevHtml;
       };
     }
   }, [selectedPkg]);
@@ -1003,26 +1006,24 @@ const BuyData = () => {
       {createPortal(
         <AnimatePresence>
           {selectedPkg && (
-            <div className="fixed inset-0 z-[99999] overflow-y-auto overscroll-contain">
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 pointer-events-none">
               {/* Backdrop */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => { setSelectedPkg(null); setPhone(""); setEmail(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false); }}
-                className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+                className="fixed inset-0 bg-black/70 backdrop-blur-sm pointer-events-auto cursor-pointer"
               />
 
-              {/* Dynamic Centering Shell for Mobile & Desktop */}
-              <div className="min-h-full flex items-center justify-center p-3 sm:p-4 text-center">
-                {/* Modal Card */}
-                <motion.div
-                  onClick={(e) => e.stopPropagation()}
-                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                  className="relative my-auto w-full max-w-[380px] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10 text-left"
-                >
+              {/* Modal Card */}
+              <motion.div
+                onClick={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="relative w-full max-w-[380px] max-h-[92vh] max-h-[92dvh] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10 text-left pointer-events-auto flex flex-col"
+              >
                 {/* Accent Top Bar */}
                 <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
 
@@ -1035,7 +1036,7 @@ const BuyData = () => {
                 </button>
 
                 {/* Modal Header */}
-                <div className="p-6 pb-4 text-center space-y-3 relative z-20">
+                <div className="shrink-0 p-6 pb-4 text-center space-y-3 relative z-20">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                     {selectedNetwork} Network
@@ -1088,7 +1089,7 @@ const BuyData = () => {
                 </div>
 
                 {/* Form Fields */}
-                <div className="p-6 pt-2 space-y-4 relative z-20">
+                <div className="p-6 pt-2 space-y-4 relative z-20 overflow-y-auto flex-1 overscroll-contain">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block font-mono">
                       Recipient Phone Number
@@ -1233,7 +1234,6 @@ const BuyData = () => {
                   </div>
                 </div>
               </motion.div>
-              </div>
             </div>
           )}
         </AnimatePresence>,
