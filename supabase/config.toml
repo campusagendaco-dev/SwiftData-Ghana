@@ -36,6 +36,9 @@ verify_jwt = false
 [functions.delivery-speed]
 verify_jwt = false
 
+[functions.delivery-tracker]
+verify_jwt = false
+
 [functions.developer-api]
 verify_jwt = false
 

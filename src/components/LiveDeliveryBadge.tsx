@@ -15,14 +15,15 @@ export default function LiveDeliveryBadge({ className = "mt-3.5" }: LiveDelivery
     try {
       const { data, error } = await supabase.functions.invoke("delivery-speed");
       if (error) throw error;
-      if (data && data.success && data.order) {
+      if (data && data.display?.lastOrderDurationMinutes) {
+        setMinutes(data.display.lastOrderDurationMinutes);
+      } else if (data && data.order?.placedAt && data.order?.deliveredAt) {
         const placed = parseISO(data.order.placedAt);
         const delivered = parseISO(data.order.deliveredAt);
         const diff = differenceInMinutes(delivered, placed);
-        // Ensure we show a reasonable estimate
         setMinutes(diff > 0 ? diff : 10);
       } else {
-        throw new Error();
+        throw new Error("Invalid speed data");
       }
     } catch {
       // Dynamic fallback based on current time to feel natural (between 6 and 10 minutes)
