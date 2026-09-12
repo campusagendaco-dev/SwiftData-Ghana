@@ -8,15 +8,20 @@ const VAPID_PUBLIC_KEY = "BBunKshlnxwoqC83k7a01ApJwKgZ0L-QqEySWnz0EuJL1eS7lneeiK
 
 // Utility to convert base64 string back to Uint8Array for crypto registration
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
+  try {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
 
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  } catch (err) {
+    console.error("[Push] Failed to parse VAPID key to Uint8Array:", err);
+    return new Uint8Array(0);
   }
-  return outputArray;
 }
 
 export function usePushNotifications() {
@@ -60,7 +65,20 @@ export function usePushNotifications() {
       let permission = Notification.permission;
       if (permission !== "granted") {
         console.log("[Push] Requesting notification permission...");
-        permission = await Notification.requestPermission();
+        try {
+          const reqRes = Notification.requestPermission();
+          if (reqRes && typeof reqRes.then === "function") {
+            permission = await reqRes;
+          } else {
+            // Safari legacy callback compatibility
+            permission = await new Promise<NotificationPermission>((resolve) => {
+              Notification.requestPermission((p) => resolve(p));
+            });
+          }
+        } catch (permErr) {
+          console.warn("[Push] Error during requestPermission call:", permErr);
+          permission = Notification.permission;
+        }
         setPermissionState(permission);
       } else {
         setPermissionState("granted");
@@ -73,7 +91,12 @@ export function usePushNotifications() {
       }
 
       console.log("[Push] Service Worker ready lookup...");
-      const registration = await navigator.serviceWorker.ready;
+      // Wrap with 8s timeout so private browsing or unready SW don't hang execution
+      const swReadyPromise = navigator.serviceWorker.ready;
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error("Service Worker readiness timed out")), 8000)
+      );
+      const registration = await Promise.race([swReadyPromise, timeoutPromise]);
       
       // Get existing subscription or create new
       let subscription = await registration.pushManager.getSubscription();
@@ -85,16 +108,43 @@ export function usePushNotifications() {
         });
       }
 
-      // Convert native JSON buffers into safe Base64/JSON tokens
-      const p256dh = btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey("p256dh")!) as any));
-      const auth = btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey("auth")!) as any));
-      
+      if (!subscription) {
+        throw new Error("Failed to obtain PushSubscription from browser push manager");
+      }
+
+      // Safe JSON and key extraction (W3C standard)
+      const subJson = subscription.toJSON();
+      let p256dh = subJson.keys?.p256dh || "";
+      let auth = subJson.keys?.auth || "";
+
+      // Fallback if browser toJSON() omitted keys
+      if (!p256dh && typeof subscription.getKey === "function") {
+        try {
+          const rawP256 = subscription.getKey("p256dh");
+          if (rawP256) {
+            p256dh = btoa(String.fromCharCode(...new Uint8Array(rawP256)));
+          }
+        } catch (_) {}
+      }
+      if (!auth && typeof subscription.getKey === "function") {
+        try {
+          const rawAuth = subscription.getKey("auth");
+          if (rawAuth) {
+            auth = btoa(String.fromCharCode(...new Uint8Array(rawAuth)));
+          }
+        } catch (_) {}
+      }
+
+      if (!subscription.endpoint) {
+        throw new Error("Subscription endpoint is missing");
+      }
+
       console.log("[Push] Saving device token to Supabase...");
       const { error } = await supabase.from("push_subscriptions" as any).upsert({
         user_id: user?.id || null,
         endpoint: subscription.endpoint,
-        p256dh,
-        auth,
+        p256dh: p256dh || null,
+        auth: auth || null,
       }, { onConflict: "endpoint" });
 
       if (error) {

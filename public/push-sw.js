@@ -26,35 +26,49 @@ self.addEventListener('push', function(event) {
     badge: '/logo.png',
     tag: tag,
     renotify: true,
-    vibrate: [250, 100, 250, 100, 250],
     data: {
       url: data.url || '/dashboard',
       id: data.id,
       timestamp: Date.now()
-    },
-    actions: [
-      {
-        action: 'open',
-        title: 'View Details 🚀'
-      },
-      {
-        action: 'close',
-        title: 'Dismiss'
-      }
-    ],
-    // Keeps notification visible on lock screens and desktop until user explicitly interacts
-    requireInteraction: data.requireInteraction !== undefined ? Boolean(data.requireInteraction) : true
+    }
   };
 
+  try {
+    if (data.requireInteraction !== undefined) {
+      options.requireInteraction = Boolean(data.requireInteraction);
+    }
+  } catch (_) {}
+
+  try {
+    // Only supply vibration and actions if supported by browser/OS
+    if ('vibrate' in navigator) {
+      options.vibrate = [250, 100, 250, 100, 250];
+    }
+    if ('actions' in Notification.prototype) {
+      options.actions = [
+        { action: 'open', title: 'View Details 🚀' },
+        { action: 'close', title: 'Dismiss' }
+      ];
+    }
+  } catch (_) {}
+
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    self.registration.showNotification(title, options).catch(function(err) {
+      console.warn('[Push Worker] Full showNotification failed, retrying with minimal options:', err);
+      return self.registration.showNotification(title, {
+        body: data.body || 'You have a new transaction update.',
+        icon: '/logo.png'
+      });
+    })
   );
 });
 
 self.addEventListener('notificationclick', function(event) {
   console.log('[Push Worker] Notification Clicked. Action:', event.action);
   
-  event.notification.close();
+  try {
+    event.notification.close();
+  } catch (_) {}
 
   // If user clicked the explicit 'close' action button, do not navigate
   if (event.action === 'close') {
@@ -66,19 +80,23 @@ self.addEventListener('notificationclick', function(event) {
 
   // Focus an existing client window if open, or open a fresh one
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async function(clientList) {
       for (const client of clientList) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.postMessage({ type: 'NAVIGATE', url: targetUrl });
-          if ('navigate' in client && client.url !== fullTargetUrl) {
-            client.navigate(fullTargetUrl);
-          }
-          return client.focus();
+        if (client.url && client.url.startsWith(self.location.origin) && 'focus' in client) {
+          try {
+            client.postMessage({ type: 'NAVIGATE', url: targetUrl });
+            if ('navigate' in client && client.url !== fullTargetUrl) {
+              await client.navigate(fullTargetUrl).catch(() => {});
+            }
+            return await client.focus();
+          } catch (_) {}
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(fullTargetUrl);
+        return await clients.openWindow(fullTargetUrl).catch(() => {});
       }
+    }).catch(function(err) {
+      console.error('[Push Worker] notificationclick error:', err);
     })
   );
 });
