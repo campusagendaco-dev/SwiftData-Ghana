@@ -146,7 +146,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
       .replace(/opacity-\[[^\]]+\]/g, "")
       .replace(/opacity-\d+/g, "")
       .replace(/dark:opacity-\[[^\]]+\]/g, "")
-      .replace(/dark:opacity-\d+/g, "") + " opacity-[0.6] dark:opacity-[0.8]";
+      .replace(/dark:opacity-\d+/g, "") + " opacity-[0.35] dark:opacity-[0.45]";
 
     return (
       <div 
@@ -211,7 +211,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
         `}
       </style>
       <div 
-        className="absolute inset-0 opacity-[0.035] dark:opacity-[0.07] pointer-events-none mix-blend-overlay"
+        className="absolute inset-0 opacity-[0.015] dark:opacity-[0.025] pointer-events-none mix-blend-overlay"
         style={{ 
           backgroundImage: "url('/assets/adinkra_pattern.png')",
           backgroundSize: "160px"
@@ -222,7 +222,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
         return (
           <div
             key={i}
-            className="absolute text-amber-600 dark:text-amber-400 bg-floating-symbol"
+            className="absolute text-amber-600/40 dark:text-amber-400/25 bg-floating-symbol"
             style={{
               top: sym.top,
               left: sym.left,
@@ -243,7 +243,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
                 viewBox="0 0 24 24" 
                 fill="currentColor" 
                 xmlns="http://www.w3.org/2000/svg"
-                style={{ opacity: 0.8 }}
+                style={{ opacity: 0.4 }}
               >
                 {getSymbol(i)}
               </svg>

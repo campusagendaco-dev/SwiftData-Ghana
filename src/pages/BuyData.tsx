@@ -854,24 +854,24 @@ const BuyData = () => {
   return (
     <div className="relative min-h-screen bg-transparent text-foreground pt-16 md:pt-24 pb-24 font-sans antialiased">
       {/* Dynamic Ambient Carrier Glow & Adinkra Texture */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-50 dark:opacity-75">
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-25 dark:opacity-30">
         <div 
-          className="absolute inset-0 opacity-[0.035] dark:opacity-[0.07] mix-blend-overlay"
+          className="absolute inset-0 opacity-[0.02] dark:opacity-[0.035] mix-blend-overlay"
           style={{ 
             backgroundImage: "url('/assets/adinkra_pattern.png')",
             backgroundSize: "140px"
           }}
         />
         <div
-          className="absolute -top-[15%] -left-[10%] w-[65vw] h-[65vw] max-w-[650px] max-h-[650px] rounded-full mix-blend-screen blur-[140px] opacity-40 transition-colors duration-1000"
+          className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] max-w-[600px] max-h-[600px] rounded-full blur-[160px] opacity-20 transition-colors duration-1000"
           style={{ backgroundColor: carrierGlowColor }}
         />
         <div
-          className="absolute top-[35%] -right-[15%] w-[55vw] h-[55vw] max-w-[550px] max-h-[550px] rounded-full mix-blend-screen blur-[130px] opacity-30 transition-colors duration-1000"
+          className="absolute top-[40%] -right-[15%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full blur-[150px] opacity-15 transition-colors duration-1000"
           style={{ backgroundColor: carrierGlowColor }}
         />
         <div
-          className="absolute -bottom-[10%] left-[20%] w-[70vw] h-[45vw] max-w-[700px] max-h-[450px] rounded-full mix-blend-screen blur-[150px] opacity-25 transition-colors duration-1000"
+          className="absolute -bottom-[15%] left-[20%] w-[60vw] h-[40vw] max-w-[600px] max-h-[400px] rounded-full blur-[170px] opacity-10 transition-colors duration-1000"
           style={{ backgroundColor: carrierGlowColor }}
         />
       </div>
