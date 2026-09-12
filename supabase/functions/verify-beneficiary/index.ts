@@ -166,24 +166,25 @@ serve(async (req) => {
     }
 
     // Retrieve active DataHub provider config
-    const { data: provider, error: pErr } = await supabaseClient
+    const { data: provider } = await supabaseClient
       .from("providers")
       .select("*")
       .eq("handler_type", "datahub")
       .eq("is_active", true)
       .maybeSingle();
 
-    if (pErr || !provider) {
-      console.log("[verify-beneficiary] No active DataHub provider found, skipping check.");
+    const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
+    const rawBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external";
+    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+    const url = `${cleanUrl}/purchases/verify-number`;
+
+    if (!apiKey) {
+      console.log("[verify-beneficiary] DataHub API key not found, skipping check.");
       return new Response(
         JSON.stringify({ success: true, exists: true, message: "DataHub provider not active, skipping verification." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const cleanUrl = (provider.base_url || "").trim().replace(/\/+$/, "");
-    const url = `${cleanUrl}/purchases/verify-number`;
-    const apiKey = provider.api_key || "";
 
     // Normalize phone number to test both local 10-digit (0...) and intl 12-digit (233...) formats
     const cleanDigits = phone.replace(/\D/g, "");

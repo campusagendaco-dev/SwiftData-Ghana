@@ -28,6 +28,27 @@ async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: s
 // DataHub Ghana webhook handler
 // Receives order status callbacks from DataHub Ghana
 
+async function verifyHmacSha256(rawBody: string, signature: string, secret: string): Promise<boolean> {
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sigBuf = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+    const hex = Array.from(new Uint8Array(sigBuf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    return hex.toLowerCase() === signature.trim().toLowerCase();
+  } catch (e) {
+    console.error("[datahub-webhook] HMAC verification error:", e);
+    return false;
+  }
+}
+
 // Maps DataHub statuses to internal system statuses
 function mapDatahubStatus(status: string): "processing" | "fulfilled" | "fulfillment_failed" | null {
   switch (status.toUpperCase()) {
@@ -71,22 +92,8 @@ serve(async (req) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Security: Verify webhook secret if configured in the vault
-  const DATAHUB_WEBHOOK_SECRET = Deno.env.get("DATAHUB_WEBHOOK_SECRET") || Deno.env.get("PROVIDER_WEBHOOK_SECRET");
-  if (DATAHUB_WEBHOOK_SECRET) {
-    const query = new URL(req.url).searchParams;
-    const providedSecret = req.headers.get("X-Webhook-Secret") || query.get("key") || query.get("secret");
-    if (providedSecret !== DATAHUB_WEBHOOK_SECRET) {
-      console.warn("[datahub-webhook] Unauthorized access attempt prevented.");
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-  }
-
   try {
-    // Log User-Agent for debugging (not used for auth — any bot can spoof it)
+    // Log User-Agent for debugging
     const userAgent = req.headers.get("user-agent") || "";
     console.log("[datahub-webhook] Incoming User-Agent:", userAgent);
 
@@ -96,6 +103,29 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Security: Verify webhook secret/HMAC signature if configured in the vault
+    const DATAHUB_WEBHOOK_SECRET = Deno.env.get("DATAHUB_WEBHOOK_SECRET") || Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+    if (DATAHUB_WEBHOOK_SECRET) {
+      const signatureHeader = req.headers.get("x-webhook-signature") || req.headers.get("X-Webhook-Signature");
+      const query = new URL(req.url).searchParams;
+      const providedSecret = req.headers.get("X-Webhook-Secret") || query.get("key") || query.get("secret");
+
+      let isAuthorized = false;
+      if (signatureHeader) {
+        isAuthorized = await verifyHmacSha256(rawBody, signatureHeader, DATAHUB_WEBHOOK_SECRET);
+      } else if (providedSecret === DATAHUB_WEBHOOK_SECRET) {
+        isAuthorized = true;
+      }
+
+      if (!isAuthorized) {
+        console.warn("[datahub-webhook] Unauthorized access attempt prevented (invalid signature or secret).");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const payload = JSON.parse(rawBody);

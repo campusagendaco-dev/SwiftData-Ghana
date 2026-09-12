@@ -356,9 +356,10 @@ export class StandardAdapter implements ProviderAdapter {
     provider: any,
     phone: string
   ): Promise<{ ok: boolean; reason?: string }> {
-    const cleanUrl = (provider.base_url || "").trim().replace(/\/+$/, "");
+    const rawBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external";
+    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
     const url = `${cleanUrl}/purchases/verify-number`;
-    const apiKey = provider.api_key || "";
+    const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
 
     const cleanDigits = phone.replace(/\D/g, "");
     let localFormat = cleanDigits;
@@ -500,8 +501,15 @@ export class StandardAdapter implements ProviderAdapter {
     data: any
   ): Promise<ProviderResponse> {
     const handlerType = String(provider.handler_type || "standard").toLowerCase();
-    const apiKey = (handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) : provider.api_key) || "";
-    const baseUrl = provider.base_url || "";
+    const apiKey = (
+      handlerType === "datahub" ? (Deno.env.get("DATAHUB_API_KEY") || provider.api_key) :
+      handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) :
+      provider.api_key
+    ) || "";
+    const baseUrl = (
+      handlerType === "datahub" ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") :
+      provider.base_url
+    ) || "";
 
     const urls = this.buildProviderUrls(baseUrl, endpoint, handlerType, data);
     let lastReason = "Provider communication failed";

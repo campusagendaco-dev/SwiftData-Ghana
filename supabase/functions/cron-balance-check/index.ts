@@ -24,8 +24,9 @@ serve(async (_req) => {
   const results: any[] = [];
 
   for (const provider of providers) {
-    const apiKey = provider.api_key;
-    const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
+    const isDataHub = provider.handler_type === "datahub";
+    const apiKey = (isDataHub ? Deno.env.get("DATAHUB_API_KEY") : null) || provider.api_key;
+    const baseUrl = (isDataHub ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") : provider.base_url || "").replace(/\/+$/, "");
     if (!apiKey || !baseUrl) continue;
 
     let balance: number | null = null;

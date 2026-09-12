@@ -217,8 +217,10 @@ serve(async (req) => {
       });
     }
 
-    const cleanBaseUrl = provider.base_url.trim().replace(/\/+$/, "");
+    const rawBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external";
+    const cleanBaseUrl = rawBaseUrl.trim().replace(/\/+$/, "");
     const purchaseUrl = `${cleanBaseUrl}/voucher-purchase`;
+    const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider.api_key || "";
 
     console.log(`[Vouchers] Sending purchase request to DataHub: ${purchaseUrl}`);
 
@@ -229,7 +231,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-API-Key": provider.api_key,
+          "X-API-Key": apiKey,
         },
         body: JSON.stringify({
           VoucherType: typeUpper,

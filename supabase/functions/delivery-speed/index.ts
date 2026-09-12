@@ -17,12 +17,16 @@ serve(async (req) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  // Primary: Try to mirror DataHub widget API (with snappy 1.8s timeout)
+  // Primary: Try to mirror DataHub widget API
   try {
     const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 1800); // 1.8s max timeout to prevent UI lag
-    const datahubRes = await fetch("https://user.datahubgh.com/api/widget/last-mtn-delivered?format=json", {
-      signal: ctrl.signal
+    const tid = setTimeout(() => ctrl.abort(), 3500); // 3.5s timeout for fast UI response without premature dropping
+    const datahubRes = await fetch("https://user.datahubgh.com/api/widget/last-mtn-delivered", {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "SwiftDataGH/2.0",
+      },
+      signal: ctrl.signal,
     });
     clearTimeout(tid);
 
