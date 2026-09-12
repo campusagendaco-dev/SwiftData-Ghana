@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, Bell, BellRing } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { cn, getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
@@ -147,6 +148,7 @@ const getPackageDetails = (pkg: any): string => {
 const BuyData = () => {
   const { toast } = useToast();
   const { profile } = useAuth();
+  const { supported: pushSupported, permissionState: pushPermission, subscribeUser } = usePushNotifications();
   const [customPrices, setCustomPrices] = useState<Record<string, Record<string, number>>>({});
   const { theme, isDark } = useAppTheme();
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>("MTN");
@@ -579,6 +581,11 @@ const BuyData = () => {
     if (orderingDisabled) {
       toast({ title: "Ordering disabled", description: holidayMessage, variant: "destructive" });
       return;
+    }
+
+    // Auto-prompt/subscribe for lock-screen delivery receipt on high-intent click
+    if (pushSupported && pushPermission === "default") {
+      subscribeUser(true).catch(() => {});
     }
 
     let netKey = selectedNetwork.toUpperCase().includes("AIRTEL") ? "AT_PREMIUM" : selectedNetwork.toUpperCase();
@@ -1243,6 +1250,38 @@ const BuyData = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* Delivery Alert Opt-in / Status */}
+                  {pushSupported && (
+                    <div className="pt-2">
+                      {pushPermission === "granted" ? (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                          <span>Lock-screen delivery alert active for this device</span>
+                        </div>
+                      ) : pushPermission === "default" ? (
+                        <div
+                          onClick={() => subscribeUser()}
+                          role="button"
+                          tabIndex={0}
+                          className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 cursor-pointer transition-all flex items-center justify-between gap-2 select-none group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+                              <BellRing className="w-4 h-4 text-amber-500 animate-pulse" />
+                            </div>
+                            <div className="text-left min-w-0">
+                              <p className="text-[11px] font-black text-foreground">Alert me on delivery 🔔</p>
+                              <p className="text-[9px] text-muted-foreground truncate">Instant phone alert the second data arrives</p>
+                            </div>
+                          </div>
+                          <span className="shrink-0 px-2.5 py-1 rounded-lg bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider group-hover:scale-105 transition-transform">
+                            Turn On
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
 
                   {/* Checkout Button */}
                   <div className="pt-2">

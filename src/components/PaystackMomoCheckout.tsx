@@ -8,6 +8,7 @@ import { useAppTheme } from "@/contexts/ThemeContext";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { runFraudSentinelCheck } from "@/lib/fraud-sentinel";
 import { getProofOfHumanityToken } from "@/lib/device-fingerprint";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
 interface PaystackMomoCheckoutProps {
   isOpen: boolean;
@@ -1199,6 +1200,15 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
                   <p className="text-[11px] text-slate-300 leading-snug">
                     <span className="font-bold text-white">Telecel:</span> Dial <span className="font-mono font-black text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">*110#</span> &rarr; 4 (Make Payments) &rarr; Approvals.
                   </p>
+                </div>
+
+                <div className="w-full max-w-[290px] text-left">
+                  <PushNotificationPrompt
+                    variant="inline"
+                    title="Lock-Screen Delivery Alert 🔔"
+                    description="Get an alert directly on your phone the instant your bundle is delivered."
+                    buttonText="Alert Me"
+                  />
                 </div>
 
                 <div className="flex flex-col w-full gap-2 mt-2">

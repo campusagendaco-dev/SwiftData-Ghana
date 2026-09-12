@@ -55,15 +55,20 @@ export function usePushNotifications() {
       return false;
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
-      console.log("[Push] Requesting notification permission...");
-      const permission = await Notification.requestPermission();
-      setPermissionState(permission);
+      let permission = Notification.permission;
+      if (permission !== "granted") {
+        console.log("[Push] Requesting notification permission...");
+        permission = await Notification.requestPermission();
+        setPermissionState(permission);
+      } else {
+        setPermissionState("granted");
+      }
 
       if (permission !== "granted") {
-        console.warn("[Push] Permission not granted.");
-        setLoading(false);
+        console.warn("[Push] Permission not granted:", permission);
+        if (!silent) setLoading(false);
         return false;
       }
 
@@ -96,6 +101,10 @@ export function usePushNotifications() {
         console.warn("[Push] Upsert warning:", error.message);
       }
 
+      try {
+        localStorage.setItem("swift_push_subscribed", "true");
+      } catch (_) {}
+
       console.log("[Push] Subscription complete & registered successfully.");
       if (!silent) {
         toast({
@@ -103,20 +112,20 @@ export function usePushNotifications() {
           description: "You'll now receive instant lock-screen alerts for your orders and wallet updates.",
         });
       }
-      setLoading(false);
+      if (!silent) setLoading(false);
       return true;
     } catch (err: any) {
       console.error("[Push] Error setting up notifications:", err);
-      setLoading(false);
+      if (!silent) setLoading(false);
       return false;
     }
   };
 
   useEffect(() => {
-    if (supported && permissionState === "granted" && user) {
+    if (supported && permissionState === "granted") {
       subscribeUser(true);
     }
-  }, [supported, permissionState, user]);
+  }, [supported, permissionState, user?.id]);
 
   const unsubscribeUser = async () => {
     if (!supported || !user) return false;
