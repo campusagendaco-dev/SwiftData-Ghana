@@ -187,7 +187,12 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
   }
 
   return (
-    <div className={`${className} ${baseClasses}`}>
+    <div 
+      className={`${className} ${baseClasses}`}
+      style={{
+        filter: `brightness(${brightness}) contrast(${contrast})`
+      }}
+    >
       <style>
         {`
           @keyframes floatVertical {
@@ -211,7 +216,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
         `}
       </style>
       <div 
-        className="absolute inset-0 opacity-[0.015] dark:opacity-[0.025] pointer-events-none mix-blend-overlay"
+        className="absolute inset-0 opacity-[0.02] dark:opacity-[0.035] pointer-events-none mix-blend-overlay"
         style={{ 
           backgroundImage: "url('/assets/adinkra_pattern.png')",
           backgroundSize: "160px"
@@ -222,7 +227,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
         return (
           <div
             key={i}
-            className="absolute text-amber-600/40 dark:text-amber-400/25 bg-floating-symbol"
+            className="absolute text-amber-500 dark:text-amber-400 bg-floating-symbol drop-shadow-[0_2px_14px_rgba(245,158,11,0.35)]"
             style={{
               top: sym.top,
               left: sym.left,
@@ -243,7 +248,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
                 viewBox="0 0 24 24" 
                 fill="currentColor" 
                 xmlns="http://www.w3.org/2000/svg"
-                style={{ opacity: 0.4 }}
+                style={{ opacity: Math.min(1.0, Math.max(0.35, 0.75 * brightness)) }}
               >
                 {getSymbol(i)}
               </svg>

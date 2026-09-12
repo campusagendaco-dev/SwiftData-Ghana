@@ -1478,19 +1478,19 @@ const AdminSettings = () => {
                 <div className="space-y-4 pt-4 border-t border-white/5">
                   <h4 className="text-xs font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-primary" />
-                    Background Image Style Filters
+                    Traditional Symbols &amp; Background Styling
                   </h4>
                   
                   <div className="space-y-4">
                     {/* Brightness */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-muted-foreground">Image Brightness</span>
-                        <span className="font-mono text-foreground">{Math.round((settings.background_brightness ?? 1.0) * 100)}%</span>
+                        <span className="text-muted-foreground">Symbols &amp; Background Brightness</span>
+                        <span className="font-mono text-primary font-black">{Math.round((settings.background_brightness ?? 1.0) * 100)}%</span>
                       </div>
                       <input
                         type="range"
-                        min="0.5"
+                        min="0.2"
                         max="2.0"
                         step="0.05"
                         value={settings.background_brightness ?? 1.0}
@@ -1502,7 +1502,7 @@ const AdminSettings = () => {
                     {/* Contrast */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-muted-foreground">Image Contrast</span>
+                        <span className="text-muted-foreground">Symbols &amp; Background Contrast</span>
                         <span className="font-mono text-foreground">{Math.round((settings.background_contrast ?? 1.0) * 100)}%</span>
                       </div>
                       <input
@@ -1534,7 +1534,7 @@ const AdminSettings = () => {
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    Adjust visual filter effects. Applied globally to active preset patterns and custom background image uploads.
+                    Adjust visual filter effects. Controls the brightness, clarity, and vibrancy of the drifting Ghanaian Adinkra symbols (Gye Nyame, Sankofa, etc.) and background wallpapers in real time.
                   </p>
                 </div>
               </div>
