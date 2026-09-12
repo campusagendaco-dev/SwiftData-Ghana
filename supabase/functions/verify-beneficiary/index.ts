@@ -5,7 +5,7 @@ import { fetchViaDb } from "../_shared/db_proxy.ts";
 
 declare const Deno: any;
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -92,7 +92,7 @@ serve(async (req) => {
 
         const resText = await dhRes.text();
         let parsed: any = null;
-        try { parsed = JSON.parse(resText); } catch {}
+        try { parsed = JSON.parse(resText); } catch { /* ignore JSON parse error */ }
 
         if (dhRes.ok) {
           const resData = parsed?.data || {

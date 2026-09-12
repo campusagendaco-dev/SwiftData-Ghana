@@ -5,7 +5,7 @@ import { sendPaymentSms } from "../_shared/sms.ts";
 // Cron: runs every 15 minutes
 // Checks all active provider balances, alerts if below threshold, auto-disables if configured
 
-serve(async (_req) => {
+serve(async (_req: Request) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
