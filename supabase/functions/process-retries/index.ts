@@ -184,7 +184,7 @@ serve(async (req: Request) => {
     const { data: pendingOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
-      .eq("status", "pending")
+      .in("status", ["pending", "awaiting_payment"])
       .neq("network", "MTN Mash Up")
       .gte("created_at", yesterday)
       .limit(10);
@@ -195,7 +195,7 @@ serve(async (req: Request) => {
 
       if (verification.ok) {
         console.log(`[retry-orders] Payment confirmed for ${order.id}. Marking as PAID.`);
-        await supabaseAdmin.from("orders").update({ status: "paid" }).eq("id", order.id).eq("status", "pending");
+        await supabaseAdmin.from("orders").update({ status: "paid", paystack_verified_amount: verification.amount }).eq("id", order.id).in("status", ["pending", "awaiting_payment"]);
         // We'll let Phase 2 pick it up in this same run or next
         order.status = "paid";
       }

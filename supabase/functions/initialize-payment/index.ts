@@ -1295,7 +1295,7 @@ serve(async (req: Request) => {
         cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
         profit: normalizedProfit,
         parent_profit: normalizedParentProfit,
-        status: (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending",
+        status: "awaiting_payment",
         payment_method: activeGateway,
         metadata: enrichedMetadata,
       };
@@ -1367,7 +1367,7 @@ serve(async (req: Request) => {
         }
       }
 
-      patch.status = (metadata.network === "MTN Mash Up" || normalizeNetwork(String(metadata.network)) === "MTN Mash Up") ? "awaiting_payment" : "pending";
+      patch.status = "awaiting_payment";
       patch.payment_method = activeGateway;
 
       const { data: currentOrder } = await supabaseAdmin.from("orders").select("metadata").eq("id", reference).maybeSingle();

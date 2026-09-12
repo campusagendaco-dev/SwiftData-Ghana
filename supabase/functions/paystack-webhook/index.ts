@@ -689,6 +689,27 @@ serve(async (req: Request) => {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    if (body.event === "charge.failed") {
+      const failedRef = body.data?.reference;
+      const failReason = body.data?.gateway_response || body.data?.message || "Payment declined or failed on Mobile Money";
+      console.warn(`[paystack-webhook] charge.failed received for reference: ${failedRef} (${failReason})`);
+      if (failedRef) {
+        await supabaseAdmin
+          .from("orders")
+          .update({
+            status: "fulfillment_failed",
+            failure_reason: failReason,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", failedRef)
+          .in("status", ["pending", "awaiting_payment"]);
+      }
+      return new Response(JSON.stringify({ received: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (body.event !== "charge.success") {
       return new Response(JSON.stringify({ received: true }), {
         status: 200,

@@ -26,6 +26,23 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return digits.length >= 10 ? digits : null;
 }
 
+export function formatPhoneForKorba(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const clean = raw.trim().replace(/[^\d+]/g, "");
+  if (!clean) return null;
+
+  const digits = clean.replace(/\D/g, "");
+  if (!digits) return null;
+
+  if (digits.startsWith("233") && digits.length >= 12) {
+    return `+${digits}`;
+  }
+  if (digits.startsWith("0") && digits.length >= 10) {
+    return `+233${digits.slice(1)}`;
+  }
+  return `+233${digits}`;
+}
+
 export type SmsGatewayType = "txtconnect" | "mnotify" | "korba" | "arkesel" | "hubtel";
 
 export interface SmsConfig {
@@ -43,7 +60,7 @@ export interface SmsConfig {
 }
 
 export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promise<SmsConfig> {
-  const [{ data: settings }, { data: dbTemplates }, { data: mnotifyProvider }] = await Promise.all([
+  const [{ data: settings }, { data: dbTemplates }, { data: mnotifyProvider }, { data: korbaProvider }] = await Promise.all([
     Promise.resolve(
       supabaseAdmin
         .from("v_system_settings_with_secrets")
@@ -65,6 +82,13 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promis
         .from("providers")
         .select("api_key, is_active, balance")
         .eq("handler_type", "mnotify")
+        .maybeSingle()
+    ).catch(() => ({ data: null })),
+    Promise.resolve(
+      supabaseAdmin
+        .from("providers")
+        .select("api_key, api_secret, settings, is_active, balance")
+        .eq("handler_type", "korba")
         .maybeSingle()
     ).catch(() => ({ data: null }))
   ]);
@@ -95,12 +119,30 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promis
   ).trim();
   const mnotifySender = (Deno.env.get("MNOTIFY_SENDER_ID") || settings?.mnotify_sender_id || txtconnectSender || "SwiftData").trim();
 
-  // Korba
-  const korbaClientId = (Deno.env.get("KORBA_CLIENT_ID") || settings?.korba_client_id || "2419").trim();
-  const korbaClientKey = (Deno.env.get("KORBA_CLIENT_KEY") || settings?.korba_client_key || "").trim();
-  const korbaSecretKey = (Deno.env.get("KORBA_SECRET_KEY") || settings?.korba_secret_key || "").trim();
+  // Korba (Env first, DB settings second, providers table third per workspace rule)
+  const korbaClientId = (
+    Deno.env.get("KORBA_CLIENT_ID") || 
+    settings?.korba_client_id || 
+    korbaProvider?.settings?.client_id || 
+    "2419"
+  ).trim();
+  const korbaClientKey = (
+    Deno.env.get("KORBA_CLIENT_KEY") || 
+    settings?.korba_client_key || 
+    korbaProvider?.api_key || 
+    korbaProvider?.settings?.client_key || 
+    ""
+  ).trim();
+  const korbaSecretKey = (
+    Deno.env.get("KORBA_SECRET_KEY") || 
+    settings?.korba_secret_key || 
+    korbaProvider?.api_secret || 
+    korbaProvider?.settings?.secret_key || 
+    ""
+  ).trim();
   const korbaSender = (Deno.env.get("KORBA_SENDER_ID") || settings?.korba_sender_id || "SwiftData").trim();
   const hasKorba = !!(korbaClientKey && korbaSecretKey);
+  const korbaCombinedKey = `korba:${korbaClientId}:${korbaClientKey}:${korbaSecretKey}`;
 
   // Arkesel
   const arkeselKey = (Deno.env.get("ARKESEL_API_KEY") || settings?.arkesel_api_key || "").trim();
@@ -129,7 +171,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promis
       resolvedSenderId = mnotifySender;
       effectiveGateway = "mnotify";
     } else if (hasKorba) {
-      resolvedApiKey = "korba";
+      resolvedApiKey = korbaCombinedKey;
       resolvedSenderId = korbaSender;
       effectiveGateway = "korba";
     } else {
@@ -140,7 +182,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promis
     resolvedApiKey = mnotifyKey;
     resolvedSenderId = mnotifySender;
   } else if (activeGateway === "korba" && hasKorba) {
-    resolvedApiKey = "korba";
+    resolvedApiKey = korbaCombinedKey;
     resolvedSenderId = korbaSender;
   } else if (activeGateway === "arkesel" && arkeselKey) {
     resolvedApiKey = arkeselKey;
@@ -162,7 +204,7 @@ export async function getSmsConfig(supabaseAdmin: any, agentId?: string): Promis
       resolvedSenderId = mnotifySender;
       effectiveGateway = "mnotify";
     } else if (hasKorba) {
-      resolvedApiKey = "korba";
+      resolvedApiKey = korbaCombinedKey;
       resolvedSenderId = korbaSender;
       effectiveGateway = "korba";
     } else if (arkeselKey) {
@@ -272,21 +314,13 @@ export async function sendSmsViaKorba(
   if (!clientId || !clientKey || !secretKey || !to) return;
 
   const endpoint = "https://xchange.korba365.com/api/v1.0/send_sms/";
-
-  // Ensure to starts with country code (e.g. +233...)
-  let formattedPhone = to;
-  if (!formattedPhone.startsWith("+")) {
-    if (formattedPhone.startsWith("233")) {
-      formattedPhone = "+" + formattedPhone;
-    } else if (formattedPhone.startsWith("0")) {
-      formattedPhone = "+233" + formattedPhone.slice(1);
-    } else {
-      formattedPhone = "+233" + formattedPhone;
-    }
+  const formattedPhone = formatPhoneForKorba(to);
+  if (!formattedPhone) {
+    throw new Error(`Invalid recipient phone number for Korba SMS: ${to}`);
   }
 
   const payload = {
-    client_id: clientId,
+    client_id: String(clientId).trim(),
     phone_number: formattedPhone,
     sms_message: body,
   };
@@ -296,7 +330,9 @@ export async function sendSmsViaKorba(
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
-    // Generate Signature
+    // Generate Signature per Korba documentation:
+    // message = "&".join(f"{k}={v}" for k, v in sorted(payload.items()))
+    // signature = hmac.new(secret_key.encode(), message.encode(), hashlib.sha256).hexdigest()
     const pMap = payload as Record<string, string>;
     const sortedKeys = Object.keys(pMap).sort();
     const messageParts = [];
@@ -321,25 +357,54 @@ export async function sendSmsViaKorba(
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    const response = await fetchViaDb(supabaseAdmin, endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `HMAC ${clientKey}:${signatureHex}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `HMAC ${clientKey}:${signatureHex}`,
+    };
 
-    const responseText = await response.text();
-    let data;
+    let response: any;
+    let responseText = "";
+
+    // 1. Try routing through static IP proxy bridge (fetchViaDb)
+    try {
+      response = await fetchViaDb(supabaseAdmin, endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      responseText = await response.text();
+    } catch (proxyErr) {
+      console.warn(`[Korba SMS] DB proxy attempt failed for ${formattedPhone}:`, proxyErr);
+    }
+
+    // 2. Fallback to direct fetch if proxy route fails (e.g. 502 / network glitch)
+    if (!response || !response.ok || response.status >= 500) {
+      try {
+        console.log(`[Korba SMS] Attempting direct fetch fallback to Korba for ${formattedPhone}...`);
+        const directRes = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+        if (directRes) {
+          response = directRes;
+          responseText = await directRes.text();
+        }
+      } catch (directErr) {
+        console.warn(`[Korba SMS] Direct fetch fallback failed for ${formattedPhone}:`, directErr);
+      }
+    }
+
+    let data: any;
     try {
       data = JSON.parse(responseText);
     } catch {
       throw new Error(`Korba SMS returned non-JSON: ${responseText.substring(0, 200)}`);
     }
 
-    if (!response.ok || data.response_code !== "00") {
-      throw new Error(`Korba SMS Error: ${data.message || "Failed to send SMS"}`);
+    if (!response || !response.ok || (data && data.response_code !== "00")) {
+      const errMsg = data?.message || data?.error || `HTTP ${response?.status || 'Unknown'}`;
+      throw new Error(`Korba SMS Error: ${errMsg}`);
     }
 
     await logSmsToDb(to, "KorbaSMS", body, type, "success", undefined, agentId).catch(console.error);
@@ -349,6 +414,43 @@ export async function sendSmsViaKorba(
     await logSmsToDb(to, "KorbaSMS", body, type, "failed", error instanceof Error ? error.message : String(error), agentId).catch(console.error);
     throw error;
   }
+}
+
+export async function sendBulkSmsViaKorba(
+  clientId: string,
+  clientKey: string,
+  secretKey: string,
+  recipients: string[],
+  body: string,
+  type = "broadcast",
+  agentId?: string
+): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
+  const uniqueRecipients = Array.from(new Set(recipients.map((r) => r.trim()).filter(Boolean)));
+  if (uniqueRecipients.length === 0) return { sent: 0, failures: [] };
+
+  let sent = 0;
+  const failures: Array<{ phone: string; reason: string }> = [];
+  const CONCURRENCY = 8;
+
+  for (let i = 0; i < uniqueRecipients.length; i += CONCURRENCY) {
+    const chunk = uniqueRecipients.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (phone) => {
+        try {
+          await sendSmsViaKorba(clientId, clientKey, secretKey, phone, body, type, agentId);
+          sent++;
+        } catch (err: any) {
+          failures.push({ phone, reason: err?.message || "Korba failed" });
+        }
+      })
+    );
+
+    if (i + CONCURRENCY < uniqueRecipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  return { sent, failures };
 }
 
 export async function sendSmsViaMnotify(
@@ -628,11 +730,20 @@ export async function dispatchUnifiedSms(
     const actualKey = key.startsWith("mnotify:") ? key.slice(8) : key;
     return await sendSmsViaMnotify(actualKey, from, to, body, type, agentId);
   }
-  if (g === "korba" || key === "korba") {
-    const korbaClientId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-    const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
-    const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY") || "";
-    return await sendSmsViaKorba(korbaClientId, korbaClientKey, korbaSecretKey, to, body, type, agentId);
+  if (g === "korba" || key === "korba" || key.startsWith("korba:")) {
+    let cId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+    let cKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
+    let sKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+
+    if (key.startsWith("korba:")) {
+      const parts = key.slice(6).split(":");
+      if (parts.length >= 3) {
+        cId = parts[0] || cId;
+        cKey = parts[1] || cKey;
+        sKey = parts.slice(2).join(":") || sKey;
+      }
+    }
+    return await sendSmsViaKorba(cId, cKey, sKey, to, body, type, agentId);
   }
   if (g === "arkesel" || key.startsWith("arkesel:")) {
     const actualKey = key.startsWith("arkesel:") ? key.slice(8) : key;
@@ -664,21 +775,20 @@ export async function dispatchUnifiedBulkSms(
     const actualKey = key.startsWith("mnotify:") ? key.slice(8) : key;
     return await sendBulkSmsViaMnotify(actualKey, from, recipients, body, type, agentId);
   }
-  if (g === "korba" || key === "korba") {
-    const korbaClientId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-    const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
-    const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY") || "";
-    let sent = 0;
-    const failures: Array<{ phone: string; reason: string }> = [];
-    for (const r of recipients) {
-      try {
-        await sendSmsViaKorba(korbaClientId, korbaClientKey, korbaSecretKey, r, body, type, agentId);
-        sent++;
-      } catch (err: any) {
-        failures.push({ phone: r, reason: err.message || "Failed" });
+  if (g === "korba" || key === "korba" || key.startsWith("korba:")) {
+    let cId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+    let cKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
+    let sKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+
+    if (key.startsWith("korba:")) {
+      const parts = key.slice(6).split(":");
+      if (parts.length >= 3) {
+        cId = parts[0] || cId;
+        cKey = parts[1] || cKey;
+        sKey = parts.slice(2).join(":") || sKey;
       }
     }
-    return { sent, failures };
+    return await sendBulkSmsViaKorba(cId, cKey, sKey, recipients, body, type, agentId);
   }
   if (g === "arkesel" || key.startsWith("arkesel:")) {
     const actualKey = key.startsWith("arkesel:") ? key.slice(8) : key;
@@ -881,21 +991,20 @@ export async function sendBulkSmsViaTxtConnect(
     return await dispatchUnifiedBulkSms(effectiveGateway, apiKey, from, recipients, body, type, agentId);
   }
 
-  if (apiKey === "korba") {
-    const korbaClientId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-    const korbaClientKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
-    const korbaSecretKey = Deno.env.get("KORBA_SECRET_KEY") || "";
-    let sent = 0;
-    const failures: Array<{ phone: string; reason: string }> = [];
-    for (const r of recipients) {
-      try {
-        await sendSmsViaKorba(korbaClientId, korbaClientKey, korbaSecretKey, r, body, type, agentId);
-        sent++;
-      } catch (err: any) {
-        failures.push({ phone: r, reason: err.message || "Failed" });
+  if (apiKey === "korba" || apiKey.startsWith("korba:")) {
+    let cId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+    let cKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
+    let sKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+
+    if (apiKey.startsWith("korba:")) {
+      const parts = apiKey.slice(6).split(":");
+      if (parts.length >= 3) {
+        cId = parts[0] || cId;
+        cKey = parts[1] || cKey;
+        sKey = parts.slice(2).join(":") || sKey;
       }
     }
-    return { sent, failures };
+    return await sendBulkSmsViaKorba(cId, cKey, sKey, recipients, body, type, agentId);
   }
 
   if (apiKey.startsWith("mnotify:")) {
@@ -987,14 +1096,17 @@ export async function sendBulkSmsViaTxtConnect(
               const remaining = uniqueRecipients.slice(i);
               console.log(`[Bulk SMS Failover] TxtConnect rate limited. Rerouting all remaining ${remaining.length} recipients to Korba...`);
               const korba = config.gatewayConfig.korba;
-              for (const r of remaining) {
-                try {
-                  await sendSmsViaKorba(korba.clientId, korba.clientKey, korba.secretKey, r, body, type, agentId);
-                  sent++;
-                } catch (kErr: any) {
-                  failures.push({ phone: r, reason: kErr.message || "Korba failed" });
-                }
-              }
+              const korbaRes = await sendBulkSmsViaKorba(
+                korba.clientId,
+                korba.clientKey,
+                korba.secretKey,
+                remaining,
+                body,
+                type,
+                agentId
+              );
+              sent += korbaRes.sent;
+              failures.push(...korbaRes.failures);
               failedOver = true;
               break; // All remaining recipients successfully routed via Korba
             }
@@ -1071,11 +1183,24 @@ export async function sendPaymentSms(
   agentId?: string
 ) {
   try {
-    const { apiKey, senderId, templates, gateway } = await getSmsConfig(supabaseAdmin, agentId);
+    const { apiKey, senderId, templates, gateway, gatewayConfig } = await getSmsConfig(supabaseAdmin, agentId);
     const recipient = normalizePhone(customerPhone);
     
-    if (!apiKey || !recipient) {
-      console.warn(`[SMS] Missing config or recipient: to=${customerPhone}, hasApiKey=${!!apiKey}, gateway=${gateway}`);
+    // Support per-call gateway override (e.g. { gateway: "korba" } for Korba packages)
+    const requestedGateway = vars.gateway ? String(vars.gateway).toLowerCase().trim() : "";
+    const effectiveGateway = requestedGateway || gateway;
+
+    let effectiveApiKey = apiKey;
+    let activeSenderId = vars.senderId ? String(vars.senderId) : senderId;
+
+    if (requestedGateway === "korba" && gatewayConfig?.korba?.clientKey) {
+      const k = gatewayConfig.korba;
+      effectiveApiKey = `korba:${k.clientId}:${k.clientKey}:${k.secretKey}`;
+      activeSenderId = k.senderId || "SwiftData";
+    }
+
+    if (!effectiveApiKey || !recipient) {
+      console.warn(`[SMS] Missing config or recipient: to=${customerPhone}, hasApiKey=${!!effectiveApiKey}, gateway=${effectiveGateway}`);
       return;
     }
 
@@ -1106,11 +1231,10 @@ export async function sendPaymentSms(
       message = formatTemplate(tMap[type] || templates.payment_success, vars);
     }
 
-    const activeSenderId = vars.senderId ? String(vars.senderId) : senderId;
-    console.log(`[SMS] Sending ${type} via ${gateway} to ${recipient} (Sender: ${activeSenderId})...`);
+    console.log(`[SMS] Sending ${type} via ${effectiveGateway} to ${recipient} (Sender: ${activeSenderId})...`);
     
     try {
-      return await dispatchUnifiedSms(gateway, apiKey, activeSenderId, recipient, message, type, agentId);
+      return await dispatchUnifiedSms(effectiveGateway, effectiveApiKey, activeSenderId, recipient, message, type, agentId);
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const defaultSenderId = Deno.env.get("TXTCONNECT_SENDER_ID") || "Orderinfo";
@@ -1120,7 +1244,7 @@ export async function sendPaymentSms(
         if (agentId) {
           await Promise.resolve(supabaseAdmin.rpc("refund_sms_credit", { p_user_id: agentId })).catch(console.error);
         }
-        return await dispatchUnifiedSms(gateway, apiKey, defaultSenderId, recipient, message, type, agentId);
+        return await dispatchUnifiedSms(effectiveGateway, effectiveApiKey, defaultSenderId, recipient, message, type, agentId);
       }
       
       throw error;

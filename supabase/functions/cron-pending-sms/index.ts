@@ -51,7 +51,7 @@ serve(async (req: Request) => {
     const { data: pendingOrders, error: ordersError } = await supabaseAdmin
       .from("orders")
       .select("id, customer_phone")
-      .eq("status", "pending")
+      .in("status", ["pending", "awaiting_payment"])
       .eq("sms_reminder_sent", false)
       .gte("created_at", startOfDay.toISOString())
       .lte("created_at", minThresholdAgo.toISOString());

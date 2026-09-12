@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Loader2, KeyRound, AlertTriangle, ShieldCheck, RefreshCw, CheckCircle2, ArrowRight, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,6 +57,16 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const countdownTimer = useRef<NodeJS.Timeout | null>(null);
   const inFlightRef = useRef(false);
+
+  // Prevent background page scrolling while modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
 
   const handleManualVerify = async () => {
     if (!reference || isManualVerifying) return;
@@ -713,25 +724,27 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     return "from-amber-500/30 via-yellow-600/20 to-transparent";
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-start pt-6 sm:pt-14 p-4 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] overflow-y-auto overscroll-contain">
       {/* High Definition Backdrop with deep blur */}
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={step !== 'initiating' && step !== 'otp_verifying' && step !== 'success' ? onClose : undefined}
-        className="absolute inset-0 bg-[#020305]/90 backdrop-blur-xl cursor-pointer"
+        className="fixed inset-0 bg-[#020305]/85 backdrop-blur-md cursor-pointer"
       />
       
-      {/* Premium Glassmorphic Checkout Modal enclosure */}
-      <motion.div
-        onClick={(e) => e.stopPropagation()}
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 20 }}
-        className="relative w-full max-w-[360px] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl"
-      >
+      {/* Dynamic Centering Shell for Mobile & Desktop */}
+      <div className="min-h-full flex items-center justify-center p-3 sm:p-4 text-center">
+        {/* Premium Glassmorphic Checkout Modal enclosure */}
+        <motion.div
+          onClick={(e) => e.stopPropagation()}
+          initial={{ opacity: 0, scale: 0.95, y: 15 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.97, y: 15 }}
+          className="relative my-auto w-full max-w-[360px] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl z-10 text-left"
+        >
         {/* Dynamic Carrier Ambient Header */}
         <div className="relative w-full pt-6 pb-4 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">
           <div 
@@ -1237,6 +1250,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> Secure 256-Bit SSL Payment &bull; SwiftData
         </div>
       </motion.div>
-    </div>
+      </div>
+    </div>,
+    document.body
   );
 };

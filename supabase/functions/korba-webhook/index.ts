@@ -241,7 +241,8 @@ serve(async (req: Request) => {
       if (isConfirmed) {
         console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
       } else {
-        console.warn(`[korba-webhook] Status API check returned non-success or failed, proceeding with order DB verification.`);
+        console.error(`[korba-webhook] Unauthorized callback: Korba status API rejected tx ${cleanedTransactionId}`);
+        return json({ error: "Unauthorized: Transaction status check failed" }, 401);
       }
     }
   } else {

@@ -1,17 +1,11 @@
 import "../deno.d.ts";
 
-// @ts-expect-error: Deno URL import
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-// @ts-expect-error: Deno URL import
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-// @ts-expect-error: Deno npm import
 import webpush from "npm:web-push";
 import { corsHeaders } from "../_shared/cors.ts";
 
 declare const Deno: any;
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") as string;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") as string;
 
 // SwiftData Secure VAPID Credentials (Defaults loaded during installation)
 const DEFAULT_VAPID_PUBLIC = "BBunKshlnxwoqC83k7a01ApJwKgZ0L-QqEySWnz0EuJL1eS7lneeiKemLOQ9Z7DYD82KptTcbYjeQKaDNN1o5gM";
@@ -30,21 +24,34 @@ try {
   console.error("[Push] Failed to initialize VAPID credentials:", vapidErr);
 }
 
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+let supabaseAdminInstance: any = null;
+function getSupabaseAdmin() {
+  if (!supabaseAdminInstance) {
+    const url = Deno.env.get("SUPABASE_URL") || "";
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    supabaseAdminInstance = createClient(url, key);
+  }
+  return supabaseAdminInstance;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidUuid = (val: any): boolean => typeof val === "string" && UUID_REGEX.test(val.trim());
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const supabaseAdmin = getSupabaseAdmin();
   const START_TIME = Date.now();
   // Supabase Edge Functions enforce strict CPU/wall-time limits.
   // We cap processing to 2500ms to guarantee clean exit before WORKER_RESOURCE_LIMIT (546).
   const MAX_EXECUTION_MS = 2500;
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { 
+      endpoint,
       user_id, 
       user_ids, 
       broadcast, 
@@ -58,29 +65,45 @@ serve(async (req: Request) => {
     } = body;
 
     const isBroadcast = Boolean(broadcast);
-    const hasMultipleUsers = Array.isArray(user_ids) && user_ids.length > 0;
+    const hasEndpoint = typeof endpoint === "string" && endpoint.trim().length > 0;
+    const validUserIds = Array.isArray(user_ids) ? user_ids.filter(isValidUuid) : [];
+    const validUserId = isValidUuid(user_id) ? user_id.trim() : null;
 
-    if (!user_id && !hasMultipleUsers && !isBroadcast) {
-      return new Response(JSON.stringify({ error: "Missing user_id, user_ids or broadcast flag" }), {
+    if (!hasEndpoint && !validUserId && validUserIds.length === 0 && !isBroadcast) {
+      if (user_id) {
+        console.warn(`[Push] Non-UUID user_id provided: "${user_id}". Handled gracefully.`);
+        return new Response(JSON.stringify({ 
+          success: true, 
+          sent: 0, 
+          message: `Invalid or non-UUID user_id: ${user_id}` 
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ error: "Missing endpoint, valid user_id, user_ids or broadcast flag" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[Push] Processing request. Broadcast: ${isBroadcast}, Multiple: ${hasMultipleUsers}, Single User: ${user_id || "none"}`);
+    console.log(`[Push] Processing request. Broadcast: ${isBroadcast}, Endpoint: ${hasEndpoint}, Valid User: ${validUserId || "none"}, Multiple: ${validUserIds.length}`);
 
     // 1. Fetch relevant subscriptions
     let query = supabaseAdmin
       .from("push_subscriptions")
       .select("endpoint, p256dh, auth, user_id");
 
-    if (isBroadcast) {
+    if (hasEndpoint) {
+      query = query.eq("endpoint", endpoint.trim()).limit(1);
+    } else if (isBroadcast) {
       // Prioritize most recent active devices up to a safe batch size
       query = query.order("created_at", { ascending: false }).limit(200);
-    } else if (hasMultipleUsers) {
-      query = query.in("user_id", user_ids).limit(100);
-    } else if (user_id) {
-      query = query.eq("user_id", user_id).limit(20);
+    } else if (validUserIds.length > 0) {
+      query = query.in("user_id", validUserIds).limit(100);
+    } else if (validUserId) {
+      query = query.eq("user_id", validUserId).limit(20);
     }
 
     const { data: subscriptions, error: fetchError } = await query;
@@ -90,7 +113,7 @@ serve(async (req: Request) => {
       console.log(`[Push] No active subscriptions found. Skipping.`);
       try {
         await supabaseAdmin.from("push_notification_logs").insert({
-          user_id: user_id || null,
+          user_id: validUserId,
           title: title || "SwiftData Ghana",
           body: messageBody || "New update from SwiftData",
           url: url || "/dashboard",
@@ -192,7 +215,7 @@ serve(async (req: Request) => {
     // 5. Persist audit log
     try {
       await supabaseAdmin.from("push_notification_logs").insert({
-        user_id: user_id || null,
+        user_id: validUserId || null,
         title: title || "SwiftData Ghana",
         body: messageBody || "New update from SwiftData",
         url: url || "/dashboard",

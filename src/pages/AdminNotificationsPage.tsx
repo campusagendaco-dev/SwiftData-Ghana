@@ -317,12 +317,14 @@ const AdminNotificationsPage = () => {
     }
   }, []);
 
-  const handleSendTestPush = async (targetUserId: string, targetName: string) => {
-    setSendingTestPushId(targetUserId);
+  const handleSendTestPush = async (targetUserId: string | null, targetName: string, endpoint?: string) => {
+    const pushKey = targetUserId || endpoint || "test";
+    setSendingTestPushId(pushKey);
     try {
       const { data, error } = await supabase.functions.invoke("send-push-notification", {
         body: {
-          user_id: targetUserId,
+          endpoint: endpoint || undefined,
+          user_id: targetUserId || undefined,
           title: "🔔 SwiftData Ghana — Push Test",
           body: `Hi ${targetName || "there"}! Your device successfully received this live test notification off-site.`,
           url: "/dashboard",
@@ -1416,11 +1418,11 @@ const AdminNotificationsPage = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleSendTestPush(sub.user_id, sub.full_name)}
-                            disabled={sendingTestPushId === sub.user_id}
+                            onClick={() => handleSendTestPush(sub.user_id, sub.full_name, sub.endpoint)}
+                            disabled={sendingTestPushId === (sub.user_id || sub.endpoint)}
                             className="h-8 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs border-white/10 font-bold gap-1.5"
                           >
-                            {sendingTestPushId === sub.user_id ? (
+                            {sendingTestPushId === (sub.user_id || sub.endpoint) ? (
                               <>
                                 <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
                                 <span>Pinging Device...</span>

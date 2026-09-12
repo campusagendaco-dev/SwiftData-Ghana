@@ -311,7 +311,12 @@ const BuyData = () => {
 
   useEffect(() => {
     if (selectedPkg) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
       setTimeout(() => phoneInputRef.current?.focus(), 100);
+      return () => {
+        document.body.style.overflow = prev;
+      };
     }
   }, [selectedPkg]);
 
@@ -998,7 +1003,7 @@ const BuyData = () => {
       {createPortal(
         <AnimatePresence>
           {selectedPkg && (
-            <div className="fixed inset-0 z-[99999] flex flex-col items-center justify-center p-4 overflow-y-auto">
+            <div className="fixed inset-0 z-[99999] overflow-y-auto overscroll-contain">
               {/* Backdrop */}
               <motion.div
                 initial={{ opacity: 0 }}
@@ -1008,14 +1013,16 @@ const BuyData = () => {
                 className="fixed inset-0 bg-black/70 backdrop-blur-sm"
               />
 
-              {/* Modal Card */}
-              <motion.div
-                onClick={(e) => e.stopPropagation()}
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                className="relative w-full max-w-[380px] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10"
-              >
+              {/* Dynamic Centering Shell for Mobile & Desktop */}
+              <div className="min-h-full flex items-center justify-center p-3 sm:p-4 text-center">
+                {/* Modal Card */}
+                <motion.div
+                  onClick={(e) => e.stopPropagation()}
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="relative my-auto w-full max-w-[380px] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10 text-left"
+                >
                 {/* Accent Top Bar */}
                 <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
 
@@ -1226,6 +1233,7 @@ const BuyData = () => {
                   </div>
                 </div>
               </motion.div>
+              </div>
             </div>
           )}
         </AnimatePresence>,

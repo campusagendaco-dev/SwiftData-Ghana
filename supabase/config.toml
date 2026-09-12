@@ -186,3 +186,5 @@ verify_jwt = false
 [functions.auto-export-mashup]
 verify_jwt = false
 
+[functions.send-push-notification]
+verify_jwt = false

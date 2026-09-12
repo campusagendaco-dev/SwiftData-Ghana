@@ -28,11 +28,11 @@ serve(async (req) => {
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    // 1. Find stuck paid/pending orders
+    // 1. Find stuck paid orders
     const { data: stuckOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
-      .in("status", ["paid", "pending"])
+      .eq("status", "paid")
       .neq("network", "MTN Mash Up")
       .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
       .lte("created_at", twoMinutesAgo)
@@ -80,6 +80,15 @@ serve(async (req) => {
         continue;
       }
 
+      // Security guard: Never auto-fulfill orders that lack verified payment proof
+      const isWalletOrder = order.payment_method === "wallet";
+      const isGatewayPaid = Number(order.paystack_verified_amount || 0) > 0;
+      const isPaidStatus = order.status === "paid";
+      if (!isWalletOrder && !isGatewayPaid && !isPaidStatus) {
+        console.warn(`[cron-auto-retry] Security guard: Order ${order.id} lacks verified payment proof (method: ${order.payment_method}, verified_amount: ${order.paystack_verified_amount}). Skipping.`);
+        continue;
+      }
+
       // Atomically claim the order to prevent concurrent runners from double-purchasing
       const { data: claimed, error: claimErr } = await supabaseAdmin
         .from("orders")
@@ -89,7 +98,7 @@ serve(async (req) => {
           last_retry_at: new Date().toISOString()
         })
         .eq("id", order.id)
-        .in("status", ["paid", "pending", "fulfillment_failed", "failed"])
+        .in("status", ["paid", "fulfillment_failed", "failed"])
         .select("id")
         .maybeSingle();
 

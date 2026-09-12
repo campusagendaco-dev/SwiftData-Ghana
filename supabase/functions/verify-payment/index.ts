@@ -884,6 +884,14 @@ serve(async (req: any) => {
             failure_reason: "Transaction was reversed (refunded/charged back)"
           }).eq("id", targetReference);
           return new Response(JSON.stringify({ status: "error", error: "The transaction was reversed." }), { headers: corsHeaders });
+        } else if (txStatus === "failed") {
+          console.warn(`[verify-payment] Payment failed on gateway`);
+          const failMsg = translateFailureReason(verifyData.data?.gateway_response || verifyData.data?.message || verifyData.message || "Payment failed on Mobile Money");
+          await supabaseAdmin.from("orders").update({
+            status: "fulfillment_failed",
+            failure_reason: failMsg
+          }).eq("id", targetReference);
+          return new Response(JSON.stringify({ status: "failed", error: failMsg }), { headers: corsHeaders });
         } else if (txStatus === "abandoned") {
           console.warn(`[verify-payment] Payment abandoned`);
           
