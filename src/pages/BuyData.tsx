@@ -853,25 +853,28 @@ const BuyData = () => {
 
   return (
     <div className="relative min-h-screen bg-transparent text-foreground pt-16 md:pt-24 pb-24 font-sans antialiased">
+      {/* Dark Ambient Depth Shade */}
+      <div className="fixed inset-0 z-0 bg-[#030407]/75 dark:bg-[#020306]/85 pointer-events-none" />
+
       {/* Dynamic Ambient Carrier Glow & Adinkra Texture */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-25 dark:opacity-30">
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-20 dark:opacity-25">
         <div 
-          className="absolute inset-0 opacity-[0.02] dark:opacity-[0.035] mix-blend-overlay"
+          className="absolute inset-0 opacity-[0.015] dark:opacity-[0.025] mix-blend-overlay"
           style={{ 
             backgroundImage: "url('/assets/adinkra_pattern.png')",
             backgroundSize: "140px"
           }}
         />
         <div
-          className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] max-w-[600px] max-h-[600px] rounded-full blur-[160px] opacity-20 transition-colors duration-1000"
+          className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] max-w-[600px] max-h-[600px] rounded-full blur-[170px] opacity-15 transition-colors duration-1000"
           style={{ backgroundColor: carrierGlowColor }}
         />
         <div
-          className="absolute top-[40%] -right-[15%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full blur-[150px] opacity-15 transition-colors duration-1000"
+          className="absolute top-[40%] -right-[15%] w-[50vw] h-[50vw] max-w-[500px] max-h-[500px] rounded-full blur-[160px] opacity-10 transition-colors duration-1000"
           style={{ backgroundColor: carrierGlowColor }}
         />
         <div
-          className="absolute -bottom-[15%] left-[20%] w-[60vw] h-[40vw] max-w-[600px] max-h-[400px] rounded-full blur-[170px] opacity-10 transition-colors duration-1000"
+          className="absolute -bottom-[15%] left-[20%] w-[60vw] h-[40vw] max-w-[600px] max-h-[400px] rounded-full blur-[180px] opacity-10 transition-colors duration-1000"
           style={{ backgroundColor: carrierGlowColor }}
         />
       </div>
