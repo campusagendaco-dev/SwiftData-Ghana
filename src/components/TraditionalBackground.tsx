@@ -114,7 +114,17 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
   if (loading) return null;
   if (!enabled && !customBgUrl) return null;
 
-  const allSymbols = [
+  interface SymbolItem {
+    top?: string;
+    bottom?: string;
+    left?: string;
+    right?: string;
+    size: number;
+    rotate: number;
+    delay: number;
+  }
+
+  const allSymbols: SymbolItem[] = [
     { top: '5%', left: '4%', size: 110, rotate: 15, delay: 0 },
     { top: '15%', right: '5%', size: 130, rotate: -10, delay: 2 },
     { top: '35%', left: '2%', size: 90, rotate: 45, delay: 3 },
