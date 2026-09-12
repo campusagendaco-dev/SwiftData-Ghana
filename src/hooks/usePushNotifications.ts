@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -54,7 +54,7 @@ export function usePushNotifications() {
     }
   }, []);
 
-  const subscribeUser = async (silent = false) => {
+  const subscribeUser = useCallback(async (silent = false) => {
     if (!supported) {
       console.warn("[Push] Notifications are not supported in this browser.");
       return false;
@@ -124,7 +124,9 @@ export function usePushNotifications() {
           if (rawP256) {
             p256dh = btoa(String.fromCharCode(...new Uint8Array(rawP256)));
           }
-        } catch (_) {}
+        } catch (_err) {
+          // Ignore key extraction error and rely on available keys
+        }
       }
       if (!auth && typeof subscription.getKey === "function") {
         try {
@@ -132,7 +134,9 @@ export function usePushNotifications() {
           if (rawAuth) {
             auth = btoa(String.fromCharCode(...new Uint8Array(rawAuth)));
           }
-        } catch (_) {}
+        } catch (_err) {
+          // Ignore key extraction error and rely on available keys
+        }
       }
 
       if (!subscription.endpoint) {
@@ -153,7 +157,9 @@ export function usePushNotifications() {
 
       try {
         localStorage.setItem("swift_push_subscribed", "true");
-      } catch (_) {}
+      } catch (_err) {
+        // Storage restricted in private browsing modes
+      }
 
       console.log("[Push] Subscription complete & registered successfully.");
       if (!silent) {
@@ -169,15 +175,15 @@ export function usePushNotifications() {
       if (!silent) setLoading(false);
       return false;
     }
-  };
+  }, [supported, user?.id, toast]);
 
   useEffect(() => {
     if (supported && permissionState === "granted") {
       subscribeUser(true);
     }
-  }, [supported, permissionState, user?.id]);
+  }, [supported, permissionState, subscribeUser]);
 
-  const unsubscribeUser = async () => {
+  const unsubscribeUser = useCallback(async () => {
     if (!supported || !user) return false;
     setLoading(true);
     try {
@@ -202,7 +208,7 @@ export function usePushNotifications() {
       setLoading(false);
       return false;
     }
-  };
+  }, [supported, user]);
 
   return {
     supported,
