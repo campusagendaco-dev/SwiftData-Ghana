@@ -744,7 +744,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: 15 }}
-        className="relative w-full max-w-[360px] max-h-[92vh] max-h-[92dvh] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl z-10 text-left pointer-events-auto"
+        className="relative w-full max-w-[360px] max-h-[92dvh] bg-[#0b0c12]/95 border border-slate-800/80 shadow-[0_32px_90px_-15px_rgba(0,0,0,0.95)] rounded-[2.25rem] overflow-hidden flex flex-col select-none text-white backdrop-blur-3xl z-10 text-left pointer-events-auto"
       >
         {/* Dynamic Carrier Ambient Header */}
         <div className="shrink-0 relative w-full pt-5 pb-3 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">

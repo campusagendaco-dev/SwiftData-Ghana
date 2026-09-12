@@ -1022,7 +1022,7 @@ const BuyData = () => {
                 initial={{ opacity: 0, scale: 0.95, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                className="relative w-full max-w-[380px] max-h-[92vh] max-h-[92dvh] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10 text-left pointer-events-auto flex flex-col"
+                className="relative w-full max-w-[380px] max-h-[92dvh] bg-card border border-border rounded-3xl overflow-hidden shadow-2xl z-10 text-left pointer-events-auto flex flex-col"
               >
                 {/* Accent Top Bar */}
                 <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
