@@ -836,8 +836,47 @@ const BuyData = () => {
     );
   }, [packages, selectedPkg?.size, handleCardClick, selectedNetwork]);
 
+  const carrierGlowColor = useMemo(() => {
+    switch (selectedNetwork) {
+      case "MTN":
+        return "#FFCC00";
+      case "MTN Mash Up":
+        return "#F59E0B";
+      case "Telecel":
+        return "#EF4444";
+      case "AirtelTigo":
+        return "#2563EB";
+      default:
+        return "#FFCC00";
+    }
+  }, [selectedNetwork]);
+
   return (
-    <div className="min-h-screen bg-background text-foreground pt-16 md:pt-24 pb-24 font-sans antialiased">
+    <div className="relative min-h-screen bg-transparent text-foreground pt-16 md:pt-24 pb-24 font-sans antialiased">
+      {/* Dynamic Ambient Carrier Glow & Adinkra Texture */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-50 dark:opacity-75">
+        <div 
+          className="absolute inset-0 opacity-[0.035] dark:opacity-[0.07] mix-blend-overlay"
+          style={{ 
+            backgroundImage: "url('/assets/adinkra_pattern.png')",
+            backgroundSize: "140px"
+          }}
+        />
+        <div
+          className="absolute -top-[15%] -left-[10%] w-[65vw] h-[65vw] max-w-[650px] max-h-[650px] rounded-full mix-blend-screen blur-[140px] opacity-40 transition-colors duration-1000"
+          style={{ backgroundColor: carrierGlowColor }}
+        />
+        <div
+          className="absolute top-[35%] -right-[15%] w-[55vw] h-[55vw] max-w-[550px] max-h-[550px] rounded-full mix-blend-screen blur-[130px] opacity-30 transition-colors duration-1000"
+          style={{ backgroundColor: carrierGlowColor }}
+        />
+        <div
+          className="absolute -bottom-[10%] left-[20%] w-[70vw] h-[45vw] max-w-[700px] max-h-[450px] rounded-full mix-blend-screen blur-[150px] opacity-25 transition-colors duration-1000"
+          style={{ backgroundColor: carrierGlowColor }}
+        />
+      </div>
+
+      <div className="relative z-10">
       <SEO
         title="Buy Cheap Data Bundles Ghana 2026 | #1 Best Data Site ★★★★★ — SwiftData"
         description="Buy cheapest non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana with instant MoMo delivery. 5.0/5 stars rated, no account required. Cheaper than Datamart."
@@ -1001,6 +1040,7 @@ const BuyData = () => {
           </Link>
         </div>
       </div>
+      </div>
 
       {/* Pro Level Transaction Modal (Portalled to document.body for top z-index placement) */}
       {createPortal(
@@ -1036,7 +1076,14 @@ const BuyData = () => {
                 </button>
 
                 {/* Modal Header */}
-                <div className="shrink-0 p-6 pb-4 text-center space-y-3 relative z-20">
+                <div className="shrink-0 p-6 pb-4 text-center space-y-3 relative z-20 overflow-hidden">
+                  <div 
+                    className="absolute inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none mix-blend-overlay"
+                    style={{ 
+                      backgroundImage: "url('/assets/adinkra_pattern.png')",
+                      backgroundSize: "120px"
+                    }}
+                  />
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                     <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                     {selectedNetwork} Network

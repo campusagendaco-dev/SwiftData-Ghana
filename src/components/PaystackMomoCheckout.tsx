@@ -735,7 +735,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={step !== 'initiating' && step !== 'otp_verifying' && step !== 'success' ? onClose : undefined}
-        className="fixed inset-0 bg-[#020305]/85 backdrop-blur-md cursor-pointer pointer-events-auto"
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm cursor-pointer pointer-events-auto"
       />
       
       {/* Premium Glassmorphic Checkout Modal enclosure */}
@@ -749,7 +749,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         {/* Dynamic Carrier Ambient Header */}
         <div className="shrink-0 relative w-full pt-5 pb-3 text-center rounded-b-[2rem] overflow-hidden border-b border-slate-800/60">
           <div 
-            className="absolute inset-0 opacity-[0.06] pointer-events-none mix-blend-overlay"
+            className="absolute inset-0 opacity-[0.16] pointer-events-none mix-blend-overlay"
             style={{ 
               backgroundImage: "url('/assets/adinkra_pattern.png')",
               backgroundSize: "120px"

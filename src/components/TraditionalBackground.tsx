@@ -115,15 +115,15 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
   if (!enabled && !customBgUrl) return null;
 
   const allSymbols = [
-    { top: '5%', left: '5%', size: 120, rotate: 15, delay: 0 },
-    { top: '15%', right: '8%', size: 160, rotate: -10, delay: 2 },
-    { bottom: '12%', left: '10%', size: 140, rotate: 25, delay: 4 },
-    { bottom: '8%', right: '12%', size: 180, rotate: -20, delay: 1 },
-    { top: '42%', left: '-3%', size: 80, rotate: 45, delay: 3 },
-    { top: '58%', right: '-3%', size: 90, rotate: -30, delay: 5 },
+    { top: '5%', left: '4%', size: 110, rotate: 15, delay: 0 },
+    { top: '15%', right: '5%', size: 130, rotate: -10, delay: 2 },
+    { top: '35%', left: '2%', size: 90, rotate: 45, delay: 3 },
+    { top: '52%', right: '2%', size: 100, rotate: -30, delay: 5 },
+    { top: '72%', left: '4%', size: 115, rotate: 25, delay: 4 },
+    { top: '88%', right: '5%', size: 140, rotate: -20, delay: 1 },
   ];
 
-  const symbols = isMobile ? allSymbols.slice(0, 3) : allSymbols;
+  const symbols = isMobile ? [allSymbols[0], allSymbols[1], allSymbols[2], allSymbols[3], allSymbols[4]] : allSymbols;
 
   const getSymbol = (index: number) => {
     const type = index % 3;
@@ -210,6 +210,13 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
           }
         `}
       </style>
+      <div 
+        className="absolute inset-0 opacity-[0.035] dark:opacity-[0.07] pointer-events-none mix-blend-overlay"
+        style={{ 
+          backgroundImage: "url('/assets/adinkra_pattern.png')",
+          backgroundSize: "160px"
+        }}
+      />
       {symbols.map((sym, i) => {
         const isEven = i % 2 === 0;
         return (
