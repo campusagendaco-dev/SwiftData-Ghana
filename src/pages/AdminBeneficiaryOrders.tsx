@@ -255,12 +255,19 @@ export default function AdminBeneficiaryOrders() {
       // Instantly remove from local list so it leaves the page immediately!
       setAllBeneficiaryOrders((prev) => prev.filter((o) => o.id !== ord.id));
 
-      // 3. Invoke verify-payment Edge function (with automatic 429 rate-limit backoff)
+      // 3. Invoke verify-payment Edge function (with automatic retry for transient 429/502/503/504)
       let res = await supabase.functions.invoke("verify-payment", {
         body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
       });
 
-      if (res.error && (res.error.status === 429 || String(res.error.message).includes("429") || String(res.error.message).includes("Too many"))) {
+      const isTransientError = (err: any) => {
+        if (!err) return false;
+        const status = err.status || 0;
+        const msg = String(err.message || "");
+        return status === 429 || status === 503 || status === 502 || status === 504 || msg.includes("429") || msg.includes("503") || msg.includes("Too many") || msg.includes("Service Unavailable");
+      };
+
+      if (isTransientError(res.error)) {
         await new Promise((r) => setTimeout(r, 2000));
         res = await supabase.functions.invoke("verify-payment", {
           body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
@@ -308,6 +315,7 @@ export default function AdminBeneficiaryOrders() {
     );
     for (const ord of pendingOrders) {
       await handleRetrySingle(ord);
+      await new Promise((r) => setTimeout(r, 300));
     }
   }, [handleRetrySingle]);
 
@@ -879,7 +887,13 @@ export default function AdminBeneficiaryOrders() {
             let res = await supabase.functions.invoke("verify-payment", {
               body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
             });
-            if (res.error && (res.error.status === 429 || String(res.error.message).includes("429"))) {
+            const isTransientError = (err: any) => {
+              if (!err) return false;
+              const status = err.status || 0;
+              const msg = String(err.message || "");
+              return status === 429 || status === 503 || status === 502 || status === 504 || msg.includes("429") || msg.includes("503") || msg.includes("Too many") || msg.includes("Service Unavailable");
+            };
+            if (isTransientError(res.error)) {
               await new Promise((r) => setTimeout(r, 2000));
               res = await supabase.functions.invoke("verify-payment", {
                 body: { reference: ord.id, order_id: ord.id, force: true, action: "retry_order" }
