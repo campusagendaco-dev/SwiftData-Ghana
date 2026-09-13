@@ -66,7 +66,7 @@ export default function AdminBroadcast() {
   const [channel, setChannel] = useState<Channel>("notification");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [senderId, setSenderId] = useState("swiftupdate");
+  const [senderId, setSenderId] = useState("SwiftDataGh");
   const [templateIdx, setTemplateIdx] = useState(5);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [counting, setCounting] = useState(false);
@@ -169,16 +169,30 @@ export default function AdminBroadcast() {
         }).catch((err) => console.warn("[Broadcast] Push notification error:", err));
       }
 
-      // SMS via edge function (fire and forget for large batches)
+      // SMS via edge function
+      let smsResultMsg = "";
       if (channel === "sms" || channel === "both") {
         const phones = recipients.map((r: any) => r.phone).filter(Boolean);
-        supabase.functions.invoke("admin-send-sms", {
-          body: { 
-            retry_phones: phones, 
-            message: `${title}\n${body}`,
-            sender_id: senderId.trim()
-          },
-        }).catch(() => {});
+        try {
+          const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
+            body: { 
+              retry_phones: phones, 
+              message: `${title}\n${body}`,
+              sender_id: senderId.trim() || "SwiftDataGh"
+            },
+          });
+          if (smsError || smsData?.error) {
+            toast({
+              title: "SMS Delivery Notice",
+              description: smsError?.message || smsData?.error || "SMS dispatch failed.",
+              variant: "destructive"
+            });
+          } else if (smsData?.sent !== undefined) {
+            smsResultMsg = ` · SMS sent to ${smsData.sent} recipient(s)`;
+          }
+        } catch (smsInvokeErr: any) {
+          console.warn("[Broadcast] SMS error:", smsInvokeErr);
+        }
       }
 
       // Log the broadcast
@@ -191,7 +205,7 @@ export default function AdminBroadcast() {
         data: { segment, channel, title, body, recipient_count: count },
       });
 
-      toast({ title: `Broadcast sent to ${count} agents`, description: `Channel: ${channel}` });
+      toast({ title: `Broadcast sent to ${count} agents`, description: `Channel: ${channel}${smsResultMsg}` });
       setTitle(""); setBody(""); setTemplateIdx(4); setRecipientCount(null);
       loadLogs();
     } catch (e: any) {

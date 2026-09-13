@@ -8,22 +8,35 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   const clean = raw.trim().replace(/[^\d+]/g, "");
   if (!clean) return null;
 
-  const digits = clean.replace(/\D/g, "");
+  let digits = clean.replace(/\D/g, "");
   if (!digits) return null;
 
-  if (digits.startsWith("233") && digits.length >= 12) {
+  // Handle leading 00 (e.g. 00233... or 0024...)
+  if (digits.startsWith("00")) {
+    digits = digits.slice(2);
+  }
+
+  // Handle 02X, 05X, 03X (Ghana local 10 digits -> 233...)
+  if (digits.startsWith("0") && digits.length === 10) {
+    digits = `233${digits.slice(1)}`;
+  }
+
+  // If 9 digits starting with 2, 3, 5 (missing leading zero or 233)
+  if (digits.length === 9 && /^[235]/.test(digits)) {
+    digits = `233${digits}`;
+  }
+
+  // Valid Ghana phone: 233 followed by 9 digits starting with 2, 3, 5 (12 digits total)
+  if (digits.startsWith("233") && digits.length === 12 && /^[235]/.test(digits.slice(3))) {
     return digits;
   }
 
-  if (digits.startsWith("0") && digits.length >= 10) {
-    return `233${digits.slice(1)}`;
+  // Valid international numbers (10 to 15 digits, non-repeating zeroes)
+  if (digits.length >= 10 && digits.length <= 15 && !digits.startsWith("00000")) {
+    return digits;
   }
 
-  if (digits.startsWith("00") && digits.length > 2) {
-    return digits.slice(2);
-  }
-
-  return digits.length >= 10 ? digits : null;
+  return null;
 }
 
 export function formatPhoneForKorba(raw: string | null | undefined): string | null {

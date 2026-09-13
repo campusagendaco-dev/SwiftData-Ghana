@@ -42,7 +42,9 @@ async function resolveRecipients(
     const { data } = await supabaseAdmin
       .from("orders")
       .select("customer_phone")
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1000);
     for (const row of data || []) {
       const p = normalizePhone(row.customer_phone);
       if (p && !unique.has(p)) {
@@ -53,16 +55,19 @@ async function resolveRecipients(
   }
 
   if (targetType === "all_order_phones") {
-    // Pull every unique customer phone from fulfilled/completed orders
+    // Pull unique customer phones from recent fulfilled/completed orders (up to 8,000 orders)
+    // To protect against Edge Function execution timeouts and prevent exhausting SMS credit balance
     const BATCH = 1000;
+    const MAX_ORDERS = 8000;
     let offset = 0;
     let hasMore = true;
-    while (hasMore) {
+    while (hasMore && offset < MAX_ORDERS) {
       const { data } = await supabaseAdmin
         .from("orders")
         .select("customer_phone")
         .in("status", ["fulfilled", "completed", "paid", "processing"])
         .not("customer_phone", "is", null)
+        .order("created_at", { ascending: false })
         .range(offset, offset + BATCH - 1);
       for (const row of data || []) {
         const p = normalizePhone(row.customer_phone);

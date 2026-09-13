@@ -67,10 +67,121 @@ function calculateNextRunTime(recurringType: string, currentScheduledAt: string)
         }
       }
     }
-    return new Date(now.getTime() + 6 * 60 * 60 * 1000).toISOString();
   }
 
   return "";
+}
+
+type Recipient = { phone: string; name: string; userId: string; isAgent: boolean };
+
+async function getScheduledRecipients(
+  supabaseAdmin: any,
+  targetType: string,
+  resumeOffset: number,
+  prevResult: Record<string, any>
+): Promise<{ chunk: Recipient[]; totalRecipients: number; cachedList?: Recipient[] }> {
+  // If we already cached the resolved recipient list in the broadcast result
+  if (Array.isArray(prevResult.cached_recipients) && prevResult.cached_recipients.length > 0) {
+    const all: Recipient[] = prevResult.cached_recipients;
+    const chunk = all.slice(resumeOffset, resumeOffset + SEND_LIMIT);
+    return { chunk, totalRecipients: all.length, cachedList: all };
+  }
+
+  if (targetType === "all_order_phones") {
+    // Pull unique customer phones from recent completed orders (up to 8,000 recent orders)
+    const unique = new Map<string, Recipient>();
+    const BATCH = 1000;
+    const MAX_ORDERS = 8000;
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore && offset < MAX_ORDERS) {
+      const { data: orders } = await supabaseAdmin
+        .from("orders")
+        .select("customer_phone")
+        .in("status", ["fulfilled", "completed", "paid", "processing"])
+        .not("customer_phone", "is", null)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + BATCH - 1);
+
+      for (const row of orders || []) {
+        const p = normalizePhone(row.customer_phone);
+        if (p && !unique.has(p)) {
+          unique.set(p, { phone: p, name: "Customer", userId: "", isAgent: false });
+        }
+      }
+      hasMore = (orders || []).length === BATCH;
+      offset += BATCH;
+    }
+
+    // Merge in registered profiles who have not opted out
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, phone, full_name, is_agent, is_sub_agent, sms_opt_out")
+      .eq("sms_opt_out", false);
+
+    for (const row of profiles || []) {
+      const p = normalizePhone(row.phone);
+      if (p && !unique.has(p)) {
+        unique.set(p, {
+          phone: p,
+          name: row.full_name || "Customer",
+          userId: row.user_id || "",
+          isAgent: Boolean(row.is_agent || row.is_sub_agent),
+        });
+      }
+    }
+
+    const all = Array.from(unique.values());
+    const chunk = all.slice(resumeOffset, resumeOffset + SEND_LIMIT);
+    return { chunk, totalRecipients: all.length, cachedList: all };
+  }
+
+  if (targetType === "pending_orders") {
+    const unique = new Map<string, Recipient>();
+    const { data: orders } = await supabaseAdmin
+      .from("orders")
+      .select("customer_phone")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1000);
+
+    for (const row of orders || []) {
+      const p = normalizePhone(row.customer_phone);
+      if (p && !unique.has(p)) {
+        unique.set(p, { phone: p, name: "Customer", userId: "", isAgent: false });
+      }
+    }
+
+    const all = Array.from(unique.values());
+    const chunk = all.slice(resumeOffset, resumeOffset + SEND_LIMIT);
+    return { chunk, totalRecipients: all.length, cachedList: all };
+  }
+
+  // Profile-based targets: "all" | "agents" | "sub_agents" | "parent_agents" | "users"
+  let q = supabaseAdmin
+    .from("profiles")
+    .select("user_id, phone, full_name, is_agent, is_sub_agent")
+    .eq("sms_opt_out", false)
+    .range(resumeOffset, resumeOffset + SEND_LIMIT - 1);
+
+  if (targetType === "agents") q = q.or("is_agent.eq.true,is_sub_agent.eq.true");
+  else if (targetType === "sub_agents") q = q.eq("is_sub_agent", true);
+  else if (targetType === "parent_agents") q = q.eq("is_agent", true).eq("is_sub_agent", false);
+  else if (targetType === "users") q = q.eq("is_agent", false).eq("is_sub_agent", false);
+
+  const { data: rows } = await q;
+  const chunk: Recipient[] = (rows || [])
+    .map((row: any) => ({
+      phone: normalizePhone(row.phone) || "",
+      name: row.full_name || "Customer",
+      userId: row.user_id || "",
+      isAgent: Boolean(row.is_agent || row.is_sub_agent),
+    }))
+    .filter((r: Recipient) => r.phone);
+
+  const totalRecipients = resumeOffset + chunk.length + (chunk.length === SEND_LIMIT ? 1 : 0);
+  return { chunk, totalRecipients };
 }
 
 serve(async (req: Request) => {
@@ -188,30 +299,12 @@ serve(async (req: Request) => {
           failures.push({ phone: "system", reason: "SMS gateway not configured" });
           isDone = true;
         } else {
-          // Fetch recipient chunk from DB
-          let q = supabaseAdmin
-            .from("profiles")
-            .select("user_id, phone, full_name, is_agent, is_sub_agent")
-            .eq("sms_opt_out", false)
-            .range(resumeOffset, resumeOffset + SEND_LIMIT - 1);
+          const { chunk, totalRecipients: resolvedTotal, cachedList } = await getScheduledRecipients(
+            supabaseAdmin, targetType, resumeOffset, prevResult
+          );
+          totalRecipients = resolvedTotal;
 
-          if (targetType === "agents") q = q.or("is_agent.eq.true,is_sub_agent.eq.true");
-          else if (targetType === "sub_agents") q = q.eq("is_sub_agent", true);
-          else if (targetType === "parent_agents") q = q.eq("is_agent", true).eq("is_sub_agent", false);
-          else if (targetType === "users") q = q.eq("is_agent", false).eq("is_sub_agent", false);
-
-          const { data: rows } = await q;
-          type Recipient = { phone: string; name: string; userId: string; isAgent: boolean };
-          const chunk: Recipient[] = (rows || [])
-            .map((row: any) => ({
-              phone: normalizePhone(row.phone) || "",
-              name: row.full_name || "Customer",
-              userId: row.user_id || "",
-              isAgent: Boolean(row.is_agent || row.is_sub_agent),
-            }))
-            .filter((r: Recipient) => r.phone);
-
-          totalRecipients = resumeOffset + chunk.length + (chunk.length === SEND_LIMIT ? 1 : 0);
+          const effectiveSenderId = targetFilters.sender_id || smsConfig.senderId || "SwiftDataGh";
 
           // Fetch balances for {{balance}} token
           const balanceMap = new Map<string, number>();
@@ -232,7 +325,7 @@ serve(async (req: Request) => {
               await Promise.all(batch.map(async (r) => {
                 const body = personalizeMessage(smsBody, r.name, balanceMap.get(r.userId));
                 try {
-                  await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, r.phone, body, "broadcast");
+                  await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, effectiveSenderId, r.phone, body, "broadcast");
                   sent++;
                 } catch (e) {
                   failures.push({ phone: r.phone, reason: e instanceof Error ? e.message : "Unknown" });
@@ -242,7 +335,7 @@ serve(async (req: Request) => {
           } else {
             const phones = chunk.map((r) => r.phone);
             if (phones.length > 0) {
-              const bulkResult = await dispatchUnifiedBulkSms(smsConfig.gateway, smsConfig.apiKey, smsConfig.senderId, phones, smsBody, "broadcast");
+              const bulkResult = await dispatchUnifiedBulkSms(smsConfig.gateway, smsConfig.apiKey, effectiveSenderId, phones, smsBody, "broadcast");
               sent = bulkResult.sent;
               failures.push(...bulkResult.failures);
             }
@@ -250,6 +343,9 @@ serve(async (req: Request) => {
 
           nextOffset = resumeOffset + chunk.length;
           isDone = nextOffset >= totalRecipients;
+          if (cachedList) {
+            prevResult.cached_recipients = cachedList;
+          }
         }
 
         const cumulativeSent = totalSentSoFar + sent;
