@@ -57,6 +57,10 @@ interface TargetFilters {
   inactive_days?: number;
   min_balance?: number;
   max_balance?: number;
+  send_push?: boolean;
+  send_sms?: boolean;
+  recurring?: "none" | "peak_hours" | "every_hour" | "every_3h" | "every_6h" | "every_12h" | "daily";
+  url?: string;
 }
 
 interface SmsTemplate {
@@ -169,6 +173,34 @@ const AdminNotificationsPage = () => {
   // Scheduling
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
+  const [recurringMode, setRecurringMode] = useState<"none" | "peak_hours" | "every_hour" | "every_3h" | "every_6h" | "every_12h" | "daily">("none");
+  const [targetUrl, setTargetUrl] = useState("/utilities");
+
+  const setScheduledPeakTime = (hours: number, minutes: number, label: string) => {
+    const d = new Date();
+    if (d.getHours() > hours || (d.getHours() === hours && d.getMinutes() >= minutes)) {
+      d.setDate(d.getDate() + 1);
+    }
+    d.setHours(hours, minutes, 0, 0);
+    const localIso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setScheduledAt(localIso);
+    setScheduleEnabled(true);
+    toast({
+      title: `${label} (${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")})`,
+      description: "Scheduled for peak customer activity window.",
+    });
+  };
+
+  const setScheduledOffset = (hours: number) => {
+    const d = new Date(Date.now() + hours * 3600 * 1000);
+    const localIso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setScheduledAt(localIso);
+    setScheduleEnabled(true);
+    toast({
+      title: `Scheduled for +${hours}h`,
+      description: `Delivery set for ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
+    });
+  };
 
   // Templates
   const [templates, setTemplates] = useState<SmsTemplate[]>([]);
@@ -466,18 +498,31 @@ const AdminNotificationsPage = () => {
       if (!scheduledAt) { toast({ title: "Pick a date/time to schedule", variant: "destructive" }); return; }
       const at = new Date(scheduledAt);
       if (at <= new Date()) { toast({ title: "Scheduled time must be in the future", variant: "destructive" }); return; }
+      
+      const enrichedFilters: TargetFilters = {
+        ...targetFilters,
+        send_push: sendWebPush,
+        send_sms: sendSms,
+        recurring: recurringMode !== "none" ? recurringMode : undefined,
+        url: targetUrl || "/utilities",
+      };
+
       const { error } = await (supabase as any).from("scheduled_broadcasts").insert({
         title: title.trim(),
         message: message.trim(),
         target_type: targetType,
-        target_filters: targetFilters,
+        target_filters: enrichedFilters,
         scheduled_at: at.toISOString(),
         status: "pending",
         created_by: user?.id,
       });
       if (error) { toast({ title: "Failed to schedule", description: error.message, variant: "destructive" }); return; }
-      toast({ title: "Broadcast scheduled!", description: `Will send on ${at.toLocaleString()}` });
-      setTitle(""); setMessage(""); setScheduledAt(""); setScheduleEnabled(false);
+      const channels = [sendWebPush ? "Web Push" : "", sendSms ? "SMS" : ""].filter(Boolean).join(" & ") || "Web Push";
+      toast({ 
+        title: "Broadcast scheduled!", 
+        description: `Will dispatch via ${channels} on ${at.toLocaleString()}${recurringMode !== "none" ? ` (Repeats: ${recurringMode.replace("_", " ")})` : ""}` 
+      });
+      setTitle(""); setMessage(""); setScheduledAt(""); setScheduleEnabled(false); setRecurringMode("none");
       await fetchAll();
       return;
     }
@@ -959,13 +1004,148 @@ const AdminNotificationsPage = () => {
                   <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} className="data-[state=checked]:bg-amber-500" />
                 </div>
                 {scheduleEnabled && (
-                  <Input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                    min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
-                    className="bg-black/20 border-white/10 text-xs h-10 rounded-xl text-white"
-                  />
+                  <div className="space-y-4 pt-2 border-t border-white/5 animate-in fade-in duration-200">
+                    {/* Recommended Peak Hours Presets */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-400" /> Recommended Ghana Peak Hours (GMT)
+                        </Label>
+                        <span className="text-[9px] text-white/40">1-click automated peak targeting</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setScheduledPeakTime(8, 30, "Morning Commute")}
+                          className="flex flex-col items-start p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 text-left transition-all group"
+                        >
+                          <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                            🌅 08:30 AM
+                          </span>
+                          <span className="text-[10px] text-white/50 mt-0.5 group-hover:text-white/80">
+                            Morning Commute (Airtime & Data)
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setScheduledPeakTime(13, 0, "Midday Lunch")}
+                          className="flex flex-col items-start p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 text-left transition-all group"
+                        >
+                          <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                            ☀️ 01:00 PM
+                          </span>
+                          <span className="text-[10px] text-white/50 mt-0.5 group-hover:text-white/80">
+                            Midday Lunch (Data Boost)
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setScheduledPeakTime(18, 30, "Evening Prime")}
+                          className="flex flex-col items-start p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 text-left transition-all group col-span-2 sm:col-span-1"
+                        >
+                          <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                            🌙 06:30 PM
+                          </span>
+                          <span className="text-[10px] text-white/50 mt-0.5 group-hover:text-white/80">
+                            Evening Prime (ECG & TV Subscriptions)
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Quick relative offsets */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="text-[9px] uppercase font-bold tracking-wider text-white/30">Or relative:</span>
+                        <button
+                          type="button"
+                          onClick={() => setScheduledOffset(1)}
+                          className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white"
+                        >
+                          ⏱️ In 1 Hour
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScheduledOffset(3)}
+                          className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white"
+                        >
+                          ⏱️ In 3 Hours
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScheduledOffset(6)}
+                          className="px-2.5 py-1 text-[10px] font-bold rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white"
+                        >
+                          ⏱️ In 6 Hours
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Exact date-time picker */}
+                    <div className="space-y-1.5">
+                      <Label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Selected Delivery Timestamp</Label>
+                      <Input
+                        type="datetime-local"
+                        value={scheduledAt}
+                        onChange={(e) => setScheduledAt(e.target.value)}
+                        min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                        className="bg-black/20 border-white/10 text-xs h-10 rounded-xl text-white"
+                      />
+                    </div>
+
+                    {/* Recurring Automation Mode */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1.5">
+                        <Label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Recurring Auto-Schedule</Label>
+                        <Select value={recurringMode} onValueChange={(v: any) => setRecurringMode(v)}>
+                          <SelectTrigger className="bg-black/20 border-white/10 text-white text-xs rounded-xl h-10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#111116] border-white/10 text-white">
+                            <SelectItem value="none">One-time broadcast (No repeat)</SelectItem>
+                            <SelectItem value="peak_hours">🔄 Auto-Repeat: Daily Peak Hours (08:30, 13:00, 18:30 GMT)</SelectItem>
+                            <SelectItem value="every_hour">⏱️ Auto-Repeat: Every 1 Hour</SelectItem>
+                            <SelectItem value="every_3h">⏱️ Auto-Repeat: Every 3 Hours</SelectItem>
+                            <SelectItem value="every_6h">⏱️ Auto-Repeat: Every 6 Hours</SelectItem>
+                            <SelectItem value="every_12h">⏱️ Auto-Repeat: Every 12 Hours</SelectItem>
+                            <SelectItem value="daily">📅 Auto-Repeat: Daily at this time</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-[9px] text-white/30">Background cron automatically recalculates and queues the next cycle</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Push Action URL (Destination)</Label>
+                        <Input
+                          value={targetUrl}
+                          onChange={(e) => setTargetUrl(e.target.value)}
+                          placeholder="e.g. /utilities or /buy-data"
+                          className="bg-black/20 border-white/10 text-xs h-10 rounded-xl text-white font-mono"
+                        />
+                        <p className="text-[9px] text-white/30">Browser tab opens here when subscriber clicks lock-screen notification</p>
+                      </div>
+                    </div>
+
+                    {/* Active Channels Summary Pill */}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
+                      <span className="text-[10px] uppercase tracking-widest font-bold text-white/40">Scheduled Dispatch Channels:</span>
+                      {sendWebPush && (
+                        <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] gap-1">
+                          <Bell className="w-3 h-3" /> Native Web Push (Lock-screen)
+                        </Badge>
+                      )}
+                      {sendSms && (
+                        <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px] gap-1">
+                          <MessageSquare className="w-3 h-3" /> SMS Gateway
+                        </Badge>
+                      )}
+                      {!sendWebPush && !sendSms && (
+                        <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">
+                          ⚠️ No channel selected
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -1010,12 +1190,39 @@ const AdminNotificationsPage = () => {
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <p className="font-bold text-sm text-white truncate">{b.title || "(No title)"}</p>
                         <Badge variant="outline" className="text-[9px] shrink-0 text-white/50 border-white/10">{TARGET_LABELS[b.target_type] || b.target_type}</Badge>
+                        {b.target_filters?.recurring && (
+                          <Badge className="text-[9px] bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono">
+                            🔄 {b.target_filters.recurring.replace("_", " ")}
+                          </Badge>
+                        )}
+                        {b.target_filters?.send_push !== false && (
+                          <Badge className="text-[9px] bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                            📱 Push
+                          </Badge>
+                        )}
+                        {b.target_filters?.send_sms !== false && (
+                          <Badge className="text-[9px] bg-blue-500/20 text-blue-300 border-blue-500/30">
+                            💬 SMS
+                          </Badge>
+                        )}
+                        {b.target_filters?.url && (
+                          <Badge variant="outline" className="text-[9px] bg-white/5 text-white/50 border-white/10 font-mono">
+                            🔗 {b.target_filters.url}
+                          </Badge>
+                        )}
                         {b.status === "processing" && <Badge className="text-[9px] bg-amber-500 shrink-0 text-black font-bold animate-pulse">Processing…</Badge>}
                       </div>
                       <p className="text-xs text-white/40 line-clamp-1">{b.message}</p>
-                      <p className="text-[10px] text-amber-400/90 mt-1.5 flex items-center gap-1 font-bold">
-                        <Clock className="w-3 h-3" /> {new Date(b.scheduled_at).toLocaleString()}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                        <p className="text-[10px] text-amber-400/90 flex items-center gap-1 font-bold">
+                          <Clock className="w-3 h-3" /> Next Run: {new Date(b.scheduled_at).toLocaleString()}
+                        </p>
+                        {(b.result as any)?.last_executed_at && (
+                          <span className="text-[10px] text-white/40">
+                            Last ran: {new Date((b.result as any).last_executed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {b.status === "pending" && (
                       <Button variant="ghost" size="icon" className="text-white/20 hover:text-red-400 hover:bg-red-500/10 shrink-0 h-8 w-8 rounded-lg"
