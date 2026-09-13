@@ -174,7 +174,9 @@ export function playSound(path?: string | null, volume = 0.4) {
       console.warn(`[Audio] Could not load audio file "${resolvedPath}", falling back to synth chime.`);
       try {
         playSynth("soft_alert", volume);
-      } catch {}
+      } catch (fallbackErr) {
+        console.debug("[Audio] Synth fallback unavailable:", fallbackErr);
+      }
     };
 
     const playPromise = audio.play();
