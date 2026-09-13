@@ -1,34 +1,101 @@
 declare const Deno: any;
 
 /**
+ * Normalizes a WhatsApp phone number into standard international format (+233...)
+ */
+export function formatWhatsAppRecipient(to: string): string {
+  let clean = to.replace(/\s+/g, "").replace(/-/g, "").replace(/^whatsapp:/i, "");
+  if (clean.startsWith("0") && clean.length === 10) {
+    clean = "+233" + clean.slice(1);
+  } else if (clean.startsWith("233") && !clean.startsWith("+")) {
+    clean = "+" + clean;
+  } else if (!clean.startsWith("+")) {
+    clean = "+" + clean;
+  }
+  return clean;
+}
+
+/**
+ * Send a WhatsApp message via Twilio API.
+ * Uses official Twilio WhatsApp API:
+ * POST https://api.twilio.com/2010-04-01/Accounts/{AccountSid}/Messages.json
+ *
+ * @param to - Recipient phone number (local 0... or international +233...)
+ * @param text - Message text
+ * @param config - Optional explicit Twilio config overrides
+ */
+export async function sendTwilioWhatsAppMessage(
+  to: string,
+  text: string,
+  config?: { accountSid?: string; authToken?: string; fromNumber?: string }
+): Promise<boolean> {
+  const accountSid = config?.accountSid || Deno.env.get("TWILIO_ACCOUNT_SID") || "";
+  const authToken = config?.authToken || Deno.env.get("TWILIO_AUTH_TOKEN") || "";
+  const rawFrom = config?.fromNumber || Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER") || "";
+
+  if (!accountSid || !authToken || !rawFrom) {
+    return false;
+  }
+
+  const cleanRecipient = formatWhatsAppRecipient(to);
+  const formattedTo = `whatsapp:${cleanRecipient}`;
+
+  let cleanFrom = rawFrom.replace(/\s+/g, "").replace(/-/g, "").replace(/^whatsapp:/i, "");
+  if (!cleanFrom.startsWith("+")) {
+    cleanFrom = "+" + cleanFrom;
+  }
+  const formattedFrom = `whatsapp:${cleanFrom}`;
+
+  try {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+    const basicAuth = btoa(`${accountSid}:${authToken}`);
+
+    const params = new URLSearchParams();
+    params.set("From", formattedFrom);
+    params.set("To", formattedTo);
+    params.set("Body", text);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.log(`[Twilio WhatsApp] Successfully sent to ${formattedTo} (SID: ${data.sid || "ok"})`);
+      return true;
+    }
+
+    const errBody = await res.text();
+    console.error(`[Twilio WhatsApp] Send failed (${res.status}):`, errBody);
+    return false;
+  } catch (err: any) {
+    console.error("[Twilio WhatsApp] Network/fetch error:", err?.message || err);
+    return false;
+  }
+}
+
+/**
  * Send a WhatsApp message via WaSender API.
  *
- * @param to    – Recipient phone number
- * @param text  – Message body
- * @param apiKey – Optional per-agent API key. Falls back to the global WHATSAPP_API_KEY secret.
+ * @param to - Recipient phone number
+ * @param text - Message text
+ * @param apiKey - Optional per-agent API key. Falls back to WHATSAPP_API_KEY secret.
  */
-export async function sendWhatsAppMessage(to: string, text: string, apiKey?: string) {
+export async function sendWaSenderMessage(to: string, text: string, apiKey?: string): Promise<boolean> {
   const WHATSAPP_API_URL = Deno.env.get("WHATSAPP_API_URL") || "https://www.wasenderapi.com/api/send-message";
   const resolvedKey = apiKey || Deno.env.get("WHATSAPP_API_KEY") || "";
 
   if (!resolvedKey) {
-    console.warn("[WhatsApp] No API key available. Message not sent:", text.slice(0, 80));
-    return;
+    console.warn("[WaSender] No API key available. Message not sent:", text.slice(0, 80));
+    return false;
   }
 
-  console.log(`[WhatsApp] Sending message using key: ${resolvedKey.slice(0, 4)}...${resolvedKey.slice(-4)}`);
-
-  // Ensure E.164 format (Ghana-focused)
-  let formattedTo = to.replace(/\s+/g, "").replace(/-/g, "");
-  if (formattedTo.startsWith("0") && formattedTo.length === 10) {
-    formattedTo = "+233" + formattedTo.slice(1);
-  }
-  if (formattedTo.startsWith("233") && !formattedTo.startsWith("+")) {
-    formattedTo = "+" + formattedTo;
-  }
-  if (!formattedTo.startsWith("+")) {
-    formattedTo = "+" + formattedTo;
-  }
+  const formattedTo = formatWhatsAppRecipient(to);
 
   let attempts = 0;
   const maxAttempts = 3;
@@ -46,37 +113,63 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
       });
 
       if (res.ok) {
-        console.log("[WhatsApp] Sent to", formattedTo);
-        return;
+        console.log("[WaSender] Sent to", formattedTo);
+        return true;
       }
 
       const errBody = await res.text();
-      console.error(`[WhatsApp] Send failed (attempt ${attempts}/${maxAttempts}):`, res.status, errBody);
+      console.error(`[WaSender] Send failed (attempt ${attempts}/${maxAttempts}):`, res.status, errBody);
 
       if (res.status === 429 && attempts < maxAttempts) {
-        let retryAfter = 3; // default fallback if parsing fails
+        let retryAfter = 3;
         try {
           const parsedErr = JSON.parse(errBody);
           if (typeof parsedErr.retry_after === "number") {
             retryAfter = parsedErr.retry_after;
           }
-        } catch (e) {
-          console.warn("[WhatsApp] Failed to parse 429 response body:", e);
-        }
+        } catch { /* ignore */ }
 
-        console.log(`[WhatsApp] Rate limited (429). Retrying after ${retryAfter} seconds...`);
+        console.log(`[WaSender] Rate limited (429). Retrying after ${retryAfter} seconds...`);
         await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
         continue;
       }
-      
-      // If it's not a 429 or we ran out of attempts, stop retrying
+
       break;
     } catch (error) {
-      console.error(`[WhatsApp] Error on attempt ${attempts}:`, error);
-      if (attempts >= maxAttempts) {
-        break;
-      }
+      console.error(`[WaSender] Error on attempt ${attempts}:`, error);
+      if (attempts >= maxAttempts) break;
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
+
+  return false;
+}
+
+/**
+ * Unified WhatsApp Dispatcher.
+ * Prioritizes Twilio WhatsApp API first (when TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_WHATSAPP_NUMBER are set).
+ * Falls back to WaSender API if Twilio is unconfigured or encounters an error.
+ *
+ * @param to - Recipient phone number
+ * @param text - Message body
+ * @param apiKey - Optional WaSender API key override
+ */
+export async function sendWhatsAppMessage(to: string, text: string, apiKey?: string) {
+  // 1. Primary: Twilio WhatsApp API
+  const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+  const twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+  const twilioFrom = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER");
+
+  if (twilioSid && twilioToken && twilioFrom) {
+    const twilioSuccess = await sendTwilioWhatsAppMessage(to, text, {
+      accountSid: twilioSid,
+      authToken: twilioToken,
+      fromNumber: twilioFrom,
+    });
+    if (twilioSuccess) return;
+    console.warn("[WhatsApp] Twilio dispatch unsuccessful; attempting fallback to WaSender API...");
+  }
+
+  // 2. Secondary / Fallback: WaSender API
+  await sendWaSenderMessage(to, text, apiKey);
 }

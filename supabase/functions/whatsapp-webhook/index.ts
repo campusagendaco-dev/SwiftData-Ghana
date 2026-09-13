@@ -519,15 +519,24 @@ async function initAfaPayment(
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
+  if (req.method === "GET") {
+    return new Response("WhatsApp Webhook is active", {
+      headers: { ...corsHeaders, "Content-Type": "text/plain" },
+      status: 200,
+    });
+  }
+
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
   const supabase = supabaseAdmin;
 
-  try {
-    const payload = await req.json();
-    const { from, text, fromMe } = parseMessage(payload);
+  let isTwilio = false;
+  let from = "";
+  let text = "";
+  let fromMe = false;
 
+  try {
     // Security: verify webhook secret if configured
     const WEBHOOK_SECRET = Deno.env.get("WHATSAPP_WEBHOOK_SECRET");
     if (WEBHOOK_SECRET) {
@@ -538,8 +547,42 @@ serve(async (req: Request) => {
       }
     }
 
-    if (!payload?.event?.includes("message") || !from || !text || fromMe) {
-      return new Response("ok");
+    const contentType = (req.headers.get("content-type") || "").toLowerCase();
+
+    if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+      // Incoming from Twilio WhatsApp API
+      isTwilio = true;
+      const formData = await req.formData();
+      const rawFrom = String(formData.get("From") || formData.get("WaId") || "");
+      const rawBody = String(formData.get("Body") || "");
+      const cleanPhone = rawFrom.replace(/^whatsapp:/i, "").trim();
+
+      from = normalizePhone(cleanPhone) || cleanPhone.replace(/\D/g, "");
+      text = rawBody.trim();
+      fromMe = false;
+
+      console.log(`[WA Webhook] Twilio incoming from: ${from} (raw: ${rawFrom}), text: "${text.slice(0, 50)}"`);
+    } else {
+      // Incoming from WaSender API (JSON)
+      const payload = await req.json().catch(() => null);
+      if (!payload || !payload?.event?.includes("message")) {
+        return new Response("ok", { headers: corsHeaders });
+      }
+      const parsed = parseMessage(payload);
+      from = parsed.from;
+      text = parsed.text;
+      fromMe = parsed.fromMe;
+      console.log(`[WA Webhook] WaSender incoming from: ${from}, text: "${text.slice(0, 50)}"`);
+    }
+
+    if (!from || !text || fromMe) {
+      if (isTwilio) {
+        return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+          headers: { "Content-Type": "text/xml" },
+          status: 200,
+        });
+      }
+      return new Response("ok", { headers: corsHeaders });
     }
 
     // Load session
@@ -1262,9 +1305,23 @@ serve(async (req: Request) => {
     });
 
     if (reply) await sendWhatsAppMessage(from, reply);
+
+    if (isTwilio) {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+        headers: { "Content-Type": "text/xml" },
+        status: 200,
+      });
+    }
+
     return new Response("ok", { headers: corsHeaders });
   } catch (e) {
     console.error("[WA Webhook] Unhandled error:", e);
+    if (isTwilio) {
+      return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+        headers: { "Content-Type": "text/xml" },
+        status: 200,
+      });
+    }
     return new Response("error", { headers: corsHeaders });
   }
 });
