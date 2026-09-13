@@ -20,6 +20,7 @@ interface Notification {
   title: string;
   message: string;
   target_type: string;
+  target_user_id?: string | null;
   created_at: string;
 }
 
@@ -224,7 +225,7 @@ const NotificationPopup = () => {
 
       const p = profile as Profile | null;
       const isAgent = Boolean(p?.agent_approved || p?.sub_agent_approved || p?.is_agent || p?.is_sub_agent);
-      const userJoinedAt = new Date(p?.created_at || user.created_at || 0).getTime();
+      const userJoinedAt = new Date((p as any)?.created_at || user.created_at || 0).getTime();
       
       const filtered = notifs.filter((n: any) => {
         if (dismissedIds.includes(n.id)) return false;
