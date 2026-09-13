@@ -27,13 +27,15 @@ export function formatWhatsAppRecipient(to: string): string {
 export async function sendTwilioWhatsAppMessage(
   to: string,
   text: string,
-  config?: { accountSid?: string; authToken?: string; fromNumber?: string }
+  config?: { accountSid?: string; authToken?: string; apiKeySid?: string; apiSecret?: string; fromNumber?: string }
 ): Promise<boolean> {
   const accountSid = config?.accountSid || Deno.env.get("TWILIO_ACCOUNT_SID") || "";
   const authToken = config?.authToken || Deno.env.get("TWILIO_AUTH_TOKEN") || "";
+  const apiKeySid = config?.apiKeySid || Deno.env.get("TWILIO_API_KEY_SID") || Deno.env.get("TWILIO_API_KEY") || "";
+  const apiSecret = config?.apiSecret || Deno.env.get("TWILIO_API_KEY_SECRET") || Deno.env.get("TWILIO_API_SECRET") || "";
   const rawFrom = config?.fromNumber || Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER") || "";
 
-  if (!accountSid || !authToken || !rawFrom) {
+  if (!accountSid || (!authToken && (!apiKeySid || !apiSecret)) || !rawFrom) {
     return false;
   }
 
@@ -48,7 +50,9 @@ export async function sendTwilioWhatsAppMessage(
 
   try {
     const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-    const basicAuth = btoa(`${accountSid}:${authToken}`);
+    const authUser = apiKeySid || accountSid;
+    const authPass = apiSecret || authToken;
+    const basicAuth = btoa(`${authUser}:${authPass}`);
 
     const params = new URLSearchParams();
     params.set("From", formattedFrom);
