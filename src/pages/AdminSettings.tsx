@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
-import { playSound } from "@/lib/sound";
+import { playSound, playSuccessSound } from "@/lib/sound";
 import { getFlagUrl } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -282,7 +282,7 @@ const AdminSettings = () => {
         title: "✨ AI Scan Completed",
         description: `Successfully analyzed user behavior and sent ${data.sent} recommended SMS promo messages.`,
       });
-      playSound("success");
+      playSuccessSound();
     } catch (err: any) {
       toast({
         title: "Scan failed",
