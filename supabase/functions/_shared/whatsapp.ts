@@ -147,7 +147,7 @@ export async function sendWaSenderMessage(to: string, text: string, apiKey?: str
 
 /**
  * Unified WhatsApp Dispatcher.
- * Prioritizes Twilio WhatsApp API first (when TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_WHATSAPP_NUMBER are set).
+ * Prioritizes Twilio WhatsApp API first (checking Deno.env secrets, then system_settings table).
  * Falls back to WaSender API if Twilio is unconfigured or encounters an error.
  *
  * @param to - Recipient phone number
@@ -156,9 +156,34 @@ export async function sendWaSenderMessage(to: string, text: string, apiKey?: str
  */
 export async function sendWhatsAppMessage(to: string, text: string, apiKey?: string) {
   // 1. Primary: Twilio WhatsApp API
-  const twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const twilioFrom = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER");
+  let twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+  let twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+  let twilioFrom = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER");
+
+  // Fallback to database system_settings if environment variables are not set
+  if (!twilioSid || !twilioToken || !twilioFrom) {
+    try {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const { data: settings } = await supabase
+          .from("system_settings")
+          .select("twilio_account_sid, twilio_auth_token, twilio_from_number")
+          .eq("id", 1)
+          .maybeSingle();
+
+        if (settings) {
+          twilioSid = twilioSid || settings.twilio_account_sid;
+          twilioToken = twilioToken || settings.twilio_auth_token;
+          twilioFrom = twilioFrom || settings.twilio_from_number;
+        }
+      }
+    } catch (dbErr) {
+      console.warn("[WhatsApp] Could not resolve Twilio config from system_settings:", dbErr);
+    }
+  }
 
   if (twilioSid && twilioToken && twilioFrom) {
     const twilioSuccess = await sendTwilioWhatsAppMessage(to, text, {
