@@ -161,10 +161,15 @@ serve(async (req) => {
     if (["completed", "success", "successful", "delivered", "fulfilled"].includes(rawStatus)) systemStatus = "fulfilled";
     else if (["failed", "rejected", "error", "refunded", "refund", "cancelled", "reversed"].includes(rawStatus)) systemStatus = "fulfillment_failed";
 
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
+    const filter = isUuid 
+      ? `id.eq.${reference},provider_order_id.eq.${reference}`
+      : `provider_order_id.eq.${reference}`;
+
     const { data: order, error: fetchError } = await supabaseAdmin
       .from("orders")
       .select("id, status, agent_id, order_type")
-      .or(`id.eq.${reference},provider_order_id.eq.${reference}`)
+      .or(filter)
       .maybeSingle();
 
     if (fetchError || !order) {

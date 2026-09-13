@@ -181,8 +181,9 @@ serve(async (req: Request) => {
 
     // Look up order — we pass our own order ID as `reference` in the purchase request,
     // so DataHub echoes it back. Try direct ID match first, then provider_order_id fallback.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(datahubReference);
     const filters = [
-      datahubReference ? `id.eq.${datahubReference}` : null,
+      (datahubReference && isUuid) ? `id.eq.${datahubReference}` : null,
       datahubReference ? `provider_order_id.eq.${datahubReference}` : null,
       datahubOrderNumber ? `provider_order_id.eq.${datahubOrderNumber}` : null,
     ].filter(Boolean).join(",");
