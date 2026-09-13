@@ -479,6 +479,12 @@ serve(async (req: any) => {
     const { data: existingOrder } = await supabaseAdmin
       .from("orders").select("*").eq("id", targetReference).maybeSingle();
 
+    if (!existingOrder) {
+      return new Response(JSON.stringify({ error: "Order not found with reference: " + targetReference }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const isServiceRole = authHeader.includes(SUPABASE_SERVICE_ROLE_KEY || "nevermatch_placeholder");
 
     // Client restriction: Allow client-side verification fallback or instant verification when force is requested
@@ -1414,6 +1420,7 @@ serve(async (req: any) => {
 
     let result: any = { ok: false, reason: "No providers" };
     let successfulProviderId = null;
+    let isBeneficiaryErr = false;
 
     const buildDataPayload = async (provider: any, overrideNetKey?: string) => {
       const ht = provider.handler_type || "standard";
@@ -1592,7 +1599,7 @@ serve(async (req: any) => {
         break; // success — stop trying
       } else {
         // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers
-        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+        isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
         let newFailures = 0;
         let autoDisable = false;
 
@@ -1703,6 +1710,7 @@ serve(async (req: any) => {
       const targetStatus = "fulfillment_failed";
       const targetProviderOrderId = "failed_api_call";
       const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request");
+      isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
 
       await supabaseAdmin.from("orders").update({
         status: targetStatus,
