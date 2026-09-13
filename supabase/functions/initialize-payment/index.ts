@@ -1369,6 +1369,7 @@ serve(async (req: Request) => {
 
       patch.status = "awaiting_payment";
       patch.payment_method = activeGateway;
+      patch.failure_reason = null;
 
       const { data: currentOrder } = await supabaseAdmin.from("orders").select("metadata").eq("id", reference).maybeSingle();
       patch.metadata = {
