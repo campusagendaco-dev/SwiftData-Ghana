@@ -425,7 +425,9 @@ const AppContent = () => {
         {/* Public buy page — no login required */}
         <Route path="/buy-data" element={<BuyData />} />
         <Route path="/buy-airtime" element={<BuyAirtime />} />
+        <Route path="/airtime" element={<Navigate to="/buy-airtime" replace />} />
         <Route path="/buy-utility" element={<BuyUtility />} />
+        <Route path="/utilities" element={<Navigate to="/buy-utility" replace />} />
         <Route path="/submit-numbers" element={<SubmitBeneficiaryNumbers />} />
         <Route path="/submit-beneficiary" element={<Navigate to="/submit-numbers" replace />} />
 

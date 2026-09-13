@@ -70,8 +70,8 @@ const WelcomeAnnouncement = () => {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-[450px] p-0 overflow-hidden border-none bg-transparent shadow-2xl">
-        <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0A0A0F] border border-white/10 shadow-2xl shadow-emerald-500/10">
+      <DialogContent className="sm:max-w-[450px] p-0 overflow-visible border-none bg-transparent shadow-none [&>button.absolute]:hidden z-[100]">
+        <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0c0d18]/95 backdrop-blur-3xl border border-white/[0.14] shadow-[0_25px_70px_rgba(0,0,0,0.85)]">
           {/* Animated Background Elements */}
           <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2 animate-pulse" />
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-sky-500/5 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/2" />
