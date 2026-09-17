@@ -95,6 +95,10 @@ export function parseProviderResponse(body: string, contentType: string | null):
         : (typeof parsed?.error === "string"
           ? parsed.error
           : undefined));
+
+    if (parsed?.error && typeof parsed.error === "string") {
+      return { ok: false, reason: parsed.error };
+    }
     
     const orderId = String(
       parsed?.results?.operatorRequestID ?? 

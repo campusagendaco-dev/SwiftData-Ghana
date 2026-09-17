@@ -176,27 +176,31 @@ async function callProviderApi(
   let payload = { ...data };
   if (handlerType === "skdataplug" && endpoint === "purchase") {
     let providerNetwork = "MTN";
-    let gbSize = String(parseCapacity(String(data.package_size || data.plan || "")));
+    const rawPkgStr = String(data.package_size || data.plan || data.package || data.bundle || data.package_name || data.capacity || "").trim();
+    const cleanPkgName = rawPkgStr.replace(/\s+/g, "");
+    const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
+    const mappedDbNet = mapDataNetworkKey(rawNet);
+    let gbSize = String(parseCapacity(rawPkgStr));
 
     if (supabaseAdmin) {
       try {
         const { data: pkgMapping } = await supabaseAdmin
           .from("provider_packages")
-          .select("raw_data")
+          .select("raw_data, capacity_gb")
           .eq("provider_id", provider.id)
-          .eq("network", data.networkRaw || data.network || "")
-          .eq("package_name", data.package_size || data.plan || "")
+          .or(`network.eq.${mappedDbNet},network.eq.${rawNet}`)
+          .or(`package_name.eq.${rawPkgStr},package_name.eq.${cleanPkgName}`)
+          .limit(1)
           .maybeSingle();
 
         if (pkgMapping?.raw_data) {
           providerNetwork = pkgMapping.raw_data.network || providerNetwork;
-          gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
+          gbSize = String(pkgMapping.raw_data.gb_size || pkgMapping.capacity_gb || gbSize);
         } else {
-          const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
           if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
             providerNetwork = "TELECEL";
           } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL")) {
-            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(String(data.package_size || data.plan || ""));
+            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(rawPkgStr);
             providerNetwork = isNoExpiry ? "AT_NOEXPIRY" : "AT_EXPIRY";
           } else {
             providerNetwork = "MTN";
@@ -207,8 +211,29 @@ async function callProviderApi(
       }
     }
 
+    if (!gbSize || gbSize === "0" || gbSize === "0.0" || gbSize === "undefined" || gbSize === "null") {
+      const parsedCap = parseCapacity(rawPkgStr);
+      if (parsedCap > 0) {
+        gbSize = String(parsedCap);
+      } else {
+        const numMatch = rawPkgStr.match(/(\d+(?:\.\d+)?)/);
+        gbSize = numMatch ? numMatch[1] : "1";
+      }
+    }
+
+    const recipientPhone = normalizeRecipient(String(
+      data.recipient ||
+      data.phoneNumber ||
+      data.phone ||
+      data.customer_phone ||
+      data.phone_number ||
+      data.mobile ||
+      data.customerPhone ||
+      ""
+    ));
+
     payload = {
-      recipient: String(data.recipient || data.phoneNumber || ""),
+      recipient: recipientPhone,
       network: providerNetwork,
       gb_size: gbSize,
       reference: String(data.reference || data.order_id || data.orderReference || "")

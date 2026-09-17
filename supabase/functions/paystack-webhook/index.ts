@@ -1729,24 +1729,30 @@ serve(async (req: Request) => {
 
     // Resolve SKPlug package mapping if relevant
     let skPlugNetwork = "MTN";
-    let skPlugGbSize = String(parseCapacity(packageSize));
+    const rawPkgStr = String(packageSize || "").trim();
+    const cleanPkgName = rawPkgStr.replace(/\s+/g, "");
+    const mappedDbNet = mapDataNetworkKey(network || "");
+    let skPlugGbSize = String(parseCapacity(rawPkgStr));
+
     if (baseUrlToLower.includes("skdataplug")) {
       try {
         const { data: pkgMapping } = await supabaseAdmin
           .from("provider_packages")
-          .select("raw_data")
-          .eq("network", network)
-          .eq("package_name", packageSize)
+          .select("raw_data, capacity_gb")
+          .or(`network.eq.${mappedDbNet},network.eq.${network}`)
+          .or(`package_name.eq.${rawPkgStr},package_name.eq.${cleanPkgName}`)
+          .limit(1)
           .maybeSingle();
+
         if (pkgMapping?.raw_data) {
           skPlugNetwork = pkgMapping.raw_data.network || skPlugNetwork;
-          skPlugGbSize = String(pkgMapping.raw_data.gb_size || skPlugGbSize);
+          skPlugGbSize = String(pkgMapping.raw_data.gb_size || pkgMapping.capacity_gb || skPlugGbSize);
         } else {
           const upperNet = (network || "").toUpperCase();
           if (upperNet.includes("VOD") || upperNet.includes("TELECEL")) {
             skPlugNetwork = "TELECEL";
           } else if (upperNet.includes("AT") || upperNet.includes("AIRTEL")) {
-            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(packageSize || "");
+            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(rawPkgStr);
             skPlugNetwork = isNoExpiry ? "AT_NOEXPIRY" : "AT_EXPIRY";
           } else {
             skPlugNetwork = "MTN";
@@ -1754,6 +1760,16 @@ serve(async (req: Request) => {
         }
       } catch (e) {
         console.error("[skdataplug-webhook-resolve] Error:", e);
+      }
+
+      if (!skPlugGbSize || skPlugGbSize === "0" || skPlugGbSize === "0.0" || skPlugGbSize === "undefined" || skPlugGbSize === "null") {
+        const parsedCap = parseCapacity(rawPkgStr);
+        if (parsedCap > 0) {
+          skPlugGbSize = String(parsedCap);
+        } else {
+          const numMatch = rawPkgStr.match(/(\d+(?:\.\d+)?)/);
+          skPlugGbSize = numMatch ? numMatch[1] : "1";
+        }
       }
     }
 

@@ -112,11 +112,11 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     // --- Purchase Payload Resolutions ---
-    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
+    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || data.mobile || data.customerPhone || ""));
     const targetRef = String(data.reference || data.orderReference || data.order_id || data.id || "");
     const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
     const netKey = mapDataNetworkKey(rawNet);
-    const pkgSize = String(data.capacity || data.package_size || data.plan || "");
+    const pkgSize = String(data.capacity || data.package_size || data.plan || data.package || data.bundle || data.package_name || "");
     const capNum = parseCapacity(pkgSize);
     const capacityStr = String(capNum > 0 ? capNum : pkgSize);
 
@@ -201,23 +201,28 @@ export class StandardAdapter implements ProviderAdapter {
       let providerNetwork = "MTN";
       let gbSize = capacityStr;
 
+      const rawPkgStr = String(data.package_size || data.plan || data.package || data.bundle || data.package_name || data.capacity || "").trim();
+      const cleanPkgName = rawPkgStr.replace(/\s+/g, "");
+      const mappedDbNet = mapDataNetworkKey(rawNet);
+
       try {
         const { data: pkgMapping } = await supabaseAdmin
           .from("provider_packages")
-          .select("raw_data")
+          .select("raw_data, capacity_gb")
           .eq("provider_id", provider.id)
-          .eq("network", data.networkRaw || data.network || "")
-          .eq("package_name", data.package_size || data.plan || "")
+          .or(`network.eq.${mappedDbNet},network.eq.${rawNet}`)
+          .or(`package_name.eq.${rawPkgStr},package_name.eq.${cleanPkgName}`)
+          .limit(1)
           .maybeSingle();
 
         if (pkgMapping?.raw_data) {
           providerNetwork = pkgMapping.raw_data.network || providerNetwork;
-          gbSize = String(pkgMapping.raw_data.gb_size || gbSize);
+          gbSize = String(pkgMapping.raw_data.gb_size || pkgMapping.capacity_gb || gbSize);
         } else {
           if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
             providerNetwork = "TELECEL";
           } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL")) {
-            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(String(data.package_size || data.plan || ""));
+            const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(rawPkgStr);
             providerNetwork = isNoExpiry ? "AT_NOEXPIRY" : "AT_EXPIRY";
           } else {
             providerNetwork = "MTN";
@@ -225,6 +230,20 @@ export class StandardAdapter implements ProviderAdapter {
         }
       } catch (e) {
         console.error("[skdataplug-payload-resolve] Error:", e);
+      }
+
+      if (!gbSize || gbSize === "0" || gbSize === "0.0" || gbSize === "undefined" || gbSize === "null") {
+        const parsedCap = parseCapacity(rawPkgStr);
+        if (parsedCap > 0) {
+          gbSize = String(parsedCap);
+        } else {
+          const numMatch = rawPkgStr.match(/(\d+(?:\.\d+)?)/);
+          if (numMatch) {
+            gbSize = numMatch[1];
+          } else {
+            gbSize = "1";
+          }
+        }
       }
 
       return {
