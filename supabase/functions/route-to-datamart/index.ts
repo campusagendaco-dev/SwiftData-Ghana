@@ -164,6 +164,10 @@ serve(async (req) => {
           } else {
             failedCount++;
             const reason = resData?.message || resData?.error || `HTTP ${res.status}`;
+            await supabaseAdmin.from("orders").update({
+              failure_reason: reason,
+              updated_at: new Date().toISOString()
+            }).eq("id", ord.id);
             results.push({ id: ord.id, status: "failed", reason });
           }
         } else {
@@ -196,6 +200,10 @@ serve(async (req) => {
             results.push({ id: ord.id, status: "success", purchaseId });
           } else {
             failedCount++;
+            await supabaseAdmin.from("orders").update({
+              failure_reason: res.reason || "Provider rejected order",
+              updated_at: new Date().toISOString()
+            }).eq("id", ord.id);
             results.push({ id: ord.id, status: "failed", reason: res.reason });
           }
         }
