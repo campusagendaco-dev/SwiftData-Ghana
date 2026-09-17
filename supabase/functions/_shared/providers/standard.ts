@@ -232,24 +232,37 @@ export class StandardAdapter implements ProviderAdapter {
         console.error("[skdataplug-payload-resolve] Error:", e);
       }
 
-      if (!gbSize || gbSize === "0" || gbSize === "0.0" || gbSize === "undefined" || gbSize === "null") {
+      // Mandatory Network Sanitization for SK Data Plug (Valid: "MTN", "TELECEL", "AT_EXPIRY", "AT_NOEXPIRY")
+      let finalNetwork = String(providerNetwork || "").toUpperCase().trim();
+      if (finalNetwork === "AT" || finalNetwork === "AIRTELTIGO" || finalNetwork === "AIRTEL" || finalNetwork === "TIGO" || finalNetwork === "AT_PREMIUM" || finalNetwork === "AT_BIGTIME") {
+        const isNoExpiry = /no[- ]?expiry|non[- ]?expiry/i.test(rawPkgStr);
+        finalNetwork = isNoExpiry ? "AT_NOEXPIRY" : "AT_EXPIRY";
+      } else if (finalNetwork.includes("VOD") || finalNetwork.includes("TELECEL")) {
+        finalNetwork = "TELECEL";
+      } else if (finalNetwork.includes("MTN") || finalNetwork === "YELLO") {
+        finalNetwork = "MTN";
+      } else if (finalNetwork !== "AT_EXPIRY" && finalNetwork !== "AT_NOEXPIRY" && finalNetwork !== "TELECEL" && finalNetwork !== "MTN") {
+        finalNetwork = "MTN";
+      }
+
+      // Mandatory gb_size Sanitization (strip "GB"/"MB", ensure valid non-empty numeric string)
+      let cleanGbSize = String(gbSize).replace(/\s*(gb|mb|tb)\s*/gi, "").trim();
+      if (!cleanGbSize || cleanGbSize === "0" || cleanGbSize === "0.0" || cleanGbSize === "undefined" || cleanGbSize === "null" || isNaN(Number(cleanGbSize))) {
         const parsedCap = parseCapacity(rawPkgStr);
         if (parsedCap > 0) {
-          gbSize = String(parsedCap);
+          cleanGbSize = String(parsedCap);
         } else {
           const numMatch = rawPkgStr.match(/(\d+(?:\.\d+)?)/);
-          if (numMatch) {
-            gbSize = numMatch[1];
-          } else {
-            gbSize = "1";
-          }
+          cleanGbSize = numMatch ? numMatch[1] : "1";
         }
       }
 
+      const cleanRecipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || data.mobile || data.customerPhone || ""));
+
       return {
-        recipient: recipient,
-        network: providerNetwork,
-        gb_size: gbSize,
+        recipient: cleanRecipient || recipient,
+        network: finalNetwork,
+        gb_size: cleanGbSize,
         reference: targetRef
       };
     }

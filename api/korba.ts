@@ -59,8 +59,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    if (body) {
-      forwardHeaders['Content-Length'] = String(Buffer.byteLength(body));
+    let bodyPayload: string | undefined = undefined;
+    if (body !== undefined && body !== null) {
+      if (typeof body === 'string') {
+        bodyPayload = body;
+      } else if (typeof body === 'object') {
+        bodyPayload = JSON.stringify(body);
+      } else {
+        bodyPayload = String(body);
+      }
+    }
+
+    if (bodyPayload !== undefined) {
+      if (!forwardHeaders['Content-Type'] && !forwardHeaders['content-type']) {
+        forwardHeaders['Content-Type'] = 'application/json';
+      }
+      forwardHeaders['Content-Length'] = String(Buffer.byteLength(bodyPayload, 'utf8'));
     }
 
     const options = {
@@ -93,8 +107,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         reject(new Error('Proxy connection timed out'));
       });
 
-      if (body) {
-        proxyReq.write(body);
+      if (bodyPayload !== undefined) {
+        proxyReq.write(bodyPayload);
       }
       proxyReq.end();
     });
