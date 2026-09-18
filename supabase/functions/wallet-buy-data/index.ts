@@ -310,6 +310,32 @@ serve(async (req: Request) => {
       agentProfit = 0; // Regular reseller/agent profit is collected offline as cash
     }
 
+    let appliedPromoId: string | null = null;
+    let appliedDiscountAmount = 0;
+
+    // Server-Side Promo Code Discount Resolution
+    const candidatePromoCode = customMetadata?.promo_code || payload.promo_code || customMetadata?.promo_id || payload.promo_id;
+    if (candidatePromoCode) {
+      try {
+        const { data: claimRows } = await supabaseAdmin.rpc("claim_promo_code", {
+          p_code: String(candidatePromoCode),
+          p_phone: normalizedPhone,
+        });
+
+        if (claimRows && claimRows.length > 0) {
+          const claimInfo = claimRows[0];
+          appliedPromoId = claimInfo.promo_id;
+          const discountPct = Number(claimInfo.discount_percentage || 0);
+          if (discountPct > 0) {
+            appliedDiscountAmount = parseFloat(((resolvedChargeAmount * discountPct) / 100).toFixed(2));
+            resolvedChargeAmount = Math.max(0, parseFloat((resolvedChargeAmount - appliedDiscountAmount).toFixed(2)));
+          }
+        }
+      } catch (promoErr) {
+        console.error("[wallet-buy-data] Error resolving promo code:", promoErr);
+      }
+    }
+
     // Server-Side Data Traffic Promo Popup Price Override
     if (customMetadata?.is_data_traffic_promo && customMetadata?.promo_id) {
       const { data: promoRow } = await supabaseAdmin
@@ -473,13 +499,15 @@ serve(async (req: Request) => {
       customer_phone: normalizeRecipient(customer_phone),
       network: normalizeNetworkForPricing(networkRaw),
       package_size: package_size,
-      amount: amountNum, // Use strictly resolved server-side amount
+      amount: resolvedChargeAmount, // Use strictly resolved server-side amount (including promo discount)
       payment_method: paymentMethod,
       cost_price: resolvedCostPrice > 0 ? resolvedCostPrice : undefined,
       profit: agentProfit,
       parent_agent_id: parentAgentId,
       parent_profit: parentProfit,
       status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid",
+      promo_code_id: appliedPromoId || undefined,
+      discount_amount: appliedDiscountAmount > 0 ? appliedDiscountAmount : 0,
       metadata: {
         is_korba: finalIsKorba,
         bypass_beneficiary: (bypass_beneficiary === true || bypass_beneficiary === "true") ? true : undefined,

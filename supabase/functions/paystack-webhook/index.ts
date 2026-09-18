@@ -1603,6 +1603,21 @@ serve(async (req: Request) => {
       ? existingOrder.customer_phone
       : (typeof (metadata?.customer_phone || metadata?.phone) === "string" ? (metadata.customer_phone || metadata.phone) : "");
 
+    // Record promo claim if a promo code was used in Paystack checkout metadata
+    const candidatePromoCode = metadata?.promo_code || metadata?.promo_id;
+    if (candidatePromoCode && customerPhone) {
+      try {
+        const cleanPhone = normalizeRecipient(customerPhone);
+        await supabaseAdmin.rpc("claim_promo_code", {
+          p_code: String(candidatePromoCode),
+          p_phone: cleanPhone,
+          p_order_id: orderId,
+        });
+      } catch (promoErr) {
+        console.error("[paystack-webhook] Error recording promo claim:", promoErr);
+      }
+    }
+
     // Retrieve the actual base price (excluding payment fees) to deliver to the provider API
     const deliveryAmount = (orderType === "airtime" || orderType === "utility" || orderType === "data")
       ? Number(existingOrder?.metadata?.base_price || metadata?.base_price || existingOrder?.amount || verifiedAmount)

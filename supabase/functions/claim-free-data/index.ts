@@ -37,17 +37,27 @@ serve(async (req) => {
       });
     }
 
-    const validPhone = phone.length >= 9 && phone.length <= 12;
+    let cleanPhone = phone;
+    if (phone.startsWith("233") && phone.length === 12) {
+      cleanPhone = `0${phone.slice(3)}`;
+    } else if (phone.length === 9) {
+      cleanPhone = `0${phone}`;
+    }
+
+    const validPhone = cleanPhone.length >= 9 && cleanPhone.length <= 12;
     if (!validPhone) {
       return new Response(JSON.stringify({ error: "Invalid phone number", success: false }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Atomically claim the promo code
+    const orderId = crypto.randomUUID();
+
+    // Atomically claim the promo code and associate with orderId
     const { data: claimRows, error: claimError } = await supabase.rpc("claim_promo_code", {
       p_code: promoCode,
-      p_phone: phone,
+      p_phone: cleanPhone,
+      p_order_id: orderId,
     });
 
     if (claimError || !claimRows || claimRows.length === 0) {
@@ -65,24 +75,23 @@ serve(async (req) => {
     }
 
     // Fetch original price for tracking
-    const { data: pkgRow } = await supabase
+    const cleanPkgSizeStr = packageSize.replace(/\s+/g, "").toUpperCase();
+    const { data: pkgRows } = await supabase
       .from("global_package_settings")
-      .select("public_price, agent_price")
-      .eq("network", network)
-      .eq("package_size", packageSize.replace(/\s+/g, "").toUpperCase())
-      .maybeSingle();
+      .select("public_price, agent_price, package_size")
+      .eq("network", network);
 
+    const pkgRow = (pkgRows || []).find((r: any) => String(r.package_size).replace(/\s+/g, "").toUpperCase() === cleanPkgSizeStr);
     const originalPrice = Number(pkgRow?.public_price) || Number(pkgRow?.agent_price) || 0;
 
     // Create order record
-    const orderId = crypto.randomUUID();
     await supabase.from("orders").insert({
       id: orderId,
       order_type: "free_data_claim",
       payment_method: "promo",
       network,
       package_size: packageSize,
-      customer_phone: phone,
+      customer_phone: cleanPhone,
       amount: 0,
       profit: 0,
       status: "paid",
@@ -90,8 +99,8 @@ serve(async (req) => {
       discount_amount: originalPrice,
     });
 
-    // Update claim with order_id
-    await supabase.from("promo_claims").update({ order_id: orderId }).eq("promo_code_id", claimResult.promo_id).eq("claimed_by_phone", phone);
+    // Update claim with order_id as additional fallback
+    await supabase.from("promo_claims").update({ order_id: orderId }).eq("promo_code_id", claimResult.promo_id).eq("claimed_by_phone", cleanPhone);
 
     // DELEGATE fulfillment to verify-payment for standard provider logic
     try {
@@ -103,10 +112,12 @@ serve(async (req) => {
         },
         body: JSON.stringify({ reference: orderId }),
       });
-      const fulfillData = await fulfillRes.json();
+      const fulfillData = await fulfillRes.json().catch(() => null) || {};
 
-      if (fulfillData.status === "fulfilled" || fulfillData.status === "processing") {
-        return new Response(JSON.stringify({ success: true, order_id: orderId, status: fulfillData.status }), {
+      const isSuccess = fulfillData.success === true || fulfillData.status === "fulfilled" || fulfillData.status === "processing" || fulfillData.status === "success";
+
+      if (isSuccess) {
+        return new Response(JSON.stringify({ success: true, order_id: orderId, status: fulfillData.status || "processing" }), {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

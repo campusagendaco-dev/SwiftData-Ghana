@@ -96,17 +96,33 @@ serve(async (req) => {
       });
     }
 
-    // If a phone is provided, check if it has already claimed this code
+    // If a phone is provided, check if it has already claimed this code across all phone formats (0..., 233..., 9-digits)
     if (rawPhone) {
+      let localPhone = rawPhone;
+      let intlPhone = rawPhone;
+      let shortPhone = rawPhone;
+
+      if (rawPhone.startsWith("233") && rawPhone.length === 12) {
+        localPhone = `0${rawPhone.slice(3)}`;
+        shortPhone = rawPhone.slice(3);
+      } else if (rawPhone.startsWith("0") && rawPhone.length === 10) {
+        intlPhone = `233${rawPhone.slice(1)}`;
+        shortPhone = rawPhone.slice(1);
+      } else if (rawPhone.length === 9) {
+        localPhone = `0${rawPhone}`;
+        intlPhone = `233${rawPhone}`;
+      }
+
       const { data: existing } = await supabase
         .from("promo_claims")
         .select("id")
         .eq("promo_code_id", promo.id)
-        .eq("claimed_by_phone", rawPhone)
+        .or(`claimed_by_phone.eq.${localPhone},claimed_by_phone.eq.${intlPhone},claimed_by_phone.eq.${shortPhone},claimed_by_phone.eq.${rawPhone}`)
+        .limit(1)
         .maybeSingle();
 
       if (existing) {
-        return new Response(JSON.stringify({ valid: false, error: "You have already claimed this code" }), {
+        return new Response(JSON.stringify({ valid: false, error: "You have already claimed this promo code" }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
