@@ -32,6 +32,7 @@ import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
 import AIConcierge from "@/components/AIConcierge";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Route-level code splitting — each page chunk loads only when first visited
 const Index = lazy(() => import("./pages/Index"));
@@ -629,6 +630,7 @@ const App = () => {
               <InstallPrompt />
             </AuthProvider>
           </BrowserRouter>
+          <SpeedInsights />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

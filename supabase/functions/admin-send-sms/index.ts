@@ -260,10 +260,10 @@ serve(async (req: Request) => {
     const actor = authResult.user;
 
     const payload = await req.json();
-    const target_type = (payload?.target_type || "all") as TargetType | "test";
+    const target_type = (payload?.target_type || ((payload?.phone || payload?.test_phone) ? "direct" : "all")) as TargetType | "test" | "direct" | "single";
     const title = String(payload?.title || "").trim();
     const message = String(payload?.message || "").trim();
-    const test_phone = String(payload?.test_phone || "").trim();
+    const targetPhone = String(payload?.test_phone || payload?.phone || payload?.recipient || "").trim();
     const dry_run = Boolean(payload?.dry_run);
     const retry_phones: string[] = Array.isArray(payload?.retry_phones) ? payload.retry_phones : [];
     const target_filters: TargetFilters = (payload?.target_filters && typeof payload.target_filters === "object")
@@ -280,16 +280,16 @@ serve(async (req: Request) => {
 
     const smsBody = title ? `${title}\n${message}` : message;
 
-    // Test mode
-    if (target_type === "test") {
-      const normalized = normalizePhone(test_phone);
+    // Direct / Single / Test mode
+    if (target_type === "test" || target_type === "direct" || target_type === "single" || (!payload?.target_type && targetPhone)) {
+      const normalized = normalizePhone(targetPhone);
       if (!normalized) {
-        return new Response(JSON.stringify({ error: "Invalid test phone number" }), {
+        return new Response(JSON.stringify({ error: "Invalid phone number format" }), {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       await dispatchUnifiedSms(activeGateway, txtApiKey, effectiveSenderId, normalized, smsBody, "broadcast");
-      return new Response(JSON.stringify({ success: true, sent: 1, target_type: "test", to: normalized, gateway: activeGateway }), {
+      return new Response(JSON.stringify({ success: true, sent: 1, target_type, to: normalized, gateway: activeGateway }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

@@ -10,7 +10,10 @@ import {
   Globe, Clock, Phone, ShieldCheck, Users2, User,
   Wallet, ShoppingCart, AlertTriangle, Gift, Hash,
   Loader2, CheckCircle2, XCircle, AlertCircle, Ban,
-  Plus, Minus, TrendingUp, Save, Key, Lock, RefreshCw
+  Plus, Minus, TrendingUp, Save, Key, Lock, RefreshCw,
+  MessageSquare, Send, Copy, Check, Smartphone, Sparkles,
+  ChevronDown, ChevronUp, Edit3, ArrowRight, ShieldAlert,
+  Bell, Radio
 } from "lucide-react";
 
 interface UserRow {
@@ -51,9 +54,6 @@ interface Order {
   created_at: string;
 }
 
-// Matches the same detection logic used on the Non-Beneficiary Hub, the
-// general Admin Orders list, and the agent's own Transactions page, so this
-// drawer's badges stay consistent with all of them.
 function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason">): boolean {
   if (order.status !== "fulfillment_failed") return false;
   const reason = (order.failure_reason || "").toLowerCase();
@@ -103,6 +103,54 @@ const avatarColor = (name: string) => {
   return colors[idx];
 };
 
+const SMS_TEMPLATES = [
+  {
+    label: "👋 Welcome",
+    text: "Hello {{name}}, welcome to SwiftData! Your account is active and ready. Explore data packages anytime at swiftdatagh.shop.",
+  },
+  {
+    label: "💰 Top-up",
+    text: "Hello {{name}}, your SwiftData wallet has been credited. Your current balance is {{balance}}. Thank you for choosing us!",
+  },
+  {
+    label: "⚠️ Notice",
+    text: "SwiftData Alert: Hi {{name}}, please check your account dashboard for an important notification regarding your services.",
+  },
+  {
+    label: "🔐 Security",
+    text: "Hello {{name}}, a security action (password/2FA update) was performed on your SwiftData account. Contact us if this was not you.",
+  },
+  {
+    label: "⚡ Order Update",
+    text: "Hello {{name}}, your recent SwiftData order has been processed. Check your transaction dashboard for live status.",
+  },
+];
+
+const PUSH_TEMPLATES = [
+  {
+    label: "👋 General Notice",
+    title: "🔔 Important Notice",
+    text: "Hi {{name}}, we have an update on your SwiftData account. Tap to view your dashboard.",
+  },
+  {
+    label: "💰 Wallet Credited",
+    title: "💳 Wallet Credited",
+    text: "Hi {{name}}, your wallet has been credited! Tap to view your new balance: {{balance}}.",
+  },
+  {
+    label: "📦 Order Delivered",
+    title: "📦 Order Delivered",
+    text: "Hi {{name}}, your data bundle order was successfully delivered! Thank you for ordering.",
+  },
+  {
+    label: "🛡️ Security Alert",
+    title: "🛡️ Security Update",
+    text: "Security Alert: A login or credentials update was performed on your SwiftData account.",
+  },
+];
+
+const PRESET_AMOUNTS = [10, 50, 100, 200, 500];
+
 interface Props {
   user: UserRow | null;
   onClose: () => void;
@@ -120,14 +168,47 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   const [topupAmount, setTopupAmount] = useState("");
   const [topupLoading, setTopupLoading] = useState(false);
   const [walletType, setWalletType] = useState<"main" | "api">("main");
-  // Per-phone beneficiary whitelist status, shared with the Non-Beneficiary
-  // Hub, the general Admin Orders list, and the agent's own Transactions page.
   const [beneficiaryStatus, setBeneficiaryStatus] = useState<Record<string, string>>({});
+
+  // Communication & Dispatch States
+  const [showCommCard, setShowCommCard] = useState(false);
+  const [activeCommTab, setActiveCommTab] = useState<"sms" | "push">("sms");
+
+  // SMS States
+  const [smsPhone, setSmsPhone] = useState(user?.phone || "");
+  const [smsMessage, setSmsMessage] = useState("");
+  const [smsSending, setSmsSending] = useState(false);
+
+  // Web Push States
+  const [pushTitle, setPushTitle] = useState("SwiftData Ghana");
+  const [pushBody, setPushBody] = useState("");
+  const [pushUrl, setPushUrl] = useState("/dashboard");
+  const [pushSending, setPushSending] = useState(false);
+  const [pushSubscriptionCount, setPushSubscriptionCount] = useState<number>(0);
+
+  // Dispatch History
+  const [dispatchHistory, setDispatchHistory] = useState<Array<{ text: string; time: string; channel: "sms" | "push"; status: "sent" | "failed" }>>([]);
+
+  // Phone editing
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState(user?.phone || "");
+  const [savingPhone, setSavingPhone] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   useEffect(() => {
     setIsSuspended(user?.is_suspended ?? false);
     setAdminNotes(user?.admin_notes || "");
-  }, [user?.user_id, user?.admin_notes, user?.is_suspended]);
+    setSmsPhone(user?.phone || "");
+    setPhoneInput(user?.phone || "");
+    setEditingPhone(false);
+  }, [user?.user_id, user?.admin_notes, user?.is_suspended, user?.phone]);
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    toast({ title: "Copied to clipboard", description: text });
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   const parseEdgeError = async (error: any, resData?: any): Promise<string> => {
     if (resData?.error) return resData.error;
@@ -138,7 +219,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           const parsed = JSON.parse(bodyText);
           if (parsed.error) return parsed.error;
         }
-      } catch (e) {
+      } catch {
         // Ignore error body JSON parse failures
       }
       return error.message || "Edge function invocation failed";
@@ -190,6 +271,162 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     } finally {
       setPromoting(false);
     }
+  };
+
+  const handleSavePhone = async () => {
+    if (!user) return;
+    const clean = phoneInput.trim();
+    setSavingPhone(true);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ phone: clean || null })
+        .eq("user_id", user.user_id);
+      if (error) throw error;
+
+      user.phone = clean || undefined;
+      setSmsPhone(clean);
+      setEditingPhone(false);
+      toast({
+        title: clean ? "Phone Number Updated" : "Phone Number Removed",
+        description: clean ? `Saved ${clean} to ${user.full_name || "user"}'s profile.` : "Profile phone cleared.",
+      });
+    } catch (err: any) {
+      toast({ title: "Failed to update phone", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingPhone(false);
+    }
+  };
+
+  const handleSendDirectSms = async () => {
+    if (!user) return;
+    const targetPhone = (smsPhone || user.phone || "").trim();
+    if (!targetPhone) {
+      toast({ title: "Recipient Phone Required", description: "Please enter a valid phone number.", variant: "destructive" });
+      return;
+    }
+    if (!smsMessage.trim()) {
+      toast({ title: "Message Required", description: "Please enter an SMS message.", variant: "destructive" });
+      return;
+    }
+
+    setSmsSending(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("admin-send-sms", {
+        body: {
+          target_type: "direct",
+          phone: targetPhone,
+          message: smsMessage.trim(),
+          sender_id: "SwiftData",
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+
+      if (error || res?.error) {
+        throw new Error(await parseEdgeError(error, res));
+      }
+
+      toast({
+        title: "SMS Dispatched Successfully! 🚀",
+        description: `Delivered to ${targetPhone} via unified SMS gateway.`,
+      });
+
+      setDispatchHistory(prev => [
+        { text: smsMessage.trim(), time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), channel: "sms", status: "sent" },
+        ...prev.slice(0, 4)
+      ]);
+      setSmsMessage("");
+    } catch (err: any) {
+      toast({
+        title: "SMS Failed to Send",
+        description: err.message || "Failed to send SMS message.",
+        variant: "destructive",
+      });
+      setDispatchHistory(prev => [
+        { text: smsMessage.trim(), time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), channel: "sms", status: "failed" },
+        ...prev.slice(0, 4)
+      ]);
+    } finally {
+      setSmsSending(false);
+    }
+  };
+
+  const handleSendWebPush = async () => {
+    if (!user) return;
+    if (!pushBody.trim()) {
+      toast({ title: "Message Required", description: "Please enter a notification message.", variant: "destructive" });
+      return;
+    }
+
+    setPushSending(true);
+    try {
+      const title = pushTitle.trim() || "SwiftData Ghana";
+      const messageText = pushBody.trim();
+      const targetUrl = pushUrl.trim() || "/dashboard";
+
+      // 1. Dispatch Web Push notification to registered devices
+      const { data: res, error } = await supabase.functions.invoke("send-push-notification", {
+        body: {
+          user_id: user.user_id,
+          title,
+          body: messageText,
+          url: targetUrl,
+          icon: "/pwa-192x192.png",
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+
+      // 2. Also record in user_notifications table so it appears in customer's in-app notification center
+      await supabase.from("user_notifications").insert({
+        user_id: user.user_id,
+        title,
+        message: messageText,
+        type: "system",
+        data: { url: targetUrl },
+      });
+
+      const devicesSent = Number(res?.sent ?? 0);
+      toast({
+        title: "Web Push Notification Sent! 🔔",
+        description: devicesSent > 0
+          ? `Dispatched to ${devicesSent} active browser/device(s) & customer inbox.`
+          : "Saved to customer's notification inbox (device push subscription inactive).",
+      });
+
+      setDispatchHistory(prev => [
+        { text: `[PUSH] ${messageText}`, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), channel: "push", status: "sent" },
+        ...prev.slice(0, 4)
+      ]);
+      setPushBody("");
+    } catch (err: any) {
+      toast({
+        title: "Push Failed",
+        description: err.message || "Failed to send web push notification.",
+        variant: "destructive",
+      });
+      setDispatchHistory(prev => [
+        { text: `[PUSH FAILED] ${pushBody.trim()}`, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), channel: "push", status: "failed" },
+        ...prev.slice(0, 4)
+      ]);
+    } finally {
+      setPushSending(false);
+    }
+  };
+
+  const applySmsTemplate = (tpl: string) => {
+    const firstName = user?.full_name?.split(" ")[0] || "Customer";
+    const balanceStr = `GH₵ ${(data?.walletBalance ?? 0).toFixed(2)}`;
+    const parsed = tpl
+      .replace(/\{\{name\}\}/gi, firstName)
+      .replace(/\{\{balance\}\}/gi, balanceStr);
+    setSmsMessage(parsed);
+  };
+
+  const applyPushTemplate = (title: string, tpl: string) => {
+    const firstName = user?.full_name?.split(" ")[0] || "Customer";
+    const balanceStr = `GH₵ ${(data?.walletBalance ?? 0).toFixed(2)}`;
+    setPushTitle(title);
+    setPushBody(tpl.replace(/\{\{name\}\}/gi, firstName).replace(/\{\{balance\}\}/gi, balanceStr));
   };
 
   const handleManualTopup = async (isDeduction = false) => {
@@ -336,9 +573,10 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           ? supabase.from("profiles").select("full_name").eq("user_id", user.referred_by).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid").eq("user_id", user.user_id).maybeSingle(),
+        supabase.from("push_subscriptions").select("id", { count: "exact", head: true }).eq("user_id", user.user_id),
       ];
 
-      const [walletRes, ordersRes, sharedRes, referrerRes, salesStatsRes] = await Promise.all(queries);
+      const [walletRes, ordersRes, sharedRes, referrerRes, salesStatsRes, pushSubRes] = await Promise.all(queries);
       const orders = (ordersRes.data || []) as Order[];
 
       setData({
@@ -351,16 +589,15 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         totalOwnProfit: Number(salesStatsRes.data?.total_own_profit ?? 0),
         totalCommissionsPaid: Number(salesStatsRes.data?.total_commissions_paid ?? 0),
       });
+      setPushSubscriptionCount(Number(pushSubRes?.count ?? 0));
       setLoading(false);
 
       setBeneficiaryStatus({});
     };
 
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
 
-  // Live updates for beneficiary submission status while the drawer is open.
   useEffect(() => {
     if (!user) return;
     const channelId = `user_drawer_beneficiary_${user.user_id}_${Math.random().toString(36).substring(7)}`;
@@ -377,7 +614,6 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       )
       .subscribe();
     return () => { safeRemoveChannel(ch); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id]);
 
   if (!user) return null;
@@ -392,96 +628,260 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     : "Customer";
 
   const roleColor = user.is_sub_agent
-    ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+    ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
     : user.is_agent
-    ? "bg-green-500/20 text-green-400 border-green-500/30"
-    : "bg-white/5 text-white/40 border-white/10";
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+    : "bg-white/5 text-white/50 border-white/10";
 
   const flags = [
-    isSuspended && { type: "danger", label: "This account is suspended", sub: "" },
+    isSuspended && { type: "danger", label: "This account is suspended", sub: "User is blocked from buying or placing orders" },
     data && data.sharedIpAccounts.length > 0 && {
       type: "danger",
       label: `IP shared with ${data.sharedIpAccounts.length} other account${data.sharedIpAccounts.length > 1 ? "s" : ""}`,
       sub: data.sharedIpAccounts.map(a => a.email).join(", "),
     },
-    !user.phone && { type: "warn", label: "No phone number on file", sub: "" },
-    user.is_agent && !user.agent_approved && { type: "warn", label: "Agent approval pending", sub: "" },
-    user.is_sub_agent && !user.sub_agent_approved && { type: "warn", label: "Sub-agent approval pending", sub: "" },
+    user.is_agent && !user.agent_approved && { type: "warn", label: "Agent approval pending", sub: "User requested agent verification" },
+    user.is_sub_agent && !user.sub_agent_approved && { type: "warn", label: "Sub-agent approval pending", sub: "Waiting for parent or admin review" },
   ].filter(Boolean) as { type: string; label: string; sub: string }[];
+
+  const charCount = smsMessage.length;
+  const smsSegments = Math.ceil(charCount / 160) || 1;
 
   return (
     <Sheet open={!!user} onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl overflow-y-auto bg-[#0a0a12] border-white/10 p-0"
+        className="w-full sm:max-w-xl overflow-y-auto bg-[#0a0a14] border-l border-white/10 p-0 text-white selection:bg-cyan-500 selection:text-black"
       >
-        {/* ── Header ── */}
-        <div className="p-6 border-b border-white/5">
-          <SheetHeader>
-            <SheetTitle className="sr-only">User Detail</SheetTitle>
-            <SheetDescription className="sr-only">
-              Detailed information and management options for user {user.full_name || user.user_id}.
-            </SheetDescription>
-          </SheetHeader>
+        <SheetHeader className="sr-only">
+          <SheetTitle>User Detail</SheetTitle>
+          <SheetDescription>Detailed info and actions for {user.full_name || user.email}.</SheetDescription>
+        </SheetHeader>
+
+        {/* ── Top Hero Card ── */}
+        <div className="relative p-6 border-b border-white/5 bg-gradient-to-b from-white/[0.04] to-transparent">
           <div className="flex items-start gap-4">
-            <Avatar className="w-14 h-14 rounded-2xl border-2 border-primary/20 shrink-0">
-              <AvatarImage src={user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.user_id}`} />
-              <AvatarFallback className={`${avatarColor(user.full_name)} text-white font-black text-lg`}>
-                {initials}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative shrink-0">
+              <Avatar className="w-16 h-16 rounded-2xl border-2 border-white/15 shadow-xl">
+                <AvatarImage src={user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.user_id}`} />
+                <AvatarFallback className={`${avatarColor(user.full_name)} text-white font-black text-xl`}>
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0a0a14] ${isSuspended ? "bg-red-500" : "bg-emerald-500"}`} />
+            </div>
+
             <div className="min-w-0 flex-1">
-              <p className="font-black text-white text-lg leading-tight truncate">{user.full_name || "—"}</p>
-              <p className="text-xs text-white/40 truncate">{user.email}</p>
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${roleColor}`}>{roleLabel}</span>
+              <div className="flex items-center gap-2">
+                <p className="font-black text-white text-lg leading-tight truncate">{user.full_name || "Anonymous User"}</p>
+              </div>
+
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-xs text-white/50 truncate font-mono">{user.email}</span>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(user.email, "email")}
+                  className="text-white/30 hover:text-white transition-colors p-0.5"
+                  title="Copy Email"
+                >
+                  {copiedField === "email" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${roleColor}`}>{roleLabel}</span>
                 {isSuspended && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-red-500/20 text-red-400 border-red-500/30">Suspended</span>
+                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border bg-red-500/20 text-red-400 border-red-500/30">
+                    Suspended
+                  </span>
                 )}
-                <span className="text-[10px] text-white/30">Joined {new Date(user.created_at).toLocaleDateString()}</span>
+                <span className="text-[10px] text-white/35 font-medium">Joined {new Date(user.created_at).toLocaleDateString()}</span>
               </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={handleSuspend}
-                disabled={suspending}
-                className={`shrink-0 h-8 text-xs gap-1.5 rounded-xl border ${
-                  isSuspended
-                    ? "bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20"
-                    : "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"
-                }`}
-              >
-                {suspending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
-                {isSuspended ? "Unsuspend" : "Suspend"}
-              </Button>
-              
-              {!user.agent_approved && (
-                <Button
-                  onClick={handlePromoteAgent}
-                  disabled={promoting}
-                  className="shrink-0 h-8 text-xs gap-1.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
-                >
-                  {promoting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-                  {user.is_agent ? "Approve Agent" : "Make Agent"}
-                </Button>
+          </div>
+
+          {/* Quick Action Buttons Row */}
+          <div className="flex items-center gap-2 mt-5 pt-4 border-t border-white/5 flex-wrap">
+            <Button
+              size="sm"
+              onClick={() => {
+                setShowCommCard(prev => !prev || activeCommTab !== "sms");
+                setActiveCommTab("sms");
+              }}
+              className={`h-8 px-3 text-xs gap-1.5 rounded-xl font-bold transition-all shadow-md ${
+                showCommCard && activeCommTab === "sms"
+                  ? "bg-cyan-500 text-black shadow-cyan-500/25" 
+                  : "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/25"
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Send SMS
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => {
+                setShowCommCard(prev => !prev || activeCommTab !== "push");
+                setActiveCommTab("push");
+              }}
+              className={`h-8 px-3 text-xs gap-1.5 rounded-xl font-bold transition-all shadow-md ${
+                showCommCard && activeCommTab === "push"
+                  ? "bg-purple-500 text-white shadow-purple-500/25" 
+                  : "bg-purple-500/15 text-purple-400 border border-purple-500/30 hover:bg-purple-500/25"
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              Web Push
+              {pushSubscriptionCount > 0 && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
               )}
-            </div>
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={handleSuspend}
+              disabled={suspending}
+              className={`h-8 px-3 text-xs gap-1.5 rounded-xl border font-bold transition-all ${
+                isSuspended
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                  : "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"
+              }`}
+            >
+              {suspending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+              {isSuspended ? "Unsuspend" : "Suspend"}
+            </Button>
+
+            {!user.agent_approved && (
+              <Button
+                size="sm"
+                onClick={handlePromoteAgent}
+                disabled={promoting}
+                className="h-8 px-3 text-xs gap-1.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 font-bold transition-all"
+              >
+                {promoting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                {user.is_agent ? "Approve Agent" : "Make Agent"}
+              </Button>
+            )}
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => copyToClipboard(user.user_id, "id")}
+              className="h-8 px-2.5 text-[11px] text-white/40 hover:text-white rounded-xl gap-1.5 ml-auto border border-white/5"
+            >
+              {copiedField === "id" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+              <span>ID</span>
+            </Button>
           </div>
         </div>
 
-        {/* ── Flags ── */}
+        {/* ── Phone Number Bar / Add Phone Banner ── */}
+        <div className="px-6 pt-4">
+          {user.phone ? (
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Contact Phone</p>
+                  <p className="text-xs font-mono font-bold text-white tracking-wide">{user.phone}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(user.phone!, "phone")}
+                  className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                  title="Copy Phone"
+                >
+                  {copiedField === "phone" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPhone(true);
+                    setPhoneInput(user.phone || "");
+                  }}
+                  className="p-1.5 text-white/40 hover:text-cyan-400 rounded-lg hover:bg-white/5 transition-colors"
+                  title="Edit Phone Number"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>No phone number on file</span>
+                </div>
+                {!editingPhone && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingPhone(true)}
+                    className="text-[11px] font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                  >
+                    + Add Phone
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Inline Phone Edit Form */}
+          {editingPhone && (
+            <div className="mt-2 p-3 rounded-2xl bg-white/[0.04] border border-cyan-500/30 space-y-2.5 animate-in fade-in-50 duration-200">
+              <p className="text-[11px] font-bold text-cyan-400 flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5" />
+                {user.phone ? "Update Phone Number" : "Attach Phone Number to Profile"}
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="tel"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  placeholder="e.g. 0244123456 or 233244123456"
+                  className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-white/20 focus:outline-none focus:border-cyan-500/50"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSavePhone}
+                  disabled={savingPhone}
+                  className="h-8 bg-cyan-500 hover:bg-cyan-600 text-black font-extrabold text-xs rounded-xl px-3 gap-1"
+                >
+                  {savingPhone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditingPhone(false)}
+                  disabled={savingPhone}
+                  className="h-8 text-white/40 hover:text-white text-xs rounded-xl px-2"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── System Security Flags ── */}
         {flags.length > 0 && (
-          <div className="px-6 pt-4 space-y-2">
+          <div className="px-6 pt-3 space-y-2">
             {flags.map((flag, i) => (
               <div
                 key={i}
-                className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl border text-xs ${
+                className={`flex items-start gap-2.5 px-3.5 py-2.5 rounded-2xl border text-xs ${
                   flag.type === "danger"
                     ? "bg-red-500/10 border-red-500/25 text-red-400"
                     : "bg-amber-500/10 border-amber-500/25 text-amber-400"
                 }`}
               >
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <div>
                   <p className="font-bold">{flag.label}</p>
                   {flag.sub && <p className="text-[10px] opacity-70 mt-0.5 font-mono">{flag.sub}</p>}
@@ -491,192 +891,519 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           </div>
         )}
 
-        {/* ── Admin Notes ── */}
-        <div className="px-6 pt-5">
-           <div className="flex items-center justify-between mb-2">
-             <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 flex items-center gap-1.5">
-               <ShieldCheck className="w-3 h-3" /> Admin Notes
-             </p>
-             {adminNotes !== (user.admin_notes || "") && (
-               <button 
-                 onClick={handleSaveNotes} 
-                 disabled={savingNotes}
-                 className="text-[10px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-50"
-               >
-                 {savingNotes ? "Saving..." : "Save Notes"}
-               </button>
-             )}
-           </div>
-           <textarea
-             value={adminNotes}
-             onChange={(e) => setAdminNotes(e.target.value)}
-             placeholder="Private notes about this user..."
-             className="w-full min-h-[80px] bg-white/[0.02] border border-white/5 rounded-xl p-3 text-xs text-white/70 placeholder:text-white/20 focus:outline-none focus:border-amber-500/30 transition-colors"
-           />
-        </div>
-
-        {/* ── Stats ── */}
-        <div className="px-6 pt-4 space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {[
-              { icon: Wallet, label: "Main Wallet", value: loading ? "…" : `GH₵ ${(data?.walletBalance ?? 0).toFixed(2)}`, color: "text-cyan-400" },
-              { icon: ShieldCheck, label: "API Wallet", value: loading ? "…" : `GH₵ ${(data?.apiBalance ?? 0).toFixed(2)}`, color: "text-emerald-400" },
-              { icon: ShoppingCart, label: "Total Sales", value: loading ? "…" : `GH₵ ${(data?.totalSalesVolume ?? 0).toFixed(2)}`, color: "text-blue-400" },
-            ].map(({ icon: Icon, label, value, color }) => (
-              <div key={label} className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
-                <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
-                <p className={`text-sm font-black ${color}`}>{value}</p>
-                <p className="text-[10px] text-white/30 uppercase tracking-wider mt-0.5">{label}</p>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { icon: TrendingUp, label: "Direct Profit", value: loading ? "…" : `GH₵ ${(data?.totalOwnProfit ?? 0).toFixed(2)}`, color: "text-emerald-400" },
-              { icon: Users2, label: "Sub Comms", value: loading ? "…" : `GH₵ ${(data?.totalCommissionsPaid ?? 0).toFixed(2)}`, color: "text-purple-400" },
-              { icon: Hash, label: "Logins", value: String(user.login_count ?? 0), color: "text-amber-400" },
-            ].map(({ icon: Icon, label, value, color }) => (
-              <div key={label} className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
-                <Icon className={`w-4 h-4 mx-auto mb-1 ${color}`} />
-                <p className={`text-xs sm:text-sm font-black ${color}`}>{value}</p>
-                <p className="text-[10px] text-white/30 uppercase tracking-wider mt-0.5">{label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Wallet Management ── */}
-        <div className="px-6 pt-5">
-           <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400 mb-3 flex items-center gap-1.5">
-             <Wallet className="w-3 h-3" /> Manage Wallet
-           </p>
-           <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-4">
-              
-              {/* Wallet Toggle */}
-              <div className="flex gap-1.5 p-1 bg-black/40 border border-white/5 rounded-xl mb-1">
-                <button
-                  type="button"
-                  onClick={() => setWalletType("main")}
-                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${walletType === "main" ? "bg-cyan-500 text-black" : "text-white/40 hover:text-white hover:bg-white/5"}`}
-                >
-                  Main Wallet
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWalletType("api")}
-                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${walletType === "api" ? "bg-emerald-500 text-black" : "text-white/40 hover:text-white hover:bg-white/5"}`}
-                >
-                  API Wallet
-                </button>
-              </div>
-
-              <div className="flex items-center gap-3">
-                 <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-xs font-bold">GH₵</span>
-                    <input 
-                      type="number"
-                      value={topupAmount}
-                      onChange={(e) => setTopupAmount(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500/50 transition-colors"
-                    />
-                 </div>
-                 <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => handleManualTopup(false)}
-                      disabled={topupLoading || !topupAmount}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl px-4 h-10 gap-2 shadow-lg shadow-emerald-500/10"
-                    >
-                      {topupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      <span className="hidden sm:inline">Add</span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleManualTopup(true)}
-                      disabled={topupLoading || !topupAmount}
-                      className="border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-xl px-4 h-10 gap-2"
-                    >
-                      {topupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Minus className="w-4 h-4" />}
-                      <span className="hidden sm:inline">Deduct</span>
-                    </Button>
-                 </div>
-              </div>
-              <p className="text-[10px] text-white/30 italic px-1">
-                * Users will receive an SMS notification for manual top-ups.
-              </p>
-           </div>
-        </div>
-
-        {/* ── Account Security ── */}
-        <div className="px-6 pt-5">
-           <p className="text-[10px] font-black uppercase tracking-widest text-rose-400 mb-3 flex items-center gap-1.5">
-             <Lock className="w-3 h-3" /> Security & Authentication
-           </p>
-           <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4">
-              <p className="text-[11px] text-white/40 mb-3 leading-relaxed">
-                If a user loses their authenticator device or gets locked out of their account, you can manually disable their Multi-Factor security or trigger a credentials reset.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                 <Button
-                   variant="outline"
-                   onClick={handleResetMfa}
-                   disabled={mfaLoading}
-                   className="border-rose-500/20 text-rose-400 hover:bg-rose-500/10 rounded-xl h-10 text-xs gap-2 shadow-sm"
-                 >
-                   {mfaLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
-                   Reset MFA/2FA
-                 </Button>
-                 <Button
-                   variant="outline"
-                   onClick={handleResetPassword}
-                   disabled={pwLoading}
-                   className="border-white/10 text-white/80 hover:bg-white/5 rounded-xl h-10 text-xs gap-2 shadow-sm"
-                 >
-                   {pwLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
-                   Reset Password
-                 </Button>
-              </div>
-           </div>
-        </div>
-
-        {/* ── Profile Details ── */}
+        {/* ── COMMUNICATIONS CONSOLE (SMS & WEB PUSH) ── */}
         <div className="px-6 pt-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-3">Profile</p>
+          <div className={`rounded-2xl border transition-all overflow-hidden ${
+            showCommCard 
+              ? activeCommTab === "sms"
+                ? "bg-gradient-to-b from-cyan-950/20 to-black/60 border-cyan-500/30 shadow-xl shadow-cyan-950/30"
+                : "bg-gradient-to-b from-purple-950/20 to-black/60 border-purple-500/30 shadow-xl shadow-purple-950/30"
+              : "bg-white/[0.02] border-white/5 hover:border-white/10"
+          }`}>
+            <button
+              type="button"
+              onClick={() => setShowCommCard(prev => !prev)}
+              className="w-full p-4 flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shadow-sm ${
+                  activeCommTab === "sms"
+                    ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
+                    : "bg-purple-500/15 border-purple-500/30 text-purple-400"
+                }`}>
+                  {activeCommTab === "sms" ? <Send className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-black uppercase tracking-wider text-white">Direct Dispatch Center</p>
+                    <span className="flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Live Gateways
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-white/40 mt-0.5">Send immediate SMS or Browser Web Push alerts</p>
+                </div>
+              </div>
+              <div className="text-white/40 hover:text-white p-1">
+                {showCommCard ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            </button>
+
+            {showCommCard && (
+              <div className="p-4 pt-0 space-y-3.5 border-t border-white/5 animate-in fade-in-50 duration-200">
+                {/* Mode Selector Tabs */}
+                <div className="flex p-1 bg-black/60 border border-white/5 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setActiveCommTab("sms")}
+                    className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                      activeCommTab === "sms"
+                        ? "bg-cyan-500 text-black shadow-sm"
+                        : "text-white/40 hover:text-white"
+                    }`}
+                  >
+                    <Phone className="w-3 h-3" /> Direct SMS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveCommTab("push")}
+                    className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                      activeCommTab === "push"
+                        ? "bg-purple-500 text-white shadow-sm"
+                        : "text-white/40 hover:text-white"
+                    }`}
+                  >
+                    <Bell className="w-3 h-3" /> Web Push Notification
+                  </button>
+                </div>
+
+                {/* ─── TAB 1: DIRECT SMS ─── */}
+                {activeCommTab === "sms" && (
+                  <div className="space-y-3">
+                    {/* Recipient Phone Selector */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/40 flex items-center justify-between">
+                        <span>Recipient Mobile Number</span>
+                        {smsPhone !== user.phone && user.phone && (
+                          <button
+                            type="button"
+                            onClick={() => setSmsPhone(user.phone || "")}
+                            className="text-cyan-400 hover:underline text-[9px] normal-case"
+                          >
+                            Reset to profile ({user.phone})
+                          </button>
+                        )}
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                        <input
+                          type="tel"
+                          value={smsPhone}
+                          onChange={(e) => setSmsPhone(e.target.value)}
+                          placeholder="e.g. 0244123456 or 233244123456"
+                          className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-cyan-500/50"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Templates */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">Quick Templates</p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {SMS_TEMPLATES.map((tpl) => (
+                          <button
+                            key={tpl.label}
+                            type="button"
+                            onClick={() => applySmsTemplate(tpl.text)}
+                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 hover:text-cyan-300 border border-white/10 hover:border-cyan-500/30 transition-all text-white/70"
+                          >
+                            {tpl.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Message Body Input */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">SMS Body</label>
+                        <span className="text-[10px] font-mono text-white/40">
+                          {charCount} chars · {smsSegments} SMS page{smsSegments > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={smsMessage}
+                        onChange={(e) => setSmsMessage(e.target.value)}
+                        placeholder="Type customized SMS message here..."
+                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-cyan-500/50 transition-colors leading-relaxed resize-none"
+                      />
+                    </div>
+
+                    {/* Send Button */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="text-[10px] text-white/30 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-cyan-400" />
+                        <span>Sender ID: <b>SwiftData</b></span>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={handleSendDirectSms}
+                        disabled={smsSending || !smsMessage.trim()}
+                        className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-black text-xs rounded-xl px-5 h-9 gap-2 shadow-lg shadow-cyan-500/20"
+                      >
+                        {smsSending ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Dispatching...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Send SMS</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── TAB 2: WEB PUSH NOTIFICATION ─── */}
+                {activeCommTab === "push" && (
+                  <div className="space-y-3 animate-in fade-in-50 duration-200">
+                    {/* Device Push Status Banner */}
+                    <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <Radio className="w-3.5 h-3.5 text-purple-400" />
+                        <span className="font-bold text-white/80">Device Status</span>
+                      </div>
+                      {pushSubscriptionCount > 0 ? (
+                        <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          {pushSubscriptionCount} Registered Device{pushSubscriptionCount > 1 ? "s" : ""}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-white/40 bg-white/5 px-2 py-0.5 rounded-full">
+                          Browser push offline (Will deliver to in-app bell inbox)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Push Templates */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">Push Templates</p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {PUSH_TEMPLATES.map((tpl) => (
+                          <button
+                            key={tpl.label}
+                            type="button"
+                            onClick={() => applyPushTemplate(tpl.title, tpl.text)}
+                            className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-purple-500/20 hover:text-purple-300 border border-white/10 hover:border-purple-500/30 transition-all text-white/70"
+                          >
+                            {tpl.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Push Title & Action URL */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Notification Title</label>
+                        <input
+                          type="text"
+                          value={pushTitle}
+                          onChange={(e) => setPushTitle(e.target.value)}
+                          placeholder="Notification Title"
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Target Link / URL</label>
+                        <input
+                          type="text"
+                          value={pushUrl}
+                          onChange={(e) => setPushUrl(e.target.value)}
+                          placeholder="/dashboard"
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-white/20 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Push Message Body */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Push Message Body</label>
+                      <textarea
+                        rows={3}
+                        value={pushBody}
+                        onChange={(e) => setPushBody(e.target.value)}
+                        placeholder="Enter message text that will pop up on the user's screen/browser..."
+                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/50 transition-colors leading-relaxed resize-none"
+                      />
+                    </div>
+
+                    {/* Send Button */}
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-[10px] text-white/40">
+                        ⚡ Instant OS popup banner & in-app bell notification
+                      </p>
+                      <Button
+                        size="sm"
+                        onClick={handleSendWebPush}
+                        disabled={pushSending || !pushBody.trim()}
+                        className="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white font-black text-xs rounded-xl px-5 h-9 gap-2 shadow-lg shadow-purple-500/20"
+                      >
+                        {pushSending ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Broadcasting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bell className="w-3.5 h-3.5" />
+                            <span>Send Web Push</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Dispatches History */}
+                {dispatchHistory.length > 0 && (
+                  <div className="pt-2 border-t border-white/5 space-y-1.5">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-white/30">Recent Dispatches (This Session)</p>
+                    <div className="space-y-1">
+                      {dispatchHistory.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-[10px] px-2.5 py-1.5 rounded-lg bg-black/30 border border-white/5">
+                          <span className="text-white/60 truncate max-w-[70%] font-mono">
+                            <b className={item.channel === "sms" ? "text-cyan-400" : "text-purple-400"}>[{item.channel.toUpperCase()}]</b> {item.text}
+                          </span>
+                          <span className={`font-bold flex items-center gap-1 ${item.status === "sent" ? "text-emerald-400" : "text-red-400"}`}>
+                            {item.status === "sent" ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                            {item.time}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Admin Private Notes ── */}
+        <div className="px-6 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5" /> Admin Notes
+            </p>
+            {adminNotes !== (user.admin_notes || "") && (
+              <button 
+                onClick={handleSaveNotes} 
+                disabled={savingNotes}
+                className="text-[10px] font-black text-amber-400 hover:text-amber-300 disabled:opacity-50 flex items-center gap-1"
+              >
+                {savingNotes ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                Save Changes
+              </button>
+            )}
+          </div>
+          <textarea
+            value={adminNotes}
+            onChange={(e) => setAdminNotes(e.target.value)}
+            placeholder="Private notes about this user (only visible to admins)..."
+            className="w-full min-h-[75px] bg-white/[0.02] border border-white/10 rounded-2xl p-3 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-amber-500/40 transition-colors resize-none"
+          />
+        </div>
+
+        {/* ── Financial & Metrics Matrix ── */}
+        <div className="px-6 pt-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2.5">
+            {[
+              { icon: Wallet, label: "Main Wallet", value: loading ? "…" : `GH₵ ${(data?.walletBalance ?? 0).toFixed(2)}`, color: "text-cyan-400", border: "border-cyan-500/20 bg-cyan-500/5" },
+              { icon: ShieldCheck, label: "API Wallet", value: loading ? "…" : `GH₵ ${(data?.apiBalance ?? 0).toFixed(2)}`, color: "text-emerald-400", border: "border-emerald-500/20 bg-emerald-500/5" },
+              { icon: ShoppingCart, label: "Total Sales", value: loading ? "…" : `GH₵ ${(data?.totalSalesVolume ?? 0).toFixed(2)}`, color: "text-blue-400", border: "border-blue-500/20 bg-blue-500/5" },
+            ].map(({ icon: Icon, label, value, color, border }) => (
+              <div key={label} className={`rounded-2xl border p-3 text-center transition-all ${border}`}>
+                <Icon className={`w-4 h-4 mx-auto mb-1.5 ${color}`} />
+                <p className={`text-xs sm:text-sm font-black tracking-tight ${color}`}>{value}</p>
+                <p className="text-[9px] text-white/40 uppercase tracking-wider font-bold mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            {[
+              { icon: TrendingUp, label: "Direct Profit", value: loading ? "…" : `GH₵ ${(data?.totalOwnProfit ?? 0).toFixed(2)}`, color: "text-emerald-400", border: "border-emerald-500/10 bg-white/[0.02]" },
+              { icon: Users2, label: "Sub Comms", value: loading ? "…" : `GH₵ ${(data?.totalCommissionsPaid ?? 0).toFixed(2)}`, color: "text-purple-400", border: "border-purple-500/10 bg-white/[0.02]" },
+              { icon: Hash, label: "Total Logins", value: String(user.login_count ?? 0), color: "text-amber-400", border: "border-amber-500/10 bg-white/[0.02]" },
+            ].map(({ icon: Icon, label, value, color, border }) => (
+              <div key={label} className={`rounded-2xl border p-3 text-center transition-all ${border}`}>
+                <Icon className={`w-4 h-4 mx-auto mb-1.5 ${color}`} />
+                <p className={`text-xs sm:text-sm font-black ${color}`}>{value}</p>
+                <p className="text-[9px] text-white/40 uppercase tracking-wider font-bold mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Manage Wallet Widget ── */}
+        <div className="px-6 pt-5">
+          <div className="rounded-2xl bg-white/[0.02] border border-white/10 p-4 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400 flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5" /> Manage User Wallet
+              </p>
+              <span className="text-[10px] text-white/40 font-mono">
+                Current: <b className="text-white">GH₵ {(walletType === "main" ? (data?.walletBalance ?? 0) : (data?.apiBalance ?? 0)).toFixed(2)}</b>
+              </span>
+            </div>
+
+            {/* Wallet Toggle Pill */}
+            <div className="flex gap-1.5 p-1 bg-black/60 border border-white/5 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setWalletType("main")}
+                className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  walletType === "main" ? "bg-cyan-500 text-black shadow-sm" : "text-white/40 hover:text-white"
+                }`}
+              >
+                Main Wallet
+              </button>
+              <button
+                type="button"
+                onClick={() => setWalletType("api")}
+                className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${
+                  walletType === "api" ? "bg-emerald-500 text-black shadow-sm" : "text-white/40 hover:text-white"
+                }`}
+              >
+                API Wallet
+              </button>
+            </div>
+
+            {/* Preset Amount Chips */}
+            <div className="flex gap-1.5 flex-wrap">
+              {PRESET_AMOUNTS.map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setTopupAmount(String(amt))}
+                  className="text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-white/70 hover:text-white transition-all"
+                >
+                  +GH₵{amt}
+                </button>
+              ))}
+            </div>
+
+            {/* Input & Actions */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 text-xs font-bold font-mono">GH₵</span>
+                <input 
+                  type="number"
+                  value={topupAmount}
+                  onChange={(e) => setTopupAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-12 pr-4 py-2 text-sm text-white font-bold focus:outline-none focus:border-cyan-500/50"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => handleManualTopup(false)}
+                disabled={topupLoading || !topupAmount}
+                className="bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold rounded-xl px-4 h-9 gap-1.5 shadow-lg shadow-emerald-500/10"
+              >
+                {topupLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                <span>Add</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleManualTopup(true)}
+                disabled={topupLoading || !topupAmount}
+                className="border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-xl px-4 h-9 gap-1.5 font-extrabold"
+              >
+                {topupLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Minus className="w-3.5 h-3.5" />}
+                <span>Deduct</span>
+              </Button>
+            </div>
+            <p className="text-[10px] text-white/30 italic px-0.5">
+              * Customers automatically receive an SMS confirmation upon wallet credit.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Security & Authentication ── */}
+        <div className="px-6 pt-5">
+          <div className="rounded-2xl bg-white/[0.02] border border-white/10 p-4 space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-rose-400 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> Security & Account Credentials
+            </p>
+            <p className="text-[11px] text-white/40 leading-relaxed">
+              If the user loses their authenticator app, phone, or gets locked out, you can safely reset their MFA security or trigger a password reset.
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button
+                variant="outline"
+                onClick={handleResetMfa}
+                disabled={mfaLoading}
+                className="border-rose-500/30 text-rose-400 hover:bg-rose-500/10 rounded-xl h-9 text-xs font-bold gap-2"
+              >
+                {mfaLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                Reset MFA/2FA
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleResetPassword}
+                disabled={pwLoading}
+                className="border-white/10 text-white/80 hover:bg-white/5 rounded-xl h-9 text-xs font-bold gap-2"
+              >
+                {pwLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+                Reset Password
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Profile & Network Details ── */}
+        <div className="px-6 pt-5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-white/35 mb-2.5">Profile Metadata</p>
           <div className="rounded-2xl bg-white/[0.02] border border-white/5 divide-y divide-white/5 text-xs">
             {[
-              { icon: Phone, label: "Phone", value: user.phone || "—" },
+              { icon: Phone, label: "Phone", value: user.phone || "No phone on file", copy: user.phone },
+              { icon: Radio, label: "Web Push", value: pushSubscriptionCount > 0 ? `${pushSubscriptionCount} Registered Device(s)` : "Not Subscribed" },
               { icon: Globe, label: "Last IP", value: user.last_ip || "Never logged in", mono: true, flag: data && data.sharedIpAccounts.length > 0 },
-              { icon: Globe, label: "Location", value: user.last_location || "—", mono: false },
-              { icon: Clock, label: "Last Seen", value: user.last_seen_at ? new Date(user.last_seen_at).toLocaleString() : "—" },
-              { icon: Gift, label: "Referral Code", value: user.referral_code || "—", mono: true },
-              { icon: User, label: "Referred By", value: data?.referrerName || (user.referred_by ? "Loading…" : "—") },
-              { icon: user.is_sub_agent ? Users2 : ShieldCheck, label: "Parent Agent", value: user.parent_name || "—" },
-            ].map(({ icon: Icon, label, value, mono, flag }) => (
+              { icon: Globe, label: "Location", value: user.last_location || "Unknown", mono: false },
+              { icon: Clock, label: "Last Seen", value: user.last_seen_at ? new Date(user.last_seen_at).toLocaleString() : "Never" },
+              { icon: Gift, label: "Referral Code", value: user.referral_code || "None", mono: true, copy: user.referral_code || undefined },
+              { icon: User, label: "Referred By", value: data?.referrerName || (user.referred_by ? "Loading…" : "Direct Signup") },
+              { icon: user.is_sub_agent ? Users2 : ShieldCheck, label: "Parent Agent", value: user.parent_name || "None (Independent)" },
+            ].map(({ icon: Icon, label, value, mono, flag, copy }) => (
               <div key={label} className="flex items-center justify-between px-4 py-2.5 gap-3">
                 <div className="flex items-center gap-2 text-white/40 shrink-0">
                   <Icon className="w-3.5 h-3.5" />
                   <span className="uppercase tracking-wider text-[10px] font-bold">{label}</span>
                 </div>
-                <span className={`text-right truncate max-w-[55%] ${mono ? "font-mono" : ""} ${flag ? "text-red-400" : "text-white/70"}`}>
-                  {value}
-                  {flag && <AlertTriangle className="w-3 h-3 inline ml-1" />}
-                </span>
+                <div className="flex items-center gap-1.5 max-w-[60%] justify-end">
+                  <span className={`truncate ${mono ? "font-mono" : ""} ${flag ? "text-red-400" : "text-white/80"}`}>
+                    {value}
+                  </span>
+                  {flag && <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />}
+                  {copy && (
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(copy, label)}
+                      className="p-1 text-white/30 hover:text-white rounded"
+                    >
+                      {copiedField === label ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
         {/* ── Recent Orders ── */}
-        <div className="px-6 pt-5 pb-10">
-          <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-3">Recent Orders</p>
+        <div className="px-6 pt-5 pb-12">
+          <div className="flex items-center justify-between mb-2.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-white/35">Recent Orders (Last 15)</p>
+            {data && data.orders.length > 0 && (
+              <span className="text-[10px] text-white/40 font-mono">{data.orders.length} order(s)</span>
+            )}
+          </div>
+
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-white/30" />
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
             </div>
           ) : !data || data.orders.length === 0 ? (
-            <p className="text-xs text-white/30 text-center py-6">No orders yet</p>
+            <div className="rounded-2xl bg-white/[0.01] border border-white/5 p-8 text-center">
+              <ShoppingCart className="w-8 h-8 text-white/10 mx-auto mb-2" />
+              <p className="text-xs text-white/30 font-medium">No order activity recorded yet</p>
+            </div>
           ) : (
             <div className="space-y-2">
               {data.orders.map((order) => {
@@ -686,30 +1413,33 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
                 const override = phoneStatus ? BENEFICIARY_STATUS_BADGE[phoneStatus] : undefined;
                 const style = override?.className || STATUS_STYLES[order.status] || "text-white/40 bg-white/5 border-white/10";
                 const label = override?.label || order.status.replace(/_/g, " ");
+
                 return (
-                  <div key={order.id} className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2.5 flex items-center gap-3">
+                  <div key={order.id} className="rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 p-3 flex items-center gap-3 transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-white truncate">
                         {order.network && order.package_size
                           ? `${order.network} ${order.package_size}`
                           : order.order_type.replace(/_/g, " ")}
                       </p>
-                      <p className="text-[10px] text-white/35 font-mono truncate">
+                      <p className="text-[10px] text-white/40 font-mono truncate mt-0.5">
                         {order.customer_phone || order.id.slice(0, 8)}
                         {" · "}
                         {new Date(order.created_at).toLocaleDateString()}
                       </p>
                     </div>
+
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-black text-white/80">GH₵{Number(order.amount).toFixed(2)}</p>
+                      <p className="text-xs font-black text-white">GH₵{Number(order.amount).toFixed(2)}</p>
                       {Number(order.profit || 0) > 0 && (
-                        <p className="text-[10px] font-bold text-emerald-400">+GH₵{Number(order.profit).toFixed(2)} profit</p>
+                        <p className="text-[10px] font-extrabold text-emerald-400">+GH₵{Number(order.profit).toFixed(2)}</p>
                       )}
                       {Number(order.parent_profit || 0) > 0 && (
-                        <p className="text-[9px] font-bold text-purple-400">+GH₵{Number(order.parent_profit || 0).toFixed(2)} parent comm</p>
+                        <p className="text-[9px] font-bold text-purple-400">+GH₵{Number(order.parent_profit || 0).toFixed(2)} comm</p>
                       )}
                     </div>
-                    <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${style}`}>
+
+                    <span className={`flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border shrink-0 ${style}`}>
                       {override ? <Clock className="w-3 h-3" /> : <StatusIcon status={order.status} />}
                       {label}
                     </span>

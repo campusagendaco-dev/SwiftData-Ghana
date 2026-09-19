@@ -1594,12 +1594,12 @@ serve(async (req: any) => {
           successfulProviderId = provider.id;
         }
         // Reset consecutive failures on success
-        supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", successfulProviderId);
+        await supabaseAdmin.from("providers").update({ consecutive_failures: 0, disabled_reason: null }).eq("id", successfulProviderId);
         log(supabaseAdmin, { level: "info", source: "verify-payment", event: "provider.called", message: `Provider accepted order`, order_id: targetReference, provider_id: successfulProviderId, duration_ms: providerDuration, data: { provider_order_id: result.id, network, package_size: packageSize, recipient } });
         break; // success — stop trying
       } else {
-        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers
-        isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+        // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers or validation/duplicate errors
+        isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient|duplicate|identical/i.test(String(result.reason || ""));
         let newFailures = 0;
         let autoDisable = false;
 

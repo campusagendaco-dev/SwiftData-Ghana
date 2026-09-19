@@ -1991,7 +1991,7 @@ serve(async (req: Request) => {
         await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
         
         if (chosenProvider?.id) {
-          await supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", chosenProvider.id);
+          await supabaseAdmin.from("providers").update({ consecutive_failures: 0, disabled_reason: null }).eq("id", chosenProvider.id);
         }
 
         log(supabaseAdmin, { 
@@ -2024,7 +2024,7 @@ serve(async (req: Request) => {
 
       lastResult = result;
       if (chosenProvider?.id) {
-        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient|duplicate|identical/i.test(String(result.reason || ""));
         if (!isBeneficiaryErr) {
           const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
           const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;

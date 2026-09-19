@@ -741,6 +741,35 @@ const AdminSettings = () => {
     setProviders(providers.map(p => p.id === id ? { ...p, ...updates } : p));
   };
 
+  const handleToggleProviderActive = async (provider: any, isActive: boolean) => {
+    const updates = {
+      is_active: isActive,
+      ...(isActive ? { consecutive_failures: 0, disabled_reason: null } : {}),
+    };
+    handleUpdateProvider(provider.id, updates);
+
+    if (provider.id && !provider.id.startsWith("new-")) {
+      try {
+        const { error } = await supabase
+          .from("providers")
+          .update(updates)
+          .eq("id", provider.id);
+        if (error) throw error;
+        toast({
+          title: isActive ? "Provider Activated" : "Provider Deactivated",
+          description: `${provider.name} is now ${isActive ? "active (failures reset to 0)" : "disabled"}.`,
+        });
+      } catch (err: any) {
+        console.error("Error toggling provider:", err);
+        toast({
+          title: "Update Failed",
+          description: err.message || "Failed to update provider status",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const handleDeleteProvider = async (id: string) => {
     if (id.startsWith("new-")) {
       setProviders(providers.filter(p => p.id !== id));
@@ -2663,7 +2692,7 @@ const AdminSettings = () => {
                           </Button>
                           <Switch 
                             checked={provider.is_active} 
-                            onCheckedChange={(c) => handleUpdateProvider(provider.id, { is_active: c })}
+                            onCheckedChange={(c) => handleToggleProviderActive(provider, c)}
                           />
                           <Button
                             size="sm"
@@ -2721,6 +2750,8 @@ const AdminSettings = () => {
                             className="w-full h-8 bg-background border border-border text-foreground rounded-md px-2 text-xs focus:outline-none"
                           >
                             <option value="standard">Standard</option>
+                            <option value="skdataplug">SK Data Plug (SKPlug)</option>
+                            <option value="spendless">Spendless</option>
                             <option value="datamart">DataMart GH</option>
                             <option value="datahub">DataHub Ghana</option>
                             <option value="superbdatafy">SuperbDatafy</option>
@@ -2754,6 +2785,20 @@ const AdminSettings = () => {
                           </div>
                         )}
                       </div>
+
+                      {provider.disabled_reason && !provider.is_active && (
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-[11px] font-medium">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{provider.disabled_reason}</span>
+                        </div>
+                      )}
+
+                      {provider.is_active && (provider.consecutive_failures || 0) > 0 && (
+                        <div className="flex items-center gap-2 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-medium">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Warning: {provider.consecutive_failures} consecutive failure(s). Auto-disables at 5.</span>
+                        </div>
+                      )}
 
                       {provider.balance > 0 && (
                         <div className="flex items-center justify-between pt-2 border-t border-border">
