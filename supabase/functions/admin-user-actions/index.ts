@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } from "../_shared/sms.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { logAdminAudit, logSecurityEvent } from "../_shared/audit.ts";
 
 declare const Deno: any;
 
@@ -342,6 +343,13 @@ serve(async (req: Request) => {
 
         if (linkErr) throw linkErr;
 
+        await logAdminAudit(supabaseAdmin, {
+          adminId: actor.id,
+          action: "send_reset_link",
+          targetUserId: user_id || null,
+          details: { email: targetEmail, redirect_url: redirectUrl }
+        });
+
         return json({
           success: true,
           email: targetEmail,
@@ -353,6 +361,21 @@ serve(async (req: Request) => {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
         const { error: signOutErr } = await supabaseAdmin.auth.admin.signOut(user_id, "global");
         if (signOutErr) throw signOutErr;
+
+        await logAdminAudit(supabaseAdmin, {
+          adminId: actor.id,
+          action: "revoke_sessions",
+          targetUserId: user_id,
+          details: { message: "Global sign-out executed for user" }
+        });
+
+        await logSecurityEvent(supabaseAdmin, {
+          userId: user_id,
+          eventType: "session_revoked",
+          severity: "warning",
+          details: { admin_id: actor.id, reason: "Admin forced session revocation" }
+        });
+
         return json({ success: true, user_id });
       }
 
