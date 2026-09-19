@@ -273,6 +273,50 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     }
   };
 
+  const [resetLinkSending, setResetLinkSending] = useState(false);
+  const handleSendResetLink = async () => {
+    if (!user) return;
+    setResetLinkSending(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "send_reset_link", user_id: user.user_id, email: user.email },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || res?.error) throw new Error(await parseEdgeError(error, res));
+      
+      const link = res?.action_link;
+      if (link) {
+        navigator.clipboard.writeText(link);
+        toast({ title: "Reset Link Generated! 🔗", description: "Copied recovery URL to clipboard & sent reset instructions." });
+      } else {
+        toast({ title: "Reset Email Sent 📧", description: `Password recovery link dispatched to ${user.email}.` });
+      }
+    } catch (err: any) {
+      toast({ title: "Reset Link Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setResetLinkSending(false);
+    }
+  };
+
+  const [revokingSessions, setRevokingSessions] = useState(false);
+  const handleRevokeSessions = async () => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to force logout ${user.full_name || user.email} from all devices?`)) return;
+    setRevokingSessions(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "revoke_sessions", user_id: user.user_id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || res?.error) throw new Error(await parseEdgeError(error, res));
+      toast({ title: "Sessions Revoked 🔒", description: `All active sessions for ${user.email} terminated.` });
+    } catch (err: any) {
+      toast({ title: "Revoke Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRevokingSessions(false);
+    }
+  };
+
   const handleSavePhone = async () => {
     if (!user) return;
     const clean = phoneInput.trim();
@@ -735,6 +779,26 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
               {pushSubscriptionCount > 0 && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
               )}
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={handleSendResetLink}
+              disabled={resetLinkSending}
+              className="h-8 px-3 text-xs gap-1.5 rounded-xl font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-all shadow-md"
+            >
+              {resetLinkSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+              Reset Link
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={handleRevokeSessions}
+              disabled={revokingSessions}
+              className="h-8 px-3 text-xs gap-1.5 rounded-xl font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 hover:bg-rose-500/25 transition-all shadow-md"
+            >
+              {revokingSessions ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+              Revoke Sessions
             </Button>
 
             <Button

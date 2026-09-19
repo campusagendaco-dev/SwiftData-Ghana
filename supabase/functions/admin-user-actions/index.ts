@@ -115,7 +115,10 @@ type AdminUserAction =
   | "force_fulfill_order"
   | "heal_stuck_orders"
   | "bulk_update_order_status"
-  | "purge_bot_spam";
+  | "purge_bot_spam"
+  | "send_reset_link"
+  | "revoke_sessions"
+  | "get_user_audit_logs";
 
 
 
@@ -319,6 +322,61 @@ serve(async (req: Request) => {
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "send_reset_link": {
+        let targetEmail = email;
+        if (!targetEmail && isValidUuid(user_id)) {
+          const { data: p } = await supabaseAdmin.from("profiles").select("email").eq("user_id", user_id).maybeSingle();
+          targetEmail = p?.email;
+        }
+        if (!targetEmail) throw new Error("Missing target user email");
+
+        const redirectUrl = redirect_path ? `https://swiftdatagh.shop${redirect_path}` : "https://swiftdatagh.shop/reset-password";
+        const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+          type: "recovery",
+          email: targetEmail,
+          options: { redirectTo: redirectUrl }
+        });
+
+        if (linkErr) throw linkErr;
+
+        return json({
+          success: true,
+          email: targetEmail,
+          action_link: linkData?.properties?.action_link || null
+        });
+      }
+
+      case "revoke_sessions": {
+        if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
+        const { error: signOutErr } = await supabaseAdmin.auth.admin.signOut(user_id, "global");
+        if (signOutErr) throw signOutErr;
+        return json({ success: true, user_id });
+      }
+
+      case "get_user_audit_logs": {
+        if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
+        
+        const [txRes, auditRes] = await Promise.all([
+          supabaseAdmin
+            .from("wallet_transactions")
+            .select("id, amount, transaction_type, balance_after, description, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", { ascending: false })
+            .limit(10),
+          supabaseAdmin
+            .from("audit_logs")
+            .select("id, action, details, created_at, admin_id")
+            .eq("target_user_id", user_id)
+            .order("created_at", { ascending: false })
+            .limit(10)
+        ]);
+
+        return json({
+          transactions: txRes.data || [],
+          audit_logs: auditRes.data || []
         });
       }
 
@@ -958,32 +1016,6 @@ serve(async (req: Request) => {
         });
       }
 
-      case "send_reset_link": {
-        if (!email) {
-          return new Response(JSON.stringify({ error: "Email is required for reset link" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const appOrigin = (Deno as any).env.get("SITE_URL") || req.headers.get("origin") || "";
-        const redirectTo = appOrigin
-          ? `${appOrigin}${redirect_path || "/reset-password"}`
-          : undefined;
-        const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, { redirectTo });
-
-        if (resetError) {
-          return new Response(JSON.stringify({ error: resetError.message }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(JSON.stringify({ success: true }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
 
       case "reset_password": {
         if (!isValidUuid(user_id)) throw new Error("Invalid or missing user_id");
