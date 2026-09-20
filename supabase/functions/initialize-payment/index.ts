@@ -57,10 +57,10 @@ function normalizeNetwork(network: string): string {
   if (normalized.startsWith("KORBA")) {
     normalized = normalized.replace("KORBA", "").trim();
   }
-  if (normalized === "AT" || normalized === "AIRTELTIGO" || normalized === "AIRTEL TIGO") return "AirtelTigo";
-  if (normalized === "VODAFONE") return "Telecel";
-  if (normalized === "TELECEL") return "Telecel";
-  if (normalized === "MTN MASH UP" || normalized === "MTN_MASH_UP" || normalized === "MTN MASHUP" || normalized === "MTN MASH-UP" || normalized === "MASHUP" || normalized === "MASH UP") return "MTN Mash Up";
+  if (normalized.includes("MASH")) return "MTN Mash Up";
+  if (normalized.includes("TELECEL") || normalized.includes("VODA") || normalized.includes("VDF") || normalized === "RED") return "Telecel";
+  if (normalized.includes("AIRTEL") || normalized.includes("TIGO") || normalized.includes("AT") || normalized.includes("ATL")) return "AirtelTigo";
+  if (normalized.includes("MTN") || normalized === "YELLO") return "MTN";
   return "MTN";
 }
 
@@ -1635,11 +1635,17 @@ serve(async (req: Request) => {
 
   // --- Gateway Router with Intelligent Fallback ---
   let initResult;
-  if (activeGateway === "korba" || isCardPayment) {
+  if (isCardPayment) {
+    // Credit/Debit Card payments ALWAYS use Paystack transaction initialize
+    initResult = await tryInitializePaystack();
+    if (!initResult.success) {
+      console.warn(`[initialize-payment] Paystack card init failed: ${initResult.error}. Retrying Korba fallback...`);
+      initResult = await tryInitializeKorba();
+    }
+  } else if (activeGateway === "korba") {
     initResult = await tryInitializeKorba();
-    if (!initResult.success && !isCardPayment) {
+    if (!initResult.success) {
       console.warn(`[initialize-payment] Primary Korba init failed: ${initResult.error}. Switching to Paystack...`);
-      // Update DB order payment method
       await supabaseAdmin.from("orders").update({ payment_method: "paystack" }).eq("id", reference);
       initResult = await tryInitializePaystack();
     }
@@ -1647,7 +1653,6 @@ serve(async (req: Request) => {
     initResult = await tryInitializePaystack();
     if (!initResult.success) {
       console.warn(`[initialize-payment] Primary Paystack init failed: ${initResult.error}. Switching to Korba...`);
-      // Update DB order payment method
       await supabaseAdmin.from("orders").update({ payment_method: "korba" }).eq("id", reference);
       initResult = await tryInitializeKorba();
     }

@@ -227,9 +227,10 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
       setIsVerifyingName(true);
       try {
         let bankCode = "";
-        if (paymentNetwork === "MTN" || paymentNetwork === "MTN Mash Up") bankCode = "MTN";
-        else if (paymentNetwork === "Telecel") bankCode = "VOD";
-        else if (paymentNetwork === "AirtelTigo") bankCode = "ATL";
+        const upperNet = String(paymentNetwork || "").toUpperCase();
+        if (upperNet.includes("MTN") || upperNet.includes("YELLO") || upperNet.includes("MASH")) bankCode = "MTN";
+        else if (upperNet.includes("TELECEL") || upperNet.includes("VODA") || upperNet.includes("VDF") || upperNet === "RED") bankCode = "VOD";
+        else if (upperNet.includes("AIRTEL") || upperNet.includes("TIGO") || upperNet.includes("AT") || upperNet.includes("ATL")) bankCode = "ATL";
 
         if (!bankCode) {
           setIsVerifyingName(false);
