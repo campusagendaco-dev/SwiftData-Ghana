@@ -115,7 +115,7 @@ export default defineConfig(({ mode }) => ({
               cacheName: "audio-cache",
               rangeRequests: true,
               cacheableResponse: {
-                statuses: [0, 200],
+                statuses: [0, 200, 206],
               },
             },
           },

@@ -150,6 +150,40 @@ const playSynth = (type: string, volume: number) => {
   }
 };
 
+const audioBufferCache = new Map<string, AudioBuffer>();
+
+async function playWebAudioFile(path: string, volume: number): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    if (!synthContext) {
+      synthContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (synthContext.state === "suspended") {
+      await synthContext.resume().catch(() => {});
+    }
+
+    let buffer = audioBufferCache.get(path);
+    if (!buffer) {
+      const response = await fetch(path);
+      if (!response.ok) return false;
+      const arrayBuffer = await response.arrayBuffer();
+      buffer = await synthContext.decodeAudioData(arrayBuffer);
+      audioBufferCache.set(path, buffer);
+    }
+
+    const source = synthContext.createBufferSource();
+    source.buffer = buffer;
+    const gainNode = synthContext.createGain();
+    gainNode.gain.setValueAtTime(Math.max(0, Math.min(1, volume)), synthContext.currentTime);
+    source.connect(gainNode);
+    gainNode.connect(synthContext.destination);
+    source.start(0);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
 export function playSound(path?: string | null, volume = 0.4) {
   try {
     if (!path || typeof path !== "string" || !path.trim()) {
@@ -164,37 +198,44 @@ export function playSound(path?: string | null, volume = 0.4) {
       return;
     }
 
-    const audio = new Audio(resolvedPath);
-    if (resolvedPath.startsWith("http")) {
-      audio.crossOrigin = "anonymous";
-    }
-    audio.volume = Math.max(0, Math.min(1, volume));
+    // 1. Primary: Load & play via Web Audio API decodeAudioData (zero Range request errors in Chrome / Service Worker)
+    playWebAudioFile(resolvedPath, volume).then((success) => {
+      if (success) return;
 
-    audio.onerror = () => {
-      console.warn(`[Audio] Could not load audio file "${resolvedPath}", falling back to synth chime.`);
+      // 2. Fallback: HTML5 Audio element with anonymous crossOrigin
       try {
-        playSynth("soft_alert", volume);
-      } catch (fallbackErr) {
-        console.debug("[Audio] Synth fallback unavailable:", fallbackErr);
-      }
-    };
+        const audio = new Audio(resolvedPath);
+        audio.crossOrigin = "anonymous";
+        audio.volume = Math.max(0, Math.min(1, volume));
 
-    const playPromise = audio.play();
-    
-    if (playPromise !== undefined) {
-      playPromise.catch((error) => {
-        // Browser autoplay restriction: will play on first user tap/click
-        if (!userHasInteracted && typeof document !== "undefined") {
-          const playOnGesture = () => {
-            audio.play().catch(() => {});
-            document.removeEventListener("click", playOnGesture);
-            document.removeEventListener("touchstart", playOnGesture);
-          };
-          document.addEventListener("click", playOnGesture, { once: true });
-          document.addEventListener("touchstart", playOnGesture, { once: true });
+        audio.onerror = () => {
+          try {
+            playSynth("soft_alert", volume);
+          } catch (fallbackErr) {
+            console.debug("[Audio] Synth fallback unavailable:", fallbackErr);
+          }
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            if (!userHasInteracted && typeof document !== "undefined") {
+              const playOnGesture = () => {
+                audio.play().catch(() => {});
+                document.removeEventListener("click", playOnGesture);
+                document.removeEventListener("touchstart", playOnGesture);
+              };
+              document.addEventListener("click", playOnGesture, { once: true });
+              document.addEventListener("touchstart", playOnGesture, { once: true });
+            }
+          });
         }
-      });
-    }
+      } catch (_fallbackAudioErr) {
+        playSynth("soft_alert", volume);
+      }
+    }).catch(() => {
+      playSynth("soft_alert", volume);
+    });
   } catch (err) {
     console.warn("[Audio] Sound playback error:", err);
   }
