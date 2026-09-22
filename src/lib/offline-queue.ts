@@ -210,7 +210,11 @@ export async function syncOfflineQueue(): Promise<void> {
 export async function registerBackgroundSync(): Promise<void> {
   if (typeof window !== "undefined" && "serviceWorker" in navigator && "SyncManager" in window) {
     try {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+      if (!reg) return;
       // Use the standard sync registration tag
       const syncManager = (reg as any).sync;
       if (syncManager) {

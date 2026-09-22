@@ -24,6 +24,69 @@ function urlBase64ToUint8Array(base64String: string) {
   }
 }
 
+/**
+ * Safely resolves an active ServiceWorkerRegistration for push notifications.
+ * If no service worker is registered (e.g. in dev mode or before VitePWA registers),
+ * it attempts to register the production SW (/sw.js) or fall back to /push-sw.js.
+ */
+async function getOrRegisterServiceWorker(): Promise<ServiceWorkerRegistration> {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+    throw new Error("Service Worker is not supported in this browser");
+  }
+
+  // 1. Check existing registration first
+  let registration = await navigator.serviceWorker.getRegistration();
+
+  // 2. If none exists, proactively register
+  if (!registration) {
+    try {
+      registration = await navigator.serviceWorker.register("/sw.js");
+    } catch (_err) {
+      // In development mode or standalone push setups, fallback to /push-sw.js
+      try {
+        registration = await navigator.serviceWorker.register("/push-sw.js");
+      } catch (fallbackErr) {
+        console.warn("[Push] Fallback registration failed:", fallbackErr);
+      }
+    }
+  }
+
+  // 3. If the registration has an active worker, return immediately
+  if (registration?.active) {
+    return registration;
+  }
+
+  // 4. If a worker is installing or waiting, listen for activation
+  const candidate = registration?.installing || registration?.waiting;
+  if (candidate) {
+    await new Promise<void>((resolve) => {
+      if (candidate.state === "activated") {
+        resolve();
+        return;
+      }
+      const onStateChange = () => {
+        if (candidate.state === "activated") {
+          candidate.removeEventListener("statechange", onStateChange);
+          resolve();
+        }
+      };
+      candidate.addEventListener("statechange", onStateChange);
+      setTimeout(resolve, 3000); // 3-second safety window
+    });
+  }
+
+  if (registration?.active) {
+    return registration;
+  }
+
+  // 5. Wrap navigator.serviceWorker.ready with a 5s timeout
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Service Worker readiness timed out")), 5000)
+  );
+
+  return await Promise.race([navigator.serviceWorker.ready, timeoutPromise]);
+}
+
 export function usePushNotifications() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -91,12 +154,11 @@ export function usePushNotifications() {
       }
 
       console.log("[Push] Service Worker ready lookup...");
-      // Wrap with 8s timeout so private browsing or unready SW don't hang execution
-      const swReadyPromise = navigator.serviceWorker.ready;
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error("Service Worker readiness timed out")), 8000)
-      );
-      const registration = await Promise.race([swReadyPromise, timeoutPromise]);
+      const registration = await getOrRegisterServiceWorker();
+
+      if (!registration || !registration.pushManager) {
+        throw new Error("PushManager is not available on Service Worker registration");
+      }
       
       // Get existing subscription or create new
       let subscription = await registration.pushManager.getSubscription();
@@ -171,7 +233,11 @@ export function usePushNotifications() {
       if (!silent) setLoading(false);
       return true;
     } catch (err: any) {
-      console.error("[Push] Error setting up notifications:", err);
+      if (silent) {
+        console.warn("[Push] Background push sync deferred:", err?.message || err);
+      } else {
+        console.error("[Push] Error setting up notifications:", err);
+      }
       if (!silent) setLoading(false);
       return false;
     }
@@ -187,7 +253,11 @@ export function usePushNotifications() {
     if (!supported || !user) return false;
     setLoading(true);
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration || !registration.pushManager) {
+        setLoading(false);
+        return true;
+      }
       const subscription = await registration.pushManager.getSubscription();
       
       if (subscription) {

@@ -5,8 +5,10 @@ import { normalizePhone, getSmsConfig, dispatchUnifiedSms, dispatchUnifiedBulkSm
 
 declare const Deno: any;
 
-const CONCURRENCY = 5;
-const SEND_LIMIT = 200; // max recipients per invocation to stay under resource limits
+const TOKEN_CONCURRENCY = 3; // Kept at 3 to prevent tripping gateway rate limiters (TxtConnect, mNotify, Korba)
+const TOKEN_SEND_LIMIT = 40;  // Per-invocation chunk limit for token-personalized messages (stays well within 20s wall time)
+const BULK_SEND_LIMIT = 100;  // Per-invocation chunk limit for non-token bulk messages (fast single HTTP payload)
+const MAX_WALL_TIME_MS = 20000; // 20-second watchdog to strictly guarantee zero Edge Function timeouts
 
 function personalizeMessage(template: string, name: string, balance?: number): string {
   return template
@@ -78,20 +80,21 @@ async function getScheduledRecipients(
   supabaseAdmin: any,
   targetType: string,
   resumeOffset: number,
-  prevResult: Record<string, any>
+  prevResult: Record<string, any>,
+  limit: number
 ): Promise<{ chunk: Recipient[]; totalRecipients: number; cachedList?: Recipient[] }> {
-  // If we already cached the resolved recipient list in the broadcast result
+  // If we already cached the resolved recipient list in the broadcast result, slice from cache directly
   if (Array.isArray(prevResult.cached_recipients) && prevResult.cached_recipients.length > 0) {
     const all: Recipient[] = prevResult.cached_recipients;
-    const chunk = all.slice(resumeOffset, resumeOffset + SEND_LIMIT);
+    const chunk = all.slice(resumeOffset, resumeOffset + limit);
     return { chunk, totalRecipients: all.length, cachedList: all };
   }
 
   if (targetType === "all_order_phones") {
-    // Pull unique customer phones from recent completed orders (up to 8,000 recent orders)
+    // Pull unique customer phones from recent completed orders (up to 5,000 recent orders)
     const unique = new Map<string, Recipient>();
     const BATCH = 1000;
-    const MAX_ORDERS = 8000;
+    const MAX_ORDERS = 5000;
     let offset = 0;
     let hasMore = true;
 
@@ -133,7 +136,7 @@ async function getScheduledRecipients(
     }
 
     const all = Array.from(unique.values());
-    const chunk = all.slice(resumeOffset, resumeOffset + SEND_LIMIT);
+    const chunk = all.slice(resumeOffset, resumeOffset + limit);
     return { chunk, totalRecipients: all.length, cachedList: all };
   }
 
@@ -154,23 +157,25 @@ async function getScheduledRecipients(
     }
 
     const all = Array.from(unique.values());
-    const chunk = all.slice(resumeOffset, resumeOffset + SEND_LIMIT);
+    const chunk = all.slice(resumeOffset, resumeOffset + limit);
     return { chunk, totalRecipients: all.length, cachedList: all };
   }
 
   // Profile-based targets: "all" | "agents" | "sub_agents" | "parent_agents" | "users"
   let q = supabaseAdmin
     .from("profiles")
-    .select("user_id, phone, full_name, is_agent, is_sub_agent")
+    .select("user_id, phone, full_name, is_agent, is_sub_agent", { count: "exact" })
     .eq("sms_opt_out", false)
-    .range(resumeOffset, resumeOffset + SEND_LIMIT - 1);
+    .not("phone", "is", null)
+    .neq("phone", "")
+    .range(resumeOffset, resumeOffset + limit - 1);
 
   if (targetType === "agents") q = q.or("is_agent.eq.true,is_sub_agent.eq.true");
   else if (targetType === "sub_agents") q = q.eq("is_sub_agent", true);
   else if (targetType === "parent_agents") q = q.eq("is_agent", true).eq("is_sub_agent", false);
   else if (targetType === "users") q = q.eq("is_agent", false).eq("is_sub_agent", false);
 
-  const { data: rows } = await q;
+  const { data: rows, count } = await q;
   const chunk: Recipient[] = (rows || [])
     .map((row: any) => ({
       phone: normalizePhone(row.phone) || "",
@@ -180,13 +185,14 @@ async function getScheduledRecipients(
     }))
     .filter((r: Recipient) => r.phone);
 
-  const totalRecipients = resumeOffset + chunk.length + (chunk.length === SEND_LIMIT ? 1 : 0);
+  const totalRecipients = count !== null && count !== undefined ? count : (resumeOffset + chunk.length);
   return { chunk, totalRecipients };
 }
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const START_TIME = Date.now();
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -198,6 +204,24 @@ serve(async (req: Request) => {
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
+    let reqBody: any = {};
+    try {
+      reqBody = await req.json();
+    } catch {
+      reqBody = {};
+    }
+
+    const forceId = reqBody?.force_id || reqBody?.broadcast_id;
+    const forceAll = Boolean(reqBody?.force_all || reqBody?.force);
+
+    // 1. Auto-recover any broadcasts that were stuck in "processing" for > 3 minutes (from previous invocation timeout or crash)
+    const staleCutoff = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    await supabaseAdmin
+      .from("scheduled_broadcasts")
+      .update({ status: "pending" })
+      .eq("status", "processing")
+      .lte("scheduled_at", staleCutoff);
+
     let smsConfig: any = null;
     try {
       smsConfig = await getSmsConfig(supabaseAdmin);
@@ -206,15 +230,26 @@ serve(async (req: Request) => {
     }
     const hasSmsConfig = Boolean(smsConfig?.apiKey && smsConfig?.senderId);
 
-    // Claim all due pending broadcasts atomically
+    // 2. Query due broadcasts or specific forced broadcast
     const now = new Date().toISOString();
-    const { data: due, error: fetchErr } = await supabaseAdmin
+    let dueQuery = supabaseAdmin
       .from("scheduled_broadcasts")
-      .select("*")
-      .eq("status", "pending")
-      .lte("scheduled_at", now)
-      .order("scheduled_at", { ascending: true })
-      .limit(10);
+      .select("*");
+
+    if (forceId) {
+      dueQuery = dueQuery.eq("id", forceId);
+    } else {
+      dueQuery = dueQuery
+        .in("status", ["pending"])
+        .order("scheduled_at", { ascending: true })
+        .limit(5);
+
+      if (!forceAll) {
+        dueQuery = dueQuery.lte("scheduled_at", now);
+      }
+    }
+
+    const { data: due, error: fetchErr } = await dueQuery;
 
     if (fetchErr) throw fetchErr;
     if (!due || due.length === 0) {
@@ -226,12 +261,23 @@ serve(async (req: Request) => {
     const results: Record<string, unknown>[] = [];
 
     for (const broadcast of due) {
-      // Mark as processing to prevent double-firing
+      // Check execution time watchdog
+      if (Date.now() - START_TIME > MAX_WALL_TIME_MS) {
+        console.log("[Scheduled] Time budget reached across broadcasts. Deferring remaining to next run.");
+        break;
+      }
+
+      // Mark as processing to prevent concurrent double-firing
+      const prevResult = (broadcast.result || {}) as Record<string, any>;
       const { error: claimErr } = await supabaseAdmin
         .from("scheduled_broadcasts")
-        .update({ status: "processing" })
+        .update({ 
+          status: "processing",
+          result: { ...prevResult, started_at: new Date().toISOString() }
+        })
         .eq("id", broadcast.id)
-        .eq("status", "pending");
+        .in("status", ["pending", "processing"]);
+
       if (claimErr) continue;
 
       try {
@@ -240,7 +286,6 @@ serve(async (req: Request) => {
         const targetFilters = broadcast.target_filters || {};
 
         // Resume from saved offset (supports chunked sending across cron runs)
-        const prevResult = (broadcast.result || {}) as Record<string, any>;
         const resumeOffset: number = Number(prevResult.next_offset ?? 0);
         const totalSentSoFar: number = Number(prevResult.sent ?? 0);
         const totalFailedSoFar: number = Number(prevResult.failed ?? 0);
@@ -261,6 +306,7 @@ serve(async (req: Request) => {
                 body: broadcast.message || "",
                 url: targetFilters.url || "/utilities",
               }),
+              signal: AbortSignal.timeout(8000),
             });
             pushResult = await pushRes.json().catch(() => ({}));
             console.log(`[Scheduled Broadcast ${broadcast.id}] Web push sent:`, pushResult);
@@ -291,7 +337,6 @@ serve(async (req: Request) => {
         const shouldSendSms = targetFilters.send_sms !== false;
 
         if (!shouldSendSms) {
-          // Push-only broadcast: finished immediately
           isDone = true;
           totalRecipients = 0;
           sent = 0;
@@ -299,8 +344,11 @@ serve(async (req: Request) => {
           failures.push({ phone: "system", reason: "SMS gateway not configured" });
           isDone = true;
         } else {
+          const needsTokens = hasTokens(smsBody);
+          const chunkLimit = needsTokens ? TOKEN_SEND_LIMIT : BULK_SEND_LIMIT;
+
           const { chunk, totalRecipients: resolvedTotal, cachedList } = await getScheduledRecipients(
-            supabaseAdmin, targetType, resumeOffset, prevResult
+            supabaseAdmin, targetType, resumeOffset, prevResult, chunkLimit
           );
           totalRecipients = resolvedTotal;
 
@@ -308,7 +356,7 @@ serve(async (req: Request) => {
 
           // Fetch balances for {{balance}} token
           const balanceMap = new Map<string, number>();
-          if (hasTokens(smsBody)) {
+          if (needsTokens) {
             const agentIds = chunk.filter((r) => r.isAgent).map((r) => r.userId).filter(Boolean);
             if (agentIds.length > 0) {
               const { data: wallets } = await supabaseAdmin
@@ -317,20 +365,30 @@ serve(async (req: Request) => {
             }
           }
 
-          // Dispatch SMS for this chunk
-          const needsTokens = hasTokens(smsBody);
+          // Dispatch SMS for this chunk with rate-limit pacing and watchdog
           if (needsTokens) {
-            for (let i = 0; i < chunk.length; i += CONCURRENCY) {
-              const batch = chunk.slice(i, i + CONCURRENCY);
+            for (let i = 0; i < chunk.length; i += TOKEN_CONCURRENCY) {
+              if (Date.now() - START_TIME > MAX_WALL_TIME_MS) {
+                console.log(`[Scheduled Broadcast ${broadcast.id}] Reached wall time limit. Pausing batch.`);
+                break;
+              }
+
+              const batch = chunk.slice(i, i + TOKEN_CONCURRENCY);
               await Promise.all(batch.map(async (r) => {
                 const body = personalizeMessage(smsBody, r.name, balanceMap.get(r.userId));
                 try {
                   await dispatchUnifiedSms(smsConfig.gateway, smsConfig.apiKey, effectiveSenderId, r.phone, body, "broadcast");
                   sent++;
-                } catch (e) {
-                  failures.push({ phone: r.phone, reason: e instanceof Error ? e.message : "Unknown" });
+                } catch (e: any) {
+                  const errMsg = e instanceof Error ? e.message : String(e);
+                  failures.push({ phone: r.phone, reason: errMsg });
                 }
               }));
+
+              // 350ms pacing delay between micro-batches to respect SMS provider rate limits
+              if (i + TOKEN_CONCURRENCY < chunk.length) {
+                await new Promise((resolve) => setTimeout(resolve, 350));
+              }
             }
           } else {
             const phones = chunk.map((r) => r.phone);
@@ -341,10 +399,14 @@ serve(async (req: Request) => {
             }
           }
 
-          nextOffset = resumeOffset + chunk.length;
-          isDone = nextOffset >= totalRecipients;
-          if (cachedList) {
-            prevResult.cached_recipients = cachedList;
+          const actuallyProcessedInRun = sent + failures.length;
+          nextOffset = resumeOffset + actuallyProcessedInRun;
+          isDone = nextOffset >= totalRecipients || chunk.length === 0;
+
+          // Preserve cached recipient list for multi-chunk runs
+          const activeCachedList = cachedList || prevResult.cached_recipients;
+          if (!isDone && activeCachedList && activeCachedList.length > 0) {
+            prevResult.cached_recipients = activeCachedList;
           }
         }
 
@@ -358,6 +420,19 @@ serve(async (req: Request) => {
           push_result: pushResult || prevResult.push_result || null,
           failures: failures.slice(0, 20),
         };
+
+        // If rate limit was detected, pause and re-queue cleanly for next minute
+        const rateLimited = failures.some(f => 
+          f.reason.toLowerCase().includes("rate") || 
+          f.reason.toLowerCase().includes("too many") ||
+          f.reason.includes("999") ||
+          f.reason.includes("429")
+        );
+
+        if (rateLimited) {
+          console.warn(`[Scheduled Broadcast ${broadcast.id}] Rate limit detected on gateway. Pausing remaining chunks for next minute cooldown.`);
+          isDone = false;
+        }
 
         if (isDone) {
           const recurringType = targetFilters.recurring;
@@ -384,9 +459,12 @@ serve(async (req: Request) => {
             }).eq("id", broadcast.id);
           }
         } else {
-          // More recipients remain — save progress and re-queue for next cron invocation
+          // More recipients remain — save progress, retain cache, and re-queue for next cron invocation
           result.next_offset = nextOffset;
           result.progress = `${nextOffset}/${totalRecipients}`;
+          if (prevResult.cached_recipients) {
+            result.cached_recipients = prevResult.cached_recipients;
+          }
           await supabaseAdmin.from("scheduled_broadcasts").update({
             status: "pending",
             result,
@@ -394,12 +472,20 @@ serve(async (req: Request) => {
         }
 
         results.push({ id: broadcast.id, ...result });
-      } catch (err) {
+      } catch (err: any) {
+        console.error(`[Scheduled Broadcast ${broadcast.id}] Error:`, err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isRateLimit = errMsg.toLowerCase().includes("rate") || errMsg.toLowerCase().includes("too many");
+
         await supabaseAdmin.from("scheduled_broadcasts").update({
-          status: "failed",
-          result: { error: err instanceof Error ? err.message : "Unknown error" },
+          status: isRateLimit ? "pending" : "failed",
+          result: { 
+            ...prevResult,
+            error: errMsg,
+            last_error_at: new Date().toISOString()
+          },
         }).eq("id", broadcast.id);
-        results.push({ id: broadcast.id, error: err instanceof Error ? err.message : "Unknown" });
+        results.push({ id: broadcast.id, error: errMsg });
       }
     }
 

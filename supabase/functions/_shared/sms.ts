@@ -398,6 +398,7 @@ export async function sendSmsViaKorba(
           method: "POST",
           headers,
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(8000),
         });
         if (directRes) {
           response = directRes;
@@ -488,7 +489,8 @@ export async function sendSmsViaMnotify(
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || (data && data.status !== "success" && data.code !== "2000" && data.code !== 2000)) {
@@ -527,7 +529,8 @@ export async function sendBulkSmsViaMnotify(
           message: body,
           is_schedule: false,
           schedule_date: ""
-        })
+        }),
+        signal: AbortSignal.timeout(10000),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || (data && data.status !== "success" && data.code !== "2000" && data.code !== 2000)) {
@@ -588,7 +591,8 @@ export async function sendSmsViaArkesel(
         "api-key": apiKey,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || (data && data.status !== "success" && data.code !== 1000 && data.code !== "1000")) {
@@ -628,7 +632,8 @@ export async function sendBulkSmsViaArkesel(
           sender: from.slice(0, 11),
           message: body,
           recipients: chunk
-        })
+        }),
+        signal: AbortSignal.timeout(10000),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || (data && data.status !== "success" && data.code !== 1000 && data.code !== "1000")) {
@@ -690,7 +695,8 @@ export async function sendSmsViaHubtel(
         "Authorization": authHeader,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || (data && data.status !== 0 && data.status !== "0" && data.Status !== 0)) {
@@ -879,6 +885,7 @@ export async function sendSmsViaTxtConnect(
         sms: body,
         unicode: "0", // 0 for regular, 1 for unicode
       }),
+      signal: AbortSignal.timeout(8000),
     });
 
     const data = await response.json().catch(() => ({}));
@@ -1056,6 +1063,7 @@ export async function sendBulkSmsViaTxtConnect(
           sms: body,
           unicode: "0",
         }),
+        signal: AbortSignal.timeout(10000),
       });
 
       const responseText = await response.text();
@@ -1130,6 +1138,26 @@ export async function sendBulkSmsViaTxtConnect(
 
         if (failedOver) {
           continue;
+        }
+
+        if (isRateLimited) {
+          console.warn("[Bulk SMS] TxtConnect rate limited and no failover available. Halting remaining batches to avoid further lockout.");
+          const remaining = uniqueRecipients.slice(i);
+          const failMsg = `TxtConnect Rate Limited (${response.status}): ${errReason}`;
+          for (const p of remaining) {
+            failures.push({ phone: p, reason: failMsg });
+          }
+          const failedLogs = remaining.map((phone) => ({
+            recipient: phone,
+            sender_id: from,
+            body,
+            type,
+            status: "failed" as const,
+            error_message: failMsg,
+            agent_id: agentId || null
+          }));
+          logBulkSmsToDb(failedLogs).catch(console.error);
+          break;
         }
 
         throw new Error(`TxtConnect Error (${response.status}): ${JSON.stringify(data)}`);

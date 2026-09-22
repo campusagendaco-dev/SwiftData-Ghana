@@ -1,6 +1,14 @@
 // SwiftData Ghana Background Service Worker Extensions
 // Listens for push notification payloads from Deno/Supabase backend even when the tab is closed.
 
+self.addEventListener('install', function(event) {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function(event) {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener('push', function(event) {
   console.log('[Push Worker] Background Push Received.');
   

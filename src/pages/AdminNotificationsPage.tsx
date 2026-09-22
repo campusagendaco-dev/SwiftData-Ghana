@@ -17,7 +17,7 @@ import {
   XCircle, Phone, BookTemplate, Save, Clock, RefreshCw,
   Users, Calendar, ChevronDown, ChevronUp, Sparkles, AlertCircle,
   Search, ShieldAlert, Check, Terminal, ExternalLink,
-  Radio, Smartphone, Laptop, Globe
+  Radio, Smartphone, Laptop, Globe, Zap
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -650,14 +650,41 @@ const AdminNotificationsPage = () => {
     }
   };
 
-  const handleRunScheduler = async () => {
-    const { data, error } = await supabase.functions.invoke("process-scheduled-sms", {
-      headers: { Authorization: `Bearer ${session?.access_token}` },
+  const [runningScheduler, setRunningScheduler] = useState(false);
+
+  const handleRunScheduler = async (broadcastId?: string) => {
+    setRunningScheduler(true);
+    toast({
+      title: broadcastId ? "Blasting broadcast..." : "Triggering scheduler...",
+      description: "Processing SMS recipients with rate-limit pacing and watchdog protection.",
     });
-    if (error) { toast({ title: "Scheduler error", description: error.message, variant: "destructive" }); return; }
-    toast({ title: `Scheduler ran: ${data?.processed ?? 0} broadcast(s) processed` });
-    await fetchAll();
-    fetchSmsLogs();
+    try {
+      const { data, error } = await supabase.functions.invoke("process-scheduled-sms", {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+        body: broadcastId ? { force_id: broadcastId, force: true } : { force_all: true },
+      });
+      if (error) {
+        toast({ title: "Scheduler error", description: error.message, variant: "destructive" });
+        return;
+      }
+      const processed = data?.processed ?? 0;
+      const res0 = data?.results?.[0];
+      const sent = res0?.sent ?? 0;
+      const failed = res0?.failed ?? 0;
+
+      toast({
+        title: processed > 0 ? "Broadcast Blasting Executed! 🚀" : "Scheduler Complete",
+        description: processed > 0 
+          ? `Processed ${processed} broadcast(s). Sent: ${sent}, Failed: ${failed}.`
+          : "No pending scheduled broadcasts to process.",
+      });
+      await fetchAll();
+      fetchSmsLogs();
+    } catch (err: any) {
+      toast({ title: "Scheduler error", description: err?.message || String(err), variant: "destructive" });
+    } finally {
+      setRunningScheduler(false);
+    }
   };
 
   // Filter SMS Logs
@@ -687,8 +714,15 @@ const AdminNotificationsPage = () => {
           <p className="text-white/40 text-xs sm:text-sm mt-1">Manage global broadcasts, SMS templates, and audit real-time system logs</p>
         </div>
         {scheduledBroadcasts.length > 0 && (
-          <Button variant="outline" size="sm" onClick={handleRunScheduler} className="gap-1.5 text-xs bg-white/5 border-white/10 hover:bg-white/10 text-white font-bold h-9">
-            <RefreshCw className="w-3.5 h-3.5" /> Run Scheduler
+          <Button 
+            variant="outline" 
+            size="sm" 
+            disabled={runningScheduler}
+            onClick={() => handleRunScheduler()} 
+            className="gap-1.5 text-xs bg-white/5 border-white/10 hover:bg-white/10 text-white font-bold h-9"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", runningScheduler && "animate-spin")} /> 
+            {runningScheduler ? "Blasting..." : "Run Scheduler"}
           </Button>
         )}
       </div>
@@ -1224,12 +1258,23 @@ const AdminNotificationsPage = () => {
                         )}
                       </div>
                     </div>
-                    {b.status === "pending" && (
-                      <Button variant="ghost" size="icon" className="text-white/20 hover:text-red-400 hover:bg-red-500/10 shrink-0 h-8 w-8 rounded-lg"
-                        onClick={() => handleCancelScheduled(b.id)}>
-                        <XCircle className="w-4 h-4" />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={runningScheduler}
+                        className="text-xs h-8 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20 gap-1 font-bold"
+                        onClick={() => handleRunScheduler(b.id)}
+                      >
+                        <Zap className="w-3.5 h-3.5" /> Blast Now
                       </Button>
-                    )}
+                      {b.status === "pending" && (
+                        <Button variant="ghost" size="icon" className="text-white/20 hover:text-red-400 hover:bg-red-500/10 shrink-0 h-8 w-8 rounded-lg"
+                          onClick={() => handleCancelScheduled(b.id)}>
+                          <XCircle className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </CardContent>

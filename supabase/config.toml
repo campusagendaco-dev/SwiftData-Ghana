@@ -191,3 +191,10 @@ verify_jwt = false
 
 [functions.send-push-notification]
 verify_jwt = false
+
+[functions.process-scheduled-sms]
+verify_jwt = false
+
+[functions.cron-process-subscriptions]
+verify_jwt = false
+
