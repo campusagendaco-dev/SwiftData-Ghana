@@ -1002,8 +1002,9 @@ serve(async (req: any) => {
             return new Response(JSON.stringify({ status: "error", error: `Amount mismatch. Paid ${verifiedAmount} GHS, Expected ${expectedAmount} GHS` }), { headers: corsHeaders });
           }
         } else if (txStatus === "failed") {
-          const failMsg = verifyData.data.gateway_response || verifyData.data.message || verifyData.message || "Payment failed";
-          console.warn(`[verify-payment] Payment failed explicitly:`, failMsg);
+          const rawFailMsg = verifyData.data?.gateway_response || verifyData.data?.message || verifyData.message || "Payment failed on Mobile Money";
+          const failMsg = translateFailureReason(rawFailMsg) || rawFailMsg;
+          console.warn(`[verify-payment] Payment failed on gateway:`, failMsg);
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
             failure_reason: failMsg
@@ -1016,14 +1017,6 @@ serve(async (req: any) => {
             failure_reason: "Transaction was reversed (refunded/charged back)"
           }).eq("id", targetReference);
           return new Response(JSON.stringify({ status: "error", error: "The transaction was reversed." }), { headers: corsHeaders });
-        } else if (txStatus === "failed") {
-          console.warn(`[verify-payment] Payment failed on gateway`);
-          const failMsg = translateFailureReason(verifyData.data?.gateway_response || verifyData.data?.message || verifyData.message || "Payment failed on Mobile Money");
-          await supabaseAdmin.from("orders").update({
-            status: "fulfillment_failed",
-            failure_reason: failMsg
-          }).eq("id", targetReference);
-          return new Response(JSON.stringify({ status: "failed", error: failMsg }), { headers: corsHeaders });
         } else if (txStatus === "abandoned") {
           console.warn(`[verify-payment] Payment abandoned`);
           
@@ -1835,7 +1828,7 @@ serve(async (req: any) => {
       const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
       const targetStatus = "fulfillment_failed";
       const targetProviderOrderId = "failed_api_call";
-      const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request");
+      const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request") || result.reason || "Provider rejected the request";
       isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
 
       let guestRefundResult = null;
