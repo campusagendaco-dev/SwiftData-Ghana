@@ -50,11 +50,11 @@ const PhoneOrderTracker = ({
 
     const sanitizedPhone = digitsOnly;
     try {
-      const { data, error: invError } = await supabase.functions.invoke("verify-payment", {
+      const { data, error: invError } = await supabase.functions.invoke("list-orders", {
         body: { phone: sanitizedPhone },
       });
 
-      if (invError || !data || data.error) {
+      if (invError || !data || !Array.isArray(data.orders) || data.orders.length === 0) {
         setError(data?.error || "No recent orders found for this number.");
         return;
       }
