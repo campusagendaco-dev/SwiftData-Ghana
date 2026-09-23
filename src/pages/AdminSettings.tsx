@@ -1346,6 +1346,10 @@ const AdminSettings = () => {
                   {[
                     { id: "traditional", label: "Ghana Drifting (Default)", url: "" },
                     { id: "slideshow", label: "🔄 Auto Slideshow", url: "/auto_switch" },
+                    { id: "cyber_kente", label: "⚡ Cyber Kente Neon", url: "/assets/backgrounds/bg_cyber_kente.png" },
+                    { id: "accra_cyber", label: "🌃 Accra Cyber Skyline", url: "/assets/backgrounds/bg_accra_cyber.png" },
+                    { id: "black_star", label: "⭐ Golden Black Star", url: "/assets/backgrounds/bg_black_star.png" },
+                    { id: "quantum_mesh", label: "🌐 Quantum Data Stream", url: "/assets/backgrounds/bg_quantum_mesh.png" },
                     { id: "worldcup", label: "🏆 World Cup Special", url: "/assets/backgrounds/bg_world_cup.png" },
                     { id: "worldcup_gold", label: "🏆 Gold Trophy Special", url: "/assets/backgrounds/bg_world_cup_gold.png" },
                     { id: "worldcup_stars", label: "🇬🇭 Black Stars Special", url: "/assets/backgrounds/bg_world_cup_stars.png" },
