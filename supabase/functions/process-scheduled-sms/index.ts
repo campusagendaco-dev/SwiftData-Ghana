@@ -5,9 +5,9 @@ import { normalizePhone, getSmsConfig, dispatchUnifiedSms, dispatchUnifiedBulkSm
 
 declare const Deno: any;
 
-const TOKEN_CONCURRENCY = 3; // Kept at 3 to prevent tripping gateway rate limiters (TxtConnect, mNotify, Korba)
-const TOKEN_SEND_LIMIT = 40;  // Per-invocation chunk limit for token-personalized messages (stays well within 20s wall time)
-const BULK_SEND_LIMIT = 100;  // Per-invocation chunk limit for non-token bulk messages (fast single HTTP payload)
+const TOKEN_CONCURRENCY = 4; // Concurrency for token-personalized micro-batches
+const TOKEN_SEND_LIMIT = 40;  // Per-invocation chunk limit for token-personalized messages
+const BULK_SEND_LIMIT = 200;  // Per-invocation chunk limit for non-token bulk messages (2x 100-chunk batches)
 const MAX_WALL_TIME_MS = 20000; // 20-second watchdog to strictly guarantee zero Edge Function timeouts
 
 function personalizeMessage(template: string, name: string, balance?: number): string {
@@ -50,9 +50,9 @@ function calculateNextRunTime(recurringType: string, currentScheduledAt: string)
 
   if (recurringType === "peak_hours") {
     // Recommended Ghana Peak Hours (GMT):
-    // 08:30 (Morning commute / workday launch - Airtime & Commute)
-    // 13:00 (Midday Lunch - Data Top-Up & Quick Purchases)
-    // 18:30 (Evening Prime - ECG Prepaid Recharge & DStv/GOtv Renewals)
+    // 08:30 (Morning commute / workday launch)
+    // 13:00 (Midday Lunch)
+    // 18:30 (Evening Prime)
     const peakSlots = [
       { h: 8, m: 30 },
       { h: 13, m: 0 },
@@ -90,11 +90,12 @@ async function getScheduledRecipients(
     return { chunk, totalRecipients: all.length, cachedList: all };
   }
 
-  if (targetType === "all_order_phones") {
-    // Pull unique customer phones from recent completed orders (up to 5,000 recent orders)
-    const unique = new Map<string, Recipient>();
+  const unique = new Map<string, Recipient>();
+
+  // For "all" or "all_order_phones", merge completed/fulfilled orders (up to 10,000 orders)
+  if (targetType === "all" || targetType === "all_order_phones") {
     const BATCH = 1000;
-    const MAX_ORDERS = 5000;
+    const MAX_ORDERS = 10000;
     let offset = 0;
     let hasMore = true;
 
@@ -116,38 +117,15 @@ async function getScheduledRecipients(
       hasMore = (orders || []).length === BATCH;
       offset += BATCH;
     }
-
-    // Merge in registered profiles who have not opted out
-    const { data: profiles } = await supabaseAdmin
-      .from("profiles")
-      .select("user_id, phone, full_name, is_agent, is_sub_agent, sms_opt_out")
-      .eq("sms_opt_out", false);
-
-    for (const row of profiles || []) {
-      const p = normalizePhone(row.phone);
-      if (p && !unique.has(p)) {
-        unique.set(p, {
-          phone: p,
-          name: row.full_name || "Customer",
-          userId: row.user_id || "",
-          isAgent: Boolean(row.is_agent || row.is_sub_agent),
-        });
-      }
-    }
-
-    const all = Array.from(unique.values());
-    const chunk = all.slice(resumeOffset, resumeOffset + limit);
-    return { chunk, totalRecipients: all.length, cachedList: all };
   }
 
   if (targetType === "pending_orders") {
-    const unique = new Map<string, Recipient>();
     const { data: orders } = await supabaseAdmin
       .from("orders")
       .select("customer_phone")
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .limit(2000);
 
     for (const row of orders || []) {
       const p = normalizePhone(row.customer_phone);
@@ -155,38 +133,59 @@ async function getScheduledRecipients(
         unique.set(p, { phone: p, name: "Customer", userId: "", isAgent: false });
       }
     }
-
     const all = Array.from(unique.values());
     const chunk = all.slice(resumeOffset, resumeOffset + limit);
     return { chunk, totalRecipients: all.length, cachedList: all };
   }
 
-  // Profile-based targets: "all" | "agents" | "sub_agents" | "parent_agents" | "users"
-  let q = supabaseAdmin
-    .from("profiles")
-    .select("user_id, phone, full_name, is_agent, is_sub_agent", { count: "exact" })
-    .eq("sms_opt_out", false)
-    .not("phone", "is", null)
-    .neq("phone", "")
-    .range(resumeOffset, resumeOffset + limit - 1);
+  // Query profiles table for matching accounts (with deterministic created_at order)
+  const BATCH = 1000;
+  let pOffset = 0;
+  let pHasMore = true;
 
-  if (targetType === "agents") q = q.or("is_agent.eq.true,is_sub_agent.eq.true");
-  else if (targetType === "sub_agents") q = q.eq("is_sub_agent", true);
-  else if (targetType === "parent_agents") q = q.eq("is_agent", true).eq("is_sub_agent", false);
-  else if (targetType === "users") q = q.eq("is_agent", false).eq("is_sub_agent", false);
+  while (pHasMore) {
+    let q = supabaseAdmin
+      .from("profiles")
+      .select("user_id, phone, full_name, is_agent, is_sub_agent, sms_opt_out")
+      .eq("sms_opt_out", false)
+      .not("phone", "is", null)
+      .neq("phone", "")
+      .order("created_at", { ascending: true })
+      .range(pOffset, pOffset + BATCH - 1);
 
-  const { data: rows, count } = await q;
-  const chunk: Recipient[] = (rows || [])
-    .map((row: any) => ({
-      phone: normalizePhone(row.phone) || "",
-      name: row.full_name || "Customer",
-      userId: row.user_id || "",
-      isAgent: Boolean(row.is_agent || row.is_sub_agent),
-    }))
-    .filter((r: Recipient) => r.phone);
+    if (targetType === "agents") {
+      q = q.or("is_agent.eq.true,is_sub_agent.eq.true");
+    } else if (targetType === "sub_agents") {
+      q = q.eq("is_sub_agent", true);
+    } else if (targetType === "parent_agents") {
+      q = q.eq("is_agent", true).eq("is_sub_agent", false);
+    } else if (targetType === "users") {
+      q = q.eq("is_agent", false).eq("is_sub_agent", false);
+    }
 
-  const totalRecipients = count !== null && count !== undefined ? count : (resumeOffset + chunk.length);
-  return { chunk, totalRecipients };
+    const { data: rows, error } = await q;
+    if (error || !rows) break;
+
+    for (const row of rows) {
+      if (row.sms_opt_out) continue;
+      const p = normalizePhone(row.phone);
+      if (!p) continue;
+      // Overwrite or add with profile metadata
+      unique.set(p, {
+        phone: p,
+        name: row.full_name || "Customer",
+        userId: row.user_id || "",
+        isAgent: Boolean(row.is_agent || row.is_sub_agent),
+      });
+    }
+
+    pHasMore = rows.length === BATCH;
+    pOffset += BATCH;
+  }
+
+  const all = Array.from(unique.values());
+  const chunk = all.slice(resumeOffset, resumeOffset + limit);
+  return { chunk, totalRecipients: all.length, cachedList: all };
 }
 
 serve(async (req: Request) => {
@@ -399,19 +398,43 @@ serve(async (req: Request) => {
             }
           }
 
-          const actuallyProcessedInRun = sent + failures.length;
-          nextOffset = resumeOffset + actuallyProcessedInRun;
-          isDone = nextOffset >= totalRecipients || chunk.length === 0;
+          // Check if rate limiting was detected on gateway
+          const rateLimited = failures.some(f => 
+            f.reason.toLowerCase().includes("rate") || 
+            f.reason.toLowerCase().includes("too many") ||
+            f.reason.includes("999") ||
+            f.reason.includes("429")
+          );
+
+          if (rateLimited) {
+            console.warn(`[Scheduled Broadcast ${broadcast.id}] Rate limit detected on gateway. Pausing remaining chunks for next minute cooldown.`);
+            isDone = false;
+            // Advance ONLY by the recipients that were sent successfully.
+            // Do NOT advance past rate-limited recipients so they will be retried next cron tick!
+            nextOffset = resumeOffset + sent;
+          } else {
+            const actuallyProcessedInRun = sent + failures.length;
+            nextOffset = resumeOffset + actuallyProcessedInRun;
+            isDone = nextOffset >= totalRecipients || chunk.length === 0;
+          }
 
           // Preserve cached recipient list for multi-chunk runs
           const activeCachedList = cachedList || prevResult.cached_recipients;
-          if (!isDone && activeCachedList && activeCachedList.length > 0) {
+          if (activeCachedList && activeCachedList.length > 0) {
             prevResult.cached_recipients = activeCachedList;
           }
         }
 
+        // Only count permanent failures in cumulative total (rate-limited ones will be retried)
+        const permanentFailures = failures.filter(f => 
+          !f.reason.toLowerCase().includes("rate") && 
+          !f.reason.toLowerCase().includes("too many") &&
+          !f.reason.includes("999") &&
+          !f.reason.includes("429")
+        );
+
         const cumulativeSent = totalSentSoFar + sent;
-        const cumulativeFailed = totalFailedSoFar + failures.length;
+        const cumulativeFailed = totalFailedSoFar + permanentFailures.length;
 
         const result: Record<string, any> = {
           total_recipients: totalRecipients,
@@ -420,19 +443,6 @@ serve(async (req: Request) => {
           push_result: pushResult || prevResult.push_result || null,
           failures: failures.slice(0, 20),
         };
-
-        // If rate limit was detected, pause and re-queue cleanly for next minute
-        const rateLimited = failures.some(f => 
-          f.reason.toLowerCase().includes("rate") || 
-          f.reason.toLowerCase().includes("too many") ||
-          f.reason.includes("999") ||
-          f.reason.includes("429")
-        );
-
-        if (rateLimited) {
-          console.warn(`[Scheduled Broadcast ${broadcast.id}] Rate limit detected on gateway. Pausing remaining chunks for next minute cooldown.`);
-          isDone = false;
-        }
 
         if (isDone) {
           const recurringType = targetFilters.recurring;

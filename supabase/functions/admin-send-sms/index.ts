@@ -34,7 +34,6 @@ async function resolveRecipients(
   targetType: TargetType,
   targetFilters: TargetFilters,
 ): Promise<{ recipients: Recipient[]; optOutCount: number }> {
-  const BATCH = 1000;
   const unique = new Map<string, Recipient>();
   let optOutCount = 0;
 
@@ -44,7 +43,7 @@ async function resolveRecipients(
       .select("customer_phone")
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .limit(2000);
     for (const row of data || []) {
       const p = normalizePhone(row.customer_phone);
       if (p && !unique.has(p)) {
@@ -54,11 +53,10 @@ async function resolveRecipients(
     return { recipients: Array.from(unique.values()), optOutCount: 0 };
   }
 
-  if (targetType === "all_order_phones") {
-    // Pull unique customer phones from recent fulfilled/completed orders (up to 8,000 orders)
-    // To protect against Edge Function execution timeouts and prevent exhausting SMS credit balance
+  // For "all" or "all_order_phones", pull order customer numbers (up to 10,000 orders)
+  if (targetType === "all" || targetType === "all_order_phones") {
     const BATCH = 1000;
-    const MAX_ORDERS = 8000;
+    const MAX_ORDERS = 10000;
     let offset = 0;
     let hasMore = true;
     while (hasMore && offset < MAX_ORDERS) {
@@ -78,31 +76,19 @@ async function resolveRecipients(
       hasMore = (data || []).length === BATCH;
       offset += BATCH;
     }
-    // Also merge in profile phones for registered users
-    const { data: profiles } = await supabaseAdmin
-      .from("profiles")
-      .select("user_id, phone, full_name, is_agent, is_sub_agent, sms_opt_out");
-    for (const row of profiles || []) {
-      if (row.sms_opt_out) { optOutCount++; continue; }
-      const p = normalizePhone(row.phone);
-      if (!p || unique.has(p)) continue;
-      unique.set(p, {
-        phone: p,
-        name: row.full_name || "Customer",
-        userId: row.user_id || "",
-        isAgent: Boolean(row.is_agent || row.is_sub_agent),
-      });
-    }
-    return { recipients: Array.from(unique.values()), optOutCount };
   }
 
-  // Build query for profiles
+  // Build query for profiles with deterministic ordering
+  const BATCH = 1000;
   let offset = 0;
   let hasMore = true;
   while (hasMore) {
     let q = supabaseAdmin
       .from("profiles")
       .select("user_id, phone, full_name, is_agent, is_sub_agent, sms_opt_out")
+      .not("phone", "is", null)
+      .neq("phone", "")
+      .order("created_at", { ascending: true })
       .range(offset, offset + BATCH - 1);
 
     if (targetType === "agents") {
@@ -121,7 +107,7 @@ async function resolveRecipients(
     for (const row of rows) {
       if (row.sms_opt_out) { optOutCount++; continue; }
       const p = normalizePhone(row.phone);
-      if (!p || unique.has(p)) continue;
+      if (!p) continue;
       unique.set(p, {
         phone: p,
         name: row.full_name || "Customer",
@@ -301,6 +287,63 @@ serve(async (req: Request) => {
         .filter((p): p is string => !!p)
         .map((p) => ({ phone: p, name: "Customer", userId: "", isAgent: false }));
 
+      // If more than 80 retry phones, queue via scheduled_broadcasts to guarantee delivery without timeouts
+      if (retryRecipients.length > 80) {
+        const { data: schedRow, error: schedErr } = await supabaseAdmin
+          .from("scheduled_broadcasts")
+          .insert({
+            title: title || "SMS Retry Broadcast",
+            message: smsBody,
+            target_type: "retry",
+            target_filters: {
+              ...target_filters,
+              sender_id: effectiveSenderId,
+              send_sms: true,
+              send_push: false,
+            },
+            scheduled_at: new Date().toISOString(),
+            status: "pending",
+            result: {
+              cached_recipients: retryRecipients,
+              total_recipients: retryRecipients.length,
+              sent: 0,
+              failed: 0,
+              next_offset: 0,
+              queued_by: actor.id,
+              started_at: new Date().toISOString(),
+            },
+            created_by: actor.id,
+          })
+          .select("id")
+          .single();
+
+        if (!schedErr && schedRow?.id) {
+          fetch(`${SUPABASE_URL}/functions/v1/process-scheduled-sms`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ force_id: schedRow.id, force: true }),
+          }).catch((err) => console.warn("[admin-send-sms] Trigger scheduler error:", err));
+
+          return new Response(JSON.stringify({
+            success: true,
+            queued_scheduler: true,
+            broadcast_id: schedRow.id,
+            target_type: "retry",
+            gateway: activeGateway,
+            total_recipients: retryRecipients.length,
+            valid_numbers: retryRecipients.length,
+            sent: 0,
+            failed: 0,
+            skipped_invalid_or_empty: retry_phones.length - retryRecipients.length,
+            failures: [],
+            opt_out_count: 0,
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+
       const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, retryRecipients, smsBody, new Map(), 5, activeGateway);
       return new Response(JSON.stringify({
         success: true,
@@ -333,32 +376,64 @@ serve(async (req: Request) => {
     const agentUserIds = recipients.filter((r) => r.isAgent && r.userId).map((r) => r.userId);
     const balanceMap = hasTokens(smsBody) ? await fetchBalanceMap(supabaseAdmin, agentUserIds) : new Map<string, number>();
 
-    // For large broadcasts (> 150 recipients), dispatch asynchronously to prevent HTTP 546 execution timeout
-    if (recipients.length > 150) {
-      const dispatchPromise = sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap, 5, activeGateway)
-        .then(({ sent, failures }) => {
-          console.log(`[admin-send-sms] Async broadcast complete. Gateway: ${activeGateway}, Sent: ${sent}, Failures: ${failures.length}`);
+    // For broadcasts with > 80 recipients, queue as a durable scheduled_broadcast job
+    // processed in guaranteed rate-limited chunks by process-scheduled-sms across cron ticks.
+    // This avoids Edge Function execution timeouts and prevents isolates being abruptly killed mid-blast.
+    if (recipients.length > 80) {
+      const { data: schedRow, error: schedErr } = await supabaseAdmin
+        .from("scheduled_broadcasts")
+        .insert({
+          title: title || "Broadcast",
+          message: smsBody,
+          target_type: target_type,
+          target_filters: {
+            ...target_filters,
+            sender_id: effectiveSenderId,
+            send_sms: true,
+            send_push: false,
+          },
+          scheduled_at: new Date().toISOString(),
+          status: "pending",
+          result: {
+            cached_recipients: recipients,
+            total_recipients: recipients.length,
+            sent: 0,
+            failed: 0,
+            next_offset: 0,
+            queued_by: actor.id,
+            started_at: new Date().toISOString(),
+          },
+          created_by: actor.id,
         })
-        .catch((err) => {
-          console.error("[admin-send-sms] Async broadcast error:", err);
-        });
+        .select("id")
+        .single();
 
-      if (typeof (globalThis as any).EdgeRuntime?.waitUntil === "function") {
-        (globalThis as any).EdgeRuntime.waitUntil(dispatchPromise);
+      if (!schedErr && schedRow?.id) {
+        // Trigger the background scheduler immediately to begin processing chunk 0 right away
+        fetch(`${SUPABASE_URL}/functions/v1/process-scheduled-sms`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({ force_id: schedRow.id, force: true }),
+        }).catch((err) => console.warn("[admin-send-sms] Trigger scheduler error:", err));
+
+        return new Response(JSON.stringify({
+          success: true,
+          queued_scheduler: true,
+          broadcast_id: schedRow.id,
+          target_type,
+          gateway: activeGateway,
+          total_recipients: recipients.length,
+          valid_numbers: recipients.length,
+          sent: 0,
+          failed: 0,
+          failures: [],
+          opt_out_count: optOutCount,
+          message: `Broadcast queued for ${recipients.length.toLocaleString()} recipients. Processing in durable background chunks.`,
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-
-      return new Response(JSON.stringify({
-        success: true,
-        target_type,
-        gateway: activeGateway,
-        total_recipients: recipients.length,
-        valid_numbers: recipients.length,
-        sent: recipients.length,
-        failed: 0,
-        queued_async: true,
-        failures: [],
-        opt_out_count: optOutCount,
-      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const { sent, failures } = await sendToRecipients(txtApiKey, effectiveSenderId, recipients, smsBody, balanceMap, 5, activeGateway);

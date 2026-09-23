@@ -439,7 +439,7 @@ export async function sendBulkSmsViaKorba(
   type = "broadcast",
   agentId?: string
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
-  const uniqueRecipients = Array.from(new Set(recipients.map((r) => r.trim()).filter(Boolean)));
+  const uniqueRecipients = Array.from(new Set(recipients.map((r) => normalizePhone(r)).filter((r): r is string => !!r)));
   if (uniqueRecipients.length === 0) return { sent: 0, failures: [] };
 
   let sent = 0;
@@ -515,9 +515,11 @@ export async function sendBulkSmsViaMnotify(
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
   let sent = 0;
   const failures: Array<{ phone: string; reason: string }> = [];
+  const uniqueRecipients = Array.from(new Set(recipients.map((r) => normalizePhone(r)).filter((r): r is string => !!r)));
+  if (uniqueRecipients.length === 0) return { sent: 0, failures: [] };
   const BATCH_SIZE = 100;
-  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const chunk = recipients.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < uniqueRecipients.length; i += BATCH_SIZE) {
+    const chunk = uniqueRecipients.slice(i, i + BATCH_SIZE);
     try {
       const endpoint = `https://api.mnotify.com/api/sms/quick?key=${encodeURIComponent(apiKey)}`;
       const res = await fetch(endpoint, {
@@ -561,8 +563,8 @@ export async function sendBulkSmsViaMnotify(
       }));
       logBulkSmsToDb(failedLogs).catch(console.error);
     }
-    if (i + BATCH_SIZE < recipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    if (i + BATCH_SIZE < uniqueRecipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, 800)); // 800ms pacing prevents tripping mNotify quick SMS limiter
     }
   }
   return { sent, failures };
@@ -617,9 +619,11 @@ export async function sendBulkSmsViaArkesel(
 ): Promise<{ sent: number; failures: Array<{ phone: string; reason: string }> }> {
   let sent = 0;
   const failures: Array<{ phone: string; reason: string }> = [];
+  const uniqueRecipients = Array.from(new Set(recipients.map((r) => normalizePhone(r)).filter((r): r is string => !!r)));
+  if (uniqueRecipients.length === 0) return { sent: 0, failures: [] };
   const BATCH_SIZE = 100;
-  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const chunk = recipients.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < uniqueRecipients.length; i += BATCH_SIZE) {
+    const chunk = uniqueRecipients.slice(i, i + BATCH_SIZE);
     try {
       const endpoint = "https://sms.arkesel.com/api/v2/sms/send";
       const res = await fetch(endpoint, {
@@ -664,8 +668,8 @@ export async function sendBulkSmsViaArkesel(
       }));
       logBulkSmsToDb(failedLogs).catch(console.error);
     }
-    if (i + BATCH_SIZE < recipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    if (i + BATCH_SIZE < uniqueRecipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, 600)); // 600ms pacing prevents tripping Arkesel rate limits
     }
   }
   return { sent, failures };
@@ -1038,8 +1042,8 @@ export async function sendBulkSmsViaTxtConnect(
     return await sendBulkSmsViaHubtel(cId, cSec, from, recipients, body, type, agentId);
   }
 
-  // Deduplicate and clean recipient phone numbers
-  const uniqueRecipients = Array.from(new Set(recipients.map((r) => r.trim()).filter(Boolean)));
+  // Deduplicate and strictly normalize recipient phone numbers
+  const uniqueRecipients = Array.from(new Set(recipients.map((r) => normalizePhone(r)).filter((r): r is string => !!r)));
   if (uniqueRecipients.length === 0) return { sent: 0, failures: [] };
 
   const effectiveKey = apiKey;
@@ -1199,7 +1203,7 @@ export async function sendBulkSmsViaTxtConnect(
     }
 
     if (i + BATCH_SIZE < uniqueRecipients.length) {
-      await new Promise((resolve) => setTimeout(resolve, 1500)); // 1.5s pacing prevents tripping TxtConnect's token bucket
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2.0s pacing prevents tripping TxtConnect's token bucket
     }
   }
 

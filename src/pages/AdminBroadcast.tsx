@@ -187,6 +187,8 @@ export default function AdminBroadcast() {
               description: smsError?.message || smsData?.error || "SMS dispatch failed.",
               variant: "destructive"
             });
+          } else if (smsData?.queued_scheduler) {
+            smsResultMsg = ` · SMS: ${smsData.total_recipients?.toLocaleString()} queued for background delivery`;
           } else if (smsData?.sent !== undefined) {
             smsResultMsg = ` · SMS sent to ${smsData.sent} recipient(s)`;
           }

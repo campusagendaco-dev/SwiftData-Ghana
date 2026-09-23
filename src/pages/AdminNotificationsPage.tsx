@@ -122,13 +122,13 @@ interface SmsLog {
 const SMS_LIMIT = 160;
 
 const TARGET_LABELS: Record<string, string> = {
-  all: "Everyone (registered profiles)",
+  all: "Everyone (All Users & Order Customers)",
   agents: "All Agents & Sub-agents",
   sub_agents: "Sub-agents Only",
   parent_agents: "Parent Agents Only",
-  users: "Customers Only",
+  users: "Registered Accounts Only",
   pending_orders: "Pending Order Phones",
-  all_order_phones: "All Order Recipients (broadest reach)",
+  all_order_phones: "Order Customers Only",
 };
 
 const TOKENS = [
@@ -572,7 +572,14 @@ const AdminNotificationsPage = () => {
         toast({ title: "Notification saved, SMS failed", description: smsError.message + pushResultText, variant: "destructive" });
       } else if (smsData?.success) {
         setLastResult(smsData as SmsResult);
-        toast({ title: `Broadcast launched!`, description: `SMS sent via ${smsData.gateway?.toUpperCase() || "gateway"} to ${smsData.sent} recipients.${pushResultText}` });
+        if (smsData.queued_scheduler) {
+          toast({ 
+            title: "Broadcast Blasting Launched! 🚀", 
+            description: `Queued ${smsData.total_recipients?.toLocaleString()} recipients via ${smsData.gateway?.toUpperCase() || "SMS gateway"}. Processing automatically via background scheduler.${pushResultText}` 
+          });
+        } else {
+          toast({ title: `Broadcast launched!`, description: `SMS sent via ${smsData.gateway?.toUpperCase() || "gateway"} to ${smsData.sent} recipients.${pushResultText}` });
+        }
         fetchSmsLogs();
       } else if (smsData?.error) {
         toast({ title: "SMS error", description: smsData.error + pushResultText, variant: "destructive" });
