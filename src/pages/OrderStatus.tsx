@@ -239,7 +239,6 @@ const OrderStatus = () => {
 
   const isBeneficiaryOrder = (orderStatus === "fulfillment_failed" || failed) &&
     orderStatus !== "fulfilled" &&
-    orderStatus !== "completed" &&
     orderStatus !== "refunded" &&
     orderStatus !== "processing" && (
       orderData?.metadata?.in_beneficiary_queue === true ||
@@ -778,7 +777,7 @@ const OrderStatus = () => {
             </div>
 
             {/* Whitelist In-Queue Callout Card */}
-            {isBeneficiaryOrder && orderStatus !== "refunded" && (
+            {isBeneficiaryOrder && (
               <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-center gap-2">
                   <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
@@ -803,15 +802,16 @@ const OrderStatus = () => {
                       const targetId = orderData?.id || resolvedOrderId || reference;
                       if (!targetId) return;
 
-                      if (orderStatus === "fulfilled") {
+                      const currentDbStatus = String((orderData as any)?.status || orderStatus);
+                      if (currentDbStatus === "fulfilled" || currentDbStatus === "completed") {
                         toast.error("Order has already been delivered. It cannot be refunded.");
                         return;
                       }
-                      if (orderStatus === "processing") {
+                      if (currentDbStatus === "processing") {
                         toast.error("Order has already gone through the network provider API and is in transit. Cannot be refunded.");
                         return;
                       }
-                      if (orderStatus === "refunded") {
+                      if (currentDbStatus === "refunded") {
                         toast.error("Order has already been refunded.");
                         return;
                       }
