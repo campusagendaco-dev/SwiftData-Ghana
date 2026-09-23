@@ -823,38 +823,105 @@ const AdminNotificationsPage = () => {
             </div>
           )}
 
-          {/* 1-Click Quick Action Banner */}
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 font-bold text-lg">
-                🚀
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  1-Click "Delivery Live" SMS Blast
-                  <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">
-                    Broadest Audience (14,000+)
-                  </Badge>
-                </h3>
-                <p className="text-xs text-white/60 mt-0.5">
-                  Preset message to notify all purchasers with or without accounts that delivery is ongoing via Sender ID <code className="text-emerald-300 font-mono">SwiftDataGh</code>.
-                </p>
+          {/* 1-Click Quick Action Presets */}
+          <div className="rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 via-amber-500/5 to-transparent p-4.5 space-y-3 shadow-xl">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 font-bold text-lg shadow-inner">
+                  🚀
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    1-Click High-Reach Broadcast Presets
+                    <Badge variant="outline" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">
+                      Reaches 100% of Users & Customers
+                    </Badge>
+                  </h3>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Pre-fills the composer with optimized, high-converting copy and sets target to <strong className="text-white">Everyone (All Users & Order Customers)</strong>.
+                  </p>
+                </div>
               </div>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              className="gap-2 bg-emerald-500 hover:bg-emerald-600 text-black font-extrabold shrink-0 shadow-md shadow-emerald-500/20"
-              onClick={() => {
-                setTitle("SwiftData Alert");
-                setTargetType("all_order_phones");
-                setMessage("SwiftData Alert: Delivery is currently ongoing and we are LIVE! Order now at https://swiftdatagh.shop or join our official WhatsApp channel for live updates: https://whatsapp.com/channel/0029Vb81tu4HVvTdqauPgU0Z");
-                setSendSms(true);
-                toast({ title: "Preset Loaded!", description: "Pre-filled composer with 'Delivery Live' broadcast payload for all purchasers." });
-              }}
-            >
-              <Sparkles className="w-4 h-4" /> Load & Prepare Blast
-            </Button>
+
+            {/* Quick Preset Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle("SwiftData Alert");
+                  setTargetType("all");
+                  setMessage("SwiftData Alert: Delivery is currently ongoing and we are LIVE! Order now at https://swiftdatagh.shop or join our official WhatsApp channel for live updates: https://whatsapp.com/channel/0029Vb81tu4HVvTdqauPgU0Z");
+                  setSendSms(true);
+                  setSendWebPush(true);
+                  toast({ title: "Delivery Live Preset Loaded! 🚀", description: "Target set to Everyone (Profiles + Orders). SMS & Web Push enabled." });
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 text-left transition-all group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">🚀</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-emerald-300 truncate">Delivery Ongoing</p>
+                  <p className="text-[10px] text-white/40 truncate">WhatsApp link + Live orders</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle("System Upgrade Live ⚡");
+                  setTargetType("all");
+                  setMessage("Hello {{name}}, our systems have been upgraded for lightning-fast instant delivery! Top up your MTN, Telecel, or AT data bundle now at https://swiftdatagh.shop. Fast & reliable!");
+                  setSendSms(true);
+                  setSendWebPush(true);
+                  toast({ title: "System Upgrade Preset Loaded! ⚡", description: "Target set to Everyone with personalized {{name}} placeholder." });
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 hover:bg-amber-500/20 text-left transition-all group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">⚡</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-amber-300 truncate">System Upgrade</p>
+                  <p className="text-[10px] text-white/40 truncate">Instant speeds announcement</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle("WASSCE 2026 Out! 🎓");
+                  setTargetType("all");
+                  setMessage("🎓 WASSCE 2026 Results are OUT! WAEC Results Checker serials & PINs are now IN STOCK at wholesale rates. Buy & check instantly at https://swiftdatagh.shop or sell to students for quick profit! 📲 Support: 0540309637");
+                  setSendSms(true);
+                  setSendWebPush(true);
+                  toast({ title: "WASSCE Checker Preset Loaded! 🎓", description: "Target set to Everyone. WAEC checker promotion ready." });
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 text-left transition-all group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">🎓</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-blue-300 truncate">WASSCE Checkers</p>
+                  <p className="text-[10px] text-white/40 truncate">PINs & Serials wholesale</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle("Promo Alert 🎁");
+                  setTargetType("all");
+                  setMessage("Special Promo Alert! Cheap & fast data bundles are live today with instant delivery on all networks. Top up now at https://swiftdatagh.shop or share with friends!");
+                  setSendSms(true);
+                  setSendWebPush(true);
+                  toast({ title: "Promo Alert Preset Loaded! 🎁", description: "Target set to Everyone. Promo blast ready." });
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-purple-500/20 bg-purple-500/10 hover:bg-purple-500/20 text-left transition-all group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">🎁</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-purple-300 truncate">Promo Flash Sale</p>
+                  <p className="text-[10px] text-white/40 truncate">Cheap bundles discount</p>
+                </div>
+              </button>
+            </div>
           </div>
 
           {/* Compose card */}
