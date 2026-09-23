@@ -343,19 +343,60 @@ serve(async (req: any) => {
     if (action === "guest_refund") {
       const targetOrderId = resolvedReference || body.order_id;
       if (!targetOrderId) {
-        return new Response(JSON.stringify({ error: "Missing order_id for guest refund" }), {
+        return new Response(JSON.stringify({ success: false, refunded: false, error: "Missing order_id for guest refund" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
       const { data: ord, error: ordErr } = await supabaseAdmin.from("orders").select("*").eq("id", targetOrderId).maybeSingle();
       if (ordErr || !ord) {
-        return new Response(JSON.stringify({ error: "Order not found" }), {
+        return new Response(JSON.stringify({ success: false, refunded: false, error: "Order not found" }), {
           status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
-      const refundRes = await executeGuestBeneficiaryRefund(supabaseAdmin, ord, body.reason || "Admin guest refund");
+
+      // Check if order has already been fulfilled or completed
+      if (ord.status === "fulfilled" || ord.status === "completed") {
+        return new Response(JSON.stringify({
+          success: false,
+          refunded: false,
+          error: "Order has already been fulfilled by the carrier and delivered. It cannot be refunded."
+        }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Check if order has already been refunded
+      if (ord.status === "refunded" || ord.auto_refunded === true) {
+        return new Response(JSON.stringify({
+          success: false,
+          refunded: false,
+          already_refunded: true,
+          error: "Order has already been refunded."
+        }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Check if order has already gone through the provider API
+      const hasActiveProviderRef = ord.provider_order_id &&
+        ord.provider_order_id !== "" &&
+        ord.provider_order_id !== "failed_api_call" &&
+        ord.provider_order_id !== "timeout";
+
+      if (ord.status === "processing" && (hasActiveProviderRef || (ord.provider_id && ord.provider_order_id !== "failed_api_call"))) {
+        return new Response(JSON.stringify({
+          success: false,
+          refunded: false,
+          error: "Order has already been sent to the carrier network API and is processing. Orders that have gone through the API cannot be refunded."
+        }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      const refundRes = await executeGuestBeneficiaryRefund(supabaseAdmin, ord, body.reason || "Customer requested guest refund");
+      const httpStatus = refundRes.refunded ? 200 : (refundRes.error ? 400 : 200);
       return new Response(JSON.stringify(refundRes), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        status: httpStatus, headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 

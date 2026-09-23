@@ -47,6 +47,30 @@ export async function handleGuestBeneficiaryFailure(
   const customerPhone = normalizePhone(order.customer_phone || order.recipient || order.phone);
   const nowIso = new Date().toISOString();
 
+  // Fresh check from database to prevent overwriting an already fulfilled or active processing order
+  if (orderId && supabaseAdmin) {
+    const { data: freshOrder } = await supabaseAdmin
+      .from("orders")
+      .select("id, status, provider_order_id, provider_id")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (freshOrder?.status === "fulfilled" || freshOrder?.status === "completed") {
+      console.warn(`[guest-refund] Cannot mark order ${orderId} as non-beneficiary failed: already ${freshOrder.status}`);
+      return { success: false, carrierSubmitted: false };
+    }
+
+    const hasActiveProviderRef = freshOrder?.provider_order_id &&
+      freshOrder.provider_order_id !== "" &&
+      freshOrder.provider_order_id !== "failed_api_call" &&
+      freshOrder.provider_order_id !== "timeout";
+
+    if (freshOrder?.status === "processing" && (hasActiveProviderRef || (freshOrder.provider_id && freshOrder.provider_order_id !== "failed_api_call"))) {
+      console.warn(`[guest-refund] Cannot mark order ${orderId} as non-beneficiary failed: already in transit with provider (${freshOrder.provider_order_id || freshOrder.provider_id})`);
+      return { success: false, carrierSubmitted: false };
+    }
+  }
+
   console.log(`[guest-refund] Handling guest non-beneficiary failure for order ${orderId} (${customerPhone}). Setting up tracking resolution...`);
 
   // 1. Update order status and metadata
@@ -161,9 +185,91 @@ export async function executeGuestBeneficiaryRefund(
   providedPaystackKey?: string
 ): Promise<GuestRefundResult> {
   const orderId = order.id;
-  const customerPhone = normalizePhone(order.customer_phone || order.recipient || order.phone);
-  const orderAmount = Number(order.amount || 0);
-  const targetRef = order.payment_reference || order.reference || orderId;
+
+  // 1. Ground truth check: Fetch fresh order details directly from database
+  let currentOrder = order;
+  if (orderId && supabaseAdmin) {
+    const { data: freshOrder, error: freshErr } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (!freshErr && freshOrder) {
+      currentOrder = freshOrder;
+    }
+  }
+
+  // 2. SAFETY GUARD: Fulfilled or completed orders CAN NEVER be refunded!
+  if (currentOrder.status === "fulfilled" || currentOrder.status === "completed") {
+    console.warn(`[guest-refund] REFUND BLOCKED: Order ${orderId} has status '${currentOrder.status}' (already delivered).`);
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "Order has already been fulfilled and delivered to recipient. Delivered orders cannot be refunded."
+    };
+  }
+
+  // 3. SAFETY GUARD: Already refunded orders cannot be double refunded
+  if (currentOrder.status === "refunded" || currentOrder.auto_refunded === true) {
+    console.warn(`[guest-refund] REFUND BLOCKED: Order ${orderId} is already refunded.`);
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "Order has already been refunded."
+    };
+  }
+
+  // 4. SAFETY GUARD: Orders currently in transit with an upstream wholesale provider API CANNOT be refunded!
+  const hasActiveProviderRef = currentOrder.provider_order_id &&
+    currentOrder.provider_order_id !== "" &&
+    currentOrder.provider_order_id !== "failed_api_call" &&
+    currentOrder.provider_order_id !== "timeout";
+
+  if (currentOrder.status === "processing" && (hasActiveProviderRef || (currentOrder.provider_id && currentOrder.provider_order_id !== "failed_api_call"))) {
+    console.warn(`[guest-refund] REFUND BLOCKED: Order ${orderId} has already gone through carrier provider API (${currentOrder.provider_order_id || currentOrder.provider_id}) and is processing.`);
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "Order has already been submitted to the upstream network provider and is currently processing. Orders that have gone through the API cannot be refunded."
+    };
+  }
+
+  // 5. SAFETY GUARD: Pending/paid orders that haven't attempted fulfillment yet cannot be refunded on-demand
+  if (["pending", "paid", "awaiting_payment"].includes(currentOrder.status)) {
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: `Order is currently in '${currentOrder.status}' state. It cannot be refunded while awaiting initial processing.`
+    };
+  }
+
+  // 6. SAFETY GUARD: Wallet orders cannot be refunded via Paystack gateway
+  const paymentMethod = String(currentOrder.payment_method || "").toLowerCase().trim();
+  if (paymentMethod === "wallet" || paymentMethod === "credit") {
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "This order was paid using agent wallet balance. It cannot be refunded via Mobile Money gateway; wallet orders must be refunded to agent wallet."
+    };
+  }
+
+  const customerPhone = normalizePhone(currentOrder.customer_phone || currentOrder.recipient || currentOrder.phone);
+  const orderAmount = Number(currentOrder.amount || 0);
+  const targetRef = currentOrder.payment_reference || currentOrder.reference || orderId;
+
+  if (orderAmount <= 0) {
+    return {
+      success: false,
+      refunded: false,
+      gateway: "none",
+      error: "Order has zero refundable amount."
+    };
+  }
 
   console.log(`[guest-refund] Executing on-demand refund for order ${orderId} (Amount: GHS ${orderAmount}, Ref: ${targetRef})`);
 

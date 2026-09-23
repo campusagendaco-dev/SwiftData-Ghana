@@ -65,6 +65,7 @@ function translateFailureReason(reason?: string): string {
 }
 
 function isBeneficiaryFailure(status: OrderStatusType, message?: string, network?: string): boolean {
+  if (status === "fulfilled" || status === "refunded" || status === "processing") return false;
   const r = (message || "").toLowerCase();
   return (
     r.includes("beneficiary") ||
@@ -77,15 +78,11 @@ function isBeneficiaryFailure(status: OrderStatusType, message?: string, network
 }
 
 function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string, isBeneficiary?: boolean) {
-  if (isBeneficiary || isBeneficiaryFailure(status, message, network)) {
-    return { 
-      color: "#F59E0B", 
-      glow: "rgba(245,158,11,0.25)", 
-      label: "In Queue for Whitelist Verification ⏳", 
-      sub: "Your recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
-      badge: "In Queue ⏳" 
-    };
+  // Fulfilled orders take absolute highest precedence — bundle has delivered
+  if (status === "fulfilled") {
+    return { color: "#10B981", glow: "rgba(16,185,129,0.22)", label: "Purchase Successful", sub: "Data bundle delivered successfully to recipient line!", badge: "Delivered" };
   }
+  // Refunded orders take second precedence — funds returned
   if (status === "refunded") {
     const isMomo = message?.toLowerCase().includes("momo") || message?.toLowerCase().includes("paystack") || message?.toLowerCase().includes("mobile money");
     return {
@@ -96,14 +93,22 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
       badge: "Refunded 💰"
     };
   }
-  if (failed || status === "fulfillment_failed") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.25)", label: "Delivery Failed", sub: translateFailureReason(message) || "Something went wrong with your order", badge: "Failed" };
-  }
-  if (status === "fulfilled") {
-    return { color: "#10B981", glow: "rgba(16,185,129,0.22)", label: "Purchase Successful", sub: "Data bundle delivered successfully to recipient line!", badge: "Delivered" };
-  }
+  // Actively processing orders
   if (status === "processing") {
     return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Transmitting Data Bundle", sub: translateFailureReason(message) || "Payment confirmed. Transmitting data bundle payload to carrier network (10 - 60 mins).", badge: "Processing" };
+  }
+  // Beneficiary queue ONLY applies when order has failed delivery or is explicitly in beneficiary state
+  if ((isBeneficiary || isBeneficiaryFailure(status, message, network)) && (failed || status === "fulfillment_failed")) {
+    return { 
+      color: "#F59E0B", 
+      glow: "rgba(245,158,11,0.25)", 
+      label: "In Queue for Whitelist Verification ⏳", 
+      sub: "Your recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
+      badge: "In Queue ⏳" 
+    };
+  }
+  if (failed || status === "fulfillment_failed") {
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.25)", label: "Delivery Failed", sub: translateFailureReason(message) || "Something went wrong with your order", badge: "Failed" };
   }
   if (status === "paid") {
     return { color: "#F59E0B", glow: "rgba(245,158,11,0.22)", label: "Payment Confirmed", sub: "Payment received. Queuing order for carrier fulfillment.", badge: "Queued" };
@@ -232,8 +237,15 @@ const OrderStatus = () => {
   const brandColor = isStoreRoute ? (storeInfo?.color || "#f59e0b") : "#f59e0b";
   const brandDomain = isStoreRoute ? (activeDomain || (storeInfo?.custom_domain) || window.location.host) : "swiftdatagh.shop";
 
-  const isBeneficiaryOrder = orderData?.metadata?.in_beneficiary_queue === true ||
-    isBeneficiaryFailure(orderStatus, statusMessage || orderData?.failure_reason, network || orderData?.network);
+  const isBeneficiaryOrder = (orderStatus === "fulfillment_failed" || failed) &&
+    orderStatus !== "fulfilled" &&
+    orderStatus !== "completed" &&
+    orderStatus !== "refunded" &&
+    orderStatus !== "processing" && (
+      orderData?.metadata?.in_beneficiary_queue === true ||
+      orderData?.metadata?.guest_refund_eligible === true ||
+      isBeneficiaryFailure(orderStatus, statusMessage || orderData?.failure_reason, network || orderData?.network)
+    );
 
   const meta = getStatusMeta(orderStatus, failed && !isBeneficiaryOrder, network || orderData?.network, statusMessage || orderData?.failure_reason, isBeneficiaryOrder);
 
@@ -399,8 +411,12 @@ const OrderStatus = () => {
   };
 
   const getProgressPercentage = () => {
-    if (isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork)) return 65;
-    if (orderStatus === "fulfilled" || orderStatus === "fulfillment_failed" || orderStatus === "error") return 100;
+    if (orderStatus === "fulfilled" || orderStatus === "error") return 100;
+    if (orderStatus === "refunded") return 100;
+    if (orderStatus === "fulfillment_failed") {
+      if (isBeneficiaryOrder) return 65;
+      return 100;
+    }
     if (orderStatus === "not_paid") return 0;
     const totalSecs = estMinutes * 60;
     const elapsed = Math.min(totalSecs - 2, elapsedSeconds);
@@ -678,7 +694,7 @@ const OrderStatus = () => {
                   <div className="relative w-26 h-26 flex items-center justify-center">
                     <div className="absolute inset-0 blur-2xl opacity-25 animate-pulse" style={{ backgroundColor: meta.color }} />
                     <div className="relative z-10 w-22 h-22 rounded-3xl bg-[#090a10] border border-slate-800/90 flex items-center justify-center shadow-2xl">
-                      {isBeneficiaryFailure(orderStatus, statusMessage, orderNetwork) ? (
+                      {isBeneficiaryOrder ? (
                         <div className="relative flex items-center justify-center">
                           <Clock className="w-10 h-10 text-amber-400 animate-pulse drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]" />
                         </div>
@@ -786,6 +802,20 @@ const OrderStatus = () => {
                     onClick={async () => {
                       const targetId = orderData?.id || resolvedOrderId || reference;
                       if (!targetId) return;
+
+                      if (orderStatus === "fulfilled") {
+                        toast.error("Order has already been delivered. It cannot be refunded.");
+                        return;
+                      }
+                      if (orderStatus === "processing") {
+                        toast.error("Order has already gone through the network provider API and is in transit. Cannot be refunded.");
+                        return;
+                      }
+                      if (orderStatus === "refunded") {
+                        toast.error("Order has already been refunded.");
+                        return;
+                      }
+
                       const confirmed = window.confirm(`Request an immediate refund of GH₵ ${Number(orderData?.amount || 0).toFixed(2)} to your Mobile Money account?`);
                       if (!confirmed) return;
 

@@ -797,6 +797,19 @@ export default function AdminBeneficiaryOrders() {
       return;
     }
 
+    if (ord.status === "fulfilled" || ord.status === "completed") {
+      toast({ title: "Cannot Refund", description: "This order has already been fulfilled and delivered by the carrier. It cannot be refunded.", variant: "destructive" });
+      return;
+    }
+
+    const hasActiveProviderRef = (ord as any).provider_order_id &&
+      !["failed_api_call", "timeout", ""].includes((ord as any).provider_order_id);
+
+    if (ord.status === "processing" && (hasActiveProviderRef || (ord as any).provider_id)) {
+      toast({ title: "Cannot Refund", description: "This order has already gone through the network provider API and is in transit. It cannot be refunded.", variant: "destructive" });
+      return;
+    }
+
     const isGuest = !ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order;
 
     if (!confirm(`Are you sure you want to refund GH₵ ${Number(ord.amount).toFixed(2)} to ${isGuest ? "customer's Mobile Money/payment account" : ord.agent_email}?`)) {
@@ -1601,7 +1614,7 @@ export default function AdminBeneficiaryOrders() {
                             Retry
                           </Button>
 
-                          {ord.status !== "refunded" && !ord.auto_refunded && (
+                          {ord.status !== "refunded" && !ord.auto_refunded && ord.status !== "fulfilled" && ord.status !== "completed" && (
                             <Button
                               variant="outline"
                               size="sm"

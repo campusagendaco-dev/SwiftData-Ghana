@@ -9,7 +9,7 @@ import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
 import { getActiveProviders, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
-import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
+import { handleGuestBeneficiaryFailure, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
 
 
 function getFirstEnvValue(keys: string[]): string {
