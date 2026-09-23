@@ -1,10 +1,7 @@
 declare const Deno: any;
 
-// @ts-ignore
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-// @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-// removed node:crypto
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
@@ -1791,10 +1788,12 @@ serve(async (req: Request) => {
       }
     }
 
-    const handlerType = baseUrlToLower.includes("datamart") 
+    const handlerType: string = baseUrlToLower.includes("datamart") 
       ? "datamart" 
       : baseUrlToLower.includes("datahub") 
       ? "datahub" 
+      : baseUrlToLower.includes("spendless")
+      ? "spendless"
       : baseUrlToLower.includes("qhowmenzconsult")
       ? "qhowmenzconsult"
       : baseUrlToLower.includes("skdataplug")
