@@ -144,6 +144,7 @@ const OrderStatus = () => {
   const redirectedRef = useRef(false);
   const hasPlayedSoundRef = useRef(false);
   const [resolvedOrderId, setResolvedOrderId] = useState<string | null>(null);
+  const [isClaimingRefund, setIsClaimingRefund] = useState(false);
 
   // State for realtime console tracking
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -772,13 +773,52 @@ const OrderStatus = () => {
                 <p className="text-xs text-slate-300 font-medium leading-relaxed">
                   Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> is in queue for carrier beneficiary verification. The data bundle will deliver automatically once verified.
                 </p>
-                <div className="pt-1">
+                <div className="pt-1 flex flex-col gap-2">
                   <button
                     onClick={() => navigate(`/submit-numbers?phone=${encodeURIComponent(phoneParam || orderPhone || "")}`)}
                     className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
                   >
                     <Zap className="w-4 h-4 fill-slate-950" />
                     Expedite / Verify Number Now 🚀
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      const targetId = orderData?.id || resolvedOrderId || reference;
+                      if (!targetId) return;
+                      const confirmed = window.confirm(`Request an immediate refund of GH₵ ${Number(orderData?.amount || 0).toFixed(2)} to your Mobile Money account?`);
+                      if (!confirmed) return;
+
+                      setIsClaimingRefund(true);
+                      try {
+                        const { data, error } = await supabase.functions.invoke("verify-payment", {
+                          body: { action: "guest_refund", order_id: targetId }
+                        });
+                        if (error) {
+                          toast.error(error.message || "Failed to process refund. Please contact support.");
+                        } else if (data?.refunded) {
+                          toast.success(`Refund Completed! GH₵ ${Number(orderData?.amount || 0).toFixed(2)} sent to Mobile Money via Paystack.`);
+                          setOrderStatus("refunded");
+                          setOrderData((prev: any) => ({
+                            ...prev,
+                            status: "refunded",
+                            refund_amount: prev?.amount,
+                            metadata: { ...(prev?.metadata || {}), guest_refund_gateway: "paystack" }
+                          }));
+                        } else {
+                          toast.error(data?.error || "Refund queued for manual payout by support team.");
+                        }
+                      } catch (e: any) {
+                        toast.error(e?.message || "An error occurred while requesting your refund.");
+                      } finally {
+                        setIsClaimingRefund(false);
+                      }
+                    }}
+                    disabled={isClaimingRefund}
+                    className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    {isClaimingRefund ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-purple-400" />}
+                    Request Refund to Mobile Money 💰
                   </button>
                 </div>
               </div>

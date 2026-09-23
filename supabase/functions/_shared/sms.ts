@@ -1267,10 +1267,11 @@ export async function sendPaymentSms(
     if (type === "custom" && vars.message) {
       message = String(vars.message);
     } else if (type === "order_failed" && isBenReason) {
-      message = `SwiftData Notice: Your number (${recipient}) is not verified on the MTN beneficiary list.\n\n` +
-        `Please submit your number for verification at:\n` +
-        `https://swiftdatagh.shop/submit-numbers\n\n` +
-        `After verification (which takes 1 to 4 days), your order will be delivered automatically! No panic!`;
+      const orderRef = String(vars.order_id || vars.reference || "").trim();
+      const trackingUrl = orderRef ? `https://swiftdatagh.shop/order-status?id=${orderRef}` : `https://swiftdatagh.shop/order-status`;
+      message = `SwiftData Notice: Your order for ${recipient} could not deliver because this number is not on the MTN beneficiary list.\n\n` +
+        `We have queued your number for carrier approval. Track your order status or request a refund here:\n` +
+        `${trackingUrl}`;
     } else {
       const tMap = templates as Record<string, string>;
       message = formatTemplate(tMap[type] || templates.payment_success, vars);

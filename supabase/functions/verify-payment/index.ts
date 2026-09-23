@@ -13,7 +13,7 @@ import { getActiveProviders, logProviderError, resolveProvidersForOrder } from "
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
-import { executeGuestBeneficiaryRefund, isGuestOrder } from "../_shared/guest-refund.ts";
+import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
 
 // --- Utilities ---
 
@@ -1734,8 +1734,8 @@ serve(async (req: any) => {
 
       let guestRefundResult = null;
       if (isBeneficiaryErr && isGuestOrder(claimedOrder)) {
-        console.log(`[verify-payment] Non-beneficiary failure on guest order ${targetReference}. Executing guest auto-refund & carrier submission...`);
-        guestRefundResult = await executeGuestBeneficiaryRefund(supabaseAdmin, claimedOrder, targetFailureReason);
+        console.log(`[verify-payment] Non-beneficiary failure on guest order ${targetReference}. Queuing carrier whitelist submission & sending tracking SMS...`);
+        guestRefundResult = await handleGuestBeneficiaryFailure(supabaseAdmin, claimedOrder, targetFailureReason);
       } else {
         await supabaseAdmin.from("orders").update({
           status: targetStatus,

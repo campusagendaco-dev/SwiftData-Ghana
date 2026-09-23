@@ -18,7 +18,6 @@ export function isGuestOrder(order: any): boolean {
   const paymentMethod = String(order.payment_method || "").toLowerCase().trim();
   const isDirectGatewayPayment = ["paystack", "momo", "card", "direct_pay", "cash"].includes(paymentMethod);
   
-  // Either no account/agent assigned, or explicitly paid directly via external MoMo/card gateway
   return hasNoAgent || isDirectGatewayPayment;
 }
 
@@ -33,9 +32,127 @@ export interface GuestRefundResult {
 }
 
 /**
- * Executes an automated gateway refund (Paystack) for a guest order that failed
- * due to carrier beneficiary / whitelist rejection, automatically submits the recipient
- * number for carrier approval, and sends a transparent notification SMS.
+ * Handles a non-beneficiary failure for a guest order WITHOUT triggering an immediate
+ * automatic money deduction. Instead, it:
+ * 1. Auto-submits the number to the carrier whitelist queue.
+ * 2. Marks the order as eligible for manual on-demand refund when tracked.
+ * 3. Sends the dedicated Non-Beneficiary SMS with an order tracking link.
+ */
+export async function handleGuestBeneficiaryFailure(
+  supabaseAdmin: any,
+  order: any,
+  failureReason: string
+): Promise<{ success: boolean; carrierSubmitted: boolean }> {
+  const orderId = order.id;
+  const customerPhone = normalizePhone(order.customer_phone || order.recipient || order.phone);
+  const nowIso = new Date().toISOString();
+
+  console.log(`[guest-refund] Handling guest non-beneficiary failure for order ${orderId} (${customerPhone}). Setting up tracking resolution...`);
+
+  // 1. Update order status and metadata
+  const existingMetadata = order.metadata || {};
+  const updatedMetadata = {
+    ...existingMetadata,
+    is_guest_order: true,
+    non_beneficiary_failed: true,
+    guest_refund_eligible: true,
+    in_beneficiary_queue: true,
+    carrier_submission_queued_at: nowIso,
+  };
+
+  await supabaseAdmin.from("orders").update({
+    status: "fulfillment_failed",
+    failure_reason: "MTN Beneficiary Error: Recipient line is not registered on carrier whitelist.",
+    metadata: updatedMetadata,
+    updated_at: nowIso,
+  }).eq("id", orderId);
+
+  // 2. Submit number to carrier whitelist (beneficiary_submissions + DataHub)
+  let carrierSubmitted = false;
+  if (customerPhone) {
+    try {
+      const cleanDigits = customerPhone.replace(/\D/g, "");
+      let localPhone = cleanDigits;
+      if (cleanDigits.startsWith("233") && cleanDigits.length === 12) {
+        localPhone = "0" + cleanDigits.slice(3);
+      } else if (cleanDigits.length === 9) {
+        localPhone = "0" + cleanDigits;
+      }
+
+      await supabaseAdmin.from("beneficiary_submissions").upsert({
+        phone_number: localPhone,
+        network: "MTN",
+        status: "submitted",
+        source: "guest_beneficiary_failure",
+        submitted_by: "System Sentinel",
+        notes: `Auto-submitted after failed guest order ${orderId.slice(0, 8)}`,
+      }, { onConflict: "phone_number" });
+
+      const { data: provider } = await supabaseAdmin
+        .from("providers")
+        .select("api_key, base_url")
+        .eq("handler_type", "datahub")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const dhApiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
+      const dhBaseUrl = (Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
+      const submitUrl = dhBaseUrl.endsWith("/submit-numbers")
+        ? dhBaseUrl
+        : dhBaseUrl.includes("/purchases")
+        ? `${dhBaseUrl}/submit-numbers`
+        : `${dhBaseUrl}/purchases/submit-numbers`;
+
+      if (dhApiKey) {
+        fetchViaDb(supabaseAdmin, submitUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": dhApiKey,
+            "Authorization": `Bearer ${dhApiKey}`,
+          },
+          body: JSON.stringify({ numbers: localPhone }),
+          disableFallback: true,
+        }, 10).catch((err: any) => console.error("[guest-refund] Background DataHub submit error:", err));
+        carrierSubmitted = true;
+      }
+    } catch (e) {
+      console.error("[guest-refund] Carrier submit error:", e);
+    }
+  }
+
+  // 3. Send Dedicated Non-Beneficiary SMS with Tracking Link
+  if (customerPhone) {
+    try {
+      const trackingUrl = `https://swiftdatagh.shop/order-status?id=${orderId}`;
+      const smsMessage = `SwiftData Notice: Your order for ${customerPhone} could not deliver because this number is not on the MTN beneficiary list.\n\n` +
+        `We have queued your number for carrier approval. Track order or request refund:\n` +
+        `${trackingUrl}`;
+
+      await sendPaymentSms(
+        supabaseAdmin,
+        customerPhone,
+        "custom",
+        {
+          message: smsMessage,
+          reason: "Not on MTN beneficiary list",
+          order_id: orderId,
+          reference: order.reference || orderId,
+          network: "MTN",
+        },
+        order.agent_id || undefined
+      );
+    } catch (smsErr) {
+      console.error("[guest-refund] Failed to send non-beneficiary SMS:", smsErr);
+    }
+  }
+
+  return { success: true, carrierSubmitted };
+}
+
+/**
+ * Executes a Paystack refund for a guest order when explicitly requested
+ * (e.g. user clicks "Request Refund to Mobile Money" on tracking page, or admin clicks "Refund MoMo").
  */
 export async function executeGuestBeneficiaryRefund(
   supabaseAdmin: any,
@@ -48,9 +165,8 @@ export async function executeGuestBeneficiaryRefund(
   const orderAmount = Number(order.amount || 0);
   const targetRef = order.payment_reference || order.reference || orderId;
 
-  console.log(`[guest-refund] Initiating guest beneficiary refund for order ${orderId} (Amount: GHS ${orderAmount}, Phone: ${customerPhone}, Ref: ${targetRef})`);
+  console.log(`[guest-refund] Executing on-demand refund for order ${orderId} (Amount: GHS ${orderAmount}, Ref: ${targetRef})`);
 
-  // 1. Resolve Paystack Secret Key prioritizing Environment Secrets
   let paystackKey = Deno.env.get("PAYSTACK_SECRET_KEY") || providedPaystackKey || "";
   if (!paystackKey) {
     try {
@@ -70,7 +186,6 @@ export async function executeGuestBeneficiaryRefund(
   let refundError = "";
   let gatewayUsed: "paystack" | "manual" | "none" = "none";
 
-  // 2. Execute Paystack Refund if key and amount are valid
   if (paystackKey && orderAmount > 0 && targetRef) {
     try {
       gatewayUsed = "paystack";
@@ -79,11 +194,9 @@ export async function executeGuestBeneficiaryRefund(
         transaction: targetRef,
         amount: amountInPesewas,
         currency: "GHS",
-        customer_note: `SwiftData: Refund for order ${orderId.slice(0, 8)} - recipient number is not on MTN beneficiary list.`,
-        merchant_note: `Auto-refund for non-beneficiary guest order ${orderId}`,
+        customer_note: `SwiftData: Refund for order ${orderId.slice(0, 8)} - recipient number not on MTN beneficiary list.`,
+        merchant_note: `Requested refund for non-beneficiary guest order ${orderId}`,
       };
-
-      console.log(`[guest-refund] Calling Paystack Refund API for transaction ${targetRef} (${amountInPesewas} pesewas)...`);
 
       let response: Response;
       try {
@@ -115,8 +228,6 @@ export async function executeGuestBeneficiaryRefund(
         refundId = String(resData.data?.id || resData.data?.transaction?.id || "paystack_refunded");
       } else {
         refundError = resData.message || `Paystack refund HTTP ${response.status}`;
-        console.warn(`[guest-refund] Paystack refund was not approved: ${refundError}`);
-        // If Paystack says already refunded, treat as success
         if (/already refunded/i.test(refundError)) {
           refundSuccess = true;
           refundId = "already_refunded";
@@ -130,7 +241,6 @@ export async function executeGuestBeneficiaryRefund(
     refundError = !paystackKey ? "Paystack API key not configured" : "Invalid order amount or missing payment reference";
   }
 
-  // 3. Update Order Record with Status, Refund Details, and Audit Trail
   const nowIso = new Date().toISOString();
   const existingMetadata = order.metadata || {};
   
@@ -147,7 +257,7 @@ export async function executeGuestBeneficiaryRefund(
 
   const updatePatch: Record<string, any> = {
     metadata: updatedMetadata,
-    failure_reason: `MTN Beneficiary Error: Recipient is not registered on carrier whitelist. ${refundSuccess ? 'GHS ' + orderAmount.toFixed(2) + ' automatically refunded to Mobile Money via Paystack.' : 'Refund queued for manual payout.'}`,
+    failure_reason: `MTN Beneficiary Error: Recipient is not registered on carrier whitelist. ${refundSuccess ? 'GHS ' + orderAmount.toFixed(2) + ' refunded to Mobile Money via Paystack.' : 'Refund queued for manual payout.'}`,
     updated_at: nowIso,
   };
 
@@ -155,16 +265,12 @@ export async function executeGuestBeneficiaryRefund(
     updatePatch.status = "refunded";
     updatePatch.auto_refunded = true;
     updatePatch.refund_amount = orderAmount;
-    updatePatch.refund_reason = "Auto-refund: MTN number not on beneficiary list. Refunded to Mobile Money/Card via Paystack.";
+    updatePatch.refund_reason = "Requested refund: MTN number not on beneficiary list. Refunded to Mobile Money via Paystack.";
     updatePatch.refunded_at = nowIso;
-  } else {
-    // Keep as fulfillment_failed so admin can easily identify and process manual payout
-    updatePatch.status = "fulfillment_failed";
   }
 
   await supabaseAdmin.from("orders").update(updatePatch).eq("id", orderId);
 
-  // 4. Log System Event
   log(supabaseAdmin, {
     level: refundSuccess ? "info" : "warn",
     source: "guest-refund",
@@ -184,76 +290,11 @@ export async function executeGuestBeneficiaryRefund(
     }
   });
 
-  // 5. Automatically Submit Number to Carrier Whitelist (DataHub)
-  let carrierSubmitted = false;
-  if (customerPhone) {
-    try {
-      // 5a. Log to beneficiary_submissions table
-      const cleanDigits = customerPhone.replace(/\D/g, "");
-      let localPhone = cleanDigits;
-      if (cleanDigits.startsWith("233") && cleanDigits.length === 12) {
-        localPhone = "0" + cleanDigits.slice(3);
-      } else if (cleanDigits.length === 9) {
-        localPhone = "0" + cleanDigits;
-      }
-
-      await supabaseAdmin.from("beneficiary_submissions").upsert({
-        phone_number: localPhone,
-        network: "MTN",
-        status: "submitted",
-        source: "guest_auto_refund",
-        submitted_by: "Guest Auto-Refund Engine",
-        notes: `Auto-submitted after failed guest order ${orderId.slice(0, 8)}`,
-      }, { onConflict: "phone_number" });
-
-      // 5b. Submit to DataHub API if provider credentials are ready
-      const { data: provider } = await supabaseAdmin
-        .from("providers")
-        .select("api_key, base_url")
-        .eq("handler_type", "datahub")
-        .eq("is_active", true)
-        .maybeSingle();
-
-      const dhApiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
-      const dhBaseUrl = (Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external").trim().replace(/\/+$/, "");
-      const submitUrl = dhBaseUrl.endsWith("/submit-numbers")
-        ? dhBaseUrl
-        : dhBaseUrl.includes("/purchases")
-        ? `${dhBaseUrl}/submit-numbers`
-        : `${dhBaseUrl}/purchases/submit-numbers`;
-
-      if (dhApiKey) {
-        fetchViaDb(supabaseAdmin, submitUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": dhApiKey,
-            "Authorization": `Bearer ${dhApiKey}`,
-          },
-          body: JSON.stringify({ numbers: localPhone }),
-          disableFallback: true,
-        }, 10).catch((err: any) => console.error("[guest-refund] Background DataHub submit error:", err));
-        carrierSubmitted = true;
-      }
-    } catch (carrierErr) {
-      console.error("[guest-refund] Carrier submit error:", carrierErr);
-    }
-  }
-
-  // 6. Send Reassuring SMS to Customer
-  if (customerPhone) {
+  // Send Refund Confirmation SMS
+  if (customerPhone && refundSuccess) {
     try {
       const trackingUrl = `https://swiftdatagh.shop/order-status?id=${orderId}`;
-      let smsMessage = "";
-
-      if (refundSuccess) {
-        smsMessage = `SwiftData Alert: Your GHS ${orderAmount.toFixed(2)} MTN order for ${customerPhone} failed because the number is not on the carrier beneficiary list.\n\n` +
-          `GHS ${orderAmount.toFixed(2)} has been refunded directly to your Mobile Money/payment account!\n\n` +
-          `We have also submitted your number for carrier approval so your next order will deliver instantly. Track: ${trackingUrl}`;
-      } else {
-        smsMessage = `SwiftData Alert: Your GHS ${orderAmount.toFixed(2)} MTN order for ${customerPhone} failed because the number is not on the carrier beneficiary list.\n\n` +
-          `Our support team has queued your refund for manual payout. Your number is also queued for carrier approval. Track: ${trackingUrl}`;
-      }
+      const smsMessage = `SwiftData Alert: GHS ${orderAmount.toFixed(2)} for ${customerPhone} has been refunded to your Mobile Money account via Paystack! Ref: ${String(targetRef).slice(0, 8)}. Track: ${trackingUrl}`;
 
       await sendPaymentSms(
         supabaseAdmin,
@@ -261,24 +302,23 @@ export async function executeGuestBeneficiaryRefund(
         "custom",
         {
           message: smsMessage,
-          reason: "Not on MTN beneficiary list",
+          reason: "Refund completed to Mobile Money",
           amount: orderAmount.toFixed(2),
           network: "MTN",
         },
         order.agent_id || undefined
       );
     } catch (smsErr) {
-      console.error("[guest-refund] Failed to send customer SMS:", smsErr);
+      console.error("[guest-refund] Failed to send customer refund SMS:", smsErr);
     }
   }
 
   return {
-    success: true,
+    success: refundSuccess,
     refunded: refundSuccess,
     gateway: gatewayUsed,
     reference: targetRef,
     refundId: refundId || undefined,
     error: refundError || undefined,
-    carrierSubmitted,
   };
 }

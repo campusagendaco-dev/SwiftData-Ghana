@@ -12,7 +12,7 @@ import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
 import { getActiveProviders, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
-import { executeGuestBeneficiaryRefund, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
+import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
 
 
 function getFirstEnvValue(keys: string[]): string {
@@ -2073,8 +2073,8 @@ serve(async (req: Request) => {
     const failureReason = result.reason || "Provider rejected the request";
 
     if (isBeneficiaryFailure(failureReason) && isGuestOrder(existingOrder)) {
-      console.log(`[paystack-webhook] Non-beneficiary failure on guest order ${orderId}. Triggering guest refund & carrier submission...`);
-      await executeGuestBeneficiaryRefund(supabaseAdmin, existingOrder, failureReason, PAYSTACK_SECRET_KEY);
+      console.log(`[paystack-webhook] Non-beneficiary failure on guest order ${orderId}. Queuing carrier submission & sending tracking SMS...`);
+      await handleGuestBeneficiaryFailure(supabaseAdmin, existingOrder, failureReason);
     } else {
       await supabaseAdmin.from("orders").update({ 
         status: failureStatus, 
