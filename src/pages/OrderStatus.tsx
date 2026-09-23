@@ -128,7 +128,7 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
 const OrderStatus = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const reference = searchParams.get("reference") || searchParams.get("trxref") || "";
+  const reference = searchParams.get("reference") || searchParams.get("trxref") || searchParams.get("ref") || searchParams.get("id") || searchParams.get("order_id") || "";
   
   const [orderNetwork, setOrderNetwork] = useState<string>("");
   const [orderPackageSize, setOrderPackageSize] = useState<string>("");
@@ -316,6 +316,11 @@ const OrderStatus = () => {
           const isRateLimit = error.status === 429 || String(error.message).includes("429") || String(error.message).includes("slow down");
           if (isRateLimit) {
             console.warn("[OrderStatus] verify-payment 429 rate limited. Relying on DB status RPC polling.");
+            return;
+          }
+          const isNotFound = error.status === 404 || String(error.message).includes("404");
+          if (isNotFound) {
+            console.warn("[OrderStatus] verify-payment returned 404. Order not found yet or awaiting creation.");
             return;
           }
           throw error;

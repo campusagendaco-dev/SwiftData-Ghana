@@ -347,10 +347,35 @@ serve(async (req: any) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
-      const { data: ord, error: ordErr } = await supabaseAdmin.from("orders").select("*").eq("id", targetOrderId).maybeSingle();
-      if (ordErr || !ord) {
+
+      let ord: any = null;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetOrderId);
+      if (isUuid) {
+        const { data: ordById } = await supabaseAdmin.from("orders").select("*").eq("id", targetOrderId).maybeSingle();
+        ord = ordById;
+      }
+      if (!ord) {
+        const { data: ordByClientRef } = await supabaseAdmin
+          .from("orders")
+          .select("*")
+          .eq("metadata->>client_reference", targetOrderId)
+          .maybeSingle();
+        ord = ordByClientRef;
+      }
+      if (!ord) {
+        const { data: ordByMetaRef } = await supabaseAdmin
+          .from("orders")
+          .select("*")
+          .or(`metadata->>reference.eq.${targetOrderId},metadata->>payment_reference.eq.${targetOrderId},metadata->>paystack_reference.eq.${targetOrderId},metadata->>trxref.eq.${targetOrderId}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        ord = ordByMetaRef;
+      }
+
+      if (!ord) {
         return new Response(JSON.stringify({ success: false, refunded: false, error: "Order not found" }), {
-          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
@@ -452,7 +477,7 @@ serve(async (req: any) => {
 
     let targetReference = resolvedReference;
 
-    // Resolve custom API references (non-UUID or custom)
+    // Resolve custom API references (UUID, non-UUID, phone number, or Paystack reference)
     if (resolvedReference) {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedReference);
       if (isUuid) {
@@ -464,19 +489,31 @@ serve(async (req: any) => {
           .maybeSingle();
         if (orderById) {
           targetReference = orderById.id;
-        } else {
-          // Fallback to client_reference search if not found by direct ID
-          const { data: orderByClientRef } = await supabaseAdmin
+        }
+      }
+
+      if (!targetReference) {
+        // 1. Check if resolvedReference is a phone number (e.g. 024xxxxxxx or 233xxxxxxxxx)
+        const digitsOnly = String(resolvedReference).replace(/\D+/g, "");
+        if (digitsOnly.length >= 9 && digitsOnly.length <= 13) {
+          const last9 = digitsOnly.slice(-9);
+          const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+          const { data: phoneOrder } = await supabaseAdmin
             .from("orders")
             .select("id")
-            .eq("metadata->>client_reference", resolvedReference)
+            .or(`customer_phone.ilike.%${last9},customer_phone.eq.${digitsOnly}`)
+            .gte("created_at", fortyEightHoursAgo)
+            .order("created_at", { ascending: false })
+            .limit(1)
             .maybeSingle();
-          if (orderByClientRef) {
-            targetReference = orderByClientRef.id;
+          if (phoneOrder) {
+            targetReference = phoneOrder.id;
           }
         }
-      } else {
-        // Non-UUID: must be client custom reference
+      }
+
+      if (!targetReference) {
+        // 2. Try client_reference in metadata
         const { data: orderByClientRef } = await supabaseAdmin
           .from("orders")
           .select("id")
@@ -484,11 +521,31 @@ serve(async (req: any) => {
           .maybeSingle();
         if (orderByClientRef) {
           targetReference = orderByClientRef.id;
-        } else {
-          return new Response(JSON.stringify({ error: "Order not found with reference: " + resolvedReference }), {
-            status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
         }
+      }
+
+      if (!targetReference) {
+        // 3. Try paystack / checkout reference in metadata
+        const { data: orderByMetaRef } = await supabaseAdmin
+          .from("orders")
+          .select("id")
+          .or(`metadata->>reference.eq.${resolvedReference},metadata->>payment_reference.eq.${resolvedReference},metadata->>paystack_reference.eq.${resolvedReference},metadata->>trxref.eq.${resolvedReference}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (orderByMetaRef) {
+          targetReference = orderByMetaRef.id;
+        }
+      }
+
+      if (!targetReference && !phone) {
+        return new Response(JSON.stringify({ 
+          status: "not_paid", 
+          error: "Order not found with reference: " + resolvedReference,
+          message: "We couldn't find a transaction for this reference."
+        }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
 
@@ -513,8 +570,12 @@ serve(async (req: any) => {
         throw searchError;
       }
       if (!latestOrder) {
-        return new Response(JSON.stringify({ error: "No recent order found for this number" }), {
-          status: 404,
+        return new Response(JSON.stringify({ 
+          status: "not_paid",
+          error: "No recent order found for this number",
+          message: "No recent order found for this phone number."
+        }), {
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -541,8 +602,12 @@ serve(async (req: any) => {
       .from("orders").select("*").eq("id", targetReference).maybeSingle();
 
     if (!existingOrder) {
-      return new Response(JSON.stringify({ error: "Order not found with reference: " + targetReference }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ 
+        status: "not_paid",
+        error: "Order not found with reference: " + targetReference,
+        message: "Order not found. Please verify reference or phone number."
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
