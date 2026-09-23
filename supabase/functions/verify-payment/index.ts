@@ -13,6 +13,7 @@ import { getActiveProviders, logProviderError, resolveProvidersForOrder } from "
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
+import { executeGuestBeneficiaryRefund, isGuestOrder } from "../_shared/guest-refund.ts";
 
 // --- Utilities ---
 
@@ -338,6 +339,25 @@ serve(async (req: any) => {
     const { reference, orderId, phone, force: forceInput, action } = body;
     const force = forceInput || action === "retry_order";
     const resolvedReference = reference || orderId;
+
+    if (action === "guest_refund") {
+      const targetOrderId = resolvedReference || body.order_id;
+      if (!targetOrderId) {
+        return new Response(JSON.stringify({ error: "Missing order_id for guest refund" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      const { data: ord, error: ordErr } = await supabaseAdmin.from("orders").select("*").eq("id", targetOrderId).maybeSingle();
+      if (ordErr || !ord) {
+        return new Response(JSON.stringify({ error: "Order not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      const refundRes = await executeGuestBeneficiaryRefund(supabaseAdmin, ord, body.reason || "Admin guest refund");
+      return new Response(JSON.stringify(refundRes), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
     // ─── 🛡️ DOS & BRUTE-FORCE RATE LIMITING ─────────────────────────────────
     const rawIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
@@ -1712,11 +1732,17 @@ serve(async (req: any) => {
       const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request");
       isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
 
-      await supabaseAdmin.from("orders").update({
-        status: targetStatus,
-        provider_order_id: targetProviderOrderId,
-        failure_reason: targetFailureReason
-      }).eq("id", targetReference);
+      let guestRefundResult = null;
+      if (isBeneficiaryErr && isGuestOrder(claimedOrder)) {
+        console.log(`[verify-payment] Non-beneficiary failure on guest order ${targetReference}. Executing guest auto-refund & carrier submission...`);
+        guestRefundResult = await executeGuestBeneficiaryRefund(supabaseAdmin, claimedOrder, targetFailureReason);
+      } else {
+        await supabaseAdmin.from("orders").update({
+          status: targetStatus,
+          provider_order_id: targetProviderOrderId,
+          failure_reason: targetFailureReason
+        }).eq("id", targetReference);
+      }
 
       const isApiOrder = (claimedOrder?.order_type || "").toLowerCase() === "api";
 

@@ -7,7 +7,7 @@ import {
   Activity, Copy, Check, RefreshCw, ArrowLeft,
   Search, Info, Database, SignalHigh, Server,
   Clock, ArrowRight, Package, ReceiptText, Store,
-  Share2, Sparkles, Cpu, Terminal
+  Share2, Sparkles, Cpu, Terminal, RotateCcw
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
@@ -20,7 +20,7 @@ import { playSuccessSound } from "@/lib/sound";
 import { Badge } from "@/components/ui/badge";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 
-type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid";
+type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid" | "refunded";
 
 const STEPS = [
   { key: "Payment", label: "Confirmed", icon: ShieldCheck, color: "#10B981" },
@@ -84,6 +84,16 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
       label: "In Queue for Whitelist Verification ⏳", 
       sub: "Your recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
       badge: "In Queue ⏳" 
+    };
+  }
+  if (status === "refunded") {
+    const isMomo = message?.toLowerCase().includes("momo") || message?.toLowerCase().includes("paystack") || message?.toLowerCase().includes("mobile money");
+    return {
+      color: "#A855F7",
+      glow: "rgba(168,85,247,0.25)",
+      label: isMomo ? "Refunded to Mobile Money 💰" : "Order Refunded 💰",
+      sub: message || "Your order was refunded. Funds have been returned safely.",
+      badge: "Refunded 💰"
     };
   }
   if (failed || status === "fulfillment_failed") {
@@ -751,7 +761,7 @@ const OrderStatus = () => {
             </div>
 
             {/* Whitelist In-Queue Callout Card */}
-            {isBeneficiaryOrder && (
+            {isBeneficiaryOrder && orderStatus !== "refunded" && (
               <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-center gap-2">
                   <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
@@ -770,6 +780,26 @@ const OrderStatus = () => {
                     <Zap className="w-4 h-4 fill-slate-950" />
                     Expedite / Verify Number Now 🚀
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Guest Beneficiary Refund Completed Alert Card */}
+            {(orderStatus === "refunded" || (orderData as any)?.auto_refunded) && ((orderData as any)?.metadata?.guest_refund_gateway === "paystack" || (orderData as any)?.metadata?.non_beneficiary_failed) && (
+              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-purple-500/15 via-purple-950/20 to-black border border-purple-500/40 text-center space-y-3 shadow-lg shadow-purple-950/40 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs font-black uppercase tracking-wider text-purple-300 font-mono">
+                    Refund Sent to Mobile Money 💰
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                  Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> is not yet on the carrier beneficiary list.
+                  Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been automatically refunded to your Mobile Money account via Paystack!
+                </p>
+                <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Carrier Whitelist: <span className="text-emerald-400 font-bold">Auto-Submitted for Approval ✅</span>
                 </div>
               </div>
             )}

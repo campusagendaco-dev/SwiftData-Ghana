@@ -12,6 +12,7 @@ import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
 import { getActiveProviders, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
+import { executeGuestBeneficiaryRefund, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
 
 
 function getFirstEnvValue(keys: string[]): string {
@@ -476,7 +477,9 @@ async function notifyFailureAndRefund(
         if (failureReason) {
           reasonPart = ` Reason: ${failureReason}.`;
         }
-        const msg = `SwiftData: Your ${packageLabel} order for ${phone} failed.${reasonPart} GHS ${amountGhs.toFixed(2)} has been refunded to your wallet. No panic, your refund is completed. Ref: ${reference.slice(0, 8)}`;
+        const isGuest = !agentId || agentId === "00000000-0000-0000-0000-000000000000";
+        const refundTarget = isGuest ? "your Mobile Money/payment account" : "your wallet";
+        const msg = `SwiftData: Your ${packageLabel} order for ${phone} failed.${reasonPart} GHS ${amountGhs.toFixed(2)} has been refunded to ${refundTarget}. No panic, your refund is completed. Ref: ${reference.slice(0, 8)}`;
         await sendSmsViaTxtConnect(apiKey, senderId, recipient, msg, "order_failed", agentId);
       }
     } catch (e) {
@@ -2067,12 +2070,18 @@ serve(async (req: Request) => {
     // Definitive failures
     const failureStatus = "processing";
     const targetProviderOrderId = "failed_api_call";
+    const failureReason = result.reason || "Provider rejected the request";
 
-    await supabaseAdmin.from("orders").update({ 
-      status: failureStatus, 
-      provider_order_id: targetProviderOrderId,
-      failure_reason: result.reason || "Provider rejected the request" 
-    }).eq("id", orderId);
+    if (isBeneficiaryFailure(failureReason) && isGuestOrder(existingOrder)) {
+      console.log(`[paystack-webhook] Non-beneficiary failure on guest order ${orderId}. Triggering guest refund & carrier submission...`);
+      await executeGuestBeneficiaryRefund(supabaseAdmin, existingOrder, failureReason, PAYSTACK_SECRET_KEY);
+    } else {
+      await supabaseAdmin.from("orders").update({ 
+        status: failureStatus, 
+        provider_order_id: targetProviderOrderId,
+        failure_reason: failureReason 
+      }).eq("id", orderId);
+    }
 
     log(supabaseAdmin, { 
       level: "error", 

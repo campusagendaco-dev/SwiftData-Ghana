@@ -793,16 +793,35 @@ export default function AdminBeneficiaryOrders() {
   // REFUND SINGLE ORDER
   const handleRefundSingle = async (ord: BeneficiaryOrder) => {
     if (ord.status === "refunded" || ord.auto_refunded) {
-      toast({ title: "Already Refunded", description: "This order has already been credited to wallet." });
+      toast({ title: "Already Refunded", description: "This order has already been refunded." });
       return;
     }
 
-    if (!confirm(`Are you sure you want to refund GH₵ ${Number(ord.amount).toFixed(2)} to ${ord.agent_email}?`)) {
+    const isGuest = !ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order;
+
+    if (!confirm(`Are you sure you want to refund GH₵ ${Number(ord.amount).toFixed(2)} to ${isGuest ? "customer's Mobile Money/payment account" : ord.agent_email}?`)) {
       return;
     }
 
     setProcessingId(ord.id);
     try {
+      if (isGuest) {
+        const { data: gData, error: gErr } = await supabase.functions.invoke("verify-payment", {
+          body: { action: "guest_refund", order_id: ord.id }
+        });
+        if (gErr) {
+          toast({ title: "Guest Refund Error", description: gErr.message || "Failed to process gateway refund", variant: "destructive" });
+        } else if (gData?.refunded) {
+          toast({ title: "Guest Refund Completed!", description: `GH₵ ${Number(ord.amount).toFixed(2)} refunded directly to Mobile Money via Paystack.` });
+          await fetchBeneficiaryOrders();
+        } else {
+          toast({ title: "Refund Queued", description: gData?.error || "Paystack refund could not be completed automatically. Marked for manual payout.", variant: "destructive" });
+          await fetchBeneficiaryOrders();
+        }
+        setProcessingId(null);
+        return;
+      }
+
       let isRefunded = false;
       let statusMsg = "";
 
@@ -1548,8 +1567,17 @@ export default function AdminBeneficiaryOrders() {
                   return (
                     <div key={ord.id} className="p-3.5 sm:p-4 rounded-2xl border border-border bg-card/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div>
-                        <div className="font-mono font-black text-sm text-foreground">{ord.id.slice(0, 8)} • {ord.package_size}</div>
-                        <div className="text-muted-foreground font-mono mt-0.5 truncate max-w-[220px]">{ord.agent_email}</div>
+                        <div className="font-mono font-black text-sm text-foreground flex items-center gap-2">
+                          <span>{ord.id.slice(0, 8)} • {ord.package_size}</span>
+                          {(!ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order) && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-500/15 text-blue-500 border border-blue-500/25">
+                              Guest Order
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-muted-foreground font-mono mt-0.5 truncate max-w-[220px]">
+                          {(!ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order) ? "Guest Customer (Direct Pay)" : ord.agent_email}
+                        </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">{date} at {time}</div>
                       </div>
 
@@ -1557,7 +1585,7 @@ export default function AdminBeneficiaryOrders() {
                         <div className="text-left sm:text-right">
                           <div className="font-black text-sm sm:text-base text-foreground">GH₵ {Number(ord.amount).toFixed(2)}</div>
                           <span className={cn("inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold mt-0.5", ord.status === "refunded" ? "bg-purple-500/15 text-purple-600 dark:text-purple-400" : "bg-red-500/15 text-red-600 dark:text-red-400")}>
-                            {ord.status.toUpperCase()}
+                            {ord.status === "refunded" && ord.metadata?.guest_refund_gateway === "paystack" ? "REFUNDED TO MOMO" : ord.status.toUpperCase()}
                           </span>
                         </div>
 
@@ -1582,7 +1610,7 @@ export default function AdminBeneficiaryOrders() {
                               disabled={isBusy || processingBatch}
                             >
                               {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                              Refund
+                              {(!ord.agent_id || ord.agent_id === "00000000-0000-0000-0000-000000000000" || ord.metadata?.is_guest_order) ? "Refund MoMo" : "Refund"}
                             </Button>
                           )}
                         </div>

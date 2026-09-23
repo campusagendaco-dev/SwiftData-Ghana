@@ -95,10 +95,11 @@ export default function AdminRefundedOrders() {
 
         const enriched = rawOrders.map(o => {
           const prof = profileMap.get(o.agent_id);
+          const isGuest = !o.agent_id || o.agent_id === "00000000-0000-0000-0000-000000000000" || o.metadata?.is_guest_order;
           return {
             ...o,
-            agent_email: prof?.email || "Unknown User",
-            agent_name: prof?.full_name || prof?.email?.split("@")[0] || "Agent",
+            agent_email: isGuest ? (o.metadata?.contact_email || o.customer_phone || "Guest Customer") : (prof?.email || "Unknown User"),
+            agent_name: isGuest ? "Guest Checkout (Direct Pay)" : (prof?.full_name || prof?.email?.split("@")[0] || "Agent"),
             store_name: prof?.store_name || undefined,
           };
         });
@@ -473,7 +474,9 @@ export default function AdminRefundedOrders() {
                           <div className="font-black text-purple-600 dark:text-purple-400 text-base">
                             +GH₵ {amount}
                           </div>
-                          <div className="text-[10px] text-muted-foreground font-medium">Returned to Wallet</div>
+                          <div className="text-[10px] text-muted-foreground font-medium">
+                            {o.metadata?.guest_refund_gateway === "paystack" ? "Refunded to Mobile Money" : "Returned to Wallet"}
+                          </div>
                         </td>
 
                         <td className="py-4 px-6 max-w-xs">
@@ -543,7 +546,9 @@ export default function AdminRefundedOrders() {
                       </div>
                       <div className="text-right">
                         <div className="font-black text-base text-purple-600 dark:text-purple-400">+GH₵ {amount}</div>
-                        <div className="text-[10px] text-muted-foreground">Wallet Credited</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {o.metadata?.guest_refund_gateway === "paystack" ? "Mobile Money Refund" : "Wallet Credited"}
+                        </div>
                       </div>
                     </div>
 
