@@ -1760,11 +1760,11 @@ serve(async (req: any) => {
     }
 
     if (result.ok) {
-      // successful API pushes remain at 'processing' state to be auto-delivered after delay
       const token = result.raw?.prepaid_token;
       const isSyncUtilityFulfill = currentOrderType === "utility" && token;
+      const isDeliveredStatus = result.status && ["delivered", "success", "successful", "fulfilled", "completed", "sent"].includes(String(result.status).toLowerCase());
       
-      const targetStatus = isSyncUtilityFulfill ? "fulfilled" : "processing";
+      const targetStatus = (isSyncUtilityFulfill || isDeliveredStatus) ? "fulfilled" : "processing";
       
       if (targetStatus === "fulfilled") {
         await fulfillOrder(supabaseAdmin, targetReference, successfulProviderId, result.id || null, token || null);

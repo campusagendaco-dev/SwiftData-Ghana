@@ -25,13 +25,13 @@ export async function fetchViaDb(
   json: () => Promise<any>;
   headers: Headers;
 }> {
-  if (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com")) {
-    const bridgeUrl = Deno.env.get("KORBA_BRIDGE_URL") || "https://swiftdatagh.shop/api/korba";
+  const configuredBridgeUrl = Deno.env.get("KORBA_BRIDGE_URL")?.trim();
+  if (configuredBridgeUrl && (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com"))) {
     const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
     
-    console.log(`[db_proxy] Routing request to Vercel bridge: ${bridgeUrl}`);
+    console.log(`[db_proxy] Routing request to Vercel bridge: ${configuredBridgeUrl}`);
     try {
-      const bridgeRes = await fetch(bridgeUrl, {
+      const bridgeRes = await fetch(configuredBridgeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -47,29 +47,24 @@ export async function fetchViaDb(
 
       const resText = await bridgeRes.text();
       const responseHeaders = new Headers(bridgeRes.headers);
-      return {
-        ok: bridgeRes.ok,
-        status: bridgeRes.status,
-        text: async () => resText,
-        json: async () => {
-          try {
-            return JSON.parse(resText);
-          } catch {
-            return resText;
-          }
-        },
-        headers: responseHeaders
-      };
+      if (bridgeRes.ok) {
+        return {
+          ok: bridgeRes.ok,
+          status: bridgeRes.status,
+          text: async () => resText,
+          json: async () => {
+            try {
+              return JSON.parse(resText);
+            } catch {
+              return resText;
+            }
+          },
+          headers: responseHeaders
+        };
+      }
+      console.warn(`[db_proxy] Vercel bridge returned status ${bridgeRes.status}. Falling back to DB RPC...`);
     } catch (bridgeErr: any) {
-      console.error(`[db_proxy] Vercel bridge connection failed:`, bridgeErr);
-      const errMsg = `Vercel bridge connection failed: ${bridgeErr.message || bridgeErr}`;
-      return {
-        ok: false,
-        status: 502,
-        text: async () => JSON.stringify({ error: errMsg }),
-        json: async () => ({ error: errMsg }),
-        headers: new Headers({ "content-type": "application/json" })
-      };
+      console.error(`[db_proxy] Vercel bridge connection failed: ${bridgeErr?.message || bridgeErr}. Falling back to DB RPC...`);
     }
   }
 
