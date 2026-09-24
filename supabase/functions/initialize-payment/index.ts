@@ -116,6 +116,17 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
   }
 
   try {
+    const { data: settings } = await supabaseClient
+      .from("system_settings")
+      .select("beneficiary_verification_enabled, allow_non_beneficiary_continue")
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (settings && (settings.beneficiary_verification_enabled === false || settings.allow_non_beneficiary_continue === true)) {
+      console.log("[initialize-payment] Beneficiary verification disabled or non-beneficiary allowed in system settings.");
+      return { ok: true };
+    }
+
     const { data: provider, error: pErr } = await supabaseClient
       .from("providers")
       .select("*")
