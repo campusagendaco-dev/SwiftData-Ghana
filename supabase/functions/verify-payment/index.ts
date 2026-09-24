@@ -1748,8 +1748,8 @@ serve(async (req: any) => {
           }
         }
         
-        const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart === true;
-        if (!autoApiSwitch && !datamartFailoverEnabled) {
+        const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart !== false;
+        if (!autoApiSwitch && !datamartFailoverEnabled && !isBeneficiaryErr) {
           console.log(`[verify-payment] Auto API switch and non-beneficiary auto-route are disabled. Not failing over from ${provider.name}.`);
           break;
         }
