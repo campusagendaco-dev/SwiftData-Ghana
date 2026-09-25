@@ -273,12 +273,11 @@ const AppContent = () => {
     message: "",
   });
   const [ipBlocked, setIpBlocked] = useState(false);
-  const [maintenanceLoading, setMaintenanceLoading] = useState(true);
-  // Minimum splash time — guarantees the loading animation is visible for at least 2 s
+  const [maintenanceLoading, setMaintenanceLoading] = useState(false);
+  // Short splash transition
   const [splashReady, setSplashReady] = useState(false);
   useEffect(() => {
-    // Short splash — just enough for auth to resolve, not a blank-screen risk
-    const t = setTimeout(() => setSplashReady(true), 400);
+    const t = setTimeout(() => setSplashReady(true), 150);
     return () => clearTimeout(t);
   }, []);
 
@@ -286,11 +285,7 @@ const AppContent = () => {
     let mounted = true;
 
     const loadMaintenance = async () => {
-      // Prevent polling errors when offline — but still unblock the loading state
-      if (!window.navigator.onLine) {
-        if (mounted) setMaintenanceLoading(false);
-        return;
-      }
+      if (!window.navigator.onLine) return;
 
       try {
         const maintenanceResult = await Promise.race([
@@ -298,7 +293,7 @@ const AppContent = () => {
             body: { action: "get" },
           }),
           new Promise<never>((_, reject) => {
-            window.setTimeout(() => reject(new Error("maintenance-timeout")), 12000); // Increased timeout to allow retries
+            window.setTimeout(() => reject(new Error("maintenance-timeout")), 3000);
           }),
         ]);
         const { data, error } = maintenanceResult as { data: any; error: any };
@@ -319,33 +314,20 @@ const AppContent = () => {
         }
       } catch (e) {
         if (!mounted) return;
-        console.warn("[Maintenance] Fallback: Connection closed or timeout.", e);
+        // Non-critical background fetch failure - fail silent and keep app responsive
         setMaintenance({ is_enabled: false, message: "" });
         setIpBlocked(false);
-      } finally {
-        if (mounted) setMaintenanceLoading(false);
       }
     };
 
     loadMaintenance();
-    const firstLoadSafetyTimeout = window.setTimeout(() => {
-      if (mounted) setMaintenanceLoading(false);
-    }, 4000);
 
-    const interval = window.setInterval(loadMaintenance, 30000);
-
-    // Continuous 10-second background heartbeat for self-healing & "No Provider" order retries
-    const autoRetryInterval = window.setInterval(() => {
-      if (typeof window !== "undefined" && window.navigator.onLine) {
-        invokePublicFunction("cron-auto-retry").catch(() => {});
-      }
-    }, 10000);
+    // Refresh maintenance status every 2 minutes without blocking UI
+    const interval = window.setInterval(loadMaintenance, 120000);
 
     return () => {
       mounted = false;
-      window.clearTimeout(firstLoadSafetyTimeout);
       window.clearInterval(interval);
-      window.clearInterval(autoRetryInterval);
     };
   }, []);
 
