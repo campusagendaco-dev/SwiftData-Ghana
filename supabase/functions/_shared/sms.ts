@@ -1269,8 +1269,8 @@ export async function sendPaymentSms(
     } else if (type === "order_failed" && isBenReason) {
       const orderRef = String(vars.order_id || vars.reference || "").trim();
       const trackingUrl = orderRef ? `https://swiftdatagh.shop/order-status?id=${orderRef}` : `https://swiftdatagh.shop/order-status`;
-      message = `SwiftData Notice: Your order for ${recipient} could not deliver because this number is not on the MTN beneficiary list.\n\n` +
-        `We have queued your number for carrier approval. Track your order status or request a refund here:\n` +
+      message = `SwiftData Notice: Your order for ${recipient} could not deliver because this number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.\n\n` +
+        `Track your order status or request a refund here:\n` +
         `${trackingUrl}`;
     } else {
       const tMap = templates as Record<string, string>;

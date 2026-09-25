@@ -265,7 +265,7 @@ serve(async (req: Request) => {
     }
 
     // Parse the error message if check fails
-    let errorMessage = `${phone} is not added to our beneficiary list`;
+    let errorMessage = `The recipient number ${phone} has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.`;
     try {
       const parsed = JSON.parse(text);
       if (parsed.error && parsed.message) {

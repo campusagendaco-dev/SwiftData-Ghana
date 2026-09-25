@@ -149,8 +149,8 @@ export async function handleGuestBeneficiaryFailure(
   if (customerPhone) {
     try {
       const trackingUrl = `https://swiftdatagh.shop/order-status?id=${orderId}`;
-      const smsMessage = `SwiftData Notice: Your order for ${customerPhone} could not deliver because this number is not on the MTN beneficiary list.\n\n` +
-        `We have queued your number for carrier approval. Track order or request refund:\n` +
+      const smsMessage = `SwiftData Notice: Your order for ${customerPhone} could not deliver because this recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.\n\n` +
+        `Track order or request refund:\n` +
         `${trackingUrl}`;
 
       await sendPaymentSms(
@@ -159,7 +159,7 @@ export async function handleGuestBeneficiaryFailure(
         "custom",
         {
           message: smsMessage,
-          reason: "Not on MTN beneficiary list",
+          reason: "Reached daily limit / unsupported plan / promo blocked",
           order_id: orderId,
           reference: order.reference || orderId,
           network: "MTN",

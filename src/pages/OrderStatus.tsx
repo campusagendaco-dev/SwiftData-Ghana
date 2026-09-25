@@ -869,7 +869,7 @@ const OrderStatus = () => {
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> is not yet on the carrier beneficiary list.
+                  Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.
                   Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been automatically refunded to your Mobile Money account via Paystack!
                 </p>
                 <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
