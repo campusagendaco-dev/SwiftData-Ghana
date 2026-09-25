@@ -27,6 +27,27 @@ interface Order {
   failure_reason?: string;
 }
 
+function translateFailureReason(reason?: string): string {
+  if (!reason) return "";
+  const r = reason.trim().toUpperCase();
+  if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
+    return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
+  }
+  if (r.includes("PAYEE_LIMIT_REACHED")) {
+    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+  }
+  if (r.includes("NOT_ALLOWED")) {
+    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+  }
+  if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
+    return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
+  }
+  if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
+    return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
+  }
+  return reason;
+}
+
 const MyOrders = () => {
   const [searchParams] = useSearchParams();
   const phoneParam = searchParams.get("phone") || "";
@@ -487,18 +508,26 @@ const MyOrders = () => {
                           reason.includes("beneficiary") || reason.includes("whitelist") || reason.includes("not added") || reason.includes("not on") || reason.includes("unregistered") || reason.includes("not registered")
                         );
                         return (
-                          <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
-                            <div className={cn(
-                              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
-                              (showReceipt.status === "fulfilled" || showReceipt.status === "processing" || showReceipt.status === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
-                              isBen && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
-                              !isBen && (showReceipt.status === "pending" || showReceipt.status === "awaiting_payment" || showReceipt.status === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
-                              !isBen && (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed" || showReceipt.status === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
-                            )}>
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              {isBen ? "In Queue for Verification ⏳" : showReceipt.status}
+                          <div className="pt-3 border-t border-dashed border-slate-700/80 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
+                              <div className={cn(
+                                "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
+                                (showReceipt.status === "fulfilled" || showReceipt.status === "processing" || showReceipt.status === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
+                                isBen && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                                !isBen && (showReceipt.status === "pending" || showReceipt.status === "awaiting_payment" || showReceipt.status === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
+                                !isBen && (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed" || showReceipt.status === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
+                              )}>
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                {isBen ? "In Queue for Verification ⏳" : showReceipt.status}
+                              </div>
                             </div>
+                            {showReceipt.failure_reason && (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed") && (
+                              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs leading-relaxed break-words font-medium text-left">
+                                <span className="font-bold text-red-400 block mb-0.5">⚠️ Carrier Reason:</span>
+                                {translateFailureReason(showReceipt.failure_reason)}
+                              </div>
+                            )}
                           </div>
                         );
                       })()}

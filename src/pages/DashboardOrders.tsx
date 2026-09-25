@@ -48,6 +48,27 @@ function isBeneficiaryFailure(order: Partial<Order> & { metadata?: any }): boole
   );
 }
 
+function translateFailureReason(reason?: string | null): string {
+  if (!reason) return "";
+  const r = reason.trim().toUpperCase();
+  if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
+    return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
+  }
+  if (r.includes("PAYEE_LIMIT_REACHED")) {
+    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+  }
+  if (r.includes("NOT_ALLOWED")) {
+    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+  }
+  if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
+    return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
+  }
+  if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
+    return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
+  }
+  return reason;
+}
+
 const networkBadgeStyles: Record<string, { bg: string; text: string; border: string }> = {
   MTN:        { bg: "bg-amber-500/15",  text: "text-amber-400", border: "border-amber-500/30" },
   Telecel:    { bg: "bg-red-500/15",    text: "text-red-400",   border: "border-red-500/30" },
@@ -863,6 +884,13 @@ const DashboardOrders = () => {
                           </div>
                         ))}
                       </div>
+
+                      {order.failure_reason && (
+                        <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs leading-relaxed break-words font-medium">
+                          <span className="font-bold text-rose-400 block mb-0.5">⚠️ Fulfillment Failure Reason:</span>
+                          {translateFailureReason(order.failure_reason)}
+                        </div>
+                      )}
 
                       {/* Action buttons */}
                       <div className="grid grid-cols-2 gap-2.5">
