@@ -167,12 +167,26 @@ const AdminAgents = () => {
       .order('created_at', { ascending: false });
 
     if (activationOrders && activationOrders.length > 0) {
-      const paidAgentIds = activationOrders.map((o: any) => o.agent_id).filter(Boolean);
-      const { data: unapprovedProfiles } = await supabase
-        .from("profiles")
-        .select("user_id, full_name, email, store_name, phone")
-        .in("user_id", paidAgentIds)
-        .eq("agent_approved", false);
+      const isValidUuid = (id: unknown): id is string =>
+        typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      
+      const paidAgentIds = Array.from(
+        new Set(
+          activationOrders
+            .map((o: any) => o.agent_id)
+            .filter(isValidUuid)
+        )
+      );
+
+      let unapprovedProfiles: any[] | null = null;
+      if (paidAgentIds.length > 0) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("user_id, full_name, email, store_name, phone")
+          .in("user_id", paidAgentIds)
+          .eq("agent_approved", false);
+        unapprovedProfiles = data;
+      }
 
       if (unapprovedProfiles && unapprovedProfiles.length > 0) {
         const unapprovedIds = new Set(unapprovedProfiles.map((p: any) => p.user_id));
