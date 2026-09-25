@@ -462,7 +462,7 @@ export class StandardAdapter implements ProviderAdapter {
       return { ok: true };
     }
 
-    let errorMessage = `${phone} is not added to our beneficiary list`;
+    let errorMessage = `The recipient number ${phone} has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.`;
     try {
       const parsed = JSON.parse(text);
       if (parsed.error && parsed.message) {
@@ -495,7 +495,7 @@ export class StandardAdapter implements ProviderAdapter {
       if (!check.ok) {
         return {
           ok: false,
-          reason: check.reason || `${recipient} is not added to our beneficiary list`
+          reason: check.reason || `The recipient number ${recipient} has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.`
         };
       }
     }

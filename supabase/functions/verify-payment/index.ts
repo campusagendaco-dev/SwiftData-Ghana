@@ -92,14 +92,19 @@ function normalizeRecipient(phone: string | null | undefined): string {
 function translateFailureReason(reason: string | null | undefined): string | null {
   if (!reason) return null;
   const r = String(reason).trim().toUpperCase();
-  if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
+  if (
+    r.includes("BENEFICIARY") ||
+    r.includes("PAYEE") ||
+    r.includes("LIMIT") ||
+    r.includes("NOT_ALLOWED") ||
+    r.includes("NOT ALLOWED") ||
+    r.includes("NOT ADDED") ||
+    r.includes("NOT_ADDED") ||
+    r.includes("WHITELIST") ||
+    r.includes("JESSCO") ||
+    r.includes("ELIGIBILITY")
+  ) {
     return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
-  }
-  if (r.includes("PAYEE_LIMIT_REACHED")) {
-    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
-  }
-  if (r.includes("NOT_ALLOWED")) {
-    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
   }
   if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
