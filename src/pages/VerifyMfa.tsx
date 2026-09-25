@@ -149,10 +149,10 @@ const VerifyMfa = () => {
       navigate("/dashboard");
     } catch (err: any) {
       console.error("[MFA] Verification failed:", err);
-      const isTotpErr = (err.message || "").toLowerCase().includes("totp") || (err.message || "").toLowerCase().includes("invalid");
+      const isTotpErr = (err.message || "").toLowerCase().includes("totp") || (err.message || "").toLowerCase().includes("invalid") || err.status === 422;
       setError(
         isTotpErr
-          ? "Invalid or expired 6-digit code. Please check your Authenticator app and ensure your phone clock is set to Automatic time."
+          ? "Invalid or expired 6-digit code. Please check your Authenticator app for the latest code. Tip: Ensure your device's date & time settings are set to 'Automatic'."
           : (err.message || "Invalid verification code. Please try again.")
       );
       setOtp(["", "", "", "", "", ""]);
