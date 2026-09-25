@@ -1478,6 +1478,16 @@ export default function SubmitBeneficiaryNumbers() {
             </DialogDescription>
           </DialogHeader>
 
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-medium space-y-1.5 leading-relaxed">
+            <div className="flex items-center gap-1.5 font-bold text-amber-400">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>Verification Timeline Notice (72 Hours – 4 Days)</span>
+            </div>
+            <p>
+              MTN beneficiary whitelisting takes <strong>72 hours (3 to 4 days)</strong> to be approved by the network. Recipient numbers cannot make Affordable SME data purchases today until MTN approves the request. An SMS notification will be sent to submitted numbers upon submission.
+            </p>
+          </div>
+
           <p className="text-[11px] text-slate-400 pt-1">
             This will be processed in <strong className="text-white font-bold">{parsedData.chunksCount}</strong> chunk{parsedData.chunksCount > 1 ? "s" : ""} of 500 ({batchCount} API batch{batchCount > 1 ? "es" : ""}).
           </p>

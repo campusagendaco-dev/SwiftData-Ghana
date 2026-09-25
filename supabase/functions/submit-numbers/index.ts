@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
+import { sendPaymentSms } from "../_shared/sms.ts";
 
 declare const Deno: any;
 
@@ -264,6 +265,16 @@ serve(async (req: Request) => {
           .from("beneficiary_submissions")
           .upsert(recordsToUpsert, { onConflict: "phone_number" });
         if (logErr) console.error("[submit-numbers] DB record FAILED:", logErr);
+
+        // Send SMS to submitted numbers informing them about 72h - 4 days verification timeline
+        for (const num of validNumbers) {
+          try {
+            const smsText = `SwiftData Notice: Your number ${num} has been submitted for MTN beneficiary verification. Please note that verification takes 72 hours (3 to 4 days) to be approved by MTN. You cannot make Affordable SME purchases for this number today until verification is completed.`;
+            await sendPaymentSms(supabaseClient, num, "custom", { message: smsText });
+          } catch (smsErr) {
+            console.error(`[submit-numbers] SMS send failed for ${num}:`, smsErr);
+          }
+        }
       } catch (e) {
         console.error("[submit-numbers] DB record FAILED:", e);
       }
