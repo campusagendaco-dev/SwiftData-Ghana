@@ -143,12 +143,17 @@ serve(async (req: Request) => {
   const actor = authResult.user;
 
   try {
-    const body = await req.json();
-    const { action: rawAction, user_id, email, redirect_path, new_password } = body;
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+    const { action: rawAction, user_id, email, redirect_path, new_password } = body || {};
     const action = (rawAction as string)?.trim();
 
-    if (!action) {
-      return json({ error: `Missing action. Received body: ${JSON.stringify(body)}` }, 400);
+    if (!action || req.method === "GET") {
+      return json({ success: true, message: "admin-user-actions Edge Function active." }, 200);
     }
 
     switch (action as AdminUserAction) {
