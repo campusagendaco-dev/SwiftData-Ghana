@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { parseCapacity } from "./providers/utils.ts";
 
 export interface Provider {
   id: string;
@@ -85,18 +86,25 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     
     let isMappedToKorba = false;
     if (orderType.toLowerCase() === "data") {
-      const queryNetwork = network.startsWith("Korba ") ? network : `Korba ${network}`;
       const { data: korbaMappings } = await supabaseAdmin
         .from("provider_packages")
-        .select("id, network")
-        .eq("provider_id", korbaProvider.id)
-        .eq("package_name", order.package_size);
+        .select("id, network, package_name, capacity_gb")
+        .eq("provider_id", korbaProvider.id);
       
-      const hasMapping = (korbaMappings || []).some(
-        m => m.network === network || m.network === queryNetwork
-      );
-      if (hasMapping) {
-        isMappedToKorba = true;
+      if (korbaMappings && korbaMappings.length > 0) {
+        const reqSize = String(order.package_size || "").trim();
+        const reqCapGb = parseCapacity(reqSize);
+        const cleanReqSize = reqSize.replace(/\s+/g, "").toUpperCase();
+
+        const hasMapping = korbaMappings.some((m: any) => {
+          const nameMatch = m.package_name === reqSize || String(m.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanReqSize;
+          const capMatch = reqCapGb > 0 && Math.abs(Number(m.capacity_gb || 0) - reqCapGb) < 0.05;
+          return nameMatch || capMatch;
+        });
+
+        if (hasMapping) {
+          isMappedToKorba = true;
+        }
       }
     }
 

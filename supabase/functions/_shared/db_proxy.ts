@@ -3,9 +3,95 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 declare const Deno: any;
 
+async function performDirectFetch(url: string, options: any) {
+  const fetchOpts: RequestInit = {
+    method: options.method || "GET",
+    headers: options.headers || {},
+    body: options.body,
+  };
+
+  let client: any = undefined;
+  if (url.includes("korba365.com")) {
+    const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim();
+    if (proxyUrl) {
+      console.log(`[db_proxy] Routing direct fetch through custom proxy: ${proxyUrl}`);
+      if (typeof (Deno as any).createHttpClient === "function") {
+        client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
+        (fetchOpts as any).client = client;
+      }
+    }
+  }
+
+  let directRes;
+  try {
+    directRes = await fetch(url, fetchOpts);
+  } finally {
+    if (client) {
+      try { client.close(); } catch { /* ignore */ }
+    }
+  }
+
+  const textVal = await directRes.text();
+  return {
+    ok: directRes.ok,
+    status: directRes.status,
+    text: async () => textVal,
+    json: async () => {
+      try { return JSON.parse(textVal); } catch { return textVal; }
+    },
+    headers: directRes.headers,
+  };
+}
+
+async function performRenderFallback(url: string, options: any, originalErr: any) {
+  const renderUrl = (Deno.env.get("RENDER_BACKEND_URL") || "https://swiftdata-auth-backend.onrender.com").replace(/\/$/, "");
+  const proxySecret = Deno.env.get("PROXY_SECRET") || "swiftdata-proxy-secret-2026";
+  console.warn(`[db_proxy] Attempting backup proxy fetch via Render service (${renderUrl})...`);
+  try {
+    const renderRes = await fetch(`${renderUrl}/api/proxy-pass`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-proxy-secret": proxySecret
+      },
+      body: JSON.stringify({
+        url: url,
+        method: options.method || "GET",
+        headers: options.headers || {},
+        body: options.body
+      })
+    });
+
+    const resText = await renderRes.text();
+    return {
+      ok: renderRes.ok,
+      status: renderRes.status,
+      text: async () => resText,
+      json: async () => {
+        try {
+          return JSON.parse(resText);
+        } catch {
+          return resText;
+        }
+      },
+      headers: renderRes.headers
+    };
+  } catch (renderErr: any) {
+    console.error("[db_proxy] Render fallback failed:", renderErr);
+    const errMsg = `DB Proxy, Direct Fetch & Render Fallback failed: ${renderErr?.message || renderErr}`;
+    return {
+      ok: false,
+      status: 502,
+      text: async () => JSON.stringify({ error: errMsg }),
+      json: async () => ({ error: errMsg }),
+      headers: new Headers({ "content-type": "application/json" })
+    };
+  }
+}
+
 /**
- * Routes an HTTP request through the database using the pg_net RPC proxy,
- * ensuring the request originates from the database's dedicated static IP.
+ * Routes an HTTP request directly via native Deno fetch for sub-second speeds,
+ * with fast fallback to database RPC proxy / backup proxy if required.
  */
 export async function fetchViaDb(
   supabaseAdmin: SupabaseClient,
@@ -62,139 +148,32 @@ export async function fetchViaDb(
           headers: responseHeaders
         };
       }
-      console.warn(`[db_proxy] Vercel bridge returned status ${bridgeRes.status}. Falling back to DB RPC...`);
+      console.warn(`[db_proxy] Vercel bridge returned status ${bridgeRes.status}. Falling back...`);
     } catch (bridgeErr: any) {
-      console.error(`[db_proxy] Vercel bridge connection failed: ${bridgeErr?.message || bridgeErr}. Falling back to DB RPC...`);
+      console.error(`[db_proxy] Vercel bridge connection failed: ${bridgeErr?.message || bridgeErr}. Falling back...`);
     }
   }
 
+  // 1. Try Direct Native Fetch First (fastest response path, ~100-200ms)
+  try {
+    const directResult = await performDirectFetch(url, options);
+    if (directResult.ok || (directResult.status >= 200 && directResult.status < 500)) {
+      return directResult;
+    }
+    console.warn(`[db_proxy] Direct native fetch returned status ${directResult.status}. Trying DB RPC fallback...`);
+  } catch (directErr) {
+    console.warn(`[db_proxy] Direct native fetch failed: ${directErr}. Trying DB RPC fallback...`);
+  }
+
+  // 2. Fallback to DB RPC if direct fetch failed
   let parsedBody: any = null;
   if (options.body) {
     try {
       parsedBody = JSON.parse(options.body);
     } catch {
-      // Fall back to raw string if it's not a JSON object
       parsedBody = options.body;
     }
   }
-
-  const isWhitelistedOnly = false; // Disabled strict whitelist only to allow korba direct fallbacks
-  const method = (options.method || "GET").toUpperCase();
-  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-
-  const performDirectFetchFallback = async (originalErr: any) => {
-    const shouldBlockFallback = options.disableFallback === true;
-    if (shouldBlockFallback) {
-      console.warn(`[db_proxy] DB Proxy failed (Error: ${JSON.stringify(originalErr)}). Fallback disabled for ${method}. Returning error.`);
-      const errMsg = `DB Proxy failed: ${originalErr?.message || JSON.stringify(originalErr)}`;
-      return {
-        ok: false,
-        status: 502,
-        text: async () => JSON.stringify({ error: errMsg }),
-        json: async () => ({ error: errMsg }),
-        headers: new Headers({ "content-type": "application/json" }),
-      };
-    }
-    console.warn(`[db_proxy] DB Proxy failed (Error: ${JSON.stringify(originalErr)}). Attempting direct fetch fallback to: ${url}`);
-    try {
-      const fetchOpts: RequestInit = {
-        method: options.method || "GET",
-        headers: options.headers || {},
-        body: options.body,
-      };
-
-      let client: any = undefined;
-      if (url.includes("korba365.com")) {
-        const proxyUrl = Deno.env.get("KORBA_PROXY_URL") || "http://cvlscvmy:wylckry6fx3o@31.59.20.176:6754/";
-        console.log(`[db_proxy] Routing direct fetch through proxy: ${proxyUrl}`);
-        if (typeof (Deno as any).createHttpClient === "function") {
-          client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
-          (fetchOpts as any).client = client;
-        } else {
-          console.warn("[db_proxy] Deno.createHttpClient is not available in this environment.");
-        }
-      }
-
-      let directRes;
-      try {
-        directRes = await fetch(url, fetchOpts);
-      } finally {
-        if (client) {
-          try {
-            client.close();
-          } catch (closeErr) {
-            console.error("[db_proxy] Error closing HTTP client proxy:", closeErr);
-          }
-        }
-      }
-      const textVal = await directRes.text();
-      if (!directRes.ok && directRes.status >= 500) {
-        return await performRenderFallback({ status: directRes.status, body: textVal });
-      }
-      return {
-        ok: directRes.ok,
-        status: directRes.status,
-        text: async () => textVal,
-        json: async () => {
-          try {
-            return JSON.parse(textVal);
-          } catch {
-            return textVal;
-          }
-        },
-        headers: directRes.headers,
-      };
-    } catch (directErr: any) {
-      console.error("[db_proxy] Direct fetch fallback failed. Trying Render backup proxy...", directErr);
-      return await performRenderFallback(directErr);
-    }
-  };
-
-  const performRenderFallback = async (originalErr: any) => {
-    const renderUrl = (Deno.env.get("RENDER_BACKEND_URL") || "https://swiftdata-auth-backend.onrender.com").replace(/\/$/, "");
-    const proxySecret = Deno.env.get("PROXY_SECRET") || "swiftdata-proxy-secret-2026";
-    console.warn(`[db_proxy] Attempting backup proxy fetch via Render service (${renderUrl})...`);
-    try {
-      const renderRes = await fetch(`${renderUrl}/api/proxy-pass`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-proxy-secret": proxySecret
-        },
-        body: JSON.stringify({
-          url: url,
-          method: options.method || "GET",
-          headers: options.headers || {},
-          body: options.body
-        })
-      });
-
-      const resText = await renderRes.text();
-      return {
-        ok: renderRes.ok,
-        status: renderRes.status,
-        text: async () => resText,
-        json: async () => {
-          try {
-            return JSON.parse(resText);
-          } catch {
-            return resText;
-          }
-        },
-        headers: renderRes.headers
-      };
-    } catch (renderErr: any) {
-      console.error("[db_proxy] Render fallback failed:", renderErr);
-      const errMsg = `DB Proxy, Direct Fetch & Render Fallback failed: ${renderErr?.message || renderErr}`;
-      return {
-        ok: false,
-        status: 502,
-        text: async () => JSON.stringify({ error: errMsg }),
-        json: async () => ({ error: errMsg }),
-        headers: new Headers({ "content-type": "application/json" })
-      };
-    }
-  };
 
   let data: any = null;
   let error: any = null;
@@ -205,7 +184,7 @@ export async function fetchViaDb(
       p_url: url,
       p_headers: options.headers || {},
       p_body: parsedBody,
-      p_timeout_seconds: timeoutSeconds,
+      p_timeout_seconds: Math.min(timeoutSeconds, 5), // Short timeout for RPC fallback
     });
     data = rpcRes.data;
     error = rpcRes.error;
@@ -215,18 +194,7 @@ export async function fetchViaDb(
   }
 
   if (error || !data) {
-    if (!isWhitelistedOnly) {
-      return await performDirectFetchFallback(error || { message: "No data returned from RPC" });
-    }
-    console.error("[db_proxy] RPC error calling exec_http_request_via_db:", error);
-    const errMsg = error?.message || "Failed to execute request via database proxy";
-    return {
-      ok: false,
-      status: 500,
-      text: async () => JSON.stringify({ error: errMsg }),
-      json: async () => ({ error: errMsg }),
-      headers: new Headers({ "content-type": "application/json" }),
-    };
+    return await performRenderFallback(url, options, error || { message: "No data returned from RPC" });
   }
 
   const responseBody = data.body || "";
@@ -239,8 +207,8 @@ export async function fetchViaDb(
     responseBody.includes("canceling statement due to statement timeout") ||
     responseBody.includes("statement timeout");
 
-  if (isTimeout && !isWhitelistedOnly) {
-    return await performDirectFetchFallback({ status, body: responseBody });
+  if (isTimeout) {
+    return await performRenderFallback(url, options, { status, body: responseBody });
   }
 
   const responseHeaders = new Headers(data.headers || {});

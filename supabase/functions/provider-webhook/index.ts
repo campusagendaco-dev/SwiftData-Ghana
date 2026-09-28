@@ -1,3 +1,5 @@
+declare const Deno: any;
+
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -21,14 +23,15 @@ async function verifyHmacSha256(bodyText: string, keyString: string, expectedSig
     const signatureArray = Array.from(new Uint8Array(signatureBuffer));
     const computedSignature = signatureArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
-    return computedSignature.toLowerCase() === expectedSignature.toLowerCase();
+    const cleanExpected = expectedSignature.toLowerCase().replace(/^sha256=/, "").trim();
+    return computedSignature.toLowerCase() === cleanExpected;
   } catch (err) {
     console.error("[provider-webhook] HMAC verification error:", err);
     return false;
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -49,11 +52,12 @@ serve(async (req) => {
     });
   }
 
-  // Security: Verify webhook secret or SKPlug HMAC signature
+  // Security: Verify webhook secret, SKPlug HMAC, or Spendless HMAC signature
   const PROVIDER_WEBHOOK_SECRET = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
   const XCEL_WEBHOOK_SECRET = Deno.env.get("XCEL_WEBHOOK_SECRET");
   
   const skplugSignature = req.headers.get("x-skplug-signature") || req.headers.get("X-SKPlug-Signature");
+  const webhookSignature = req.headers.get("x-webhook-signature") || req.headers.get("X-Webhook-Signature");
   const xWebhookSecret = req.headers.get("x-webhook-secret");
   
   let isAuthorized = false;
@@ -88,6 +92,34 @@ serve(async (req) => {
       console.log("[provider-webhook] SKPlug signature verified successfully.");
     } catch (err: any) {
       console.error("[provider-webhook] Error verifying SKPlug signature:", err.message);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } else if (webhookSignature) {
+    try {
+      const { data: spendlessProvider } = await supabaseAdmin
+        .from("providers")
+        .select("api_key, settings")
+        .eq("handler_type", "spendless")
+        .maybeSingle();
+
+      const secretKey = Deno.env.get("SPENDLESS_WEBHOOK_SECRET") || spendlessProvider?.settings?.webhook_secret || spendlessProvider?.api_key || "direct";
+      const signatureValid = await verifyHmacSha256(body, secretKey, webhookSignature);
+
+      if (!signatureValid) {
+        console.warn("[provider-webhook] Spendless HMAC signature verification failed: Signature mismatch.");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      isAuthorized = true;
+      console.log("[provider-webhook] Spendless HMAC signature verified successfully.");
+    } catch (err: any) {
+      console.error("[provider-webhook] Error verifying Spendless HMAC signature:", err.message);
       return new Response(JSON.stringify({ error: "Unauthorized" }), { 
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" }

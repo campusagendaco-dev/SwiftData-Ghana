@@ -57,8 +57,8 @@ serve(async (req: Request) => {
       }
 
       const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
-      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+      const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "189eae68808be2089295211d065ecf14d4f34b3c";
+      const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
 
       if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
         return new Response(JSON.stringify({ success: false, error: "Korba credentials not configured" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -141,8 +141,8 @@ serve(async (req: Request) => {
       || { name: "Korba", handler_type: "korba" };
 
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || activeProvider?.settings?.client_id || "2419";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || activeProvider?.api_key || "";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || activeProvider?.api_secret || "";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || activeProvider?.api_key || "189eae68808be2089295211d065ecf14d4f34b3c";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || activeProvider?.api_secret || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
 
     let lookupUrl = "";
     let payload: any = {};

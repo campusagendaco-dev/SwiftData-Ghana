@@ -1,6 +1,6 @@
 import { fetchViaDb } from "../db_proxy.ts";
 import { ProviderAdapter, ProviderResponse, PurchaseData } from "./types.ts";
-import { normalizeRecipient, parseProviderResponse } from "./utils.ts";
+import { normalizeRecipient, parseProviderResponse, parseCapacity } from "./utils.ts";
 
 export class KorbaAdapter implements ProviderAdapter {
   mapNetwork(rawNetwork: string): string {
@@ -17,8 +17,8 @@ export class KorbaAdapter implements ProviderAdapter {
     data: PurchaseData
   ): Promise<ProviderResponse> {
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
       return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };
@@ -132,22 +132,54 @@ export class KorbaAdapter implements ProviderAdapter {
 
       let packageId = String(data.plan || data.package_size || "");
       try {
-        const rawNetwork = data.networkRaw || data.network || "";
-        const queryNetwork = rawNetwork.startsWith("Korba ") ? rawNetwork : `Korba ${rawNetwork}`;
+        const rawNetwork = String(data.networkRaw || data.network || "").toUpperCase();
+        let dbNet = "MTN";
+        if (rawNetwork.includes("TELECEL") || rawNetwork.includes("VODA")) dbNet = "Telecel";
+        else if (rawNetwork.includes("AIRTEL") || rawNetwork.includes("TIGO") || rawNetwork.includes("AT")) dbNet = "AirtelTigo";
+        else if (rawNetwork.includes("GLO")) dbNet = "GLO";
+
         const { data: pkgMappings } = await supabaseAdmin
           .from("provider_packages")
-          .select("external_id, network")
-          .eq("provider_id", provider.id)
-          .eq("package_name", data.package_size || data.plan || "");
-        
-        const mapping = (pkgMappings || []).find(
-          m => m.network === rawNetwork || m.network === queryNetwork
-        );
-        if (mapping?.external_id) {
-          packageId = mapping.external_id;
+          .select("external_id, package_name, capacity_gb, network, raw_data")
+          .eq("provider_id", provider.id);
+
+        if (pkgMappings && pkgMappings.length > 0) {
+          const reqSize = String(data.package_size || data.plan || "").trim();
+          const reqCapGb = parseCapacity(reqSize);
+          const cleanReqSize = reqSize.replace(/\s+/g, "").toUpperCase();
+
+          const netPkgs = pkgMappings.filter((p: any) => 
+            p.network === dbNet || 
+            p.network === rawNetwork || 
+            (dbNet === "MTN" && (p.network === "MTN" || p.network === "YELLO"))
+          );
+
+          // 1. Exact match on external_id
+          let match = netPkgs.find((p: any) => p.external_id === reqSize);
+          // 2. Exact match on package_name (ignoring spaces & case)
+          if (!match) {
+            match = netPkgs.find((p: any) => String(p.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanReqSize);
+          }
+          // 3. Match on capacity_gb
+          if (!match && reqCapGb > 0) {
+            match = netPkgs.find((p: any) => Math.abs(Number(p.capacity_gb || 0) - reqCapGb) < 0.05);
+          }
+          // 4. Substring match in package_name or raw_data.name
+          if (!match) {
+            match = netPkgs.find((p: any) => {
+              const pName = String(p.package_name || "").replace(/\s+/g, "").toUpperCase();
+              const rawName = String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase();
+              return pName.includes(cleanReqSize) || rawName.includes(cleanReqSize);
+            });
+          }
+
+          if (match?.external_id) {
+            packageId = match.external_id;
+            console.log(`[korba-payload-resolve] Mapped ${rawNetwork} ${reqSize} -> Korba ID: ${packageId} (${match.package_name})`);
+          }
         }
-      } catch (e) {
-        console.error("[korba-payload-resolve] Error:", e);
+      } catch (e: any) {
+        console.error("[korba-payload-resolve] Error:", e?.message || e);
       }
 
       const isVodafone = rawNet.includes("TELECEL") || rawNet.includes("VODA");
@@ -183,8 +215,8 @@ export class KorbaAdapter implements ProviderAdapter {
     reference: string
   ): Promise<ProviderResponse> {
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
       return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };
@@ -271,9 +303,9 @@ export class KorbaAdapter implements ProviderAdapter {
       proxyError = e.message || "Unknown proxy exception";
     }
 
-    // Attempt 2: Direct HTTP Fetch Fallback (Only for status checks)
-    if (!success && isStatusCheck) {
-      console.log(`[KorbaAdapter] DB Proxy failed (${proxyError}). Falling back to Direct fetch...`);
+    // Attempt 2: Direct HTTP Fetch Fallback
+    if (!success) {
+      console.log(`[KorbaAdapter] DB Proxy failed (${proxyError}). Falling back to Direct native fetch...`);
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 12000);

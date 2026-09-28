@@ -63,8 +63,16 @@ export class StandardAdapter implements ProviderAdapter {
       return [`${clean}/${alias}`];
     }
     if (handlerType === "spendless") {
-      const alias = endpoint === "purchase" ? "purchase" : (endpoint === "status" ? "order-status" : endpoint);
-      return [`${clean}/${alias}`];
+      if (endpoint === "status") {
+        const ref = String(data.transaction_id || data.reference || data.order_id || "");
+        return [
+          `${clean}/orders?reference=${ref}`,
+          `${clean}/orders/${ref}`,
+          `${clean}/order-status?reference=${ref}`,
+          `${clean}/order-status/${ref}`
+        ];
+      }
+      return [`${clean}/${endpoint === "purchase" ? "purchase" : endpoint}`];
     }
 
     // Generic fallback aliases
@@ -161,12 +169,20 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "datahub" || handlerType === "spendless") {
-      return {
+      const payloadObj: any = {
         networkKey: netKey,
         recipient: recipient,
         capacity: capacityStr,
         reference: targetRef,
       };
+      if (handlerType === "spendless") {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const callbackUrl = data.callback_url || data.webhook_url || (supabaseUrl ? `${supabaseUrl}/functions/v1/provider-webhook` : undefined);
+        if (callbackUrl) {
+          payloadObj.webhook_url = callbackUrl;
+        }
+      }
+      return payloadObj;
     }
     
     if (handlerType === "qhowmenzconsult") {
@@ -550,7 +566,8 @@ export class StandardAdapter implements ProviderAdapter {
                   (handlerType === "superbdatafy" && endpoint === "status") || 
                   (handlerType === "xcel" && endpoint === "status") ||
                   (handlerType === "qhowmenzconsult" && endpoint === "status") ||
-                  (handlerType === "skdataplug" && endpoint === "status");
+                  (handlerType === "skdataplug" && endpoint === "status") ||
+                  (handlerType === "spendless" && endpoint === "status");
 
     const maxAttempts = (endpoint === "status") ? 2 : 1;
 

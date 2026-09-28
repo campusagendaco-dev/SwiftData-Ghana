@@ -6,6 +6,7 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Copy,
   Check,
   RefreshCw,

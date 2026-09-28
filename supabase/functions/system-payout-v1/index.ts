@@ -143,7 +143,8 @@ type AdminUserAction =
   | "grant_admin_role"
   | "revoke_admin_role"
   | "verify_paystack_transfer"
-  | "get_korba_transactions";
+  | "get_korba_transactions"
+  | "purge_bot_spam";
 
 async function queryKorbaApi(
   supabaseAdmin: any,
@@ -244,13 +245,17 @@ async function queryKorbaApi(
       };
 
       if (url.includes("korba365.com")) {
-        const proxyUrl = Deno.env.get("KORBA_PROXY_URL") || "http://cvlscvmy:wylckry6fx3o@31.59.20.176:6754/";
-        console.log(`[system-payout-v1] Routing direct fetch through proxy: ${proxyUrl}`);
-        if (typeof (Deno as any).createHttpClient === "function") {
-          client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
-          (fetchOpts as any).client = client;
+        const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim();
+        if (proxyUrl) {
+          console.log(`[system-payout-v1] Routing direct fetch through custom proxy: ${proxyUrl}`);
+          if (typeof (Deno as any).createHttpClient === "function") {
+            client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
+            (fetchOpts as any).client = client;
+          } else {
+            console.warn("[system-payout-v1] Deno.createHttpClient is not available in this environment.");
+          }
         } else {
-          console.warn("[system-payout-v1] Deno.createHttpClient is not available in this environment.");
+          console.log(`[system-payout-v1] Sending direct native request to Korba from Supabase Edge Function`);
         }
       }
 
@@ -2492,27 +2497,6 @@ serve(async (req: Request) => {
         }).catch(() => {});
 
         return new Response(JSON.stringify({ success: true, count: ids.length, message: `Successfully purged ${ids.length} unpaid spam order(s).` }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      case "purge_test_accounts": {
-        const { data: testProfiles, error: fetchErr } = await supabaseAdmin
-          .from("profiles")
-          .select("user_id, email")
-          .or("email.ilike.%@example.com,email.ilike.%apitest%,email.ilike.%testbot%");
-
-        if (fetchErr) throw fetchErr;
-        const testIds = (testProfiles || []).map((p: any) => p.user_id);
-
-        if (testIds.length > 0) {
-          await supabaseAdmin.from("orders").delete().in("agent_id", testIds);
-          await supabaseAdmin.from("wallets").delete().in("agent_id", testIds);
-          await supabaseAdmin.from("profiles").delete().in("user_id", testIds);
-        }
-
-        return new Response(JSON.stringify({ success: true, deleted_count: testIds.length }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
