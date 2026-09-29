@@ -110,9 +110,9 @@ serve(async (req) => {
       .gte("created_at", oneMinuteAgo);
 
     if (recentOrders && recentOrders.length > 0) {
-      const statusesToCheck = ["paid", "processing", "fulfilled", "completed"];
+      const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
       const match = recentOrders.find(o => {
-        if (!statusesToCheck.includes(o.status)) return false;
+        if (!activeStatuses.includes(o.status)) return false;
 
         // Compare network case-insensitively with alias support
         const n1 = String(o.network || "").trim().toUpperCase();

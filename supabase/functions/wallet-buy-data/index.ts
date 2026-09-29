@@ -402,53 +402,27 @@ serve(async (req: Request) => {
 
     const amountNum = resolvedChargeAmount;
 
-    // Anti-Duplicate Protection (Strict guard to prevent duplicate purchases)
+    // Anti-Duplicate Protection (Strict guard to prevent duplicate purchases for identical recipient + package size while in-progress)
     const allowDuplicateSetting = sysSettings?.allow_duplicate_purchases === true;
     const clientAllowDuplicate = payload?.allow_duplicate === true || payload?.allow_duplicate === "true";
     const skipDuplicateCheck = allowDuplicateSetting || clientAllowDuplicate;
 
-    // 1. ALWAYS BLOCK if an order for the exact same recipient and package size is currently PROCESSING
-    const { data: activeProcessingOrders } = await supabaseAdmin
-      .from("orders")
-      .select("id, status, created_at, package_size")
-      .eq("customer_phone", normalizedPhone)
-      .eq("status", "processing")
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    if (activeProcessingOrders && activeProcessingOrders.length > 0) {
-      const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
-      const existingMatch = activeProcessingOrders.find((o: any) => {
-        const p1 = String(o.package_size || "").replace(/\s+/g, "").toUpperCase();
-        return p1 === p2;
-      });
-
-      if (existingMatch) {
-        console.warn(`[DUPLICATE] Blocked purchase: Order ${existingMatch.id} for ${normalizedPhone} (${package_size}) is currently PROCESSING.`);
-        return new Response(JSON.stringify({ 
-          error: "An order for this phone number and package size is currently processing. Please wait for delivery confirmation before placing another request." 
-        }), {
-          status: 409,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
-
     if (!skipDuplicateCheck) {
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       let duplicateOrder = null;
 
       const { data: recentOrders } = await supabaseAdmin
         .from("orders")
         .select("id, status, network, package_size, amount, created_at")
-        .eq("agent_id", user.id)
         .eq("customer_phone", normalizedPhone)
-        .gte("created_at", oneHourAgo);
+        .gte("created_at", tenMinutesAgo);
 
       if (recentOrders && recentOrders.length > 0) {
-        const statusesToCheck = ["paid", "processing", "fulfilled", "completed"];
+        // Only block if an active order for the EXACT SAME recipient & EXACT SAME package size is STILL IN-PROGRESS.
+        // If previous order is fulfilled, completed, failed, or refunded, or if package size is DIFFERENT, ALLOW purchase!
+        const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
         const match = recentOrders.find((o: any) => {
-          if (!statusesToCheck.includes(o.status)) return false;
+          if (!activeStatuses.includes(o.status)) return false;
 
           // Compare network case-insensitively with alias support
           const n1 = String(o.network || "").trim().toUpperCase();
@@ -473,9 +447,9 @@ serve(async (req: Request) => {
       }
 
       if (duplicateOrder) {
-        console.warn(`[DUPLICATE] Rejected duplicate order for ${normalizedPhone} within 60 minutes`);
+        console.warn(`[DUPLICATE] Blocked purchase: Active order ${duplicateOrder.id} (${duplicateOrder.package_size}) for ${normalizedPhone} is currently ${duplicateOrder.status}.`);
         return new Response(JSON.stringify({ 
-          error: "Duplicate order detected. Please wait 60 minutes before placing the same order again." 
+          error: "An order for this phone number and package size is currently in progress. Please wait for delivery confirmation before placing another request for the same package." 
         }), {
           status: 409,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

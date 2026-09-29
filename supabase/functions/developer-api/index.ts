@@ -1052,20 +1052,20 @@ serve(async (req: Request) => {
            duplicateOrder = data?.find((o: any) => o.metadata?.client_reference === clientRef);
         }
 
-        // 2. Fallback Time-Window Check (60 Minutes for exact same parameters)
+        // 2. Fallback Time-Window Check (Only block if identical package size is CURRENTLY IN PROGRESS)
         if (!duplicateOrder) {
-          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
           const { data: recentOrders } = await supabase
             .from("orders")
             .select("id, status, network, package_size, amount, created_at")
             .eq("agent_id", currentUserId ?? "")
             .eq("customer_phone", normalizedPhone)
-            .gte("created_at", oneHourAgo);
+            .gte("created_at", tenMinutesAgo);
 
           if (recentOrders && recentOrders.length > 0) {
-            const statusesToCheck = ["paid", "processing", "pending", "fulfilled", "completed", "failed", "fulfillment_failed", "refunded"];
+            const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
             const match = recentOrders.find((o: any) => {
-              if (!statusesToCheck.includes(o.status)) return false;
+              if (!activeStatuses.includes(o.status)) return false;
 
               // Compare network case-insensitively with alias support
               const n1 = String(o.network || "").trim().toUpperCase();

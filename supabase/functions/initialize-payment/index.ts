@@ -1265,22 +1265,21 @@ serve(async (req: Request) => {
       }
     }
 
-    // ── Anti-Duplicate Protection (60 Minutes to prevent double checkouts for identical details) ──
+    // ── Anti-Duplicate Protection (Only block if an identical package size for the same recipient is CURRENTLY IN PROGRESS) ──
     const allowDuplicateSetting = settings?.allow_duplicate_purchases === true;
     if (!allowDuplicateSetting) {
       const customerPhone = (metadata.customer_phone || "").trim();
       const network = (metadata.network || "").trim();
       const packageSize = (metadata.package_size || "").trim();
       if (customerPhone && network) {
-        const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
         let dupQuery = supabaseAdmin
           .from("orders")
           .select("id, status")
           .eq("customer_phone", customerPhone)
           .eq("network", network)
-          .eq("amount", resolvedAmount)
-          .in("status", ["paid", "processing", "fulfilled", "completed", "pending", "awaiting_payment"])
-          .gte("created_at", sixtyMinutesAgo);
+          .in("status", ["paid", "processing", "pending", "awaiting_payment"])
+          .gte("created_at", tenMinutesAgo);
 
         if (orderType === "data" && packageSize) {
           dupQuery = dupQuery.eq("package_size", packageSize);
@@ -1291,9 +1290,9 @@ serve(async (req: Request) => {
         const { data: existingDuplicate } = await dupQuery.limit(1).maybeSingle();
 
         if (existingDuplicate) {
-          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone} (${orderType})`);
+          console.warn(`[DUPLICATE_INIT] Blocked duplicate payment initialization for ${customerPhone} (${packageSize || orderType})`);
           return new Response(JSON.stringify({ 
-            error: "An order with identical details was recently placed. Please wait 60 minutes before trying again." 
+            error: "An order for this number and package size is currently in progress. Please wait for delivery confirmation before placing another request." 
           }), {
             status: 409,
             headers: { ...corsHeaders, "Content-Type": "application/json" }
