@@ -1,16 +1,11 @@
 declare const Deno: any;
 
-// @ts-ignore
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-// @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, sendSmsViaTxtConnect, getSmsConfig } from "../_shared/sms.ts";
 import { getActiveProviders, logProviderError } from "../_shared/providers.ts";
 import { notifyWalletCredit } from "../_shared/webhooks.ts";
-
-
-declare const Deno: any;
 
 function getEnv(...keys: string[]): string {
   for (const k of keys) { const v = (Deno as any).env.get(k)?.trim(); if (v) return v; }
@@ -37,6 +32,8 @@ function mapNetworkKey(network: string): string {
 
   return raw;
 }
+
+const mapDataNetworkKey = mapNetworkKey;
 
 function parseCapacity(pkg: string | null | undefined): number {
   if (!pkg) return 0;
