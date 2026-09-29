@@ -1067,14 +1067,10 @@ serve(async (req: Request) => {
             const match = recentOrders.find((o: any) => {
               if (!activeStatuses.includes(o.status)) return false;
 
-              // Compare network case-insensitively with alias support
+              // Compare network / offer type strictly
               const n1 = String(o.network || "").trim().toUpperCase();
               const n2 = String(network || "").trim().toUpperCase();
-              const networksMatch = n1 === n2 ||
-                ((n1 === "MTN" || n1 === "YELLO") && (n2 === "MTN" || n2 === "YELLO")) ||
-                ((n1 === "TELECEL" || n1 === "VODAFONE" || n1 === "RED") && (n2 === "TELECEL" || n2 === "VODAFONE" || n2 === "RED")) ||
-                ((n1 === "AT" || n1 === "AIRTELTIGO" || n1 === "BLUE") && (n2 === "AT" || n2 === "AIRTELTIGO" || n2 === "BLUE"));
-              if (!networksMatch) return false;
+              if (n1 !== n2) return false;
 
               // Compare package_size or amount
               if (package_size) {
