@@ -411,6 +411,7 @@ serve(async (req: Request) => {
         .eq("customer_phone", normalizedPhone)
         .gte("created_at", tenMinutesAgo);
 
+      if (recentOrders && recentOrders.length > 0) {
         // Only block if an active order for the EXACT SAME recipient, EXACT SAME offer/network, and EXACT SAME package size is STILL IN-PROGRESS.
         // If previous order is fulfilled, completed, failed, or refunded, or if package size / offer type is DIFFERENT, ALLOW purchase!
         const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
@@ -419,7 +420,7 @@ serve(async (req: Request) => {
 
           // Compare network / offer type strictly
           const n1 = String(o.network || "").trim().toUpperCase();
-          const n2 = String(network || normalizedNet || "").trim().toUpperCase();
+          const n2 = String(networkRaw || normalizedNet || "").trim().toUpperCase();
           if (n1 !== n2) return false;
 
           // Compare package size (whitespace & case insensitive)
