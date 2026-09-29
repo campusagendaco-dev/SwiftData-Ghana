@@ -26,9 +26,15 @@ export function normalizePhone(raw: string | null | undefined): string | null {
     digits = `233${digits}`;
   }
 
-  // Valid Ghana phone: 233 followed by 9 digits starting with 2, 3, 5 (12 digits total)
-  if (digits.startsWith("233") && digits.length === 12 && /^[235]/.test(digits.slice(3))) {
-    return digits;
+  // Valid Ghana phone: 233 followed by 9 digits with a valid mobile prefix
+  if (digits.startsWith("233") && digits.length === 12) {
+    const ghPrefix = `0${digits.slice(3, 5)}`;
+    const validGhPrefixes = ["024", "054", "055", "059", "025", "053", "020", "050", "027", "057", "026", "056", "023"];
+    if (validGhPrefixes.includes(ghPrefix)) {
+      return digits;
+    }
+    console.warn(`[SMS Validation] Rejected phone ${digits} with invalid Ghana prefix: ${ghPrefix}`);
+    return null;
   }
 
   // Valid international numbers (10 to 15 digits, non-repeating zeroes)
@@ -737,6 +743,27 @@ export async function sendBulkSmsViaHubtel(
   return { sent, failures };
 }
 
+// In-memory deduplication cache (holds recent SMS hashes for 45s to prevent duplicate delivery)
+const recentSmsMap = new Map<string, number>();
+
+function isDuplicateSms(recipient: string, type: string, body: string): boolean {
+  const now = Date.now();
+  // Simple hash for recipient + type + message body
+  const key = `${recipient}:${type}:${body.slice(0, 40)}`;
+  const lastSent = recentSmsMap.get(key);
+  if (lastSent && now - lastSent < 45000) { // 45 seconds deduplication window
+    return true;
+  }
+  recentSmsMap.set(key, now);
+  // Clean up old entries if cache grows too large
+  if (recentSmsMap.size > 1000) {
+    for (const [k, ts] of recentSmsMap.entries()) {
+      if (now - ts > 60000) recentSmsMap.delete(k);
+    }
+  }
+  return false;
+}
+
 export async function dispatchUnifiedSms(
   gateway: string,
   apiKey: string | null,
@@ -746,40 +773,163 @@ export async function dispatchUnifiedSms(
   type = "broadcast",
   agentId?: string
 ): Promise<any> {
-  const g = (gateway || "txtconnect").toLowerCase().trim();
+  const recipient = normalizePhone(to);
+  if (!recipient) {
+    console.warn(`[Smart SMS Engine] Skipped dispatch to invalid Ghana/International recipient: ${to}`);
+    return null;
+  }
+
+  // Smart Deduplication Guard
+  if (type !== "broadcast" && isDuplicateSms(recipient, type, body)) {
+    console.log(`[Smart SMS Engine] Suppressed duplicate ${type} SMS to ${recipient} (Sent < 45s ago).`);
+    return { success: true, deduplicated: true };
+  }
+
+  const primaryGateway = (gateway || "txtconnect").toLowerCase().trim();
   const key = apiKey || "";
 
-  if (g === "mnotify" || key.startsWith("mnotify:")) {
-    const actualKey = key.startsWith("mnotify:") ? key.slice(8) : key;
-    return await sendSmsViaMnotify(actualKey, from, to, body, type, agentId);
-  }
-  if (g === "korba" || key === "korba" || key.startsWith("korba:")) {
-    let cId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
-    let cKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
-    let sKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+  // Priority queue of gateways to try
+  const gatewayOrder: Array<{ g: SmsGatewayType; keyOverride?: string }> = [
+    { g: primaryGateway as SmsGatewayType, keyOverride: key }
+  ];
 
-    if (key.startsWith("korba:")) {
-      const parts = key.slice(6).split(":");
-      if (parts.length >= 3) {
-        cId = parts[0] || cId;
-        cKey = parts[1] || cKey;
-        sKey = parts.slice(2).join(":") || sKey;
-      }
+  const allGateways: SmsGatewayType[] = ["txtconnect", "mnotify", "korba", "arkesel", "hubtel"];
+  for (const gw of allGateways) {
+    if (gw !== primaryGateway) {
+      gatewayOrder.push({ g: gw });
     }
-    return await sendSmsViaKorba(cId, cKey, sKey, to, body, type, agentId);
   }
-  if (g === "arkesel" || key.startsWith("arkesel:")) {
-    const actualKey = key.startsWith("arkesel:") ? key.slice(8) : key;
-    return await sendSmsViaArkesel(actualKey, from, to, body, type, agentId);
+
+  let lastError: Error | null = null;
+  const url = Deno.env.get("SUPABASE_URL") || "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  let supabaseAdmin: any = null;
+  if (url && serviceKey) {
+    try { supabaseAdmin = createClient(url, serviceKey); } catch {}
   }
-  if (g === "hubtel" || key.startsWith("hubtel:") || key.includes(":")) {
-    const raw = key.startsWith("hubtel:") ? key.slice(7) : key;
-    const [cId, cSec] = raw.split(":");
-    const finalId = Deno.env.get("HUBTEL_CLIENT_ID") || cId || "";
-    const finalSec = Deno.env.get("HUBTEL_CLIENT_SECRET") || cSec || "";
-    return await sendSmsViaHubtel(finalId, finalSec, from, to, body, type, agentId);
+
+  let sysConfig: SmsConfig | null = null;
+
+  for (const item of gatewayOrder) {
+    const currentGw = item.g;
+    try {
+      if (currentGw === "mnotify") {
+        let mKey = item.keyOverride?.startsWith("mnotify:") ? item.keyOverride.slice(8) : item.keyOverride;
+        if (!mKey || mKey === "mnotify") {
+          if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
+          mKey = sysConfig?.gatewayConfig.mnotify.apiKey || Deno.env.get("MNOTIFY_API_KEY") || Deno.env.get("MNOTIFY_KEY") || "";
+        }
+        if (!mKey) continue;
+        const sender = (sysConfig?.gatewayConfig.mnotify.senderId || from || "SwiftData").slice(0, 11);
+        return await sendSmsViaMnotify(mKey, sender, recipient, body, type, agentId);
+      }
+
+      if (currentGw === "korba") {
+        let cId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
+        let cKey = Deno.env.get("KORBA_CLIENT_KEY") || "";
+        let sKey = Deno.env.get("KORBA_SECRET_KEY") || "";
+        if (item.keyOverride?.startsWith("korba:")) {
+          const parts = item.keyOverride.slice(6).split(":");
+          if (parts.length >= 3) {
+            cId = parts[0] || cId;
+            cKey = parts[1] || cKey;
+            sKey = parts.slice(2).join(":") || sKey;
+          }
+        }
+        if (!cKey || !sKey) {
+          if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
+          const k = sysConfig?.gatewayConfig.korba;
+          if (k) { cId = k.clientId; cKey = k.clientKey; sKey = k.secretKey; }
+        }
+        if (!cKey || !sKey) continue;
+        return await sendSmsViaKorba(cId, cKey, sKey, recipient, body, type, agentId);
+      }
+
+      if (currentGw === "arkesel") {
+        let aKey = item.keyOverride?.startsWith("arkesel:") ? item.keyOverride.slice(8) : item.keyOverride;
+        if (!aKey || aKey === "arkesel") {
+          if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
+          aKey = sysConfig?.gatewayConfig.arkesel.apiKey || Deno.env.get("ARKESEL_API_KEY") || "";
+        }
+        if (!aKey) continue;
+        const sender = (sysConfig?.gatewayConfig.arkesel.senderId || from || "SwiftData").slice(0, 11);
+        return await sendSmsViaArkesel(aKey, sender, recipient, body, type, agentId);
+      }
+
+      if (currentGw === "hubtel") {
+        let hId = Deno.env.get("HUBTEL_CLIENT_ID") || "";
+        let hSec = Deno.env.get("HUBTEL_CLIENT_SECRET") || "";
+        if (item.keyOverride?.startsWith("hubtel:")) {
+          const [cId, cSec] = item.keyOverride.slice(7).split(":");
+          hId = cId || hId;
+          hSec = cSec || hSec;
+        } else if (item.keyOverride?.includes(":")) {
+          const [cId, cSec] = item.keyOverride.split(":");
+          hId = cId || hId;
+          hSec = cSec || hSec;
+        }
+        if (!hId || !hSec) {
+          if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
+          const h = sysConfig?.gatewayConfig.hubtel;
+          if (h) { hId = h.clientId; hSec = h.clientSecret; }
+        }
+        if (!hId || !hSec) continue;
+        const sender = (sysConfig?.gatewayConfig.hubtel.senderId || from || "SwiftData").slice(0, 11);
+        return await sendSmsViaHubtel(hId, hSec, sender, recipient, body, type, agentId);
+      }
+
+      // TxtConnect Gateway
+      let txtKey = item.keyOverride;
+      if (!txtKey || txtKey === "txtconnect" || txtKey.includes(":")) {
+        if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
+        txtKey = sysConfig?.gatewayConfig.txtconnect.apiKey || Deno.env.get("TXTCONNECT_API_KEY") || "";
+      }
+      if (!txtKey) continue;
+
+      const endpoint = "https://api.txtconnect.net/dev/api/sms/send";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${txtKey}`,
+        },
+        body: JSON.stringify({
+          to: recipient,
+          from: from || "Orderinfo",
+          sms: body,
+          unicode: "0",
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      const isRateLimited = response.status === 429 ||
+        data?.data?.status_code === "999" ||
+        data?.status_code === "999" ||
+        String(data?.data?.reason || "").toLowerCase().includes("too many request");
+
+      if (!response.ok || isRateLimited) {
+        if (isRateLimited && supabaseAdmin) {
+          const cooldownExpiry = new Date(Date.now() + 65 * 1000).toISOString();
+          supabaseAdmin.from("system_settings").update({ txtconnect_cooldown_until: cooldownExpiry }).eq("id", 1).then(() => {}).catch(() => {});
+        }
+        throw new Error(`TxtConnect Error (${response.status}): ${JSON.stringify(data)}`);
+      }
+
+      if (data && data.msg !== "Sms send Successful" && !data.messageId) {
+        throw new Error(`TxtConnect API failure: ${data.msg || "Unknown error"}`);
+      }
+
+      await logSmsToDb(recipient, from || "Orderinfo", body, type, "success", undefined, agentId).catch(console.error);
+      return data;
+
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Smart SMS Engine] Primary gateway "${currentGw}" failed for ${recipient} (${err?.message}). Autonomously cascading to next gateway...`);
+    }
   }
-  return await sendSmsViaTxtConnect(key, from, to, body, type, agentId);
+
+  throw lastError || new Error("All SMS gateways failed to deliver message.");
 }
 
 export async function dispatchUnifiedBulkSms(
