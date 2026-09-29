@@ -23,9 +23,9 @@ export class NewAggregatorAdapter implements ProviderAdapter {
     data: PurchaseData
   ): Promise<ProviderResponse> {
     // 1. Fetch credentials from provider settings (can be defined in Admin panel JSON settings or env)
-    const CLIENT_ID = provider?.settings?.client_id || Deno.env.get("NEW_AGGREGATOR_CLIENT_ID") || "";
-    const API_KEY = provider?.api_key || provider?.settings?.api_key || Deno.env.get("NEW_AGGREGATOR_API_KEY") || "";
-    const SECRET_KEY = provider?.api_secret || provider?.settings?.secret_key || Deno.env.get("NEW_AGGREGATOR_SECRET_KEY") || "";
+    const CLIENT_ID = Deno.env.get("NEW_AGGREGATOR_CLIENT_ID") || provider?.settings?.client_id || "";
+    const API_KEY = Deno.env.get("NEW_AGGREGATOR_API_KEY") || provider?.api_key || provider?.settings?.api_key || "";
+    const SECRET_KEY = Deno.env.get("NEW_AGGREGATOR_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
     const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
 
     if (!API_KEY) {
@@ -120,7 +120,7 @@ export class NewAggregatorAdapter implements ProviderAdapter {
     providerOrderId: string,
     reference: string
   ): Promise<ProviderResponse> {
-    const API_KEY = provider?.api_key || provider?.settings?.api_key || Deno.env.get("NEW_AGGREGATOR_API_KEY") || "";
+    const API_KEY = Deno.env.get("NEW_AGGREGATOR_API_KEY") || provider?.api_key || provider?.settings?.api_key || "";
     const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
 
     if (!baseUrl || !API_KEY) {

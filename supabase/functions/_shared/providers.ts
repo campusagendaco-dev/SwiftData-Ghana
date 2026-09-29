@@ -54,6 +54,19 @@ export async function logProviderError(supabaseAdmin: any, providerId: string, o
 }
 
 export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise<Provider[]> {
+  // 0. If order already has an assigned provider_id, prioritize that provider!
+  if (order?.provider_id) {
+    const { data: explicitProvider } = await supabaseAdmin
+      .from("providers")
+      .select("*")
+      .eq("id", order.provider_id)
+      .maybeSingle();
+    if (explicitProvider) {
+      console.log(`[resolveProvidersForOrder] Prioritizing assigned provider ${explicitProvider.name} (${explicitProvider.id}) for order ${order.id}`);
+      return [explicitProvider];
+    }
+  }
+
   let orderType = (order?.order_type || "data") as string;
   if (orderType.toLowerCase() === "api") {
     if (String(order?.package_size).toUpperCase() === "AIRTIME") {
@@ -77,39 +90,14 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     .eq("name", "Korba")
     .maybeSingle();
 
-  if (korbaProvider && !isAffordable) {
-    const isAirtime = orderType.toLowerCase() === "airtime";
-    const isUtility = orderType.toLowerCase() === "utility";
+  if (korbaProvider) {
     const isKorbaFlag = (network && String(network).toUpperCase().startsWith("KORBA")) || 
                         order?.metadata?.is_korba === true || 
-                        order?.metadata?.is_korba === "true";
+                        order?.metadata?.is_korba === "true" ||
+                        order?.payment_method === "korba";
     
-    let isMappedToKorba = false;
-    if (orderType.toLowerCase() === "data") {
-      const { data: korbaMappings } = await supabaseAdmin
-        .from("provider_packages")
-        .select("id, network, package_name, capacity_gb")
-        .eq("provider_id", korbaProvider.id);
-      
-      if (korbaMappings && korbaMappings.length > 0) {
-        const reqSize = String(order.package_size || "").trim();
-        const reqCapGb = parseCapacity(reqSize);
-        const cleanReqSize = reqSize.replace(/\s+/g, "").toUpperCase();
-
-        const hasMapping = korbaMappings.some((m: any) => {
-          const nameMatch = m.package_name === reqSize || String(m.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanReqSize;
-          const capMatch = reqCapGb > 0 && Math.abs(Number(m.capacity_gb || 0) - reqCapGb) < 0.05;
-          return nameMatch || capMatch;
-        });
-
-        if (hasMapping) {
-          isMappedToKorba = true;
-        }
-      }
-    }
-
-    if (isAirtime || isUtility || isKorbaFlag || isMappedToKorba) {
-      console.log(`[resolveProvidersForOrder] Resolved Korba provider for order ${order.id} (Airtime=${isAirtime}, Utility=${isUtility}, Flag=${isKorbaFlag}, Mapped=${isMappedToKorba})`);
+    if (isKorbaFlag) {
+      console.log(`[resolveProvidersForOrder] Resolved Korba provider for explicit Korba order ${order.id} (is_korba=true)`);
       return [korbaProvider];
     }
   }

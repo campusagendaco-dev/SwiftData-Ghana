@@ -251,6 +251,7 @@ export default function AdminCheckerOrders() {
     setAllOrders(enriched);
     if (!isSilent) {
       setLoading(false);
+    }
   }, [page, search, statusFilter, checkerTypeFilter, startDate, endDate, toast]);
 
   useEffect(() => {

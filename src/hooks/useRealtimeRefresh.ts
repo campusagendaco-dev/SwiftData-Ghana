@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
 
@@ -16,14 +16,14 @@ interface RealtimeOptions {
 }
 
 /** Poll interval (ms) — safety net for mobile where WebSocket dies in background */
-const POLL_INTERVAL_MS = 45_000;
+const POLL_INTERVAL_MS = 60_000;
 
 /**
  * Subscribes to one or more Supabase tables and calls onRefresh
  * (debounced) on any INSERT / UPDATE / DELETE.
  *
  * Prevents UI flicker by notifying consumers when an update is a silent background sync.
- * Gated by tab visibility to avoid CPU and battery thrashing on background tabs.
+ * Deduplicates channels to prevent socket connection exhaustion.
  */
 export function useRealtimeRefresh({
   tables,
@@ -43,20 +43,33 @@ export function useRealtimeRefresh({
   const trigger = (isSilent = true) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      // Only execute if tab is currently visible
       if (document.visibilityState === "visible") {
         onRefreshRef.current(isSilent);
       }
     }, debounceMs);
   };
 
+  const tablesKey = useMemo(() => [...tables].sort().join(","), [tables]);
+  const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
+
   useEffect(() => {
-    const filtersStr = JSON.stringify(filters);
+    if (!tables || tables.length === 0) return;
+
+    const parsedFilters = JSON.parse(filtersKey || "{}");
 
     // ── Realtime subscriptions ──────────────────────────────────────────────
     const channels = tables.map((table) => {
-      const channelName = `realtime-sync-${table}-${Math.random().toString(36).slice(2, 9)}`;
-      const filter = filters[table];
+      const channelName = `rt-sync-${table}`;
+
+      // Clean up existing channel for this topic if present to prevent socket duplication
+      const existingChannel = supabase.getChannels().find(
+        (c) => c.topic === `realtime:${channelName}`
+      );
+      if (existingChannel) {
+        safeRemoveChannel(existingChannel);
+      }
+
+      const filter = parsedFilters[table];
 
       const ch = supabase
         .channel(channelName)
@@ -70,19 +83,23 @@ export function useRealtimeRefresh({
           },
           () => trigger(true),
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn(`[Realtime] Channel ${table} notice: ${status}. Polling fallback active.`);
+          }
+        });
 
       return ch;
     });
 
-    // ── Polling fallback (catches missed events if mobile OS killed WS) ──
+    // ── Polling fallback ──
     pollRef.current = setInterval(() => {
       if (document.visibilityState === "visible") {
         onRefreshRef.current(true);
       }
     }, POLL_INTERVAL_MS);
 
-    // ── Re-fetch immediately when tab regains focus (app foregrounded) ──────
+    // ── Re-fetch immediately when tab regains focus ──
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         trigger(true);
@@ -97,5 +114,5 @@ export function useRealtimeRefresh({
       channels.forEach((ch) => safeRemoveChannel(ch));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tables.join(","), JSON.stringify(filters), debounceMs]);
+  }, [tablesKey, filtersKey, debounceMs]);
 }

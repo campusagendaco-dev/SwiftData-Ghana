@@ -114,7 +114,7 @@ serve(async (req) => {
         }
 
         if (handler === "datamart") {
-          const apiKey = chosenProvider.api_key || Deno.env.get("DATAMART_API_KEY") || "";
+          const apiKey = Deno.env.get("DATAMART_API_KEY") || chosenProvider?.api_key || "";
           const netStr = String(ord.network || "MTN").toUpperCase();
           let dmNetwork = "YELLO";
           if (netStr.includes("TELECEL") || netStr.includes("VODA")) dmNetwork = "TELECEL";

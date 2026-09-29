@@ -775,8 +775,8 @@ export async function dispatchUnifiedSms(
   if (g === "hubtel" || key.startsWith("hubtel:") || key.includes(":")) {
     const raw = key.startsWith("hubtel:") ? key.slice(7) : key;
     const [cId, cSec] = raw.split(":");
-    const finalId = cId || Deno.env.get("HUBTEL_CLIENT_ID") || "";
-    const finalSec = cSec || Deno.env.get("HUBTEL_CLIENT_SECRET") || "";
+    const finalId = Deno.env.get("HUBTEL_CLIENT_ID") || cId || "";
+    const finalSec = Deno.env.get("HUBTEL_CLIENT_SECRET") || cSec || "";
     return await sendSmsViaHubtel(finalId, finalSec, from, to, body, type, agentId);
   }
   return await sendSmsViaTxtConnect(key, from, to, body, type, agentId);
@@ -820,8 +820,8 @@ export async function dispatchUnifiedBulkSms(
   if (g === "hubtel" || key.startsWith("hubtel:") || key.includes(":")) {
     const raw = key.startsWith("hubtel:") ? key.slice(7) : key;
     const [cId, cSec] = raw.split(":");
-    const finalId = cId || Deno.env.get("HUBTEL_CLIENT_ID") || "";
-    const finalSec = cSec || Deno.env.get("HUBTEL_CLIENT_SECRET") || "";
+    const finalId = Deno.env.get("HUBTEL_CLIENT_ID") || cId || "";
+    const finalSec = Deno.env.get("HUBTEL_CLIENT_SECRET") || cSec || "";
     return await sendBulkSmsViaHubtel(finalId, finalSec, from, recipients, body, type, agentId);
   }
   return await sendBulkSmsViaTxtConnect(key, from, recipients, body, type, agentId);

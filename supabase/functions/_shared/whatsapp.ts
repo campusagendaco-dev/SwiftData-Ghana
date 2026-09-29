@@ -29,11 +29,11 @@ export async function sendTwilioWhatsAppMessage(
   text: string,
   config?: { accountSid?: string; authToken?: string; apiKeySid?: string; apiSecret?: string; fromNumber?: string }
 ): Promise<boolean> {
-  const accountSid = config?.accountSid || Deno.env.get("TWILIO_ACCOUNT_SID") || "";
-  const authToken = config?.authToken || Deno.env.get("TWILIO_AUTH_TOKEN") || "";
-  const apiKeySid = config?.apiKeySid || Deno.env.get("TWILIO_API_KEY_SID") || Deno.env.get("TWILIO_API_KEY") || "";
-  const apiSecret = config?.apiSecret || Deno.env.get("TWILIO_API_KEY_SECRET") || Deno.env.get("TWILIO_API_SECRET") || "";
-  const rawFrom = config?.fromNumber || Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER") || "";
+  const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID") || config?.accountSid || "";
+  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN") || config?.authToken || "";
+  const apiKeySid = Deno.env.get("TWILIO_API_KEY_SID") || Deno.env.get("TWILIO_API_KEY") || config?.apiKeySid || "";
+  const apiSecret = Deno.env.get("TWILIO_API_KEY_SECRET") || Deno.env.get("TWILIO_API_SECRET") || config?.apiSecret || "";
+  const rawFrom = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER") || config?.fromNumber || "";
 
   if (!accountSid || (!authToken && (!apiKeySid || !apiSecret)) || !rawFrom) {
     return false;

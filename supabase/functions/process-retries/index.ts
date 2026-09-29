@@ -201,8 +201,66 @@ serve(async (req: Request) => {
       }
     }
 
-    // ── PHASE 2: FULFILL PAID/FAILED ORDERS (DISABLED) ───────────────────────
-    console.log("[retry-orders] Phase 2: Fulfill retries is disabled. Relying on webhook/status check.");
+    // ── PHASE 2: FULFILL STUCK PAID / PROCESSING ORDERS ─────────────────────
+    const oneMinAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
+    const { data: stuckOrders } = await supabaseAdmin
+      .from("orders")
+      .select("id, status, order_type, agent_id, profit, profit_credited")
+      .in("status", ["paid", "processing"])
+      .gte("created_at", yesterday)
+      .lte("created_at", oneMinAgo)
+      .limit(15);
+
+    console.log(`[retry-orders] Phase 2: Found ${(stuckOrders || []).length} stuck paid/processing orders.`);
+
+    const verifyPaymentUrl = `${SUPABASE_URL}/functions/v1/verify-payment`;
+    for (const order of stuckOrders || []) {
+      console.log(`[retry-orders] Triggering verify-payment for stuck order: ${order.id} (Status: ${order.status})`);
+      try {
+        const resp = await fetch(verifyPaymentUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({ reference: order.id }),
+        });
+        const respText = await resp.text();
+        console.log(`[retry-orders] verify-payment response for ${order.id}:`, respText);
+        results.push({ order_id: order.id, status: order.status, response: respText });
+      } catch (err) {
+        console.error(`[retry-orders] Error triggering verify-payment for ${order.id}:`, err);
+      }
+    }
+
+    // ── PHASE 3: UNCREDITED PROFIT SAFETY NET ──────────────────────────────────
+    const { data: uncreditedOrders } = await supabaseAdmin
+      .from("orders")
+      .select("id, agent_id, profit")
+      .in("status", ["fulfilled", "completed"])
+      .gt("profit", 0)
+      .eq("profit_credited", false)
+      .limit(20);
+
+    console.log(`[retry-orders] Phase 3: Found ${(uncreditedOrders || []).length} uncredited fulfilled orders.`);
+
+    for (const order of uncreditedOrders || []) {
+      if (order.agent_id && order.profit > 0) {
+        console.log(`[retry-orders] Crediting missing profit GHS ${order.profit} for agent ${order.agent_id}...`);
+        const { data: wallet } = await supabaseAdmin
+          .from("wallets")
+          .select("id, balance")
+          .eq("agent_id", order.agent_id)
+          .maybeSingle();
+
+        if (wallet) {
+          const newBal = Number(wallet.balance || 0) + Number(order.profit);
+          await supabaseAdmin.from("wallets").update({ balance: newBal }).eq("id", wallet.id);
+          await supabaseAdmin.from("orders").update({ profit_credited: true }).eq("id", order.id);
+          console.log(`[retry-orders] Successfully credited missing profit for order ${order.id}`);
+        }
+      }
+    }
 
     return new Response(JSON.stringify({ processed: results.length, results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -215,3 +273,4 @@ serve(async (req: Request) => {
     });
   }
 });
+

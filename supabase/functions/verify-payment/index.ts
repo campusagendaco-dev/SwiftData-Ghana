@@ -725,18 +725,17 @@ serve(async (req: any) => {
       }
     }
 
-    // --- 1.2. AGE CHECK FALLBACK ---
+    // --- 1.2. PROCESSING FALLBACK (No arbitrary timeouts - strictly rely on provider status updates) ---
     if (existingOrder && existingOrder.status === "processing") {
       if (existingOrder.network === "MTN Mash Up") {
         return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
       }
-      
-      // Safety: Never re-submit any processing order to the provider API.
-      // If it is stuck at processing, it has likely already entered/passed through the provider's API.
-      console.log(`[verify-payment] Order ${targetReference} is currently in processing state. Safety check: blocking re-submission to provider API.`);
+
+      console.log(`[verify-payment] Order ${targetReference} is currently in processing state. Awaiting provider status update.`);
       return new Response(JSON.stringify({ 
         status: "processing", 
-        message: "Order is in processing state. Re-submission blocked to prevent duplicate carrier charging." 
+        provider_order_id: existingOrder.provider_order_id,
+        message: "Order is in processing state awaiting provider status update." 
       }), { headers: corsHeaders });
     }
 

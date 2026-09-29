@@ -362,4 +362,89 @@ export class KorbaAdapter implements ProviderAdapter {
     try { parsedMsg = JSON.parse(resText)?.message || JSON.parse(resText)?.error || ""; } catch { /* ignore */ }
     return { ok: false, reason: parsedMsg || `Korba returned status ${status}: ${resText.slice(0, 100)}`, rawBody: resText };
   }
+
+  async checkStatus(
+    supabaseAdmin: any,
+    provider: any,
+    providerOrderId: string,
+    reference: string
+  ): Promise<ProviderResponse> {
+    const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
+
+    const txId = providerOrderId || reference;
+    if (!txId) return { ok: false, reason: "Missing transaction ID for status check." };
+
+    const baseUrl = (provider.base_url || "https://sme.korbaweb.com/api/v1.0").replace(/\/+$/, "");
+    const targetUrl = `${baseUrl}/transaction_status/`;
+
+    const payload = {
+      client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+      transaction_id: txId,
+    };
+
+    const sortedKeys = Object.keys(payload).sort();
+    const messageParts = [];
+    for (const key of sortedKeys) {
+      if ((payload as any)[key] !== undefined) {
+        messageParts.push(`${key}=${(payload as any)[key]}`);
+      }
+    }
+    const message = messageParts.join("&");
+    
+    const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const messageData = new TextEncoder().encode(message);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    try {
+      console.log(`[KorbaAdapter] Checking status for ${txId} via ${targetUrl}...`);
+      const res = await fetchViaDb(supabaseAdmin, targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const resText = await res.text();
+      let parsed: any = {};
+      try { parsed = JSON.parse(resText); } catch { /* ignore text */ }
+
+      if (res.ok) {
+        const rawStatus = (parsed.status || parsed.status_code || parsed.code || "").toString().toUpperCase();
+        const isDelivered = rawStatus === "000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
+        const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
+
+        let token: string | null = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || null;
+
+        return {
+          ok: true,
+          status: isDelivered ? "delivered" : (isFailed ? "failed" : "processing"),
+          id: txId,
+          reason: parsed.message || parsed.description || "",
+          raw: token ? { prepaid_token: token } : undefined,
+          rawBody: resText
+        };
+      } else {
+        return { ok: false, status: "processing", reason: `Korba HTTP ${res.status}` };
+      }
+    } catch (err: any) {
+      console.error("[KorbaAdapter] Status check exception:", err);
+      return { ok: false, status: "processing", reason: err?.message || String(err) };
+    }
+  }
 }
+
