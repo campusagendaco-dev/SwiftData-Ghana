@@ -936,22 +936,24 @@ serve(async (req: any) => {
           }), { headers: corsHeaders });
         }
 
-        const korbaStatus = String(statusData?.status || "").toLowerCase();
+        const rawKorbaStatus = String(statusData?.status || statusData?.results || statusData?.delivery_status || "").toLowerCase();
+        const isKorbaSuccess = statusData?.success === true || rawKorbaStatus.includes("success") || rawKorbaStatus === "paid" || rawKorbaStatus === "completed" || rawKorbaStatus === "fulfilled";
+        const isKorbaFailed = statusData?.success === false && (rawKorbaStatus.includes("fail") || rawKorbaStatus.includes("error") || rawKorbaStatus.includes("cancel") || (statusData?.error_code && Number(statusData.error_code) > 0));
 
-        if (korbaStatus === "success") {
+        if (isKorbaSuccess) {
           verifiedAmount = Number(existingOrder?.amount || 0);
           paystackFeeOnVerified = Number(existingOrder?.paystack_fee || 0);
           metadata = existingOrder?.metadata || {};
           currentOrderType = (existingOrder?.order_type || "data") as string;
-        } else if (korbaStatus === "failed" || korbaStatus === "failure") {
-          const failMsg = translateFailureReason(statusData.message || "Payment failed");
+        } else if (isKorbaFailed) {
+          const failMsg = translateFailureReason(statusData.message || statusData.results || statusData.error_message || "Payment failed");
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
             failure_reason: failMsg
           }).eq("id", targetReference);
           return new Response(JSON.stringify({ status: "error", error: failMsg }), { headers: corsHeaders });
         } else {
-          console.log(`[verify-payment] Korba status is not success: ${korbaStatus}`);
+          console.log(`[verify-payment] Korba status is not success: ${rawKorbaStatus}`);
           await sendPendingSmsIfNeeded(false);
           return new Response(JSON.stringify({ status: "pending", message: "Awaiting mobile money approval." }), { headers: corsHeaders });
         }

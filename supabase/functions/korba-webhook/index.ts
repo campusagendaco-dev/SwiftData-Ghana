@@ -80,7 +80,10 @@ async function verifyKorbaSignature(
   return computedSignature.toLowerCase() === receivedSignature.toLowerCase();
 }
 
+import { fetchViaDb } from "../_shared/db_proxy.ts";
+
 async function verifyKorbaStatusViaApi(
+  supabaseAdmin: any,
   clientId: string,
   clientKey: string,
   secretKey: string,
@@ -113,19 +116,20 @@ async function verifyKorbaStatusViaApi(
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
 
-    const response = await fetch("https://xchange.korba365.com/api/v1.0/transaction_status/", {
+    const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/transaction_status/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `HMAC ${clientKey}:${signatureHex}`,
       },
       body: JSON.stringify(statusPayload),
+      disableFallback: false,
     });
 
     if (!response.ok) return false;
     const resData = await response.json();
-    const statusStr = String(resData?.status || "").toLowerCase();
-    return statusStr === "success";
+    const rawStatus = String(resData?.status || resData?.results || "").toLowerCase();
+    return resData?.success === true || rawStatus.includes("success") || rawStatus === "paid" || rawStatus === "completed";
   } catch (err) {
     console.error("[korba-webhook] verifyKorbaStatusViaApi error:", err);
     return false;
@@ -237,7 +241,7 @@ serve(async (req: Request) => {
       // Standard Korba webhooks do not include a signature query/body parameter.
       // Confirm transaction status via Korba API for security.
       console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${cleanedTransactionId}`);
-      const isConfirmed = await verifyKorbaStatusViaApi(KORBA_CLIENT_ID, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, cleanedTransactionId);
+      const isConfirmed = await verifyKorbaStatusViaApi(supabaseAdmin, KORBA_CLIENT_ID, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, cleanedTransactionId);
       if (isConfirmed) {
         console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
       } else {
