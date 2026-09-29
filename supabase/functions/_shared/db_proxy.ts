@@ -1,5 +1,7 @@
 import "../deno.d.ts";
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+
+export type SupabaseClient = ReturnType<typeof createClient>;
 
 declare const Deno: any;
 
