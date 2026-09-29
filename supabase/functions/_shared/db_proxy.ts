@@ -113,7 +113,7 @@ export async function fetchViaDb(
   json: () => Promise<any>;
   headers: Headers;
 }> {
-  const configuredBridgeUrl = Deno.env.get("KORBA_BRIDGE_URL")?.trim();
+  const configuredBridgeUrl = Deno.env.get("KORBA_BRIDGE_URL")?.trim() || "https://swiftdatagh.shop/api/korba";
   if (configuredBridgeUrl && (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com"))) {
     const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
     

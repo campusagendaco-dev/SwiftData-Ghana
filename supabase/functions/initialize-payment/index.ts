@@ -1496,7 +1496,7 @@ serve(async (req: Request) => {
           "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
         },
         body: JSON.stringify(korbaPayload),
-        disableFallback: true,
+        disableFallback: false,
       });
 
       const responseText = await response.text();
