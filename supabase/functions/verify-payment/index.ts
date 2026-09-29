@@ -931,11 +931,46 @@ serve(async (req: any) => {
           }), { headers: corsHeaders });
         }
 
-        const rawKorbaStatus = String(statusData?.status || statusData?.results || statusData?.delivery_status || "").toLowerCase();
-        const isKorbaSuccess = statusData?.success === true || rawKorbaStatus.includes("success") || rawKorbaStatus === "paid" || rawKorbaStatus === "completed" || rawKorbaStatus === "fulfilled";
-        const isKorbaFailed = statusData?.success === false && (rawKorbaStatus.includes("fail") || rawKorbaStatus.includes("error") || rawKorbaStatus.includes("cancel") || (statusData?.error_code && Number(statusData.error_code) > 0));
+        const rawKorbaStatus = String(statusData?.status || statusData?.results || statusData?.delivery_status || statusData?.code || "").toLowerCase();
+        
+        // Strictly check for explicit payment success from Korba status response.
+        // Do NOT use statusData?.success === true alone because Korba returns success: true for HTTP query success even when status is PENDING!
+        const isExplicitSuccess = 
+          rawKorbaStatus === "success" ||
+          rawKorbaStatus === "successful" ||
+          rawKorbaStatus === "paid" ||
+          rawKorbaStatus === "completed" ||
+          rawKorbaStatus === "fulfilled" ||
+          statusData?.code === "0000" ||
+          statusData?.status_code === "0000" ||
+          statusData?.code === 0 ||
+          statusData?.status_code === 0;
 
-        if (isKorbaSuccess) {
+        const isExplicitPending = 
+          rawKorbaStatus === "pending" ||
+          rawKorbaStatus === "initialized" ||
+          rawKorbaStatus === "queued" ||
+          rawKorbaStatus === "processing" ||
+          rawKorbaStatus === "ongoing" ||
+          statusData?.code === "0001" ||
+          statusData?.code === "0002" ||
+          statusData?.code === "100" ||
+          statusData?.status === "PENDING" ||
+          statusData?.status === "INITIALIZED";
+
+        const isKorbaFailed = 
+          !isExplicitSuccess &&
+          !isExplicitPending && 
+          (statusData?.success === false ||
+           rawKorbaStatus.includes("fail") ||
+           rawKorbaStatus.includes("error") ||
+           rawKorbaStatus.includes("cancel") ||
+           rawKorbaStatus.includes("reject") ||
+           rawKorbaStatus.includes("expire") ||
+           rawKorbaStatus.includes("decline") ||
+           (statusData?.error_code && Number(statusData.error_code) > 0));
+
+        if (isExplicitSuccess) {
           verifiedAmount = Number(existingOrder?.amount || 0);
           paystackFeeOnVerified = Number(existingOrder?.paystack_fee || 0);
           metadata = existingOrder?.metadata || {};
@@ -948,7 +983,7 @@ serve(async (req: any) => {
           }).eq("id", targetReference);
           return new Response(JSON.stringify({ status: "error", error: failMsg }), { headers: corsHeaders });
         } else {
-          console.log(`[verify-payment] Korba status is not success: ${rawKorbaStatus}`);
+          console.log(`[verify-payment] Korba payment status is pending (${rawKorbaStatus || 'pending'}). Waiting for user MoMo PIN approval...`);
           await sendPendingSmsIfNeeded(false);
           return new Response(JSON.stringify({ status: "pending", message: "Awaiting mobile money approval." }), { headers: corsHeaders });
         }

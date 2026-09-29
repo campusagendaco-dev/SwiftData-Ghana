@@ -128,8 +128,19 @@ async function verifyKorbaStatusViaApi(
 
     if (!response.ok) return false;
     const resData = await response.json();
-    const rawStatus = String(resData?.status || resData?.results || "").toLowerCase();
-    return resData?.success === true || rawStatus.includes("success") || rawStatus === "paid" || rawStatus === "completed";
+    const rawStatus = String(resData?.status || resData?.results || resData?.delivery_status || resData?.code || "").toLowerCase();
+    
+    // Explicit success check only — resData?.success === true alone is insufficient as HTTP wrapper returns success: true when status is PENDING!
+    const isExplicitSuccess = 
+      rawStatus === "success" || 
+      rawStatus === "successful" || 
+      rawStatus === "paid" || 
+      rawStatus === "completed" || 
+      rawStatus === "fulfilled" ||
+      resData?.code === "0000" ||
+      resData?.status_code === "0000";
+
+    return isExplicitSuccess;
   } catch (err) {
     console.error("[korba-webhook] verifyKorbaStatusViaApi error:", err);
     return false;
