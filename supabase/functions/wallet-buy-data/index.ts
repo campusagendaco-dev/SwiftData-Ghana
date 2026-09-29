@@ -75,6 +75,19 @@ serve(async (req: Request) => {
 
     const normalizedPhone = normalizeRecipient(customer_phone);
 
+    // Ghana Phone Prefix Validation Guard
+    const ghanaPrefixes = ["024", "054", "055", "059", "025", "053", "020", "050", "027", "057", "026", "056", "023"];
+    const prefix = normalizedPhone.slice(0, 3);
+    if (normalizedPhone.length !== 10 || !ghanaPrefixes.includes(prefix)) {
+      console.warn(`[VALIDATION] Blocked order for invalid recipient phone: ${normalizedPhone} (prefix ${prefix})`);
+      return new Response(JSON.stringify({ 
+        error: `Invalid Ghana phone number (prefix '${prefix}' is not a recognized mobile network). Please check the recipient number.` 
+      }), { 
+        status: 400, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      });
+    }
+
     // Maintenance mode check and active payment gateway fetch
     const { data: sysSettings } = await supabaseAdmin
       .from("v_system_settings_with_secrets").select("maintenance_mode, maintenance_message, active_payment_gateway, allow_duplicate_purchases").eq("id", 1).maybeSingle();

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, AlertTriangle } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
-import { getNetworkCardColors, detectNetwork } from "@/lib/utils";
+import { getNetworkCardColors, detectNetwork, isValidGhanaPhone } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
 import { OfflineQueueWidget } from "@/components/OfflineQueueWidget";
 import { playSuccessSound } from "@/lib/sound";
@@ -652,8 +652,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       toast({ title: "Select a package first", variant: "destructive" });
       return false;
     }
-    if (!phone.trim() || !isPhoneValid) {
-      toast({ title: "Invalid phone number", description: "Use a valid Ghana number.", variant: "destructive" });
+    const check = isValidGhanaPhone(phone, selectedTypeOrCategory === "mashup" ? "MTN" : network);
+    if (!check.valid) {
+      toast({ title: "Invalid Phone Number", description: check.reason || "Please check the recipient number.", variant: "destructive" });
       return false;
     }
     return true;

@@ -417,6 +417,29 @@ serve(async (req: Request) => {
     const cleanPhone9 = rawTargetPhone.slice(-9);
     const deviceFp = String(payload?.device_fingerprint || metadata?.device_fingerprint || "").trim();
 
+    // Ghana Phone Prefix Validation Guard
+    let cleanTarget10 = rawTargetPhone;
+    if (rawTargetPhone.startsWith("233") && rawTargetPhone.length === 12) {
+      cleanTarget10 = "0" + rawTargetPhone.slice(3);
+    }
+    if (cleanTarget10.length === 10 && cleanTarget10.startsWith("0")) {
+      const ghanaPrefixes = ["024", "054", "055", "059", "025", "053", "020", "050", "027", "057", "026", "056", "023"];
+      const prefix = cleanTarget10.slice(0, 3);
+      if (!ghanaPrefixes.includes(prefix)) {
+        console.warn(`[VALIDATION] Blocked initialize-payment for invalid Ghana phone prefix: ${cleanTarget10} (${prefix})`);
+        let suggestion = "";
+        if (prefix === "051" || prefix === "052" || prefix === "058") {
+          suggestion = ` Did you mean 054${cleanTarget10.slice(3)}?`;
+        }
+        return new Response(JSON.stringify({
+          error: `Prefix '${prefix}' is not a valid Ghana mobile network prefix.${suggestion} Please check the recipient number.`
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Helper to blacklist entities safely in security_blacklist table
     const blacklistEntity = async (type: "ip" | "domain", value: string, reason: string) => {
       if (!value) return;

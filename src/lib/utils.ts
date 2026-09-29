@@ -106,6 +106,59 @@ export function detectNetwork(phone: string): "MTN" | "Telecel" | "AirtelTigo" |
 }
 
 /**
+ * Validates Ghanaian phone numbers against official network prefixes.
+ */
+export function isValidGhanaPhone(
+  phone: string,
+  expectedNetwork?: string
+): { valid: boolean; reason?: string; detectedNetwork?: "MTN" | "Telecel" | "AirtelTigo" } {
+  const digits = (phone || "").replace(/\D+/g, "");
+  let cleanPhone = digits;
+  if (digits.startsWith("233") && digits.length === 12) {
+    cleanPhone = "0" + digits.slice(3);
+  }
+
+  if (cleanPhone.length !== 10 || !cleanPhone.startsWith("0")) {
+    return { valid: false, reason: "Phone number must be 10 digits long (e.g. 024XXXXXXX)." };
+  }
+
+  const prefix = cleanPhone.slice(0, 3);
+  const mtn = ["024", "054", "055", "059", "025", "053"];
+  const telecel = ["020", "050"];
+  const at = ["027", "057", "026", "056"];
+  const glo = ["023"];
+
+  let detected: "MTN" | "Telecel" | "AirtelTigo" | null = null;
+  if (mtn.includes(prefix)) detected = "MTN";
+  else if (telecel.includes(prefix)) detected = "Telecel";
+  else if (at.includes(prefix)) detected = "AirtelTigo";
+  else if (glo.includes(prefix)) detected = "MTN";
+
+  if (!detected) {
+    let suggestion = "";
+    if (prefix === "051" || prefix === "052" || prefix === "058") {
+      suggestion = ` Did you mean 054${cleanPhone.slice(3)}?`;
+    }
+    return { valid: false, reason: `Prefix '${prefix}' is not a valid Ghana mobile network prefix.${suggestion}` };
+  }
+
+  if (expectedNetwork) {
+    const normExpected = expectedNetwork.trim().toUpperCase();
+    if ((normExpected.includes("MTN") || normExpected.includes("YELLO")) && detected !== "MTN") {
+      return { valid: false, reason: `Number ${cleanPhone} belongs to ${detected}, but an ${expectedNetwork} bundle was selected.`, detectedNetwork: detected };
+    }
+    if ((normExpected.includes("TELECEL") || normExpected.includes("VODA")) && detected !== "Telecel") {
+      return { valid: false, reason: `Number ${cleanPhone} belongs to ${detected}, but a ${expectedNetwork} bundle was selected.`, detectedNetwork: detected };
+    }
+    if ((normExpected.includes("AIRTEL") || normExpected.includes("TIGO") || normExpected.includes("AT")) && detected !== "AirtelTigo") {
+      return { valid: false, reason: `Number ${cleanPhone} belongs to ${detected}, but an ${expectedNetwork} bundle was selected.`, detectedNetwork: detected };
+    }
+  }
+
+  return { valid: true, detectedNetwork: detected };
+}
+
+/**
  * Returns a high-quality FlagCDN URL mapping common team names, abbreviations,
  * or emoji characters to their corresponding ISO two-letter country flag.
  */
