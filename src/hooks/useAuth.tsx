@@ -37,6 +37,8 @@ export interface Profile {
   is_suspended?: boolean;
   credit_enabled?: boolean;
   credit_limit?: number;
+  avatar_url?: string | null;
+  transaction_pin?: string | null;
 }
 
 interface AuthContextType {

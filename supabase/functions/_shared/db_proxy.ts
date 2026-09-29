@@ -1,5 +1,5 @@
-/// <reference path="../deno.d.ts" />
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "../deno.d.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 declare const Deno: any;
 

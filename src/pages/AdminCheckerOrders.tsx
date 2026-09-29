@@ -251,8 +251,6 @@ export default function AdminCheckerOrders() {
     setAllOrders(enriched);
     if (!isSilent) {
       setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, search, statusFilter, checkerTypeFilter, startDate, endDate, toast]);
 
   useEffect(() => {
@@ -361,7 +359,7 @@ export default function AdminCheckerOrders() {
 
         <div className="flex items-center gap-2">
           <Button
-            onClick={fetchOrders}
+            onClick={() => fetchOrders()}
             disabled={loading}
             variant="outline"
             className="h-11 rounded-2xl gap-2 text-xs font-bold border-border"

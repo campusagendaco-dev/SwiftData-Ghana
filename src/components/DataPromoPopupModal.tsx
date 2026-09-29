@@ -200,7 +200,7 @@ export const DataPromoPopupModal = () => {
     };
 
     fetchActivePromo();
-  }, [user]);
+  }, [user, isAgentStorefront]);
 
   // Countdown timer effect
   useEffect(() => {
