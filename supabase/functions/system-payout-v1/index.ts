@@ -245,17 +245,15 @@ async function queryKorbaApi(
       };
 
       if (url.includes("korba365.com")) {
-        const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim();
+        const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
         if (proxyUrl) {
-          console.log(`[system-payout-v1] Routing direct fetch through custom proxy: ${proxyUrl}`);
+          console.log(`[system-payout-v1] Routing direct fetch through whitelisted proxy: ${proxyUrl.replace(/:[^:@]+@/, ":***@")}`);
           if (typeof (Deno as any).createHttpClient === "function") {
             client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
             (fetchOpts as any).client = client;
           } else {
             console.warn("[system-payout-v1] Deno.createHttpClient is not available in this environment.");
           }
-        } else {
-          console.log(`[system-payout-v1] Sending direct native request to Korba from Supabase Edge Function`);
         }
       }
 

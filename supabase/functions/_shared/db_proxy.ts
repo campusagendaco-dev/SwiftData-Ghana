@@ -12,9 +12,9 @@ async function performDirectFetch(url: string, options: any) {
 
   let client: any = undefined;
   if (url.includes("korba365.com")) {
-    const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim();
+    const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
     if (proxyUrl) {
-      console.log(`[db_proxy] Routing direct fetch through custom proxy: ${proxyUrl}`);
+      console.log(`[db_proxy] Routing direct fetch through whitelisted proxy: ${proxyUrl.replace(/:[^:@]+@/, ":***@")}`);
       if (typeof (Deno as any).createHttpClient === "function") {
         client = (Deno as any).createHttpClient({ proxy: { url: proxyUrl } });
         (fetchOpts as any).client = client;
