@@ -1390,13 +1390,14 @@ serve(async (req: Request) => {
         console.log(`[admin-user-actions] Deleting provider ${providerId} cleanly...`);
 
         // 1. Unlink orders from this provider
-        await supabaseAdmin.from("orders").update({ provider_id: null, provider_name: null }).eq("provider_id", providerId);
+        await supabaseAdmin.from("orders").update({ provider_id: null }).eq("provider_id", providerId);
 
         // 2. Delete provider_packages
         await supabaseAdmin.from("provider_packages").delete().eq("provider_id", providerId);
 
-        // 3. Delete provider_errors
+        // 3. Delete or Unlink provider_errors
         await supabaseAdmin.from("provider_errors").delete().eq("provider_id", providerId);
+        await supabaseAdmin.from("provider_errors").update({ provider_id: null }).eq("provider_id", providerId);
 
         // 4. Delete system_logs referencing provider_id
         await supabaseAdmin.from("system_logs").delete().eq("provider_id", providerId);
