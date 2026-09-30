@@ -72,12 +72,10 @@ const DashboardWithdraw = () => {
   const fetchData = useCallback(async () => {
     if (!user) return;
 
-    const [ordersRes, parentRes, withdrawalsRes, walletRes, countRes] = await Promise.all([
-      supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
-      supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
+    const [statsRes, withdrawalsRes, walletRes] = await Promise.all([
+      supabase.rpc("get_agent_financial_stats", { p_agent_id: user.id }),
       supabase.from("withdrawals").select("*").eq("agent_id", user.id).order("created_at", { ascending: false }),
       supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle(),
-      supabase.from("orders").select("id", { count: "exact", head: true }).eq("agent_id", user.id).in("status", ["fulfilled", "completed"]),
     ]);
 
     // Fetch settings separately — columns may not exist in older deployments; default gracefully
@@ -93,25 +91,30 @@ const DashboardWithdraw = () => {
       // ignore — defaults will be used
     }
 
-    const profits = (ordersRes.data || []).reduce((sum, o: any) => sum + (o.profit || 0), 0);
-    const parentProfits = (parentRes.data || []).reduce((sum, o: any) => sum + (o.parent_profit || 0), 0);
-    setTotalProfit(parseFloat((profits + parentProfits).toFixed(2)));
+    const stats = Array.isArray(statsRes.data) && statsRes.data[0] ? statsRes.data[0] : null;
 
     const wds = (withdrawalsRes.data || []) as Withdrawal[];
     setWithdrawals(wds);
 
-    const completed = wds
-      .filter((w) => w.status === "completed")
-      .reduce((sum, w) => sum + w.amount, 0);
-    
-    const pending = wds
-      .filter((w) => ["pending", "processing"].includes(w.status))
-      .reduce((sum, w) => sum + w.amount, 0);
+    if (stats) {
+      setTotalProfit(Number(stats.lifetime_profit || 0));
+      setCompletedWithdrawals(Number(stats.completed_withdrawals || 0));
+      setPendingWithdrawals(Number(stats.pending_withdrawals || 0));
+      setCompletedOrderCount(Number(stats.completed_order_count || 0));
+    } else {
+      const completed = wds
+        .filter((w) => w.status === "completed")
+        .reduce((sum, w) => sum + w.amount, 0);
+      
+      const pending = wds
+        .filter((w) => ["pending", "processing"].includes(w.status))
+        .reduce((sum, w) => sum + w.amount, 0);
 
-    setCompletedWithdrawals(completed);
-    setPendingWithdrawals(pending);
+      setCompletedWithdrawals(completed);
+      setPendingWithdrawals(pending);
+    }
+
     setWalletBalance(Number(walletRes.data?.balance || 0));
-    setCompletedOrderCount(countRes?.count || 0);
 
     if (settingsRes.data) {
       setMinWithdrawal(Number(settingsRes.data.min_withdrawal_amount) || 25);

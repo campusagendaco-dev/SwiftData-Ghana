@@ -365,9 +365,8 @@ export default function DashboardMyStore() {
     if (!user) return;
     setLoadingWithdrawals(true);
     try {
-      const [ordersRes, parentRes, withdrawalsRes, walletRes] = await Promise.all([
-        supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
-        supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
+      const [statsRes, withdrawalsRes, walletRes] = await Promise.all([
+        supabase.rpc("get_agent_financial_stats", { p_agent_id: user.id }),
         supabase.from("withdrawals").select("*").eq("agent_id", user.id).order("created_at", { ascending: false }),
         supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle(),
       ]);
@@ -383,23 +382,27 @@ export default function DashboardMyStore() {
         // ignore
       }
 
-      const profits = (ordersRes.data || []).reduce((sum, o: any) => sum + (o.profit || 0), 0);
-      const parentProfits = (parentRes.data || []).reduce((sum, o: any) => sum + (o.parent_profit || 0), 0);
-      setTotalProfit(parseFloat((profits + parentProfits).toFixed(2)));
+      const stats = Array.isArray(statsRes.data) && statsRes.data[0] ? statsRes.data[0] : null;
 
       const wds = withdrawalsRes.data || [];
       setWithdrawals(wds);
 
-      const completed = wds
-        .filter((w: any) => w.status === "completed")
-        .reduce((sum: number, w: any) => sum + w.amount, 0);
-      
-      const pending = wds
-        .filter((w: any) => ["pending", "processing"].includes(w.status))
-        .reduce((sum: number, w: any) => sum + w.amount, 0);
+      if (stats) {
+        setTotalProfit(Number(stats.lifetime_profit || 0));
+        setCompletedWithdrawals(Number(stats.completed_withdrawals || 0));
+        setPendingWithdrawals(Number(stats.pending_withdrawals || 0));
+      } else {
+        const completed = wds
+          .filter((w: any) => w.status === "completed")
+          .reduce((sum: number, w: any) => sum + w.amount, 0);
+        
+        const pending = wds
+          .filter((w: any) => ["pending", "processing"].includes(w.status))
+          .reduce((sum: number, w: any) => sum + w.amount, 0);
 
-      setCompletedWithdrawals(completed);
-      setPendingWithdrawals(pending);
+        setCompletedWithdrawals(completed);
+        setPendingWithdrawals(pending);
+      }
 
       if (settingsRes.data) {
         setMinWithdrawal(Number(settingsRes.data.min_withdrawal_amount) || 25);

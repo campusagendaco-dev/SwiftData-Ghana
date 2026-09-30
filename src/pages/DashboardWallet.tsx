@@ -174,22 +174,18 @@ const DashboardWallet = () => {
   const fetchBalance = useCallback(async () => {
     if (!user) return;
 
-    const [walletRes, ordersRes, parentProfitRes, withdrawalsRes] = await Promise.all([
+    const [walletRes, statsRes] = await Promise.all([
       supabase.from("wallets").select("balance, loyalty_balance, api_balance").eq("agent_id", user.id).maybeSingle(),
-      supabase.from("orders").select("profit").eq("agent_id", user.id).eq("status", "fulfilled"),
-      supabase.from("orders").select("parent_profit").eq("parent_agent_id", user.id).eq("status", "fulfilled"),
-      supabase.from("withdrawals").select("amount, status").eq("agent_id", user.id).in("status", ["completed", "pending", "processing"]),
+      supabase.rpc("get_agent_financial_stats", { p_agent_id: user.id }),
     ]);
 
     const walletData = walletRes.data;
     const walletBalance = walletData?.balance || 0;
     const apiBal = walletData?.api_balance || 0;
     const loyaltyPoints = walletData?.loyalty_balance || 0;
-    const totalProfit = (ordersRes.data || []).reduce((sum, row: any) => sum + Number(row.profit || 0), 0);
-    const parentProfitRows = (parentProfitRes.data || []) as Array<{ parent_profit?: number }>;
-    const totalParentProfit = parentProfitRows.reduce((sum, row) => sum + Number(row.parent_profit || 0), 0);
-    const withdrawnProfit = (withdrawalsRes.data || []).reduce((sum, row: any) => sum + Number(row.amount || 0), 0);
-    const profitBalance = parseFloat(((totalProfit + totalParentProfit) - withdrawnProfit).toFixed(2));
+    
+    const stats = Array.isArray(statsRes.data) && statsRes.data[0] ? statsRes.data[0] : null;
+    const profitBalance = stats ? Number(stats.available_balance || 0) : 0;
 
     setBalance(walletBalance);
     setApiBalance(apiBal);
