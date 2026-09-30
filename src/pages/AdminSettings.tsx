@@ -777,12 +777,25 @@ const AdminSettings = () => {
       return;
     }
 
-    if (!confirm("Are you sure you want to permanently delete this provider? This will remove all associated packages.")) {
+    if (!confirm("Are you sure you want to permanently delete this provider? Associated orders will be unlinked and packages removed.")) {
       return;
     }
 
     setSaving(true);
     try {
+      // 1. Attempt RPC safe deletion first
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc("delete_provider_safe", { p_provider_id: id });
+
+      if (!rpcErr && rpcRes && rpcRes.success) {
+        toast({ title: "Provider Deleted", description: rpcRes.message || "Provider deleted successfully." });
+        setProviders(providers.filter(p => p.id !== id));
+        return;
+      }
+
+      // 2. Fallback: Clean up dependent foreign key records before deleting provider
+      await supabase.from("provider_packages" as any).delete().eq("provider_id", id).catch(() => {});
+      await supabase.from("orders" as any).update({ provider_id: null }).eq("provider_id", id).catch(() => {});
+
       const { error } = await supabase
         .from("providers")
         .delete()
@@ -790,13 +803,13 @@ const AdminSettings = () => {
 
       if (error) throw error;
 
-      toast({ title: "Provider Deleted", description: "Provider has been deleted successfully." });
+      toast({ title: "Provider Deleted", description: "Provider deleted successfully." });
       setProviders(providers.filter(p => p.id !== id));
     } catch (err: any) {
       console.error("Error deleting provider:", err);
       toast({ 
         title: "Delete Failed", 
-        description: err.message || "Failed to delete provider from the database. It might have orders referencing it.", 
+        description: err.message || "Failed to delete provider from the database.", 
         variant: "destructive" 
       });
     } finally {
