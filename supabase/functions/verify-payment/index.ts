@@ -722,7 +722,7 @@ serve(async (req: any) => {
     }
 
     // --- 1.2. PROCESSING FALLBACK (No arbitrary timeouts - strictly rely on provider status updates) ---
-    if (existingOrder && existingOrder.status === "processing") {
+    if (existingOrder && existingOrder.status === "processing" && !force) {
       if (existingOrder.network === "MTN Mash Up") {
         return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
       }
