@@ -783,20 +783,30 @@ const AdminSettings = () => {
 
     setSaving(true);
     try {
-      // 1. Attempt RPC safe deletion first
+      // 1. Invoke Edge Function (uses Service Role Key to bypass RLS & clean up FK constraints)
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke("admin-user-actions", {
+        body: { action: "delete_provider", provider_id: id },
+      });
+
+      if (!edgeError && edgeData?.success) {
+        toast({ title: "Provider Deleted", description: edgeData.message || "Provider deleted successfully." });
+        setProviders(providers.filter(p => p.id !== id));
+        return;
+      }
+
+      // 2. Attempt RPC safe deletion if edge function returned fallback
       try {
         const { data: rpcRes, error: rpcErr } = await supabase.rpc("delete_provider_safe", { p_provider_id: id });
-
         if (!rpcErr && rpcRes && rpcRes.success) {
           toast({ title: "Provider Deleted", description: rpcRes.message || "Provider deleted successfully." });
           setProviders(providers.filter(p => p.id !== id));
           return;
         }
       } catch (_e) {
-        // RPC might return 404 if not yet deployed on DB, fallback below
+        /* ignore */
       }
 
-      // 2. Fallback: Clean up dependent foreign key records safely (wrapping query builders in Promise.resolve)
+      // 3. Fallback: Clean up dependent foreign key records safely
       await Promise.resolve(
         supabase.from("provider_packages" as any).delete().eq("provider_id", id)
       ).catch((e) => console.warn("[deleteProvider] provider_packages cleanup warning:", e));
