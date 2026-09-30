@@ -526,6 +526,11 @@ export class StandardAdapter implements ProviderAdapter {
     providerOrderId: string,
     reference: string
   ): Promise<ProviderResponse> {
+    const handlerType = String(provider?.handler_type || "").toLowerCase();
+    if (handlerType === "spendless") {
+      return { ok: false, status: "processing", reason: "Spendless relies on webhook callbacks for status updates." };
+    }
+
     const activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;
     const data: PurchaseData = {
       recipient: "",
