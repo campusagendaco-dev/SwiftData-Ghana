@@ -784,17 +784,30 @@ const AdminSettings = () => {
     setSaving(true);
     try {
       // 1. Attempt RPC safe deletion first
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc("delete_provider_safe", { p_provider_id: id });
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc("delete_provider_safe", { p_provider_id: id });
 
-      if (!rpcErr && rpcRes && rpcRes.success) {
-        toast({ title: "Provider Deleted", description: rpcRes.message || "Provider deleted successfully." });
-        setProviders(providers.filter(p => p.id !== id));
-        return;
+        if (!rpcErr && rpcRes && rpcRes.success) {
+          toast({ title: "Provider Deleted", description: rpcRes.message || "Provider deleted successfully." });
+          setProviders(providers.filter(p => p.id !== id));
+          return;
+        }
+      } catch (_e) {
+        // RPC might return 404 if not yet deployed on DB, fallback below
       }
 
-      // 2. Fallback: Clean up dependent foreign key records before deleting provider
-      await supabase.from("provider_packages" as any).delete().eq("provider_id", id).catch(() => {});
-      await supabase.from("orders" as any).update({ provider_id: null }).eq("provider_id", id).catch(() => {});
+      // 2. Fallback: Clean up dependent foreign key records safely (wrapping query builders in Promise.resolve)
+      await Promise.resolve(
+        supabase.from("provider_packages" as any).delete().eq("provider_id", id)
+      ).catch((e) => console.warn("[deleteProvider] provider_packages cleanup warning:", e));
+
+      await Promise.resolve(
+        supabase.from("orders" as any).update({ provider_id: null }).eq("provider_id", id)
+      ).catch((e) => console.warn("[deleteProvider] orders unlinking warning:", e));
+
+      await Promise.resolve(
+        supabase.from("provider_errors" as any).delete().eq("provider_id", id)
+      ).catch((e) => console.warn("[deleteProvider] provider_errors cleanup warning:", e));
 
       const { error } = await supabase
         .from("providers")
