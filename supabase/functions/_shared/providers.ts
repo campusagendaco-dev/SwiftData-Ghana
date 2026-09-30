@@ -114,8 +114,14 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   // 5. Exclude Korba from primary list, but keep it available as fallback below
   activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
 
-  // 6. Append Korba at the end of activeProviders as a universal fallback provider for Data & Airtime
-  if (korbaProvider && korbaProvider.is_active && !isAfaOrder && (orderType === "data" || orderType === "airtime")) {
+  // 6. Append Korba at the end of activeProviders as a fallback provider:
+  // - Airtime: All networks supported
+  // - Data: Telecel and AirtelTigo supported
+  // - Note: Standard MTN data is NOT in Korba's catalog (Korba only has special retail/IDD bundles)
+  const rawNetUpper = String(order?.network || "").toUpperCase();
+  const isMtnStandardData = (orderType === "data" || !orderType) && (rawNetUpper.includes("MTN") || rawNetUpper.includes("YELLO"));
+
+  if (korbaProvider && korbaProvider.is_active && !isAfaOrder && !isMtnStandardData && (orderType === "data" || orderType === "airtime")) {
     if (!activeProviders.some((p: any) => p.id === korbaProvider.id)) {
       activeProviders.push(korbaProvider);
     }
