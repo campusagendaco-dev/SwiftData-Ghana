@@ -106,8 +106,8 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   const providerCategory = orderType === "airtime" ? "airtime" : (orderType === "utility" ? "utility" : "data");
   let activeProviders = await getActiveProviders(supabaseAdmin, providerCategory);
 
-  // 4. Exclude AFA-only providers (e.g. Spendless) from standard Data/Airtime orders
-  if (!isAfaOrder) {
+  // 4. Exclude Spendless from airtime orders (Spendless provides Data and AFA)
+  if (orderType === "airtime") {
     activeProviders = activeProviders.filter((p: any) => p.handler_type !== "spendless");
   }
 
