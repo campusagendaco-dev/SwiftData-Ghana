@@ -1654,6 +1654,9 @@ serve(async (req: Request) => {
           customerNumber: airtimeRecipient,
           amount: airtimeAmount,
           networkCode: airtimeNetworkKey,
+          reference: orderId,
+          orderReference: orderId,
+          order_id: orderId,
           description: `Airtime topup: GHS ${airtimeAmount} for ${airtimeRecipient}`
         },
         DATA_PROVIDER_WEBHOOK_URL
@@ -1852,6 +1855,9 @@ serve(async (req: Request) => {
           plan: packageSize,
           amount: deliveryAmount,
           order_type: "data",
+          reference: orderId,
+          orderReference: orderId,
+          order_id: orderId,
           description: `Data: ${packageSize} for ${customerPhone}`
         };
 

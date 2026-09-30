@@ -26,8 +26,8 @@ export class KorbaAdapter implements ProviderAdapter {
 
     const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
     const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
-    // Append a unique timestamp-based suffix to prevent Duplicate Transaction ID errors on Korba during retries
-    const transactionId = `${data.reference || data.orderReference || data.order_id || data.id || ""}_${String(Date.now()).slice(-6)}_disb`;
+    const rawRef = String(data.reference || data.orderReference || data.order_id || data.id || "").trim() || crypto.randomUUID();
+    const transactionId = `${rawRef}_${String(Date.now()).slice(-6)}_disb`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/korba-webhook`);
     const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
 
