@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Bell, AlertTriangle, CheckCircle2, Info, Check, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,26 +50,40 @@ export const NotificationCenter = ({ isDark }: { isDark: boolean }) => {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("user_notifications")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(20);
+    try {
+      const { data, error } = await supabase
+        .from("user_notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
 
-    if (!error && data) {
-      setNotifications(data as UserNotification[]);
+      if (error) {
+        console.warn("[NotificationCenter] fetch warning:", error.message);
+      } else if (data) {
+        setNotifications(data as UserNotification[]);
+      }
+    } catch (err: any) {
+      console.warn("[NotificationCenter] fetch error:", err?.message || err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [user]);
 
   const markAsRead = async (id: string) => {
-    const { error } = await supabase
+    let q = supabase
       .from("user_notifications")
       .update({ read: true })
       .eq("id", id);
+    
+    if (user?.id) {
+      q = q.eq("user_id", user.id);
+    }
+
+    const { error } = await q;
     
     if (!error) {
       setNotifications((prev) =>
@@ -169,7 +183,7 @@ export const NotificationCenter = ({ isDark }: { isDark: boolean }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user, fetchNotifications, navigate]);
 
   if (!user) return null;
 
