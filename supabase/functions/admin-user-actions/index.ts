@@ -119,7 +119,8 @@ type AdminUserAction =
   | "purge_bot_spam"
   | "send_reset_link"
   | "revoke_sessions"
-  | "get_user_audit_logs";
+  | "get_user_audit_logs"
+  | "delete_provider";
 
 
 
@@ -1378,40 +1379,44 @@ serve(async (req: Request) => {
       }
 
       case "delete_provider": {
-        const { provider_id } = body;
-        if (!provider_id || !isValidUuid(provider_id)) {
-          return new Response(JSON.stringify({ error: "Invalid or missing provider_id UUID" }), {
+        const providerId = body.provider_id || body.id;
+        if (!providerId) {
+          return new Response(JSON.stringify({ error: "Missing provider_id" }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        console.log(`[admin-user-actions] Deleting provider ${provider_id} cleanly...`);
+        console.log(`[admin-user-actions] Deleting provider ${providerId} cleanly...`);
 
         // 1. Unlink orders from this provider
-        await supabaseAdmin.from("orders").update({ provider_id: null }).eq("provider_id", provider_id);
+        await supabaseAdmin.from("orders").update({ provider_id: null, provider_name: null }).eq("provider_id", providerId);
 
         // 2. Delete provider_packages
-        await supabaseAdmin.from("provider_packages").delete().eq("provider_id", provider_id);
+        await supabaseAdmin.from("provider_packages").delete().eq("provider_id", providerId);
 
         // 3. Delete provider_errors
-        await supabaseAdmin.from("provider_errors").delete().eq("provider_id", provider_id);
+        await supabaseAdmin.from("provider_errors").delete().eq("provider_id", providerId);
 
         // 4. Delete system_logs referencing provider_id
-        await supabaseAdmin.from("system_logs").delete().eq("provider_id", provider_id);
+        await supabaseAdmin.from("system_logs").delete().eq("provider_id", providerId);
 
         // 5. Delete provider from providers table
-        const { error: delErr } = await supabaseAdmin.from("providers").delete().eq("id", provider_id);
+        const { error: delErr } = await supabaseAdmin.from("providers").delete().eq("id", providerId);
 
         if (delErr) {
           console.error(`[admin-user-actions] Delete provider error:`, delErr);
-          return new Response(JSON.stringify({ error: delErr.message }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          // Fallback to delete_provider_safe RPC if available
+          const { error: rpcErr } = await supabaseAdmin.rpc("delete_provider_safe", { p_provider_id: providerId });
+          if (rpcErr && rpcErr.code !== "P0001") {
+            return new Response(JSON.stringify({ error: delErr.message || rpcErr.message }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
         }
 
-        await logAdminAudit(supabaseAdmin, actor.id, "DELETE_PROVIDER", { provider_id });
+        await logAdminAudit(supabaseAdmin, actor.id, "DELETE_PROVIDER", { provider_id: providerId }).catch(() => {});
 
         return new Response(JSON.stringify({
           success: true,

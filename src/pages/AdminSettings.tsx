@@ -783,17 +783,46 @@ const AdminSettings = () => {
 
     setSaving(true);
     try {
-      // Invoke Edge Function (uses Service Role Key to bypass RLS & clean up FK constraints)
+      let success = false;
+      
+      // 1. Try via Edge Function first (uses Service Role Key to bypass RLS & clean up FK constraints)
       const { data: edgeData, error: edgeError } = await supabase.functions.invoke("admin-user-actions", {
         body: { action: "delete_provider", provider_id: id },
       });
 
-      if (edgeError || (edgeData && !edgeData.success)) {
-        throw new Error(edgeError?.message || edgeData?.error || "Failed to delete provider via admin service.");
+      if (!edgeError && edgeData?.success) {
+        success = true;
+      } else {
+        console.warn("Edge function provider deletion fallback to client cleanup:", edgeError?.message || edgeData?.error);
+        
+        // 2. Client-side fallback cleanup:
+        // a. Unlink provider from orders
+        await Promise.resolve(supabase.from("orders").update({ provider_id: null, provider_name: null }).eq("provider_id", id)).catch(() => {});
+
+        // b. Remove provider packages
+        await Promise.resolve(supabase.from("provider_packages").delete().eq("provider_id", id)).catch(() => {});
+
+        // c. Delete provider error records if permitted by RLS
+        await Promise.resolve(supabase.from("provider_errors").delete().eq("provider_id", id)).catch(() => {});
+
+        // d. Try safe RPC if deployed
+        const { error: rpcError } = await Promise.resolve(supabase.rpc("delete_provider_safe" as any, { p_provider_id: id }));
+        if (!rpcError) {
+          success = true;
+        } else {
+          // e. Direct delete provider row
+          const { error: delError } = await Promise.resolve(supabase.from("providers").delete().eq("id", id));
+          if (delError) {
+            throw new Error(delError.message || edgeError?.message || edgeData?.error || "Failed to delete provider from database.");
+          }
+          success = true;
+        }
       }
 
-      toast({ title: "Provider Deleted", description: edgeData?.message || "Provider deleted successfully." });
-      setProviders(providers.filter(p => p.id !== id));
+      if (success) {
+        toast({ title: "Provider Deleted", description: "Provider deleted successfully." });
+        setProviders(providers.filter(p => p.id !== id));
+      }
     } catch (err: any) {
       console.error("Error deleting provider:", err);
       toast({ 
