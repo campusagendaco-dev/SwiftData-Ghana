@@ -198,3 +198,6 @@ verify_jwt = false
 [functions.cron-process-subscriptions]
 verify_jwt = false
 
+[functions.cron-winback-push]
+verify_jwt = false
+

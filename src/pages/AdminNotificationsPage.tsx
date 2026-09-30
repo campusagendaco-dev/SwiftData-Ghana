@@ -236,6 +236,7 @@ const AdminNotificationsPage = () => {
   const [pushLoading, setPushLoading] = useState(false);
   const [sendingTestPushId, setSendingTestPushId] = useState<string | null>(null);
   const [pushSearchQuery, setPushSearchQuery] = useState("");
+  const [triggeringWinback, setTriggeringWinback] = useState(false);
 
   const smsBody = (title ?? "").trim() ? `${(title ?? "").trim()}\n${(message ?? "").trim()}` : (message ?? "").trim();
   const smsChars = smsBody.length;
@@ -380,6 +381,47 @@ const AdminNotificationsPage = () => {
       toast({ title: "Error sending test push", description: err.message, variant: "destructive" });
     } finally {
       setSendingTestPushId(null);
+    }
+  };
+
+  const handleTriggerMissedYouBlast = async () => {
+    setTriggeringWinback(true);
+    toast({
+      title: "Launching 'We Missed You' Push Blast... 🚀",
+      description: "Finding inactive users and dispatching web push & in-app alerts.",
+    });
+    try {
+      const { data, error } = await supabase.rpc("dispatch_missed_you_push_broadcast", {
+        p_inactive_hours: 24,
+      });
+
+      if (error) {
+        const { data: edgeData, error: edgeError } = await supabase.functions.invoke("cron-winback-push", {
+          body: { inactive_hours: 24 },
+        });
+        if (edgeError) {
+          toast({ title: "Blast failed", description: edgeError.message, variant: "destructive" });
+          return;
+        }
+        toast({
+          title: "Winback Blast Complete! 🚀",
+          description: `Notified ${edgeData?.targeted_users || 0} inactive user(s) across ${edgeData?.push_tokens_notified || 0} web push tokens.`,
+        });
+      } else {
+        const targeted = data?.targeted_users ?? 0;
+        const pushed = data?.push_tokens_notified ?? 0;
+        toast({
+          title: targeted > 0 ? "Winback Blast Complete! 🚀" : "Winback System Checked",
+          description: targeted > 0
+            ? `Dispatched "We Missed You" alerts to ${targeted} inactive user(s) (${pushed} push tokens).`
+            : "No eligible inactive users found (all active or already notified in last 12h).",
+        });
+      }
+      await fetchPushData();
+    } catch (err: any) {
+      toast({ title: "Blast Error", description: err?.message || String(err), variant: "destructive" });
+    } finally {
+      setTriggeringWinback(false);
     }
   };
 
@@ -845,7 +887,7 @@ const AdminNotificationsPage = () => {
             </div>
 
             {/* Quick Preset Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => {
@@ -881,6 +923,25 @@ const AdminNotificationsPage = () => {
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-amber-300 truncate">System Upgrade</p>
                   <p className="text-[10px] text-white/40 truncate">Instant speeds announcement</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTitle("We Missed You! 👋");
+                  setTargetType("all");
+                  setMessage("We missed you! Good news: all your data, airtime, and order payments can now go through smoothly. Place your order now at https://swiftdatagh.shop! 🚀");
+                  setSendSms(false);
+                  setSendWebPush(true);
+                  toast({ title: "'We Missed You' Preset Loaded! 👋", description: "Target set to Web Push broadcast for inactive users." });
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 text-left transition-all group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">👋</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-cyan-300 truncate">We Missed You</p>
+                  <p className="text-[10px] text-white/40 truncate">Orders ready winback</p>
                 </div>
               </button>
 
@@ -1645,6 +1706,58 @@ const AdminNotificationsPage = () => {
               <p className="text-[10px] text-white/40 font-bold mt-1">Safari, Firefox, Edge</p>
             </div>
           </div>
+
+          {/* Automated Winback Card */}
+          <Card className="border-cyan-500/20 bg-gradient-to-r from-cyan-950/30 via-cyan-900/10 to-transparent shadow-2xl rounded-3xl p-5 border">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">👋</span>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Automated Twice-Daily "We Missed You" Web Push Blast
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] uppercase tracking-wider font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1" /> Active Schedule
+                    </Badge>
+                  </h3>
+                </div>
+                <p className="text-xs text-white/60 leading-relaxed max-w-2xl">
+                  Automatically sends web push notifications to inactive users (no orders in 24h) <strong className="text-cyan-300">twice a day at 10:00 AM & 6:00 PM UTC</strong>.
+                  Reminds them that all data, airtime, and bill payment orders can now go through smoothly.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-white/40">
+                  <span className="flex items-center gap-1 font-mono text-cyan-400">
+                    <Clock className="w-3.5 h-3.5" /> 10:00 AM & 6:00 PM GMT Daily
+                  </span>
+                  <span>·</span>
+                  <span className="flex items-center gap-1 font-mono text-white/60">
+                    <Users className="w-3.5 h-3.5 text-amber-400" /> Target: Inactive Users (≥ 24h)
+                  </span>
+                  <span>·</span>
+                  <span className="flex items-center gap-1 font-mono text-emerald-400">
+                    <Zap className="w-3.5 h-3.5" /> Web Push + In-App Alerts
+                  </span>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleTriggerMissedYouBlast}
+                disabled={triggeringWinback}
+                className="bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs px-4 h-10 rounded-2xl shadow-lg shadow-cyan-500/20 shrink-0 gap-2 transition-all hover:scale-105"
+              >
+                {triggeringWinback ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-black" />
+                    <span>Blasting Inactive Users...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 fill-black text-black" />
+                    <span>Trigger Blast Now</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </Card>
 
           {/* Section 1: Active Registered Push Devices */}
           <Card className="border-white/5 bg-[#0a0a0f] shadow-2xl rounded-3xl overflow-hidden">
