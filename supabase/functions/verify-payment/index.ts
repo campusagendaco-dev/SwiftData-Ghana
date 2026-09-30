@@ -1538,7 +1538,24 @@ serve(async (req: any) => {
           category: claimedOrder.metadata?.category 
         };
       }
-      if (ht === "datahub" || ht === "spendless") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
+      if (ht === "datahub") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
+      if (ht === "spendless") {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+        const webhookUrl = supabaseUrl
+          ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+          : undefined;
+        const payload: any = {
+          networkKey: netKey,
+          recipient,
+          capacity: Number(parseCapacity(packageSize)) || 1,
+          reference: targetReference,
+          bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary,
+          category: claimedOrder.metadata?.category,
+        };
+        if (webhookUrl) payload.webhook_url = webhookUrl;
+        return payload;
+      }
       if (ht === "qhowmenzconsult") {
         return {
           networkRaw: network,

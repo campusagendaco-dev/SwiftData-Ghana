@@ -436,18 +436,28 @@ async function callProviderApi(
 }
 
 function buildAfaPayload(metadata: Record<string, unknown>, recipient: string) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+  const webhookUrl = supabaseUrl
+    ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+    : undefined;
   return {
+    full_name: metadata.afa_full_name,
     fullName: metadata.afa_full_name,
+    phone: recipient,
+    customer_phone: recipient,
+    recipient,
+    ghana_card: metadata.afa_ghana_card,
     ghanaCardNumber: metadata.afa_ghana_card,
+    location: metadata.afa_residence,
+    placeOfResidence: metadata.afa_residence,
     occupation: metadata.afa_occupation,
     email: metadata.afa_email,
-    placeOfResidence: metadata.afa_residence,
+    date_of_birth: metadata.afa_date_of_birth,
     dateOfBirth: metadata.afa_date_of_birth,
     networkKey: "AFA",
     capacity: "BUNDLE",
-    recipient,
-    customer_phone: recipient,
-    phone: recipient,
+    webhook_url: webhookUrl,
   };
 }
 
@@ -1559,7 +1569,7 @@ serve(async (req: Request) => {
       const result = await callProviderApi(
         DATA_PROVIDER_BASE_URL,
         DATA_PROVIDER_API_KEY,
-        "afa-registration",
+        "afa",
         buildAfaPayload(metadata, recipient),
       );
 
@@ -1909,8 +1919,25 @@ serve(async (req: Request) => {
         (chosenProvider?.base_url || "").toLowerCase().includes("datamart") ? "datamart" : "standard"
       );
 
-      let currentPayload: any = dataPayload;
-      if (ht === "datahub" || ht === "spendless") {
+      if (ht === "spendless") {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+        const webhookUrl = supabaseUrl
+          ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+          : undefined;
+        currentPayload = {
+          networkKey: mapDataNetworkKey(network),
+          networkRaw: network,
+          recipient: normalizeRecipient(customerPhone),
+          capacity: Number(parseCapacity(packageSize)) || 1,
+          package_size: packageSize,
+          reference: orderId,
+          orderReference: orderId,
+          bypass_beneficiary: existingOrder?.metadata?.bypass_beneficiary,
+          category: existingOrder?.metadata?.category,
+          webhook_url: webhookUrl,
+        };
+      } else if (ht === "datahub") {
         currentPayload = {
           networkKey: mapDataNetworkKey(network),
           networkRaw: network,

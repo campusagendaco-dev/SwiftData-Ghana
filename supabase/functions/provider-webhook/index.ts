@@ -161,7 +161,7 @@ serve(async (req: Request) => {
 
   try {
     const payload = JSON.parse(body);
-    let reference = payload?.data?.reference || payload?.reference || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.transactionId;
+    let reference = payload?.data?.reference || payload?.reference || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.transactionId || payload?.data?.orderId || payload?.orderId;
     
     if (payload?.data?.metadata) {
       try {
@@ -198,11 +198,26 @@ serve(async (req: Request) => {
       ? `id.eq.${reference},provider_order_id.eq.${reference}`
       : `provider_order_id.eq.${reference}`;
 
-    const { data: order, error: fetchError } = await supabaseAdmin
+    let { data: order, error: fetchError } = await supabaseAdmin
       .from("orders")
       .select("id, status, agent_id, order_type")
       .or(filter)
       .maybeSingle();
+
+    if (!order && (payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference)) {
+      const altRef = String(payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || "");
+      if (altRef && altRef !== reference && /^[a-zA-Z0-9\-_]{1,64}$/.test(altRef)) {
+        const altFilter = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(altRef)
+          ? `id.eq.${altRef},provider_order_id.eq.${altRef}`
+          : `provider_order_id.eq.${altRef}`;
+        const { data: altOrder } = await supabaseAdmin
+          .from("orders")
+          .select("id, status, agent_id, order_type")
+          .or(altFilter)
+          .maybeSingle();
+        if (altOrder) order = altOrder;
+      }
+    }
 
     if (fetchError || !order) {
       console.warn("[provider-webhook] Order not found for reference:", reference);

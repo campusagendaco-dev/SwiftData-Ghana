@@ -67,12 +67,16 @@ export class StandardAdapter implements ProviderAdapter {
         const ref = String(data.transaction_id || data.reference || data.order_id || "");
         return [
           `${clean}/orders?reference=${ref}`,
-          `${clean}/orders/${ref}`,
-          `${clean}/order-status?reference=${ref}`,
-          `${clean}/order-status/${ref}`
+          `${clean}/transactions`
         ];
       }
-      return [`${clean}/${endpoint === "purchase" ? "purchase" : endpoint}`];
+      if (endpoint === "afa" || endpoint === "afa-registration") {
+        return [`${clean}/afa`];
+      }
+      if (endpoint === "balance") {
+        return [`${clean}/balance`];
+      }
+      return [`${clean}/purchase`];
     }
 
     // Generic fallback aliases
@@ -168,21 +172,58 @@ export class StandardAdapter implements ProviderAdapter {
       };
     }
 
-    if (handlerType === "datahub" || handlerType === "spendless") {
+    if (handlerType === "spendless") {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+      const webhookUrl = supabaseUrl
+        ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+        : undefined;
+
+      if (endpoint === "afa" || endpoint === "afa-registration" || (data as any).order_type === "afa" || rawNet === "AFA") {
+        const fullName = (data as any).full_name || (data as any).fullName || (data as any).afa_full_name || (data as any).name || "";
+        const ghanaCard = (data as any).ghana_card || (data as any).ghanaCardNumber || (data as any).afa_ghana_card || "";
+        const location = (data as any).location || (data as any).placeOfResidence || (data as any).afa_residence || (data as any).residence || "";
+        const occupation = (data as any).occupation || (data as any).afa_occupation || "";
+        const dob = (data as any).date_of_birth || (data as any).dateOfBirth || (data as any).afa_date_of_birth || (data as any).dob || "";
+        const email = (data as any).email || (data as any).afa_email || "";
+
+        const afaPayload: any = {
+          full_name: fullName,
+          fullName: fullName,
+          phone: recipient,
+          recipient: recipient,
+          ghana_card: ghanaCard,
+          ghanaCardNumber: ghanaCard,
+          location: location,
+          placeOfResidence: location,
+          occupation: occupation,
+          date_of_birth: dob,
+          email: email,
+          reference: targetRef,
+        };
+        if (webhookUrl) afaPayload.webhook_url = webhookUrl;
+        return afaPayload;
+      }
+
       const payloadObj: any = {
+        networkKey: netKey,
+        recipient: recipient,
+        capacity: capNum > 0 ? capNum : (Number(capacityStr) || 1),
+        reference: targetRef,
+      };
+      if (webhookUrl) {
+        payloadObj.webhook_url = webhookUrl;
+      }
+      return payloadObj;
+    }
+
+    if (handlerType === "datahub") {
+      return {
         networkKey: netKey,
         recipient: recipient,
         capacity: capacityStr,
         reference: targetRef,
       };
-      if (handlerType === "spendless") {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const callbackUrl = data.callback_url || data.webhook_url || (supabaseUrl ? `${supabaseUrl}/functions/v1/provider-webhook` : undefined);
-        if (callbackUrl) {
-          payloadObj.webhook_url = callbackUrl;
-        }
-      }
-      return payloadObj;
     }
     
     if (handlerType === "qhowmenzconsult") {
@@ -528,7 +569,41 @@ export class StandardAdapter implements ProviderAdapter {
   ): Promise<ProviderResponse> {
     const handlerType = String(provider?.handler_type || "").toLowerCase();
     if (handlerType === "spendless") {
-      return { ok: false, status: "processing", reason: "Spendless relies on webhook callbacks for status updates." };
+      try {
+        const apiKey = Deno.env.get("SPENDLESS_API_KEY") || provider.api_key || "";
+        const pages = [1, 2, 3];
+        for (const page of pages) {
+          const txRes = await fetch(`https://spendless.top/api/transactions?page=${page}`, {
+            method: "GET",
+            headers: {
+              "X-API-Key": apiKey,
+              "Accept": "application/json"
+            }
+          });
+          if (txRes.ok) {
+            const txJson = await txRes.json();
+            const txs = txJson?.data?.transactions || txJson?.transactions || [];
+            const match = txs.find((t: any) =>
+              String(t.orderId) === String(providerOrderId) ||
+              String(t.reference) === String(providerOrderId) ||
+              String(t.reference) === String(reference)
+            );
+            if (match) {
+              const st = String(match.status || "").toLowerCase();
+              if (st === "delivered" || st === "successful" || st === "completed") {
+                return { ok: true, status: "delivered", id: String(match.reference || match.orderId), raw: match };
+              }
+              if (st === "failed" || st === "rejected" || st === "cancelled") {
+                return { ok: false, status: "failed", reason: match.reason || `Spendless order ${st}`, raw: match };
+              }
+              return { ok: true, status: "processing", id: String(match.reference || match.orderId), raw: match };
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn("[Spendless checkStatus] Fallback to /api/transactions error:", err?.message || err);
+      }
+      return { ok: true, status: "processing", reason: "Spendless relies on webhook callbacks for status updates." };
     }
 
     const activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;

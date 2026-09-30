@@ -208,34 +208,6 @@ export class KorbaAdapter implements ProviderAdapter {
     return result;
   }
 
-  async checkStatus(
-    supabaseAdmin: any,
-    provider: any,
-    providerOrderId: string,
-    reference: string
-  ): Promise<ProviderResponse> {
-    const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
-
-    if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
-      return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };
-    }
-
-    const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
-    const targetUrl = `${baseUrl}/transaction_status/`;
-
-    let activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;
-    if (activeProviderOrderId === reference) {
-      activeProviderOrderId = `${reference}_disb`;
-    }
-    const korbaPayload = {
-      transaction_id: String(activeProviderOrderId),
-      client_id: parseInt(KORBA_CLIENT_ID) || 2419,
-    };
-
-    return this.executeRequest(supabaseAdmin, targetUrl, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, korbaPayload, true);
-  }
 
   private async executeRequest(
     supabaseAdmin: any,
