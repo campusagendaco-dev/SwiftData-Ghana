@@ -634,10 +634,12 @@ serve(async (req: Request) => {
     if (p.endsWith("/balance")) finalAction = "balance";
     else if (p.endsWith("/account")) finalAction = "account";
     else if (p.endsWith("/plans")) finalAction = "plans";
-    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
+    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/order") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
     else if (p.endsWith("/sms") || p.endsWith("/api/sms")) finalAction = "sms";
+    else if (p.includes("/orders-summary") || p.includes("/orders_summary")) finalAction = "orders_summary";
     else if (p.endsWith("/orders")) finalAction = "orders";
-    else if (p.endsWith("/status") || p.endsWith("/order-status")) finalAction = "status";
+    else if (p.includes("/callback")) finalAction = "callback";
+    else if (p.includes("/status")) finalAction = "status";
     else if (p.endsWith("/wallets")) finalAction = "wallets";
     else if (p.endsWith("/wallet/transfer")) finalAction = "wallet_transfer";
     else if (p.endsWith("/afa-registration")) finalAction = "afa_registration";
@@ -650,8 +652,8 @@ serve(async (req: Request) => {
     else if (p.endsWith("/service-status")) finalAction = "service_status";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "status", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "orders_summary", "status", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "orders_summary", "status", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
@@ -1402,23 +1404,150 @@ serve(async (req: Request) => {
       return json({ success: true, orders: orders ?? [] });
     }
 
-    if (finalAction === "status") {
-      let orderId = url.searchParams.get("order_id") || 
-                    url.searchParams.get("id") || 
-                    url.searchParams.get("reference") || 
-                    url.searchParams.get("orderNumber");
+    if (finalAction === "orders_summary") {
+      const { data: allOrders, error: ordErr } = await supabase
+        .from("orders")
+        .select("id, network, customer_phone, package_size, amount, status, created_at, metadata")
+        .eq("agent_id", currentUserId)
+        .order("created_at", { ascending: false })
+        .limit(1000);
 
+      if (ordErr) {
+        console.error("[developer-api/orders-summary] Error fetching orders:", ordErr);
+        return json({ success: false, error: "Failed to fetch orders summary" }, 500);
+      }
+
+      const waitingList: any[] = [];
+      const refundedList: any[] = [];
+      const refundRequestedList: any[] = [];
+
+      let waitingSum = 0;
+      let refundedSum = 0;
+      let refundReqSum = 0;
+
+      for (const o of allOrders || []) {
+        const orderId = String(o.metadata?.client_reference || o.id);
+        const amountNum = Number(o.amount || 0);
+        const amountStr = amountNum.toFixed(2);
+        const gbSizeNum = parseCapacity(o.package_size);
+        const gbSizeStr = gbSizeNum > 0 ? gbSizeNum.toFixed(2) : "1.00";
+        const netStr = String(o.network || "").toUpperCase();
+        const recipientStr = String(o.customer_phone || "");
+        const statusStr = String(o.status || "").toLowerCase();
+
+        const orderObj = {
+          order_id: orderId,
+          network: netStr,
+          recipient: recipientStr,
+          gb_size: gbSizeStr,
+          price_paid: amountStr,
+          amount_owed: amountStr,
+          status: ["pending", "processing", "waiting", "awaiting_payment"].includes(statusStr) ? "waiting" : statusStr,
+          created_at: o.created_at
+        };
+
+        if (["pending", "processing", "waiting", "awaiting_payment"].includes(statusStr)) {
+          waitingList.push(orderObj);
+          waitingSum += amountNum;
+        } else if (["refunded", "cancelled"].includes(statusStr)) {
+          refundedList.push(orderObj);
+          refundedSum += amountNum;
+        } else if (["refund_requested", "disputed"].includes(statusStr)) {
+          refundRequestedList.push({ ...orderObj, paid: false });
+          refundReqSum += amountNum;
+        }
+      }
+
+      return json({
+        waiting: {
+          count: waitingList.length,
+          total: waitingSum === 0 ? "0" : waitingSum.toFixed(2),
+          orders: waitingList
+        },
+        refunded: {
+          count: refundedList.length,
+          total: refundedSum === 0 ? "0" : refundedSum.toFixed(2),
+          orders: refundedList
+        },
+        refund_requested: {
+          count: refundRequestedList.length,
+          total: refundReqSum === 0 ? "0" : refundReqSum.toFixed(2),
+          orders: refundRequestedList
+        }
+      });
+    }
+
+    if (finalAction === "callback") {
       if (req.method === "POST") {
+        const payload = await req.json().catch(() => null);
+        const callbackUrl = String(payload?.callback_url || payload?.url || "").trim();
+
+        if (!callbackUrl) {
+          return json({ success: false, error: "Missing required field: callback_url" }, 400);
+        }
+
+        try {
+          const parsed = new URL(callbackUrl);
+          if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+            return json({ success: false, error: "Invalid callback_url protocol. Must be HTTP or HTTPS." }, 400);
+          }
+        } catch {
+          return json({ success: false, error: "Invalid callback_url format." }, 400);
+        }
+
+        const { error: updateErr } = await supabase
+          .from("profiles")
+          .update({ api_webhook_url: callbackUrl })
+          .eq("user_id", currentUserId);
+
+        if (updateErr) {
+          console.error("[developer-api/callback] Error updating callback URL:", updateErr);
+          return json({ success: false, error: "Failed to register callback URL" }, 500);
+        }
+
+        return json({
+          message: "Callback URL registered successfully.",
+          callback_url: callbackUrl,
+          note: "We will POST to this URL when your orders are delivered."
+        });
+      }
+
+      // GET request
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("api_webhook_url")
+        .eq("user_id", currentUserId)
+        .maybeSingle();
+
+      return json({
+        callback_url: prof?.api_webhook_url || ""
+      });
+    }
+
+    if (finalAction === "status") {
+      let orderId = "";
+      const pathParts = p.split("/status/");
+      if (pathParts.length > 1 && pathParts[1].trim() !== "") {
+        orderId = pathParts[1].split("/")[0].trim();
+      }
+
+      orderId = orderId || 
+                url.searchParams.get("order_id") || 
+                url.searchParams.get("id") || 
+                url.searchParams.get("reference") || 
+                url.searchParams.get("orderNumber") || "";
+
+      if (req.method === "POST" && !orderId) {
         try {
           const payload = await req.json().catch(() => null);
           if (payload) {
-            orderId = orderId || payload.order_id || payload.id || payload.reference || payload.orderNumber;
+            orderId = payload.order_id || payload.id || payload.reference || payload.orderNumber || "";
           }
         } catch { /* ignore */ }
       }
 
       if (!orderId) {
-        return json({ success: false, error: "Either 'reference' or 'orderNumber' is required" }, 400);
+        return json({ success: false, error: "Order ID or reference is required" }, 400);
       }
 
       let query = supabase
@@ -1430,7 +1559,7 @@ serve(async (req: Request) => {
       if (UUID_RE.test(orderId)) {
         query = query.or(`id.eq.${orderId},metadata->>client_reference.eq.${orderId}`);
       } else {
-        query = query.eq("metadata->>client_reference", orderId);
+        query = query.or(`id.eq.${orderId},metadata->>client_reference.eq.${orderId}`);
       }
 
       const { data: order, error } = await query.maybeSingle();
@@ -1442,7 +1571,6 @@ serve(async (req: Request) => {
       let latestOrder = order;
       if (order.status === "processing") {
         try {
-          console.log(`[developer-api/status] Order ${order.id} is processing. Fetching live status via verify-payment...`);
           const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
             method: "POST",
             headers: {
@@ -1466,29 +1594,43 @@ serve(async (req: Request) => {
         }
       }
 
-      // Map internal status to DataHub status format (PROCESSING, SUCCESS, FAILED)
-      let statusUpper = "PROCESSING";
+      let simpleStatus = "processing";
       const s = String(latestOrder.status || "").toLowerCase();
-      if (s === "fulfilled" || s === "completed" || s === "success") {
-        statusUpper = "SUCCESS";
-      } else if (s === "failed" || s === "failure" || s === "refunded") {
-        statusUpper = "FAILED";
+      if (s === "fulfilled" || s === "completed" || s === "success" || s === "delivered") {
+        simpleStatus = "delivered";
+      } else if (s === "failed" || s === "failure") {
+        simpleStatus = "failed";
+      } else if (s === "pending" || s === "awaiting_payment") {
+        simpleStatus = "pending";
+      } else if (s === "refunded") {
+        simpleStatus = "refunded";
       }
 
-      // Build friendly status description
-      let statusDescription = "Order sent to network provider, awaiting completion";
-      if (statusUpper === "SUCCESS") {
-        statusDescription = "Order completed successfully";
-      } else if (statusUpper === "FAILED") {
-        statusDescription = latestOrder.failure_reason || "Order failed to deliver";
+      const clientRef = latestOrder.metadata?.client_reference || latestOrder.id;
+
+      if (p.includes("/status/") || url.searchParams.get("format") === "simple") {
+        return json({
+          order_id: clientRef,
+          status: simpleStatus
+        });
       }
+
+      let statusUpper = "PROCESSING";
+      if (simpleStatus === "delivered") statusUpper = "SUCCESS";
+      else if (simpleStatus === "failed" || simpleStatus === "refunded") statusUpper = "FAILED";
+
+      let statusDescription = "Order sent to network provider, awaiting completion";
+      if (statusUpper === "SUCCESS") statusDescription = "Order completed successfully";
+      else if (statusUpper === "FAILED") statusDescription = latestOrder.failure_reason || "Order failed to deliver";
 
       return json({
+        order_id: clientRef,
+        status: simpleStatus,
         success: true,
         message: "Order status retrieved successfully",
         data: {
           orderNumber: latestOrder.id,
-          reference: latestOrder.metadata?.client_reference || latestOrder.id,
+          reference: clientRef,
           status: statusUpper,
           network: String(latestOrder.network || "").toUpperCase(),
           recipient: latestOrder.customer_phone,

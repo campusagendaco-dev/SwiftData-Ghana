@@ -57,6 +57,7 @@ export async function notifyApiClient(supabaseAdmin: any, orderId: string, statu
         headers: {
           "Content-Type": "application/json",
           "X-Swift-Signature": signature,
+          "X-SKPlug-Signature": signature,
           "User-Agent": "SwiftData-Webhook/1.0"
         },
         body: payload
@@ -105,6 +106,7 @@ export async function notifyWalletCredit(supabaseAdmin: any, userId: string, amo
         headers: {
           "Content-Type": "application/json",
           "X-Swift-Signature": signature,
+          "X-SKPlug-Signature": signature,
           "User-Agent": "SwiftData-Webhook/1.0"
         },
         body: payload
