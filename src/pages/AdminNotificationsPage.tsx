@@ -387,37 +387,40 @@ const AdminNotificationsPage = () => {
   const handleTriggerMissedYouBlast = async () => {
     setTriggeringWinback(true);
     toast({
-      title: "Launching 'We Missed You' Push Blast... 🚀",
-      description: "Finding inactive users and dispatching web push & in-app alerts.",
+      title: "Launching 'We Missed You' Blast... 🚀",
+      description: "Finding inactive users and dispatching web push, in-app alerts & safe-capped SMS.",
     });
     try {
-      const { data, error } = await supabase.rpc("dispatch_missed_you_push_broadcast", {
-        p_inactive_hours: 24,
+      // 1. Try invoking the cron-winback-push edge function (Push + Smart-Capped SMS)
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke("cron-winback-push", {
+        body: { inactive_hours: 24, send_push: true, send_sms: true, sms_limit: 25 },
       });
 
-      if (error) {
-        const { data: edgeData, error: edgeError } = await supabase.functions.invoke("cron-winback-push", {
-          body: { inactive_hours: 24 },
-        });
-        if (edgeError) {
-          toast({ title: "Blast failed", description: edgeError.message, variant: "destructive" });
-          return;
-        }
+      if (!edgeError && edgeData) {
+        const targeted = edgeData?.targeted_users ?? 0;
+        const pushed = edgeData?.push_tokens_notified ?? 0;
+        const smsSent = edgeData?.sms_sent ?? 0;
         toast({
           title: "Winback Blast Complete! 🚀",
-          description: `Notified ${edgeData?.targeted_users || 0} inactive user(s) across ${edgeData?.push_tokens_notified || 0} web push tokens.`,
+          description: `Notified ${targeted} inactive user(s) (${pushed} push tokens delivered, ${smsSent} SMS sent).`,
         });
       } else {
+        // Fallback to direct RPC
+        const { data, error } = await supabase.rpc("dispatch_missed_you_push_broadcast", {
+          p_inactive_hours: 24,
+        });
+        if (error) throw error;
         const targeted = data?.targeted_users ?? 0;
         const pushed = data?.push_tokens_notified ?? 0;
         toast({
-          title: targeted > 0 ? "Winback Blast Complete! 🚀" : "Winback System Checked",
+          title: targeted > 0 ? "Winback Push Complete! 🚀" : "Winback Checked",
           description: targeted > 0
-            ? `Dispatched "We Missed You" alerts to ${targeted} inactive user(s) (${pushed} push tokens).`
-            : "No eligible inactive users found (all active or already notified in last 12h).",
+            ? `Dispatched "We Missed You" push alerts to ${targeted} inactive user(s) (${pushed} push tokens).`
+            : "No eligible inactive users found (all active or notified recently).",
         });
       }
       await fetchPushData();
+      await fetchSmsLogs();
     } catch (err: any) {
       toast({ title: "Blast Error", description: err?.message || String(err), variant: "destructive" });
     } finally {
@@ -1714,14 +1717,14 @@ const AdminNotificationsPage = () => {
                 <div className="flex items-center gap-2">
                   <span className="text-xl">👋</span>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    Automated Twice-Daily "We Missed You" Web Push Blast
+                    Automated Twice-Daily "We Missed You" Blast
                     <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] uppercase tracking-wider font-bold">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1" /> Active Schedule
                     </Badge>
                   </h3>
                 </div>
                 <p className="text-xs text-white/60 leading-relaxed max-w-2xl">
-                  Automatically sends web push notifications to inactive users (no orders in 24h) <strong className="text-cyan-300">twice a day at 10:00 AM & 6:00 PM UTC</strong>.
+                  Automatically sends web push notifications to inactive users (no orders in 24h) plus smart-capped SMS (up to 25/blast, 48h cooldown) <strong className="text-cyan-300">twice a day at 10:00 AM & 6:00 PM UTC</strong>.
                   Reminds them that all data, airtime, and bill payment orders can now go through smoothly.
                 </p>
                 <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-white/40">
@@ -1734,7 +1737,7 @@ const AdminNotificationsPage = () => {
                   </span>
                   <span>·</span>
                   <span className="flex items-center gap-1 font-mono text-emerald-400">
-                    <Zap className="w-3.5 h-3.5" /> Web Push + In-App Alerts
+                    <Zap className="w-3.5 h-3.5" /> Web Push + In-App + Smart Capped SMS
                   </span>
                 </div>
               </div>

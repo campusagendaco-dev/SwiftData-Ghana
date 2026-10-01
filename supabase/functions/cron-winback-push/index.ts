@@ -15,7 +15,7 @@ serve(async (req: Request) => {
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+    return new Response(JSON.stringify({ error: "Server misconfigured: missing environment variables" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -30,71 +30,115 @@ serve(async (req: Request) => {
       body: messageBody = "We missed you! Good news: all your data, airtime, and order payments can now go through smoothly. Place your order now at https://swiftdatagh.shop! 🚀",
       link = "/dashboard/buy-data",
       inactive_hours = 24,
-      send_sms = true
+      send_push = true,
+      send_sms = true,
+      sms_limit = 25,
+      sms_cooldown_hours = 48
     } = body;
 
-    console.log(`[winback-push] Triggering automatic 'We Missed You' blast (Inactive: ${inactive_hours}h, SMS: ${send_sms})...`);
+    console.log(`[winback-push] Triggering winback campaign (Inactive: ${inactive_hours}h, Push: ${send_push}, SMS: ${send_sms}, SMS Limit: ${sms_limit})...`);
 
-    // 1. Call RPC function dispatch_missed_you_push_broadcast for Web Push & In-App Alerts
-    const { data: result, error } = await supabaseAdmin.rpc("dispatch_missed_you_push_broadcast", {
-      p_title: title,
-      p_body: messageBody,
-      p_link: link,
-      p_inactive_hours: Number(inactive_hours) || 24
-    });
+    let pushResult: any = { targeted_users: 0, push_tokens_notified: 0 };
 
-    if (error) {
-      console.error("[winback-push] RPC error:", error);
-      throw error;
+    // 1. Dispatch Web Push & In-App Alerts
+    if (send_push) {
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc("dispatch_missed_you_push_broadcast", {
+          p_title: title,
+          p_body: messageBody,
+          p_link: link,
+          p_inactive_hours: Number(inactive_hours) || 24
+        });
+
+        if (rpcErr) {
+          console.error("[winback-push] Web Push RPC warning:", rpcErr);
+        } else {
+          pushResult = rpcRes || pushResult;
+        }
+      } catch (pushErr: any) {
+        console.error("[winback-push] Error executing push broadcast:", pushErr?.message);
+      }
     }
 
     let smsSentCount = 0;
+    const sentUserIds: string[] = [];
 
-    // 2. Dispatch SMS to inactive users if send_sms is true and SMS is configured
+    // 2. Dispatch SMS to inactive users if send_sms is true
     if (send_sms) {
       try {
         const smsConfig = await getSmsConfig(supabaseAdmin);
-        if (smsConfig.apiKey && smsConfig.senderId) {
-          const { data: inactiveUsers } = await supabaseAdmin.rpc("get_inactive_winback_users", {
+        const effectiveGateway = (smsConfig?.gateway || "txtconnect").toLowerCase().trim();
+        // Ensure verified approved Sender ID for TxtConnect is SwiftDataGh
+        const resolvedSenderId = effectiveGateway === "txtconnect" 
+          ? "SwiftDataGh" 
+          : (smsConfig?.senderId || "SwiftDataGh");
+
+        if (smsConfig.apiKey) {
+          // Cap sms_limit at 50 max to strictly prevent unintended credit consumption
+          const safeLimit = Math.min(Math.max(Number(sms_limit) || 25, 1), 50);
+
+          const { data: inactiveSmsUsers, error: fetchErr } = await supabaseAdmin.rpc("get_inactive_winback_sms_users", {
             p_inactive_hours: Number(inactive_hours) || 24,
-            p_limit: 50
+            p_limit: safeLimit,
+            p_cooldown_hours: Number(sms_cooldown_hours) || 48
           });
 
-          if (inactiveUsers && inactiveUsers.length > 0) {
-            for (const u of inactiveUsers) {
+          if (fetchErr) {
+            console.error("[winback-push] Error fetching inactive SMS users:", fetchErr);
+          } else if (inactiveSmsUsers && inactiveSmsUsers.length > 0) {
+            console.log(`[winback-push] Found ${inactiveSmsUsers.length} inactive user(s) eligible for winback SMS.`);
+
+            for (const u of inactiveSmsUsers) {
               const targetPhone = normalizePhone(u.phone);
               if (!targetPhone) continue;
 
-              const recipientName = u.full_name || "Customer";
-              const smsText = `Hey ${recipientName}, we missed you! Good news: all your data, airtime & order payments can now go through smoothly. Order now at https://swiftdatagh.shop`;
+              const rawName = (u.full_name || "").trim();
+              const firstName = rawName ? rawName.split(" ")[0] : "Customer";
+              const cleanFirstName = firstName.replace(/[^a-zA-Z]/g, "") || "Customer";
+
+              // 136 characters -> fits inside 1 single SMS credit (160 limit)
+              const smsText = `Hey ${cleanFirstName}, we missed you! Good news: all your data, airtime & order payments can now go through smoothly. Order now at https://swiftdatagh.shop`;
 
               try {
-                await dispatchUnifiedSms(
-                  smsConfig.gateway,
+                const sendRes = await dispatchUnifiedSms(
+                  smsConfig.gateway || "txtconnect",
                   smsConfig.apiKey,
-                  smsConfig.senderId,
+                  resolvedSenderId,
                   targetPhone,
                   smsText,
                   "winback"
                 );
-                smsSentCount++;
+
+                if (sendRes && (sendRes.success !== false)) {
+                  smsSentCount++;
+                  sentUserIds.push(u.user_id);
+                }
               } catch (smsErr: any) {
                 console.warn(`[winback-push] SMS failed for ${targetPhone}:`, smsErr?.message);
               }
             }
+
+            // Update missed_you_sms_sent_at on profiles to ensure 48h cooldown
+            if (sentUserIds.length > 0) {
+              await supabaseAdmin.rpc("mark_missed_you_sms_sent", {
+                p_user_ids: sentUserIds
+              });
+            }
           }
+        } else {
+          console.warn("[winback-push] SMS gateway API key not found in configuration.");
         }
       } catch (smsConfigErr: any) {
         console.warn("[winback-push] SMS config check warning:", smsConfigErr?.message);
       }
     }
 
-    console.log("[winback-push] Blast summary:", { ...result, sms_sent: smsSentCount });
+    console.log("[winback-push] Campaign summary:", { ...pushResult, sms_sent: smsSentCount });
 
     return new Response(JSON.stringify({
-      ...(result || {}),
+      ...pushResult,
       sms_sent: smsSentCount,
-      message: `Dispatched "We Missed You" blast across Web Push, In-App alerts & ${smsSentCount} SMS.`
+      message: `Dispatched "We Missed You" blast across Web Push (${pushResult?.push_tokens_notified || 0} tokens) & ${smsSentCount} SMS.`
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
