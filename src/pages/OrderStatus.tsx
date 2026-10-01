@@ -414,9 +414,9 @@ const OrderStatus = () => {
     return lines.join("\n");
   };
 
-  const getWhatsAppUrl = () => {
+  const getWhatsAppUrl = (customText?: string) => {
     const cleanPhone = getCleanWhatsAppPhone();
-    const text = encodeURIComponent(getWhatsAppMessage());
+    const text = encodeURIComponent(customText || getWhatsAppMessage());
     return `https://wa.me/${cleanPhone}?text=${text}`;
   };
 
