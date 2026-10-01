@@ -53,16 +53,16 @@ serve(async (req) => {
       .gte("created_at", twoDaysAgo)
       .limit(25);
 
-    // 3. Find failed orders whose failure_reason indicates No Provider or retryable error
+    // 3. Find failed orders whose failure_reason indicates No Provider or retryable provider failure (including Spendless rejections)
     const { data: noProviderOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .in("status", ["fulfillment_failed", "failed"])
       .not("order_type", "in", excludedTypes)
-      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%,failure_reason.ilike.%timeout%,failure_reason.ilike.%504%,failure_reason.ilike.%502%")
+      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%,failure_reason.ilike.%timeout%,failure_reason.ilike.%504%,failure_reason.ilike.%502%,failure_reason.ilike.%Order processing failed%,failure_reason.ilike.%Bundle not available%,failure_reason.ilike.%rejected%,provider_order_id.eq.failed_api_call")
       .gte("created_at", twoDaysAgo)
       .order("created_at", { ascending: false })
-      .limit(25);
+      .limit(35);
 
     // Deduplicate candidate orders by ID
     const orderMap = new Map<string, any>();

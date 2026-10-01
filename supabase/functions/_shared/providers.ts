@@ -128,12 +128,19 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   }
 
   // 7. Check if order was ALREADY ACCEPTED by a provider.
-  // Rule 1: Once an order is accepted by a provider (has provider_id AND (provider_order_id OR status is processing/fulfilled)),
-  // it MUST NOT enter a different provider! Lock to assigned provider ONLY.
-  const isAcceptedByProvider = Boolean(order?.provider_id) && (
-    Boolean(order?.provider_order_id) || 
-    ["processing", "fulfilled", "delivered", "completed"].includes(String(order?.status || "").toLowerCase())
+  // Rule 1: Once an order is accepted by a provider with a valid provider-side ID,
+  // lock to assigned provider ONLY. Non-acceptance IDs (failed_api_call, timeout, manual_fulfillment_mode)
+  // or failed statuses MUST NOT lock the order so it can cascade/retry to SKPlug or other providers.
+  const validProviderOrderId = Boolean(
+    order?.provider_order_id &&
+    order.provider_order_id !== "failed_api_call" &&
+    order.provider_order_id !== "timeout" &&
+    order.provider_order_id !== "manual_fulfillment_mode"
   );
+  const isFulfilledOrActive = ["fulfilled", "delivered", "completed"].includes(String(order?.status || "").toLowerCase()) ||
+    (order?.status === "processing" && validProviderOrderId);
+
+  const isAcceptedByProvider = Boolean(order?.provider_id) && validProviderOrderId && isFulfilledOrActive;
 
   if (isAcceptedByProvider) {
     const assigned = activeProviders.find((p: any) => p.id === order.provider_id);
@@ -152,8 +159,23 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // If order has an assigned provider_id but was NOT yet accepted (e.g. unaccepted initial attempt), prioritize assigned provider first
-  if (order?.provider_id) {
+  // If order was previously attempted on a provider and failed (e.g. Spendless failed_api_call or status failed),
+  // move that failed provider to the END of activeProviders so healthy providers (e.g. SKPlug, DataHub) are tried first!
+  const hasFailedOnAssigned = Boolean(order?.provider_id) && (
+    order?.provider_order_id === "failed_api_call" ||
+    order?.status === "fulfillment_failed" ||
+    order?.status === "failed" ||
+    Boolean(order?.failure_reason)
+  );
+
+  if (hasFailedOnAssigned && order?.provider_id) {
+    const failedIndex = activeProviders.findIndex((p: any) => p.id === order.provider_id);
+    if (failedIndex !== -1) {
+      const [failedProv] = activeProviders.splice(failedIndex, 1);
+      activeProviders.push(failedProv);
+      console.log(`[resolveProvidersForOrder] Order ${order?.id} previously failed on ${failedProv.name}. Demoted ${failedProv.name} to end of list.`);
+    }
+  } else if (order?.provider_id && !hasFailedOnAssigned) {
     const assignedIndex = activeProviders.findIndex((p: any) => p.id === order.provider_id);
     if (assignedIndex > 0) {
       const [assigned] = activeProviders.splice(assignedIndex, 1);
@@ -172,7 +194,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // 8. Handle non-beneficiary / forced fallback (e.g. Datamart or designated beneficiary fallback)
+  // 8. Handle non-beneficiary / forced fallback (e.g. Spendless or SKPlug for non-beneficiary bypass)
   const isForceFallback = order?.metadata?.route_via_datamart === true || order?.metadata?.bypass_beneficiary === true;
   if (isForceFallback) {
     const designated = activeProviders.find((p: any) => p.settings?.is_beneficiary_fallback === true);
@@ -180,10 +202,11 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       console.log(`[resolveProvidersForOrder] Order ${order?.id} using admin-selected fallback provider ${designated.name}...`);
       return [designated, ...activeProviders.filter((p: any) => p.id !== designated.id)];
     }
-    const datamartProv = activeProviders.find((p: any) => p.handler_type === "datamart");
-    if (datamartProv) {
-      console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary Datamart API. Prioritizing Datamart...`);
-      return [datamartProv, ...activeProviders.filter((p: any) => p.id !== datamartProv.id)];
+    // If DataHub requires beneficiary whitelist, prioritize Spendless or SKPlug for bypass
+    const nonBeneficiaryProv = activeProviders.find((p: any) => p.handler_type === "spendless" || p.handler_type === "skdataplug");
+    if (nonBeneficiaryProv) {
+      console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary bypass. Prioritizing ${nonBeneficiaryProv.name}...`);
+      return [nonBeneficiaryProv, ...activeProviders.filter((p: any) => p.id !== nonBeneficiaryProv.id)];
     }
   }
 

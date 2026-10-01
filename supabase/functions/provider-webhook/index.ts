@@ -4,6 +4,7 @@ import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
+import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 
 async function verifyHmacSha256(bodyText: string, keyString: string, expectedSignature: string): Promise<boolean> {
   try {
@@ -200,7 +201,7 @@ serve(async (req: Request) => {
 
     let { data: order, error: fetchError } = await supabaseAdmin
       .from("orders")
-      .select("id, status, agent_id, order_type")
+      .select("*")
       .or(filter)
       .maybeSingle();
 
@@ -212,7 +213,7 @@ serve(async (req: Request) => {
           : `provider_order_id.eq.${altRef}`;
         const { data: altOrder } = await supabaseAdmin
           .from("orders")
-          .select("id, status, agent_id, order_type")
+          .select("*")
           .or(altFilter)
           .maybeSingle();
         if (altOrder) order = altOrder;
@@ -228,13 +229,60 @@ serve(async (req: Request) => {
     }
     if (order.status === "fulfilled" && systemStatus === "fulfilled") return new Response(JSON.stringify({ message: "Already fulfilled" }));
 
+    // If provider reported failure, attempt automatic failover to the next active provider (e.g. SKPlug)
+    if (systemStatus === "fulfillment_failed" && order.status !== "fulfilled") {
+      const isPaid = order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0 || order.status === "processing";
+      const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation"].includes(String(order.order_type || "data").toLowerCase());
+
+      if (isPaid && isTelecomOrder) {
+        console.log(`[provider-webhook] Order ${order.id} failed at provider ${order.provider_id}. Attempting automatic failover to next provider (SKPlug)...`);
+        
+        // Record failure in provider_errors
+        const failReason = payload?.message || payload?.error || payload?.data?.reason || `Provider reported status: ${rawStatus}`;
+        await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+          provider_id: order.provider_id,
+          order_id: order.id,
+          error_message: failReason,
+        })).catch(() => {});
+
+        const failoverDispatch = await dispatchOrderWithFailover(supabaseAdmin, {
+          ...order,
+          provider_order_id: null, // Clear so resolveProvidersForOrder does not lock to failed provider
+          status: "processing",
+        });
+
+        if (failoverDispatch.ok) {
+          console.log(`[provider-webhook] Automatic failover SUCCESS for order ${order.id} via provider ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
+          await supabaseAdmin.from("orders").update({
+            status: failoverDispatch.status,
+            provider_id: failoverDispatch.provider_id || null,
+            provider_order_id: failoverDispatch.provider_order_id || null,
+            failure_reason: null,
+            updated_at: new Date().toISOString()
+          }).eq("id", order.id);
+
+          if (failoverDispatch.status === "fulfilled") {
+            await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+          }
+
+          await notifyApiClient(supabaseAdmin, order.id, failoverDispatch.status);
+          return new Response(JSON.stringify({ success: true, failover: true, status: failoverDispatch.status }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        } else {
+          console.warn(`[provider-webhook] All failover providers exhausted for order ${order.id}: ${failoverDispatch.reason}`);
+          systemStatus = "fulfillment_failed";
+        }
+      }
+    }
+
     await supabaseAdmin.from("orders").update({ 
       status: systemStatus,
       updated_at: new Date().toISOString()
     }).eq("id", order.id);
 
     if (systemStatus === "fulfilled") {
-      await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
+      await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
     }
 
     // ── Notify API Client ─────────────────────────────────────────────────────

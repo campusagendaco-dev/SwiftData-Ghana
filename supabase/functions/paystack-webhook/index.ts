@@ -1989,6 +1989,20 @@ serve(async (req: Request) => {
           reference: orderId,
           gateway: "wallet"
         };
+      } else if (ht === "skdataplug") {
+        currentPayload = {
+          networkRaw: network,
+          network: network,
+          networkKey: mapDataNetworkKey(network),
+          recipient: normalizeRecipient(customerPhone),
+          package_size: packageSize,
+          plan: packageSize,
+          capacity: String(parseCapacity(packageSize)),
+          amount: deliveryAmount,
+          reference: orderId,
+          orderReference: orderId,
+          order_id: orderId,
+        };
       }
 
       let result: any;

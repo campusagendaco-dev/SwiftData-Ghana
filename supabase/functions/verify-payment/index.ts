@@ -1647,13 +1647,38 @@ serve(async (req: any) => {
         }
       }
 
-      // Auto-failover to Datamart for MTN orders rejected by DataHub (Beneficiary / Payee Limit / Unlisted number / Provider rejection)
+      // Auto-failover: If Spendless rejects an order, immediately cascade to SKPlug (skdataplug)
+      const isSpendless = (provider.handler_type || "").toLowerCase() === "spendless";
+      if (!result.ok && isSpendless) {
+        console.log(`[verify-payment] Order rejected by Spendless (${result.reason}). Attempting SKPlug API failover...`);
+        const { data: skProvider } = await supabaseAdmin
+          .from("providers")
+          .select("*")
+          .eq("handler_type", "skdataplug")
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (skProvider && skProvider.id !== provider.id) {
+          console.log(`[verify-payment] Cascading Spendless failed order for ${recipient} via ${skProvider.name} (SKPlug)...`);
+          const skPayload = await buildDataPayload(skProvider);
+          const skResult = await callProviderApi(supabaseAdmin, skProvider, skPayload, "purchase");
+          if (skResult.ok) {
+            result = skResult;
+            successfulProviderId = skProvider.id;
+            console.log(`[verify-payment] SKPlug failover SUCCESSFUL for ${recipient}! Provider Order ID: ${skResult.id}`);
+          } else {
+            console.error(`[verify-payment] SKPlug failover also rejected: ${skResult.reason}`);
+          }
+        }
+      }
+
+      // Auto-failover to Datamart/SKPlug for MTN orders rejected by DataHub (Beneficiary / Payee Limit / Unlisted number / Provider rejection)
       const isDataHub = (provider.handler_type || "").toLowerCase() === "datahub";
       const isMtn = network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO";
       const isBeneficiaryOrLimitError = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
       
       if (!result.ok && isMtn && (isDataHub || isBeneficiaryOrLimitError)) {
-        console.log(`[verify-payment] MTN order rejected by ${provider.name} (${result.reason}). Attempting Datamart API failover...`);
+        console.log(`[verify-payment] MTN order rejected by ${provider.name} (${result.reason}). Attempting Datamart/SKPlug API failover...`);
         const { data: dmProvider } = await supabaseAdmin
           .from("providers")
           .select("*")
@@ -1718,7 +1743,7 @@ serve(async (req: any) => {
         }
         
         const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart !== false;
-        if (!autoApiSwitch && !datamartFailoverEnabled && !isBeneficiaryErr) {
+        if (!autoApiSwitch && !datamartFailoverEnabled && !isBeneficiaryErr && (provider.handler_type || "") !== "spendless") {
           console.log(`[verify-payment] Auto API switch and non-beneficiary auto-route are disabled. Not failing over from ${provider.name}.`);
           break;
         }
