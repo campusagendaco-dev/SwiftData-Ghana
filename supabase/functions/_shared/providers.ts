@@ -127,8 +127,32 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // 7. If order has an assigned provider_id, prioritize that assigned provider at index 0,
-  // BUT KEEP all other active providers behind it for full failover!
+  // 7. Check if order was ALREADY ACCEPTED by a provider.
+  // Rule 1: Once an order is accepted by a provider (has provider_id AND (provider_order_id OR status is processing/fulfilled)),
+  // it MUST NOT enter a different provider! Lock to assigned provider ONLY.
+  const isAcceptedByProvider = Boolean(order?.provider_id) && (
+    Boolean(order?.provider_order_id) || 
+    ["processing", "fulfilled", "delivered", "completed"].includes(String(order?.status || "").toLowerCase())
+  );
+
+  if (isAcceptedByProvider) {
+    const assigned = activeProviders.find((p: any) => p.id === order.provider_id);
+    if (assigned) {
+      console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${assigned.name} (${assigned.id}). Locking to assigned provider ONLY.`);
+      return [assigned];
+    }
+    const { data: explicitProvider } = await supabaseAdmin
+      .from("providers")
+      .select("*")
+      .eq("id", order.provider_id)
+      .maybeSingle();
+    if (explicitProvider) {
+      console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${explicitProvider.name}. Locking to assigned provider ONLY.`);
+      return [explicitProvider];
+    }
+  }
+
+  // If order has an assigned provider_id but was NOT yet accepted (e.g. unaccepted initial attempt), prioritize assigned provider first
   if (order?.provider_id) {
     const assignedIndex = activeProviders.findIndex((p: any) => p.id === order.provider_id);
     if (assignedIndex > 0) {

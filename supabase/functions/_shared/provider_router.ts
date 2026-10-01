@@ -45,6 +45,10 @@ export function normalizeRecipient(phone: string | null | undefined): string {
 
 /**
  * Executes a hybrid multi-provider dispatch with intelligent auto-failover.
+ * 
+ * Rules Enforced:
+ * 1. Once an order is ACCEPTED by a provider (res.ok === true), it locks to that provider and NEVER enters a different provider.
+ * 2. An order is ONLY marked as fulfillment_failed after it has been attempted and REJECTED by ALL active providers.
  */
 export async function dispatchOrderWithFailover(
   supabaseAdmin: any,
@@ -61,11 +65,32 @@ export async function dispatchOrderWithFailover(
     };
   }
 
+  // Fetch past provider rejections for this order from provider_errors
+  const rejectedProviderIds = new Set<string>();
+  if (order?.id) {
+    const { data: pastErrors } = await supabaseAdmin
+      .from("provider_errors")
+      .select("provider_id")
+      .eq("order_id", order.id);
+    if (pastErrors && pastErrors.length > 0) {
+      pastErrors.forEach((errRow: any) => {
+        if (errRow.provider_id) rejectedProviderIds.add(String(errRow.provider_id));
+      });
+    }
+  }
+
   let lastFailureReason = "Provider dispatch failed";
 
   for (let i = 0; i < activeProviders.length; i++) {
     const provider = activeProviders[i];
     const isLastProvider = i === activeProviders.length - 1;
+
+    // If this provider previously rejected this order AND there are other active providers remaining that haven't rejected it yet, skip this provider
+    const hasRemainingUntried = activeProviders.some(p => !rejectedProviderIds.has(String(p.id)));
+    if (rejectedProviderIds.has(String(provider.id)) && hasRemainingUntried && activeProviders.length > 1) {
+      console.log(`[HybridRouter] Provider ${provider.name} (${provider.id}) previously rejected order ${order.id}. Skipping to untried provider...`);
+      continue;
+    }
 
     console.log(`[HybridRouter] Attempting Provider ${i + 1}/${activeProviders.length}: ${provider.name} (${provider.handler_type || "standard"}) for order ${order.id}`);
 
@@ -77,13 +102,14 @@ export async function dispatchOrderWithFailover(
         const isDelivered = res.status === "delivered" || res.status === "success" || res.status === "successful" || res.status === "fulfilled" || res.status === "completed" || res.status === "sent";
         const isProcessing = res.status === "processing" || res.status === "pending" || res.status === "queued" || res.status === "ongoing";
 
-        console.log(`[HybridRouter] Provider ${provider.name} responded with status: ${res.status}`);
+        console.log(`[HybridRouter] Provider ${provider.name} ACCEPTED order ${order.id} (status: ${res.status}). Locking to ${provider.name}.`);
 
-        // Swift Relearning: Instantly reset consecutive failures upon successful fulfillment
+        // Swift Relearning: Reset consecutive failures upon successful acceptance
         if (provider.id) {
           Promise.resolve(supabaseAdmin.from("providers").update({ consecutive_failures: 0 }).eq("id", provider.id)).catch(() => {});
         }
 
+        // Lock order to this provider and return immediately (NEVER enter a different provider)
         return {
           ok: true,
           status: isDelivered ? "fulfilled" : "processing",
@@ -96,34 +122,45 @@ export async function dispatchOrderWithFailover(
       }
 
       lastFailureReason = res.reason || `Failed at provider ${provider.name}`;
-      console.warn(`[HybridRouter] Provider ${provider.name} failed for order ${order.id}: ${lastFailureReason}`);
+      console.warn(`[HybridRouter] Provider ${provider.name} REJECTED order ${order.id}: ${lastFailureReason}`);
 
-      // Swift Relearning: Increment failure count if it's a provider infrastructure/balance error
+      // Record rejection log
+      if (provider.id && order?.id) {
+        rejectedProviderIds.add(String(provider.id));
+        Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+          provider_id: provider.id,
+          order_id: order.id,
+          error_message: lastFailureReason,
+        })).catch(() => {});
+      }
+
+      // Swift Relearning: Increment failure count for provider-side issues
       const isProviderSideIssue = /balance|limit|maintenance|out of stock|server error|502|timeout|down/i.test(lastFailureReason);
       if (isProviderSideIssue && provider.id) {
         Promise.resolve(supabaseAdmin.from("providers").update({ consecutive_failures: (provider.consecutive_failures || 0) + 1 }).eq("id", provider.id)).catch(() => {});
       }
 
-      // Check if error is terminal (e.g. invalid phone number format), or if we should cascade failover
-      const isTerminalError = /invalid phone|blacklisted|invalid msisdn/i.test(lastFailureReason);
-      if (isTerminalError) {
-        console.warn(`[HybridRouter] Terminal error encountered ("${lastFailureReason}"). Halting provider failover.`);
-        break;
-      }
-
-      // If there's another provider, log failover transition
       if (!isLastProvider) {
-        console.log(`[HybridRouter] Smart failover: Cascading to next provider (${activeProviders[i + 1].name})...`);
+        console.log(`[HybridRouter] Smart failover: Cascading to next active provider (${activeProviders[i + 1].name})...`);
       }
     } catch (err: any) {
       console.error(`[HybridRouter] Exception while dispatching to ${provider.name}:`, err);
       lastFailureReason = err.message || "Network exception during provider call";
+      if (provider.id && order?.id) {
+        rejectedProviderIds.add(String(provider.id));
+        Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+          provider_id: provider.id,
+          order_id: order.id,
+          error_message: lastFailureReason,
+        })).catch(() => {});
+      }
     }
   }
 
+  console.warn(`[HybridRouter] Order ${order.id} was REJECTED by ALL ${activeProviders.length} active provider(s). Transitioning to fulfillment_failed.`);
   return {
     ok: false,
     status: "fulfillment_failed",
-    reason: lastFailureReason,
+    reason: `Rejected by all ${activeProviders.length} active provider(s): ${lastFailureReason}`,
   };
 }
