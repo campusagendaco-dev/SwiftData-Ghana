@@ -1,4 +1,3 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { parseCapacity } from "./providers/utils.ts";
 
 export interface Provider {

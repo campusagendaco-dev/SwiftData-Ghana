@@ -94,6 +94,7 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 12px;
+      -webkit-backdrop-filter: blur(12px);
       backdrop-filter: blur(12px);
     }
 
@@ -122,6 +123,7 @@
       border-radius: 16px;
       padding: 1.75rem;
       margin-bottom: 2rem;
+      -webkit-backdrop-filter: blur(12px);
       backdrop-filter: blur(12px);
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
       transition: transform 0.2s ease, border-color 0.2s ease;
@@ -240,6 +242,31 @@
     .status-unverified { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
     .status-pending { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
 
+    .card-desc {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .code-label-group {
+      margin-top: 1rem;
+    }
+
+    .code-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .endpoint-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .mt-4 {
+      margin-top: 1rem;
+    }
+
     footer {
       text-align: center;
       padding: 2rem 0;
@@ -308,7 +335,7 @@
         <span class="http-pill pill-get">GET</span>
         <span class="endpoint-path">/api/bundles.php</span>
       </div>
-      <p style="color: var(--text-muted); font-size: 0.95rem;">
+      <p class="card-desc">
         Fetch all available data bundles and exact capacity keys before placing orders.
       </p>
       <pre><code>curl "https://bundlezone.shop/api/bundles.php" \
@@ -321,20 +348,20 @@
         <span class="http-pill pill-post">POST</span>
         <span class="endpoint-path">/api/beneficiary-check.php</span>
       </div>
-      <p style="color: var(--text-muted); font-size: 0.95rem;">
+      <p class="card-desc">
         Precheck MTN / Yello recipients. Accepts single or multiple numbers (up to 1,000 numbers per request). Never debits the wallet or creates orders.
       </p>
 
-      <div style="margin-top: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Request:</span>
+      <div class="code-label-group">
+        <span class="code-label">Request:</span>
         <pre><code>{
   "network": "MTN",
   "phone_number": "0551234567"
 }</code></pre>
       </div>
 
-      <div style="margin-top: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Verified Response:</span>
+      <div class="code-label-group">
+        <span class="code-label">Verified Response:</span>
         <pre><code>{
   "success": true,
   "data": {
@@ -390,14 +417,14 @@
       <div class="card-title">
         <span class="http-pill pill-post">POST</span>
         <span class="endpoint-path">/api/order.php</span>
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">(Single Order)</span>
+        <span class="endpoint-subtitle">(Single Order)</span>
       </div>
-      <p style="color: var(--text-muted); font-size: 0.95rem;">
+      <p class="card-desc">
         Submit a single data bundle order for execution.
       </p>
 
-      <div style="margin-top: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Payload:</span>
+      <div class="code-label-group">
+        <span class="code-label">Payload:</span>
         <pre><code>{
   "mode": "single",
   "network": "MTN",
@@ -406,8 +433,8 @@
 }</code></pre>
       </div>
 
-      <div style="margin-top: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Successful Accepted Response (HTTP 200):</span>
+      <div class="code-label-group">
+        <span class="code-label">Successful Accepted Response (HTTP 200):</span>
         <pre><code>{
   "success": true,
   "data": {
@@ -427,11 +454,11 @@
     <!-- 4. Webhooks -->
     <section class="card">
       <div class="card-title">Webhooks &amp; Status Callbacks</div>
-      <p style="color: var(--text-muted); font-size: 0.95rem;">
+      <p class="card-desc">
         BundleZone notifies your server when an order changes status via HTTP POST to your registered webhook URL.
       </p>
 
-      <div class="notes-grid" style="margin-top: 1rem;">
+      <div class="notes-grid mt-4">
         <div class="note-card">
           <strong>Header: Timestamp</strong>
           <code>X-BundleZone-Timestamp</code>: Unix time in seconds. Rejects requests older than 300 seconds.
@@ -442,14 +469,14 @@
         </div>
       </div>
 
-      <div style="margin-top: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Signature Computation Formula:</span>
+      <div class="code-label-group">
+        <span class="code-label">Signature Computation Formula:</span>
         <pre><code>signed_payload = X-BundleZone-Timestamp + "." + raw_request_body;
 expected_signature = "sha256=" + HMAC_SHA256_HEX(signed_payload, WEBHOOK_SECRET);</code></pre>
       </div>
 
-      <div style="margin-top: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Callback Payload Example:</span>
+      <div class="code-label-group">
+        <span class="code-label">Callback Payload Example:</span>
         <pre><code>{
   "event": "order.status_changed",
   "timestamp": "2026-08-17T08:15:00+00:00",
