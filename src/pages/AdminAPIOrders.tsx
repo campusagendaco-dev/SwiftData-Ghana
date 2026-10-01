@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
+import { ProviderBadge } from "@/components/ProviderBadge";
 
 interface OrderRow {
   id: string;
@@ -38,6 +39,8 @@ interface OrderRow {
   refund_amount?: number;
   refund_reason?: string;
   metadata?: any;
+  provider_id?: string | null;
+  provider_order_id?: string | null;
 }
 
 interface DeveloperProfile {
@@ -592,6 +595,7 @@ export default function AdminAPIOrders() {
                 <tr className="border-b border-white/5 bg-white/[0.02] text-white/40 uppercase tracking-wider font-black text-[10px]">
                   <th className="px-4 py-3">Timestamp</th>
                   <th className="px-4 py-3">Order Details</th>
+                  <th className="px-4 py-3">Provider Gateway</th>
                   <th className="px-4 py-3">Agent / Developer</th>
                   <th className="px-4 py-3">Recipient</th>
                   <th className="px-4 py-3 text-right">Amount</th>
@@ -639,6 +643,16 @@ export default function AdminAPIOrders() {
                             )}
                           </div>
                         </div>
+                      </td>
+
+                      {/* Provider Gateway */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <ProviderBadge
+                          providerId={o.provider_id}
+                          providerOrderId={o.provider_order_id}
+                          metadata={o.metadata}
+                          status={o.status}
+                        />
                       </td>
 
                       {/* Agent / Developer */}

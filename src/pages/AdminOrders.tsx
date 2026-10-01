@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
+import { ProviderBadge } from "@/components/ProviderBadge";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
@@ -59,6 +60,8 @@ interface OrderRow {
   refund_amount?: number;
   refund_reason?: string;
   payment_method?: string;
+  provider_id?: string | null;
+  provider_order_id?: string | null;
 }
 
 interface AgentProfile {
@@ -1402,6 +1405,7 @@ export default function AdminOrders() {
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Recipient Phone</th>
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Network</th>
                 <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Package Details</th>
+                <th className="text-left px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Provider Gateway</th>
                 <th className="text-right px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Amount</th>
                 <th className="text-right px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Profits (Admin / Agent)</th>
                 <th className="text-center px-4 py-3.5 font-extrabold uppercase tracking-wider text-muted-foreground">Status / Queue</th>
@@ -1544,6 +1548,16 @@ export default function AdminOrders() {
                           ECG: {order.metadata.prepaid_token}
                         </div>
                       )}
+                    </td>
+
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <ProviderBadge
+                        providerId={order.provider_id}
+                        providerOrderId={order.provider_order_id}
+                        metadata={order.metadata}
+                        status={order.status}
+                        providers={providers}
+                      />
                     </td>
 
                     <td className="px-4 py-3.5 text-right font-mono text-sm font-black text-foreground whitespace-nowrap">
@@ -1724,6 +1738,16 @@ export default function AdminOrders() {
                 <div>
                   <p className="text-[10px] uppercase font-bold text-muted-foreground">Network & Package</p>
                   <p className="font-bold text-foreground mt-0.5">{order.network || "—"} ({order.package_size || "—"})</p>
+                </div>
+                <div className="col-span-2 flex items-center justify-between pt-1.5 border-t border-white/5">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Provider Gateway:</span>
+                  <ProviderBadge
+                    providerId={order.provider_id}
+                    providerOrderId={order.provider_order_id}
+                    metadata={order.metadata}
+                    status={order.status}
+                    providers={providers}
+                  />
                 </div>
                 {order.status === "fulfilled" && (
                   <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-white/5 text-[11px] font-mono">

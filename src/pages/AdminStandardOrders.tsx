@@ -25,6 +25,7 @@ import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 import { motion } from "framer-motion";
+import { ProviderBadge } from "@/components/ProviderBadge";
 
 interface OrderRow {
   id: string;
@@ -44,6 +45,8 @@ interface OrderRow {
   agent_phone?: string;
   is_sub_agent?: boolean;
   metadata?: any;
+  provider_id?: string | null;
+  provider_order_id?: string | null;
 }
 
 interface AgentProfile {
@@ -573,13 +576,21 @@ const AdminStandardOrders = () => {
                         </div>
                       </td>
                       <td className="p-2.5">
-                        {(() => {
-                          const isApi = o.metadata?.client_reference || o.metadata?.wallet_type === "api";
-                          const isWallet = o.payment_method === "wallet" && !isApi;
-                          if (isApi) return <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">API</Badge>;
-                          if (isWallet) return <Badge className="bg-sky-500/10 text-sky-400 border-sky-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Wallet</Badge>;
-                          return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Direct MoMo</Badge>;
-                        })()}
+                        <div className="flex flex-col gap-1 items-start">
+                          {(() => {
+                            const isApi = o.metadata?.client_reference || o.metadata?.wallet_type === "api";
+                            const isWallet = (o as any).payment_method === "wallet" && !isApi;
+                            if (isApi) return <Badge className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">API</Badge>;
+                            if (isWallet) return <Badge className="bg-sky-500/10 text-sky-400 border-sky-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Wallet</Badge>;
+                            return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] font-black tracking-wider uppercase px-1.5 py-0.5">Direct MoMo</Badge>;
+                          })()}
+                          <ProviderBadge
+                            providerId={o.provider_id}
+                            providerOrderId={o.provider_order_id}
+                            metadata={o.metadata}
+                            status={o.status}
+                          />
+                        </div>
                       </td>
                       <td className="p-2.5 text-right font-black text-foreground text-[11px]">
                         ₵{o.amount.toFixed(2)}
