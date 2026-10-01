@@ -72,7 +72,7 @@ const Terms = () => {
               <br />
               <strong>Email:</strong> support@swiftdatagh.shop
               <br />
-              <strong>Phone:</strong> 0540309637
+              <strong>Phone:</strong> +233 59 817 0947
               <br />
               <strong>Location:</strong> Accra, Ghana
             </p>

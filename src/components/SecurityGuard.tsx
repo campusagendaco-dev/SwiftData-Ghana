@@ -26,7 +26,7 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
 
   const [cachedStore, setCachedStore] = useState<{ name: string; logo: string | null; color: string | null } | null>(null);
   const [isDeviceBlocked, setIsDeviceBlocked] = useState(false);
-  const [supportNumber, setSupportNumber] = useState("0540309637");
+  const [supportNumber, setSupportNumber] = useState("0598170947");
 
   useEffect(() => {
     const checkDeviceStatus = async () => {

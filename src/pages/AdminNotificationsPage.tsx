@@ -950,7 +950,7 @@ const AdminNotificationsPage = () => {
                 onClick={() => {
                   setTitle("WASSCE 2026 Out! 🎓");
                   setTargetType("all");
-                  setMessage("🎓 WASSCE 2026 Results are OUT! WAEC Results Checker serials & PINs are now IN STOCK at wholesale rates. Buy & check instantly at https://swiftdatagh.shop or sell to students for quick profit! 📲 Support: 0540309637");
+                  setMessage("🎓 WASSCE 2026 Results are OUT! WAEC Results Checker serials & PINs are now IN STOCK at wholesale rates. Buy & check instantly at https://swiftdatagh.shop or sell to students for quick profit! 📲 Support: 0598170947");
                   setSendSms(true);
                   setSendWebPush(true);
                   toast({ title: "WASSCE Checker Preset Loaded! 🎓", description: "Target set to Everyone. WAEC checker promotion ready." });

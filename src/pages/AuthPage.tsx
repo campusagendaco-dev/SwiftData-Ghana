@@ -33,7 +33,7 @@ const itemVariants = {
 const AuthPage = () => {
   const [isSignUp, setIsSignUp] = useState(true);
   const [email, setEmail] = useState("");
-  const [supportNumber, setSupportNumber] = useState("0540309637");
+  const [supportNumber, setSupportNumber] = useState("0598170947");
   const [isDeviceBlocked, setIsDeviceBlocked] = useState(false);
   const [dismissedBlockedBanner, setDismissedBlockedBanner] = useState(false);
 

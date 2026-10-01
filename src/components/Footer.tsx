@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { MapPin, Mail, Phone, ArrowRight, ShieldCheck, Zap } from "lucide-react";
 
 const Footer = () => {
-  const [customerServiceNumber, setCustomerServiceNumber] = useState("0540309637");
+  const [customerServiceNumber, setCustomerServiceNumber] = useState("0598170947");
   const [supportChannelLink, setSupportChannelLink] = useState("https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40");
 
   useEffect(() => {

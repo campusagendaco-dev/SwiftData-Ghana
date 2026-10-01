@@ -152,7 +152,7 @@ const OrderStatus = () => {
   const [resolvedOrderId, setResolvedOrderId] = useState<string | null>(null);
   const [isClaimingRefund, setIsClaimingRefund] = useState(false);
   const [isExpediting, setIsExpediting] = useState(false);
-  const [supportPhone, setSupportPhone] = useState<string>("0540309637");
+  const [supportPhone, setSupportPhone] = useState<string>("0598170947");
 
   // State for realtime console tracking
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -373,12 +373,12 @@ const OrderStatus = () => {
   }, [reference, resolvedOrderId, handleStatusUpdate]);
 
   const getCleanWhatsAppPhone = () => {
-    const raw = storeInfo?.whatsapp_number || storeInfo?.support_number || supportPhone || "0540309637";
+    const raw = storeInfo?.whatsapp_number || storeInfo?.support_number || supportPhone || "0598170947";
     const digits = String(raw).replace(/\D+/g, "");
     if (digits.startsWith("233")) return digits;
     if (digits.startsWith("0")) return `233${digits.slice(1)}`;
     if (digits.length === 9) return `233${digits}`;
-    return digits || "233540309637";
+    return digits || "233598170947";
   };
 
   const getWhatsAppMessage = () => {
