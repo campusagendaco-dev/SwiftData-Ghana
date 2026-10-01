@@ -117,6 +117,7 @@ export default function AdminOrders() {
   const initialSearch = searchParams.get("agent") || "";
   const [search, setSearch] = useState(initialSearch);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
   const [retryingAll, setRetryingAll] = useState(false);
   const [forcingFulfill, setForcingFulfill] = useState(false);
@@ -529,6 +530,45 @@ export default function AdminOrders() {
       toast({ title: "Update Failed", description: err.message, variant: "destructive" });
     } finally {
       setUpdatingSingleStatus(false);
+    }
+  };
+
+  const handleCheckProviderStatus = async (orderId: string) => {
+    setCheckingStatusId(orderId);
+    try {
+      const { data, error } = await supabase.functions.invoke("check-order-status", {
+        body: { order_id: orderId },
+      });
+
+      if (error) throw error;
+      if (!data || !data.success) {
+        throw new Error(data?.error || "Failed to check provider status");
+      }
+
+      const orderData = data.order;
+      const newStatus = orderData?.status || "processing";
+      const provInfo = data.provider;
+      const provName = provInfo?.name || "Provider";
+      const rawStatus = provInfo?.raw_status || newStatus;
+
+      setAllOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus, failure_reason: orderData?.failure_reason } : o))
+      );
+
+      toast({
+        title: `Provider Status: ${String(rawStatus).toUpperCase()} 📡`,
+        description: provInfo 
+          ? `${provName} reports "${rawStatus}". Order is "${newStatus.replace(/_/g, " ")}".`
+          : `Order is "${newStatus.replace(/_/g, " ")}". No provider assigned.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Status Check Failed",
+        description: err.message || String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setCheckingStatusId(null);
     }
   };
 
@@ -1645,6 +1685,17 @@ export default function AdminOrders() {
 
                         return (
                           <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-[10px] gap-1 h-7 px-2 border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg font-bold"
+                              disabled={checkingStatusId === order.id}
+                              onClick={() => handleCheckProviderStatus(order.id)}
+                              title="Check exact live status from upstream provider"
+                            >
+                              {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+                              Check Status
+                            </Button>
                             {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                               <Button
                                 size="sm"
@@ -1782,6 +1833,17 @@ export default function AdminOrders() {
                   <p className="text-[10px] text-rose-400 italic truncate max-w-[160px]">{order.failure_reason}</p>
                 )}
                 <div className="flex items-center gap-1.5 ml-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs gap-1 h-8 px-2 rounded-lg border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 font-bold"
+                    disabled={checkingStatusId === order.id}
+                    onClick={() => handleCheckProviderStatus(order.id)}
+                    title="Check exact live status from provider"
+                  >
+                    {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+                    Check Status
+                  </Button>
                   {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                     <Button
                       size="sm"

@@ -342,8 +342,42 @@ const OrderStatus = () => {
 
       setIsRefreshing(true);
       try {
+        const orderIdOrRef = resolvedOrderId || reference;
+
+        // 1. Try checking live carrier status from check-order-status edge function
+        let checked = false;
+        try {
+          const { data: checkData, error: checkErr } = await supabase.functions.invoke("check-order-status", {
+            body: { order_id: orderIdOrRef },
+          });
+
+          if (!checkErr && checkData && checkData.success) {
+            checked = true;
+            if (checkData.order) {
+              setOrderData(checkData.order);
+              if (checkData.order.network) setOrderNetwork(checkData.order.network);
+              if (checkData.order.package_size) setOrderPackageSize(checkData.order.package_size);
+              if (checkData.order.customer_phone) setOrderPhone(checkData.order.customer_phone);
+              if (checkData.order.order_type) setOrderType(checkData.order.order_type);
+            }
+            handleStatusUpdate(checkData.order?.status, checkData.order?.carrier_status || checkData.message);
+
+            if (checkData.order?.status === "fulfilled" || checkData.order?.status === "fulfillment_failed" || checkData.order?.status === "error") {
+              redirectedRef.current = true;
+            }
+          }
+        } catch (cErr) {
+          console.warn("[OrderStatus] check-order-status fallback:", cErr);
+        }
+
+        if (checked) {
+          setIsRefreshing(false);
+          return;
+        }
+
+        // 2. Fallback to verify-payment for initial checkout confirmation
         const { data, error } = await supabase.functions.invoke("verify-payment", {
-          body: { reference: resolvedOrderId || reference, force: true },
+          body: { reference: orderIdOrRef, force: true },
         });
 
         if (error) {
@@ -1300,7 +1334,17 @@ const OrderStatus = () => {
           </div>
 
           {/* Action Toolbar */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <button 
+              onClick={() => pollStatus(true)} 
+              disabled={isRefreshing} 
+              className="flex-1 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              title="Check exact live delivery status from carrier"
+            >
+              <Activity className={cn("w-4 h-4 text-cyan-400", isRefreshing && "animate-spin")} />
+              <span>{isRefreshing ? "Verifying with Telecom Carrier..." : "Check Live Delivery Status"}</span>
+            </button>
+
             <button 
               onClick={() => setShowReceipt(true)} 
               className="flex-1 h-12 rounded-2xl text-slate-950 font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-110"
@@ -1310,17 +1354,8 @@ const OrderStatus = () => {
             </button>
 
             <button 
-              onClick={() => pollStatus(true)} 
-              disabled={isRefreshing || orderStatus === "fulfilled"} 
-              className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white disabled:opacity-30"
-              title="Refresh status"
-            >
-              <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin text-amber-400")} />
-            </button>
-
-            <button 
               onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')} 
-              className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white"
+              className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white shrink-0"
               title="Back to lookup"
             >
               <ArrowLeft className="w-4 h-4" />

@@ -201,3 +201,7 @@ verify_jwt = false
 [functions.cron-winback-push]
 verify_jwt = false
 
+[functions.check-order-status]
+verify_jwt = false
+
+

@@ -364,18 +364,43 @@ const DashboardOrders = () => {
     return () => { safeRemoveChannel(ch); };
   }, [user]);
 
-  // Manual retry for a single order
-  const retryOrder = useCallback(async (orderId: string) => {
+  // Manual retry or status check for a single order
+  const checkOrderStatus = useCallback(async (orderId: string) => {
     setRetryingIds((prev) => new Set(prev).add(orderId));
     try {
-      await invokePublicFunctionAsUser("verify-payment", { body: { reference: orderId, force: true } });
-      await fetchOrders(false, true);
-    } catch {
-      // silent — real-time will handle the update
+      const { data, error } = await supabase.functions.invoke("check-order-status", {
+        body: { order_id: orderId }
+      });
+
+      if (!error && data && data.success) {
+        const orderData = data.order;
+        const newStatus = orderData?.status;
+        const carrierMsg = data.message || orderData?.carrier_status;
+
+        toast({
+          title: newStatus === "fulfilled" ? "Order Delivered! ✅" : "Live Status Checked 📡",
+          description: carrierMsg || `Order status: ${newStatus}`,
+        });
+
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, status: newStatus, failure_reason: orderData?.failure_reason } : o))
+        );
+      } else {
+        await invokePublicFunctionAsUser("verify-payment", { body: { reference: orderId, force: true } });
+        await fetchOrders(false, true);
+      }
+    } catch (err: any) {
+      toast({
+        title: "Status Check",
+        description: err.message || "Failed to check status",
+        variant: "destructive"
+      });
     } finally {
       setRetryingIds((prev) => { const n = new Set(prev); n.delete(orderId); return n; });
     }
-  }, [fetchOrders]);
+  }, [fetchOrders, toast]);
+
+  const retryOrder = checkOrderStatus;
 
   // Auto-retry pending/paid orders sequentially every 45s with rate-limit protection
   useEffect(() => {
@@ -787,17 +812,17 @@ const DashboardOrders = () => {
                         {retryCount > 0 && <span className="opacity-75 font-mono text-[10px]">(Attempt #{retryCount})</span>}
                       </span>
                       <button
-                        onClick={() => isBeneficiary ? navigate("/submit-numbers") : retryOrder(order.id)}
+                        onClick={() => isBeneficiary ? navigate("/submit-numbers") : checkOrderStatus(order.id)}
                         disabled={isRetrying}
                         className={`text-xs font-extrabold px-3 py-1 rounded-lg transition-all border disabled:opacity-50 ${
                           isBeneficiary
                             ? "text-amber-400 hover:text-amber-300 bg-amber-500/20 border-amber-500/30"
                             : order.status === "fulfillment_failed" 
                             ? "text-rose-400 hover:text-rose-300 bg-rose-500/20 border-rose-500/30"
-                            : "text-amber-400 hover:text-amber-300 bg-amber-500/20 border-amber-500/30"
+                            : "text-cyan-400 hover:text-cyan-300 bg-cyan-500/20 border-cyan-500/30"
                         }`}
                       >
-                        {isRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isBeneficiary ? "Verify Number 🚀" : order.status === "fulfillment_failed" ? "Retry Fulfillment" : "Check Status"}
+                        {isRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isBeneficiary ? "Verify Number 🚀" : "Check Live Status"}
                       </button>
                     </div>
                   )}
@@ -894,6 +919,14 @@ const DashboardOrders = () => {
 
                       {/* Action buttons */}
                       <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          onClick={() => checkOrderStatus(order.id)}
+                          disabled={isRetrying}
+                          className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black border transition-all bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 active:scale-95 disabled:opacity-50"
+                        >
+                          {isRetrying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5 text-cyan-400" />}
+                          Check Live Carrier Delivery Status
+                        </button>
                         <button
                           onClick={() => copyReceipt(order)}
                           className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold border transition-all bg-white/5 border-white/10 text-white hover:bg-white/10"
