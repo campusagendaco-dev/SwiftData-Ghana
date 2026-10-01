@@ -193,6 +193,7 @@ serve(async (req: Request) => {
               await supabaseAdmin.from("orders").update({
                 status: "fulfilled",
                 failure_reason: null,
+                provider_response: pRes.raw || pRes,
                 updated_at: new Date().toISOString()
               }).eq("id", order.id);
 
@@ -210,6 +211,7 @@ serve(async (req: Request) => {
               await supabaseAdmin.from("orders").update({
                 status: "fulfillment_failed",
                 failure_reason: currentFailureReason,
+                provider_response: pRes.raw || pRes,
                 updated_at: new Date().toISOString()
               }).eq("id", order.id);
 
@@ -217,6 +219,13 @@ serve(async (req: Request) => {
             }
           } else {
             carrierStatusDesc = "Transmitting to carrier network — active in processing";
+            // Persist latest live polling response into metadata/provider_response
+            if (pRes.raw || pRes.id) {
+              await supabaseAdmin.from("orders").update({
+                provider_response: pRes.raw || pRes,
+                updated_at: new Date().toISOString()
+              }).eq("id", order.id);
+            }
           }
         } catch (provErr: any) {
           console.warn(`[check-order-status] Error querying provider status:`, provErr?.message || provErr);
