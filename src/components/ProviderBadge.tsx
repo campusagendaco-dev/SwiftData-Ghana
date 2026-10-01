@@ -86,35 +86,13 @@ export function getProviderDetails(
     matchedName = `Provider (${providerId.slice(0, 6)})`;
   }
 
-  // 4. Resolve top ACTIVE provider from DB based on order category and network (skips inactive providers like Datamart)
+  // 4. If no provider is explicitly assigned or recorded in metadata, the order has not been dispatched yet
   if (!matchedName) {
-    const typeLower = String(orderType || "data").toLowerCase();
-    const netUpper = String(network || "").toUpperCase();
-
-    // Filter active providers for this category
-    const activeForCategory = activeProvidersOnly.filter(p => {
-      const pType = (p.provider_type || "data").toLowerCase();
-      if (typeLower === "airtime") return pType === "airtime" || p.handler_type === "korba";
-      if (typeLower === "utility") return pType === "utility";
-      return pType === "data" || p.handler_type === "spendless" || p.handler_type === "korba";
-    }).sort((a, b) => (a.priority || 99) - (b.priority || 99));
-
-    if (activeForCategory.length > 0) {
-      // Pick top active provider configured in DB
-      matchedName = activeForCategory[0].name;
-    }
-  }
-
-  if (!matchedName) {
-    if (status === "fulfilled" || status === "processing") {
-      matchedName = "Active Gateway";
-    } else {
-      return {
-        name: "Not Dispatched",
-        badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-        refId: null,
-      };
-    }
+    return {
+      name: "Not Dispatched",
+      badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+      refId: null,
+    };
   }
 
   const nameUpper = String(matchedName).toUpperCase();
