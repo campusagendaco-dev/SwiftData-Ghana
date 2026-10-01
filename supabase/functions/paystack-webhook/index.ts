@@ -1919,6 +1919,8 @@ serve(async (req: Request) => {
         (chosenProvider?.base_url || "").toLowerCase().includes("datamart") ? "datamart" : "standard"
       );
 
+      let currentPayload: any = dataPayload;
+
       if (ht === "spendless") {
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
         const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
