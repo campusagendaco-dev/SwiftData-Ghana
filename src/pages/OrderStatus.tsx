@@ -507,12 +507,25 @@ const OrderStatus = () => {
           ...prev,
           status: "refunded",
           refund_amount: prev?.amount || amt,
-          metadata: { ...(prev?.metadata || {}), guest_refund_gateway: "paystack" }
+          metadata: { 
+            ...(prev?.metadata || {}), 
+            guest_refund_gateway: "paystack",
+            guest_refund_status: "completed",
+            guest_refund_id: data?.refundId
+          }
         }));
       } else if (data?.error?.includes("processing") || data?.error?.includes("carrier network API")) {
         toast.info("Your bundle has already been dispatched to the carrier network! It is arriving shortly.");
       } else {
         toast.error(data?.error || "Refund queued for manual payout by support team.");
+        setOrderData((prev: any) => ({
+          ...prev,
+          metadata: {
+            ...(prev?.metadata || {}),
+            guest_refund_status: "needs_manual_payout",
+            guest_refund_error: data?.error
+          }
+        }));
       }
     } catch (e: any) {
       toast.error(e?.message || "An error occurred while requesting your refund.");
@@ -992,20 +1005,32 @@ const OrderStatus = () => {
                     Expedite / Verify Number Now 🚀
                   </button>
 
-                  <button
-                    onClick={handleInstantRefund}
-                    disabled={isClaimingRefund}
-                    className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    {isClaimingRefund ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-purple-400" />}
-                    Request Refund to Mobile Money 💰
-                  </button>
+                  {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" ? (
+                    <a
+                      href={getWhatsAppUrl(`Hello SwiftData support, my refund request for order ${resolvedOrderId || reference} is pending manual payout. Please assist me.`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 px-4 rounded-xl bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/40 text-amber-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      <MessageCircle className="w-4 h-4 text-amber-400 fill-amber-400/20" />
+                      Refund Under Review (Chat Support) ⏳
+                    </a>
+                  ) : (
+                    <button
+                      onClick={handleInstantRefund}
+                      disabled={isClaimingRefund}
+                      className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      {isClaimingRefund ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-purple-400" />}
+                      Request Refund to Mobile Money 💰
+                    </button>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Guest Beneficiary Refund Completed Alert Card */}
-            {(orderStatus === "refunded" || (orderData as any)?.auto_refunded) && ((orderData as any)?.metadata?.guest_refund_gateway === "paystack" || (orderData as any)?.metadata?.non_beneficiary_failed) && (
+            {/* 1. Verified Completed Paystack Mobile Money Refund */}
+            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway === "paystack" && (orderData as any)?.metadata?.guest_refund_status === "completed" && (
               <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-purple-500/15 via-purple-950/20 to-black border border-purple-500/40 text-center space-y-3 shadow-lg shadow-purple-950/40 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-center gap-2">
                   <RotateCcw className="w-4 h-4 text-purple-400" />
@@ -1015,12 +1040,58 @@ const OrderStatus = () => {
                 </div>
                 <p className="text-xs text-slate-300 font-medium leading-relaxed">
                   Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.
-                  Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been automatically refunded to your Mobile Money account via Paystack!
+                  Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been verified and successfully refunded to your Mobile Money account via Paystack!
                 </p>
+                {(orderData as any)?.metadata?.guest_refund_id && (
+                  <div className="text-[11px] text-purple-300/80 font-mono bg-purple-500/10 py-1 px-3 rounded-lg border border-purple-500/20 inline-block">
+                    Paystack Refund ID: <span className="font-bold text-purple-200">{(orderData as any)?.metadata?.guest_refund_id}</span>
+                  </div>
+                )}
                 <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   Carrier Whitelist: <span className="text-emerald-400 font-bold">Auto-Submitted for Approval ✅</span>
                 </div>
+              </div>
+            )}
+
+            {/* 2. Refund Under Manual Review (Queued for Support Payout) */}
+            {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" && orderStatus !== "refunded" && (
+              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
+                    Refund Request Under Review ⏳
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                  Your refund request for <strong className="text-amber-300 font-bold">GH₵ {Number((orderData as any)?.amount || 0).toFixed(2)}</strong> has been received and queued for manual Mobile Money payout by our support team.
+                </p>
+                <div className="pt-1">
+                  <a
+                    href={getWhatsAppUrl(`Hello SwiftData support, my order ${resolvedOrderId || reference} is pending manual refund payout. Please assist me.`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-white" />
+                    Chat Support on WhatsApp for Instant Payout 🚀
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Refunded to Agent Wallet Balance */}
+            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway !== "paystack" && (
+              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-blue-500/15 via-blue-950/20 to-black border border-blue-500/40 text-center space-y-3 shadow-lg shadow-blue-950/40 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs font-black uppercase tracking-wider text-blue-300 font-mono">
+                    Refunded to Wallet Balance 💳
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                  The amount of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been returned to your agent wallet balance.
+                </p>
               </div>
             )}
 
@@ -1076,7 +1147,15 @@ const OrderStatus = () => {
                   </button>
 
                   {/* 3. Refund (Only if not yet entered a provider) or Carrier Guaranteed Badge */}
-                  {!hasEnteredProvider ? (
+                  {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" ? (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2.5 shadow-sm">
+                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                      <div className="leading-tight text-left">
+                        <span className="font-bold block text-amber-200">Refund Under Review:</span>
+                        <span>Queued for manual payout by support team.</span>
+                      </div>
+                    </div>
+                  ) : !hasEnteredProvider ? (
                     <button
                       onClick={handleInstantRefund}
                       disabled={isClaimingRefund}

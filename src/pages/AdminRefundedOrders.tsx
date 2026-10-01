@@ -475,7 +475,7 @@ export default function AdminRefundedOrders() {
                             +GH₵ {amount}
                           </div>
                           <div className="text-[10px] text-muted-foreground font-medium">
-                            {o.metadata?.guest_refund_gateway === "paystack" ? "Refunded to Mobile Money" : "Returned to Wallet"}
+                            {o.metadata?.guest_refund_gateway === "paystack" && o.metadata?.guest_refund_status === "completed" ? "Refunded to Mobile Money" : "Returned to Wallet"}
                           </div>
                         </td>
 
@@ -547,7 +547,7 @@ export default function AdminRefundedOrders() {
                       <div className="text-right">
                         <div className="font-black text-base text-purple-600 dark:text-purple-400">+GH₵ {amount}</div>
                         <div className="text-[10px] text-muted-foreground">
-                          {o.metadata?.guest_refund_gateway === "paystack" ? "Mobile Money Refund" : "Wallet Credited"}
+                          {o.metadata?.guest_refund_gateway === "paystack" && o.metadata?.guest_refund_status === "completed" ? "Mobile Money Refund" : "Wallet Credited"}
                         </div>
                       </div>
                     </div>

@@ -260,7 +260,6 @@ export async function executeGuestBeneficiaryRefund(
 
   const customerPhone = normalizePhone(currentOrder.customer_phone || currentOrder.recipient || currentOrder.phone);
   const orderAmount = Number(currentOrder.amount || 0);
-  const targetRef = currentOrder.payment_reference || currentOrder.reference || orderId;
 
   if (orderAmount <= 0) {
     return {
@@ -271,7 +270,33 @@ export async function executeGuestBeneficiaryRefund(
     };
   }
 
-  console.log(`[guest-refund] Executing on-demand refund for order ${orderId} (Amount: GHS ${orderAmount}, Ref: ${targetRef})`);
+  // Safely parse order metadata
+  let meta: Record<string, any> = {};
+  if (typeof currentOrder.metadata === "string") {
+    try {
+      meta = JSON.parse(currentOrder.metadata || "{}");
+    } catch {
+      meta = {};
+    }
+  } else if (currentOrder.metadata && typeof currentOrder.metadata === "object") {
+    meta = { ...currentOrder.metadata };
+  }
+
+  // Gather candidate Paystack transaction references in order of priority:
+  const candidateRefs: string[] = Array.from(new Set([
+    meta.paystack_reference,
+    meta.trxref,
+    meta.reference,
+    meta.payment_reference,
+    meta.paystack_transaction_id,
+    meta.transaction_id,
+    currentOrder.payment_reference,
+    currentOrder.reference,
+    orderId,
+  ].map((r) => (r !== null && r !== undefined ? String(r).trim() : ""))
+   .filter((r) => r.length > 0 && r !== "failed_api_call" && r !== "timeout")));
+
+  console.log(`[guest-refund] Executing on-demand refund for order ${orderId} (Amount: GHS ${orderAmount}, Candidate Refs: ${candidateRefs.join(", ")})`);
 
   let paystackKey = Deno.env.get("PAYSTACK_SECRET_KEY") || providedPaystackKey || "";
   if (!paystackKey) {
@@ -291,19 +316,61 @@ export async function executeGuestBeneficiaryRefund(
   let refundId = "";
   let refundError = "";
   let gatewayUsed: "paystack" | "manual" | "none" = "none";
+  let verifiedPaystackTxId: string | number | null = null;
+  let verifiedPaystackRef: string | null = null;
+  let verifiedPaystackStatus: string | null = null;
 
-  if (paystackKey && orderAmount > 0 && targetRef) {
-    try {
-      gatewayUsed = "paystack";
-      const amountInPesewas = Math.round(orderAmount * 100);
-      const refundPayload = {
-        transaction: targetRef,
-        amount: amountInPesewas,
-        currency: "GHS",
-        customer_note: `SwiftData: Refund for order ${orderId.slice(0, 8)} - recipient number not on MTN beneficiary list.`,
-        merchant_note: `Requested refund for non-beneficiary guest order ${orderId}`,
+  if (paystackKey && orderAmount > 0 && candidateRefs.length > 0) {
+    gatewayUsed = "paystack";
+
+    // 1. Verify candidate references against Paystack to locate the exact transaction ID and status
+    for (const cand of candidateRefs) {
+      try {
+        console.log(`[guest-refund] Verifying candidate reference against Paystack: ${cand}`);
+        const verifyRes = await fetchViaDb(supabaseAdmin, `https://api.paystack.co/transaction/verify/${encodeURIComponent(cand)}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${paystackKey}`,
+          },
+        }, 8);
+
+        const verifyData = await verifyRes.json().catch(() => ({}));
+        if (verifyRes.ok && verifyData.status === true && verifyData.data) {
+          verifiedPaystackTxId = verifyData.data.id;
+          verifiedPaystackRef = verifyData.data.reference;
+          verifiedPaystackStatus = verifyData.data.status;
+          console.log(`[guest-refund] Found Paystack transaction: ID=${verifiedPaystackTxId}, Ref=${verifiedPaystackRef}, Status=${verifiedPaystackStatus}`);
+          break;
+        }
+      } catch (verErr) {
+        console.warn(`[guest-refund] Error verifying candidate ref ${cand} with Paystack:`, verErr);
+      }
+    }
+
+    // Safety guard: If Paystack returned a non-success transaction status (e.g. abandoned, failed, reversed)
+    if (verifiedPaystackStatus && verifiedPaystackStatus !== "success") {
+      console.warn(`[guest-refund] REFUND BLOCKED: Paystack transaction ${verifiedPaystackRef} status is '${verifiedPaystackStatus}' (not a successful charge).`);
+      return {
+        success: false,
+        refunded: false,
+        gateway: "none",
+        error: `Cannot process refund: Payment on Paystack has status '${verifiedPaystackStatus}' (not a completed charge).`
       };
+    }
 
+    // Target transaction identifier for Paystack /refund (prefer numerical ID, then ref, then candidate)
+    const targetTx = verifiedPaystackTxId || verifiedPaystackRef || candidateRefs[0] || orderId;
+    const amountInPesewas = Math.round(orderAmount * 100);
+    const refundPayload = {
+      transaction: targetTx,
+      amount: amountInPesewas,
+      currency: "GHS",
+      customer_note: `SwiftData: Refund for order ${orderId.slice(0, 8)} - MTN recipient limit / whitelist issue.`,
+      merchant_note: `Requested guest refund for order ${orderId} (${customerPhone || "guest"})`,
+    };
+
+    try {
+      console.log(`[guest-refund] Submitting Paystack refund for transaction '${targetTx}' (Amount: ${amountInPesewas} pesewas)`);
       let response: Response;
       try {
         response = await fetch("https://api.paystack.co/refund", {
@@ -329,7 +396,7 @@ export async function executeGuestBeneficiaryRefund(
       const resData = await response.json().catch(() => ({}));
       console.log(`[guest-refund] Paystack refund response (HTTP ${response.status}):`, resData);
 
-      if (response.ok && resData.status) {
+      if (response.ok && resData.status === true) {
         refundSuccess = true;
         refundId = String(resData.data?.id || resData.data?.transaction?.id || "paystack_refunded");
       } else {
@@ -348,7 +415,7 @@ export async function executeGuestBeneficiaryRefund(
   }
 
   const nowIso = new Date().toISOString();
-  const existingMetadata = order.metadata || {};
+  const existingMetadata = meta;
   
   const updatedMetadata = {
     ...existingMetadata,
@@ -359,11 +426,15 @@ export async function executeGuestBeneficiaryRefund(
     guest_refund_id: refundId || null,
     guest_refund_error: refundSuccess ? null : refundError,
     guest_refund_timestamp: nowIso,
+    paystack_transaction_id: verifiedPaystackTxId || existingMetadata.paystack_transaction_id || null,
+    paystack_reference: verifiedPaystackRef || existingMetadata.paystack_reference || candidateRefs[0] || null,
   };
 
   const updatePatch: Record<string, any> = {
     metadata: updatedMetadata,
-    failure_reason: `MTN Beneficiary Error: Recipient is not registered on carrier whitelist. ${refundSuccess ? 'GHS ' + orderAmount.toFixed(2) + ' refunded to Mobile Money via Paystack.' : 'Refund queued for manual payout.'}`,
+    failure_reason: refundSuccess
+      ? `Refund Verified & Completed: GHS ${orderAmount.toFixed(2)} sent to Mobile Money via Paystack.`
+      : `MTN Beneficiary Error: Recipient line not on carrier whitelist. Refund queued for manual payout (${refundError || 'unverified'}).`,
     updated_at: nowIso,
   };
 
@@ -371,7 +442,7 @@ export async function executeGuestBeneficiaryRefund(
     updatePatch.status = "refunded";
     updatePatch.auto_refunded = true;
     updatePatch.refund_amount = orderAmount;
-    updatePatch.refund_reason = "Requested refund: MTN number not on beneficiary list. Refunded to Mobile Money via Paystack.";
+    updatePatch.refund_reason = `Requested refund: MTN number not on beneficiary list. Refunded to Mobile Money via Paystack (Refund ID: ${refundId}).`;
     updatePatch.refunded_at = nowIso;
   }
 
@@ -396,11 +467,12 @@ export async function executeGuestBeneficiaryRefund(
     }
   });
 
-  // Send Refund Confirmation SMS
+  // Send Refund Confirmation SMS STRICTLY when refund is verified and complete
   if (customerPhone && refundSuccess) {
     try {
       const trackingUrl = `https://swiftdatagh.shop/order-status?id=${orderId}`;
-      const smsMessage = `SwiftData Alert: GHS ${orderAmount.toFixed(2)} for ${customerPhone} has been refunded to your Mobile Money account via Paystack! Ref: ${String(targetRef).slice(0, 8)}. Track: ${trackingUrl}`;
+      const smsRef = verifiedPaystackRef || refundId || candidateRefs[0] || orderId;
+      const smsMessage = `SwiftData Alert: GHS ${orderAmount.toFixed(2)} for ${customerPhone} has been refunded to your Mobile Money account via Paystack! Ref: ${String(smsRef).slice(0, 10)}. Track: ${trackingUrl}`;
 
       await sendPaymentSms(
         supabaseAdmin,
@@ -412,7 +484,7 @@ export async function executeGuestBeneficiaryRefund(
           amount: orderAmount.toFixed(2),
           network: "MTN",
         },
-        order.agent_id || undefined
+        currentOrder.agent_id || undefined
       );
     } catch (smsErr) {
       console.error("[guest-refund] Failed to send customer refund SMS:", smsErr);
@@ -423,7 +495,7 @@ export async function executeGuestBeneficiaryRefund(
     success: refundSuccess,
     refunded: refundSuccess,
     gateway: gatewayUsed,
-    reference: targetRef,
+    reference: verifiedPaystackRef || candidateRefs[0] || orderId,
     refundId: refundId || undefined,
     error: refundError || undefined,
   };
