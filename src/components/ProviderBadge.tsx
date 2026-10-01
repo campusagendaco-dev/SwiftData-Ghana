@@ -47,6 +47,39 @@ export function getProviderDetails(
   network?: string | null,
   orderType?: string | null
 ) {
+  // 0. Handle non-telecom order types (Wallet Top-up, Direct Debit, Agent Activation)
+  const typeLower = String(orderType || "").toLowerCase();
+  const pkgUpper = String(metadata?.package_size || metadata?.package_name || "").toUpperCase();
+
+  const isWalletTopup = typeLower === "wallet_topup" || typeLower === "store_wallet_topup" || typeLower === "topup" || typeLower === "deposit" || pkgUpper.includes("WALLET TOPUP") || pkgUpper.includes("WALLET TOP-UP");
+  const isAgentActivation = typeLower === "agent_activation" || typeLower === "sub_agent_activation" || pkgUpper.includes("ACTIVATION");
+
+  if (isWalletTopup) {
+    const isDirect = metadata?.payment_method === "direct_debit" || metadata?.gateway === "direct_debit" || metadata?.payment_type === "direct_debit";
+    const isWalletTransfer = metadata?.payment_method === "wallet" || metadata?.gateway === "wallet";
+    const ref = providerOrderId || metadata?.paystack_reference || metadata?.reference || metadata?.transaction_id || null;
+    let name = isDirect ? "Direct Debit" : (isWalletTransfer ? "Wallet Transfer" : "Paystack Gateway");
+    if (providerName && (providerName.toLowerCase().includes("paystack") || providerName.toLowerCase().includes("direct"))) {
+      name = providerName;
+    }
+    return {
+      name,
+      badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+      refId: ref,
+      isPendingDispatch: false,
+    };
+  }
+
+  if (isAgentActivation) {
+    const ref = providerOrderId || metadata?.paystack_reference || metadata?.reference || null;
+    return {
+      name: "System Billing",
+      badgeClass: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+      refId: ref,
+      isPendingDispatch: false,
+    };
+  }
+
   let matchedName = providerName;
   const allProviders = (providersList && providersList.length > 0) ? providersList : (globalProvidersCache || []);
   const activeProvidersOnly = allProviders.filter(p => p.is_active !== false);
