@@ -128,29 +128,11 @@ serve(async (req: Request) => {
       );
     }
 
-    const { phone, network } = body;
-    if (!phone) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Phone number is required." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
-      );
-    }
-
-    // Only MTN numbers require the carrier beneficiary check
-    const net = String(network || "").toUpperCase();
-    if (!net.includes("MTN") && !net.includes("YELLO")) {
-      return new Response(
-        JSON.stringify({ success: true, exists: true, message: "Only MTN numbers require beneficiary validation." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    
     const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Check if beneficiary verification is enabled in system settings
+    // Check if beneficiary verification is globally disabled
     const { data: settings } = await supabaseClient
       .from("system_settings")
       .select("beneficiary_verification_enabled")
@@ -165,29 +147,93 @@ serve(async (req: Request) => {
       );
     }
 
-    // Retrieve active DataHub provider config
-    const { data: provider } = await supabaseClient
+    const { network } = body;
+    const net = String(network || "").toUpperCase();
+    const isMtnOrYello = net.includes("MTN") || net.includes("YELLO");
+
+    // Fetch BundleZone provider config
+    const { data: bzProvider } = await supabaseClient
       .from("providers")
       .select("*")
-      .eq("handler_type", "datahub")
+      .eq("handler_type", "bundlezone")
       .eq("is_active", true)
       .maybeSingle();
 
-    const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
-    const rawBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external";
-    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
-    const url = `${cleanUrl}/purchases/verify-number`;
+    const bzApiKey = Deno.env.get("BUNDLEZONE_API_KEY") || bzProvider?.api_key || "";
+    const rawBzBaseUrl = Deno.env.get("BUNDLEZONE_BASE_URL") || bzProvider?.base_url || "https://bundlezone.shop";
+    const bzCheckUrl = `${rawBzBaseUrl.trim().replace(/\/+$/, "")}/api/beneficiary-check.php`;
 
-    if (!apiKey) {
-      console.log("[verify-beneficiary] DataHub API key not found, skipping check.");
+    // ── Bulk numbers request support (up to 1,000 numbers) ──
+    const phoneNumbersInput: string[] = Array.isArray(body.phone_numbers) ? body.phone_numbers : [];
+    if (phoneNumbersInput.length > 0) {
+      if (!isMtnOrYello) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+              network: network || "Telecel",
+              count: phoneNumbersInput.length,
+              results: phoneNumbersInput.map((p: string) => ({
+                phone_number: p,
+                status: "not_required",
+                verification_status: "VERIFIED",
+                can_order: true,
+                message: "Verification is not required for AT or Telecel.",
+              })),
+            },
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (bzApiKey) {
+        try {
+          const bzRes = await fetchViaDb(supabaseClient, bzCheckUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": bzApiKey,
+              "Authorization": `Bearer ${bzApiKey}`,
+            },
+            body: JSON.stringify({
+              network: "MTN",
+              phone_numbers: phoneNumbersInput,
+            }),
+            disableFallback: true,
+          }, 15);
+
+          if (bzRes.ok) {
+            const bzData = await bzRes.json();
+            return new Response(JSON.stringify(bzData), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        } catch (bzErr) {
+          console.error("[verify-beneficiary] BundleZone bulk check error:", bzErr);
+        }
+      }
+    }
+
+    // ── Single number request ──
+    const phone = body.phone || body.phone_number;
+    if (!phone) {
       return new Response(
-        JSON.stringify({ success: true, exists: true, message: "DataHub provider not active, skipping verification." }),
+        JSON.stringify({ success: false, error: "Phone number is required." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
+
+    // Only MTN numbers require carrier beneficiary check
+    if (!isMtnOrYello) {
+      return new Response(
+        JSON.stringify({ success: true, exists: true, message: "Only MTN numbers require beneficiary validation." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Normalize phone number to test both local 10-digit (0...) and intl 12-digit (233...) formats
-    const cleanDigits = phone.replace(/\D/g, "");
+    // Normalize phone number (0... and 233...)
+    const cleanDigits = String(phone).replace(/\D/g, "");
     let localFormat = cleanDigits;
     let intlFormat = cleanDigits;
 
@@ -202,7 +248,7 @@ serve(async (req: Request) => {
 
     const formatsToTest = [...new Set([localFormat, intlFormat])];
 
-    // Check if the number has any successful order history (means it is already verified)
+    // Check if the number has successful order history
     const { data: hasHistory } = await supabaseClient
       .from("orders")
       .select("id")
@@ -214,52 +260,108 @@ serve(async (req: Request) => {
     if (hasHistory) {
       console.log(`[verify-beneficiary] Number ${localFormat} has successful order history. Automatically verified.`);
       return new Response(
-        JSON.stringify({ success: true, exists: true, message: "Number verified via order history." }),
+        JSON.stringify({ success: true, exists: true, verification_status: "VERIFIED", can_order: true, message: "Number verified via order history." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    let exists = false;
-    let text = "";
-    let status = 200;
-
-    for (const testPhone of formatsToTest) {
-      console.log(`[verify-beneficiary] Testing DataHub variant: ${testPhone}`);
+    // Check BundleZone Beneficiary Check API
+    if (bzApiKey) {
       try {
-        const res = await fetchViaDb(supabaseClient, url, {
+        console.log(`[verify-beneficiary] Checking BundleZone for ${localFormat}...`);
+        const bzRes = await fetchViaDb(supabaseClient, bzCheckUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-API-Key": apiKey,
-            "Authorization": `Bearer ${apiKey}`
+            "x-api-key": bzApiKey,
+            "Authorization": `Bearer ${bzApiKey}`,
           },
           body: JSON.stringify({
-            phone: testPhone,
-            is_ported_number: true
+            network: "MTN",
+            phone_number: localFormat,
           }),
           disableFallback: true,
-        }, 10);
+        }, 12);
 
-        text = await res.text();
-        status = res.status;
-        console.log(`[verify-beneficiary] Response for ${testPhone} status ${res.status}: ${text}`);
-
-        if (res.ok) {
-          let parsed: any = {};
-          try { parsed = JSON.parse(text); } catch { /* ignore */ }
-          if (parsed.success || parsed.data?.exists) {
-            exists = true;
-            break;
+        if (bzRes.ok) {
+          const bzJson = await bzRes.json();
+          const results = bzJson.data?.results || [];
+          const match = results.find((r: any) => r.phone_number === localFormat) || results[0];
+          if (match) {
+            const vStatus = String(match.verification_status || "").toUpperCase();
+            if (vStatus === "VERIFIED" || match.can_order === true) {
+              console.log(`[verify-beneficiary] Number ${localFormat} verified via BundleZone.`);
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  exists: true,
+                  status: "verified",
+                  verification_status: "VERIFIED",
+                  can_order: true,
+                  provider: "bundlezone",
+                  message: match.message || "Number verified and ready for ordering.",
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
           }
         }
-      } catch (err) {
-        console.error(`[verify-beneficiary] Error testing ${testPhone}:`, err);
+      } catch (bzErr) {
+        console.warn("[verify-beneficiary] BundleZone check failed, falling back to DataHub:", bzErr);
+      }
+    }
+
+    // Fallback: Check DataHub provider
+    const { data: dhProvider } = await supabaseClient
+      .from("providers")
+      .select("*")
+      .eq("handler_type", "datahub")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    const dhApiKey = Deno.env.get("DATAHUB_API_KEY") || dhProvider?.api_key || "";
+    const rawDhBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || dhProvider?.base_url || "https://user.datahubgh.com/api/external";
+    const dhCleanUrl = rawDhBaseUrl.trim().replace(/\/+$/, "");
+    const dhUrl = `${dhCleanUrl}/purchases/verify-number`;
+
+    let exists = false;
+    let text = "";
+
+    if (dhApiKey) {
+      for (const testPhone of formatsToTest) {
+        try {
+          const res = await fetchViaDb(supabaseClient, dhUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": dhApiKey,
+              "Authorization": `Bearer ${dhApiKey}`,
+            },
+            body: JSON.stringify({
+              phone: testPhone,
+              is_ported_number: true,
+            }),
+            disableFallback: true,
+          }, 10);
+
+          text = await res.text();
+          if (res.ok) {
+            let parsed: any = {};
+            try { parsed = JSON.parse(text); } catch { /* ignore */ }
+            if (parsed.success || parsed.data?.exists) {
+              exists = true;
+              break;
+            }
+          }
+        } catch (err) {
+          console.error(`[verify-beneficiary] Error testing DataHub for ${testPhone}:`, err);
+        }
       }
     }
 
     if (exists) {
       return new Response(
-        JSON.stringify({ success: true, exists: true, message: "Number verified successfully." }),
+        JSON.stringify({ success: true, exists: true, verification_status: "VERIFIED", can_order: true, message: "Number verified successfully." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
