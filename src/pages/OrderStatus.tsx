@@ -269,6 +269,17 @@ const OrderStatus = () => {
       isBeneficiaryFailure(orderStatus, statusMessage || orderData?.failure_reason, network || orderData?.network)
     );
 
+  const hasEnteredProvider = Boolean(
+    (orderData?.provider_order_id &&
+      orderData.provider_order_id !== "" &&
+      orderData.provider_order_id !== "failed_api_call" &&
+      orderData.provider_order_id !== "timeout") ||
+    (orderData?.provider_id &&
+      orderData?.provider_order_id !== "failed_api_call" &&
+      orderData?.provider_order_id !== "timeout") ||
+    orderStatus === "processing"
+  );
+
   const meta = getStatusMeta(orderStatus, failed && !isBeneficiaryOrder, network || orderData?.network, statusMessage || orderData?.failure_reason, isBeneficiaryOrder);
 
   const handleStatusUpdate = useCallback((status: OrderStatusType, message?: string) => {
@@ -461,6 +472,11 @@ const OrderStatus = () => {
   const handleInstantRefund = async () => {
     const targetId = orderData?.id || resolvedOrderId || reference;
     if (!targetId) return;
+
+    if (hasEnteredProvider) {
+      toast.info("This order has already entered the carrier network provider gateway. Delivery is 100% guaranteed, so it cannot be refunded.");
+      return;
+    }
 
     const currentDbStatus = String((orderData as any)?.status || orderStatus);
     if (currentDbStatus === "fulfilled" || currentDbStatus === "completed") {
@@ -1059,31 +1075,49 @@ const OrderStatus = () => {
                     <span>Chat with Support on WhatsApp 💬</span>
                   </button>
 
-                  {/* 3. 1-Click Instant Refund to Mobile Money */}
-                  <button
-                    onClick={handleInstantRefund}
-                    disabled={isClaimingRefund}
-                    className="w-full py-2.5 px-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isClaimingRefund ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
-                        <span>Processing Instant Refund...</span>
-                      </>
-                    ) : (
-                      <>
-                        <RotateCcw className="w-4 h-4 text-purple-400" />
-                        <span>Claim Instant Refund to Mobile Money 💰</span>
-                      </>
-                    )}
-                  </button>
+                  {/* 3. Refund (Only if not yet entered a provider) or Carrier Guaranteed Badge */}
+                  {!hasEnteredProvider ? (
+                    <button
+                      onClick={handleInstantRefund}
+                      disabled={isClaimingRefund}
+                      className="w-full py-2.5 px-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isClaimingRefund ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                          <span>Processing Instant Refund...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-4 h-4 text-purple-400" />
+                          <span>Claim Instant Refund to Mobile Money 💰</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2.5 shadow-sm">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div className="leading-tight text-left">
+                        <span className="font-bold text-white text-[11px] block">🔒 Entered Provider Gateway</span>
+                        <span className="text-[10px] text-emerald-300/80 font-medium">Delivery is 100% guaranteed. Refunds are locked once entered a provider.</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 100% Guarantee Reassurance Note */}
                 <div className="flex items-start gap-2 text-[10px] text-slate-400 border-t border-slate-800/80 pt-2.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-slate-200">100% Delivery or Instant Refund Guarantee:</strong> If the carrier network delays or rejects this package, your payment is 100% protected and returned instantly to your Mobile Money account or wallet.
+                    {hasEnteredProvider ? (
+                      <>
+                        <strong className="text-slate-200">100% Delivery Guaranteed:</strong> Order has entered the carrier network provider API and is broadcasting. Delivery is guaranteed to recipient line.
+                      </>
+                    ) : (
+                      <>
+                        <strong className="text-slate-200">100% Delivery or Instant Refund Guarantee:</strong> Order has not yet entered a provider gateway. You can expedite dispatch or claim an immediate full refund to Mobile Money.
+                      </>
+                    )}
                   </span>
                 </div>
               </div>

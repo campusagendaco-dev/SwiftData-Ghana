@@ -403,17 +403,24 @@ serve(async (req: any) => {
         });
       }
 
-      // Check if order has already gone through the provider API
+      // Check if order has already entered a provider
       const hasActiveProviderRef = ord.provider_order_id &&
         ord.provider_order_id !== "" &&
         ord.provider_order_id !== "failed_api_call" &&
         ord.provider_order_id !== "timeout";
 
-      if (ord.status === "processing" && (hasActiveProviderRef || (ord.provider_id && ord.provider_order_id !== "failed_api_call"))) {
+      const hasEnteredProvider = Boolean(
+        hasActiveProviderRef ||
+        (ord.provider_id && ord.provider_order_id !== "failed_api_call" && ord.provider_order_id !== "timeout") ||
+        ord.status === "processing"
+      );
+
+      if (hasEnteredProvider) {
         return new Response(JSON.stringify({
           success: false,
           refunded: false,
-          error: "Order has already been sent to the carrier network API and is processing. Orders that have gone through the API cannot be refunded."
+          has_entered_provider: true,
+          error: "This order has already entered the carrier network provider API and delivery is 100% guaranteed. Orders that have entered a provider cannot be cancelled or refunded."
         }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
