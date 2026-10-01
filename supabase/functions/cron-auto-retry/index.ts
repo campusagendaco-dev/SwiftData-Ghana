@@ -28,39 +28,41 @@ serve(async (req) => {
     const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
+    const excludedTypes = "(wallet_topup,store_wallet_topup,agent_activation,sub_agent_activation,vendor_activation,free_data_claim)";
+
     // 1. Find stuck paid orders (not yet processed)
     const { data: stuckPaidOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("status", "paid")
       .neq("network", "MTN Mash Up")
-      .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
+      .not("order_type", "in", excludedTypes)
       .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
-      .limit(20);
+      .limit(25);
 
-    // 2. Find stuck undispatched processing orders (no provider_order_id assigned, or marked timeout/failed_api_call)
+    // 2. Find stuck undispatched processing orders (no provider_id or no provider_order_id assigned, or marked timeout/failed_api_call)
     const { data: undispatchedOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("status", "processing")
-      .or("provider_order_id.is.null,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call")
+      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call")
       .neq("network", "MTN Mash Up")
-      .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
+      .not("order_type", "in", excludedTypes)
       .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
-      .limit(20);
+      .limit(25);
 
     // 3. Find failed orders whose failure_reason indicates No Provider or retryable error
     const { data: noProviderOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .in("status", ["fulfillment_failed", "failed"])
-      .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
+      .not("order_type", "in", excludedTypes)
       .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%,failure_reason.ilike.%timeout%,failure_reason.ilike.%504%,failure_reason.ilike.%502%")
       .gte("created_at", twoDaysAgo)
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(25);
 
     // Deduplicate candidate orders by ID
     const orderMap = new Map<string, any>();

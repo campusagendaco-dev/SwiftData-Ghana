@@ -686,9 +686,16 @@ serve(async (req: any) => {
     const isQueuedError = /queued/i.test(String(existingOrder?.failure_reason || ""));
     const isProviderOrder = !["agent_activation", "sub_agent_activation", "wallet_topup", "free_data_claim"].includes(orderType.toLowerCase());
 
-    // --- 1. STATUS CHECK (For orders already being processed) ---
-    // Skip for non-data/airtime order types — they don't involve a data provider.
-    if (existingOrder?.status === "processing" && !isQueuedError && isProviderOrder) {
+    const hasActiveProviderOrder = Boolean(
+      existingOrder?.provider_id &&
+      existingOrder?.provider_order_id &&
+      existingOrder.provider_order_id !== "timeout" &&
+      existingOrder.provider_order_id !== "failed_api_call"
+    );
+
+    // --- 1. STATUS CHECK (For orders already being processed by a provider) ---
+    // Only query provider status if this order was ACTUALLY dispatched to a provider!
+    if (existingOrder?.status === "processing" && hasActiveProviderOrder && !isQueuedError && isProviderOrder) {
       const providers = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
       let foundOnProvider = false;
       for (const provider of providers) {
@@ -728,12 +735,19 @@ serve(async (req: any) => {
     }
 
     // --- 1.2. PROCESSING FALLBACK (No arbitrary timeouts - strictly rely on provider status updates) ---
-    if (existingOrder && existingOrder.status === "processing" && !force) {
+    const hasAssignedProvider = Boolean(
+      existingOrder?.provider_id &&
+      existingOrder?.provider_order_id &&
+      existingOrder.provider_order_id !== "timeout" &&
+      existingOrder.provider_order_id !== "failed_api_call"
+    );
+
+    if (existingOrder && existingOrder.status === "processing" && hasAssignedProvider && !force) {
       if (existingOrder.network === "MTN Mash Up") {
         return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
       }
 
-      console.log(`[verify-payment] Order ${targetReference} is currently in processing state. Awaiting provider status update.`);
+      console.log(`[verify-payment] Order ${targetReference} is currently in processing state with provider ${existingOrder.provider_id}. Awaiting provider status update.`);
       return new Response(JSON.stringify({ 
         status: "processing", 
         provider_order_id: existingOrder.provider_order_id,
@@ -1107,7 +1121,10 @@ serve(async (req: any) => {
     
     const orderCreatedAt = existingOrder ? new Date(existingOrder.created_at).getTime() : Date.now();
     const ageInMinutes = (Date.now() - orderCreatedAt) / 60000;
-    const allowedStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
+    const isUndispatchedProcessing = existingOrder?.status === "processing" && (!existingOrder?.provider_id || existingOrder?.provider_order_id === "timeout" || existingOrder?.provider_order_id === "failed_api_call" || force);
+    const allowedStatuses = isUndispatchedProcessing 
+      ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing"]
+      : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
 
     const isMashUp = existingOrder?.network === "MTN Mash Up";
     const targetStatus = isMashUp ? "pending" : "processing";
@@ -1115,8 +1132,8 @@ serve(async (req: any) => {
       .from("orders")
       .update({ 
         status: targetStatus, 
-        paystack_verified_amount: verifiedAmount,
-        paystack_fee: paystackFeeOnVerified,
+        paystack_verified_amount: verifiedAmount || existingOrder?.paystack_verified_amount,
+        paystack_fee: paystackFeeOnVerified || existingOrder?.paystack_fee,
         failure_reason: null,
         updated_at: new Date().toISOString()
       })
