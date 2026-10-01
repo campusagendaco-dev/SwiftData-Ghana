@@ -178,14 +178,30 @@ const AdminAgents = () => {
         )
       );
 
-      let unapprovedProfiles: any[] | null = null;
+      let unapprovedProfiles: any[] = [];
       if (paidAgentIds.length > 0) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("user_id, full_name, email, store_name, phone")
-          .in("user_id", paidAgentIds)
-          .eq("agent_approved", false);
-        unapprovedProfiles = data;
+        // Chunk paidAgentIds in batches of 40 to prevent PostgREST URL length overflow (HTTP 400 Bad Request)
+        const CHUNK_SIZE = 40;
+        const chunks: string[][] = [];
+        for (let i = 0; i < paidAgentIds.length; i += CHUNK_SIZE) {
+          chunks.push(paidAgentIds.slice(i, i + CHUNK_SIZE));
+        }
+
+        const chunkResults = await Promise.all(
+          chunks.map((chunk) =>
+            supabase
+              .from("profiles")
+              .select("user_id, full_name, email, store_name, phone")
+              .in("user_id", chunk)
+              .eq("agent_approved", false)
+          )
+        );
+
+        for (const res of chunkResults) {
+          if (res.data && res.data.length > 0) {
+            unapprovedProfiles.push(...res.data);
+          }
+        }
       }
 
       if (unapprovedProfiles && unapprovedProfiles.length > 0) {
