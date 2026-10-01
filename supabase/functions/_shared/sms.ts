@@ -819,8 +819,8 @@ export async function dispatchUnifiedSms(
           if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
           mKey = sysConfig?.gatewayConfig.mnotify.apiKey || Deno.env.get("MNOTIFY_API_KEY") || Deno.env.get("MNOTIFY_KEY") || "";
         }
-        if (!mKey) continue;
-        const sender = (sysConfig?.gatewayConfig.mnotify.senderId || from || "SwiftData").slice(0, 11);
+        const rawSender = sysConfig?.gatewayConfig.mnotify.senderId || from || "Swiftinfo";
+        const sender = (rawSender === "SwiftData" || rawSender === "Orderinfo") ? "Swiftinfo" : rawSender.slice(0, 11);
         return await sendSmsViaMnotify(mKey, sender, recipient, body, type, agentId);
       }
 
@@ -946,7 +946,19 @@ export async function dispatchUnifiedBulkSms(
 
   if (g === "mnotify" || key.startsWith("mnotify:")) {
     const actualKey = key.startsWith("mnotify:") ? key.slice(8) : key;
-    return await sendBulkSmsViaMnotify(actualKey, from, recipients, body, type, agentId);
+    const mnotifyFrom = (from === "SwiftData" || from === "Orderinfo") ? "Swiftinfo" : from;
+    try {
+      const mRes = await sendBulkSmsViaMnotify(actualKey, mnotifyFrom, recipients, body, type, agentId);
+      if (mRes.sent > 0) return mRes;
+      console.warn("[Bulk SMS Failover] mNotify sent 0 messages. Failing over to TxtConnect...");
+    } catch (mErr) {
+      console.warn("[Bulk SMS Failover] mNotify error. Failing over to TxtConnect:", mErr);
+    }
+    // Failover to TxtConnect
+    const txtKey = Deno.env.get("TXTCONNECT_API_KEY") || "";
+    if (txtKey) {
+      return await sendBulkSmsViaTxtConnect(txtKey, "SwiftDataGh", recipients, body, type, agentId);
+    }
   }
   if (g === "korba" || key === "korba" || key.startsWith("korba:")) {
     let cId = Deno.env.get("KORBA_CLIENT_ID") || "2419";
