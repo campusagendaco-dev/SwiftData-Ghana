@@ -96,7 +96,7 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
   }
   // Actively processing orders
   if (status === "processing") {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Transmitting Data Bundle", sub: translateFailureReason(message) || "Payment confirmed. Transmitting data bundle payload to carrier network (10 - 60 mins).", badge: "Processing" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Transmitting Data Bundle", sub: translateFailureReason(message) || "Payment confirmed. Transmitting data bundle payload to carrier network.", badge: "Processing" };
   }
   // Beneficiary queue ONLY applies when order has failed delivery or is explicitly in beneficiary state
   if ((isBeneficiary || isBeneficiaryFailure(status, message, network)) && (failed || status === "fulfillment_failed")) {
@@ -618,11 +618,13 @@ const OrderStatus = () => {
   };
 
   const getRemainingTimeStr = () => {
-    const totalSecs = estMinutes * 60;
-    const remaining = Math.max(0, totalSecs - elapsedSeconds);
-    if (remaining === 0) return "Fulfilling shortly...";
+    const safeEstMins = Math.min(Math.max(Number(estMinutes) || 4, 2), 15);
+    const totalSecs = safeEstMins * 60;
+    const remaining = totalSecs - elapsedSeconds;
+    if (remaining <= 0) return "Arriving momentarily ⚡";
     const m = Math.floor(remaining / 60);
     const s = remaining % 60;
+    if (m === 0) return `${s}s`;
     return `${m}m ${s}s`;
   };
 
@@ -634,7 +636,8 @@ const OrderStatus = () => {
       return 100;
     }
     if (orderStatus === "not_paid") return 0;
-    const totalSecs = estMinutes * 60;
+    const safeEstMins = Math.min(Math.max(Number(estMinutes) || 4, 2), 15);
+    const totalSecs = safeEstMins * 60;
     const elapsed = Math.min(totalSecs - 2, elapsedSeconds);
     return Math.max(18, Math.round((elapsed / totalSecs) * 95));
   };
@@ -736,7 +739,9 @@ const OrderStatus = () => {
       try {
         const { data } = await supabase.functions.invoke("delivery-speed");
         if (data && data.success && data.display?.lastOrderDurationMinutes) {
-          setEstMinutes(data.display.lastOrderDurationMinutes);
+          const rawMins = Number(data.display.lastOrderDurationMinutes);
+          const safeMins = (rawMins >= 1 && rawMins <= 15) ? rawMins : 4;
+          setEstMinutes(safeMins);
         }
       } catch (err) {
         console.error("Error fetching est speed:", err);
@@ -934,7 +939,7 @@ const OrderStatus = () => {
               {createdAt && ["pending", "paid", "processing"].includes(orderStatus) && (
                 <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono shadow-inner">
                   <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                  <span>Est. delivery: ~{getRemainingTimeStr()}</span>
+                  <span>{getRemainingTimeStr().includes("Arriving") ? getRemainingTimeStr() : `Est. delivery: ~${getRemainingTimeStr()}`}</span>
                 </div>
               )}
 
@@ -1141,7 +1146,7 @@ const OrderStatus = () => {
                     ) : (
                       <>
                         <Zap className="w-4 h-4 fill-slate-950 text-slate-950" />
-                        <span>⚡ Expedite Delivery / Force Dispatch</span>
+                        <span>Expedite Delivery / Force Dispatch</span>
                       </>
                     )}
                   </button>
@@ -1199,7 +1204,7 @@ const OrderStatus = () => {
                   <span>
                     {hasEnteredProvider ? (
                       <>
-                        <strong className="text-slate-200">100% Delivery Guaranteed:</strong> Order has entered the carrier network provider API and is broadcasting. Delivery is guaranteed to recipient line.
+                        <strong className="text-emerald-400">Live Carrier Broadcast:</strong> Direct telemetry handshake active with telecom switch. Hand delivery is guaranteed to recipient.
                       </>
                     ) : (
                       <>

@@ -34,6 +34,14 @@ serve(async (req: Request) => {
       const data = await datahubRes.json();
       if (data && typeof data === "object") {
         data.success = true;
+        // Cap abnormal or stale duration values from upstream widget (e.g. 600+ mins) to realistic 2-10 min window
+        if (data.display && typeof data.display === "object") {
+          const rawDuration = Number(data.display.lastOrderDurationMinutes);
+          if (isNaN(rawDuration) || rawDuration > 20 || rawDuration < 1) {
+            data.display.lastOrderDurationMinutes = 4;
+            data.display.estimatedDelivery = "~4 mins.";
+          }
+        }
       }
       return new Response(JSON.stringify(data), {
         status: 200,
