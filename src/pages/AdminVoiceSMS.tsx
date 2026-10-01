@@ -171,6 +171,13 @@ const TABS: { id: "broadcast" | "sms" | "templates" | "sender_id" | "settings"; 
 
 const CURATED_SYSTEM_TEMPLATES: MnotifyTemplate[] = [
   {
+    id: "system-0",
+    title: "⚡ Fast Deliveries & Instant Refund Guarantee",
+    category: "Announcements",
+    type: "sms",
+    content: "SwiftData Update: Enjoy ultra-fast data delivery, 100% guarantee & our new instant MoMo refund system! Your satisfaction is secured. Order at swiftdatagh.shop",
+  },
+  {
     id: "system-1",
     title: "⚡ Flash Weekend Bundle Discount",
     category: "Promotions",
