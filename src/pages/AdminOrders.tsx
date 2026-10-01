@@ -1554,6 +1554,8 @@ export default function AdminOrders() {
                       <ProviderBadge
                         providerId={order.provider_id}
                         providerOrderId={order.provider_order_id}
+                        network={order.network}
+                        orderType={order.order_type}
                         metadata={order.metadata}
                         status={order.status}
                         providers={providers}
@@ -1744,6 +1746,8 @@ export default function AdminOrders() {
                   <ProviderBadge
                     providerId={order.provider_id}
                     providerOrderId={order.provider_order_id}
+                    network={order.network}
+                    orderType={order.order_type}
                     metadata={order.metadata}
                     status={order.status}
                     providers={providers}

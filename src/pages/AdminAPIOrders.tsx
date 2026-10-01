@@ -650,6 +650,8 @@ export default function AdminAPIOrders() {
                         <ProviderBadge
                           providerId={o.provider_id}
                           providerOrderId={o.provider_order_id}
+                          network={o.network}
+                          orderType={o.order_type}
                           metadata={o.metadata}
                           status={o.status}
                         />
