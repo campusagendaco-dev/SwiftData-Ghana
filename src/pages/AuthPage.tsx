@@ -10,9 +10,9 @@ import { ArrowRight, Eye, EyeOff, Loader2, Fingerprint } from "lucide-react";
 import { useWebAuthn } from "@/hooks/useWebAuthn";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
   visible: { 
     opacity: 1, 
@@ -25,7 +25,7 @@ const containerVariants = {
   }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 30 } }
 };
