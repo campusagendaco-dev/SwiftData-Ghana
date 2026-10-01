@@ -144,7 +144,9 @@ export function parseProviderResponse(body: string, contentType: string | null):
     
     const isFailed = parsed?.success === false || technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";
     if (isFailed) {
-      const errReason = message || data?.order?.message || data?.message || parsed?.data?.code || "Provider rejected this order.";
+      const code = parsed?.code || parsed?.error_code || data?.code || parsed?.data?.code;
+      const baseReason = message || data?.order?.message || data?.message || "Provider rejected this order.";
+      const errReason = code ? `${code}: ${baseReason}` : baseReason;
       return { ok: false, reason: errReason };
     }
 

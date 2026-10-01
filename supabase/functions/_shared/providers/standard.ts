@@ -834,10 +834,18 @@ export class StandardAdapter implements ProviderAdapter {
           }
 
           let parsedMsg = "";
-          try { parsedMsg = JSON.parse(text)?.message || JSON.parse(text)?.error || ""; } catch { /* ignore */ }
+          try { 
+            const p = JSON.parse(text);
+            const code = p?.code || p?.error_code;
+            const msg = p?.message || p?.error;
+            parsedMsg = code && msg ? `${code}: ${msg}` : (msg || code || "");
+          } catch { /* ignore */ }
           lastReason = parsedMsg || `Provider returned ${res.status}`;
 
-          const isAlreadyPlaced = /already placed/i.test(lastReason) || /currently being processed/i.test(lastReason);
+          const isAlreadyPlaced = /already placed/i.test(lastReason) || 
+            /currently being processed/i.test(lastReason) || 
+            /ORDER_ALREADY_PENDING/i.test(lastReason) ||
+            /already pending/i.test(lastReason);
           if (isAlreadyPlaced) {
             return { ok: true, reason: "", status: "processing" };
           }
