@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
+import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 
 function parseCapacity(packageSize: string | null | undefined): number {
   if (!packageSize) return 0;
@@ -114,46 +115,14 @@ serve(async (req) => {
         }
 
         if (handler === "datamart") {
-          const apiKey = Deno.env.get("DATAMART_API_KEY") || chosenProvider?.api_key || "";
-          const netStr = String(ord.network || "MTN").toUpperCase();
-          let dmNetwork = "YELLO";
-          if (netStr.includes("TELECEL") || netStr.includes("VODA")) dmNetwork = "TELECEL";
-          if (netStr.includes("AT") || netStr.includes("AIRTEL")) dmNetwork = "AT_PREMIUM";
-
-          const capNum = parseCapacity(ord.package_size);
-          const planId = `MTN_${capNum > 0 ? capNum : 1}`;
-
-          const payload = {
-            phoneNumber: phone,
-            recipient: phone,
-            network: dmNetwork,
-            planId: planId,
-            plan: planId,
-            capacity: String(capNum > 0 ? capNum : 1),
-            orderReference: ord.id,
-            reference: ord.id,
-            gateway: "wallet",
-            bypass_beneficiary: true
-          };
-
-          const res = await fetch("https://api.datamartgh.shop/api/developer/purchase", {
-            method: "POST",
-            headers: {
-              "X-API-Key": apiKey,
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-          });
-
-          const resData = await res.json().catch(() => null);
-
-          if (res.ok && resData?.status === "success" && resData?.data?.purchaseId) {
-            const purchaseId = resData.data.purchaseId;
+          // Route via active 3-tier cascade (DataHub -> Spendless -> SKPlug)
+          const dispatch = await dispatchOrderWithFailover(supabaseAdmin, ord);
+          if (dispatch.ok) {
+            const purchaseId = dispatch.provider_order_id || "routed";
             await supabaseAdmin.from("orders").update({
-              provider_id: chosenProvider.id,
+              provider_id: dispatch.provider_id || null,
               provider_order_id: purchaseId,
-              status: "processing",
+              status: dispatch.status === "fulfilled" ? "fulfilled" : "processing",
               failure_reason: null,
               auto_refunded: false,
               updated_at: new Date().toISOString()
@@ -163,7 +132,7 @@ serve(async (req) => {
             results.push({ id: ord.id, status: "success", purchaseId });
           } else {
             failedCount++;
-            const reason = resData?.message || resData?.error || `HTTP ${res.status}`;
+            const reason = dispatch.reason || "All active providers rejected this order";
             await supabaseAdmin.from("orders").update({
               failure_reason: reason,
               updated_at: new Date().toISOString()

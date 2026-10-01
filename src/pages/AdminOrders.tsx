@@ -137,6 +137,8 @@ export default function AdminOrders() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [autoRouterQueueCount, setAutoRouterQueueCount] = useState<number>(0);
+  const [retryingAutoRouter, setRetryingAutoRouter] = useState(false);
 
   // Date Range Filters State
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
@@ -150,6 +152,19 @@ export default function AdminOrders() {
   const [updatingSingleStatus, setUpdatingSingleStatus] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const fetchAutoRouterQueueCount = useCallback(async () => {
+    try {
+      const { data } = await supabase.functions.invoke("admin-retry-autorouter", {
+        body: { count_only: true }
+      });
+      if (data && typeof data.count === "number") {
+        setAutoRouterQueueCount(data.count);
+      }
+    } catch (err) {
+      console.error("Failed to fetch auto router queue count:", err);
+    }
+  }, []);
+
   const fetchProviders = useCallback(async () => {
     const { data } = await supabase.from("providers").select("*").order("name", { ascending: true });
     setProviders(data || []);
@@ -157,7 +172,8 @@ export default function AdminOrders() {
 
   useEffect(() => {
     fetchProviders();
-  }, [fetchProviders]);
+    fetchAutoRouterQueueCount();
+  }, [fetchProviders, fetchAutoRouterQueueCount]);
 
   const syncAllProviderBalances = async () => {
     setSyncingBalances(true);
@@ -284,8 +300,16 @@ export default function AdminOrders() {
     }
 
     // Status Filter
-    if (statusFilter !== "all" && statusFilter !== "in_queue") {
+    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue") {
       q = q.eq("status", statusFilter);
+    } else if (statusFilter === "auto_router_queue") {
+      const excludedTypes = "(wallet_topup,store_wallet_topup,agent_activation,sub_agent_activation,vendor_activation,free_data_claim)";
+      q = q
+        .neq("network", "MTN Mash Up")
+        .not("package_size", "is", null)
+        .not("order_type", "in", excludedTypes)
+        .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode");
     }
     // Network Filter
     if (networkFilter !== "all") {
@@ -377,48 +401,115 @@ export default function AdminOrders() {
   // Live updates — re-fetch current page silently whenever any order changes
   useRealtimeRefresh({
     tables: ["orders"],
-    onRefresh: (isSilent) => fetchOrders(isSilent ?? true),
+    onRefresh: (isSilent) => {
+      fetchOrders(isSilent ?? true);
+      fetchAutoRouterQueueCount();
+    },
   });
 
-  const handleRouteAllToDatamart = async () => {
-    const candidateOrders = selectedOrders.length > 0
-      ? selectedOrders
-      : allOrders.filter(o => o.status === "fulfillment_failed" || o.status === "processing" || o.status === "pending").map(o => o.id);
+  const handleRetryAutoRouterQueue = async () => {
+    const isSelected = selectedIds.size > 0;
+    const targetCount = isSelected ? selectedIds.size : autoRouterQueueCount;
 
-    if (candidateOrders.length === 0) {
-      toast({ title: "No Orders to Route", description: "No eligible pending/failed orders found to route." });
+    if (targetCount === 0) {
+      toast({
+        title: "Auto-Router Queue Empty ✨",
+        description: "There are currently 0 verified orders waiting for provider dispatch."
+      });
       return;
     }
 
-    if (!confirm(`Are you sure you want to FORCE-ROUTE ${candidateOrders.length} orders directly to the designated fallback provider?`)) {
-      return;
-    }
+    const confirmMsg = isSelected
+      ? `Retry ${selectedIds.size} selected verified order(s) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`
+      : `Retry all verified orders in Auto-Router queue (${autoRouterQueueCount} pending) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`;
 
-    setRoutingDatamart(true);
-    toast({ title: "Routing to Fallback Provider...", description: `Submitting ${candidateOrders.length} orders...` });
+    if (!confirm(confirmMsg)) return;
+
+    setRetryingAutoRouter(true);
+    toast({
+      title: "Auto-Routing Started ⚡",
+      description: `Dispatching ${targetCount} verified orders through active provider cascade...`
+    });
 
     try {
-      const { data, error } = await supabase.functions.invoke("route-to-datamart", {
-        body: { order_ids: candidateOrders }
-      });
-
-      if (error || !data?.success) {
-        toast({
-          title: "Routing Failed",
-          description: error?.message || data?.error || "Could not route orders to fallback provider",
-          variant: "destructive"
+      if (isSelected) {
+        const ids = Array.from(selectedIds);
+        const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+          body: { order_ids: ids }
         });
+        if (error) throw error;
+        toast({
+          title: "Auto-Route Complete! 🚀",
+          description: data?.message || `Processed ${ids.length} orders.`
+        });
+        setSelectedIds(new Set());
+        if (currentUser) {
+          await logAudit(currentUser.id, "bulk_autoroute_selected", { order_ids: ids, result: data?.summary });
+        }
       } else {
+        let totalFulfilled = 0;
+        let totalProcessing = 0;
+        let totalFailed = 0;
+        const batchLimit = 25;
+        let hasMore = true;
+        let iteration = 0;
+        const maxIterations = 20;
+
+        while (hasMore && iteration < maxIterations) {
+          iteration++;
+          const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+            body: { limit: batchLimit }
+          });
+          if (error) throw error;
+
+          if (!data || !data.success || !data.summary || data.summary.total === 0) {
+            hasMore = false;
+            break;
+          }
+
+          totalFulfilled += data.summary.fulfilled || 0;
+          totalProcessing += data.summary.processing || 0;
+          totalFailed += data.summary.failed || 0;
+
+          if (data.remaining_count !== undefined) {
+            setAutoRouterQueueCount(data.remaining_count);
+            if (data.remaining_count === 0) hasMore = false;
+          }
+          if (data.summary.total < batchLimit) {
+            hasMore = false;
+          }
+        }
+
         toast({
-          title: "Routing Complete! ⚡",
-          description: data.message || `Successfully routed ${data.routedCount || 0} orders to fallback provider.`,
+          title: "Auto-Routing Complete! 🚀",
+          description: `Dispatched orders across active providers: ${totalFulfilled} fulfilled, ${totalProcessing} processing, ${totalFailed} rejected.`
         });
-        await fetchOrders();
+
+        if (currentUser) {
+          await logAudit(currentUser.id, "bulk_autoroute_queue", {
+            iterations: iteration,
+            fulfilled: totalFulfilled,
+            processing: totalProcessing,
+            failed: totalFailed
+          });
+        }
       }
+
+      await fetchOrders();
+      await fetchAutoRouterQueueCount();
     } catch (e: any) {
-      toast({ title: "Routing error", description: e.message, variant: "destructive" });
+      toast({
+        title: "Auto-Route Error",
+        description: e.message || "Failed to execute auto-routing",
+        variant: "destructive"
+      });
+    } finally {
+      setRetryingAutoRouter(false);
     }
-    setRoutingDatamart(false);
+  };
+
+  const handleRouteAllToDatamart = async () => {
+    await handleRetryAutoRouterQueue();
   };
 
   const handleRetry = async (orderId: string) => {
@@ -893,6 +984,17 @@ export default function AdminOrders() {
       if (statusFilter === "in_queue") {
         return isBeneficiaryFailure(o) || (o.customer_phone && beneficiaryStatus[o.customer_phone]);
       }
+      if (statusFilter === "auto_router_queue") {
+        const isPaid = o.payment_method === "wallet" || 
+                       o.payment_method === "credit" || 
+                       Number(o.paystack_verified_amount || 0) > 0 || 
+                       o.status === "paid" || 
+                       o.status === "processing";
+        const hasNoProvider = !o.provider_id || !o.provider_order_id || ["failed_api_call", "timeout", "manual_fulfillment_mode"].includes(o.provider_order_id);
+        const isNonTelecom = ["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(o.order_type || "").toLowerCase());
+        const isMashUp = String(o.network || "").toLowerCase().includes("mash up");
+        return isPaid && hasNoProvider && !isNonTelecom && !isMashUp;
+      }
       return true;
     });
   }, [allOrders, typeFilter, statusFilter, beneficiaryStatus]);
@@ -1046,12 +1148,13 @@ export default function AdminOrders() {
             
             <Button
               size="sm"
-              className="gap-2 h-10 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold shadow-lg shadow-amber-950/40 border border-amber-400/40 text-xs transition-all active:scale-95"
-              onClick={handleRouteAllToDatamart}
-              disabled={routingDatamart}
+              className="gap-2 h-10 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold shadow-lg shadow-amber-950/40 border border-amber-400/40 text-xs transition-all active:scale-95"
+              onClick={handleRetryAutoRouterQueue}
+              disabled={retryingAutoRouter}
+              title="Retry all verified telecom orders in Auto Router Queue through DataHub, Spendless, and SKPlug"
             >
-              {routingDatamart ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
-              ⚡ Route Fallback
+              {retryingAutoRouter ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
+              {retryingAutoRouter ? "Auto-Routing..." : `⚡ Retry Auto-Router (${autoRouterQueueCount})`}
             </Button>
 
             <Button
@@ -1185,9 +1288,18 @@ export default function AdminOrders() {
       </div>
 
       {/* ── Stats Metric Cards Grid ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
         {[
           { label: "Page Orders", value: allOrders.length.toLocaleString(), icon: ShoppingCart, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", grad: "from-blue-500 to-cyan-500" },
+          {
+            label: "Auto-Router Queue",
+            value: autoRouterQueueCount.toString(),
+            icon: Zap,
+            color: "text-amber-400 font-extrabold",
+            bg: "bg-amber-500/15 border-amber-500/30 cursor-pointer hover:bg-amber-500/25 transition-all shadow-md shadow-amber-950/20",
+            grad: "from-amber-500 to-orange-500",
+            onClick: () => setStatusFilter("auto_router_queue")
+          },
           { label: "Fulfilled Volume", value: `GH₵${totalRevenue.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", grad: "from-emerald-500 to-teal-500" },
           { label: "Admin Net Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: DollarSign, color: "text-sky-400 font-black", bg: "bg-sky-500/15 border-sky-500/30 shadow-lg shadow-sky-950/20", grad: "from-sky-500 to-blue-500" },
           {
@@ -1271,6 +1383,7 @@ export default function AdminOrders() {
             className="text-xs h-10 bg-background/80 border border-border rounded-xl px-3 py-2 text-foreground font-semibold outline-none focus:border-amber-500/50 shrink-0"
           >
             <option value="all">All Statuses</option>
+            <option value="auto_router_queue">⚡ Auto-Router Queue ({autoRouterQueueCount})</option>
             <option value="in_queue">In Queue (Beneficiary Approval)</option>
             <option value="fulfilled">Fulfilled (Successful)</option>
             <option value="processing">Processing</option>

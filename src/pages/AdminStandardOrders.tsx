@@ -86,6 +86,25 @@ const AdminStandardOrders = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [autoRouterQueueCount, setAutoRouterQueueCount] = useState<number>(0);
+  const [retryingAutoRouter, setRetryingAutoRouter] = useState(false);
+
+  const fetchAutoRouterQueueCount = useCallback(async () => {
+    try {
+      const { data } = await supabase.functions.invoke("admin-retry-autorouter", {
+        body: { count_only: true }
+      });
+      if (data && typeof data.count === "number") {
+        setAutoRouterQueueCount(data.count);
+      }
+    } catch (err) {
+      console.error("Failed to fetch auto router queue count:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAutoRouterQueueCount();
+  }, [fetchAutoRouterQueueCount]);
 
   // Reset to page 1 when any filter changes
   useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter]);
@@ -143,7 +162,13 @@ const AdminStandardOrders = () => {
       }
     }
 
-    if (statusFilter !== "all") q = q.eq("status", statusFilter);
+    if (statusFilter !== "all" && statusFilter !== "auto_router_queue") {
+      q = q.eq("status", statusFilter);
+    } else if (statusFilter === "auto_router_queue") {
+      q = q
+        .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode");
+    }
 
     const { data, count, error } = await q;
     
@@ -207,8 +232,112 @@ const AdminStandardOrders = () => {
 
   useRealtimeRefresh({
     tables: ["orders"],
-    onRefresh: (isSilent) => fetchOrders(isSilent ?? true),
+    onRefresh: (isSilent) => {
+      fetchOrders(isSilent ?? true);
+      fetchAutoRouterQueueCount();
+    },
   });
+
+  const handleRetryAutoRouterQueue = async () => {
+    const isSelected = selectedIds.size > 0;
+    const targetCount = isSelected ? selectedIds.size : autoRouterQueueCount;
+
+    if (targetCount === 0) {
+      toast({
+        title: "Auto-Router Queue Empty ✨",
+        description: "There are currently 0 verified orders waiting for provider dispatch."
+      });
+      return;
+    }
+
+    const confirmMsg = isSelected
+      ? `Retry ${selectedIds.size} selected verified order(s) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`
+      : `Retry all verified orders in Auto-Router queue (${autoRouterQueueCount} pending) through the 3-tier cascade (DataHub -> Spendless -> SKPlug)?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setRetryingAutoRouter(true);
+    toast({
+      title: "Auto-Routing Started ⚡",
+      description: `Dispatching ${targetCount} verified orders through active provider cascade...`
+    });
+
+    try {
+      if (isSelected) {
+        const ids = Array.from(selectedIds);
+        const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+          body: { order_ids: ids }
+        });
+        if (error) throw error;
+        toast({
+          title: "Auto-Route Complete! 🚀",
+          description: data?.message || `Processed ${ids.length} orders.`
+        });
+        setSelectedIds(new Set());
+        if (currentUser) {
+          await logAudit(currentUser.id, "bulk_autoroute_selected_standard", { order_ids: ids, result: data?.summary });
+        }
+      } else {
+        let totalFulfilled = 0;
+        let totalProcessing = 0;
+        let totalFailed = 0;
+        const batchLimit = 25;
+        let hasMore = true;
+        let iteration = 0;
+        const maxIterations = 20;
+
+        while (hasMore && iteration < maxIterations) {
+          iteration++;
+          const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+            body: { limit: batchLimit }
+          });
+          if (error) throw error;
+
+          if (!data || !data.success || !data.summary || data.summary.total === 0) {
+            hasMore = false;
+            break;
+          }
+
+          totalFulfilled += data.summary.fulfilled || 0;
+          totalProcessing += data.summary.processing || 0;
+          totalFailed += data.summary.failed || 0;
+
+          if (data.remaining_count !== undefined) {
+            setAutoRouterQueueCount(data.remaining_count);
+            if (data.remaining_count === 0) hasMore = false;
+          }
+          if (data.summary.total < batchLimit) {
+            hasMore = false;
+          }
+        }
+
+        toast({
+          title: "Auto-Routing Complete! 🚀",
+          description: `Dispatched orders across active providers: ${totalFulfilled} fulfilled, ${totalProcessing} processing, ${totalFailed} rejected.`
+        });
+
+        if (currentUser) {
+          await logAudit(currentUser.id, "bulk_autoroute_queue_standard", {
+            iterations: iteration,
+            fulfilled: totalFulfilled,
+            processing: totalProcessing,
+            failed: totalFailed
+          });
+        }
+      }
+
+      await fetchOrders();
+      await fetchAutoRouterQueueCount();
+    } catch (e: any) {
+      toast({
+        title: "Auto-Route Error",
+        description: e.message || "Failed to execute auto-routing",
+        variant: "destructive"
+      });
+    } finally {
+      setRetryingAutoRouter(false);
+    }
+  };
 
   const handleRetryOrder = async (orderId: string) => {
     if (!window.confirm("Are you sure you want to retry this standard data order?")) return;
@@ -382,6 +511,17 @@ const AdminStandardOrders = () => {
 
         <div className="flex items-center gap-2 flex-wrap">
           <Button
+            size="sm"
+            onClick={handleRetryAutoRouterQueue}
+            disabled={retryingAutoRouter}
+            className="h-9 px-4 gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold shadow-md shadow-amber-950/30 border border-amber-400/40 text-xs transition-all active:scale-95"
+            title="Retry all verified orders in Auto Router Queue through DataHub, Spendless, and SKPlug"
+          >
+            {retryingAutoRouter ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white text-white" />}
+            <span>{retryingAutoRouter ? "Auto-Routing..." : `⚡ Retry Auto-Router (${autoRouterQueueCount})`}</span>
+          </Button>
+
+          <Button
             variant="outline"
             size="sm"
             onClick={handleExportCsv}
@@ -487,6 +627,7 @@ const AdminStandardOrders = () => {
             className="bg-background border border-border/85 text-xs rounded-xl px-4 h-11 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-sm"
           >
             <option value="all">All Statuses</option>
+            <option value="auto_router_queue">⚡ Auto-Router Queue ({autoRouterQueueCount})</option>
             <option value="paid">Paid (Queue)</option>
             <option value="processing">Processing</option>
             <option value="fulfilled">Fulfilled</option>
