@@ -114,6 +114,23 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   // 5. Exclude Korba from primary list, but keep it available as fallback below
   activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
 
+  // Round-robin load balancing for providers sharing top priority (e.g. DataHub & BundleZone both at Priority 1)
+  if (activeProviders.length > 1) {
+    const topPriority = activeProviders[0]?.priority ?? 1;
+    const topTier = activeProviders.filter((p: any) => p.priority === topPriority && (p.consecutive_failures || 0) < 3);
+    if (topTier.length > 1) {
+      const orderSeed = String(order?.id || order?.reference || order?.created_at || Math.random());
+      const hash = orderSeed.split("").reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
+      const shift = hash % topTier.length;
+      if (shift > 0) {
+        const rotatedTop = [...topTier.slice(shift), ...topTier.slice(0, shift)];
+        const rest = activeProviders.filter((p: any) => !topTier.some((t: any) => t.id === p.id));
+        activeProviders = [...rotatedTop, ...rest];
+        console.log(`[resolveProvidersForOrder] Round-robin balanced Priority ${topPriority} providers: 1st=${activeProviders[0]?.name}, 2nd=${activeProviders[1]?.name}`);
+      }
+    }
+  }
+
   // 6. Append Korba at the end of activeProviders as a fallback provider:
   // - Airtime: All networks supported
   // - Data: Telecel and AirtelTigo supported
