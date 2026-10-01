@@ -16,6 +16,7 @@ const adapters: Record<string, ProviderAdapter> = {
   xcel: new StandardAdapter(),
   qhowmenzconsult: new StandardAdapter(),
   bossu: new StandardAdapter(),
+  bundlezone: new StandardAdapter(),
 };
 
 /**

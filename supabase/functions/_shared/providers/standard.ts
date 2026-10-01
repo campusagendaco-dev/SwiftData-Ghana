@@ -53,6 +53,20 @@ export class StandardAdapter implements ProviderAdapter {
       return [`${clean}/orders/${ref}`];
     }
 
+    if (handlerType === "bundlezone") {
+      if (endpoint === "status") {
+        const ref = String(data.transaction_id || data.reference || data.order_id || "");
+        return [`${clean}/api/order.php?reference=${ref}`, `${clean}/api/order.php`];
+      }
+      if (endpoint === "beneficiary") {
+        return [`${clean}/api/beneficiary-check.php`];
+      }
+      if (endpoint === "bundles") {
+        return [`${clean}/api/bundles.php`];
+      }
+      return [`${clean}/api/order.php`];
+    }
+
     // Standard URL formatting fallback
     if (handlerType === "bossu" || handlerType === "superbdatafy" || handlerType === "xcel" || handlerType === "qhowmenzconsult") {
       return [clean];
@@ -324,6 +338,34 @@ export class StandardAdapter implements ProviderAdapter {
       };
     }
 
+    if (handlerType === "bundlezone") {
+      let bzNetwork = "MTN";
+      if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
+        bzNetwork = "Telecel";
+      } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO")) {
+        bzNetwork = "AT";
+      } else {
+        bzNetwork = "MTN";
+      }
+
+      if (endpoint === "beneficiary") {
+        return {
+          network: bzNetwork,
+          phone_number: recipient
+        };
+      }
+
+      const bzCapacity = capNum > 0 ? capNum : (parseFloat(capacityStr) || 1);
+
+      return {
+        mode: "single",
+        network: bzNetwork,
+        recipient: recipient,
+        capacity: bzCapacity,
+        reference: targetRef,
+      };
+    }
+
     if (handlerType === "superbdatafy") {
       const network = rawNet.toLowerCase();
       let sbNetwork = network;
@@ -536,6 +578,79 @@ export class StandardAdapter implements ProviderAdapter {
     return { ok: false, reason: errorMessage };
   }
 
+  async verifyBundleZoneBeneficiary(
+    supabaseAdmin: any,
+    provider: any,
+    phone: string,
+    network: string
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const rawBaseUrl = Deno.env.get("BUNDLEZONE_BASE_URL") || provider?.base_url || "https://bundlezone.shop";
+    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+    const url = `${cleanUrl}/api/beneficiary-check.php`;
+    const apiKey = Deno.env.get("BUNDLEZONE_API_KEY") || provider?.api_key || "";
+
+    const localPhone = normalizeRecipient(phone);
+
+    const { data: hasHistory } = await supabaseAdmin
+      .from("orders")
+      .select("id")
+      .in("status", ["fulfilled", "completed"])
+      .eq("customer_phone", localPhone)
+      .limit(1)
+      .maybeSingle();
+
+    if (hasHistory) {
+      console.log(`[BundleZone-Verify-Beneficiary] Number ${localPhone} verified via previous order history.`);
+      return { ok: true };
+    }
+
+    try {
+      console.log(`[BundleZone-Verify-Beneficiary] Checking beneficiary status for ${localPhone}...`);
+      const res = await fetchViaDb(supabaseAdmin, url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          network: network || "MTN",
+          phone_number: localPhone
+        }),
+        disableFallback: true,
+      }, 15);
+
+      const text = await res.text();
+      console.log(`[BundleZone-Verify-Beneficiary] Response status ${res.status}: ${text}`);
+
+      let parsed: any = {};
+      try { parsed = JSON.parse(text); } catch { /* ignore */ }
+
+      if (res.ok && parsed.success) {
+        const results = parsed.data?.results || [];
+        const match = results.find((r: any) => r.phone_number === localPhone) || results[0];
+        if (match) {
+          const vStatus = String(match.verification_status || "").toUpperCase();
+          if (vStatus === "VERIFIED" || match.can_order === true) {
+            return { ok: true };
+          }
+          return {
+            ok: false,
+            reason: match.message || `MTN recipient ${localPhone} is not verified (${vStatus || "NOT_VERIFIED"}).`
+          };
+        }
+        return { ok: true };
+      }
+
+      if (parsed.message) {
+        return { ok: false, reason: parsed.message };
+      }
+    } catch (err: any) {
+      console.error(`[BundleZone-Verify-Beneficiary] Check failed for ${localPhone}:`, err);
+    }
+
+    return { ok: true };
+  }
+
   async purchase(
     supabaseAdmin: any,
     provider: any,
@@ -557,6 +672,17 @@ export class StandardAdapter implements ProviderAdapter {
       }
     }
 
+    if (handlerType === "bundlezone" && (network.includes("MTN") || network === "YELLO") && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
+      const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
+      const check = await this.verifyBundleZoneBeneficiary(supabaseAdmin, provider, recipient, "MTN");
+      if (!check.ok) {
+        return {
+          ok: false,
+          reason: check.reason || `MTN recipient ${recipient} is not verified. No order was created.`
+        };
+      }
+    }
+
     const payload = await this.buildPayload(supabaseAdmin, provider, "purchase", data);
     return this.executeRequest(supabaseAdmin, provider, "purchase", payload, data);
   }
@@ -568,6 +694,9 @@ export class StandardAdapter implements ProviderAdapter {
     reference: string
   ): Promise<ProviderResponse> {
     const handlerType = String(provider?.handler_type || "").toLowerCase();
+    if (handlerType === "bundlezone") {
+      return { ok: true, status: "processing", reason: "BundleZone relies on webhook callbacks for status updates." };
+    }
     if (handlerType === "spendless") {
       try {
         const apiKey = Deno.env.get("SPENDLESS_API_KEY") || provider.api_key || "";
@@ -632,10 +761,12 @@ export class StandardAdapter implements ProviderAdapter {
     const apiKey = (
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_API_KEY") || provider.api_key) :
       handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) :
+      handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key) :
       provider.api_key
     ) || "";
     const baseUrl = (
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") :
+      handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop") :
       provider.base_url
     ) || "";
 
@@ -668,6 +799,9 @@ export class StandardAdapter implements ProviderAdapter {
           if (handlerType === "xcel") {
             headers["x-api-key"] = apiKey;
             headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
+          } else if (handlerType === "bundlezone") {
+            headers["x-api-key"] = apiKey;
+            headers["User-Agent"] = "BundleZone-Client/1.0";
           } else if (handlerType === "skdataplug" || handlerType === "datamart") {
             headers["Authorization"] = `Bearer ${apiKey}`;
             headers["x-api-key"] = apiKey;

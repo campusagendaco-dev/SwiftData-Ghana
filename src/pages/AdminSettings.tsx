@@ -2787,6 +2787,7 @@ const AdminSettings = () => {
                             className="w-full h-8 bg-background border border-border text-foreground rounded-md px-2 text-xs focus:outline-none"
                           >
                             <option value="standard">Standard</option>
+                            <option value="bundlezone">BundleZone (bundlezone.shop)</option>
                             <option value="skdataplug">SK Data Plug (SKPlug)</option>
                             <option value="spendless">Spendless</option>
                             <option value="datamart">DataMart GH</option>
@@ -2804,7 +2805,7 @@ const AdminSettings = () => {
                             onChange={(e) => handleUpdateProvider(provider.id, { 
                               settings: { ...provider.settings, webhook_secret: e.target.value } 
                             })}
-                            placeholder={provider.handler_type === "xcel" ? "XCEL Webhook Key" : "DataMart Webhook Key"}
+                            placeholder={provider.handler_type === "bundlezone" ? "BundleZone Webhook Secret" : (provider.handler_type === "xcel" ? "XCEL Webhook Key" : "DataMart Webhook Key")}
                             className="h-8 bg-background border-border text-xs"
                           />
                         </div>

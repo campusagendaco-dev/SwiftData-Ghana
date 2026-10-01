@@ -101,6 +101,10 @@ export function parseProviderResponse(body: string, contentType: string | null):
     }
     
     const orderId = String(
+      data?.request_id ??
+      data?.order?.order_id ??
+      data?.order?.id ??
+      data?.order?.request_id ??
       parsed?.results?.operatorRequestID ?? 
       parsed?.results?.operatorRequestId ?? 
       parsed?.korba_trans_id ??
@@ -130,15 +134,18 @@ export function parseProviderResponse(body: string, contentType: string | null):
                parsed?.status === true || 
                parsed?.status === 200 || 
                parsed?.code === 200 || 
+               data?.order?.success === true ||
+               data?.order?.status === "processing" ||
                parsed?.ok === true;
 
-    if (ok) {
+    if (ok && parsed?.success !== false) {
       return { ok: true, id: orderId || undefined, status: effectiveStatus || "processing" };
     }
     
-    const isFailed = technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";
+    const isFailed = parsed?.success === false || technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";
     if (isFailed) {
-      return { ok: false, reason: message || "Provider rejected this order." };
+      const errReason = message || data?.order?.message || data?.message || parsed?.data?.code || "Provider rejected this order.";
+      return { ok: false, reason: errReason };
     }
 
     const statusCode = Number(parsed?.statusCode);

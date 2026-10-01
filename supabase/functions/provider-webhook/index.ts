@@ -59,11 +59,61 @@ serve(async (req: Request) => {
   
   const skplugSignature = req.headers.get("x-skplug-signature") || req.headers.get("X-SKPlug-Signature");
   const webhookSignature = req.headers.get("x-webhook-signature") || req.headers.get("X-Webhook-Signature");
+  const bundlezoneSignature = req.headers.get("x-bundlezone-signature") || req.headers.get("X-BundleZone-Signature");
+  const bundlezoneTimestamp = req.headers.get("x-bundlezone-timestamp") || req.headers.get("X-BundleZone-Timestamp");
   const xWebhookSecret = req.headers.get("x-webhook-secret");
   
   let isAuthorized = false;
 
-  if (skplugSignature) {
+  if (bundlezoneSignature) {
+    try {
+      if (bundlezoneTimestamp) {
+        const tsNum = parseInt(bundlezoneTimestamp, 10);
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (Math.abs(nowSec - tsNum) > 300) {
+          console.warn("[provider-webhook] Expired BundleZone webhook timestamp.");
+          return new Response(JSON.stringify({ error: "Expired webhook timestamp" }), { 
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+
+      const { data: bzProvider } = await supabaseAdmin
+        .from("providers")
+        .select("api_key, settings")
+        .eq("handler_type", "bundlezone")
+        .maybeSingle();
+
+      const secretKey = Deno.env.get("BUNDLEZONE_WEBHOOK_SECRET") || bzProvider?.settings?.webhook_secret || bzProvider?.api_key || "";
+      if (!secretKey) {
+        console.warn("[provider-webhook] BundleZone signature verification failed: Secret not configured.");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      const signedPayload = bundlezoneTimestamp ? `${bundlezoneTimestamp}.${body}` : body;
+      const signatureValid = await verifyHmacSha256(signedPayload, secretKey, bundlezoneSignature);
+      if (!signatureValid) {
+        console.warn("[provider-webhook] BundleZone signature verification failed: Signature mismatch.");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      isAuthorized = true;
+      console.log("[provider-webhook] BundleZone signature verified successfully.");
+    } catch (err: any) {
+      console.error("[provider-webhook] Error verifying BundleZone signature:", err.message);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  } else if (skplugSignature) {
     try {
       const { data: skplugProvider } = await supabaseAdmin
         .from("providers")
@@ -162,7 +212,7 @@ serve(async (req: Request) => {
 
   try {
     const payload = JSON.parse(body);
-    let reference = payload?.data?.reference || payload?.reference || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.transactionId || payload?.data?.orderId || payload?.orderId;
+    let reference = payload?.data?.reference || payload?.reference || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.order_id || payload?.data?.transactionId || payload?.data?.orderId || payload?.orderId;
     
     if (payload?.data?.metadata) {
       try {
@@ -205,8 +255,8 @@ serve(async (req: Request) => {
       .or(filter)
       .maybeSingle();
 
-    if (!order && (payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference)) {
-      const altRef = String(payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || "");
+    if (!order && (payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || payload?.data?.order_id)) {
+      const altRef = String(payload?.data?.order_id || payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || "");
       if (altRef && altRef !== reference && /^[a-zA-Z0-9\-_]{1,64}$/.test(altRef)) {
         const altFilter = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(altRef)
           ? `id.eq.${altRef},provider_order_id.eq.${altRef}`

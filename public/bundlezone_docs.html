@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BundleZone REST API Reference - SwiftData Ghana</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(18, 24, 38, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #14b8a6;
+      --primary-glow: rgba(20, 184, 166, 0.25);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --code-bg: #0d121f;
+      --accent-blue: #38bdf8;
+      --accent-purple: #a855f7;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.6;
+      padding: 2.5rem 1.5rem;
+      background-image: 
+        radial-gradient(circle at 10% 15%, rgba(20, 184, 166, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 90% 85%, rgba(56, 189, 248, 0.08) 0%, transparent 40%);
+      background-attachment: fixed;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 2rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.8rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(20, 184, 166, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(20, 184, 166, 0.3);
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(135deg, #ffffff 40%, var(--primary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.lead {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 750px;
+    }
+
+    .meta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+      padding: 1rem 1.25rem;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      backdrop-filter: blur(12px);
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.85rem;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-val {
+      font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(20, 184, 166, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .http-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+    }
+
+    .pill-get { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .pill-post { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+
+    .endpoint-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1rem;
+      color: #e2e8f0;
+    }
+
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin: 1.25rem 0;
+    }
+
+    .note-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .note-card strong {
+      color: var(--primary);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      margin: 1rem 0;
+      position: relative;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.25rem 0;
+      font-size: 0.9rem;
+    }
+
+    th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .status-verified { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .status-unverified { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
+    .status-pending { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+    footer {
+      text-align: center;
+      padding: 2rem 0;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--card-border);
+      margin-top: 3rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">REST Provider Integration</div>
+      <h1>BundleZone API Reference</h1>
+      <p class="lead">
+        Comprehensive guide for integrating with <strong>BundleZone</strong> (<code>https://bundlezone.shop</code>) in SwiftData Ghana: bundle listings, MTN/Yello beneficiary verification, order submissions, and webhook callbacks.
+      </p>
+
+      <div class="meta-bar">
+        <div class="meta-item">
+          <span class="meta-label">Base URL</span>
+          <span class="meta-val">https://bundlezone.shop</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Auth Header</span>
+          <span class="meta-val">x-api-key: YOUR_API_KEY</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Handler Type</span>
+          <span class="meta-val">bundlezone</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Recipient Format</span>
+          <span class="meta-val">0551234567 (10 Digits)</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Key Rules -->
+    <section class="card">
+      <div class="card-title">Integration &amp; Usage Rules</div>
+      <div class="notes-grid">
+        <div class="note-card">
+          <strong>Recipient Format</strong>
+          Ghana 10-digit local phone number format (e.g. <code>0551234567</code>).
+        </div>
+        <div class="note-card">
+          <strong>Capacity Unit</strong>
+          Numeric Gigabytes (GB). E.g. <code>1</code> for 1GB, <code>2</code> for 2GB, <code>0.5</code> for 500MB.
+        </div>
+        <div class="note-card">
+          <strong>Beneficiary Verification</strong>
+          Mandatory for <strong>MTN / Yello</strong> numbers. <strong>AT</strong> and <strong>Telecel</strong> bypass verification automatically.
+        </div>
+        <div class="note-card">
+          <strong>Strict Ordering Rule</strong>
+          Only recipients with an explicit <code>VERIFIED</code> status can proceed to order creation.
+        </div>
+      </div>
+    </section>
+
+    <!-- 1. Bundles Endpoint -->
+    <section class="card">
+      <div class="card-title">
+        <span class="http-pill pill-get">GET</span>
+        <span class="endpoint-path">/api/bundles.php</span>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.95rem;">
+        Fetch all available data bundles and exact capacity keys before placing orders.
+      </p>
+      <pre><code>curl "https://bundlezone.shop/api/bundles.php" \
+  -H "x-api-key: YOUR_API_KEY"</code></pre>
+    </section>
+
+    <!-- 2. Beneficiary Check Endpoint -->
+    <section class="card">
+      <div class="card-title">
+        <span class="http-pill pill-post">POST</span>
+        <span class="endpoint-path">/api/beneficiary-check.php</span>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.95rem;">
+        Precheck MTN / Yello recipients. Accepts single or multiple numbers (up to 1,000 numbers per request). Never debits the wallet or creates orders.
+      </p>
+
+      <div style="margin-top: 1rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Request:</span>
+        <pre><code>{
+  "network": "MTN",
+  "phone_number": "0551234567"
+}</code></pre>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Verified Response:</span>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "request_id": "REQ-ABC123",
+    "network": "MTN",
+    "count": 1,
+    "results": [
+      {
+        "phone_number": "0551234567",
+        "status": "verified",
+        "verification_status": "VERIFIED",
+        "verification_request_id": "8fd7a5f4-05ef-4aa8-a44e-8da58f50ef11",
+        "can_order": true,
+        "retryable": false,
+        "estimated_delivery": "30 minutes to 6 hours",
+        "message": "The number is verified and ready for ordering."
+      }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Meaning</th>
+            <th>Ordering Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status-badge status-verified">VERIFIED</span></td>
+            <td>Number is approved and active on beneficiary list</td>
+            <td>Safe to order</td>
+          </tr>
+          <tr>
+            <td><span class="status-badge status-unverified">NOT_VERIFIED</span></td>
+            <td>Not eligible for ordering</td>
+            <td>Do NOT submit</td>
+          </tr>
+          <tr>
+            <td><span class="status-badge status-pending">PENDING</span></td>
+            <td>Verification decision still in progress</td>
+            <td>Retry later</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. Single Order -->
+    <section class="card">
+      <div class="card-title">
+        <span class="http-pill pill-post">POST</span>
+        <span class="endpoint-path">/api/order.php</span>
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">(Single Order)</span>
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.95rem;">
+        Submit a single data bundle order for execution.
+      </p>
+
+      <div style="margin-top: 1rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Payload:</span>
+        <pre><code>{
+  "mode": "single",
+  "network": "MTN",
+  "recipient": "0551234567",
+  "capacity": 1
+}</code></pre>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Successful Accepted Response (HTTP 200):</span>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "request_id": "REQ-ABC123",
+    "mode": "single",
+    "order": {
+      "success": true,
+      "status": "processing",
+      "message": "Order accepted.",
+      "estimated_delivery": "30 minutes to 6 hours"
+    }
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- 4. Webhooks -->
+    <section class="card">
+      <div class="card-title">Webhooks &amp; Status Callbacks</div>
+      <p style="color: var(--text-muted); font-size: 0.95rem;">
+        BundleZone notifies your server when an order changes status via HTTP POST to your registered webhook URL.
+      </p>
+
+      <div class="notes-grid" style="margin-top: 1rem;">
+        <div class="note-card">
+          <strong>Header: Timestamp</strong>
+          <code>X-BundleZone-Timestamp</code>: Unix time in seconds. Rejects requests older than 300 seconds.
+        </div>
+        <div class="note-card">
+          <strong>Header: Signature</strong>
+          <code>X-BundleZone-Signature</code>: Format <code>sha256=HMAC_HEX</code>.
+        </div>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Signature Computation Formula:</span>
+        <pre><code>signed_payload = X-BundleZone-Timestamp + "." + raw_request_body;
+expected_signature = "sha256=" + HMAC_SHA256_HEX(signed_payload, WEBHOOK_SECRET);</code></pre>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">Callback Payload Example:</span>
+        <pre><code>{
+  "event": "order.status_changed",
+  "timestamp": "2026-08-17T08:15:00+00:00",
+  "data": {
+    "order_id": 1842,
+    "reference": "BZ-20260817-ABC123",
+    "network": "MTN",
+    "recipient": "0551234567",
+    "capacity": 5,
+    "capacity_label": "5GB",
+    "price": 19.5,
+    "currency": "GHS",
+    "status": "completed",
+    "source": "api",
+    "created_at": "2026-08-17 08:04:31",
+    "updated_at": "2026-08-17 08:15:00"
+  },
+  "client": {
+    "api_client_id": 26,
+    "client_name": "SwiftData"
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <footer>
+      SwiftData Ghana &bull; Integrated Provider Protocol Reference &bull; BundleZone
+    </footer>
+  </div>
+</body>
+</html>

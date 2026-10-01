@@ -138,6 +138,7 @@ export function getProviderDetails(
   else if (nameUpper.includes("KORBA")) badgeClass = "bg-amber-500/15 text-amber-400 border-amber-500/30";
   else if (nameUpper.includes("TXTCONNECT")) badgeClass = "bg-indigo-500/15 text-indigo-400 border-indigo-500/30";
   else if (nameUpper.includes("HUBTEL")) badgeClass = "bg-rose-500/15 text-rose-400 border-rose-500/30";
+  else if (nameUpper.includes("BUNDLEZONE")) badgeClass = "bg-teal-500/15 text-teal-400 border-teal-500/30";
   else if (nameUpper.includes("NTA")) badgeClass = "bg-teal-500/15 text-teal-400 border-teal-500/30";
   else if (nameUpper.includes("SUPERB")) badgeClass = "bg-cyan-500/15 text-cyan-400 border-cyan-500/30";
 
