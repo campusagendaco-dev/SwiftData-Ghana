@@ -7,7 +7,8 @@ import {
   Activity, Copy, Check, RefreshCw, ArrowLeft,
   Search, Info, Database, SignalHigh, Server,
   Clock, ArrowRight, Package, ReceiptText, Store,
-  Share2, Sparkles, Cpu, Terminal, RotateCcw
+  Share2, Sparkles, Cpu, Terminal, RotateCcw,
+  MessageCircle, Headphones
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
@@ -150,6 +151,8 @@ const OrderStatus = () => {
   const hasPlayedSoundRef = useRef(false);
   const [resolvedOrderId, setResolvedOrderId] = useState<string | null>(null);
   const [isClaimingRefund, setIsClaimingRefund] = useState(false);
+  const [isExpediting, setIsExpediting] = useState(false);
+  const [supportPhone, setSupportPhone] = useState<string>("0540309637");
 
   // State for realtime console tracking
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -189,6 +192,24 @@ const OrderStatus = () => {
   });
 
   useEffect(() => {
+    const fetchSupportSettings = async () => {
+      try {
+        const { data } = await supabase
+          .from("public_system_settings")
+          .select("customer_service_number")
+          .eq("id", 1)
+          .maybeSingle();
+        if (data?.customer_service_number) {
+          setSupportPhone(String(data.customer_service_number).trim());
+        }
+      } catch (err) {
+        console.error("Error loading support phone:", err);
+      }
+    };
+    fetchSupportSettings();
+  }, []);
+
+  useEffect(() => {
     const loadStoreDetails = async () => {
       if (storeInfo && (storeInfo.slug === storeParam || (activeDomain && storeInfo.custom_domain === activeDomain))) {
         return;
@@ -202,7 +223,7 @@ const OrderStatus = () => {
       try {
         let query = supabase
           .from("agent_stores")
-          .select("store_name, store_logo_url, store_primary_color, slug, custom_domain");
+          .select("store_name, store_logo_url, store_primary_color, slug, custom_domain, whatsapp_number, support_number");
         
         if (lookupSlug) {
           query = query.eq("slug", lookupSlug);
@@ -218,7 +239,9 @@ const OrderStatus = () => {
             logo: storeData.store_logo_url,
             color: storeData.store_primary_color,
             slug: storeData.slug,
-            custom_domain: storeData.custom_domain
+            custom_domain: storeData.custom_domain,
+            whatsapp_number: storeData.whatsapp_number,
+            support_number: storeData.support_number
           };
           setStoreInfo(loaded);
           localStorage.setItem("current_store_tenant", JSON.stringify(loaded));
@@ -348,6 +371,157 @@ const OrderStatus = () => {
       inFlightRef.current = false;
     }
   }, [reference, resolvedOrderId, handleStatusUpdate]);
+
+  const getCleanWhatsAppPhone = () => {
+    const raw = storeInfo?.whatsapp_number || storeInfo?.support_number || supportPhone || "0540309637";
+    const digits = String(raw).replace(/\D+/g, "");
+    if (digits.startsWith("233")) return digits;
+    if (digits.startsWith("0")) return `233${digits.slice(1)}`;
+    if (digits.length === 9) return `233${digits}`;
+    return digits || "233540309637";
+  };
+
+  const getWhatsAppMessage = () => {
+    const activeRef = (orderData?.id || resolvedOrderId || reference || "").toUpperCase();
+    const activeNetwork = network || orderNetwork || orderData?.network || "Data Bundle";
+    const activePkg = packageSize || orderPackageSize || orderData?.package_size || "";
+    const activePhone = phoneParam || orderPhone || orderData?.customer_phone || "";
+    const activeStatus = orderStatus ? orderStatus.toUpperCase() : "PENDING";
+    const orderAmt = orderData?.amount ? `GH₵ ${Number(orderData.amount).toFixed(2)}` : "";
+
+    const lines = [
+      `👋 Hello ${storeName} Support,`,
+      `I need urgent assistance with my data order:`,
+      `• Ref: ${activeRef}`,
+      ...(activePhone ? [`• Recipient: ${activePhone}`] : []),
+      ...(activeNetwork ? [`• Network: ${activeNetwork}`] : []),
+      ...(activePkg ? [`• Package: ${activePkg}`] : []),
+      ...(orderAmt ? [`• Amount: ${orderAmt}`] : []),
+      `• Status: ${activeStatus}`,
+      `Please help me verify or expedite this order. Thank you!`
+    ];
+    return lines.join("\n");
+  };
+
+  const getWhatsAppUrl = () => {
+    const cleanPhone = getCleanWhatsAppPhone();
+    const text = encodeURIComponent(getWhatsAppMessage());
+    return `https://wa.me/${cleanPhone}?text=${text}`;
+  };
+
+  const handleWhatsAppSupport = () => {
+    window.open(getWhatsAppUrl(), "_blank", "noopener,noreferrer");
+  };
+
+  const handleExpediteDelivery = async () => {
+    const targetId = orderData?.id || resolvedOrderId || reference;
+    if (!targetId) return;
+
+    if (orderStatus === "fulfilled") {
+      toast.success("Order has already been delivered successfully!");
+      return;
+    }
+
+    setIsExpediting(true);
+    toast.info("⚡ Fast-tracking delivery with carrier gateway...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-payment", {
+        body: {
+          reference: targetId,
+          orderId: targetId,
+          force: true,
+          action: "retry_order"
+        }
+      });
+
+      if (error) {
+        toast.error(error.message || "Failed to expedite order. Please contact support.");
+      } else if (data?.status === "fulfilled") {
+        toast.success("🎉 Data bundle delivered successfully!");
+        setOrderStatus("fulfilled");
+        if (data.order) setOrderData(data.order);
+        if (!hasPlayedSoundRef.current) {
+          hasPlayedSoundRef.current = true;
+          playSuccessSound();
+        }
+      } else {
+        toast.success("⚡ Order dispatched to carrier! Delivery in progress.");
+        if (data?.status) handleStatusUpdate(data.status, data.message || data.reason);
+      }
+      await pollStatus(true);
+    } catch (e: any) {
+      console.error("Expedite delivery error:", e);
+      toast.error("Gateway busy. Click 'Chat with Support' for instant live help.");
+    } finally {
+      setIsExpediting(false);
+    }
+  };
+
+  const handleInstantRefund = async () => {
+    const targetId = orderData?.id || resolvedOrderId || reference;
+    if (!targetId) return;
+
+    const currentDbStatus = String((orderData as any)?.status || orderStatus);
+    if (currentDbStatus === "fulfilled" || currentDbStatus === "completed") {
+      toast.error("Order has already been delivered. It cannot be refunded.");
+      return;
+    }
+    if (currentDbStatus === "refunded") {
+      toast.error("Order has already been refunded.");
+      return;
+    }
+
+    const amt = Number(orderData?.amount || 0);
+    const amtStr = amt > 0 ? `GH₵ ${amt.toFixed(2)}` : "your payment";
+    const confirmed = window.confirm(`Request an immediate refund of ${amtStr} to your Mobile Money account?`);
+    if (!confirmed) return;
+
+    setIsClaimingRefund(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-payment", {
+        body: { action: "guest_refund", order_id: targetId, reason: "Customer requested instant refund on Order Status page" }
+      });
+      if (error) {
+        toast.error(error.message || "Failed to process refund. Please contact WhatsApp support.");
+      } else if (data?.refunded) {
+        toast.success(`Refund Completed! ${amtStr} sent to Mobile Money via Paystack.`);
+        setOrderStatus("refunded");
+        setOrderData((prev: any) => ({
+          ...prev,
+          status: "refunded",
+          refund_amount: prev?.amount || amt,
+          metadata: { ...(prev?.metadata || {}), guest_refund_gateway: "paystack" }
+        }));
+      } else if (data?.error?.includes("processing") || data?.error?.includes("carrier network API")) {
+        toast.info("Your bundle has already been dispatched to the carrier network! It is arriving shortly.");
+      } else {
+        toast.error(data?.error || "Refund queued for manual payout by support team.");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "An error occurred while requesting your refund.");
+    } finally {
+      setIsClaimingRefund(false);
+    }
+  };
+
+  const renderFloatingSupport = () => (
+    <a
+      href={getWhatsAppUrl()}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl shadow-emerald-950/80 border border-emerald-400/40 transition-all hover:scale-105 active:scale-95 group backdrop-blur-md"
+      title="Need assistance? Chat with WhatsApp Support"
+    >
+      <div className="relative">
+        <MessageCircle className="w-5 h-5 text-white fill-white/20" />
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 border-2 border-emerald-600 absolute -top-1 -right-1 animate-pulse" />
+      </div>
+      <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">
+        Live Support
+      </span>
+    </a>
+  );
 
   const copyReceipt = () => {
     const now = new Date().toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short" });
@@ -803,52 +977,7 @@ const OrderStatus = () => {
                   </button>
 
                   <button
-                    onClick={async () => {
-                      const targetId = orderData?.id || resolvedOrderId || reference;
-                      if (!targetId) return;
-
-                      const currentDbStatus = String((orderData as any)?.status || orderStatus);
-                      if (currentDbStatus === "fulfilled" || currentDbStatus === "completed") {
-                        toast.error("Order has already been delivered. It cannot be refunded.");
-                        return;
-                      }
-                      if (currentDbStatus === "processing") {
-                        toast.error("Order has already gone through the network provider API and is in transit. Cannot be refunded.");
-                        return;
-                      }
-                      if (currentDbStatus === "refunded") {
-                        toast.error("Order has already been refunded.");
-                        return;
-                      }
-
-                      const confirmed = window.confirm(`Request an immediate refund of GH₵ ${Number(orderData?.amount || 0).toFixed(2)} to your Mobile Money account?`);
-                      if (!confirmed) return;
-
-                      setIsClaimingRefund(true);
-                      try {
-                        const { data, error } = await supabase.functions.invoke("verify-payment", {
-                          body: { action: "guest_refund", order_id: targetId }
-                        });
-                        if (error) {
-                          toast.error(error.message || "Failed to process refund. Please contact support.");
-                        } else if (data?.refunded) {
-                          toast.success(`Refund Completed! GH₵ ${Number(orderData?.amount || 0).toFixed(2)} sent to Mobile Money via Paystack.`);
-                          setOrderStatus("refunded");
-                          setOrderData((prev: any) => ({
-                            ...prev,
-                            status: "refunded",
-                            refund_amount: prev?.amount,
-                            metadata: { ...(prev?.metadata || {}), guest_refund_gateway: "paystack" }
-                          }));
-                        } else {
-                          toast.error(data?.error || "Refund queued for manual payout by support team.");
-                        }
-                      } catch (e: any) {
-                        toast.error(e?.message || "An error occurred while requesting your refund.");
-                      } finally {
-                        setIsClaimingRefund(false);
-                      }
-                    }}
+                    onClick={handleInstantRefund}
                     disabled={isClaimingRefund}
                     className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
                   >
@@ -875,6 +1004,87 @@ const OrderStatus = () => {
                 <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   Carrier Whitelist: <span className="text-emerald-400 font-bold">Auto-Submitted for Approval ✅</span>
+                </div>
+              </div>
+            )}
+
+            {/* Urgent Customer Care & Resolution Command Center */}
+            {orderStatus !== "fulfilled" && orderStatus !== "refunded" && (
+              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-slate-900/90 via-[#0d0e17] to-black border border-amber-500/30 text-left space-y-3 shadow-xl shadow-amber-950/20 relative overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Headphones className="w-4 h-4 text-amber-400 animate-pulse" />
+                    <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
+                      Urgent Resolution Hub
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    Agents Online
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
+                  Need this delivered immediately, or have questions about this order? Choose an instant self-service action:
+                </p>
+
+                <div className="space-y-2 pt-0.5">
+                  {/* 1. Fast-Track / Expedite Delivery Button */}
+                  <button
+                    onClick={handleExpediteDelivery}
+                    disabled={isExpediting}
+                    className="w-full py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isExpediting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                        <span>Connecting Carrier Gateway...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 fill-slate-950 text-slate-950" />
+                        <span>⚡ Expedite Delivery / Force Dispatch</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* 2. Direct 1-Tap WhatsApp Support Button */}
+                  <button
+                    onClick={handleWhatsAppSupport}
+                    className="w-full py-2.5 px-3.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-400" />
+                    <span>Chat with Support on WhatsApp 💬</span>
+                  </button>
+
+                  {/* 3. 1-Click Instant Refund to Mobile Money */}
+                  <button
+                    onClick={handleInstantRefund}
+                    disabled={isClaimingRefund}
+                    className="w-full py-2.5 px-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isClaimingRefund ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                        <span>Processing Instant Refund...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-4 h-4 text-purple-400" />
+                        <span>Claim Instant Refund to Mobile Money 💰</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* 100% Guarantee Reassurance Note */}
+                <div className="flex items-start gap-2 text-[10px] text-slate-400 border-t border-slate-800/80 pt-2.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-slate-200">100% Delivery or Instant Refund Guarantee:</strong> If the carrier network delays or rejects this package, your payment is 100% protected and returned instantly to your Mobile Money account or wallet.
+                  </span>
                 </div>
               </div>
             )}
@@ -1139,6 +1349,9 @@ const OrderStatus = () => {
             document.body
           )}
         </div>
+
+        {/* Floating WhatsApp Support Button */}
+        {renderFloatingSupport()}
       </div>
     );
   }
@@ -1213,6 +1426,9 @@ const OrderStatus = () => {
             </button>
           </div>
         </div>
+
+        {/* Floating WhatsApp Support Button */}
+        {renderFloatingSupport()}
       </div>
     );
   }
@@ -1368,6 +1584,9 @@ const OrderStatus = () => {
            </div>
         </div>
       </div>
+
+      {/* Floating WhatsApp Support Button */}
+      {renderFloatingSupport()}
     </div>
   );
 };
