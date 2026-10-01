@@ -387,7 +387,7 @@ serve(async (req: any) => {
           refunded: false,
           error: "Order has already been fulfilled by the carrier and delivered. It cannot be refunded."
         }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
@@ -399,7 +399,7 @@ serve(async (req: any) => {
           already_refunded: true,
           error: "Order has already been refunded."
         }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
@@ -422,14 +422,13 @@ serve(async (req: any) => {
           has_entered_provider: true,
           error: "This order has already entered the carrier network provider API and delivery is 100% guaranteed. Orders that have entered a provider cannot be cancelled or refunded."
         }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
       const refundRes = await executeGuestBeneficiaryRefund(supabaseAdmin, ord, body.reason || "Customer requested guest refund");
-      const httpStatus = refundRes.refunded ? 200 : (refundRes.error ? 400 : 200);
       return new Response(JSON.stringify(refundRes), {
-        status: httpStatus, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 

@@ -499,7 +499,16 @@ const OrderStatus = () => {
         body: { action: "guest_refund", order_id: targetId, reason: "Customer requested instant refund on Order Status page" }
       });
       if (error) {
-        toast.error(error.message || "Failed to process refund. Please contact WhatsApp support.");
+        let msg = error.message;
+        try {
+          if ((error as any).context?.json) {
+            const errJson = await (error as any).context.json();
+            if (errJson?.error) msg = errJson.error;
+          }
+        } catch {
+          // ignore
+        }
+        toast.error(msg || "Failed to process refund. Please contact WhatsApp support.");
       } else if (data?.refunded) {
         toast.success(`Refund Completed! ${amtStr} sent to Mobile Money via Paystack.`);
         setOrderStatus("refunded");
@@ -514,8 +523,8 @@ const OrderStatus = () => {
             guest_refund_id: data?.refundId
           }
         }));
-      } else if (data?.error?.includes("processing") || data?.error?.includes("carrier network API")) {
-        toast.info("Your bundle has already been dispatched to the carrier network! It is arriving shortly.");
+      } else if (data?.error?.includes("processing") || data?.error?.includes("carrier network") || data?.has_entered_provider) {
+        toast.info(data.error || "Your bundle has already been dispatched to the carrier network! Delivery is guaranteed.");
       } else {
         toast.error(data?.error || "Refund queued for manual payout by support team.");
         setOrderData((prev: any) => ({
