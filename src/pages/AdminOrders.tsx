@@ -555,11 +555,13 @@ export default function AdminOrders() {
         prev.map((o) => (o.id === orderId ? { ...o, status: newStatus, failure_reason: orderData?.failure_reason } : o))
       );
 
+      const smsNote = data.sms_sent ? " (Customer SMS dispatched)" : "";
+
       toast({
         title: `Provider Status: ${String(rawStatus).toUpperCase()} 📡`,
         description: provInfo 
-          ? `${provName} reports "${rawStatus}". Order is "${newStatus.replace(/_/g, " ")}".`
-          : `Order is "${newStatus.replace(/_/g, " ")}". No provider assigned.`,
+          ? `${provName} reports "${rawStatus}". Order is "${newStatus.replace(/_/g, " ")}".${smsNote}`
+          : `Order is "${newStatus.replace(/_/g, " ")}". No provider assigned.${smsNote}`,
       });
     } catch (err: any) {
       toast({

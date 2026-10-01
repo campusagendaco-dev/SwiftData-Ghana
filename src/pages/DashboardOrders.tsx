@@ -377,9 +377,11 @@ const DashboardOrders = () => {
         const newStatus = orderData?.status;
         const carrierMsg = data.message || orderData?.carrier_status;
 
+        const smsNote = data.sms_sent ? " • SMS update sent to customer" : "";
+
         toast({
           title: newStatus === "fulfilled" ? "Order Delivered! ✅" : "Live Status Checked 📡",
-          description: carrierMsg || `Order status: ${newStatus}`,
+          description: (carrierMsg || `Order status: ${newStatus}`) + smsNote,
         });
 
         setOrders((prev) =>

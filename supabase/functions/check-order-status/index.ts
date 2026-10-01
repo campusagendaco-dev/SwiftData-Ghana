@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
+import { normalizePhone, getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
 
 declare const Deno: any;
 
@@ -236,7 +237,66 @@ serve(async (req: Request) => {
       }
     }
 
-    // 6. User vs Admin Response Formatting
+    // 6. Send Live Status SMS to user with WhatsApp Channel & Support Number
+    let smsSent = false;
+    const shouldSendSms = body.send_sms !== false && !isAdmin;
+
+    if (shouldSendSms || (isAdmin && body.send_sms === true)) {
+      try {
+        const rawTargetPhone = order.customer_phone || (authUser?.phone);
+        const targetPhone = normalizePhone(rawTargetPhone);
+
+        if (targetPhone) {
+          const { data: settings } = await supabaseAdmin
+            .from("system_settings")
+            .select("customer_service_number, support_channel_link")
+            .eq("id", 1)
+            .maybeSingle();
+
+          const supportNumber = (settings?.customer_service_number || "0598170947").trim();
+          const channelLink = (settings?.support_channel_link || "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40").trim();
+
+          const netLabel = (order.network || "Bundle").toUpperCase();
+          const sizeLabel = order.package_size || "";
+          const phoneLabel = order.customer_phone || targetPhone;
+
+          let statusText = "is PROCESSING with carrier";
+          if (currentStatus === "fulfilled") {
+            statusText = "is DELIVERED";
+          } else if (currentStatus === "fulfillment_failed") {
+            statusText = "could not be delivered";
+          } else if (currentStatus === "refunded") {
+            statusText = "has been REFUNDED";
+          }
+
+          // Strict GSM-7 clean message (< 160 characters, single SMS credit)
+          const smsBody = `SwiftData Update: Your ${netLabel} ${sizeLabel} to ${phoneLabel} ${statusText}. Channel: ${channelLink} | Support: ${supportNumber}`;
+
+          const smsConfig = await getSmsConfig(supabaseAdmin);
+          const effectiveGateway = (smsConfig?.gateway || "txtconnect").toLowerCase().trim();
+          const resolvedSenderId = effectiveGateway === "txtconnect" ? "SwiftDataGh" : (smsConfig?.senderId || "SwiftDataGh");
+
+          if (smsConfig?.apiKey) {
+            const smsRes = await dispatchUnifiedSms(
+              effectiveGateway,
+              smsConfig.apiKey,
+              resolvedSenderId,
+              targetPhone,
+              smsBody,
+              "order_status_check"
+            );
+            if (smsRes && smsRes.success !== false) {
+              smsSent = true;
+              console.log(`[check-order-status] Status SMS dispatched to ${targetPhone} for order ${order.id}`);
+            }
+          }
+        }
+      } catch (smsErr: any) {
+        console.warn(`[check-order-status] SMS dispatch error for order ${order.id}:`, smsErr?.message || smsErr);
+      }
+    }
+
+    // 7. User vs Admin Response Formatting
     // =========================================================================
     // CRITICAL SECURITY ENFORCEMENT: NEVER REVEAL THE PROVIDER TO USERS!
     // =========================================================================
@@ -269,6 +329,7 @@ serve(async (req: Request) => {
           failure_reason: sanitizeForUser(currentFailureReason),
         },
         message: userFriendlyMessage,
+        sms_sent: smsSent,
         last_checked_at: new Date().toISOString(),
       }), {
         status: 200,
@@ -305,6 +366,7 @@ serve(async (req: Request) => {
       message: providerInfo 
         ? `Live status verified with ${providerInfo.name}: ${liveProviderResult?.status || currentStatus}`
         : "Order is not currently assigned to a provider.",
+      sms_sent: smsSent,
       last_checked_at: new Date().toISOString(),
     }), {
       status: 200,

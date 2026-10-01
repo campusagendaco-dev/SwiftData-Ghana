@@ -362,6 +362,10 @@ const OrderStatus = () => {
             }
             handleStatusUpdate(checkData.order?.status, checkData.order?.carrier_status || checkData.message);
 
+            if (checkData.sms_sent) {
+              toast.success("Live delivery status checked! An SMS update was sent to your phone with our WhatsApp channel & support details.");
+            }
+
             if (checkData.order?.status === "fulfilled" || checkData.order?.status === "fulfillment_failed" || checkData.order?.status === "error") {
               redirectedRef.current = true;
             }
