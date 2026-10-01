@@ -1362,17 +1362,19 @@ serve(async (req: any) => {
     // Skip this check for Korba orders to allow duplicate back-to-back purchases.
     const isKorbaPackage = activeProviders && activeProviders.some((p: any) => p?.name === "Korba" || p?.handler_type === "korba");
     if (isProviderOrder && customerPhone && network && packageSize && !isKorbaPackage) {
-      const thirtySecondsAgo = new Date(new Date(claimedOrder.created_at).getTime() - 30 * 1000).toISOString();
+      const tenSecondsAgo = new Date(Date.now() - 10 * 1000).toISOString();
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")
         .select("id, status, provider_order_id, provider_id, profit, parent_profit, parent_agent_id, created_at, network, package_size, amount")
         .eq("customer_phone", customerPhone)
-        .neq("id", targetReference) // Exclude current order
-        .in("status", ["processing", "paid"]) // Only look at active in-progress siblings
-        .gte("created_at", thirtySecondsAgo)
+        .neq("id", targetReference)
+        .in("status", ["processing", "paid"])
+        .gte("created_at", tenSecondsAgo)
         .order("created_at", { ascending: false });
 
       const siblingOrders = (rawSiblings || []).filter((o: any) => {
+        // Only inspect siblings that have a valid provider_order_id (actually sent to provider)
+        if (!o.provider_order_id || o.provider_order_id === "timeout") return false;
         const n1 = String(o.network || "").trim().toUpperCase();
         const n2 = String(network || "").trim().toUpperCase();
         const networksMatch = n1 === n2 ||
@@ -1397,67 +1399,43 @@ serve(async (req: any) => {
           const currentTime = new Date(claimedOrder.created_at).getTime();
           const isOlder = siblingTime < currentTime || (siblingTime === currentTime && sibling.id < targetReference);
 
-          if (!isOlder) {
-            console.log(`[verify-payment] Sibling order ${sibling.id} is active but newer than current order. Ignoring sibling.`);
-            continue;
-          }
-          console.log(`[verify-payment] Sibling order ${sibling.id} is active (${sibling.status}). Checking provider status.`);
+          if (!isOlder) continue;
           
-          for (const provider of activeProviders) {
-            const checkResult = await callProviderApi(supabaseAdmin, provider, {
-              transaction_id: sibling.provider_order_id || sibling.id,
-              order_id: sibling.provider_order_id || sibling.id,
+          // Check assigned provider first for fast status check
+          const assignedProvider = activeProviders.find((p: any) => p.id === sibling.provider_id) || activeProviders[0];
+          if (assignedProvider) {
+            const checkResult = await callProviderApi(supabaseAdmin, assignedProvider, {
+              transaction_id: sibling.provider_order_id,
+              order_id: sibling.provider_order_id,
               reference: sibling.id,
             }, "status");
             
             if (checkResult.ok) {
               const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
-              const isProcessing = checkResult.status === "processing" || checkResult.status === "pending" || checkResult.status === "queued" || checkResult.status === "ongoing";
               
               if (isDelivered) {
-                console.log(`[verify-payment] Sibling order ${sibling.id} was actually fulfilled at provider. Marking current order ${targetReference} as fulfilled.`);
+                console.log(`[verify-payment] Sibling order ${sibling.id} was fulfilled at provider. Marking current order ${targetReference} as fulfilled.`);
                 await supabaseAdmin.from("orders").update({
                   status: "fulfilled",
-                  provider_id: provider.id,
+                  provider_id: assignedProvider.id,
                   provider_order_id: checkResult.id || sibling.provider_order_id || null,
                   failure_reason: null
                 }).eq("id", sibling.id);
                 
                 await supabaseAdmin.from("orders").update({
                   status: "fulfilled",
-                  provider_id: provider.id,
+                  provider_id: assignedProvider.id,
                   provider_order_id: checkResult.id || sibling.provider_order_id || null,
                   failure_reason: `Completed via duplicate sibling order ${sibling.id}`
                 }).eq("id", targetReference);
 
-                await supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id });
-                await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference });
-
-                await notifyApiClient(supabaseAdmin, sibling.id, "fulfilled");
-                await notifyApiClient(supabaseAdmin, targetReference, "fulfilled");
+                await supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id }).catch(() => {});
+                await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference }).catch(() => {});
                 
                 return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
-              } else if (isProcessing) {
-                console.log(`[verify-payment] Sibling order ${sibling.id} is confirmed processing at provider. Halting current purchase.`);
-                await supabaseAdmin.from("orders").update({
-                  status: "processing",
-                  provider_id: provider.id,
-                  provider_order_id: checkResult.id || sibling.provider_order_id || null,
-                  failure_reason: `Waiting for sibling order ${sibling.id} processing`
-                }).eq("id", targetReference);
-                
-                return new Response(JSON.stringify({ status: "processing", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
               }
             }
           }
-          
-          console.log(`[verify-payment] Sibling order ${sibling.id} is active in DB but provider status check was inconclusive. Halting current purchase to prevent duplicates.`);
-          await supabaseAdmin.from("orders").update({
-            status: "processing",
-            failure_reason: `Waiting for sibling order ${sibling.id} processing`
-          }).eq("id", targetReference);
-          
-          return new Response(JSON.stringify({ status: "processing", message: `Waiting for sibling order ${sibling.id} processing` }), { headers: corsHeaders });
         }
       }
     }
