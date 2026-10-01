@@ -25,34 +25,47 @@ serve(async (req) => {
   try {
     console.log("[cron-auto-retry] Running hybrid self-healing background worker...");
 
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000).toISOString();
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    // 1. Find stuck paid orders
-    const { data: stuckOrders } = await supabaseAdmin
+    // 1. Find stuck paid orders (not yet processed)
+    const { data: stuckPaidOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("status", "paid")
       .neq("network", "MTN Mash Up")
       .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
-      .lte("created_at", twoMinutesAgo)
+      .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
-      .limit(15);
+      .limit(20);
 
-    // 2. Find failed orders whose failure_reason indicates No Provider
+    // 2. Find stuck undispatched processing orders (no provider_order_id assigned, or marked timeout/failed_api_call)
+    const { data: undispatchedOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("status", "processing")
+      .or("provider_order_id.is.null,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call")
+      .neq("network", "MTN Mash Up")
+      .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
+      .lte("created_at", oneMinuteAgo)
+      .gte("created_at", twoDaysAgo)
+      .limit(20);
+
+    // 3. Find failed orders whose failure_reason indicates No Provider or retryable error
     const { data: noProviderOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .in("status", ["fulfillment_failed", "failed"])
       .not("order_type", "in", '("wallet_topup","store_wallet_topup","agent_activation","sub_agent_activation","vendor_activation","free_data_claim")')
-      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%")
+      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%,failure_reason.ilike.%timeout%,failure_reason.ilike.%504%,failure_reason.ilike.%502%")
       .gte("created_at", twoDaysAgo)
       .order("created_at", { ascending: false })
-      .limit(15);
+      .limit(20);
 
     // Deduplicate candidate orders by ID
     const orderMap = new Map<string, any>();
-    (stuckOrders || []).forEach(o => orderMap.set(o.id, o));
+    (stuckPaidOrders || []).forEach(o => orderMap.set(o.id, o));
+    (undispatchedOrders || []).forEach(o => orderMap.set(o.id, o));
     (noProviderOrders || []).forEach(o => orderMap.set(o.id, o));
 
     const candidateOrders = Array.from(orderMap.values());
@@ -83,7 +96,7 @@ serve(async (req) => {
       // Security guard: Never auto-fulfill orders that lack verified payment proof
       const isWalletOrder = order.payment_method === "wallet";
       const isGatewayPaid = Number(order.paystack_verified_amount || 0) > 0;
-      const isPaidStatus = order.status === "paid";
+      const isPaidStatus = order.status === "paid" || order.status === "processing";
       if (!isWalletOrder && !isGatewayPaid && !isPaidStatus) {
         console.warn(`[cron-auto-retry] Security guard: Order ${order.id} lacks verified payment proof (method: ${order.payment_method}, verified_amount: ${order.paystack_verified_amount}). Skipping.`);
         continue;
@@ -98,7 +111,7 @@ serve(async (req) => {
           last_retry_at: new Date().toISOString()
         })
         .eq("id", order.id)
-        .in("status", ["paid", "fulfillment_failed", "failed"])
+        .in("status", ["paid", "processing", "fulfillment_failed", "failed"])
         .select("id")
         .maybeSingle();
 
@@ -186,3 +199,25 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
+
+// Deno.cron: Run self-healing worker every 1 minute natively in Deno runtime
+if (typeof (Deno as any).cron === "function") {
+  (Deno as any).cron("Self Healing Auto Retry Worker", "*/1 * * * *", async () => {
+    try {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+      const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+        const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        await fetch(`${SUPABASE_URL}/functions/v1/cron-auto-retry`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json"
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[cron-auto-retry] Deno.cron trigger error:", e);
+    }
+  });
+}
