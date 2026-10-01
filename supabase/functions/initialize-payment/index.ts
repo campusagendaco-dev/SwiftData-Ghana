@@ -1328,7 +1328,8 @@ serve(async (req: Request) => {
         metadata: enrichedMetadata,
       };
       if (resolvedParentAgentId) orderRow.parent_agent_id = resolvedParentAgentId;
-      if (metadata.customer_phone) orderRow.customer_phone = metadata.customer_phone;
+      const resolvedCustomerPhone = metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone;
+      if (resolvedCustomerPhone) orderRow.customer_phone = resolvedCustomerPhone;
       if (metadata.network) orderRow.network = metadata.network;
       if (metadata.package_size) orderRow.package_size = metadata.package_size;
       // AFA fields

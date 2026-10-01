@@ -968,8 +968,8 @@ serve(async (req: Request) => {
         failure_reason: null,
         network: typeof metadata?.network === "string" ? metadata.network : null,
         package_size: typeof metadata?.package_size === "string" ? metadata.package_size : null,
-        customer_phone: typeof (metadata?.customer_phone || metadata?.phone) === "string" 
-          ? (metadata.customer_phone || metadata.phone) 
+        customer_phone: typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string" 
+          ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone) 
           : null,
         afa_full_name: typeof metadata?.afa_full_name === "string" ? metadata.afa_full_name : null,
         afa_ghana_card: typeof metadata?.afa_ghana_card === "string" ? metadata.afa_ghana_card : null,
@@ -1028,8 +1028,9 @@ serve(async (req: Request) => {
       }
       if (!existingOrder.network && typeof metadata?.network === "string") patch.network = metadata.network;
       if (!existingOrder.package_size && typeof metadata?.package_size === "string") patch.package_size = metadata.package_size;
-      if (!existingOrder.customer_phone && typeof (metadata?.customer_phone || metadata?.phone) === "string") {
-        patch.customer_phone = metadata.customer_phone || metadata.phone;
+      const candidatePhone = metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone;
+      if (!existingOrder.customer_phone && typeof candidatePhone === "string") {
+        patch.customer_phone = candidatePhone;
       }
       if (!existingOrder.parent_agent_id && typeof metadata?.parent_agent_id === "string" && metadata.parent_agent_id) {
         patch.parent_agent_id = metadata.parent_agent_id;
@@ -1561,9 +1562,11 @@ serve(async (req: Request) => {
     const baseUrlToLower = DATA_PROVIDER_BASE_URL.toLowerCase();
 
     if (orderType === "afa") {
-      const customerPhone = typeof existingOrder?.customer_phone === "string"
+      const customerPhone = typeof existingOrder?.customer_phone === "string" && existingOrder.customer_phone
         ? existingOrder.customer_phone
-        : (typeof (metadata?.customer_phone || metadata?.phone) === "string" ? (metadata.customer_phone || metadata.phone) : "");
+        : (typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string" 
+            ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone) 
+            : "");
       const recipient = normalizeRecipient(customerPhone);
 
       const result = await callProviderApi(
@@ -1609,9 +1612,11 @@ serve(async (req: Request) => {
     const packageSize = typeof existingOrder?.package_size === "string"
       ? existingOrder.package_size
       : (typeof metadata?.package_size === "string" ? metadata.package_size : "");
-    const customerPhone = typeof existingOrder?.customer_phone === "string"
+    const customerPhone = typeof existingOrder?.customer_phone === "string" && existingOrder.customer_phone
       ? existingOrder.customer_phone
-      : (typeof (metadata?.customer_phone || metadata?.phone) === "string" ? (metadata.customer_phone || metadata.phone) : "");
+      : (typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string" 
+          ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone) 
+          : "");
 
     // Record promo claim if a promo code was used in Paystack checkout metadata
     const candidatePromoCode = metadata?.promo_code || metadata?.promo_id;
@@ -1726,9 +1731,14 @@ serve(async (req: Request) => {
     }
 
     if (!network || !packageSize || !customerPhone) {
+      const missingParts = [
+        !network ? "network" : null,
+        !packageSize ? "package size" : null,
+        !customerPhone ? "customer phone" : null,
+      ].filter(Boolean).join(", ");
       await supabaseAdmin.from("orders").update({
         status: "fulfillment_failed",
-        failure_reason: `Could not parse package size from '${packageSize}'`,
+        failure_reason: `Missing order details for fulfillment (${missingParts})`,
       }).eq("id", orderId);
       await notifyFailureAndRefund(supabaseAdmin, customerPhone, verifiedAmount, packageSize || "your order", reference, PAYSTACK_SECRET_KEY, existingOrder?.agent_id, "Missing order details for fulfillment");
       return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: "Missing order details for fulfillment." }), {

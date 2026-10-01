@@ -468,6 +468,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           metadata: {
             ...metadata,
             order_id: orderId,
+            customer_phone: recipientPhone || paymentPhone || metadata?.customer_phone || metadata?.phone,
+            phone: recipientPhone || paymentPhone || metadata?.phone,
             payment_phone: paymentPhone || recipientPhone,
             payment_network: paymentNetwork || recipientNetwork,
             is_fallback: true,
@@ -645,6 +647,8 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
             package_size: metadata?.package_size,
             base_price: metadata.base_price || amount,
             order_id: orderId,
+            customer_phone: recipientPhone || paymentPhone || metadata?.customer_phone || metadata?.phone,
+            phone: recipientPhone || paymentPhone || metadata?.phone,
             payment_phone: paymentPhone,
             payment_network: paymentNetwork,
             bypass_beneficiary: (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true" || !isBeneficiaryVerified) ? true : undefined,
