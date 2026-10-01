@@ -146,7 +146,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       .select("*")
       .eq("id", order.provider_id)
       .maybeSingle();
-    if (explicitProvider) {
+    if (explicitProvider && explicitProvider.is_active) {
       console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${explicitProvider.name}. Locking to assigned provider ONLY.`);
       return [explicitProvider];
     }
