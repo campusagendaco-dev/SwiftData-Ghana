@@ -119,34 +119,14 @@ export function getProviderDetails(
     matchedName = `Provider (${providerId.slice(0, 6)})`;
   }
 
-  // 4. Resolve top ACTIVE provider from DB based on order category and network (skips inactive providers like Datamart)
+  // 4. If no provider_id or provider_order_id or metadata is assigned, the order has NOT passed through any provider yet
   if (!matchedName) {
-    const typeLower = String(orderType || "data").toLowerCase();
-
-    // Filter active providers for this category
-    const activeForCategory = activeProvidersOnly.filter(p => {
-      const pType = (p.provider_type || "data").toLowerCase();
-      if (typeLower === "airtime") return pType === "airtime" || p.handler_type === "korba";
-      if (typeLower === "utility") return pType === "utility";
-      return pType === "data" || p.handler_type === "spendless" || p.handler_type === "korba";
-    }).sort((a, b) => (a.priority || 99) - (b.priority || 99));
-
-    if (activeForCategory.length > 0) {
-      matchedName = activeForCategory[0].name;
-    }
-  }
-
-  if (!matchedName) {
-    if (status === "fulfilled" || status === "processing") {
-      matchedName = "Active Gateway";
-    } else {
-      return {
-        name: "Not Dispatched",
-        badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-        refId: null,
-        isPendingDispatch: true,
-      };
-    }
+    return {
+      name: "Pending Dispatch",
+      badgeClass: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+      refId: null,
+      isPendingDispatch: true,
+    };
   }
 
   const nameUpper = String(matchedName).toUpperCase();
@@ -217,8 +197,8 @@ export function ProviderBadge({
         </span>
       )}
       {showRef && !details.refId && details.isPendingDispatch && (
-        <span className="text-[9px] text-amber-400/90 font-mono truncate max-w-[130px]" title="Order is queued / awaiting carrier API handshake">
-          Ref: Pending Dispatch
+        <span className="text-[9px] text-amber-400/90 font-mono truncate max-w-[130px]" title="Order is in system queue awaiting carrier API dispatch">
+          Ref: Auto Router Queue
         </span>
       )}
     </div>
