@@ -86,13 +86,34 @@ export function getProviderDetails(
     matchedName = `Provider (${providerId.slice(0, 6)})`;
   }
 
-  // 4. If no provider is explicitly assigned or recorded in metadata, the order has not been dispatched yet
+  // 4. Resolve top ACTIVE provider from DB based on order category and network (skips inactive providers like Datamart)
   if (!matchedName) {
-    return {
-      name: "Not Dispatched",
-      badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-      refId: null,
-    };
+    const typeLower = String(orderType || "data").toLowerCase();
+
+    // Filter active providers for this category
+    const activeForCategory = activeProvidersOnly.filter(p => {
+      const pType = (p.provider_type || "data").toLowerCase();
+      if (typeLower === "airtime") return pType === "airtime" || p.handler_type === "korba";
+      if (typeLower === "utility") return pType === "utility";
+      return pType === "data" || p.handler_type === "spendless" || p.handler_type === "korba";
+    }).sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+    if (activeForCategory.length > 0) {
+      matchedName = activeForCategory[0].name;
+    }
+  }
+
+  if (!matchedName) {
+    if (status === "fulfilled" || status === "processing") {
+      matchedName = "Active Gateway";
+    } else {
+      return {
+        name: "Not Dispatched",
+        badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+        refId: null,
+        isPendingDispatch: true,
+      };
+    }
   }
 
   const nameUpper = String(matchedName).toUpperCase();
@@ -107,10 +128,13 @@ export function getProviderDetails(
   else if (nameUpper.includes("NTA")) badgeClass = "bg-teal-500/15 text-teal-400 border-teal-500/30";
   else if (nameUpper.includes("SUPERB")) badgeClass = "bg-cyan-500/15 text-cyan-400 border-cyan-500/30";
 
+  const rawRef = providerOrderId || metadata?.provider_order_id || null;
+
   return {
     name: matchedName,
     badgeClass,
-    refId: providerOrderId || metadata?.provider_order_id || null,
+    refId: rawRef,
+    isPendingDispatch: !rawRef && (status === "processing" || status === "pending" || status === "waiting"),
   };
 }
 
@@ -157,6 +181,11 @@ export function ProviderBadge({
       {showRef && details.refId && (
         <span className="text-[9px] text-muted-foreground/80 font-mono truncate max-w-[130px]" title={String(details.refId)}>
           Ref: #{String(details.refId).slice(0, 12)}
+        </span>
+      )}
+      {showRef && !details.refId && details.isPendingDispatch && (
+        <span className="text-[9px] text-amber-400/90 font-mono truncate max-w-[130px]" title="Order is queued / awaiting carrier API handshake">
+          Ref: Pending Dispatch
         </span>
       )}
     </div>
