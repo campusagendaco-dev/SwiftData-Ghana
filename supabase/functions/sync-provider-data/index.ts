@@ -46,112 +46,138 @@ serve(async (req: Request) => {
       .from("providers")
       .select("*")
       .eq("id", provider_id)
-      .single();
+      .single();    if (providerError || !provider) throw new Error("Provider not found");
 
-    if (providerError || !provider) throw new Error("Provider not found");
+    const handlerType = (provider.handler_type || "standard").toLowerCase().trim();
+    
+    // Always prioritize Environment Secrets per AGENTS.md rules
+    const envApiKey = 
+      (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") : null) ||
+      (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) ||
+      (handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") : null) ||
+      (handlerType === "korba" ? Deno.env.get("KORBA_SECRET_KEY") : null);
 
-    const handlerType = provider.handler_type || "standard";
-    const apiKey = (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : (handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") : null)) || provider.api_key;
-    const baseUrl = (provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
+    const apiKey = envApiKey || provider.api_key || "";
+    const envBaseUrl = handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_BASE_URL") : null;
+    const baseUrl = (envBaseUrl || provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
 
-    if (!apiKey) throw new Error("Provider API key missing");
-    if (!baseUrl && handlerType !== "mnotify") throw new Error("Provider Base URL missing");
+    if (!apiKey) throw new Error(`Provider API key missing for ${provider.name}`);
+    if (!baseUrl && handlerType !== "mnotify") throw new Error(`Provider Base URL missing for ${provider.name}`);
 
     let packagesSynced = 0;
     let balance = provider.balance;
 
-    if (handlerType === "datamart" || handlerType === "standard") {
+    if (handlerType !== "datahub" && handlerType !== "korba" && handlerType !== "mnotify") {
       console.log(`Syncing ${handlerType} provider: ${provider.name}`);
 
       const cleanBase = baseUrl.trim().replace(/\/+$/, "");
 
       // 1. Sync Packages
       const packageUrlVariations = [
-        `${cleanBase}/data-packages`,
+        `${cleanBase}/api/bundles.php`,
+        `${cleanBase}/api/bundles`,
         `${cleanBase}/api/data-packages`,
+        `${cleanBase}/data-packages`,
         `${cleanBase}/developer/data-packages`,
         `${cleanBase}/api/developer/data-packages`,
         `${cleanBase}/packages`
       ];
 
+      const requestHeaders: Record<string, string> = {
+        "Authorization": apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`,
+        "X-API-Key": apiKey,
+        "Accept": "application/json"
+      };
+
       let res;
       for (const url of packageUrlVariations) {
-        console.log(`[sync] Trying package URL: ${url}`);
-        const response = await fetch(url, {
-          headers: { "X-API-Key": apiKey, "Accept": "application/json" }
-        });
-        if (response.ok) {
-          res = response;
-          break;
+        console.log(`[sync:${handlerType}] Trying package URL: ${url}`);
+        try {
+          const response = await fetch(url, { headers: requestHeaders });
+          if (response.ok) {
+            res = response;
+            break;
+          }
+        } catch (err: any) {
+          console.warn(`[sync:${handlerType}] Error fetching packages at ${url}:`, err.message);
         }
       }
 
       if (res) {
-        const result = await res.json();
-        const rawData = result.data || result.packages || result;
-        if (rawData && typeof rawData === "object") {
-          const allPackages = [];
+        try {
+          const result = await res.json();
+          const rawData = result.data || result.packages || result.bundles || result;
+          if (rawData && typeof rawData === "object") {
+            const allPackages = [];
 
-          // Handle both DataMart (nested by network) and Standard (array or object)
-          const networks = handlerType === "datamart" ? Object.keys(rawData) : ["MTN", "Telecel", "AirtelTigo"];
+            // Handle both DataMart/BundleZone (nested by network or array)
+            const isArray = Array.isArray(rawData);
+            const networks = (handlerType === "datamart" || !isArray) && typeof rawData === "object" ? Object.keys(rawData) : ["MTN", "Telecel", "AirtelTigo"];
 
-          for (const netKey of networks) {
-            const netPackages = handlerType === "datamart" ? rawData[netKey] : (Array.isArray(rawData) ? rawData : []);
-            if (!Array.isArray(netPackages)) continue;
+            for (const netKey of networks) {
+              const netPackages = (handlerType === "datamart" || !isArray) ? rawData[netKey] : (isArray ? rawData : []);
+              if (!Array.isArray(netPackages)) continue;
 
-            let dbNetwork = netKey;
-            if (netKey === "YELLO") dbNetwork = "MTN";
+              let dbNetwork = netKey;
+              if (netKey === "YELLO") dbNetwork = "MTN";
 
-            for (const pkg of netPackages) {
-              // Skip if package doesn't match network for standard array
-              if (handlerType === "standard" && pkg.network && pkg.network !== netKey) continue;
+              for (const pkg of netPackages) {
+                if (isArray && pkg.network && pkg.network !== netKey && pkg.network !== dbNetwork) continue;
 
-              allPackages.push({
-                provider_id: provider.id,
-                network: dbNetwork,
-                package_name: pkg.capacity >= 1 ? `${pkg.capacity}GB` : (pkg.package_name || `${pkg.mb || 0}MB`),
-                capacity_gb: pkg.capacity || ((pkg.mb || 0) / 1024),
-                cost_price: pkg.price || pkg.amount,
-                external_id: String(pkg.id || pkg.package_id || `${dbNetwork}_${pkg.capacity}`),
-                raw_data: pkg,
-                is_active: true
-              });
+                const name = pkg.name || pkg.package_name || (pkg.capacity >= 1 ? `${pkg.capacity}GB` : `${pkg.mb || 0}MB`);
+                const capGb = pkg.capacity || (pkg.mb ? pkg.mb / 1024 : 0);
+
+                allPackages.push({
+                  provider_id: provider.id,
+                  network: dbNetwork,
+                  package_name: name,
+                  capacity_gb: capGb,
+                  cost_price: pkg.price || pkg.amount || pkg.cost_price || 0,
+                  external_id: String(pkg.id || pkg.package_id || pkg.bundle_id || `${dbNetwork}_${capGb}`),
+                  raw_data: pkg,
+                  is_active: true
+                });
+              }
+            }
+
+            if (allPackages.length > 0) {
+              const { error: upsertError } = await supabaseAdmin
+                .from("provider_packages")
+                .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
+              if (upsertError) console.error("Package upsert error:", upsertError);
+              packagesSynced = allPackages.length;
             }
           }
-
-          if (allPackages.length > 0) {
-            const { error: upsertError } = await supabaseAdmin
-              .from("provider_packages")
-              .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
-            if (upsertError) console.error("Package upsert error:", upsertError);
-            packagesSynced = allPackages.length;
-          }
+        } catch (jsonErr: any) {
+          console.warn(`[sync:${handlerType}] Failed to parse package response JSON:`, jsonErr.message);
         }
       }
 
       // 2. Sync Balance
       const balanceUrlVariations = [
-        `${cleanBase}/balance`,
+        `${cleanBase}/api/balance.php`,
+        `${cleanBase}/api/user.php`,
         `${cleanBase}/api/balance`,
+        `${cleanBase}/balance`,
         `${cleanBase}/developer/balance`,
         `${cleanBase}/api/developer/balance`
       ];
 
       for (const url of balanceUrlVariations) {
-        console.log(`[sync] Trying balance URL: ${url}`);
-        const balanceRes = await fetch(url, {
-          headers: { "X-API-Key": apiKey, "Accept": "application/json" }
-        });
-
-        if (balanceRes.ok) {
-          const bResult = await balanceRes.json();
-          const rawBal = bResult.data?.rawBalance || bResult.data?.balance || bResult.balance;
-          if (rawBal !== undefined) {
-            // Clean currency symbols if it's a string
-            balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
-            console.log(`[sync] Found balance: ${balance}`);
-            break;
+        console.log(`[sync:${handlerType}] Trying balance URL: ${url}`);
+        try {
+          const balanceRes = await fetch(url, { headers: requestHeaders });
+          if (balanceRes.ok) {
+            const bResult = await balanceRes.json();
+            const rawBal = bResult.data?.rawBalance || bResult.data?.balance || bResult.balance || bResult.user?.balance || bResult.wallet_balance;
+            if (rawBal !== undefined) {
+              balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
+              console.log(`[sync:${handlerType}] Found balance: ${balance}`);
+              break;
+            }
           }
+        } catch (err: any) {
+          console.warn(`[sync:${handlerType}] Balance check failed at ${url}:`, err.message);
         }
       }
     } else if (handlerType === "datahub") {
