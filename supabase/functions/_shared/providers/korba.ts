@@ -26,8 +26,8 @@ export class KorbaAdapter implements ProviderAdapter {
 
     const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
     const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
-    const rawRef = String(data.reference || data.orderReference || data.order_id || data.id || "").trim() || crypto.randomUUID();
-    const transactionId = `${rawRef}_${String(Date.now()).slice(-6)}_disb`;
+    const rawRef = String(data.reference || data.orderReference || data.order_id || data.id || "").trim();
+    const transactionId = rawRef ? (rawRef.endsWith("_disb") ? rawRef : `${rawRef}_disb`) : `ord_${crypto.randomUUID()}_disb`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/korba-webhook`);
     const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
 
@@ -345,7 +345,10 @@ export class KorbaAdapter implements ProviderAdapter {
     const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
     const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
 
-    const txId = providerOrderId || reference;
+    let txId = String(providerOrderId || reference || "").trim();
+    if (txId && !txId.endsWith("_disb")) {
+      txId = `${txId}_disb`;
+    }
     if (!txId) return { ok: false, reason: "Missing transaction ID for status check." };
 
     const baseUrl = (provider.base_url || "https://sme.korbaweb.com/api/v1.0").replace(/\/+$/, "");

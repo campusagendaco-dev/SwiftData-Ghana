@@ -751,17 +751,33 @@ serve(async (req: any) => {
       existingOrder.provider_order_id !== "failed_api_call"
     );
 
-    if (existingOrder && existingOrder.status === "processing" && hasAssignedProvider && !force) {
+    const orderUpdatedAt = existingOrder?.updated_at ? new Date(existingOrder.updated_at).getTime() : new Date(existingOrder?.created_at || 0).getTime();
+    const secondsSinceUpdate = (Date.now() - orderUpdatedAt) / 1000;
+
+    if (existingOrder && existingOrder.status === "processing" && !force) {
       if (existingOrder.network === "MTN Mash Up") {
         return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
       }
 
-      console.log(`[verify-payment] Order ${targetReference} is currently in processing state with provider ${existingOrder.provider_id}. Awaiting provider status update.`);
-      return new Response(JSON.stringify({ 
-        status: "processing", 
-        provider_order_id: existingOrder.provider_order_id,
-        message: "Order is in processing state awaiting provider status update." 
-      }), { headers: corsHeaders });
+      // If already assigned to an external provider order ID (and not just our dispatching lock)
+      if (hasAssignedProvider && existingOrder.provider_order_id !== "dispatching") {
+        console.log(`[verify-payment] Order ${targetReference} is currently in processing state with provider ${existingOrder.provider_id}. Awaiting provider status update.`);
+        return new Response(JSON.stringify({ 
+          status: "processing", 
+          provider_order_id: existingOrder.provider_order_id,
+          message: "Order is in processing state awaiting provider status update." 
+        }), { headers: corsHeaders });
+      }
+
+      // If actively in-flight/dispatching within the last 60 seconds, block duplicate concurrent dispatch
+      if (secondsSinceUpdate < 60 && existingOrder.provider_order_id !== "timeout" && existingOrder.provider_order_id !== "failed_api_call") {
+        console.log(`[verify-payment] Order ${targetReference} is currently actively in-flight/dispatching (${secondsSinceUpdate.toFixed(1)}s ago). Blocking duplicate concurrent dispatch.`);
+        return new Response(JSON.stringify({ 
+          status: "processing", 
+          provider_order_id: existingOrder.provider_order_id || "dispatching",
+          message: "Order is currently being dispatched to provider." 
+        }), { headers: corsHeaders });
+      }
     }
 
     // --- 1.5. PRE-VERIFICATION PROVIDER CHECK ---
@@ -1126,11 +1142,19 @@ serve(async (req: any) => {
 
     // --- 3. ATOMIC FULFILLMENT LOCK ---
     const now = Date.now();
-    const oneMinuteAgo = new Date(now - 60000).toISOString();
+    const orderCreatedAt = existingOrder ? new Date(existingOrder.created_at).getTime() : now;
+    const lockUpdatedAt = existingOrder?.updated_at ? new Date(existingOrder.updated_at).getTime() : orderCreatedAt;
+    const lockSecondsSinceUpdate = (now - lockUpdatedAt) / 1000;
     
-    const orderCreatedAt = existingOrder ? new Date(existingOrder.created_at).getTime() : Date.now();
-    const ageInMinutes = (Date.now() - orderCreatedAt) / 60000;
-    const isUndispatchedProcessing = existingOrder?.status === "processing" && (!existingOrder?.provider_id || existingOrder?.provider_order_id === "timeout" || existingOrder?.provider_order_id === "failed_api_call" || force);
+    // An order in 'processing' is ONLY re-claimable if:
+    // 1. It explicitly timed out or failed previously (provider_order_id === "timeout" or "failed_api_call")
+    // 2. OR it has been stuck/abandoned for > 90 seconds AND force is true / explicit retry
+    const isUndispatchedProcessing = existingOrder?.status === "processing" && (
+      existingOrder?.provider_order_id === "timeout" || 
+      existingOrder?.provider_order_id === "failed_api_call" || 
+      (lockSecondsSinceUpdate > 90 && (!existingOrder?.provider_order_id || existingOrder?.provider_order_id === "dispatching")) ||
+      force
+    );
     const allowedStatuses = isUndispatchedProcessing 
       ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing"]
       : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
@@ -1141,6 +1165,7 @@ serve(async (req: any) => {
       .from("orders")
       .update({ 
         status: targetStatus, 
+        provider_order_id: targetStatus === "processing" ? "dispatching" : null,
         paystack_verified_amount: verifiedAmount || existingOrder?.paystack_verified_amount,
         paystack_fee: paystackFeeOnVerified || existingOrder?.paystack_fee,
         failure_reason: null,
@@ -1389,11 +1414,9 @@ serve(async (req: any) => {
     const activeProviders = await resolveProvidersForOrder(supabaseAdmin, claimedOrder);
 
     // --- SIBLING DUPLICATE PROTECTION ---
-    // Look for any identical order submitted in the last 60 minutes for the same phone, network, package, and amount.
-    // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 30 seconds).
-    // Skip this check for Korba orders to allow duplicate back-to-back purchases.
-    const isKorbaPackage = activeProviders && activeProviders.some((p: any) => p?.name === "Korba" || p?.handler_type === "korba");
-    if (isProviderOrder && customerPhone && network && packageSize && !isKorbaPackage) {
+    // Look for any identical order submitted in the last 10 seconds for the same phone, network, package, and amount.
+    // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 10 seconds).
+    if (isProviderOrder && customerPhone && network && packageSize) {
       const tenSecondsAgo = new Date(Date.now() - 10 * 1000).toISOString();
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")

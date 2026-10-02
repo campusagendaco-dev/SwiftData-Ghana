@@ -1140,9 +1140,11 @@ serve(async (req: Request) => {
       .from("orders")
       .update({
         status: targetStatus,
+        provider_order_id: targetStatus === "processing" ? "dispatching" : null,
         failure_reason: null,
         paystack_verified_amount: verifiedAmount,
         paystack_fee: paystackFeeOnVerified,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", orderId)
       .in("status", claimableStatuses)
