@@ -220,13 +220,26 @@ export const getSubAdminInfo = (profile: any) => {
       ? profile.admin_permissions
       : (Array.isArray(profile.metadata?.admin_permissions) ? profile.metadata.admin_permissions : []));
 
-  // Explicit Super Admin (Main Admin) has is_sub_admin === false AND all 8 sub-admin permission modules
-  const isExplicitSuperAdmin = (markupsObj.is_sub_admin === false || profile.is_sub_admin === false || profile.is_super_admin === true || markupsObj.is_super_admin === true) && perms.length === 8;
+  const email = (profile.email || "").toLowerCase().trim();
 
-  // By default, restrict any admin that isn't explicitly configured as full Super Admin
-  const isRestrictedSubAdmin = !isExplicitSuperAdmin;
+  // Known Main Admin master emails and explicit Super Admin flags
+  const isMasterAdminEmail = email === "swiftdatagh.me@gmail.com" || email === "tabuaaeunice780@gmail.com";
+  const isExplicitSuperAdmin = isMasterAdminEmail ||
+    profile.is_super_admin === true ||
+    markupsObj.is_super_admin === true ||
+    markupsObj.is_sub_admin === false ||
+    profile.is_sub_admin === false;
 
-  return { isRestrictedSubAdmin, userPerms: perms };
+  // A profile is ONLY a restricted sub-admin if explicitly set to sub-admin with limited permissions and not a master admin
+  const isSubAdminFlag = (markupsObj.is_sub_admin === true || profile.is_sub_admin === true) && !isMasterAdminEmail;
+  const isRestrictedByPerms = markupsObj.hasOwnProperty("admin_permissions") && perms.length < 8 && !isMasterAdminEmail;
+
+  const isRestrictedSubAdmin = !isExplicitSuperAdmin && (isSubAdminFlag || isRestrictedByPerms);
+
+  return { 
+    isRestrictedSubAdmin, 
+    userPerms: isRestrictedSubAdmin ? perms : ["orders", "agents", "packages", "finance", "communications", "support", "users", "system", "overview"] 
+  };
 };
 
 export const ROUTE_PERM_MAP: Record<string, string> = {
