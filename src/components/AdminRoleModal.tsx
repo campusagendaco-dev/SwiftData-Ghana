@@ -25,14 +25,11 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   {
     key: "orders",
     label: "Orders & Fulfillments",
-    description: "View, retry, refund, check live status, and manage all orders (Data, Airtime, Utility, MashUp, Beneficiary, Checker, API).",
+    description: "View, retry, refund, check live status, and manage standard orders (Data, Airtime, Utility, MashUp, Checker, API).",
     icon: ShoppingCart,
     paths: [
       "/admin/orders",
       "/admin/refunded-orders",
-      "/admin/beneficiary-orders",
-      "/admin/submitted-numbers",
-      "/submit-numbers",
       "/admin/airtime-orders",
       "/admin/mashup-orders",
       "/admin/utility-orders",
@@ -89,23 +86,6 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
     description: "View user profiles, suspend/unsuspend accounts, manage API users, and assign sub-admin roles.",
     icon: Users,
     paths: ["/admin/users", "/admin/api-users"],
-  },
-  {
-    key: "system",
-    label: "System Settings, Security & AI",
-    description: "Access system configuration, security logs, Sentinel AI, feature flags, health status, and audit logs.",
-    icon: Settings,
-    paths: [
-      "/admin/security",
-      "/admin/system-health",
-      "/admin/sentinel",
-      "/admin/ai-strategy",
-      "/admin/api-network",
-      "/admin/system-logs",
-      "/admin/feature-flags",
-      "/admin/audit-logs",
-      "/admin/settings",
-    ],
   },
 ];
 

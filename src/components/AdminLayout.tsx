@@ -242,6 +242,30 @@ export const getSubAdminInfo = (profile: any) => {
   };
 };
 
+export const SUPER_ADMIN_ONLY_PATHS = new Set([
+  // Main Dashboard & Analytics
+  "/admin",
+  "/admin/analytics",
+
+  // Internal Beneficiary & Number Submission Tools (Image 1)
+  "/admin/beneficiary-orders",
+  "/admin/non-beneficiary",
+  "/admin/submitted-numbers",
+  "/admin/submitted-beneficiaries",
+  "/submit-numbers",
+
+  // System, Health, Security, AI & Settings (Image 2)
+  "/admin/security",
+  "/admin/system-health",
+  "/admin/sentinel",
+  "/admin/ai-strategy",
+  "/admin/api-network",
+  "/admin/system-logs",
+  "/admin/feature-flags",
+  "/admin/audit-logs",
+  "/admin/settings",
+]);
+
 export const ROUTE_PERM_MAP: Record<string, string> = {
   "/admin": "overview",
   "/admin/analytics": "overview",
@@ -313,6 +337,7 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const filteredSections = NAV_SECTIONS.map((section) => {
     if (!isRestrictedSubAdmin) return section;
     const allowedItems = section.items.filter((item) => {
+      if (SUPER_ADMIN_ONLY_PATHS.has(item.path)) return false;
       if (item.path === "/admin/account-settings") return true;
       return item.permKey ? userPerms.includes(item.permKey) : false;
     });
@@ -450,15 +475,23 @@ const AdminLayout = () => {
 
   const allowedNavItems = NAV_SECTIONS.flatMap(s => s.items).filter(item => {
     if (!isRestrictedSubAdmin) return true;
+    if (SUPER_ADMIN_ONLY_PATHS.has(item.path)) return false;
     if (item.path === "/admin/account-settings") return true;
     return item.permKey ? userPerms.includes(item.permKey) : false;
   });
 
   const isCurrentPathAllowed = () => {
     if (!isRestrictedSubAdmin) return true;
-    if (location.pathname === "/admin/account-settings") return true;
 
     const cleanPath = location.pathname.split("?")[0].replace(/\/$/, "");
+
+    // Immediately reject all Super Admin only paths for restricted sub-admins
+    if (SUPER_ADMIN_ONLY_PATHS.has(cleanPath) || SUPER_ADMIN_ONLY_PATHS.has(location.pathname)) {
+      return false;
+    }
+
+    if (location.pathname === "/admin/account-settings") return true;
+
     const mappedKey = ROUTE_PERM_MAP[cleanPath];
 
     if (mappedKey) {
