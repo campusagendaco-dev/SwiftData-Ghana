@@ -1367,7 +1367,8 @@ serve(async (req: Request) => {
       const patch: Record<string, unknown> = {};
 
       if (metadata.agent_id) patch.agent_id = metadata.agent_id;
-      if (metadata.customer_phone) patch.customer_phone = metadata.customer_phone;
+      const resolvedCustomerPhone = metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone;
+      if (resolvedCustomerPhone) patch.customer_phone = resolvedCustomerPhone;
       if (metadata.network) patch.network = metadata.network;
       if (metadata.package_size) patch.package_size = metadata.package_size;
       if (metadata.afa_full_name) patch.afa_full_name = metadata.afa_full_name;

@@ -56,7 +56,10 @@ export class StandardAdapter implements ProviderAdapter {
     if (handlerType === "bundlezone") {
       if (endpoint === "status") {
         const ref = String(data.transaction_id || data.reference || data.order_id || "");
-        return [`${clean}/api/order.php?reference=${ref}`, `${clean}/api/order.php`];
+        return [
+          `${clean}/api/status.php?reference=${ref}`,
+          `${clean}/api/status.php?order_id=${ref}`
+        ];
       }
       if (endpoint === "beneficiary") {
         return [`${clean}/api/beneficiary-check.php`];
@@ -138,7 +141,7 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     // --- Purchase Payload Resolutions ---
-    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || data.mobile || data.customerPhone || ""));
+    const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || data.mobile || data.customerPhone || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
     const targetRef = String(data.reference || data.orderReference || data.order_id || data.id || "");
     const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
     const netKey = mapDataNetworkKey(rawNet);
@@ -328,7 +331,7 @@ export class StandardAdapter implements ProviderAdapter {
         }
       }
 
-      const cleanRecipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || data.mobile || data.customerPhone || ""));
+      const cleanRecipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || data.mobile || data.customerPhone || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
 
       return {
         recipient: cleanRecipient || recipient,
@@ -662,7 +665,7 @@ export class StandardAdapter implements ProviderAdapter {
     const isAffordable = category === "affordable" || category === "affordable sme" || category.includes("sme");
 
     if (handlerType === "datahub" && network.includes("MTN") && isAffordable && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
-      const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
+      const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
       const check = await this.verifyDataHubBeneficiary(supabaseAdmin, provider, recipient);
       if (!check.ok) {
         return {
@@ -673,7 +676,7 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "bundlezone" && (network.includes("MTN") || network === "YELLO") && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
-      const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
+      const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
       const check = await this.verifyBundleZoneBeneficiary(supabaseAdmin, provider, recipient, "MTN");
       if (!check.ok) {
         return {
@@ -695,6 +698,35 @@ export class StandardAdapter implements ProviderAdapter {
   ): Promise<ProviderResponse> {
     const handlerType = String(provider?.handler_type || "").toLowerCase();
     if (handlerType === "bundlezone") {
+      try {
+        const apiKey = Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key || "";
+        const baseUrl = (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop").replace(/\/+$/, "");
+        const candidates = [reference, providerOrderId].filter(Boolean);
+        
+        for (const cand of candidates) {
+          for (const param of ["reference", "order_id"]) {
+            const res = await fetch(`${baseUrl}/api/status.php?${param}=${cand}`, {
+              headers: { "X-API-Key": apiKey, "Accept": "application/json" }
+            });
+            if (res.ok) {
+              const json = await res.json().catch(() => ({}));
+              if (json.success && json.data) {
+                const s = String(json.data.status || "").toLowerCase();
+                const isDelivered = ["completed", "delivered", "fulfilled", "success", "successful"].includes(s);
+                const isFailed = ["failed", "rejected", "cancelled", "reversed"].includes(s);
+                return {
+                  ok: true,
+                  status: isDelivered ? "fulfilled" : (isFailed ? "fulfillment_failed" : "processing"),
+                  reason: json.data.message || json.message,
+                  raw: json.data
+                };
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn("[BundleZone-checkStatus] Error:", err.message);
+      }
       return { ok: true, status: "processing", reason: "BundleZone relies on webhook callbacks for status updates." };
     }
     if (handlerType === "spendless") {

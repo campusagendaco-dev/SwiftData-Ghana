@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/utils/auditLogger";
-import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown, Globe, Clock, Ban, MessageCircle, Wallet, Eye, ArrowUpDown, ArrowDown, ArrowUp, ArrowDownWideNarrow } from "lucide-react";
+import { Loader2, Search, RefreshCw, Phone, User, ShieldCheck, Users2, ShoppingCart, ChevronDown, Globe, Clock, Ban, MessageCircle, Wallet, Eye, ArrowUpDown, ArrowDown, ArrowUp, ArrowDownWideNarrow, Key } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
+import AdminRoleModal from "@/components/AdminRoleModal";
 
 interface UserRow {
   user_id: string;
@@ -65,6 +66,7 @@ const AdminUsers = () => {
   const PAGE_SIZE = 50;
   const [actionLoading, setActionLoading] = useState<Record<string, "reset" | "delete" | "approve-sub" | "approve-agent" | "impersonate" | "suspend" | null>>({});
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
+  const [roleModalUser, setRoleModalUser] = useState<UserRow | null>(null);
 
   const fetchUsers = useCallback(async (isLoadMore = false) => {
     if (!isLoadMore) {
@@ -731,6 +733,14 @@ const AdminUsers = () => {
                       >
                         <Wallet className="w-3.5 h-3.5" />
                       </Button>
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={() => setRoleModalUser(user)}
+                        title="Assign Admin Role & Feature Permissions"
+                        className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 hover:bg-purple-500/20 transition-colors"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                      </Button>
                       <Link
                         to={`/admin/orders?agent=${encodeURIComponent(user.full_name || user.email)}`}
                         title="View user orders"
@@ -838,6 +848,14 @@ const AdminUsers = () => {
                   </Button>
                   <Button
                     size="sm" variant="outline"
+                    onClick={() => setRoleModalUser(user)}
+                    title="Assign Admin Role & Feature Permissions"
+                    className="h-8 w-8 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center p-0"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm" variant="outline"
                     onClick={() => handleToggleUserSuspend(user)}
                     disabled={actionLoading[user.user_id] === "suspend"}
                     title={user.is_suspended ? "Restore/Unsuspend user" : "Suspend user"}
@@ -928,6 +946,12 @@ const AdminUsers = () => {
       )}
 
       <UserDetailDrawer user={selectedUser} onClose={() => setSelectedUser(null)} />
+      <AdminRoleModal
+        user={roleModalUser}
+        isOpen={!!roleModalUser}
+        onClose={() => setRoleModalUser(null)}
+        onUpdated={() => fetchUsers()}
+      />
     </div>
   );
 };

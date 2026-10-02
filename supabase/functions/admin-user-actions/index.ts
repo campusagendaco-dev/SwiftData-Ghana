@@ -1697,6 +1697,46 @@ serve(async (req: Request) => {
         });
       }
 
+      case "update_sub_admin_permissions": {
+        const targetId = body.target_user_id || body.user_id;
+        const permsToSave = Array.isArray(body.permissions) ? body.permissions : [];
+        const isSubAdmin = typeof body.is_sub_admin === "boolean" ? body.is_sub_admin : permsToSave.length < 9;
+
+        if (!isValidUuid(targetId)) throw new Error("Invalid or missing target_user_id");
+
+        const { data: prof } = await supabaseAdmin
+          .from("profiles")
+          .select("markups")
+          .eq("user_id", targetId)
+          .maybeSingle();
+
+        const rawCurrent = prof?.markups;
+        let currentMarkups: Record<string, any> = {};
+        if (typeof rawCurrent === "string") {
+          try { currentMarkups = JSON.parse(rawCurrent); } catch (e) { currentMarkups = {}; }
+        } else if (rawCurrent && typeof rawCurrent === "object") {
+          currentMarkups = rawCurrent as Record<string, any>;
+        }
+
+        const { error: updErr } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            markups: {
+              ...currentMarkups,
+              admin_permissions: permsToSave,
+              is_sub_admin: isSubAdmin,
+            },
+          })
+          .eq("user_id", targetId);
+
+        if (updErr) throw updErr;
+
+        return new Response(JSON.stringify({ success: true, message: "Sub-admin permissions updated." }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       case "refund_order": {
         const { orderId, reason } = body;
         if (!isValidUuid(orderId)) throw new Error("Invalid or missing orderId");

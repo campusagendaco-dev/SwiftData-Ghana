@@ -121,6 +121,15 @@ export function getProviderDetails(
 
   // 4. If no provider_id or provider_order_id or metadata is assigned, the order has NOT passed through any provider yet
   if (!matchedName) {
+    const isFailedOrCancelled = status === "fulfillment_failed" || status === "failed" || status === "cancelled" || status === "declined";
+    if (isFailedOrCancelled) {
+      return {
+        name: "Unassigned",
+        badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/20",
+        refId: null,
+        isPendingDispatch: false,
+      };
+    }
     return {
       name: "Pending Dispatch",
       badgeClass: "bg-amber-500/10 text-amber-400 border-amber-500/20",

@@ -16,7 +16,7 @@ serve(async (req: Request) => {
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
-    const { phone, action, order_id, amount, package_size, network, agent_id, reason } = body;
+    const { phone, action, order_id, amount, package_size, network, agent_id, reason, custom_message, status, custom_sender_id } = body;
 
     const shortId = order_id ? String(order_id).slice(0, 8).toUpperCase() : "";
     let message = "";
@@ -32,7 +32,12 @@ serve(async (req: Request) => {
       rLower.includes("unregistered")
     );
 
-    if (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) {
+    if (custom_message && String(custom_message).trim().length > 0) {
+      message = String(custom_message).trim();
+    } else if (action === "receipt" || action === "resend_receipt" || action === "receipt_sms") {
+      const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)})` : "";
+      message = `SwiftData Receipt: Order #${shortId} (${network || ""} ${package_size || ""}${amtPart}) for ${phone || "recipient"} status: ${(status || "fulfilled").toUpperCase()}. Thank you for buying with SwiftData!`;
+    } else if (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) {
       const amtPart = amount ? ` (GHS ${Number(amount || 0).toFixed(2)})` : "";
       message = `SwiftData Notice: Order #${shortId} for ${phone || "recipient"} is IN QUEUE ⏳.\n\n` +
         `Your number is not verified on the MTN beneficiary list. Please submit your number for verification at:\n` +
@@ -52,8 +57,8 @@ serve(async (req: Request) => {
     let sentToRecipient = false;
     let sentToAgent = false;
 
-    // Use "SwiftUpdate" Sender ID specifically for queued/non-beneficiary guide SMS
-    const customSenderId = (action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) ? "SwiftUpdate" : undefined;
+    // Use custom_sender_id if provided, or "SwiftUpdate" for non-beneficiary/queue notice, or default
+    const customSenderId = custom_sender_id || ((action === "non_beneficiary" || action === "beneficiary_guide" || action === "in_queue" || isBeneficiaryReason) ? "SwiftUpdate" : undefined);
 
     // Send SMS to recipient phone number if available
     if (phone) {

@@ -505,3 +505,24 @@ body.shield-active .secure-area {
   user-select: none;
 }
 
+/* ── Mobile iOS WebKit Performance Overrides ─── */
+@media (max-width: 768px) {
+  .glass-card,
+  .glass-card-neo,
+  .glass-panel-cyber {
+    -webkit-backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(8px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  }
+
+  /* Reduce offscreen GPU rasterization and lag on mobile Safari */
+  .glow-yellow,
+  .glow-cyan,
+  .glow-cyan-lg,
+  .glow-gold,
+  .glow-emerald {
+    box-shadow: none !important;
+  }
+}
+
+

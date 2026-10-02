@@ -560,7 +560,7 @@ export const DataPromoPopupModal = () => {
           email={resolvedEmail}
           recipientPhone={phone}
           recipientNetwork={activePromo.network}
-          metadata={{ promo_id: activePromo.id, is_data_promo: true, package_size: activePromo.package_size }}
+          metadata={{ promo_id: activePromo.id, is_data_promo: true, package_size: activePromo.package_size, customer_phone: phone.trim(), phone: phone.trim() }}
           onSuccess={handlePaystackSuccess}
           onFailure={(err) => toast({ title: "Payment Failed", description: err, variant: "destructive" })}
         />

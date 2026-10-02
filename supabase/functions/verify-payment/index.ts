@@ -89,9 +89,18 @@ function translateFailureReason(reason: string | null | undefined): string | nul
   if (!reason) return null;
   const r = String(reason).trim().toUpperCase();
   if (
+    r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED") ||
+    r.includes("LOW_BALANCE") ||
+    r.includes("LOW BALANCE") ||
+    r.includes("PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")
+  ) {
+    return "Mobile Money payment declined: Customer wallet has insufficient funds or has reached its daily MoMo transaction limit.";
+  }
+  if (r.includes("PAYEE_LIMIT_REACHED")) {
+    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+  }
+  if (
     r.includes("BENEFICIARY") ||
-    r.includes("PAYEE") ||
-    r.includes("LIMIT") ||
     r.includes("NOT_ALLOWED") ||
     r.includes("NOT ALLOWED") ||
     r.includes("NOT ADDED") ||
@@ -102,7 +111,7 @@ function translateFailureReason(reason: string | null | undefined): string | nul
   ) {
     return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
   }
-  if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
+  if (r.includes("CUSTOMER ABANDONED TRANSACTION") || r.includes("CUSTOMER ABANDONED")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
   }
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {

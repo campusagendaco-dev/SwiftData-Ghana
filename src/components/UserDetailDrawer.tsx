@@ -15,6 +15,7 @@ import {
   ChevronDown, ChevronUp, Edit3, ArrowRight, ShieldAlert,
   Bell, Radio
 } from "lucide-react";
+import AdminRoleModal from "@/components/AdminRoleModal";
 
 interface UserRow {
   user_id: string;
@@ -202,6 +203,8 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     setPhoneInput(user?.phone || "");
     setEditingPhone(false);
   }, [user?.user_id, user?.admin_notes, user?.is_suspended, user?.phone]);
+
+  const [roleModalOpen, setRoleModalOpen] = useState(false);
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -813,6 +816,16 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
             >
               {suspending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
               {isSuspended ? "Unsuspend" : "Suspend"}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setRoleModalOpen(true)}
+              className="h-8 px-3 text-xs gap-1.5 rounded-xl bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/25 font-bold transition-all"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+              Role & Perms
             </Button>
 
             {!user.agent_approved && (
@@ -1514,6 +1527,12 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           )}
         </div>
       </SheetContent>
+
+      <AdminRoleModal
+        user={user}
+        isOpen={roleModalOpen}
+        onClose={() => setRoleModalOpen(false)}
+      />
     </Sheet>
   );
 };

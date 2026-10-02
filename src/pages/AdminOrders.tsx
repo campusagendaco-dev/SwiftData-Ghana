@@ -14,12 +14,13 @@ import {
   CheckCircle2, PlayCircle, UserCheck, Download,
   Coins, ShieldAlert, Zap, Check, X,
   DollarSign, Sparkles, AlertCircle, Copy, Activity,
-  Calendar, FileSpreadsheet, Edit3
+  Calendar, FileSpreadsheet, Edit3, FileText, Smartphone
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import UserDetailDrawer from "@/components/UserDetailDrawer";
+import WhatsAppReceiptModal from "@/components/WhatsAppReceiptModal";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 import { logAudit } from "@/utils/auditLogger";
@@ -151,6 +152,101 @@ export default function AdminOrders() {
   const [newStatusReason, setNewStatusReason] = useState("");
   const [updatingSingleStatus, setUpdatingSingleStatus] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Receipt Modal and SMS Resend State
+  const [receiptOrder, setReceiptOrder] = useState<OrderRow | null>(null);
+  const [resendingSmsId, setResendingSmsId] = useState<string | null>(null);
+  const [bulkResendingSms, setBulkResendingSms] = useState(false);
+
+  const handleQuickResendSms = async (order: OrderRow) => {
+    if (!order.customer_phone) {
+      toast({ title: "No Phone Number", description: "Order has no customer phone number.", variant: "destructive" });
+      return;
+    }
+    setResendingSmsId(order.id);
+    try {
+      const statusLabel = order.status === "fulfilled" ? "FULFILLED & DELIVERED 🎉" :
+                          order.status === "processing" ? "PROCESSING ⏳" :
+                          order.status === "pending" ? "PENDING ⏳" :
+                          order.status === "fulfillment_failed" || order.status === "failed" ? "FAILED ❌" :
+                          order.status.toUpperCase();
+
+      const smsMessage = `SwiftData Alert: Order #${order.id.slice(0, 8).toUpperCase()} for ${order.customer_phone} (${order.network || ""} ${order.package_size || ""}, GHS ${Number(order.amount || 0).toFixed(2)}) Status: [${statusLabel}]. Thank you!`;
+      const { error } = await supabase.functions.invoke("send-order-sms", {
+        body: {
+          phone: order.customer_phone,
+          action: "custom",
+          custom_message: smsMessage,
+          order_id: order.id,
+          amount: order.amount,
+          package_size: order.package_size,
+          network: order.network,
+          agent_id: order.agent_id,
+          status: order.status,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "SMS Resent! 📱",
+        description: `Order receipt SMS sent to ${order.customer_phone}.`,
+      });
+    } catch (err: any) {
+      console.error("Resend SMS error:", err);
+      toast({
+        title: "Failed to Send SMS",
+        description: err.message || "An error occurred while sending SMS.",
+        variant: "destructive",
+      });
+    } finally {
+      setResendingSmsId(null);
+    }
+  };
+
+  const handleBulkResendSms = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkResendingSms(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    const selectedOrdersList = allOrders.filter(o => selectedIds.has(o.id) && o.customer_phone);
+
+    for (const order of selectedOrdersList) {
+      try {
+        const statusLabel = order.status === "fulfilled" ? "FULFILLED & DELIVERED 🎉" :
+                            order.status === "processing" ? "PROCESSING ⏳" :
+                            order.status === "pending" ? "PENDING ⏳" :
+                            order.status === "fulfillment_failed" || order.status === "failed" ? "FAILED ❌" :
+                            order.status.toUpperCase();
+
+        const smsMessage = `SwiftData Alert: Order #${order.id.slice(0, 8).toUpperCase()} for ${order.customer_phone} (${order.network || ""} ${order.package_size || ""}, GHS ${Number(order.amount || 0).toFixed(2)}) Status: [${statusLabel}]. Thank you!`;
+        const { error } = await supabase.functions.invoke("send-order-sms", {
+          body: {
+            phone: order.customer_phone,
+            action: "custom",
+            custom_message: smsMessage,
+            order_id: order.id,
+            amount: order.amount,
+            package_size: order.package_size,
+            network: order.network,
+            agent_id: order.agent_id,
+            status: order.status,
+          },
+        });
+        if (error) failCount++;
+        else successCount++;
+      } catch (err) {
+        failCount++;
+      }
+    }
+
+    setBulkResendingSms(false);
+    toast({
+      title: "Bulk SMS Complete 📱",
+      description: `Sent SMS to ${successCount} order(s). ${failCount > 0 ? `Failed: ${failCount}` : ""}`,
+    });
+  };
 
   const fetchAutoRouterQueueCount = useCallback(async () => {
     try {
@@ -1543,6 +1639,16 @@ export default function AdminOrders() {
               {bulkUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Apply Bulk Change
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || bulkResendingSms}
+              onClick={handleBulkResendSms}
+              className="h-8 gap-1.5 rounded-lg text-xs font-bold border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20"
+            >
+              {bulkResendingSms ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Smartphone className="w-3.5 h-3.5" />}
+              Resend SMS ({selectedIds.size})
+            </Button>
           </div>
         </div>
       </div>
@@ -1803,13 +1909,34 @@ export default function AdminOrders() {
                             <Button
                               size="sm"
                               variant="outline"
+                              className="text-[10px] gap-1 h-7 px-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg font-bold"
+                              onClick={() => setReceiptOrder(order)}
+                              title="Copy Receipt & Send/Resend SMS"
+                            >
+                              <FileText className="w-3 h-3" />
+                              Receipt
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-[10px] gap-1 h-7 px-2 border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg font-bold"
+                              disabled={resendingSmsId === order.id}
+                              onClick={() => handleQuickResendSms(order)}
+                              title="Resend SMS to Customer"
+                            >
+                              {resendingSmsId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
+                              SMS
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="text-[10px] gap-1 h-7 px-2 border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 rounded-lg font-bold"
                               disabled={checkingStatusId === order.id}
                               onClick={() => handleCheckProviderStatus(order.id)}
                               title="Check exact live status from upstream provider"
                             >
                               {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
-                              Check Status
+                              Status
                             </Button>
                             {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                               <Button
@@ -1947,17 +2074,38 @@ export default function AdminOrders() {
                 {order.failure_reason && (
                   <p className="text-[10px] text-rose-400 italic truncate max-w-[160px]">{order.failure_reason}</p>
                 )}
-                <div className="flex items-center gap-1.5 ml-auto">
+                <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="text-xs gap-1 h-8 px-2 rounded-lg border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 font-bold"
+                    className="text-xs gap-1 h-8 px-2 rounded-lg border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-bold"
+                    onClick={() => setReceiptOrder(order)}
+                    title="Copy Receipt & SMS"
+                  >
+                    <FileText className="w-3 h-3" />
+                    Receipt
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs gap-1 h-8 px-2 rounded-lg border-cyan-500/30 bg-cyan-500/10 text-cyan-400 font-bold"
+                    disabled={resendingSmsId === order.id}
+                    onClick={() => handleQuickResendSms(order)}
+                    title="Resend SMS"
+                  >
+                    {resendingSmsId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Smartphone className="w-3 h-3" />}
+                    SMS
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs gap-1 h-8 px-2 rounded-lg border-cyan-500/30 bg-cyan-500/10 text-cyan-400 font-bold"
                     disabled={checkingStatusId === order.id}
                     onClick={() => handleCheckProviderStatus(order.id)}
                     title="Check exact live status from provider"
                   >
                     {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
-                    Check Status
+                    Status
                   </Button>
                   {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                     <Button
@@ -2171,6 +2319,24 @@ export default function AdminOrders() {
           onClose={() => setSelectedUserForDrawer(null)}
         />
       )}
+
+      {/* Order Receipt & SMS Resend Modal */}
+      <WhatsAppReceiptModal
+        order={receiptOrder ? {
+          id: receiptOrder.id,
+          network: receiptOrder.network || "Bundle",
+          package_size: receiptOrder.package_size || "",
+          customer_phone: receiptOrder.customer_phone || "",
+          customer_name: receiptOrder.customer_name,
+          amount: receiptOrder.amount,
+          created_at: receiptOrder.created_at,
+          status: receiptOrder.status,
+          store_name: profiles[receiptOrder.agent_id]?.full_name || "SwiftData Hub",
+          agent_id: receiptOrder.agent_id,
+        } : null}
+        isOpen={!!receiptOrder}
+        onClose={() => setReceiptOrder(null)}
+      />
     </div>
   );
 }

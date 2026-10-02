@@ -54,6 +54,14 @@ export async function dispatchOrderWithFailover(
   supabaseAdmin: any,
   order: any
 ): Promise<DispatchResult> {
+  // Fallback to metadata payment_phone if customer_phone is missing/null
+  if (!order.customer_phone && (order.metadata?.payment_phone || order.metadata?.customer_phone || order.metadata?.phone || order.metadata?.recipient_phone)) {
+    order.customer_phone = order.metadata.payment_phone || order.metadata.customer_phone || order.metadata.phone || order.metadata.recipient_phone;
+    if (order.id) {
+      Promise.resolve(supabaseAdmin.from("orders").update({ customer_phone: order.customer_phone }).eq("id", order.id)).catch(() => {});
+    }
+  }
+
   const activeProviders = await resolveProvidersForOrder(supabaseAdmin, order);
 
   if (!activeProviders || activeProviders.length === 0) {

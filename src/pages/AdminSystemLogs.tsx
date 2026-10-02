@@ -133,7 +133,7 @@ export default function AdminSystemLogs() {
     setLoading(true);
     let query = (supabase as any)
       .from("system_logs")
-      .select("*", { count: "exact" })
+      .select("*", { count: "estimated" })
       .gte("ts", getSince())
       .order("ts", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);

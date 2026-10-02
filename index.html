@@ -95,7 +95,7 @@
           }
           
           // Background fetch to ensure fresh settings
-          var url = "https://lsocdjpflecduumopijn.supabase.co/rest/v1/agent_stores?custom_domain=ilike." + host + "&select=store_name,store_logo_url,store_primary_color,slug";
+          var url = "https://lsocdjpflecduumopijn.supabase.co/rest/v1/agent_stores?custom_domain=ilike.*" + encodeURIComponent(host) + "*&select=store_name,store_logo_url,store_primary_color,slug";
           fetch(url, {
             headers: {
               "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzb2NkanBmbGVjZHV1bW9waWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2Nzk3NDMsImV4cCI6MjA5MTI1NTc0M30.4RnQ7s2qCXO4Qqlw1WKqTfZBfB-1Kq3toyXpGHnbv_0",
@@ -201,9 +201,10 @@
     <!-- ═══════════════════════════════════════════════
          FAVICON & PWA
     ═══════════════════════════════════════════════ -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/logo.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/logo.png" />
-    <link rel="shortcut icon" href="/logo.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/logo.png" />
     <meta name="msapplication-TileColor" content="#f59e0b" />
     <meta name="msapplication-TileImage" content="/logo.png" />

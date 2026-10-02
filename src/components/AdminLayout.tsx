@@ -15,13 +15,133 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { TraditionalBackground } from "@/components/TraditionalBackground";
 
+export interface NavItem {
+  label: string;
+  icon: any;
+  path: string;
+  permKey?: string;
+}
+
+export interface NavSection {
+  title: string;
+  permKey?: string;
+  items: NavItem[];
+}
+
+export const NAV_SECTIONS: NavSection[] = [
+  {
+    title: "Main",
+    permKey: "overview",
+    items: [
+      { label: "Overview",   icon: LayoutDashboard, path: "/admin", permKey: "overview" },
+      { label: "Analytics",  icon: BarChart3,        path: "/admin/analytics", permKey: "overview" },
+    ],
+  },
+  {
+    title: "Operations & Orders",
+    permKey: "orders",
+    items: [
+      { label: "Orders",       icon: ShoppingCart, path: "/admin/orders", permKey: "orders" },
+      { label: "Airtime Orders", icon: Phone,        path: "/admin/airtime-orders", permKey: "orders" },
+      { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders", permKey: "orders" },
+      { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders", permKey: "orders" },
+      { label: "Standard Orders", icon: Package,     path: "/admin/standard-orders", permKey: "orders" },
+      { label: "Checker Orders",  icon: GraduationCap, path: "/admin/checker-orders", permKey: "orders" },
+      { label: "Refunded Orders", icon: RotateCcw, path: "/admin/refunded-orders", permKey: "orders" },
+      { label: "Non-Beneficiary List", icon: ListCheck, path: "/admin/beneficiary-orders", permKey: "orders" },
+      { label: "Submitted Numbers", icon: PhoneCall, path: "/admin/submitted-numbers", permKey: "orders" },
+      { label: "Submit Beneficiary Numbers", icon: Send, path: "/submit-numbers", permKey: "orders" },
+      { label: "API Orders",    icon: ShoppingCart, path: "/admin/api-orders", permKey: "orders" },
+    ],
+  },
+  {
+    title: "Agents & Network",
+    permKey: "agents",
+    items: [
+      { label: "Swift Vendor Master", icon: ShieldAlert, path: "/admin/swift-vendor", permKey: "agents" },
+      { label: "Agents",       icon: ShieldCheck,  path: "/admin/agents", permKey: "agents" },
+      { label: "Sub-Agents",   icon: Users2,       path: "/admin/sub-agents", permKey: "agents" },
+      { label: "Agent Performance", icon: UserCheck,   path: "/admin/agent-performance", permKey: "agents" },
+    ],
+  },
+  {
+    title: "Packages & Pricing",
+    permKey: "packages",
+    items: [
+      { label: "Packages",     icon: Package,      path: "/admin/packages", permKey: "packages" },
+      { label: "Korba Hub",    icon: Activity,     path: "/admin/korba", permKey: "packages" },
+      { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages", permKey: "packages" },
+      { label: "Promo Codes",  icon: Ticket,       path: "/admin/promotions", permKey: "packages" },
+    ],
+  },
+  {
+    title: "Financials & Profits",
+    permKey: "finance",
+    items: [
+      { label: "Wallet Top-Up",icon: CreditCard,   path: "/admin/wallet-topup", permKey: "finance" },
+      { label: "Withdrawals",  icon: Wallet,        path: "/admin/withdrawals", permKey: "finance" },
+      { label: "Reconciliation", icon: CreditCard,   path: "/admin/reconciliation", permKey: "finance" },
+      { label: "Profits",          icon: TrendingUp,  path: "/admin/profits", permKey: "finance" },
+      { label: "P&L Report",        icon: LineChart,   path: "/admin/pnl", permKey: "finance" },
+      { label: "Credit Mgmt",       icon: Banknote,    path: "/admin/credit-management", permKey: "finance" },
+    ],
+  },
+  {
+    title: "Communications",
+    permKey: "communications",
+    items: [
+      { label: "Broadcast",         icon: Megaphone,   path: "/admin/broadcast", permKey: "communications" },
+      { label: "Voice Calls (mNotify)", icon: PhoneCall, path: "/admin/voice-sms", permKey: "communications" },
+      { label: "Promo Banners",     icon: ImageIcon,   path: "/admin/banners", permKey: "communications" },
+      { label: "SMS Templates",  icon: MessageSquare, path: "/admin/sms-templates", permKey: "communications" },
+    ],
+  },
+  {
+    title: "Support & Engagement",
+    permKey: "support",
+    items: [
+      { label: "Support Tickets", icon: LifeBuoy,   path: "/admin/tickets", permKey: "support" },
+      { label: "Notifications",   icon: Bell,        path: "/admin/notifications", permKey: "support" },
+      { label: "Engagement Hub",  icon: Sparkles,    path: "/admin/engagement", permKey: "support" },
+    ],
+  },
+  {
+    title: "Users & Accounts",
+    permKey: "users",
+    items: [
+      { label: "Users",           icon: Users,       path: "/admin/users", permKey: "users" },
+      { label: "API Users",     icon: Key,        path: "/admin/api-users", permKey: "users" },
+    ],
+  },
+  {
+    title: "System & AI",
+    permKey: "system",
+    items: [
+      { label: "Security",      icon: ShieldCheck, path: "/admin/security", permKey: "system" },
+      { label: "System Health", icon: Activity,    path: "/admin/system-health", permKey: "system" },
+      { label: "Sentinel AI",   icon: Brain,       path: "/admin/sentinel", permKey: "system" },
+      { label: "AI Intelligence Hub", icon: Brain, path: "/admin/ai-strategy", permKey: "system" },
+      { label: "API Network Intelligence", icon: Activity, path: "/admin/api-network", permKey: "system" },
+      { label: "System Logs",    icon: ScrollText,    path: "/admin/system-logs", permKey: "system" },
+      { label: "Feature Flags",  icon: Flag,          path: "/admin/feature-flags", permKey: "system" },
+      { label: "Audit Logs",     icon: FileSearch,    path: "/admin/audit-logs", permKey: "system" },
+      { label: "Settings",      icon: Settings,   path: "/admin/settings", permKey: "system" },
+    ],
+  },
+  {
+    title: "Account",
+    items: [
+      { label: "My Security",   icon: Key,        path: "/admin/account-settings" },
+    ],
+  },
+];
+
 // ── COMMAND PALETTE COMPONENT ──────────────────────────────────────────────────
-const AdminCommandPalette = ({ open, setOpen, onNavigate }: { open: boolean, setOpen: (v: boolean) => void, onNavigate: (p: string) => void }) => {
+const AdminCommandPalette = ({ open, setOpen, onNavigate, allowedItems }: { open: boolean, setOpen: (v: boolean) => void, onNavigate: (p: string) => void, allowedItems: NavItem[] }) => {
   const [query, setQuery] = useState("");
   const { isDark } = useAppTheme();
   
-  const allItems = NAV_SECTIONS.flatMap(s => s.items);
-  const filtered = query ? allItems.filter(i => i.label.toLowerCase().includes(query.toLowerCase())) : [];
+  const filtered = query ? allowedItems.filter(i => i.label.toLowerCase().includes(query.toLowerCase())) : [];
 
   if (!open) return null;
 
@@ -56,7 +176,7 @@ const AdminCommandPalette = ({ open, setOpen, onNavigate }: { open: boolean, set
             </div>
           ) : (
             <div className="space-y-1">
-              {(query ? filtered : allItems.slice(0, 6)).map((item, i) => (
+              {(query ? filtered : allowedItems.slice(0, 6)).map((item) => (
                 <button
                   key={item.path}
                   onClick={() => { onNavigate(item.path); setOpen(false); }}
@@ -83,79 +203,82 @@ const AdminCommandPalette = ({ open, setOpen, onNavigate }: { open: boolean, set
   );
 };
 
-const NAV_SECTIONS = [
-  {
-    title: "Main",
-    items: [
-      { label: "Overview",   icon: LayoutDashboard, path: "/admin" },
-      { label: "Analytics",  icon: BarChart3,        path: "/admin/analytics" },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      { label: "Swift Vendor Master", icon: ShieldAlert, path: "/admin/swift-vendor" },
-      { label: "Agents",       icon: ShieldCheck,  path: "/admin/agents" },
-      { label: "Sub-Agents",   icon: Users2,       path: "/admin/sub-agents" },
-      { label: "Orders",       icon: ShoppingCart, path: "/admin/orders" },
-      { label: "Refunded Orders", icon: RotateCcw, path: "/admin/refunded-orders" },
-      { label: "Non-Beneficiary List", icon: ListCheck, path: "/admin/beneficiary-orders" },
-      { label: "Submitted Numbers", icon: PhoneCall, path: "/admin/submitted-numbers" },
-      { label: "Submit Beneficiary Numbers", icon: Send, path: "/submit-numbers" },
-      { label: "Airtime Orders", icon: Phone,        path: "/admin/airtime-orders" },
-      { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders" },
-      { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders" },
-      { label: "Standard Orders", icon: Package,     path: "/admin/standard-orders" },
-      { label: "Checker Orders",  icon: GraduationCap, path: "/admin/checker-orders" },
-      { label: "Packages",     icon: Package,      path: "/admin/packages" },
-      { label: "Korba Hub",    icon: Activity,     path: "/admin/korba" },
-      { label: "Korba Packages", icon: Package,    path: "/admin/korba/packages" },
-      { label: "Promo Codes",  icon: Ticket,       path: "/admin/promotions" },
-      { label: "Wallet Top-Up",icon: CreditCard,   path: "/admin/wallet-topup" },
-      { label: "Withdrawals",  icon: Wallet,        path: "/admin/withdrawals" },
-      { label: "Reconciliation", icon: CreditCard,   path: "/admin/reconciliation" },
-      { label: "Profits",          icon: TrendingUp,  path: "/admin/profits" },
-      { label: "Agent Performance", icon: UserCheck,   path: "/admin/agent-performance" },
-      { label: "P&L Report",        icon: LineChart,   path: "/admin/pnl" },
-      { label: "Credit Mgmt",       icon: Banknote,    path: "/admin/credit-management" },
-      { label: "Broadcast",         icon: Megaphone,   path: "/admin/broadcast" },
-      { label: "Voice Calls (mNotify)", icon: PhoneCall, path: "/admin/voice-sms" },
-      { label: "Promo Banners",     icon: ImageIcon,   path: "/admin/banners" },
-    ],
-  },
-  {
-    title: "Support & Users",
-    items: [
-      { label: "Support Tickets", icon: LifeBuoy,   path: "/admin/tickets" },
-      { label: "Notifications",   icon: Bell,        path: "/admin/notifications" },
-      { label: "Engagement Hub",  icon: Sparkles,    path: "/admin/engagement" },
-      { label: "Users",           icon: Users,       path: "/admin/users" },
-    ],
-  },
-  {
-    title: "System",
-    items: [
-      { label: "Security",      icon: ShieldCheck, path: "/admin/security" },
-      { label: "System Health", icon: Activity,    path: "/admin/system-health" },
-      { label: "Sentinel AI",   icon: Brain,       path: "/admin/sentinel" },
-      { label: "AI Intelligence Hub", icon: Brain, path: "/admin/ai-strategy" },
-      { label: "API Network Intelligence", icon: Activity, path: "/admin/api-network" },
-      { label: "System Logs",    icon: ScrollText,    path: "/admin/system-logs" },
-      { label: "Feature Flags",  icon: Flag,          path: "/admin/feature-flags" },
-      { label: "SMS Templates",  icon: MessageSquare, path: "/admin/sms-templates" },
-      { label: "Audit Logs",     icon: FileSearch,    path: "/admin/audit-logs" },
-      { label: "API Users",     icon: Key,        path: "/admin/api-users" },
-      { label: "API Orders",    icon: ShoppingCart, path: "/admin/api-orders" },
-      { label: "Settings",      icon: Settings,   path: "/admin/settings" },
-    ],
-  },
-  {
-    title: "Account",
-    items: [
-      { label: "My Security",   icon: Key,        path: "/admin/account-settings" },
-    ],
-  },
-];
+export const getSubAdminInfo = (profile: any) => {
+  if (!profile) return { isRestrictedSubAdmin: false, userPerms: [] as string[] };
+  
+  const rawMarkups = profile.markups;
+  let markupsObj: Record<string, any> = {};
+  if (typeof rawMarkups === "string") {
+    try { markupsObj = JSON.parse(rawMarkups); } catch (e) { markupsObj = {}; }
+  } else if (rawMarkups && typeof rawMarkups === "object") {
+    markupsObj = rawMarkups;
+  }
+
+  const perms: string[] = Array.isArray(markupsObj.admin_permissions)
+    ? markupsObj.admin_permissions
+    : (Array.isArray(profile.admin_permissions)
+      ? profile.admin_permissions
+      : (Array.isArray(profile.metadata?.admin_permissions) ? profile.metadata.admin_permissions : []));
+
+  // Explicit Super Admin (Main Admin) has is_sub_admin === false AND all 8 sub-admin permission modules
+  const isExplicitSuperAdmin = (markupsObj.is_sub_admin === false || profile.is_sub_admin === false || profile.is_super_admin === true || markupsObj.is_super_admin === true) && perms.length === 8;
+
+  // By default, restrict any admin that isn't explicitly configured as full Super Admin
+  const isRestrictedSubAdmin = !isExplicitSuperAdmin;
+
+  return { isRestrictedSubAdmin, userPerms: perms };
+};
+
+export const ROUTE_PERM_MAP: Record<string, string> = {
+  "/admin": "overview",
+  "/admin/analytics": "overview",
+  "/admin/orders": "orders",
+  "/admin/refunded-orders": "orders",
+  "/admin/refunds": "orders",
+  "/admin/beneficiary-orders": "orders",
+  "/admin/non-beneficiary": "orders",
+  "/admin/submitted-numbers": "orders",
+  "/admin/submitted-beneficiaries": "orders",
+  "/submit-numbers": "orders",
+  "/admin/airtime-orders": "orders",
+  "/admin/mashup-orders": "orders",
+  "/admin/utility-orders": "orders",
+  "/admin/standard-orders": "orders",
+  "/admin/checker-orders": "orders",
+  "/admin/api-orders": "orders",
+  "/admin/swift-vendor": "agents",
+  "/admin/agents": "agents",
+  "/admin/sub-agents": "agents",
+  "/admin/agent-performance": "agents",
+  "/admin/packages": "packages",
+  "/admin/korba": "packages",
+  "/admin/korba/packages": "packages",
+  "/admin/promotions": "packages",
+  "/admin/wallet-topup": "finance",
+  "/admin/withdrawals": "finance",
+  "/admin/reconciliation": "finance",
+  "/admin/profits": "finance",
+  "/admin/pnl": "finance",
+  "/admin/credit-management": "finance",
+  "/admin/broadcast": "communications",
+  "/admin/voice-sms": "communications",
+  "/admin/banners": "communications",
+  "/admin/sms-templates": "communications",
+  "/admin/tickets": "support",
+  "/admin/notifications": "support",
+  "/admin/engagement": "support",
+  "/admin/users": "users",
+  "/admin/api-users": "users",
+  "/admin/security": "system",
+  "/admin/system-health": "system",
+  "/admin/sentinel": "system",
+  "/admin/ai-strategy": "system",
+  "/admin/api-network": "system",
+  "/admin/system-logs": "system",
+  "/admin/feature-flags": "system",
+  "/admin/audit-logs": "system",
+  "/admin/settings": "system",
+};
 
 const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const { signOut, profile } = useAuth();
@@ -171,8 +294,20 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
 
   const isActive = (path: string) => location.pathname === path;
 
+  // Granular Sub-Admin Filter
+  const { isRestrictedSubAdmin, userPerms } = getSubAdminInfo(profile);
+
+  const filteredSections = NAV_SECTIONS.map((section) => {
+    if (!isRestrictedSubAdmin) return section;
+    const allowedItems = section.items.filter((item) => {
+      if (item.path === "/admin/account-settings") return true;
+      return item.permKey ? userPerms.includes(item.permKey) : false;
+    });
+    return { ...section, items: allowedItems };
+  }).filter((section) => section.items.length > 0);
+
   return (
-    <div className={`flex flex-col h-full relative overflow-hidden bg-transparent`}>
+    <div className={`flex flex-col h-full relative overflow-hidden ${isDark ? "bg-[#0a0a0f]" : "bg-white"}`}>
       {/* Ambient glow */}
       <div className={`absolute top-0 left-0 w-full h-32 blur-[50px] pointer-events-none ${isDark ? "bg-amber-500/8" : "bg-amber-400/5"}`} />
 
@@ -190,7 +325,9 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
           <p className={`font-black tracking-tight leading-none text-base ${isDark ? "text-white" : "text-gray-900"}`}>
             Admin<span className="text-amber-500">Pro</span>
           </p>
-          <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isDark ? "text-white/35" : "text-gray-400"}`}>Control Center</p>
+          <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${isDark ? "text-white/35" : "text-gray-400"}`}>
+            {isRestrictedSubAdmin ? "Sub-Admin Portal" : "Control Center"}
+          </p>
         </div>
       </div>
 
@@ -202,14 +339,16 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
           </div>
           <div className="min-w-0">
             <p className={`text-xs font-bold truncate leading-none ${isDark ? "text-white/90" : "text-gray-800"}`}>{profile.full_name || "Admin"}</p>
-            <p className={`text-[10px] mt-0.5 truncate ${isDark ? "text-white/35" : "text-gray-400"}`}>Administrator</p>
+            <p className={`text-[10px] mt-0.5 truncate ${isDark ? "text-white/35" : "text-gray-400"}`}>
+              {isRestrictedSubAdmin ? "Sub-Administrator" : "Super Administrator"}
+            </p>
           </div>
         </div>
       )}
 
       {/* Nav */}
       <nav className="flex-1 px-3 overflow-y-auto py-1 relative z-10 scrollbar-none space-y-4">
-        {NAV_SECTIONS.map((section) => (
+        {filteredSections.map((section) => (
           <div key={section.title}>
             <p className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 mb-1.5 ${isDark ? "text-white/25" : "text-gray-400"}`}>
               {section.title}
@@ -253,19 +392,14 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
 
       {/* Footer controls */}
       <div className="p-3 relative z-10 space-y-2">
-        {/* Dark/Light toggle */}
         <button
           onClick={toggleDark}
           className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-            isDark
-              ? "text-white/55 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border-white/5"
-              : "text-gray-600 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 border-gray-200"
+            isDark ? "bg-white/5 border-white/10 text-white/70 hover:bg-white/10" : "bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200"
           }`}
         >
-          {isDark
-            ? <><Sun className="w-4 h-4 text-amber-400" /><span>Switch to Light Mode</span></>
-            : <><Moon className="w-4 h-4 text-gray-500" /><span>Switch to Dark Mode</span></>
-          }
+          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-600" />}
+          <span>{isDark ? "Light Interface" : "Dark Interface"}</span>
         </button>
 
         <button
@@ -283,6 +417,7 @@ const AdminLayout = () => {
   const [open, setOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const { isDark, toggleDark } = useAppTheme();
+  const { profile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -298,15 +433,59 @@ const AdminLayout = () => {
     return () => document.removeEventListener("keydown", down);
   }, []);
 
+  const { isRestrictedSubAdmin, userPerms } = getSubAdminInfo(profile);
+
+  const allowedNavItems = NAV_SECTIONS.flatMap(s => s.items).filter(item => {
+    if (!isRestrictedSubAdmin) return true;
+    if (item.path === "/admin/account-settings") return true;
+    return item.permKey ? userPerms.includes(item.permKey) : false;
+  });
+
+  const isCurrentPathAllowed = () => {
+    if (!isRestrictedSubAdmin) return true;
+    if (location.pathname === "/admin/account-settings") return true;
+
+    const cleanPath = location.pathname.split("?")[0].replace(/\/$/, "");
+    const mappedKey = ROUTE_PERM_MAP[cleanPath];
+
+    if (mappedKey) {
+      return userPerms.includes(mappedKey);
+    }
+
+    const currentItem = NAV_SECTIONS.flatMap(s => s.items).find(i => i.path === cleanPath);
+    if (currentItem?.permKey) {
+      return userPerms.includes(currentItem.permKey);
+    }
+
+    // Block any unmapped /admin route for restricted sub-admins
+    if (cleanPath.startsWith("/admin")) {
+      return false;
+    }
+
+    return true;
+  };
+
   const currentPage = NAV_SECTIONS.flatMap((s) => s.items).find(
     (item) => location.pathname === item.path,
   );
+
+  const pathAllowed = isCurrentPathAllowed();
+
+  // Auto-redirect sub-admins away from unpermitted root paths (e.g. landing on /admin when lacking "overview" permission)
+  useEffect(() => {
+    if (isRestrictedSubAdmin && !pathAllowed) {
+      const firstAllowed = allowedNavItems[0]?.path || "/admin/account-settings";
+      if (firstAllowed && location.pathname !== firstAllowed) {
+        navigate(firstAllowed, { replace: true });
+      }
+    }
+  }, [isRestrictedSubAdmin, pathAllowed, location.pathname, allowedNavItems, navigate]);
 
   return (
     <div className={`min-h-screen flex selection:bg-amber-400/30 bg-[#050508] relative ${isDark ? "text-white" : "text-gray-900 bg-gray-50"}`}>
       <TraditionalBackground className="fixed inset-0 z-0 opacity-10 dark:opacity-20 pointer-events-none" />
       <AdminNotifications />
-      <AdminCommandPalette open={cmdOpen} setOpen={setCmdOpen} onNavigate={(path) => navigate(path)} />
+      <AdminCommandPalette open={cmdOpen} setOpen={setCmdOpen} onNavigate={(path) => navigate(path)} allowedItems={allowedNavItems} />
 
       {/* Desktop Sidebar - FLOATING GLASS */}
       <aside className="hidden md:flex w-[280px] flex-col shrink-0 sticky top-0 h-screen p-4 pr-2">
@@ -320,7 +499,7 @@ const AdminLayout = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Deep Ambient Background Mesh */}
-        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-80">
+        <div className="hidden md:block fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-80">
           <div className={`absolute top-0 right-0 w-[600px] h-[600px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-2000 ${isDark ? "bg-indigo-500/10" : "bg-blue-400/5"}`} />
           <div className={`absolute bottom-0 left-1/4 w-[500px] h-[500px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-2000 ${isDark ? "bg-amber-500/10" : "bg-amber-400/5"}`} />
           <div className={`absolute -top-1/4 left-1/3 w-[800px] h-[400px] blur-[150px] rounded-full mix-blend-screen transition-colors duration-2000 ${isDark ? "bg-emerald-500/5" : "bg-emerald-400/5"}`} />
@@ -331,87 +510,110 @@ const AdminLayout = () => {
           <header className="glass-panel-cyber flex items-center gap-4 px-5 h-[64px] rounded-[24px]">
             {/* Mobile hamburger */}
             <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`md:hidden rounded-xl ${isDark ? "text-white/70 hover:text-white hover:bg-white/10" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"}`}
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`md:hidden rounded-xl ${isDark ? "text-white/70 hover:text-white hover:bg-white/10" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"}`}
+                >
+                  <Menu className="w-5 h-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                side="left"
+                className={`p-0 w-[85vw] max-w-[280px] border-y-0 border-l-0 shadow-2xl ${
+                  isDark ? "bg-[#0a0a0f] text-white border-r border-white/10" : "bg-white text-gray-900 border-r border-gray-200"
+                }`}
               >
-                <Menu className="w-5 h-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-[85vw] max-w-[260px] bg-transparent border-none">
-              <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-              <SheetDescription className="sr-only">
-                Access administrative navigation links and tools.
-              </SheetDescription>
-              <SidebarContent onNavigate={() => setOpen(false)} />
-            </SheetContent>
-          </Sheet>
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+                <SheetDescription className="sr-only">
+                  Access administrative navigation links and tools.
+                </SheetDescription>
+                <SidebarContent onNavigate={() => setOpen(false)} />
+              </SheetContent>
+            </Sheet>
 
-          {/* Mobile branding */}
-          <div className="md:hidden flex items-center gap-2">
-            <div className="relative">
-              <div className={`p-1.5 rounded-lg border ${isDark ? "bg-white/5 border-white/10" : "bg-white border-gray-200"}`}>
-                <img src="/logo.png" alt="SwiftData Ghana" className="w-5 h-5" />
-              </div>
-            </div>
-            <span className={`font-black tracking-tight text-base ${isDark ? "text-white" : "text-gray-900"}`}>
-              Admin<span className="text-amber-500">Pro</span>
-            </span>
-          </div>
-
-          {/* Page title & Cmd+K prompt */}
-          <div className="hidden md:flex items-center gap-3 flex-1">
-            {currentPage && (
-              <div className="flex items-center gap-2">
-                <div className={`p-1.5 rounded-lg border shadow-sm ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}>
-                  <currentPage.icon className={`w-4 h-4 ${isDark ? "text-white/70" : "text-gray-600"}`} />
+            {/* Mobile branding */}
+            <div className="md:hidden flex items-center gap-2">
+              <div className="relative">
+                <div className={`p-1.5 rounded-lg border ${isDark ? "bg-white/5 border-white/10" : "bg-white border-gray-200"}`}>
+                  <img src="/logo.png" alt="SwiftData Ghana" className="w-5 h-5" />
                 </div>
-                <span className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>{currentPage.label}</span>
               </div>
-            )}
-            <div className={`h-4 w-px mx-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
-            <button 
-              onClick={() => setCmdOpen(true)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors group ${
-                isDark ? "bg-black/20 border-white/5 hover:border-white/15 text-white/40 hover:text-white/70" : "bg-gray-50 border-gray-200 hover:border-gray-300 text-gray-400 hover:text-gray-600"
-              }`}
-            >
-              <Command className="w-3.5 h-3.5 group-hover:text-amber-500 transition-colors" />
-              Search or jump to...
-              <span className={`ml-2 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-mono text-[9px] font-black border ${isDark ? "bg-white/5 border-white/10 text-white/30" : "bg-white border-gray-200 text-gray-500"}`}>
-                <Command className="w-2.5 h-2.5" /> K
+              <span className={`font-black tracking-tight text-base ${isDark ? "text-white" : "text-gray-900"}`}>
+                Admin<span className="text-amber-500">Pro</span>
               </span>
-            </button>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2.5">
-            {/* Dark/light toggle — desktop only in header */}
-            <button
-              onClick={toggleDark}
-              className={`hidden md:flex w-9 h-9 items-center justify-center rounded-xl transition-all border ${
-                isDark ? "text-white/50 hover:text-amber-400 hover:bg-amber-400/10 border-white/5 hover:border-amber-400/20" : "text-gray-500 hover:text-amber-600 hover:bg-amber-50 border-gray-200 hover:border-amber-200"
-              }`}
-              title={isDark ? "Light Mode" : "Dark Mode"}
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-
-            <div className={`badge-status-glow flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black shadow-inner uppercase tracking-widest ${
-              isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-600"
-            }`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-              Live System
             </div>
-          </div>
-        </header>
+
+            {/* Page title & Cmd+K prompt */}
+            <div className="hidden md:flex items-center gap-3 flex-1">
+              {currentPage && (
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-lg border shadow-sm ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}>
+                    <currentPage.icon className={`w-4 h-4 ${isDark ? "text-white/70" : "text-gray-600"}`} />
+                  </div>
+                  <span className={`text-sm font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>{currentPage.label}</span>
+                </div>
+              )}
+              <div className={`h-4 w-px mx-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
+              <button 
+                onClick={() => setCmdOpen(true)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors group ${
+                  isDark ? "bg-black/20 border-white/5 hover:border-white/15 text-white/40 hover:text-white/70" : "bg-gray-50 border-gray-200 hover:border-gray-300 text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <Command className="w-3.5 h-3.5 group-hover:text-amber-500 transition-colors" />
+                Search or jump to...
+                <span className={`ml-2 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-mono text-[9px] font-black border ${isDark ? "bg-white/5 border-white/10 text-white/30" : "bg-white border-gray-200 text-gray-500"}`}>
+                  <Command className="w-2.5 h-2.5" /> K
+                </span>
+              </button>
+            </div>
+
+            <div className="ml-auto flex items-center gap-2.5">
+              {/* Dark/light toggle */}
+              <button
+                onClick={toggleDark}
+                className={`hidden md:flex w-9 h-9 items-center justify-center rounded-xl transition-all border ${
+                  isDark ? "text-white/50 hover:text-amber-400 hover:bg-amber-400/10 border-white/5 hover:border-amber-400/20" : "text-gray-500 hover:text-amber-600 hover:bg-amber-50 border-gray-200 hover:border-amber-200"
+                }`}
+                title={isDark ? "Light Mode" : "Dark Mode"}
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+
+              <div className={`badge-status-glow flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black shadow-inner uppercase tracking-widest ${
+                isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-600"
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                {isRestrictedSubAdmin ? "Sub-Admin Active" : "Live System"}
+              </div>
+            </div>
+          </header>
         </div>
 
         {/* Scrollable content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 relative z-10 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 relative z-10 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent [will-change:transform] [-webkit-overflow-scrolling:touch]">
           <div className="mx-auto max-w-7xl space-y-6">
-            <Outlet />
+            {pathAllowed ? (
+              <Outlet />
+            ) : (
+              <div className="py-20 text-center glass-card-neo rounded-3xl border border-rose-500/30 p-8 max-w-xl mx-auto space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-400">
+                  <ShieldAlert className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-black text-foreground">Access Restricted for Sub-Admin</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Your sub-admin role does not have permission to access the <strong>{currentPage?.label || location.pathname}</strong> module. Please contact a Super Administrator to grant you access.
+                </p>
+                <Button
+                  onClick={() => navigate(allowedNavItems[0]?.path || "/admin/account-settings")}
+                  className="rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs h-10 px-5 border-0 shadow-md"
+                >
+                  Go to Permitted Page
+                </Button>
+              </div>
+            )}
           </div>
         </main>
       </div>

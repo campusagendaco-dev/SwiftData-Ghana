@@ -212,7 +212,7 @@ serve(async (req: Request) => {
 
   try {
     const payload = JSON.parse(body);
-    let reference = payload?.data?.reference || payload?.reference || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.order_id || payload?.data?.transactionId || payload?.data?.orderId || payload?.orderId;
+    let reference = payload?.data?.reference || payload?.reference || payload?.data?.request_id || payload?.request_id || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.order_id || payload?.data?.transactionId || payload?.data?.orderId || payload?.orderId;
     
     if (payload?.data?.metadata) {
       try {
@@ -255,8 +255,8 @@ serve(async (req: Request) => {
       .or(filter)
       .maybeSingle();
 
-    if (!order && (payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || payload?.data?.order_id)) {
-      const altRef = String(payload?.data?.order_id || payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || "");
+    if (!order && (payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || payload?.data?.order_id || payload?.data?.request_id || payload?.request_id)) {
+      const altRef = String(payload?.data?.request_id || payload?.request_id || payload?.data?.order_id || payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || "");
       if (altRef && altRef !== reference && /^[a-zA-Z0-9\-_]{1,64}$/.test(altRef)) {
         const altFilter = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(altRef)
           ? `id.eq.${altRef},provider_order_id.eq.${altRef}`
@@ -267,6 +267,27 @@ serve(async (req: Request) => {
           .or(altFilter)
           .maybeSingle();
         if (altOrder) order = altOrder;
+      }
+    }
+
+    // Smart fallback for providers (like BundleZone) that send internal references or recipient
+    if (!order && (payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone)) {
+      const rawPhone = String(payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone).replace(/\D/g, "");
+      let localPhone = rawPhone;
+      if (rawPhone.startsWith("233") && rawPhone.length === 12) localPhone = "0" + rawPhone.slice(3);
+      else if (rawPhone.length === 9) localPhone = "0" + rawPhone;
+
+      const { data: phoneOrders } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .eq("status", "processing")
+        .or(`customer_phone.eq.${localPhone},customer_phone.eq.${rawPhone}`)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (phoneOrders && phoneOrders.length > 0) {
+        order = phoneOrders[0];
+        console.log(`[provider-webhook] Matched processing order ${order.id} via recipient fallback ${localPhone}.`);
       }
     }
 
