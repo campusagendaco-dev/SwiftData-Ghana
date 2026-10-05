@@ -2018,18 +2018,18 @@ export async function checkAndTriggerDeliveryOnFire(
       targetBotNumber =
         settings?.mashup_whatsapp_number ||
         settings?.customer_service_number ||
-        "233548942122";
+        "12139035565";
 
       if (settings?.support_channel_link) {
         targetChannelLink = settings.support_channel_link;
       }
     }
 
-    let cleanBotPhone = String(targetBotNumber || "233548942122").replace(/\D/g, "");
+    let cleanBotPhone = String(targetBotNumber || "12139035565").replace(/\D/g, "");
     if (cleanBotPhone.startsWith("0") && cleanBotPhone.length === 10) {
       cleanBotPhone = "233" + cleanBotPhone.slice(1);
     }
-    if (!cleanBotPhone.startsWith("233") && cleanBotPhone.length === 9) {
+    if (!cleanBotPhone.startsWith("233") && !cleanBotPhone.startsWith("1") && cleanBotPhone.length === 9) {
       cleanBotPhone = "233" + cleanBotPhone;
     }
 

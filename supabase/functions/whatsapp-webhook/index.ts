@@ -36,7 +36,7 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100; // GHS
-const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "233548942122";
+const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "12139035565";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -744,7 +744,7 @@ function getAgentPromoCaptions(storeName: string, slug: string, referralCode?: s
     `${botLink}`,
     ``,
     `👉 *Option 2 — Save & Chat:*`,
-    `Save bot number: *+233 54 894 2122*`,
+    `Save bot number: *+1 (213) 903-5565*`,
     `Send message: *Hi ${agentCode}*`,
     `Agent Code: *${agentCode}*`,
     ``,
@@ -2751,7 +2751,7 @@ Return ONLY a valid JSON object matching these keys.`;
 
             const storeTitle = profile.store_name || profile.full_name || "Reseller Store";
             const dtStr = new Date().toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" });
-            const botLink = `https://wa.me/233548942122?text=Hi+${profile.slug || ""}`;
+            const botLink = `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${profile.slug || ""}`;
             const storeUrl = `${APP_BASE_URL}/store/${profile.slug || ""}`;
             const dashboardUrl = `${APP_BASE_URL}/auth?role=agent`;
 
@@ -3090,7 +3090,7 @@ Return ONLY a valid JSON object matching these keys.`;
 
             const storeTitle = profile.store_name || profile.full_name || "Reseller Store";
             const dtStr = new Date().toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" });
-            const botLink = `https://wa.me/233548942122?text=Hi+${profile.slug || ""}`;
+            const botLink = `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${profile.slug || ""}`;
             const storeUrl = `${APP_BASE_URL}/store/${profile.slug || ""}`;
             const dashboardUrl = `${APP_BASE_URL}/auth?role=agent`;
 
