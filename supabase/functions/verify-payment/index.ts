@@ -10,7 +10,7 @@ import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
-import { sendWhatsAppOrderReceipt } from "../_shared/whatsapp.ts";
+import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
 
 // --- Utilities ---
 
@@ -336,6 +336,13 @@ async function fulfillOrder(
       console.error("[verify-payment] WhatsApp dispatch error:", waErr);
     }
   }
+
+  // Trigger auto delivery velocity announcement to WhatsApp Channel if cooldown passed
+  try {
+    checkAndTriggerDeliveryOnFire(supabaseAdmin).catch((cErr) =>
+      console.warn("[verify-payment] Delivery fire channel alert error:", cErr)
+    );
+  } catch (_cErr) {}
 }
 
 async function callProviderApi(

@@ -36,11 +36,11 @@ serve(async (req: Request) => {
     const count = fulfilledOrders?.length || 0;
     console.log(`[Velocity Alert] Found ${count} fulfilled orders in the last 60 minutes.`);
 
-    if (count < 50) {
+    if (count < 2) {
       return new Response(
         JSON.stringify({
           triggered: false,
-          reason: `Only ${count} orders fulfilled in last 60 mins. Threshold is 50.`,
+          reason: `Only ${count} orders fulfilled in last 60 mins. Threshold is 2.`,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
       );

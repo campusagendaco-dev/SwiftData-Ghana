@@ -1983,7 +1983,7 @@ export async function checkAndTriggerDeliveryOnFire(
       }
     }
 
-    // 2. Count fulfilled orders in the recent window (Threshold: 50 successful fulfillments)
+    // 2. Count fulfilled orders in the recent window (Threshold: 2+ successful fulfillments)
     const { data: fulfilledOrders, error } = await supabaseAdmin
       .from("orders")
       .select("id, status, updated_at, network, package_size")
@@ -1991,11 +1991,12 @@ export async function checkAndTriggerDeliveryOnFire(
       .gte("updated_at", windowStart)
       .limit(100);
 
-    if (error || !fulfilledOrders || fulfilledOrders.length < 50) {
+    const minThreshold = options?.minOrders || 2;
+    if (error || !fulfilledOrders || fulfilledOrders.length < minThreshold) {
       if (!options?.force) return false;
     }
 
-    const orderCount = fulfilledOrders?.length || 50;
+    const orderCount = fulfilledOrders?.length || minThreshold;
 
     // 3. Resolve Channel JID, Bot Number, Site URL
     const targetChannelJid =
@@ -2032,12 +2033,17 @@ export async function checkAndTriggerDeliveryOnFire(
       cleanBotPhone = "233" + cleanBotPhone;
     }
 
-    // 4. Construct high-conversion 50+ delivery fire alert message
+    // 4. Construct high-conversion dynamic delivery fire alert message
+    const headline = orderCount >= 50 ? `🔥 *50+ ORDERS DELIVERED & COUNTING!* ⚡🚀` : `🔥 *DELIVERY IS ON FIRE!* ⚡🚀`;
+    const subline = orderCount >= 10
+      ? `Over *${orderCount} data bundles & telecom orders* have just been successfully fulfilled in real-time with zero delays! 🇬🇭✨`
+      : `Our automated engine just delivered *${orderCount} orders* in under 5 minutes with zero delays! High-speed delivery is 100% active on all networks right now! 🇬🇭⚡`;
+
     const message = [
-      `🔥 *50+ ORDERS DELIVERED & COUNTING!* ⚡🚀`,
+      headline,
       ``,
       `*Automated Delivery Engine is 100% ACTIVE!*`,
-      `Over *50 data bundles & telecom orders* have just been successfully fulfilled in real-time with zero delays! 🇬🇭✨`,
+      subline,
       ``,
       `📶 *MTN Bundles* (SME, Retail, MashUp, Social, Midnight)`,
       `📶 *Telecel Bundles* (Instant automated top-ups)`,
