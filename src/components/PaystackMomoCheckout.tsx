@@ -147,7 +147,11 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
         return;
       }
 
-      if (metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true") {
+      // Beneficiary verification is strictly for Affordable MTN SME packages, NEVER for Korba or standard retail packages
+      const isKorba = metadata?.is_korba === true || metadata?.is_korba === "true" || metadata?.category === "korba" || metadata?.package_category === "korba" || metadata?.provider_type === "korba";
+      const isNonSme = (metadata?.category && metadata.category !== "affordable" && metadata.category !== "sme") || (metadata?.order_type && metadata.order_type !== "data");
+
+      if (isKorba || isNonSme || metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true") {
         setIsBeneficiaryVerified(true);
         return;
       }

@@ -2345,9 +2345,11 @@ Return ONLY a valid JSON object matching these keys.`;
           nextStep = "SELECT_CHECKER_TYPE";
         } else if (input === "7" || input.includes("beneficiary") || input.includes("whitelist") || input.includes("verify")) {
           reply = [
-            `🛡️ *Verify MTN Beneficiary Number*`,
+            `🛡️ *Verify MTN Beneficiary Number (Affordable SME)*`,
             `━━━━━━━━━━━━━━━━━━━━`,
-            `Check if a phone number is registered on the MTN Beneficiary Whitelist to receive instant automated data delivery.`,
+            `Check if an MTN number is on the MTN Beneficiary Whitelist to receive *Affordable SME Data Bundles*.`,
+            ``,
+            `💡 *Note:* Beneficiary whitelisting is only required for Affordable SME data bundles. Korba and standard retail packages do NOT require beneficiary whitelisting.`,
             ``,
             `📱 *Please enter the 10-digit MTN number to verify:*`,
             `_Example: 0244123456_`,
@@ -2892,7 +2894,7 @@ Return ONLY a valid JSON object matching these keys.`;
             `⚡ *Network:* MTN Ghana`,
             `📊 *Status:* *Active & Whitelisted*`,
             ``,
-            `This number is registered on the MTN beneficiary list and ready to receive instant automated data bundles!`,
+            `This number is whitelisted on the MTN beneficiary list and ready to receive instant *Affordable SME Data Bundles*!`,
             ``,
             `_Reply 1 to Buy Data now, or 0 for Menu._`
           ].join("\n");
@@ -2902,15 +2904,17 @@ Return ONLY a valid JSON object matching these keys.`;
             `────────────────────`,
             `📱 *Number:* \`${cleanPhone}\``,
             `⚡ *Network:* MTN Ghana`,
-            `📊 *Status:* *Not Whitelisted*`,
+            `📊 *Status:* *Not Whitelisted for SME*`,
             ``,
-            `*How to add to MTN Beneficiary Whitelist:* `,
+            `This number is not yet on the MTN SME beneficiary whitelist.`,
+            ``,
+            `💡 *Alternative:* You can still purchase Korba / standard retail data bundles and Airtime without any beneficiary whitelisting!`,
+            ``,
+            `*How to whitelist for Affordable SME Bundles:* `,
             `1. Dial **170#** on your phone`,
             `2. Select *Option 1 (Transfer Money)*`,
-            `3. Select *Option 5 (Other Networks)* or *Option 1 (MoMo User)*`,
+            `3. Select *Option 1 (MoMo User)* or *Option 5 (Other Networks)*`,
             `4. Enter *${cleanPhone}* and send a small transfer (e.g. GH₵ 1) to whitelist it.`,
-            ``,
-            `💡 *Good News:* You can still place your order! Our system will automatically route delivery through instant carrier channels.`,
             ``,
             `_Reply 1 to Buy Data, or 0 for Menu._`
           ].join("\n");

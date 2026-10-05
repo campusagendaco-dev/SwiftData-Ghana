@@ -147,6 +147,22 @@ serve(async (req: Request) => {
       );
     }
 
+    // Beneficiary verification is ONLY for Affordable MTN SME packages, NEVER for Korba packages
+    const isKorba = body.is_korba === true || body.is_korba === "true" || body.category === "korba" || body.package_category === "korba" || body.package_type === "korba" || body.provider_type === "korba";
+    if (isKorba) {
+      console.log("[verify-beneficiary] Korba package detected. Beneficiary verification is not required.");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          exists: true,
+          verification_status: "NOT_REQUIRED",
+          can_order: true,
+          message: "Beneficiary verification is not required for Korba packages. Only Affordable SME packages require beneficiary whitelisting."
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { network } = body;
     const net = String(network || "").toUpperCase();
     const isMtnOrYello = net.includes("MTN") || net.includes("YELLO");

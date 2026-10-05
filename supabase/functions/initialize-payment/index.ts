@@ -666,7 +666,11 @@ serve(async (req: Request) => {
     }
 
     // --- Secure MTN Beneficiary Whitelist & Failover Routing ---
-    if (orderType === "data" && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
+    // Beneficiary verification is ONLY for Affordable SME packages, NEVER for Korba packages or standard retail
+    const isKorbaPackage = metadata.category === "korba" || metadata.package_category === "korba" || metadata.is_korba === true || metadata.is_korba === "true" || metadata.provider_type === "korba";
+    const isAffordableSme = !isKorbaPackage && (metadata.category === "affordable" || metadata.category === "sme" || !metadata.category);
+
+    if (orderType === "data" && isAffordableSme && !isKorbaPackage && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {
@@ -684,6 +688,8 @@ serve(async (req: Request) => {
           }
         }
       }
+    } else if (isKorbaPackage) {
+      metadata.bypass_beneficiary = true;
     }
 
     // Network-specific markup from system settings
