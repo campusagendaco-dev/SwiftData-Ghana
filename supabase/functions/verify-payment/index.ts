@@ -1804,6 +1804,47 @@ serve(async (req: any) => {
             }
           }
 
+          // Fallback to DataMart Checker API if DataHub didn't return vouchers
+          const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
+          if (vouchersList.length === 0 && dmApiKey) {
+            try {
+              const checkerType = vType.includes("BECE") ? "BECE" : "WAEC";
+              const cleanRecipient = (vRecipient || "").replace(/\D/g, "");
+              const formattedPhone = cleanRecipient.length === 9 ? `0${cleanRecipient}` : (cleanRecipient.startsWith("233") ? `0${cleanRecipient.slice(3)}` : cleanRecipient);
+              
+              console.log(`[verify-payment] Purchasing ${vQty} ${checkerType} voucher(s) via DataMart Checkers API...`);
+              for (let i = 0; i < vQty; i++) {
+                const dmRef = `v_${targetReference.slice(0, 12)}_${i}_${Date.now()}`;
+                const dmRes = await fetch("https://api.datamartgh.shop/api/checkers/purchase", {
+                  method: "POST",
+                  headers: {
+                    "X-API-Key": dmApiKey,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    checkerType,
+                    phoneNumber: formattedPhone || "0240000000",
+                    ref: dmRef,
+                    skipSms: true
+                  })
+                });
+                const dmJson = await dmRes.json().catch(() => ({}));
+                if (dmJson?.status === "success" && dmJson?.data?.pin) {
+                  vouchersList.push({
+                    serial: dmJson.data.serialNumber || dmJson.data.serial || "WAEC-ONLINE",
+                    pin: dmJson.data.pin,
+                    type: `${checkerType} Results Checker`,
+                    purchasedAt: new Date().toISOString()
+                  });
+                } else {
+                  console.warn("[verify-payment] DataMart Checker response was not success:", dmJson?.message);
+                }
+              }
+            } catch (dmErr) {
+              console.warn("[verify-payment] DataMart Checker purchase exception:", dmErr);
+            }
+          }
+
           if (vouchersList.length === 0) {
             // Instant reliable generation if live provider is pending or mock mode
             for (let i = 0; i < vQty; i++) {

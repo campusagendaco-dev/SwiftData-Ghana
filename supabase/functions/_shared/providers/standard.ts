@@ -794,11 +794,13 @@ export class StandardAdapter implements ProviderAdapter {
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_API_KEY") || provider.api_key) :
       handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) :
       handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key) :
+      handlerType === "datamart" ? (Deno.env.get("DATAMART_API_KEY") || provider.api_key) :
       provider.api_key
     ) || "";
     const baseUrl = (
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") :
       handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop") :
+      handlerType === "datamart" ? (Deno.env.get("DATAMART_BASE_URL") || provider.base_url || "https://api.datamartgh.shop/api/developer") :
       provider.base_url
     ) || "";
 

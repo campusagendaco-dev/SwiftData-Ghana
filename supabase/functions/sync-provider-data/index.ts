@@ -71,10 +71,13 @@ serve(async (req: Request) => {
       (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") : null) ||
       (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) ||
       (handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") : null) ||
+      (handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") : null) ||
       (handlerType === "korba" ? Deno.env.get("KORBA_SECRET_KEY") : null);
 
     const apiKey = envApiKey || provider.api_key || "";
-    const envBaseUrl = handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_BASE_URL") : null;
+    const envBaseUrl = 
+      (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_BASE_URL") : null) ||
+      (handlerType === "datamart" ? Deno.env.get("DATAMART_BASE_URL") : null);
     const baseUrl = (envBaseUrl || provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
 
     if (!apiKey) throw new Error(`Provider API key missing for ${provider.name}`);
@@ -258,6 +261,8 @@ serve(async (req: Request) => {
 
               let dbNetwork = netKey;
               if (netKey === "YELLO") dbNetwork = "MTN";
+              else if (netKey === "TELECEL") dbNetwork = "Telecel";
+              else if (netKey === "AT_PREMIUM" || netKey === "at" || netKey === "AT") dbNetwork = "AirtelTigo";
 
               for (const pkg of netPackages) {
                 if (handlerType === "standard" && pkg.network && pkg.network !== netKey) continue;
