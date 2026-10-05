@@ -342,7 +342,9 @@ async function fulfillOrder(
     checkAndTriggerDeliveryOnFire(supabaseAdmin).catch((cErr) =>
       console.warn("[verify-payment] Delivery fire channel alert error:", cErr)
     );
-  } catch (_cErr) {}
+  } catch (cErr) {
+    console.warn("[verify-payment] Delivery fire trigger dispatch error:", cErr);
+  }
 }
 
 async function callProviderApi(

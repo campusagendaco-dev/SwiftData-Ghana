@@ -36,6 +36,7 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100; // GHS
+const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "233548942122";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -662,7 +663,6 @@ async function lookupUserProfileDossier(supabase: any, query: string): Promise<s
 }
 
 function formatAgentMenu(storeName: string, walletBalance: number, slug: string, agentCode?: string): string {
-  const WHATSAPP_BOT_NUMBER = "233548942122";
   const displayCode = (agentCode || slug || "AGENT").toUpperCase();
   return [
     `💼 *SwiftData Agent Business Hub*`,
@@ -719,7 +719,6 @@ async function getAgentTodayReport(supabase: any, agentId: string, storeName: st
 }
 
 function getAgentPromoCaptions(storeName: string, slug: string, referralCode?: string): string {
-  const WHATSAPP_BOT_NUMBER = "233548942122";
   const agentCode = (referralCode || slug || "").toUpperCase();
   const botLink = `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${encodeURIComponent(agentCode)}`;
   const storeLink = `https://swiftdatagh.shop/store/${slug || agentCode.toLowerCase()}`;
@@ -2399,7 +2398,6 @@ Return ONLY a valid JSON object matching these keys.`;
           );
         }
 
-        const WHATSAPP_BOT_NUMBER = "233548942122";
         const effectiveMode = data.viewMode || (isSenderAdmin && !agentId ? "admin" : (isSenderAgent && !agentId ? "agent" : "customer"));
 
         if (effectiveMode === "admin") {
