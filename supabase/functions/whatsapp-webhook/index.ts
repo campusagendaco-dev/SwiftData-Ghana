@@ -3328,7 +3328,9 @@ Return ONLY a valid JSON object matching these keys.`;
                 broadcast_to_channel: true,
               })
             }).catch(e => console.warn("[WA Bot] Admin broadcast invoke error:", e));
-          } catch (_e) {}
+          } catch (e) {
+            console.warn("[WA Bot] Background broadcast dispatch error:", e);
+          }
 
           reply = [
             `✅ *Broadcast Queued Successfully!* 🚀`,

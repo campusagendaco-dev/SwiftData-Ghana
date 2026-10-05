@@ -75,7 +75,7 @@ async function processQueueBatch(supabaseAdmin: any, targetBroadcastId?: string,
         }
 
         // 1. Send text message
-        const textResult = await sendWhatsAppMessage(phone, finalMessage);
+        const textResult: any = await sendWhatsAppMessage(phone, finalMessage);
         
         // Check for session disconnection error from Wasender
         if (textResult?.data?.message?.includes?.("Session is not connected") || 
@@ -262,7 +262,9 @@ serve(async (req: Request) => {
           // Also persist discovered session ID
           try {
             await Promise.resolve(supabaseAdmin.from("system_secrets").update({ wasender_session_id: String(sessionId) }).eq("id", 1));
-          } catch (_e) {}
+          } catch (_e) {
+            // Ignore system_secrets update error if table/row inaccessible
+          }
         } else {
           return new Response(JSON.stringify({
             success: false,

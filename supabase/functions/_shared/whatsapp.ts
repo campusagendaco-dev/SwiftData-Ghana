@@ -17,7 +17,7 @@ export function formatWhatsAppRecipient(to: string): string {
 
 export function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  let clean = raw.replace(/\D/g, "");
+  const clean = raw.replace(/\D/g, "");
   if (clean.startsWith("0") && clean.length === 10) {
     return "233" + clean.slice(1);
   }
@@ -612,7 +612,7 @@ export async function fetchWhatsAppUsername(
  * Helper to ensure a target is formatted as a WhatsApp JID (e.g. 1234567890@s.whatsapp.net).
  */
 export function formatToWhatsAppJid(to: string): string {
-  let clean = to.trim();
+  const clean = to.trim();
   if (clean.includes("@")) return clean;
   let digits = clean.replace(/\D/g, "");
   if (digits.startsWith("0") && digits.length === 10) {
@@ -1151,8 +1151,8 @@ export async function sendWatiV3TemplateMessage(
   params: Array<{ name: string; value: string }> = [],
   config?: { token?: string; endpoint?: string; mediaUrl?: string }
 ): Promise<boolean> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return false;
   const baseUrl = (endpoint || "https://live-mt-server.wati.io").replace(/\/\d+$/, "").replace(/\/+$/, "");
@@ -1207,8 +1207,8 @@ export async function scheduleWatiTemplateMessage(
   params: Array<{ name: string; value: string }> = [],
   config?: { token?: string; endpoint?: string }
 ): Promise<boolean> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return false;
   const baseUrl = (endpoint || "https://live-mt-server.wati.io").replace(/\/\d+$/, "").replace(/\/+$/, "");
@@ -1262,7 +1262,7 @@ export async function createWatiTemplate(
   config?: { token?: string; endpoint?: string },
   headerMedia?: { type: "none" | "text" | "image" | "document" | "video"; text?: string; link?: string }
 ): Promise<any> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
   let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return null;
@@ -1327,13 +1327,13 @@ export async function getWatiMessageStatus(
   localMessageId: string,
   config?: { token?: string; endpoint?: string }
 ): Promise<any | null> {
-  let token = Deno.env.get("WATI_TOKEN") || Deno.env.get("WATI_ACCESS_TOKEN") || Deno.env.get("WATI_API_KEY") || config?.token || "";
+  const token = Deno.env.get("WATI_TOKEN") || Deno.env.get("WATI_ACCESS_TOKEN") || Deno.env.get("WATI_API_KEY") || config?.token || "";
   let endpoint = Deno.env.get("WATI_ENDPOINT") || Deno.env.get("WATI_BASE_URL") || config?.endpoint || "";
 
   if (!token) return null;
 
   endpoint = (endpoint || "https://live-mt-server.wati.io/10263110").replace(/\/+$/, "");
-  let cleanPhone = channelPhoneNumber.replace(/\D/g, "");
+  const cleanPhone = channelPhoneNumber.replace(/\D/g, "");
   const authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
 
   try {
@@ -1363,8 +1363,8 @@ export async function getWatiChannels(
   pageSize: number = 20,
   config?: { token?: string; endpoint?: string }
 ): Promise<any | null> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return null;
   const baseUrl = (endpoint || "https://live-mt-server.wati.io").replace(/\/\d+$/, "").replace(/\/+$/, "");
@@ -1392,8 +1392,8 @@ export async function sendWatiTypingIndicator(
   targetPhone: string,
   config?: { token?: string; endpoint?: string }
 ): Promise<boolean> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return false;
   const baseUrl = (endpoint || "https://live-mt-server.wati.io").replace(/\/\d+$/, "").replace(/\/+$/, "");
@@ -1432,8 +1432,8 @@ export async function sendWatiFileViaUrl(
   caption?: string,
   config?: { token?: string; endpoint?: string }
 ): Promise<boolean> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return false;
   const baseUrl = (endpoint || "https://live-mt-server.wati.io").replace(/\/\d+$/, "").replace(/\/+$/, "");
@@ -1482,8 +1482,8 @@ export async function sendWatiInteractiveMessage(
   },
   config?: { token?: string; endpoint?: string }
 ): Promise<boolean> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return false;
   const baseUrl = (endpoint || "https://live-mt-server.wati.io").replace(/\/\d+$/, "").replace(/\/+$/, "");
@@ -1491,7 +1491,7 @@ export async function sendWatiInteractiveMessage(
   if (cleanPhone.startsWith("0") && cleanPhone.length === 10) cleanPhone = "233" + cleanPhone.slice(1);
   const authHeader = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
 
-  let payload: any = {
+  const payload: any = {
     target: cleanPhone,
     type,
   };
@@ -1821,8 +1821,8 @@ export async function getWatiChatbots(
   pageSize: number = 50,
   config?: { token?: string; endpoint?: string }
 ): Promise<{ chatbot_list: Array<{ id: string; name: string; created?: string }>; page_number?: number; page_size?: number } | null> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token) return null;
 
@@ -1882,8 +1882,8 @@ export async function startWatiChatbot(
   chatbotId: string,
   config?: { token?: string; endpoint?: string }
 ): Promise<boolean> {
-  let token = Deno.env.get("WATI_TOKEN") || config?.token || "";
-  let endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
+  const token = Deno.env.get("WATI_TOKEN") || config?.token || "";
+  const endpoint = Deno.env.get("WATI_ENDPOINT") || config?.endpoint || "";
 
   if (!token || !chatbotId) return false;
 
@@ -1960,6 +1960,7 @@ export async function checkAndTriggerDeliveryOnFire(
     windowMinutes?: number;
     cooldownMinutes?: number;
     force?: boolean;
+    minOrders?: number;
   }
 ): Promise<boolean> {
   try {
@@ -2005,7 +2006,7 @@ export async function checkAndTriggerDeliveryOnFire(
       "120363425720623850@newsletter";
 
     let targetBotNumber = options?.botNumber || Deno.env.get("WHATSAPP_BOT_NUMBER");
-    let targetSiteUrl = options?.siteUrl || "https://swiftdatagh.shop";
+    const targetSiteUrl = options?.siteUrl || "https://swiftdatagh.shop";
     let targetChannelLink = "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40";
 
     if (!targetBotNumber) {

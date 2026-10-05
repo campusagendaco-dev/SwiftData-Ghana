@@ -1215,7 +1215,7 @@ serve(async (req: Request) => {
       }
       let agentId = metadata?.agent_id;
       const isWhatsApp = metadata?.channel === "whatsapp" || Boolean(metadata?.wa_from);
-      const waFrom = metadata?.wa_from || metadata?.customer_phone;
+      const waFrom = String(metadata?.wa_from || metadata?.customer_phone || "");
       const normWaFrom = waFrom ? normalizePhone(waFrom) : "";
 
       if (!agentId && isWhatsApp && normWaFrom) {
@@ -1225,8 +1225,8 @@ serve(async (req: Request) => {
           .or(`phone.eq.${normWaFrom},whatsapp_number.eq.${normWaFrom}`)
           .maybeSingle();
 
-        const agentEmail = metadata?.email || `agent${normWaFrom}@swiftdatagh.shop`;
-        const generatedPassword = metadata?.generated_password || `Swift${Math.floor(1000 + Math.random() * 9000)}#${normWaFrom.slice(-4)}`;
+        const agentEmail = String(metadata?.email || `agent${normWaFrom}@swiftdatagh.shop`);
+        const generatedPassword = String(metadata?.generated_password || `Swift${Math.floor(1000 + Math.random() * 9000)}#${normWaFrom.slice(-4)}`);
 
         if (existingProf?.user_id) {
           agentId = existingProf.user_id;
@@ -1236,7 +1236,9 @@ serve(async (req: Request) => {
               email: existingProf.email || agentEmail,
               email_confirm: true,
             });
-          } catch (_) {}
+          } catch (authUpdateErr) {
+            console.warn("Auth user update error:", authUpdateErr);
+          }
         } else {
           const { data: newAuthUser } = await supabaseAdmin.auth.admin.createUser({
             email: agentEmail,
@@ -1253,7 +1255,7 @@ serve(async (req: Request) => {
             agentId = newAuthUser.user.id;
           } else {
             const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
-            const existingAuth = (listData?.users || []).find((u: any) => u.email?.toLowerCase() === agentEmail.toLowerCase());
+            const existingAuth = (listData?.users || []).find((u: any) => u.email && String(u.email).toLowerCase() === agentEmail.toLowerCase());
             if (existingAuth) {
               agentId = existingAuth.id;
               await supabaseAdmin.auth.admin.updateUserById(agentId, { password: generatedPassword, email_confirm: true });
