@@ -408,9 +408,8 @@ serve(async (req: Request) => {
           });
         }
       }
-    } else {
-      // Broadcast to ALL users (fetching across all tables)
-      // 1. Profiles (paginated to support 6,000+ users)
+    } else if (body.broadcast_to_users === true || (body.segment && body.segment !== "none")) {
+      // Broadcast to ALL users (fetching across all tables) ONLY if explicitly requested
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
@@ -432,27 +431,9 @@ serve(async (req: Request) => {
           page++;
         }
       }
-
-      // 2. WhatsApp bot sessions
-      const { data: sessions } = await supabaseAdmin
-        .from("whatsapp_sessions")
-        .select("phone_number")
-        .limit(2000);
-
-      (sessions || []).forEach((s: any) => {
-        if (s.phone_number) phoneList.push(s.phone_number);
-      });
-
-      // 3. Customers with recent orders
-      const { data: orders } = await supabaseAdmin
-        .from("orders")
-        .select("customer_phone")
-        .order("created_at", { ascending: false })
-        .limit(2000);
-
-      (orders || []).forEach((o: any) => {
-        if (o.customer_phone) phoneList.push(o.customer_phone);
-      });
+    } else {
+      // Default: Do NOT message individual phone numbers unless explicitly provided
+      phoneList = [];
     }
 
     // Normalize and Deduplicate all recipient phones
@@ -545,6 +526,21 @@ serve(async (req: Request) => {
       } catch (err: any) {
         console.warn(`[WhatsApp Broadcast] Failed to post to WhatsApp Channel:`, err?.message || err);
       }
+    }
+
+    // Stop here if fire alert or no individual recipients specified — never send to user numbers
+    if (is_fire_alert || uniquePhones.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          channelSent,
+          totalRecipients: 0,
+          message: channelSent
+            ? "Dispatched broadcast exclusively to Official WhatsApp Channel. No individual user numbers messaged."
+            : "No individual recipients specified. Zero numbers contacted.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      );
     }
 
     // 2. Enqueue all recipients into whatsapp_broadcast_queue in batches of 500

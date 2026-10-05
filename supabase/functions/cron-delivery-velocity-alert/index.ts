@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
 
 declare const Deno: any;
 
@@ -67,32 +68,20 @@ serve(async (req: Request) => {
       );
     }
 
-    // 3. Trigger WhatsApp & Push "Delivery Is On Fire!" Broadcast
-    console.log(`⚡ VELOCITY TRIGGERED! ${count} orders fulfilled in window. Dispatching broadcast...`);
+    // 3. Trigger WhatsApp Channel Delivery Alert directly (NO user phone numbers are ever messaged)
+    console.log(`⚡ VELOCITY TRIGGERED! ${count} orders fulfilled in window. Dispatching to WhatsApp Channel...`);
 
-    const broadcastPayload = {
-      is_fire_alert: true,
-      site_url: "https://swiftdatagh.shop",
-      channel_url: "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40",
-      sticker_url: "https://swiftdatagh.shop/stickers/delivery_fire.webp",
-    };
-
-    // Invoke admin-broadcast-whatsapp
-    const { data: bRes, error: bErr } = await supabaseAdmin.functions.invoke(
-      "admin-broadcast-whatsapp",
-      { body: broadcastPayload }
-    );
-
-    if (bErr) {
-      console.error("[Velocity Alert] Broadcast invoke error:", bErr);
-    }
+    const channelSent = await checkAndTriggerDeliveryOnFire(supabaseAdmin, {
+      force: true,
+      siteUrl: "https://swiftdatagh.shop",
+    });
 
     // Also send push notification to all active web push devices
     supabaseAdmin.functions
       .invoke("send-push-notification", {
         body: {
-          title: "🔥 50+ ORDERS DELIVERED! ⚡🚀",
-          body: `Over 50 orders fulfilled with zero delays! High-speed delivery is 100% active right now. Order at swiftdatagh.shop!`,
+          title: "🔥 ORDERS DELIVERED! ⚡🚀",
+          body: `High-speed delivery is 100% active right now! Order at swiftdatagh.shop!`,
           url: "https://swiftdatagh.shop",
         },
       })
@@ -102,7 +91,8 @@ serve(async (req: Request) => {
       JSON.stringify({
         triggered: true,
         fulfilledCount: count,
-        broadcastResult: bRes || null,
+        channelSent,
+        message: "Channel announcement dispatched. Zero individual numbers messaged."
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
