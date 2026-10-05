@@ -1415,12 +1415,12 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
   const cleanTo = normalizePhone(to) || to.replace(/\D/g, "");
   if (!cleanTo || cleanTo.length < 9) return;
 
-  // Anti-Ban Safeguard: Deduplication flood protection (prevents sending identical messages within 60s)
+  // Anti-Ban Safeguard: Deduplication flood protection (prevents double replies within 3.5s)
   const dedupKey = `${cleanTo}:${text.trim().slice(0, 100)}`;
   const now = Date.now();
   const lastSent = recentMessageDedupCache.get(dedupKey);
-  if (lastSent && now - lastSent < 60000) {
-    console.log(`[WhatsApp Anti-Ban] Skipped duplicate message to ${cleanTo} within 60s`);
+  if (lastSent && now - lastSent < 3500) {
+    console.log(`[WhatsApp Anti-Ban] Skipped duplicate message to ${cleanTo} within 3.5s`);
     return;
   }
   recentMessageDedupCache.set(dedupKey, now);

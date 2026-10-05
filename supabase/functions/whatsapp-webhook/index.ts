@@ -165,6 +165,7 @@ async function callGeminiVision(prompt: string, imageBase64: string, mimeType = 
 // ── WaSender payload parser ───────────────────────────────────────────────────
 
 function parseMessage(payload: any): { 
+  id?: string;
   from: string; 
   text: string; 
   fromMe: boolean;
@@ -173,8 +174,10 @@ function parseMessage(payload: any): {
   imageBase64?: string | null;
   mimeType?: string;
 } {
-  const m = payload?.data?.messages || payload?.data || payload;
-  if (!m) return { from: "", text: "", fromMe: false, isImage: false };
+  const rawM = payload?.data?.messages || payload?.data || payload;
+  const m = Array.isArray(rawM) ? rawM[0] : rawM;
+  if (!m) return { id: "", from: "", text: "", fromMe: false, isImage: false };
+  const messageId = String(m.key?.id || m.id || payload?.data?.id || payload?.id || "");
   const from = m.key?.cleanedSenderPn || m.key?.remoteJid?.split("@")[0] || "";
   const msg = m.message || {};
   const imageMsg = msg.imageMessage || msg.viewOnceMessage?.message?.imageMessage || msg.viewOnceMessageV2?.message?.imageMessage;
@@ -220,6 +223,7 @@ function parseMessage(payload: any): {
   }
 
   return { 
+    id: messageId,
     from: from.trim(), 
     text: text.trim(), 
     fromMe: Boolean(m.key?.fromMe),
@@ -1266,6 +1270,8 @@ async function initUtilityPayment(
   return { orderId, status: json?.data?.status, otpMessage: json?.data?.otp_message };
 }
 
+const inMemoryIncomingDedup = new Map<string, number>();
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -1284,6 +1290,7 @@ serve(async (req: Request) => {
   let isTwilio = false;
   let from = "";
   let text = "";
+  let messageId = "";
   let fromMe = false;
   let isImage = false;
   let imageUrl: string | null = null;
@@ -1311,6 +1318,7 @@ serve(async (req: Request) => {
       const rawBody = String(formData.get("Body") || "");
       const cleanPhone = rawFrom.replace(/^whatsapp:/i, "").trim();
 
+      messageId = String(formData.get("MessageSid") || formData.get("SmsMessageSid") || "");
       from = normalizePhone(cleanPhone) || cleanPhone.replace(/\D/g, "");
       text = rawBody.trim();
       fromMe = false;
@@ -1330,6 +1338,7 @@ serve(async (req: Request) => {
         return new Response("ok", { headers: corsHeaders });
       }
       const parsed = parseMessage(payload);
+      messageId = parsed.id || "";
       from = parsed.from;
       text = parsed.text;
       fromMe = parsed.fromMe;
@@ -1348,6 +1357,52 @@ serve(async (req: Request) => {
         });
       }
       return new Response("ok", { headers: corsHeaders });
+    }
+
+    // ── INCOMING DEDUPLICATION SAFEGUARD ─────────────────────────────────────
+    // 1. In-memory short-burst dedup check (prevents double executions within 3.5s)
+    const burstKey = `${from}:${messageId || text.trim().toLowerCase()}`;
+    const now = Date.now();
+    const lastSeen = inMemoryIncomingDedup.get(burstKey);
+    if (lastSeen && (now - lastSeen) < 3500) {
+      console.log(`[WA Webhook] Dropping burst duplicate webhook for key: ${burstKey} (${now - lastSeen}ms ago)`);
+      if (isTwilio) {
+        return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+          headers: { "Content-Type": "text/xml" },
+          status: 200,
+        });
+      }
+      return new Response("ok (duplicate)", { headers: corsHeaders });
+    }
+    inMemoryIncomingDedup.set(burstKey, now);
+
+    // Prune stale cache entries if map grows
+    if (inMemoryIncomingDedup.size > 2000) {
+      for (const [k, ts] of inMemoryIncomingDedup.entries()) {
+        if (now - ts > 10000) inMemoryIncomingDedup.delete(k);
+      }
+    }
+
+    // 2. Database atomic deduplication via claim_whatsapp_webhook_message RPC
+    if (messageId) {
+      try {
+        const { data: isClaimed, error: claimErr } = await supabase.rpc("claim_whatsapp_webhook_message", {
+          p_message_id: messageId,
+          p_from: from,
+        });
+        if (!claimErr && isClaimed === false) {
+          console.log(`[WA Webhook] DB atomic duplicate dropped for messageId: ${messageId}`);
+          if (isTwilio) {
+            return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
+              headers: { "Content-Type": "text/xml" },
+              status: 200,
+            });
+          }
+          return new Response("ok (duplicate)", { headers: corsHeaders });
+        }
+      } catch (rpcErr) {
+        console.warn("[WA Webhook] Error checking claim_whatsapp_webhook_message:", rpcErr);
+      }
     }
 
     // Load session
