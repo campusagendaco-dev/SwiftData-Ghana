@@ -455,17 +455,21 @@ serve(async (req: Request) => {
       console.warn(`[TARPIT_SINKHOLE] Intercepted bot/spammer attempt: ${reason}`, details);
       
       // Asynchronously log to sentinel actions table
-      await supabaseAdmin.from("sentinel_actions").insert({
-        action_type: "TARPIT_SINKHOLE_TRAP",
-        status: "TRAPPED",
-        reasoning: reason,
-        metadata: {
-          ...details,
-          client_ip: clientIp,
-          device_fingerprint: deviceFp,
-          timestamp: new Date().toISOString()
-        }
-      }).catch(() => {});
+      try {
+        await supabaseAdmin.from("sentinel_actions").insert({
+          action_type: "TARPIT_SINKHOLE_TRAP",
+          status: "TRAPPED",
+          reasoning: reason,
+          metadata: {
+            ...details,
+            client_ip: clientIp,
+            device_fingerprint: deviceFp,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (logErr) {
+        console.warn("[TARPIT_SINKHOLE] Logging error:", logErr);
+      }
 
       // ⏱️ Artificial Tarpit Delay: Freeze the bot script by stalling the HTTP socket
       await new Promise((resolve) => setTimeout(resolve, 8000));
@@ -667,10 +671,10 @@ serve(async (req: Request) => {
 
     // --- Secure MTN Beneficiary Whitelist & Failover Routing ---
     // Beneficiary verification is ONLY for Affordable SME packages, NEVER for Korba packages or standard retail
-    const isKorbaPackage = metadata.category === "korba" || metadata.package_category === "korba" || metadata.is_korba === true || metadata.is_korba === "true" || metadata.provider_type === "korba";
-    const isAffordableSme = !isKorbaPackage && (metadata.category === "affordable" || metadata.category === "sme" || !metadata.category);
+    const isExplicitKorba = isKorba || metadata.category === "korba" || metadata.package_category === "korba" || metadata.is_korba === true || metadata.is_korba === "true" || metadata.provider_type === "korba";
+    const isAffordableSme = !isExplicitKorba && (metadata.category === "affordable" || metadata.category === "sme" || !metadata.category);
 
-    if (orderType === "data" && isAffordableSme && !isKorbaPackage && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
+    if (orderType === "data" && isAffordableSme && !isExplicitKorba && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {
