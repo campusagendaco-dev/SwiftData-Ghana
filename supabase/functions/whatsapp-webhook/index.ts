@@ -69,10 +69,145 @@ function feeAmount(base: number): number {
   return parseFloat(Math.min(base * PAYSTACK_FEE_RATE, PAYSTACK_FEE_CAP).toFixed(2));
 }
 
+function parseQuickOrderText(text: string): { network: string; packageSize: string; recipient: string } | null {
+  const clean = text.trim();
+  if (clean.length < 7) return null;
+
+  // 1. Look for Ghanaian 10-digit number (e.g. 0244123456) or 233...
+  const phoneMatch = text.match(/\b(0[235][0-9]{8}|233[235][0-9]{8})\b/);
+  if (!phoneMatch) return null;
+  const recipient = normalizePhone(phoneMatch[1]);
+  if (!recipient || recipient.length !== 10) return null;
+
+  // 2. Identify network if mentioned, or infer from phone prefix
+  let network = "";
+  if (/\b(mtn|yello)\b/i.test(text)) network = "MTN";
+  else if (/\b(telecel|vodafone|voda)\b/i.test(text)) network = "Telecel";
+  else if (/\b(airteltigo|airtel|tigo|at)\b/i.test(text)) network = "AirtelTigo";
+
+  if (!network) {
+    if (recipient.startsWith("024") || recipient.startsWith("054") || recipient.startsWith("055") || recipient.startsWith("059") || recipient.startsWith("053") || recipient.startsWith("025")) {
+      network = "MTN";
+    } else if (recipient.startsWith("020") || recipient.startsWith("050")) {
+      network = "Telecel";
+    } else if (recipient.startsWith("027") || recipient.startsWith("057") || recipient.startsWith("026") || recipient.startsWith("056")) {
+      network = "AirtelTigo";
+    }
+  }
+  if (!network) return null;
+
+  // 3. Extract bundle size: e.g. 1GB, 2GB, 3GB, 5GB, 10GB, 500MB
+  const sizeMatch = text.match(/\b(\d+(?:\.\d+)?\s*(?:gb|mb|gig|gigs))\b/i);
+  if (!sizeMatch) return null;
+  let packageSize = sizeMatch[1].toUpperCase().replace(/\s+/g, "");
+  packageSize = packageSize.replace("GIGS", "GB").replace("GIG", "GB");
+
+  return { network, packageSize, recipient };
+}
+
+function formatMoreMenu(storeTitle: string): string {
+  return [
+    `➕ *More Services & Utility Bills*`,
+    `_Powered by ${storeTitle}_ 🇬🇭`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `*1* — 💡 ECG Electricity (Prepaid Meter Tokens & Postpaid)`,
+    `*2* — 💧 Water & Pay TV Bills (GWCL, DStv, GOtv, StarTimes)`,
+    `*3* — 🎓 WAEC Result Checker (WASSCE & BECE Instant PIN)`,
+    `*4* — 🛡️ Verify MTN Beneficiary (Whitelist Status Check)`,
+    `*5* — 💰 Wallet Balance & Instant Top-Up`,
+    `*6* — 📋 Recent Orders History`,
+    `*7* — 🎧 Live Support & Customer Care (0598170947)`,
+    `*8* — 💼 Reseller Agent Program (Become an Agent)`,
+    `*9* — 📢 Official WhatsApp Channel`,
+    `*10* — 🔌 Developer API Integration`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_Reply with 1 to 10 — or reply 0 for Main Menu._`
+  ].join("\n");
+}
+
+function formatMainMenu(
+  agent: Agent | null,
+  storeName: string,
+  senderProfile: any,
+  senderProfileMeta: UserProfileAndWallet | null,
+  isSenderAdmin: boolean,
+  isSenderAgent: boolean,
+  whatsappBotNumber: string,
+  reorderOrder?: any
+): string {
+  const reorderLines: string[] = [];
+  if (reorderOrder && (reorderOrder.package_size || reorderOrder.amount)) {
+    const pkgDesc = reorderOrder.package_size
+      ? `${reorderOrder.network} ${reorderOrder.package_size}`
+      : `${reorderOrder.network} GH₵ ${Number(reorderOrder.amount).toFixed(2)} Airtime`;
+    reorderLines.push(
+      `⚡ *1-TAP FAST REORDER AVAILABLE:*`,
+      `Reply *YES* to quickly repeat your last order:`,
+      `👉 *${pkgDesc}* for \`${reorderOrder.customer_phone}\``,
+      ``
+    );
+  }
+
+  const agentCodeStr = (senderProfile?.referral_code || senderProfile?.slug || "").toUpperCase();
+  const agentBar = isSenderAgent ? [
+    `💼 *Agent Terminal Active:* *${senderProfile?.store_name || senderProfile?.full_name}*`,
+    `💳 *Wallet:* GH₵ ${(senderProfileMeta?.walletBalance || 0).toFixed(2)}`,
+    `🏷️ *Your Agent Code:* *${agentCodeStr}*`,
+    `👉 *Your Bot Link:* \`https://wa.me/${whatsappBotNumber}?text=Hi+${agentCodeStr}\``,
+    `_(Share with your customers so they order directly with your prices!)_`,
+    ``
+  ] : [];
+
+  const modeHint = isSenderAdmin
+    ? `_🛡️ Admin Detected: Reply *ADMIN* to switch to Admin Terminal._`
+    : (isSenderAgent
+      ? `_💼 Agent Detected: Reply *AGENT* to switch to Agent Hub._`
+      : `_🏷️ Have an Agent Code? Reply *CODE <your_code>* to connect to your agent!_`);
+
+  if (!agent) {
+    return [
+      `⚡ *SwiftData Ghana* (@swiftdatagh)`,
+      `👋 *Welcome to SwiftData Ghana!*`,
+      `_Ghana's #1 Automated Telecommunications & Data Hub_ 🇬🇭`,
+      ``,
+      ...agentBar,
+      ...reorderLines,
+      `How can we serve you today?`,
+      ``,
+      `*1* — 📶 Buy Data (MTN, Telecel, AirtelTigo)`,
+      `*2* — 📱 Buy Airtime (Instant Recharge)`,
+      `*3* — ⚡ MTN Mash Up (Voice + Data Packages)`,
+      `*4* — 🔍 Track Order & Live Status`,
+      `*5* — ➕ More Services & Bills (ECG, Water, WAEC & More)`,
+      ``,
+      `_Reply with 1 to 5 (or reply YES to reorder)_`,
+      modeHint
+    ].join("\n");
+  } else {
+    return [
+      `🏪 *${storeName}*`,
+      `_Official Agent Storefront (Powered by SwiftData Ghana)_`,
+      ``,
+      ...reorderLines,
+      `How can we serve you today?`,
+      ``,
+      `*1* — 📶 Buy Data`,
+      `*2* — 📱 Buy Airtime`,
+      `*3* — ⚡ MTN Mash Up (Voice + Data)`,
+      `*4* — 🔍 Track Order & Live Status`,
+      `*5* — ➕ More Services & Bills (ECG, Water, WAEC & More)`,
+      ``,
+      `_Reply with 1 to 5 (or reply YES to reorder)_`,
+      `_Reply *SWIFTDATA* anytime to switch to official platform bot._`,
+      modeHint
+    ].join("\n");
+  }
+}
+
 async function callGemini(prompt: string) {
   if (!GEMINI_API_KEY) return null;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  const timeoutId = setTimeout(() => controller.abort(), 4500); // Fast 4.5s timeout
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: "POST",
@@ -2046,68 +2181,165 @@ Return ONLY a valid JSON object matching these keys.`;
       }
     }
 
-    // ── AI Intent Parsing (Only for natural queries, NEVER intercept reset/menu commands) ───
-    if (step === "MENU" && !isResetCmd && !["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "yes", "y"].includes(input)) {
-      let customPrompt = SYSTEM_PROMPT;
-      try {
-        const { data: settingsData } = await supabase
-          .from("v_system_settings_with_secrets").select("whatsapp_bot_prompt")
-          .eq("id", 1)
-          .maybeSingle();
-        if (settingsData && settingsData.whatsapp_bot_prompt && settingsData.whatsapp_bot_prompt.trim().length > 0) {
-          customPrompt = settingsData.whatsapp_bot_prompt;
+    // ── Instant Heuristic NLP Fast-Path (<1ms, no network latency) ───────────
+    if (step === "MENU" && !isResetCmd && !["1", "2", "3", "4", "5", "yes", "y"].includes(input)) {
+      // 1. Direct Quick Order NLP Check (e.g. "mtn 1gb 0244123456" or "telecel 2gb 0501234567")
+      const quickOrder = parseQuickOrderText(text);
+      if (quickOrder) {
+        try {
+          const pkgs = await getPackagesForNetwork(supabase, quickOrder.network, agent?.prices || {});
+          const matched = pkgs.find(p => p.size.toUpperCase() === quickOrder.packageSize.toUpperCase());
+          if (matched) {
+            data.net = quickOrder.network;
+            data.pkg = matched.size;
+            data.recipient = quickOrder.recipient;
+            data.basePrice = matched.basePrice;
+            data.totalPrice = matched.total;
+            data.isAirtime = false;
+
+            const normFrom = normalizePhone(from);
+            const isFromGhana = normFrom && normFrom.length === 10 && normFrom.startsWith("0");
+
+            const lines = [
+              `⚡ *Smart Order Detected!*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `📶 Network:   *${quickOrder.network}*`,
+              `📦 Bundle:    *${matched.size}*`,
+              `👤 Recipient: \`${quickOrder.recipient}\``,
+              `💰 You Pay:   *GH₵ ${matched.total.toFixed(2)}*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `Please provide the Mobile Money (MoMo) number to pay:`,
+              ``,
+              `• Reply *1* to pay with recipient number (\`${quickOrder.recipient}\`)`,
+            ];
+            if (isFromGhana && normFrom !== quickOrder.recipient) {
+              lines.push(`• Reply *2* to pay with your WhatsApp number (\`${normFrom}\`)`);
+            }
+            lines.push(
+              `• Or type any other 10-digit MoMo number (e.g. \`0244123456\`)`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `_Reply 0 to cancel._`
+            );
+
+            await supabase.from("whatsapp_sessions").upsert({
+              phone_number: from,
+              agent_id: agentId || "",
+              current_step: "ENTER_PAYER_MOMO",
+              order_data: data,
+              updated_at: new Date().toISOString(),
+            });
+            await sendWhatsAppMessage(from, lines.join("\n"));
+            return new Response("ok", { headers: corsHeaders });
+          }
+        } catch (err) {
+          console.warn("[WA Bot] Quick order parse error:", err);
         }
-      } catch (err) {
-        console.error("Failed to fetch custom bot prompt:", err);
       }
 
-      const aiResponse = await callGemini(`${customPrompt.replace(/\{\{storeName\}\}/g, storeName)}\n\nUser Message: "${text}"\n\nAnalyze the intent and respond with a friendly message or identify the service needed.`);
-      if (aiResponse) {
-        if (aiResponse.includes("BUY_DATA") || text.toLowerCase().includes("data")) {
-          step = "SELECT_SERVICE";
-          input = "1";
-        } else if (aiResponse.includes("BUY_AIRTIME") || text.toLowerCase().includes("airtime")) {
-          step = "SELECT_SERVICE";
-          input = "2";
-        } else if (aiResponse.includes("MASHUP") || text.toLowerCase().includes("mashup") || text.toLowerCase().includes("mash up")) {
-          step = "SELECT_SERVICE";
-          input = "3";
-        } else if (aiResponse.includes("ECG") || text.toLowerCase().includes("ecg") || text.toLowerCase().includes("meter") || text.toLowerCase().includes("power") || text.toLowerCase().includes("light")) {
-          step = "SELECT_SERVICE";
-          input = "4";
-        } else if (aiResponse.includes("UTILITY") || text.toLowerCase().includes("water") || text.toLowerCase().includes("dstv") || text.toLowerCase().includes("gotv") || text.toLowerCase().includes("startimes")) {
-          step = "SELECT_SERVICE";
-          input = "5";
-        } else if (aiResponse.includes("CHECKER") || aiResponse.includes("WAEC") || text.toLowerCase().includes("checker") || text.toLowerCase().includes("waec") || text.toLowerCase().includes("wassce") || text.toLowerCase().includes("bece")) {
-          step = "SELECT_SERVICE";
-          input = "6";
-        } else if (aiResponse.includes("BENEFICIARY") || text.toLowerCase().includes("beneficiary") || text.toLowerCase().includes("whitelist")) {
-          step = "SELECT_SERVICE";
-          input = "7";
-        } else if (aiResponse.includes("WALLET") || text.toLowerCase().includes("wallet") || text.toLowerCase().includes("balance") || text.toLowerCase().includes("topup")) {
-          step = "SELECT_SERVICE";
-          input = "8";
-        } else if (aiResponse.includes("TRACK") || text.toLowerCase().includes("track")) {
-          step = "SELECT_SERVICE";
-          input = "9";
-        } else if (aiResponse.includes("SUPPORT") || aiResponse.includes("AGENT") || text.toLowerCase().includes("agent") || text.toLowerCase().includes("human") || text.toLowerCase().includes("care") || text.toLowerCase().includes("complain")) {
-          step = "SELECT_SERVICE";
-          input = "10";
-        } else if (aiResponse.includes("HISTORY") || text.toLowerCase().includes("order history") || text.toLowerCase().includes("recent order")) {
-          step = "SELECT_SERVICE";
-          input = "11";
-        } else if (aiResponse.includes("PORTAL") || aiResponse.includes("RESELLER") || text.toLowerCase().includes("become an agent")) {
-          step = "SELECT_SERVICE";
-          input = "12";
-        } else if (aiResponse.includes("CHANNEL") || text.toLowerCase().includes("channel")) {
-          step = "SELECT_SERVICE";
-          input = "13";
-        } else if (aiResponse.includes("API") || text.toLowerCase().includes("developer") || text.toLowerCase().includes("api")) {
-          step = "SELECT_SERVICE";
-          input = "14";
-        } else {
-          await sendWhatsAppMessage(from, sanitizePublicFailureReason(aiResponse));
-          return new Response("ok");
+      // 2. Keyword heuristic routing (<1ms)
+      const lower = text.toLowerCase();
+      if (/\b(data|bundle|bundles|gig|gigs|gb|mb)\b/.test(lower) && !lower.includes("history")) {
+        step = "SELECT_SERVICE";
+        input = "1";
+      } else if (/\b(airtime|credit|recharge|topup\s*phone)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "2";
+      } else if (/\b(mashup|mash\s*up|mash)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "3";
+      } else if (/\b(track|order\s*status|check\s*order|my\s*order)\b/.test(lower) || /[0-9a-f]{8}-[0-9a-f]{4}/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "4";
+      } else if (/\b(more|menu\s*2|other|services|bills|utilities)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "5";
+      } else if (/\b(ecg|light|power|prepaid\s*meter|postpaid\s*meter)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "ecg";
+      } else if (/\b(water|gwcl|dstv|gotv|startimes)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "water";
+      } else if (/\b(waec|wassce|bece|checker|result\s*checker)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "waec";
+      } else if (/\b(beneficiary|whitelist)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "beneficiary";
+      } else if (/\b(wallet|balance|my\s*wallet)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "wallet";
+      } else if (/\b(support|help|customer\s*care|care|complaint|human|talk\s*to\s*someone)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "support";
+      } else if (/\b(orders|history|recent\s*orders)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "history";
+      } else if (/\b(portal|become\s*an\s*agent|join\s*agent|reseller)\b/.test(lower)) {
+        step = "SELECT_SERVICE";
+        input = "portal";
+      } else {
+        // 3. Fallback to Gemini AI (Fast 4.5s timeout)
+        let customPrompt = SYSTEM_PROMPT;
+        try {
+          const { data: settingsData } = await supabase
+            .from("v_system_settings_with_secrets").select("whatsapp_bot_prompt")
+            .eq("id", 1)
+            .maybeSingle();
+          if (settingsData && settingsData.whatsapp_bot_prompt && settingsData.whatsapp_bot_prompt.trim().length > 0) {
+            customPrompt = settingsData.whatsapp_bot_prompt;
+          }
+        } catch (err) {
+          console.error("Failed to fetch custom bot prompt:", err);
+        }
+
+        const aiResponse = await callGemini(`${customPrompt.replace(/\{\{storeName\}\}/g, storeName)}\n\nUser Message: "${text}"\n\nAnalyze the intent and respond with a friendly message or identify the service needed.`);
+        if (aiResponse) {
+          if (aiResponse.includes("BUY_DATA") || text.toLowerCase().includes("data")) {
+            step = "SELECT_SERVICE";
+            input = "1";
+          } else if (aiResponse.includes("BUY_AIRTIME") || text.toLowerCase().includes("airtime")) {
+            step = "SELECT_SERVICE";
+            input = "2";
+          } else if (aiResponse.includes("MASHUP") || text.toLowerCase().includes("mashup") || text.toLowerCase().includes("mash up")) {
+            step = "SELECT_SERVICE";
+            input = "3";
+          } else if (aiResponse.includes("TRACK") || text.toLowerCase().includes("track")) {
+            step = "SELECT_SERVICE";
+            input = "4";
+          } else if (aiResponse.includes("ECG") || text.toLowerCase().includes("ecg") || text.toLowerCase().includes("meter") || text.toLowerCase().includes("power") || text.toLowerCase().includes("light")) {
+            step = "SELECT_SERVICE";
+            input = "ecg";
+          } else if (aiResponse.includes("UTILITY") || text.toLowerCase().includes("water") || text.toLowerCase().includes("dstv") || text.toLowerCase().includes("gotv") || text.toLowerCase().includes("startimes")) {
+            step = "SELECT_SERVICE";
+            input = "water";
+          } else if (aiResponse.includes("CHECKER") || aiResponse.includes("WAEC") || text.toLowerCase().includes("checker") || text.toLowerCase().includes("waec") || text.toLowerCase().includes("wassce") || text.toLowerCase().includes("bece")) {
+            step = "SELECT_SERVICE";
+            input = "waec";
+          } else if (aiResponse.includes("BENEFICIARY") || text.toLowerCase().includes("beneficiary") || text.toLowerCase().includes("whitelist")) {
+            step = "SELECT_SERVICE";
+            input = "beneficiary";
+          } else if (aiResponse.includes("WALLET") || text.toLowerCase().includes("wallet") || text.toLowerCase().includes("balance") || text.toLowerCase().includes("topup")) {
+            step = "SELECT_SERVICE";
+            input = "wallet";
+          } else if (aiResponse.includes("SUPPORT") || aiResponse.includes("AGENT") || text.toLowerCase().includes("agent") || text.toLowerCase().includes("human") || text.toLowerCase().includes("care") || text.toLowerCase().includes("complain")) {
+            step = "SELECT_SERVICE";
+            input = "support";
+          } else if (aiResponse.includes("HISTORY") || text.toLowerCase().includes("order history") || text.toLowerCase().includes("recent order")) {
+            step = "SELECT_SERVICE";
+            input = "history";
+          } else if (aiResponse.includes("PORTAL") || aiResponse.includes("RESELLER") || text.toLowerCase().includes("become an agent")) {
+            step = "SELECT_SERVICE";
+            input = "portal";
+          } else if (aiResponse.includes("CHANNEL") || text.toLowerCase().includes("channel")) {
+            step = "SELECT_SERVICE";
+            input = "channel";
+          } else if (aiResponse.includes("API") || text.toLowerCase().includes("developer") || text.toLowerCase().includes("api")) {
+            step = "SELECT_SERVICE";
+            input = "api";
+          } else {
+            await sendWhatsAppMessage(from, sanitizePublicFailureReason(aiResponse));
+            return new Response("ok", { headers: corsHeaders });
+          }
         }
       }
     }
@@ -2161,76 +2393,16 @@ Return ONLY a valid JSON object matching these keys.`;
           break;
         }
 
-        const agentCodeStr = (senderProfile?.referral_code || senderProfile?.slug || "").toUpperCase();
-        const agentBar = isSenderAgent ? [
-          `💼 *Agent Terminal Active:* *${senderProfile?.store_name || senderProfile?.full_name}*`,
-          `💳 *Wallet:* GH₵ ${(senderProfileMeta?.walletBalance || 0).toFixed(2)}`,
-          `🏷️ *Your Agent Code:* *${agentCodeStr}*`,
-          `👉 *Your Bot Link:* \`https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${agentCodeStr}\``,
-          `_(Share with your customers so they order directly from your bot!)_`,
-          ``
-        ] : [];
-
-        const modeHint = isSenderAdmin
-          ? `_🛡️ Admin Terminal Active: Reply *ADMIN* to switch._`
-          : (isSenderAgent ? `_💼 Agent Hub Active: Reply *AGENT* to switch._` : `_🏷️ Have an Agent Code? Reply *CODE <your_code>* or send the code anytime to connect to your agent!_`);
-
-        if (!agent) {
-          reply = [
-            `⚡ *SwiftData Ghana* (@swiftdatagh)`,
-            `👋 *Welcome to SwiftData Ghana!*`,
-            `_Ghana's #1 Automated Telecommunications & Data Hub_ 🇬🇭`,
-            ``,
-            ...agentBar,
-            ...reorderLines,
-            `How can we serve you today?`,
-            ``,
-            `*1* — Buy Data 📶 (Wholesale & Retail Bundles)`,
-            `*2* — Buy Airtime 📱 (Instant Recharge)`,
-            `*3* — MTN Mash Up ⚡ (Voice + Data Packages)`,
-            `*4* — ECG Electricity 💡 (Prepaid Meter Tokens & Postpaid)`,
-            `*5* — Water & Pay TV Bills 💧 (GWCL, DSTV, GOtv, StarTimes)`,
-            `*6* — WAEC Result Checker 🎓 (WASSCE & BECE Instant PIN)`,
-            `*7* — Verify MTN Beneficiary 🛡️ (Instant Whitelist Check)`,
-            `*8* — Wallet Balance & Instant Topup 💰`,
-            `*9* — Track Order & Live Status 🔍`,
-            `*10* — Live Support & Customer Care 🎧 (0598170947)`,
-            `*11* — Recent Orders Report 📋`,
-            isSenderAgent ? `*12* — My Agent Sales & Profit Report 📊` : `*12* — Reseller Agent Portal 💼 (Become an Agent)`,
-            `*13* — Official WhatsApp Channel 📢`,
-            `*14* — Developer API Integration 🔌 (Talk to Tech Lead)`,
-            ``,
-            `_Reply with 1 to 14 (or reply YES to reorder)_`,
-            modeHint
-          ].join("\n");
-        } else {
-          // Custom Agent Storefront Bot
-          reply = [
-            `🏪 *${storeName}*`,
-            `_Official Agent Storefront (Powered by SwiftData Ghana - @swiftdatagh)_`,
-            ``,
-            ...reorderLines,
-            `How can we serve you today?`,
-            ``,
-            `*1* — Buy Data 📶`,
-            `*2* — Buy Airtime 📱`,
-            `*3* — MTN Mash Up ⚡ (Voice + Data)`,
-            `*4* — ECG Electricity 💡 (Prepaid Tokens & Postpaid)`,
-            `*5* — Water & Pay TV Bills 💧 (GWCL, DSTV, GOtv, StarTimes)`,
-            `*6* — WAEC Result Checker 🎓 (WASSCE & BECE Instant PIN)`,
-            `*7* — Verify MTN Beneficiary 🛡️ (Instant Whitelist Check)`,
-            `*8* — Wallet Balance 💰 *(Auth Required)*`,
-            `*9* — Track Order & Live Status 🔍`,
-            `*10* — Contact Store Support 🎧`,
-            `*11* — Recent Orders Report 📋`,
-            `*12* — Reseller Agent Portal 💼`,
-            `*13* — Official WhatsApp Channel 📢`,
-            ``,
-            `_Reply with 1 to 13 (or reply YES to reorder)_`,
-            `_Reply *SWIFTDATA* anytime to switch to official platform bot._`,
-            modeHint
-          ].join("\n");
-        }
+        reply = formatMainMenu(
+          agent,
+          storeName,
+          senderProfile,
+          senderProfileMeta,
+          isSenderAdmin,
+          isSenderAgent,
+          WHATSAPP_BOT_NUMBER,
+          data.reorderOrder
+        );
         nextStep = "SELECT_SERVICE";
         break;
       }
@@ -2325,7 +2497,13 @@ Return ONLY a valid JSON object matching these keys.`;
             ].join("\n");
             nextStep = "SELECT_MTN_CATEGORY";
           }
-        } else if (input === "4" || input.includes("ecg") || input.includes("electricity") || input.includes("meter") || input.includes("light") || input.includes("power")) {
+        } else if (input === "4" || input.includes("track")) {
+          reply = `🔍 *Live Order Tracking & System Diagnostics*\n\nPlease reply with your *Order ID* (or first 8 characters).\n\n_Reply 0 to return to Menu._`;
+          nextStep = "TRACK_ORDER";
+        } else if (input === "5" || input.includes("more") || input.includes("service") || input.includes("bill") || input.includes("utility") || input.includes("other")) {
+          reply = formatMoreMenu(agent?.name || storeName || "SwiftData Ghana");
+          nextStep = "MORE_MENU";
+        } else if (input.includes("ecg") || input.includes("electricity") || input.includes("meter") || input.includes("light") || input.includes("power")) {
           data.isUtility = true;
           data.utilityType = "electricity";
           reply = [
@@ -2338,7 +2516,7 @@ Return ONLY a valid JSON object matching these keys.`;
             `_Reply 1, 2, or 3 — or 0 for Menu_`
           ].join("\n");
           nextStep = "SELECT_UTILITY_PROVIDER";
-        } else if (input === "5" || input.includes("water") || input.includes("gwcl") || input.includes("tv") || input.includes("dstv") || input.includes("gotv") || input.includes("startimes")) {
+        } else if (input.includes("water") || input.includes("gwcl") || input.includes("tv") || input.includes("dstv") || input.includes("gotv") || input.includes("startimes")) {
           data.isUtility = true;
           reply = [
             `💧 *Select Bill / Utility Service:*`,
@@ -2647,7 +2825,317 @@ Return ONLY a valid JSON object matching these keys.`;
             ].join("\n");
             break;
           }
-          reply = `⚠️ Please reply with a number from *1 to 14* (or reply *CODE <agent_code>* to connect to an agent).`;
+          reply = `⚠️ Please reply with a number from *1 to 5* (or *5* for More Services, or reply *CODE <agent_code>* to connect to an agent).`;
+        }
+        break;
+      }
+
+      // ── MORE SERVICES MENU ───────────────────────────────────────────────────
+      case "MORE_MENU": {
+        if (input === "0" || input === "back" || input === "menu" || input === "home" || input === "main") {
+          reply = formatMainMenu(
+            agent,
+            storeName,
+            senderProfile,
+            senderProfileMeta,
+            isSenderAdmin,
+            isSenderAgent,
+            WHATSAPP_BOT_NUMBER,
+            data.reorderOrder
+          );
+          nextStep = "SELECT_SERVICE";
+          break;
+        } else if (input === "1" || input.includes("ecg") || input.includes("electricity") || input.includes("meter") || input.includes("light") || input.includes("power")) {
+          data.isUtility = true;
+          data.utilityType = "electricity";
+          reply = [
+            `⚡ *ECG & Electricity Recharge:*`,
+            `────────────────────`,
+            `*1* — 💡 ECG Prepaid (Alpha & Smart Meters via ECG Direct)`,
+            `*2* — 🏢 ECG Postpaid`,
+            `*3* — ⚡ NEDCO`,
+            `────────────────────`,
+            `_Reply 1, 2, or 3 — or 0 for Menu_`
+          ].join("\n");
+          nextStep = "SELECT_UTILITY_PROVIDER";
+        } else if (input === "2" || input.includes("water") || input.includes("gwcl") || input.includes("tv") || input.includes("dstv") || input.includes("gotv") || input.includes("startimes")) {
+          data.isUtility = true;
+          reply = [
+            `💧 *Select Bill / Utility Service:*`,
+            `────────────────────`,
+            `*1* — 💧 Ghana Water (GWCL Bills)`,
+            `*2* — 📺 Pay TV (DSTV / GOtv / StarTimes)`,
+            `────────────────────`,
+            `_Reply 1 or 2 — or 0 for Menu_`
+          ].join("\n");
+          nextStep = "SELECT_WATER_OR_TV";
+        } else if (input === "3" || input.includes("check") || input.includes("waec") || input.includes("wassce") || input.includes("bece") || input.includes("vouch")) {
+          reply = [
+            `🎓 *WAEC Result Checker Vouchers:* `,
+            `────────────────────`,
+            `*1* — WASSCE Result Checker (GH₵ 18.00)`,
+            `*2* — BECE Result Checker (GH₵ 18.00)`,
+            `────────────────────`,
+            `_Instant Serial Number & PIN delivered directly here in chat!_`,
+            ``,
+            `_Reply 1 or 2 — or 0 for Menu_`
+          ].join("\n");
+          nextStep = "SELECT_CHECKER_TYPE";
+        } else if (input === "4" || input.includes("beneficiary") || input.includes("whitelist") || input.includes("verify")) {
+          reply = [
+            `🛡️ *Verify MTN Beneficiary Number (Affordable SME)*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Check if an MTN number is on the MTN Beneficiary Whitelist to receive *Affordable SME Data Bundles*.`,
+            ``,
+            `💡 *Note:* Beneficiary whitelisting is only required for Affordable SME data bundles. Korba and standard retail packages do NOT require beneficiary whitelisting.`,
+            ``,
+            `📱 *Please enter the 10-digit MTN number to verify:*`,
+            `_Example: 0244123456_`,
+            ``,
+            `_Reply 0 to go back_`
+          ].join("\n");
+          nextStep = "ENTER_BENEFICIARY_CHECK_PHONE";
+        } else if (input === "5" || input.includes("wallet") || input.includes("balance") || input.includes("topup") || input.includes("top up")) {
+          const normFrom = normalizePhone(from);
+          const userMeta = await getUserProfileAndWallet(supabase, from);
+
+          if (!userMeta?.profile) {
+            reply = `⚠️ *Account Not Found*\n\nNo registered SwiftData account was found for your phone number (*${from}*).\n\nPlease sign up at https://swiftdatagh.shop to create your wallet.\n\n_Reply 0 for menu._`;
+            nextStep = "MENU";
+          } else {
+            const profile = userMeta.profile;
+            const balance = userMeta.walletBalance;
+            const accountTitle = profile.store_name || profile.full_name || "SwiftData User";
+
+            data.authProfile = profile;
+            data.topupAgentId = profile.user_id;
+            data.walletBalance = balance;
+
+            reply = [
+              `💳 *SwiftData Wallet Balance*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `Account: *${accountTitle}*`,
+              `Phone:   *${normFrom}*`,
+              `Balance: *GH₵ ${balance.toFixed(2)}*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              ``,
+              `⚡ *Would you like to top up your wallet?*`,
+              `• Reply with the amount in GH₵ (e.g. *20* or *50*) to top up instantly via MoMo.`,
+              `• Or reply *0* to return to the Main Menu.`,
+            ].join("\n");
+            nextStep = "ENTER_WALLET_TOPUP_AMT";
+          }
+        } else if (input === "6" || input.includes("history") || input.includes("recent") || input.includes("report")) {
+          const normFrom = normalizePhone(from);
+          const { data: recentOrders } = await supabase
+            .from("orders")
+            .select("id, network, package_size, amount, status, created_at")
+            .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from},momo_number.eq.${normFrom},momo_number.eq.${from}`)
+            .order("created_at", { ascending: false })
+            .limit(5);
+
+          if (!recentOrders || recentOrders.length === 0) {
+            reply = `📋 *Recent Orders Report*\n\nNo order history found for your phone number (*${from}*).\n\n_Reply 0 to return to menu._`;
+          } else {
+            const statusEmoji: Record<string, string> = {
+              fulfilled: "✅ Delivered",
+              pending: "⏳ Pending",
+              processing: "⚙️ Processing",
+              paid: "💳 Paid",
+              fulfillment_failed: "❌ Failed",
+            };
+
+            const reportLines = [
+              `📋 *Recent Orders Report (Last ${recentOrders.length})*`,
+              ``
+            ];
+
+            recentOrders.forEach((o: any, i: number) => {
+              const dt = new Date(o.created_at).toLocaleDateString("en-GH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+              const label = statusEmoji[o.status] || o.status.toUpperCase();
+              const itemStr = o.package_size ? `${o.network} ${o.package_size}` : `${o.network} GH₵ ${Number(o.amount || 0).toFixed(2)}`;
+              reportLines.push(`*${i + 1}.* ${itemStr}`);
+              reportLines.push(`   Status: *${label}* (${dt})`);
+              reportLines.push(`   Order ID: \`${o.id.slice(0, 8)}\``);
+              reportLines.push(``);
+            });
+
+            reportLines.push(`_Reply 0 to return to the menu._`);
+            reply = reportLines.join("\n");
+          }
+          nextStep = "MENU";
+        } else if (input === "7" || input.includes("support") || input.includes("care") || input.includes("complain") || input.includes("issue") || input.includes("agent") || input.includes("help")) {
+          const normFrom = normalizePhone(from);
+          const { data: recentOrders } = await supabase
+            .from("orders")
+            .select("*")
+            .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from}`)
+            .order("created_at", { ascending: false })
+            .limit(3);
+
+          const waNum = agent?.wa?.replace(/[^0-9]/g, "");
+          const isAgentStore = Boolean(agent && waNum);
+          const storeSupportLink = isAgentStore ? `https://wa.me/${waNum}` : "https://wa.me/233598170947";
+
+          if (recentOrders && recentOrders.length > 0) {
+            const latest = recentOrders[0];
+            data.lastOrderId = latest.id;
+            const diagnostic = formatOrderDiagnostic(latest);
+
+            reply = [
+              `👋 *SwiftData Live Support & Complaints Desk*`,
+              `We are genuinely here to help you get this resolved!`,
+              ``,
+              diagnostic,
+              ``,
+              `🛠️ *Available Actions:*`,
+              latest.status === "fulfillment_failed" || latest.status === "pending" || latest.status === "processing"
+                ? `• Reply *R* to automatically *Retry* this order now 🔄`
+                : ``,
+              isAgentStore
+                ? `• Message Store Agent directly: ${storeSupportLink} 👨‍💼\n• Central Technical Desk: https://wa.me/233598170947`
+                : `• Message SwiftData Official Support: https://wa.me/233598170947 👨‍💼\n• Phone/WhatsApp: *0598170947*\n• Email: *support@swiftdata.tech*`,
+              ``,
+              `_Or reply with your complaint details directly below._`,
+              `_Reply 0 for Main Menu._`
+            ].filter(Boolean).join("\n");
+            nextStep = "LIVE_SUPPORT";
+          } else {
+            reply = [
+              `👋 *SwiftData Live Support & Customer Care*`,
+              `We are genuinely here to help you!`,
+              ``,
+              isAgentStore
+                ? `👨‍💼 *Store Agent Chat:* ${storeSupportLink}\n🛠️ *Central Support Desk:* https://wa.me/233598170947`
+                : `👨‍💼 *SwiftData Live Support:* https://wa.me/233598170947\n📞 *Call / WhatsApp:* 0598170947\n📧 *Email:* support@swiftdata.tech`,
+              ``,
+              `_Reply 0 to return to Menu._`
+            ].join("\n");
+            nextStep = "MENU";
+          }
+        } else if (input === "8" || input.includes("portal") || input.includes("reseller") || input.includes("sales") || input.includes("profit")) {
+          const userMeta = await getUserProfileAndWallet(supabase, from);
+          const profile = userMeta?.profile;
+
+          if (!profile || (!profile.is_agent && !profile.is_sub_agent && !profile.agent_approved && !profile.sub_agent_approved)) {
+            const actFee = await getAgentActivationFee(supabase);
+            reply = [
+              `💼 *SwiftData Reseller Agent Portal*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `Start your own telecom data business directly on WhatsApp!`,
+              ``,
+              `✨ *What You Get as a Registered Agent:*`,
+              `• 🤖 Your own branded WhatsApp Bot link for your customers`,
+              `• 🌐 Your personal online storefront (e.g. swiftdatagh.shop/store/yourname)`,
+              `• 💰 Wholesale bundle rates & set your own prices to keep 100% profit`,
+              `• ⚡ Instant automated 24/7 carrier delivery across MTN, Telecel & AT`,
+              `• 📱 Dedicated Agent Web Dashboard with login credentials`,
+              `• 💵 One-Time Lifetime Activation: *GH₵ ${actFee.toFixed(2)}*`,
+              ``,
+              `🚀 *Get Started Right Now:*`,
+              `👉 Sign up instantly at: *https://swiftdatagh.shop/agent-register*`,
+              `📞 Or chat with our onboarding agent: https://wa.me/233598170947`,
+              ``,
+              `_Reply 0 to return to the Main Menu._`,
+            ].join("\n");
+            nextStep = "MENU";
+          } else {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+
+            const { data: todayOrders } = await supabase
+              .from("orders")
+              .select("amount, profit, status, created_at")
+              .eq("agent_id", profile.user_id)
+              .gte("created_at", todayStart.toISOString());
+
+            let totalCount = 0;
+            let totalRevenue = 0;
+            let totalProfit = 0;
+
+            (todayOrders || []).forEach((o: any) => {
+              if (o.status === "fulfilled" || o.status === "paid") {
+                totalCount++;
+                totalRevenue += Number(o.amount || 0);
+                totalProfit += Number(o.profit || 0);
+              }
+            });
+
+            const storeTitle = profile.store_name || profile.full_name || "Reseller Store";
+            const dtStr = new Date().toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" });
+            const botLink = `https://wa.me/233548942122?text=Hi+${profile.slug || ""}`;
+            const storeUrl = `${APP_BASE_URL}/store/${profile.slug || ""}`;
+            const dashboardUrl = `${APP_BASE_URL}/auth?role=agent`;
+
+            reply = [
+              `📊 *Daily Agent Performance Report*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `Store: *${storeTitle}*`,
+              `Date:  *${dtStr}*`,
+              ``,
+              `📦 Orders Completed Today: *${totalCount}*`,
+              `💰 Total Sales Revenue:   *GH₵ ${totalRevenue.toFixed(2)}*`,
+              `💵 Net Profit Earned:     *GH₵ ${totalProfit.toFixed(2)}*`,
+              `💳 Wallet Balance:        *GH₵ ${Number(userMeta.walletBalance || 0).toFixed(2)}*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              ``,
+              `🛒 *Your Storefront Link:*`,
+              `${storeUrl}`,
+              ``,
+              `🤖 *Your Customer WhatsApp Bot Link:*`,
+              `${botLink}`,
+              `_(Share this link with your customers to earn profit on every order!)_`,
+              ``,
+              `🌐 *Agent Web Dashboard:*`,
+              `${dashboardUrl}`,
+              ``,
+              `_Reply 0 for menu._`,
+            ].join("\n");
+            nextStep = "MENU";
+          }
+        } else if (input === "9" || input.includes("channel")) {
+          reply = [
+            `📢 *Official SwiftData WhatsApp Channel*`,
+            ``,
+            `Stay connected with our official broadcast channel:`,
+            `⚡ Real-time carrier network status (MTN, Telecel, AT)`,
+            `🔥 Daily discounts & flash data bundle sales`,
+            `🔔 Instant service maintenance notices & news`,
+            ``,
+            `👉 *Tap to Join Official Channel:*`,
+            `https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40`,
+            ``,
+            `_Reply 0 to return to the menu._`
+          ].join("\n");
+          nextStep = "MENU";
+        } else if (input === "10" || input.includes("api") || input.includes("developer") || input.includes("integration")) {
+          reply = [
+            `⚡ *SwiftData Developer API & Technical Support* 🔌`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Are you building an app, website, or fintech and need automated data & airtime delivery?`,
+            ``,
+            `🚀 *API Features & Benefits:*`,
+            `• Instant automated carrier top-ups (MTN, Telecel, AT)`,
+            `• High-uptime REST endpoints with JSON payloads`,
+            `• Live webhook delivery status callbacks`,
+            `• Wholesale developer rates & automated wallet billing`,
+            ``,
+            `👨‍💼 *Chat Directly with Our Technical Lead (Real Person):*`,
+            `Our integration engineer is active and ready to issue your API key and help you integrate!`,
+            ``,
+            `👉 *Tap to Chat on WhatsApp:*`,
+            `https://wa.me/233598170947?text=Hello%20SwiftData%20Support,%20I%20am%20a%20developer%20interested%20in%20API%20Access`,
+            ``,
+            `📞 *Call Directly:* *0598170947*`,
+            `📧 *Email:* *support@swiftdata.tech*`,
+            `📖 *Developer Documentation:* https://swiftdatagh.shop/developer`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_Reply 0 to return to the Main Menu._`
+          ].join("\n");
+          nextStep = "MENU";
+        } else {
+          reply = `⚠️ Please choose an option from *1 to 10* — or reply *0* to return to the Main Menu.`;
+          nextStep = "MORE_MENU";
         }
         break;
       }
