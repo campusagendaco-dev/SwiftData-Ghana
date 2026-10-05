@@ -1319,7 +1319,7 @@ export default function AdminBroadcast() {
 
                     {/* Step-by-step instructions */}
                     <div className="w-full bg-black/40 rounded-xl p-3 border border-white/5 text-[11px] space-y-1.5 text-white/70">
-                      <p className="font-bold text-white text-xs flex items-center gap-1.5 text-emerald-400">
+                      <p className="font-bold text-xs flex items-center gap-1.5 text-emerald-400">
                         <Smartphone className="w-3.5 h-3.5" />
                         How to Link:
                       </p>

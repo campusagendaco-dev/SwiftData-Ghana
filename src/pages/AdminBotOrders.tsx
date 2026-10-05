@@ -231,7 +231,7 @@ export default function AdminBotOrders() {
       const rawRows = (data || []) as BotOrderRow[];
       const agentIds = Array.from(new Set(rawRows.map(r => r.agent_id).filter(Boolean))) as string[];
 
-      let agentMap: Record<string, { name: string; slug: string; code: string }> = {};
+      const agentMap: Record<string, { name: string; slug: string; code: string }> = {};
       if (agentIds.length > 0) {
         const { data: profiles } = await supabase
           .from("profiles")

@@ -1457,7 +1457,7 @@ serve(async (req: any) => {
       if (recipientPhone) {
         const voucherText = generatedVouchers.map((v, idx) => `Voucher ${idx + 1}: Serial: ${v.serial} | PIN: ${v.pin}`).join("\n");
         const msg = `Your ${vType} Result Checker:\n${voucherText}\nCheck result at: https://ghana.waecdirect.org`;
-        sendPaymentSms(supabaseAdmin, recipientPhone, "voucher_delivery", { custom_message: msg }).catch(console.error);
+        sendPaymentSms(supabaseAdmin, recipientPhone, "custom", { message: msg }).catch(console.error);
       }
 
       return new Response(JSON.stringify({ 
@@ -1719,7 +1719,9 @@ serve(async (req: any) => {
     };
 
     // Auto-failover: try each active provider in priority order
+    let lastAttemptedProvider: any = null;
     for (const provider of activeProviders) {
+      lastAttemptedProvider = provider;
       const providerCallStart = Date.now();
       if (currentOrderType === "afa") {
         result = await callProviderApi(
@@ -2048,9 +2050,11 @@ serve(async (req: any) => {
 
       // Otherwise, it's a definitive failure/rejection (e.g. Insufficient Balance, Invalid Number, etc.)
       const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
+      const targetStatus = "fulfillment_failed";
+      const targetProviderOrderId = "failed_api_call";
       const isMtnData = (!network || network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO") &&
                         (!currentOrderType || currentOrderType === "data" || currentOrderType === "sme") &&
-                        (provider?.handler_type || "").toLowerCase() !== "korba" &&
+                        (lastAttemptedProvider?.handler_type || "").toLowerCase() !== "korba" &&
                         claimedOrder?.metadata?.category !== "korba" &&
                         claimedOrder?.metadata?.is_korba !== true &&
                         claimedOrder?.metadata?.is_korba !== "true";
@@ -2059,7 +2063,7 @@ serve(async (req: any) => {
         result.reason || "Provider rejected the request",
         network || claimedOrder?.network,
         currentOrderType || claimedOrder?.order_type,
-        provider?.handler_type
+        lastAttemptedProvider?.handler_type
       ) || result.reason || "Provider rejected the request";
 
       isBeneficiaryErr = isMtnData && /beneficiary|payee|daily.*limit|not_allowed|not allowed|not added|whitelist|jessco|eligibility/i.test(String(result.reason || ""));
