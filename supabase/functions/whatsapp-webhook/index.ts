@@ -965,6 +965,7 @@ async function initDataPayment(
     profit,
     parent_profit: parentProfit,
     status: "pending",
+    channel: "whatsapp",
     failure_reason: null,
     metadata,
   });
@@ -1042,6 +1043,7 @@ async function initAirtimePayment(
     profit: 0,
     parent_profit: 0,
     status: "pending",
+    channel: "whatsapp",
     failure_reason: null,
     metadata,
   });
@@ -1145,6 +1147,7 @@ async function initAfaPayment(
     profit: 0,
     parent_profit: 0,
     status: "pending",
+    channel: "whatsapp",
     failure_reason: null,
     metadata,
     afa_full_name: data.afaName,
@@ -1290,6 +1293,7 @@ async function initUtilityPayment(
     profit: 0,
     parent_profit: 0,
     status: "pending",
+    channel: "whatsapp",
     failure_reason: null,
     metadata,
     payment_method: "paystack",

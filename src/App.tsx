@@ -77,6 +77,7 @@ const AdminRefundedOrders = lazy(() => import("./pages/AdminRefundedOrders"));
 const AdminBeneficiaryOrders = lazy(() => import("./pages/AdminBeneficiaryOrders"));
 const AdminSubmittedBeneficiaryNumbers = lazy(() => import("./pages/AdminSubmittedBeneficiaryNumbers"));
 const AdminAirtimeOrders = lazy(() => import("./pages/AdminAirtimeOrders"));
+const AdminBotOrders = lazy(() => import("./pages/AdminBotOrders"));
 const AdminMashUpOrders = lazy(() => import("./pages/AdminMashUpOrders"));
 const AdminUtilityOrders = lazy(() => import("./pages/AdminUtilityOrders"));
 const AdminStandardOrders = lazy(() => import("./pages/AdminStandardOrders"));
@@ -489,6 +490,7 @@ const AppContent = () => {
           <Route path="submitted-numbers" element={<AdminSubmittedBeneficiaryNumbers />} />
           <Route path="submitted-beneficiaries" element={<AdminSubmittedBeneficiaryNumbers />} />
           <Route path="airtime-orders" element={<AdminAirtimeOrders />} />
+          <Route path="bot-orders" element={<AdminBotOrders />} />
           <Route path="mashup-orders" element={<AdminMashUpOrders />} />
           <Route path="utility-orders" element={<AdminUtilityOrders />} />
           <Route path="standard-orders" element={<AdminStandardOrders />} />

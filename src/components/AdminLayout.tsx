@@ -9,7 +9,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap
+  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -42,6 +42,7 @@ export const NAV_SECTIONS: NavSection[] = [
     permKey: "orders",
     items: [
       { label: "Orders",       icon: ShoppingCart, path: "/admin/orders", permKey: "orders" },
+      { label: "Bot Orders",   icon: Bot,          path: "/admin/bot-orders", permKey: "orders" },
       { label: "Airtime Orders", icon: Phone,        path: "/admin/airtime-orders", permKey: "orders" },
       { label: "Mash Up Orders", icon: Zap,          path: "/admin/mashup-orders", permKey: "orders" },
       { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders", permKey: "orders" },
