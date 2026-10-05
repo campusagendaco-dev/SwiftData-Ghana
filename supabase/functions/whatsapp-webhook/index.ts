@@ -898,13 +898,15 @@ async function initDataPayment(
   agent: Agent | null,
   pkg: Pkg,
   network: string,
-  recipient: string
+  recipient: string,
+  payerPhone?: string
 ): Promise<PayResult | null> {
   const orderId = crypto.randomUUID();
   const fee = feeAmount(pkg.basePrice);
   const { profit, parentProfit, parentAgentId, costPrice } = await resolveProfit(supabase, network, pkg.size, agent, pkg.basePrice);
 
-  const provider = getPaymentProvider(from);
+  const cleanPayer = normalizePhone(payerPhone || from) || normalizePhone(recipient) || normalizePhone(from) || from;
+  const provider = getPaymentProvider(cleanPayer);
 
   const metadata = {
     order_id: orderId,
@@ -913,6 +915,7 @@ async function initDataPayment(
     network,
     package_size: pkg.size,
     customer_phone: recipient,
+    momo_number: cleanPayer,
     channel: "whatsapp",
     wa_from: from,
     base_price: pkg.basePrice,
@@ -929,14 +932,13 @@ async function initDataPayment(
       method: "POST",
       headers: { Authorization: `Bearer ${paystackKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: `wa-${from}@swiftdatagh.shop`,
-
+        email: `wa-${cleanPayer}@swiftdatagh.shop`,
         amount: Math.round(pkg.total * 100),
         reference: orderId,
         metadata,
         currency: "GHS",
         mobile_money: {
-          phone: normalizePhone(from),
+          phone: cleanPayer,
           provider,
         }
       }),
@@ -959,6 +961,7 @@ async function initDataPayment(
     network,
     package_size: pkg.size,
     customer_phone: recipient,
+    momo_number: cleanPayer,
     amount: pkg.basePrice,
     paystack_fee: fee,
     cost_price: costPrice,
@@ -980,13 +983,15 @@ async function initAirtimePayment(
   agent: Agent | null,
   network: string,
   airtimeBase: number,
-  recipient: string
+  recipient: string,
+  payerPhone?: string
 ): Promise<PayResult | null> {
   const orderId = crypto.randomUUID();
   const fee = 0;
   const total = airtimeBase;
 
-  const provider = getPaymentProvider(from);
+  const cleanPayer = normalizePhone(payerPhone || from) || normalizePhone(recipient) || normalizePhone(from) || from;
+  const provider = getPaymentProvider(cleanPayer);
 
   const metadata = {
     order_id: orderId,
@@ -994,6 +999,7 @@ async function initAirtimePayment(
     agent_id: agent?.id || null,
     network,
     customer_phone: recipient,
+    momo_number: cleanPayer,
     base_price: airtimeBase,
     channel: "whatsapp",
     wa_from: from,
@@ -1008,14 +1014,13 @@ async function initAirtimePayment(
       method: "POST",
       headers: { Authorization: `Bearer ${paystackKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: `wa-${from}@swiftdatagh.shop`,
-
+        email: `wa-${cleanPayer}@swiftdatagh.shop`,
         amount: Math.round(total * 100),
         reference: orderId,
         metadata,
         currency: "GHS",
         mobile_money: {
-          phone: normalizePhone(from),
+          phone: cleanPayer,
           provider,
         }
       }),
@@ -1037,6 +1042,7 @@ async function initAirtimePayment(
     network,
     package_size: null,
     customer_phone: recipient,
+    momo_number: cleanPayer,
     amount: airtimeBase,
     paystack_fee: fee,
     cost_price: null,
@@ -1912,34 +1918,46 @@ Return ONLY a valid JSON object matching these keys.`;
       const found = await getAgent(supabase, codeWord);
       if (found) {
         agentId = found.id;
-        session.agent_id = found.id;
         data = { ...data, agentId: found.id };
-        step = "MENU";
+        step = "SELECT_SERVICE";
         input = "";
         await supabase
           .from("whatsapp_sessions")
-          .update({
+          .upsert({
+            phone_number: from,
             agent_id: found.id,
-            step: "MENU",
-            session_data: data,
+            current_step: "SELECT_SERVICE",
+            order_data: data,
             updated_at: new Date().toISOString(),
-          })
-          .eq("phone", from);
+          });
 
         const agentWelcome = [
           `✅ *Connected to ${found.name}!*`,
           `━━━━━━━━━━━━━━━━━━━━`,
           `You are now shopping with *${found.name}*'s special bundle rates.`,
           ``,
-          `_Loading store menu..._`
+          `Please choose a service:`,
+          `*1* — Buy Data 📶`,
+          `*2* — Buy Airtime 📱`,
+          `*3* — MTN Mash Up ⚡`,
+          `*4* — ECG Electricity 💡`,
+          `*5* — Water & Pay TV Bills 💧`,
+          `*6* — WAEC Result Checker 🎓`,
+          `*7* — Verify MTN Beneficiary 🛡️`,
+          `*8* — Wallet Balance 💰`,
+          `*9* — Track Order 🔍`,
+          `*10* — Contact Store Support 🎧`,
+          ``,
+          `_Reply with a number (1-10) to begin._`
         ].join("\n");
         await sendWhatsAppMessage(from, agentWelcome);
+        return new Response("ok", { headers: corsHeaders });
       } else {
         await sendWhatsAppMessage(
           from,
           `❌ *Agent Code Not Found*\n\nWe couldn't find an active agent with code *${agentCodeMatch[1].toUpperCase()}*. Please check the spelling or reply *0* for main menu.`
         );
-        return new Response("ok");
+        return new Response("ok", { headers: corsHeaders });
       }
     }
 
@@ -2606,7 +2624,6 @@ Return ONLY a valid JSON object matching these keys.`;
           const maybeAgent = await getAgent(supabase, input);
           if (maybeAgent) {
             agentId = maybeAgent.id;
-            session.agent_id = maybeAgent.id;
             data = { ...data, agentId: maybeAgent.id };
             nextStep = "SELECT_SERVICE";
             reply = [
@@ -3401,6 +3418,92 @@ Return ONLY a valid JSON object matching these keys.`;
         }
         data.recipient = phone;
 
+        // Handle Agent Wholesale Direct Wallet Debit Purchase (proceeds straight to confirmation)
+        if (data.isAgentWholesale) {
+          const summary: string[] = [
+            `📋 *Wholesale Order Summary*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `📶 Network:   *${data.net}*`,
+          ];
+          if (data.pkg) {
+            summary.push(`📦 Bundle:    *${data.pkg}*`);
+          } else {
+            summary.push(`📱 Airtime:   *GH₵ ${data.airtimeBase?.toFixed(2)}*`);
+          }
+          summary.push(`👤 Recipient: \`${phone}\``);
+          summary.push(`💰 Wallet Cost: *GH₵ ${(data.basePrice || data.totalPrice || 0).toFixed(2)}*`);
+          summary.push(`━━━━━━━━━━━━━━━━━━━━`);
+          summary.push(``);
+          summary.push(`Reply *1* to confirm & debit wallet ✅`);
+          summary.push(`Reply *0* to cancel ❌`);
+
+          reply = summary.join("\n");
+          nextStep = "CONFIRM_ORDER";
+          break;
+        }
+
+        // Retail customer: Prompt for Mobile Money payment number!
+        const normFrom = normalizePhone(from);
+        const isFromGhana = normFrom && normFrom.length === 10 && normFrom.startsWith("0");
+
+        const momoPromptLines: string[] = [
+          `💳 *Payment Mobile Money (MoMo) Number*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Please provide the MoMo number that will make payment of *GH₵ ${(data.totalPrice || 0).toFixed(2)}*:`,
+          ``,
+          `• Reply *1* to pay with the recipient number (\`${phone}\`)`,
+        ];
+
+        if (isFromGhana && normFrom !== phone) {
+          momoPromptLines.push(`• Reply *2* to pay with your WhatsApp number (\`${normFrom}\`)`);
+        }
+
+        momoPromptLines.push(
+          `• Or type any other 10-digit Ghanaian MoMo number (e.g. \`0244123456\`)`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `_Reply 0 to cancel._`
+        );
+
+        reply = momoPromptLines.join("\n");
+        nextStep = "ENTER_PAYER_MOMO";
+        break;
+      }
+
+      // ── Payment MoMo Number ───────────────────────────────────────────────────
+      case "ENTER_PAYER_MOMO": {
+        if (input === "0") {
+          reply = `❌ *Order cancelled.* Reply *Hi* for main menu.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
+
+        const normFrom = normalizePhone(from);
+        const isFromGhana = normFrom && normFrom.length === 10 && normFrom.startsWith("0");
+        let payerPhone = "";
+
+        if (input === "1") {
+          payerPhone = data.recipient;
+        } else if (input === "2" && isFromGhana && normFrom !== data.recipient) {
+          payerPhone = normFrom;
+        } else if (input === "yes" || input === "y") {
+          payerPhone = data.recipient || normFrom || "";
+        } else {
+          payerPhone = normalizePhone(input);
+        }
+
+        if (!payerPhone || payerPhone.length !== 10 || !payerPhone.startsWith("0")) {
+          reply = [
+            `❌ *Invalid Mobile Money Number.*`,
+            ``,
+            `Please enter a valid 10-digit Ghanaian number (e.g. \`0244123456\`) or reply *1* to pay with recipient number (\`${data.recipient}\`):`
+          ].join("\n");
+          break;
+        }
+
+        data.payerMoMo = payerPhone;
+        const payerMmoProvider = getPaymentProvider(payerPhone).toUpperCase();
+
         // Smart Duplicate Check (last 60 mins)
         let duplicateWarning = "";
         try {
@@ -3408,7 +3511,7 @@ Return ONLY a valid JSON object matching these keys.`;
           const { data: recent } = await supabase
             .from("orders")
             .select("id, status, created_at")
-            .eq("customer_phone", phone)
+            .eq("customer_phone", data.recipient)
             .in("status", ["fulfilled", "pending", "paid", "processing"])
             .gte("created_at", oneHourAgo)
             .order("created_at", { ascending: false })
@@ -3419,9 +3522,9 @@ Return ONLY a valid JSON object matching these keys.`;
             const timeDiff = Math.round((Date.now() - new Date(last.created_at).getTime()) / 60000);
 
             if (last.status === "fulfilled") {
-              duplicateWarning = `\n\n⚠️ *Duplicate Warning:* A successful order for *${phone}* was placed ${timeDiff} mins ago. To avoid network issues, we recommend waiting 60 mins between orders for the same number.`;
+              duplicateWarning = `\n⚠️ *Duplicate Warning:* A successful order for *${data.recipient}* was placed ${timeDiff} mins ago.`;
             } else {
-              duplicateWarning = `\n\n⚠️ *Order in Progress:* You have a *${last.status}* order for this number from ${timeDiff} mins ago. Please check your status before placing another to avoid double charging.`;
+              duplicateWarning = `\n⚠️ *Order in Progress:* You have an existing *${last.status}* order for this number from ${timeDiff} mins ago.`;
             }
           }
         } catch (err) {
@@ -3429,25 +3532,26 @@ Return ONLY a valid JSON object matching these keys.`;
         }
 
         const summary: string[] = [
-          `📋 *Order Summary*`,
-          ``,
-          `Network:   *${data.net}*`,
+          `📋 *Order Summary & Payment*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `📶 Network:        *${data.net}*`,
         ];
         if (data.pkg) {
-          summary.push(`Bundle:    *${data.pkg}*`);
+          summary.push(`📦 Bundle:         *${data.pkg}*`);
         } else {
-          summary.push(`Airtime:   *GH₵ ${data.airtimeBase?.toFixed(2)}*`);
+          summary.push(`📱 Airtime:        *GH₵ ${data.airtimeBase?.toFixed(2)}*`);
         }
-        summary.push(`Recipient: *${phone}*`);
-        summary.push(`You Pay:   *GH₵ ${(data.totalPrice || 0).toFixed(2)}*`);
+        summary.push(`👤 Recipient:      \`${data.recipient}\` (receives bundle)`);
+        summary.push(`💳 Payment MoMo:   \`${data.payerMoMo}\` (${payerMmoProvider} MoMo)`);
+        summary.push(`💰 Amount to Pay:  *GH₵ ${(data.totalPrice || 0).toFixed(2)}*`);
         summary.push(`_(includes 3% payment processing fee)_`);
 
         if (duplicateWarning) {
-          summary.push(duplicateWarning);
+          summary.push(``, duplicateWarning);
         }
 
         summary.push(``);
-        summary.push(`Reply *1* to confirm ✅`);
+        summary.push(`Reply *1* to send MoMo prompt ✅`);
         summary.push(`Reply *0* to cancel ❌`);
 
         reply = summary.join("\n");
@@ -3538,16 +3642,17 @@ Return ONLY a valid JSON object matching these keys.`;
           break;
         }
 
+        const payerPhone = data.payerMoMo || normalizePhone(from) || data.recipient;
         let result: PayResult | null = null;
         if (!data.isAirtime && data.pkg) {
           const pkg: Pkg = { size: data.pkg, basePrice: data.basePrice, total: data.totalPrice };
-          result = await initDataPayment(supabase, from, agent, pkg, data.net, data.recipient);
+          result = await initDataPayment(supabase, from, agent, pkg, data.net, data.recipient, payerPhone);
         } else {
-          result = await initAirtimePayment(supabase, from, agent, data.net, data.airtimeBase, data.recipient);
+          result = await initAirtimePayment(supabase, from, agent, data.net, data.airtimeBase, data.recipient, payerPhone);
         }
 
         if (!result) {
-          reply = `❌ *Payment prompt failed.* Please try again or reply *0* for the menu.`;
+          reply = `❌ *Payment prompt failed.* Please verify your MoMo number (\`${payerPhone}\`) has an active mobile money account or reply *0* for menu.`;
           nextStep = "MENU";
           data = {};
           break;
@@ -3559,7 +3664,7 @@ Return ONLY a valid JSON object matching these keys.`;
           reply = [
             `🔑 *OTP Verification Required*`,
             ``,
-            `Paystack has sent a verification code (OTP) to your phone number.`,
+            `Paystack has sent a verification code (OTP) to \`${payerPhone}\`.`,
             ``,
             `💬 *Please reply with the OTP code here to complete your payment:*`,
             ``,
@@ -3568,11 +3673,11 @@ Return ONLY a valid JSON object matching these keys.`;
           nextStep = "AWAIT_OTP";
         } else {
           reply = [
-            `📲 *MoMo Prompt Sent!*`,
+            `📲 *MoMo Prompt Sent to ${payerPhone}!*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `*Step 1* — Please check the phone (\`${payerPhone}\`) for the Mobile Money PIN prompt.`,
             ``,
-            `*Step 1* — Please check your phone for the Mobile Money PIN prompt.`,
-            ``,
-            `*Step 2* — Enter your PIN **on your phone** to approve the payment of GH₵ ${(data.totalPrice || 0).toFixed(2)}.`,
+            `*Step 2* — Enter your PIN **on that phone** to approve the payment of *GH₵ ${(data.totalPrice || 0).toFixed(2)}*.`,
             ``,
             `*Step 3* — Reply *Done* here once payment is complete.`,
             ``,

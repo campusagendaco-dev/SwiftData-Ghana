@@ -198,12 +198,16 @@ export default function AdminBroadcast() {
   // Auto-poll WhatsApp status when connect modal is open
   useEffect(() => {
     if (!connectModalOpen) return;
+    let handled = false;
     const interval = setInterval(async () => {
+      if (handled) return;
       try {
         const { data } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
           body: { action: "session_status" }
         });
-        if (data?.connected) {
+        if (data?.connected && !handled) {
+          handled = true;
+          clearInterval(interval);
           setWaSessionStatus(data);
           setConnectStatus("CONNECTED");
           toast({
@@ -213,7 +217,7 @@ export default function AdminBroadcast() {
           fetchWaGroups();
           setTimeout(() => {
             setConnectModalOpen(false);
-          }, 2000);
+          }, 800);
         }
       } catch (_e) {
         // silent polling
