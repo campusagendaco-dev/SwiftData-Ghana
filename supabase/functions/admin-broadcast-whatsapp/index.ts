@@ -6,6 +6,8 @@ import {
   sendWaSenderMessage,
   sendWatiFileViaUrl,
   checkIsOnWhatsApp,
+  getWaSenderStatus,
+  getWaSenderGroups,
   normalizePhone
 } from "../_shared/whatsapp.ts";
 
@@ -167,26 +169,76 @@ serve(async (req: Request) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const body = await req.json().catch(() => ({}));
 
-    // Action: Get Queue Stats
-    if (body.action === "queue_stats") {
-      const { data: stats, error: statsErr } = await supabaseAdmin.rpc(
-        "get_whatsapp_broadcast_queue_stats",
-        { p_broadcast_id: body.broadcast_id || null }
-      );
-      return new Response(JSON.stringify(stats || {}), {
+    // Action: Live WhatsApp Session Status (from Wasender API)
+    if (body.action === "session_status" || body.action === "status") {
+      const sessionStatus = await getWaSenderStatus();
+      return new Response(JSON.stringify(sessionStatus), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: statsErr ? 400 : 200,
+        status: 200,
       });
     }
 
-    // Action: Background Queue Processor Trigger
-    if (body.action === "process_queue") {
-      if (typeof (globalThis as any).EdgeRuntime?.waitUntil === "function") {
-        (globalThis as any).EdgeRuntime.waitUntil(processQueueBatch(supabaseAdmin, body.broadcast_id));
-      } else {
-        processQueueBatch(supabaseAdmin, body.broadcast_id);
+    // Action: Get Connected WhatsApp Groups (from Wasender API)
+    if (body.action === "get_groups" || body.action === "groups") {
+      const groupsResult = await getWaSenderGroups();
+      return new Response(JSON.stringify(groupsResult), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Action: Verify Contact on WhatsApp (Anti-Ban Validator)
+    if (body.action === "check_on_whatsapp" || body.action === "check_whatsapp") {
+      const targetContact = body.contact || body.phone || body.number || "";
+      const checkResult = await checkIsOnWhatsApp(targetContact);
+      return new Response(JSON.stringify(checkResult), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Action: Direct Broadcast to Selected WhatsApp Groups
+    if (body.action === "broadcast_groups" || body.target_type === "groups") {
+      const groupJids: string[] = Array.isArray(body.group_ids)
+        ? body.group_ids
+        : (body.group_id ? [body.group_id] : []);
+
+      if (groupJids.length === 0) {
+        return new Response(JSON.stringify({ error: "No target groups selected" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        });
       }
-      return new Response(JSON.stringify({ status: "processing_started" }), {
+
+      const mediaOpts = {
+        imageUrl: body.image_url,
+        videoUrl: body.video_url,
+        documentUrl: body.document_url,
+        fileName: body.file_name,
+        audioUrl: body.audio_url,
+        stickerUrl: body.sticker_url,
+      };
+
+      const results = [];
+      for (const gJid of groupJids) {
+        try {
+          const sent = await sendWaSenderMessage(gJid, body.message, mediaOpts);
+          results.push({ id: gJid, sent });
+        } catch (err: any) {
+          results.push({ id: gJid, sent: false, error: err.message });
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
+      await supabaseAdmin.from("system_logs").insert({
+        level: "info",
+        source: "whatsapp_broadcast",
+        event: "broadcast.groups_dispatched",
+        message: `Dispatched WhatsApp broadcast to ${groupJids.length} groups via WaSender`,
+        data: { groupJids, results, message: body.message?.slice(0, 100) }
+      });
+
+      return new Response(JSON.stringify({ success: true, count: groupJids.length, results }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
@@ -279,13 +331,32 @@ serve(async (req: Request) => {
     }
 
     // Normalize and Deduplicate all recipient phones
-    const uniquePhones = Array.from(
+    let uniquePhones = Array.from(
       new Set(
         phoneList
           .map((p) => normalizePhone(p) || p.replace(/\D/g, ""))
           .filter((p) => p && p.length >= 9)
       )
     );
+
+    // Pre-Verification Anti-Ban Shield: Filter out numbers not registered on WhatsApp
+    if (verify_before_send && uniquePhones.length > 0) {
+      console.log(`[WhatsApp Broadcast] Pre-validating ${uniquePhones.length} contacts on WhatsApp...`);
+      const validPhones: string[] = [];
+      for (const phone of uniquePhones) {
+        try {
+          const check = await checkIsOnWhatsApp(phone);
+          if (check.exists !== false) {
+            validPhones.push(phone);
+          } else {
+            console.log(`[WhatsApp Broadcast] Filtered out non-WhatsApp number: ${phone}`);
+          }
+        } catch (_err) {
+          validPhones.push(phone); // If check temporarily fails, keep phone to be safe
+        }
+      }
+      uniquePhones = validPhones;
+    }
 
     console.log(`[WhatsApp Broadcast] Enqueueing broadcast for ${uniquePhones.length} recipients...`);
 

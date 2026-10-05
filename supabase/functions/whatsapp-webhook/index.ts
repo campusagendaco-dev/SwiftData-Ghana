@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
+import { sendWhatsAppMessage, checkIsOnWhatsApp, getWaSenderStatus } from "../_shared/whatsapp.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { SYSTEM_PROMPT } from "./prompt.ts";
 
@@ -1334,6 +1334,20 @@ serve(async (req: Request) => {
     } else {
       // Incoming from WaSender API (JSON)
       const payload = await req.json().catch(() => null);
+      if (payload?.action === "check_on_whatsapp" || payload?.action === "check_whatsapp") {
+        const checkResult = await checkIsOnWhatsApp(payload.contact || payload.phone || payload.number || "");
+        return new Response(JSON.stringify(checkResult), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+      if (payload?.action === "session_status" || payload?.action === "status") {
+        const sessionStatus = await getWaSenderStatus();
+        return new Response(JSON.stringify(sessionStatus), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
       if (!payload || !payload?.event?.includes("message")) {
         return new Response("ok", { headers: corsHeaders });
       }

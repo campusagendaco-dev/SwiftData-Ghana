@@ -420,7 +420,7 @@ const DashboardWhatsAppBot = () => {
                 setChecking(true);
                 setCheckResult(null);
                 try {
-                  const { data, error } = await supabase.functions.invoke("whatsapp-webhook", {
+                  const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
                     body: { action: "check_on_whatsapp", contact: checkNumber.trim() }
                   });
                   if (error) throw error;

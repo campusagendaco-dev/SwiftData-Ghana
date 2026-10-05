@@ -81,6 +81,49 @@ export default function AdminBroadcast() {
 
   const [packages, setPackages] = useState<any[]>([]);
 
+  // WaSender Live Integration State
+  const [waSessionStatus, setWaSessionStatus] = useState<{ connected: boolean; status: string; user?: any } | null>(null);
+  const [loadingWaStatus, setLoadingWaStatus] = useState(false);
+  const [waGroups, setWaGroups] = useState<Array<{ id: string; name: string; participantsCount: number; isAnnounce?: boolean }>>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [broadcastMode, setBroadcastMode] = useState<"users" | "groups">("users");
+
+  const fetchWaSessionStatus = useCallback(async () => {
+    setLoadingWaStatus(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+        body: { action: "session_status" }
+      });
+      if (!error && data) {
+        setWaSessionStatus(data);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch WA session status:", e);
+    }
+    setLoadingWaStatus(false);
+  }, []);
+
+  const fetchWaGroups = useCallback(async () => {
+    setLoadingGroups(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+        body: { action: "get_groups" }
+      });
+      if (!error && data?.groups) {
+        setWaGroups(data.groups);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch WA groups:", e);
+    }
+    setLoadingGroups(false);
+  }, []);
+
+  useEffect(() => {
+    fetchWaSessionStatus();
+    fetchWaGroups();
+  }, [fetchWaSessionStatus, fetchWaGroups]);
+
   useEffect(() => {
     supabase
       .from("global_package_settings")
@@ -133,6 +176,36 @@ export default function AdminBroadcast() {
     setSending(true);
 
     try {
+      // Direct WhatsApp Groups Broadcast Mode
+      if (broadcastMode === "groups") {
+        if (selectedGroups.length === 0) {
+          toast({ title: "No groups selected", description: "Please select at least one WhatsApp group.", variant: "destructive" });
+          setSending(false);
+          return;
+        }
+
+        const { data: waData, error: waError } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+          body: {
+            action: "broadcast_groups",
+            group_ids: selectedGroups,
+            message: `${title ? `*${title.trim()}*\n\n` : ""}${body.trim()}`,
+            image_url: mediaUrl.trim() && !mediaUrl.includes(".pdf") && !mediaUrl.includes(".doc") ? mediaUrl.trim() : undefined,
+            document_url: mediaUrl.trim() && (mediaUrl.includes(".pdf") || mediaUrl.includes(".doc")) ? mediaUrl.trim() : undefined,
+            file_name: mediaFileName.trim() || undefined,
+            sticker_url: stickerUrl.trim() || undefined,
+          }
+        });
+
+        if (waError) throw waError;
+
+        toast({
+          title: "Groups Broadcast Dispatched! 🚀",
+          description: `Successfully broadcasted to ${selectedGroups.length} WhatsApp groups.`,
+        });
+        setSending(false);
+        return;
+      }
+
       // Fetch recipient user_ids based on segment
       let query = (supabase as any).from("profiles").select("user_id, phone, whatsapp_number, phone_number");
       query = buildSegmentQuery(query);
@@ -449,39 +522,188 @@ export default function AdminBroadcast() {
             </div>
 
             {/* Send button */}
+            {/* Send button */}
             <Button type="button" onClick={handleSend} disabled={sending || !title || !body}
               className="w-full gap-2 bg-primary hover:bg-primary/90 text-black font-black h-11">
               <Send className="w-4 h-4" />
-              {sending ? "Sending..." : `Send to ${recipientCount !== null ? recipientCount.toLocaleString() : "?"} agents`}
+              {sending
+                ? "Sending..."
+                : broadcastMode === "groups"
+                  ? `Send to ${selectedGroups.length} WhatsApp Group${selectedGroups.length === 1 ? "" : "s"}`
+                  : `Send to ${recipientCount !== null ? recipientCount.toLocaleString() : "?"} recipients`}
             </Button>
           </Card>
         </div>
 
         {/* Settings panel */}
         <div className="space-y-4">
-          {/* Segment */}
-          <Card className="bg-white/5 border-white/10 p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-primary" />
-              <h3 className="text-white font-black text-sm">Target Segment</h3>
-            </div>
-            <div className="space-y-2">
-              {SEGMENTS.map((s) => (
-                <button type="button" key={s.value} onClick={() => { setSegment(s.value); setRecipientCount(null); }}
-                  className={cn("w-full text-left px-3 py-2.5 rounded-xl border transition-all",
-                    segment === s.value ? "bg-primary/10 border-primary/30" : "bg-white/[0.03] border-white/5 hover:bg-white/5")}>
-                  <p className={cn("text-sm font-bold", segment === s.value ? "text-primary" : "text-white/70")}>{s.label}</p>
-                  <p className="text-white/30 text-[11px] mt-0.5">{s.desc}</p>
-                </button>
-              ))}
+          {/* WaSender Live Session Monitor */}
+          <Card className="bg-emerald-950/20 border-emerald-500/20 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-white font-black text-xs">WaSender Session Monitor</h3>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => { fetchWaSessionStatus(); fetchWaGroups(); }}
+                disabled={loadingWaStatus}
+                className="h-7 px-2 text-[10px] text-emerald-400 hover:bg-emerald-500/10 gap-1"
+              >
+                <RefreshCw className={cn("w-3 h-3", loadingWaStatus && "animate-spin")} />
+                Refresh
+              </Button>
             </div>
 
-            <Button type="button" variant="outline" size="sm" onClick={handleCountRecipients} disabled={counting}
-              className="w-full border-white/10 text-white/60 hover:bg-white/5 gap-2">
-              <Users className="w-3.5 h-3.5" />
-              {counting ? "Counting..." : recipientCount !== null ? `${recipientCount} recipients` : "Count Recipients"}
-            </Button>
+            <div className="flex items-center justify-between bg-black/40 rounded-xl p-2.5 border border-white/5">
+              <div className="space-y-0.5">
+                <p className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                  <span className={cn(
+                    "w-2 h-2 rounded-full",
+                    waSessionStatus?.connected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                  )} />
+                  {waSessionStatus?.connected ? "WhatsApp Connected" : (waSessionStatus?.status === "logged_out" ? "Logged Out" : "Session Checking...")}
+                </p>
+                <p className="text-[10px] text-white/40">
+                  {waSessionStatus?.user?.name || waSessionStatus?.user?.phone
+                    ? `Account: ${waSessionStatus.user.name || ''} (${waSessionStatus.user.phone || ''})`
+                    : (waSessionStatus?.connected ? "Ready to dispatch" : "Scan QR in WaSender dashboard if disconnected")}
+                </p>
+              </div>
+              <Badge className={cn(
+                "text-[10px] px-2 py-0.5 border",
+                waSessionStatus?.connected
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              )}>
+                {waSessionStatus?.connected ? "Live & Ready" : (waSessionStatus?.status || "Idle")}
+              </Badge>
+            </div>
+
+            {/* Target Mode Toggle */}
+            <div className="grid grid-cols-2 gap-1.5 bg-black/40 p-1 rounded-xl border border-white/5 text-xs">
+              <button
+                type="button"
+                onClick={() => setBroadcastMode("users")}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg font-bold transition-all text-[11px] flex items-center justify-center gap-1.5",
+                  broadcastMode === "users" ? "bg-primary text-black" : "text-white/50 hover:text-white"
+                )}
+              >
+                <Users className="w-3.5 h-3.5" />
+                User Segments
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBroadcastMode("groups");
+                  if (waGroups.length === 0) fetchWaGroups();
+                }}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg font-bold transition-all text-[11px] flex items-center justify-center gap-1.5",
+                  broadcastMode === "groups" ? "bg-emerald-500 text-black" : "text-white/50 hover:text-white"
+                )}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                WhatsApp Groups ({waGroups.length})
+              </button>
+            </div>
           </Card>
+
+          {/* Target Segment or Groups Card */}
+          {broadcastMode === "groups" ? (
+            <Card className="bg-white/5 border-white/10 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-white font-black text-sm">Target WhatsApp Groups</h3>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedGroups.length === waGroups.length) {
+                      setSelectedGroups([]);
+                    } else {
+                      setSelectedGroups(waGroups.map(g => g.id));
+                    }
+                  }}
+                  className="h-6 px-2 text-[10px] text-white/50 hover:text-white"
+                >
+                  {selectedGroups.length === waGroups.length ? "Deselect All" : "Select All"}
+                </Button>
+              </div>
+
+              {loadingGroups ? (
+                <div className="p-6 text-center text-xs text-white/40">Loading connected WhatsApp groups...</div>
+              ) : waGroups.length === 0 ? (
+                <div className="p-4 rounded-xl border border-white/5 bg-black/40 text-center space-y-2">
+                  <p className="text-xs text-white/50">No WhatsApp groups found on this session.</p>
+                  <p className="text-[11px] text-white/30">Make sure your WhatsApp bot account is connected and joined to groups in Wasender.</p>
+                  <Button type="button" size="sm" variant="outline" onClick={fetchWaGroups} className="text-xs h-7 border-white/10 text-white/60">
+                    Retry Fetching Groups
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {waGroups.map((g) => {
+                    const isSelected = selectedGroups.includes(g.id);
+                    return (
+                      <div
+                        key={g.id}
+                        onClick={() => {
+                          setSelectedGroups(prev =>
+                            isSelected ? prev.filter(id => id !== g.id) : [...prev, g.id]
+                          );
+                        }}
+                        className={cn(
+                          "flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all",
+                          isSelected ? "bg-emerald-500/10 border-emerald-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/5"
+                        )}
+                      >
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold">{g.name}</p>
+                          <p className="text-[10px] text-white/40">{g.participantsCount} participants</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500 w-4 h-4 pointer-events-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          ) : (
+            <Card className="bg-white/5 border-white/10 p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-primary" />
+                <h3 className="text-white font-black text-sm">Target Segment</h3>
+              </div>
+              <div className="space-y-2">
+                {SEGMENTS.map((s) => (
+                  <button type="button" key={s.value} onClick={() => { setSegment(s.value); setRecipientCount(null); }}
+                    className={cn("w-full text-left px-3 py-2.5 rounded-xl border transition-all",
+                      segment === s.value ? "bg-primary/10 border-primary/30" : "bg-white/[0.03] border-white/5 hover:bg-white/5")}>
+                    <p className={cn("text-sm font-bold", segment === s.value ? "text-primary" : "text-white/70")}>{s.label}</p>
+                    <p className="text-white/30 text-[11px] mt-0.5">{s.desc}</p>
+                  </button>
+                ))}
+              </div>
+
+              <Button type="button" variant="outline" size="sm" onClick={handleCountRecipients} disabled={counting}
+                className="w-full border-white/10 text-white/60 hover:bg-white/5 gap-2">
+                <Users className="w-3.5 h-3.5" />
+                {counting ? "Counting..." : recipientCount !== null ? `${recipientCount} recipients` : "Count Recipients"}
+              </Button>
+            </Card>
+          )}
 
           {/* Channel */}
           <Card className="bg-white/5 border-white/10 p-5 space-y-3">
@@ -622,7 +844,7 @@ export default function AdminBroadcast() {
                   setTestingContact(true);
                   setContactResult(null);
                   try {
-                    const { data, error } = await supabase.functions.invoke("whatsapp-webhook", {
+                    const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
                       body: { action: "check_on_whatsapp", contact: testContact.trim() }
                     });
                     if (error) throw error;

@@ -251,18 +251,15 @@ export async function checkIsOnWhatsApp(
     return { success: false, exists: false, error: "Empty contact identifier" };
   }
 
-  // If plain phone number, normalize to international format
-  if (!identifier.includes("@")) {
-    let clean = identifier.replace(/\s+/g, "").replace(/-/g, "").replace(/^whatsapp:/i, "");
-    if (clean.startsWith("0") && clean.length === 10) {
-      clean = "+233" + clean.slice(1);
-    } else if (clean.startsWith("233") && !clean.startsWith("+")) {
-      clean = "+" + clean;
-    } else if (!clean.startsWith("+") && /^\d+$/.test(clean)) {
-      clean = "+" + clean;
-    }
-    identifier = clean;
+  // Format clean JID or digits (no '+', no spaces)
+  let clean = identifier.replace(/\s+/g, "").replace(/-/g, "").replace(/^whatsapp:/i, "").replace(/^\+/, "");
+  if (clean.startsWith("0") && clean.length === 10) {
+    clean = "233" + clean.slice(1);
   }
+  if (!clean.includes("@")) {
+    clean = `${clean}@s.whatsapp.net`;
+  }
+  identifier = clean;
 
   // Check in-memory cache first to avoid high-risk endpoint overuse
   const cached = onWhatsAppCache.get(identifier);
@@ -276,9 +273,8 @@ export async function checkIsOnWhatsApp(
     return { success: false, exists: false, error: "Missing WaSender API Key (WHATSAPP_API_KEY)" };
   }
 
-  // URL-encode special characters (e.g. @ as %40) as required by WaSender API
   const encodedPath = encodeURIComponent(identifier);
-  const url = `https://www.wasenderapi.com/api/on-whatsapp/${encodedPath}`;
+  const url = `https://wasenderapi.com/api/on-whatsapp/${encodedPath}`;
 
   try {
     const res = await fetch(url, {
@@ -289,8 +285,8 @@ export async function checkIsOnWhatsApp(
       },
     });
 
-    if (res.ok) {
-      const json = await res.json().catch(() => ({}));
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json?.success !== false) {
       const exists = Boolean(json?.data?.exists ?? json?.exists);
       // Cache positive/negative existence for 24 hours
       onWhatsAppCache.set(identifier, {
@@ -306,12 +302,20 @@ export async function checkIsOnWhatsApp(
       };
     }
 
-    const errText = await res.text();
+    if (json?.message && json.message.toLowerCase().includes("session is not connected")) {
+      return {
+        success: false,
+        exists: false,
+        error: "WhatsApp Session is not connected in Wasender. Please connect session first.",
+      };
+    }
+
+    const errText = json?.message || (await res.text().catch(() => `HTTP ${res.status}`));
     console.error(`[WaSender on-whatsapp] Verification failed (${res.status}):`, errText);
     return {
       success: false,
       exists: false,
-      error: `WaSender verification failed (${res.status}): ${errText}`,
+      error: `WaSender verification failed: ${errText}`,
     };
   } catch (err: any) {
     console.error("[WaSender on-whatsapp] Network/fetch error:", err?.message || err);
@@ -320,6 +324,79 @@ export async function checkIsOnWhatsApp(
       exists: false,
       error: err?.message || String(err),
     };
+  }
+}
+
+/**
+ * Check live WhatsApp session status & user details via WaSender API.
+ * Endpoint: GET https://wasenderapi.com/api/status and /api/user
+ */
+export async function getWaSenderStatus(apiKey?: string): Promise<{
+  connected: boolean;
+  status: string;
+  user?: any;
+  error?: string;
+}> {
+  const resolvedKey = apiKey || Deno.env.get("WHATSAPP_API_KEY") || "";
+  if (!resolvedKey) {
+    return { connected: false, status: "no_api_key", error: "Missing WHATSAPP_API_KEY" };
+  }
+  try {
+    const statusRes = await fetch("https://wasenderapi.com/api/status", {
+      headers: { Authorization: `Bearer ${resolvedKey}` },
+    });
+    const statusJson = await statusRes.json().catch(() => ({}));
+    const status = statusJson?.status || (statusRes.ok ? "unknown" : "error");
+    const connected = status === "connected" || status === "open";
+
+    let user = null;
+    if (connected) {
+      const userRes = await fetch("https://wasenderapi.com/api/user", {
+        headers: { Authorization: `Bearer ${resolvedKey}` },
+      });
+      const userJson = await userRes.json().catch(() => ({}));
+      if (userJson?.success && userJson?.data) {
+        user = userJson.data;
+      }
+    }
+
+    return { connected, status, user };
+  } catch (err: any) {
+    return { connected: false, status: "error", error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Fetch all WhatsApp groups from connected WaSender session.
+ * Endpoint: GET https://wasenderapi.com/api/groups
+ */
+export async function getWaSenderGroups(apiKey?: string): Promise<{
+  success: boolean;
+  groups: Array<{ id: string; name: string; participantsCount: number; isAnnounce?: boolean }>;
+  error?: string;
+}> {
+  const resolvedKey = apiKey || Deno.env.get("WHATSAPP_API_KEY") || "";
+  if (!resolvedKey) {
+    return { success: false, groups: [], error: "Missing WHATSAPP_API_KEY" };
+  }
+  try {
+    const res = await fetch("https://wasenderapi.com/api/groups", {
+      headers: { Authorization: `Bearer ${resolvedKey}` },
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      return { success: false, groups: [], error: json?.message || "Failed to fetch groups from WaSender" };
+    }
+    const list = Array.isArray(json?.data) ? json.data : (Array.isArray(json) ? json : []);
+    const groups = list.map((g: any) => ({
+      id: g.id || g.jid,
+      name: g.subject || g.name || "Unnamed Group",
+      participantsCount: Array.isArray(g.participants) ? g.participants.length : (g.size || 0),
+      isAnnounce: Boolean(g.announce || g.isAnnounce)
+    }));
+    return { success: true, groups };
+  } catch (err: any) {
+    return { success: false, groups: [], error: err?.message || String(err) };
   }
 }
 
