@@ -4,9 +4,23 @@ import { log } from "./logger.ts";
 
 declare const Deno: any;
 
-export function isBeneficiaryFailure(reason: string | null | undefined): boolean {
+export function isBeneficiaryFailure(
+  reason: string | null | undefined,
+  network?: string | null,
+  orderType?: string | null,
+  provider?: string | null
+): boolean {
   if (!reason) return false;
-  return /beneficiary|payee|limit|not_allowed|not allowed|not added|not on|whitelist|unregistered|recipient/i.test(String(reason));
+  const net = String(network || "").toUpperCase();
+  if (network && !net.includes("MTN") && !net.includes("YELLO")) return false;
+
+  const type = String(orderType || "").toLowerCase();
+  if (orderType && type !== "data" && type !== "sme") return false;
+
+  const prov = String(provider || "").toLowerCase();
+  if (provider && (prov === "korba" || prov.includes("korba"))) return false;
+
+  return /beneficiary|daily.*limit|payee_limit|not_allowed|not allowed|not added|not on|whitelist|unregistered|eligibility/i.test(String(reason));
 }
 
 export function isGuestOrder(order: any): boolean {
@@ -69,6 +83,28 @@ export async function handleGuestBeneficiaryFailure(
       console.warn(`[guest-refund] Cannot mark order ${orderId} as non-beneficiary failed: already in transit with provider (${freshOrder.provider_order_id || freshOrder.provider_id})`);
       return { success: false, carrierSubmitted: false };
     }
+  }
+
+  // Guard: MTN SME Beneficiary Whitelist ONLY applies to MTN SME Data packages, NEVER for Korba, Airtime, or other carriers
+  const net = String(order.network || "").toUpperCase();
+  const isMtn = net.includes("MTN") || net.includes("YELLO");
+  const orderType = String(order.order_type || "data").toLowerCase();
+  const isData = orderType === "data" || orderType === "sme";
+  const isKorba = String(order.provider_id || "").toLowerCase().includes("korba") || 
+                  order.metadata?.category === "korba" || 
+                  order.metadata?.package_category === "korba" || 
+                  order.metadata?.is_korba === true ||
+                  order.metadata?.provider_type === "korba";
+
+  if (!isMtn || !isData || isKorba) {
+    console.log(`[guest-refund] Order ${orderId} is non-MTN, non-SME, or Korba (${order.network || 'unknown'}, ${orderType}). Skipping MTN whitelist logic.`);
+    await supabaseAdmin.from("orders").update({
+      status: "fulfillment_failed",
+      provider_order_id: "failed_api_call",
+      failure_reason: failureReason || "Carrier declined transaction for this recipient number.",
+      updated_at: nowIso,
+    }).eq("id", orderId);
+    return { success: true, carrierSubmitted: false };
   }
 
   console.log(`[guest-refund] Handling guest non-beneficiary failure for order ${orderId} (${customerPhone}). Setting up tracking resolution...`);

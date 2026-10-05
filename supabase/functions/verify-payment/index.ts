@@ -86,9 +86,16 @@ function normalizeRecipient(phone: string | null | undefined): string {
   return phone.trim();
 }
 
-function translateFailureReason(reason: string | null | undefined): string | null {
+function translateFailureReason(
+  reason: string | null | undefined,
+  network?: string | null,
+  orderType?: string | null,
+  provider?: string | null
+): string | null {
   if (!reason) return null;
   const r = String(reason).trim().toUpperCase();
+
+  // 1. Mobile Money checkout payment failures
   if (
     r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED") ||
     r.includes("LOW_BALANCE") ||
@@ -97,27 +104,53 @@ function translateFailureReason(reason: string | null | undefined): string | nul
   ) {
     return "Mobile Money payment declined: Customer wallet has insufficient funds or has reached its daily MoMo transaction limit.";
   }
-  if (r.includes("PAYEE_LIMIT_REACHED")) {
-    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
-  }
-  if (
-    r.includes("BENEFICIARY") ||
-    r.includes("NOT_ALLOWED") ||
-    r.includes("NOT ALLOWED") ||
-    r.includes("NOT ADDED") ||
-    r.includes("NOT_ADDED") ||
-    r.includes("WHITELIST") ||
-    r.includes("JESSCO") ||
-    r.includes("ELIGIBILITY")
-  ) {
-    return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
-  }
   if (r.includes("CUSTOMER ABANDONED TRANSACTION") || r.includes("CUSTOMER ABANDONED")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
   }
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
     return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
   }
+
+  const netUpper = String(network || "").toUpperCase();
+  const isMtn = netUpper.includes("MTN") || netUpper.includes("YELLO");
+  const typeLower = String(orderType || "data").toLowerCase();
+  const isDataOrSme = typeLower === "data" || typeLower === "sme";
+  const isKorba = String(provider || "").toLowerCase() === "korba";
+
+  // Beneficiary, Whitelist, and MTN Daily Data limits ONLY apply to MTN SME Data orders from data aggregators
+  const isMtnSmeData = isMtn && isDataOrSme && !isKorba;
+
+  if (isMtnSmeData) {
+    if (r.includes("PAYEE_LIMIT_REACHED") || r.includes("DAILY LIMIT")) {
+      return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+    }
+    if (
+      r.includes("BENEFICIARY") ||
+      r.includes("NOT_ALLOWED") ||
+      r.includes("NOT ALLOWED") ||
+      r.includes("NOT ADDED") ||
+      r.includes("NOT_ADDED") ||
+      r.includes("WHITELIST") ||
+      r.includes("JESSCO") ||
+      r.includes("ELIGIBILITY")
+    ) {
+      return "The recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.";
+    }
+  }
+
+  // Non-MTN or Non-SME orders: Never show MTN data limit errors!
+  if (typeLower === "airtime") {
+    if (r.includes("NOT_ALLOWED") || r.includes("NOT ALLOWED") || r.includes("INVALID") || r.includes("FAILED")) {
+      return "Airtime delivery could not be completed by carrier for this recipient number. Please verify recipient number or try another amount.";
+    }
+  }
+
+  if (isKorba) {
+    return reason
+      .replace(/\b(Korba|Korba365)\b/gi, "Carrier Network")
+      .replace(/Carrier Network reported:\s*/gi, "Carrier reported: ");
+  }
+
   return reason;
 }
 
@@ -742,7 +775,12 @@ serve(async (req: any) => {
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
           } else if (isFailed) {
             const targetStatus = "fulfillment_failed";
-            const resolvedReason = translateFailureReason(checkResult.reason || "Provider reported failure during status check");
+            const resolvedReason = translateFailureReason(
+              checkResult.reason || "Provider reported failure during status check",
+              existingOrder?.network,
+              existingOrder?.order_type,
+              provider?.handler_type
+            );
             await supabaseAdmin.from("orders").update({ 
               status: targetStatus, 
               failure_reason: resolvedReason 
@@ -1038,7 +1076,12 @@ serve(async (req: any) => {
           metadata = existingOrder?.metadata || {};
           currentOrderType = (existingOrder?.order_type || "data") as string;
         } else if (isKorbaFailed) {
-          const failMsg = translateFailureReason(statusData.message || statusData.results || statusData.error_message || "Payment failed");
+          const failMsg = translateFailureReason(
+            statusData.message || statusData.results || statusData.error_message || "Payment failed",
+            existingOrder?.network,
+            existingOrder?.order_type,
+            "korba"
+          );
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
             failure_reason: failMsg
@@ -1104,7 +1147,7 @@ serve(async (req: any) => {
           }
         } else if (txStatus === "failed") {
           const rawFailMsg = verifyData.data?.gateway_response || verifyData.data?.message || verifyData.message || "Payment failed on Mobile Money";
-          const failMsg = translateFailureReason(rawFailMsg) || rawFailMsg;
+          const failMsg = translateFailureReason(rawFailMsg, existingOrder?.network, existingOrder?.order_type) || rawFailMsg;
           console.warn(`[verify-payment] Payment failed on gateway:`, failMsg);
           await supabaseAdmin.from("orders").update({
             status: "fulfillment_failed",
@@ -1964,14 +2007,25 @@ serve(async (req: any) => {
 
       // Otherwise, it's a definitive failure/rejection (e.g. Insufficient Balance, Invalid Number, etc.)
       const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
-      const targetStatus = "fulfillment_failed";
-      const targetProviderOrderId = "failed_api_call";
-      const targetFailureReason = translateFailureReason(result.reason || "Provider rejected the request") || result.reason || "Provider rejected the request";
-      isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || ""));
+      const isMtnData = (!network || network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO") &&
+                        (!currentOrderType || currentOrderType === "data" || currentOrderType === "sme") &&
+                        (provider?.handler_type || "").toLowerCase() !== "korba" &&
+                        claimedOrder?.metadata?.category !== "korba" &&
+                        claimedOrder?.metadata?.is_korba !== true &&
+                        claimedOrder?.metadata?.is_korba !== "true";
+
+      const targetFailureReason = translateFailureReason(
+        result.reason || "Provider rejected the request",
+        network || claimedOrder?.network,
+        currentOrderType || claimedOrder?.order_type,
+        provider?.handler_type
+      ) || result.reason || "Provider rejected the request";
+
+      isBeneficiaryErr = isMtnData && /beneficiary|payee|daily.*limit|not_allowed|not allowed|not added|whitelist|jessco|eligibility/i.test(String(result.reason || ""));
 
       let guestRefundResult = null;
       if (isBeneficiaryErr && isGuestOrder(claimedOrder)) {
-        console.log(`[verify-payment] Non-beneficiary failure on guest order ${targetReference}. Queuing carrier whitelist submission & sending tracking SMS...`);
+        console.log(`[verify-payment] Non-beneficiary failure on MTN guest order ${targetReference}. Queuing carrier whitelist submission & sending tracking SMS...`);
         guestRefundResult = await handleGuestBeneficiaryFailure(supabaseAdmin, claimedOrder, targetFailureReason);
       } else {
         await supabaseAdmin.from("orders").update({

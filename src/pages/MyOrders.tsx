@@ -27,17 +27,32 @@ interface Order {
   failure_reason?: string;
 }
 
-function translateFailureReason(reason?: string): string {
+function translateFailureReason(reason?: string, network?: string, orderType?: string): string {
   if (!reason) return "";
   const r = reason.trim().toUpperCase();
   if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED") || r.includes("LOW_BALANCE") || r.includes("PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
     return "Mobile Money payment declined: Customer wallet has insufficient funds or has reached its daily MoMo transaction limit.";
   }
-  if (r.includes("PAYEE_LIMIT_REACHED")) {
-    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
-  }
-  if (r.includes("NOT_ALLOWED")) {
-    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+  const net = String(network || "").toUpperCase();
+  const isMtn = net.includes("MTN") || net.includes("YELLO");
+  const isData = !orderType || orderType === "data" || orderType === "sme";
+
+  if (isMtn && isData) {
+    if (r.includes("PAYEE_LIMIT_REACHED") || r.includes("DAILY LIMIT")) {
+      return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+    }
+    if (r.includes("NOT_ALLOWED") || r.includes("UNSUPPORTED PLAN")) {
+      return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+    }
+  } else {
+    if (r.includes("MTN DATA TRANSFER LIMIT") || r.includes("BENEFICIARY ERROR")) {
+      return orderType === "airtime"
+        ? "Airtime delivery failed by carrier. Please verify recipient number or try another amount."
+        : "Delivery could not be completed by carrier network for this recipient line.";
+    }
+    if (r.includes("NOT_ALLOWED") || r.includes("UNSUPPORTED")) {
+      return "Recipient number or transaction is not supported by carrier network for this service. Please verify number or try another amount.";
+    }
   }
   if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
@@ -533,7 +548,7 @@ const MyOrders = () => {
                             {showReceipt.failure_reason && (showReceipt.status === "failed" || showReceipt.status === "fulfillment_failed") && (
                               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs leading-relaxed break-words font-medium text-left">
                                 <span className="font-bold text-red-400 block mb-0.5">⚠️ Carrier Reason:</span>
-                                {translateFailureReason(showReceipt.failure_reason)}
+                                {translateFailureReason(showReceipt.failure_reason, showReceipt.network, showReceipt.order_type)}
                               </div>
                             )}
                           </div>

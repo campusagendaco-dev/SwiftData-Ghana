@@ -2240,8 +2240,8 @@ serve(async (req: Request) => {
     const targetProviderOrderId = "failed_api_call";
     const failureReason = result.reason || "Provider rejected the request";
 
-    if (isBeneficiaryFailure(failureReason) && isGuestOrder(existingOrder)) {
-      console.log(`[paystack-webhook] Non-beneficiary failure on guest order ${orderId}. Queuing carrier submission & sending tracking SMS...`);
+    if (isBeneficiaryFailure(failureReason, existingOrder.network, existingOrder.order_type, lastProviderName) && isGuestOrder(existingOrder)) {
+      console.log(`[paystack-webhook] Non-beneficiary failure on MTN guest order ${orderId}. Queuing carrier submission & sending tracking SMS...`);
       await handleGuestBeneficiaryFailure(supabaseAdmin, existingOrder, failureReason);
     } else {
       await supabaseAdmin.from("orders").update({ 

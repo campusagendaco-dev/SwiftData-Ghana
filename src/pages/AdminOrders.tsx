@@ -100,6 +100,22 @@ function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason">
   return reason.includes("beneficiary") || reason.includes("not added");
 }
 
+function formatOrderFailureReason(order: Pick<OrderRow, "failure_reason"> & { network?: string; order_type?: string }): string {
+  if (!order.failure_reason) return "";
+  const net = String(order.network || "").toUpperCase();
+  const isMtn = net.includes("MTN") || net.includes("YELLO");
+  const isData = !order.order_type || order.order_type === "data" || order.order_type === "sme";
+  const rUpper = order.failure_reason.toUpperCase();
+
+  // If a non-MTN, non-SME, or Korba order somehow has the generic MTN error message saved, clean it up for display
+  if ((!isMtn || !isData) && (rUpper.includes("MTN DATA TRANSFER LIMIT") || rUpper.includes("MTN BENEFICIARY ERROR") || rUpper.includes("UNSUPPORTED PLAN (E.G. CORPORATE SIM)"))) {
+    return order.order_type === "airtime"
+      ? "Airtime delivery failed by carrier. Check recipient or balance."
+      : "Delivery declined by carrier network.";
+  }
+  return order.failure_reason;
+}
+
 const BENEFICIARY_STATUS_BADGE: Record<string, { label: string; className: string }> = {
   submitted: { label: "in queue", className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 font-bold shadow-sm" },
   whitelisted: { label: "in queue", className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 font-bold shadow-sm" },
@@ -1889,8 +1905,8 @@ export default function AdminOrders() {
                         )}
                       </div>
                       {order.failure_reason && !isBeneficiaryFailure(order) && (
-                        <p className="text-[9px] text-rose-400 mt-1 max-w-[130px] truncate mx-auto" title={order.failure_reason}>
-                          {order.failure_reason}
+                        <p className="text-[9px] text-rose-400 mt-1 max-w-[130px] truncate mx-auto" title={formatOrderFailureReason(order)}>
+                          {formatOrderFailureReason(order)}
                         </p>
                       )}
                     </td>
@@ -2077,7 +2093,9 @@ export default function AdminOrders() {
 
               <div className="flex items-center justify-between gap-2">
                 {order.failure_reason && (
-                  <p className="text-[10px] text-rose-400 italic truncate max-w-[160px]">{order.failure_reason}</p>
+                  <p className="text-[10px] text-rose-400 italic truncate max-w-[160px]" title={formatOrderFailureReason(order)}>
+                    {formatOrderFailureReason(order)}
+                  </p>
                 )}
                 <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
                   <Button

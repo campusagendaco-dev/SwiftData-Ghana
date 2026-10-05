@@ -44,7 +44,7 @@ interface TrackerData {
   }
 }
 
-function translateFailureReason(reason?: string): string {
+function translateFailureReason(reason?: string, network?: string, orderType?: string): string {
   if (!reason) return "";
   const r = reason.trim().toUpperCase();
   if (r.includes("REFUNDED")) {
@@ -53,11 +53,29 @@ function translateFailureReason(reason?: string): string {
   if (r.includes("LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED") || r.includes("LOW_BALANCE") || r.includes("PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED")) {
     return "Mobile Money payment declined: Customer wallet has insufficient funds or has reached its daily MoMo transaction limit.";
   }
-  if (r.includes("PAYEE_LIMIT_REACHED") || r.includes("DAILY LIMIT")) {
-    return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
-  }
-  if (r.includes("NOT_ALLOWED") || r.includes("NOT ALLOWED") || r.includes("UNSUPPORTED PLAN")) {
-    return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+  const net = String(network || "").toUpperCase();
+  const isMtn = net.includes("MTN") || net.includes("YELLO");
+  const isData = !orderType || orderType === "data" || orderType === "sme";
+
+  if (isMtn && isData) {
+    if (r.includes("PAYEE_LIMIT_REACHED") || r.includes("DAILY LIMIT")) {
+      return "The recipient's MTN daily transfer limit has been reached. Please try again tomorrow or use another number.";
+    }
+    if (r.includes("NOT_ALLOWED") || r.includes("NOT ALLOWED") || r.includes("UNSUPPORTED PLAN")) {
+      return "This number is not allowed to receive SME data bundles (e.g. corporate/postpaid lines). Please try another number.";
+    }
+    if (r.includes("BENEFICIARY") || r.includes("WHITELIST") || r.includes("NOT ADDED")) {
+      return "Recipient number is not on the carrier's approved beneficiary list. Please submit it for verification.";
+    }
+  } else {
+    if (r.includes("MTN DATA TRANSFER LIMIT") || r.includes("BENEFICIARY ERROR")) {
+      return orderType === "airtime"
+        ? "Airtime delivery failed by carrier. Please verify recipient number or try another amount."
+        : "Delivery could not be completed by carrier network for this recipient line.";
+    }
+    if (r.includes("NOT_ALLOWED") || r.includes("NOT ALLOWED") || r.includes("UNSUPPORTED")) {
+      return "Recipient number or transaction is not supported by carrier network for this service. Please verify number or try another amount.";
+    }
   }
   if (r.includes("CUSTOMER ABANDONED TRANSACTION") || r.includes("CUSTOMER ABANDONED")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
@@ -65,19 +83,17 @@ function translateFailureReason(reason?: string): string {
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
     return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
   }
-  if (r.includes("BENEFICIARY") || r.includes("WHITELIST") || r.includes("NOT ADDED")) {
-    return "Recipient number is not on the carrier's approved beneficiary list. Please submit it for verification.";
-  }
   return reason
     .replace(/\b(DataHub|BundleZone|DataMart|Datamart|Xcel|Hubnet|Korba|Korba365|SKDataPlug|SKPlug|Spendless|TxtConnect|Mnotify|Arkesel|Hubtel)\b/gi, "Carrier Network")
     .replace(/Carrier Network reported:\s*/gi, "Carrier reported: ");
 }
 
-function isBeneficiaryFailure(status: OrderStatusType, message?: string, network?: string): boolean {
+function isBeneficiaryFailure(status: OrderStatusType, message?: string, network?: string, orderType?: string): boolean {
   if (status === "fulfilled" || status === "refunded" || status === "processing") return false;
   const net = String(network || "").toUpperCase();
   const isMtn = net.includes("MTN") || net.includes("YELLO");
-  if (!isMtn) return false;
+  const isData = !orderType || orderType === "data" || orderType === "sme";
+  if (!isMtn || !isData) return false;
 
   const r = (message || "").toLowerCase();
   return (
@@ -90,7 +106,7 @@ function isBeneficiaryFailure(status: OrderStatusType, message?: string, network
   );
 }
 
-function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string, isBeneficiary?: boolean) {
+function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string, isBeneficiary?: boolean, orderType?: string) {
   // Fulfilled orders take absolute highest precedence — bundle has delivered
   if (status === "fulfilled") {
     return { color: "#10B981", glow: "rgba(16,185,129,0.22)", label: "Purchase Successful", sub: "Data bundle delivered successfully to recipient line!", badge: "Delivered" };
@@ -108,10 +124,10 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
   }
   // Actively processing orders
   if (status === "processing") {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Transmitting Data Bundle", sub: translateFailureReason(message) || "Payment confirmed. Transmitting data bundle payload to carrier network.", badge: "Processing" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Transmitting Data Bundle", sub: translateFailureReason(message, network, orderType) || "Payment confirmed. Transmitting data bundle payload to carrier network.", badge: "Processing" };
   }
   // Beneficiary queue ONLY applies when order has failed delivery or is explicitly in beneficiary state
-  if ((isBeneficiary || isBeneficiaryFailure(status, message, network)) && (failed || status === "fulfillment_failed")) {
+  if ((isBeneficiary || isBeneficiaryFailure(status, message, network, orderType)) && (failed || status === "fulfillment_failed")) {
     return { 
       color: "#F59E0B", 
       glow: "rgba(245,158,11,0.25)", 
@@ -121,21 +137,21 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
     };
   }
   if (failed || status === "fulfillment_failed") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.25)", label: "Delivery Failed", sub: translateFailureReason(message) || "Something went wrong with your order", badge: "Failed" };
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.25)", label: "Delivery Failed", sub: translateFailureReason(message, network, orderType) || "Something went wrong with your order", badge: "Failed" };
   }
   if (status === "paid") {
     return { color: "#F59E0B", glow: "rgba(245,158,11,0.22)", label: "Payment Confirmed", sub: "Payment received. Queuing order for carrier fulfillment.", badge: "Queued" };
   }
   if (status === "not_paid") {
-    return { color: "#FBBF24", glow: "rgba(251,191,36,0.20)", label: "Payment Not Found", sub: translateFailureReason(message) || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
+    return { color: "#FBBF24", glow: "rgba(251,191,36,0.20)", label: "Payment Not Found", sub: translateFailureReason(message, network, orderType) || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
   }
   if (status === "error") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.20)", label: "Payment Failed", sub: translateFailureReason(message) || "There was a problem verifying your payment.", badge: "Error" };
+    return { color: "#EF4444", glow: "rgba(239,68,68,0.20)", label: "Payment Failed", sub: translateFailureReason(message, network, orderType) || "There was a problem verifying your payment.", badge: "Error" };
   }
   if (status === "pending" && (network === "MTN Mash Up" || network?.toLowerCase()?.includes("mash"))) {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Paid & Processing", sub: translateFailureReason(message) || "Your payment is confirmed. MTN Mash Up bundle is queued for manual processing.", badge: "Queued" };
+    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Paid & Processing", sub: translateFailureReason(message, network, orderType) || "Your payment is confirmed. MTN Mash Up bundle is queued for manual processing.", badge: "Queued" };
   }
-  return { color: "#D97706", glow: "rgba(217,119,6,0.20)", label: "Awaiting Payment", sub: translateFailureReason(message) || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
+  return { color: "#D97706", glow: "rgba(217,119,6,0.20)", label: "Awaiting Payment", sub: translateFailureReason(message, network, orderType) || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
 }
 
 const OrderStatus = () => {
@@ -272,13 +288,21 @@ const OrderStatus = () => {
   const brandColor = isStoreRoute ? (storeInfo?.color || "#f59e0b") : "#f59e0b";
   const brandDomain = isStoreRoute ? (activeDomain || (storeInfo?.custom_domain) || window.location.host) : "swiftdatagh.shop";
 
-  const isBeneficiaryOrder = (orderStatus === "fulfillment_failed" || failed) &&
+  const orderNet = String(network || orderData?.network || "").toUpperCase();
+  const isMtnOrder = orderNet.includes("MTN") || orderNet.includes("YELLO");
+  const isDataOrder = !orderData?.order_type || orderData.order_type === "data" || orderData.order_type === "sme";
+  const isKorbaOrder = String(orderData?.provider_id || "").toLowerCase().includes("korba") ||
+                       orderData?.metadata?.category === "korba" ||
+                       orderData?.metadata?.package_category === "korba";
+
+  const isBeneficiaryOrder = isMtnOrder && isDataOrder && !isKorbaOrder &&
+    (orderStatus === "fulfillment_failed" || failed) &&
     orderStatus !== "fulfilled" &&
     orderStatus !== "refunded" &&
     orderStatus !== "processing" && (
       orderData?.metadata?.in_beneficiary_queue === true ||
       orderData?.metadata?.guest_refund_eligible === true ||
-      isBeneficiaryFailure(orderStatus, statusMessage || orderData?.failure_reason, network || orderData?.network)
+      isBeneficiaryFailure(orderStatus, statusMessage || orderData?.failure_reason, network || orderData?.network, orderData?.order_type)
     );
 
   const hasEnteredProvider = Boolean(
@@ -1103,18 +1127,28 @@ const OrderStatus = () => {
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.
-                  Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been verified and successfully refunded to your Mobile Money account via Paystack!
+                  {((!orderData?.network || String(orderData?.network).toUpperCase().includes("MTN")) && (!orderData?.order_type || orderData?.order_type === "data")) ? (
+                    <>
+                      Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.
+                    </>
+                  ) : (
+                    <>
+                      Delivery could not be completed by carrier network for recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span>.
+                    </>
+                  )}
+                  {" "}Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been verified and successfully refunded to your Mobile Money account via Paystack!
                 </p>
                 {(orderData as any)?.metadata?.guest_refund_id && (
                   <div className="text-[11px] text-purple-300/80 font-mono bg-purple-500/10 py-1 px-3 rounded-lg border border-purple-500/20 inline-block">
                     Paystack Refund ID: <span className="font-bold text-purple-200">{(orderData as any)?.metadata?.guest_refund_id}</span>
                   </div>
                 )}
-                <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  Carrier Whitelist: <span className="text-emerald-400 font-bold">Auto-Submitted for Approval ✅</span>
-                </div>
+                {((!orderData?.network || String(orderData?.network).toUpperCase().includes("MTN")) && (!orderData?.order_type || orderData?.order_type === "data")) && (
+                  <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Carrier Whitelist: <span className="text-emerald-400 font-bold">Auto-Submitted for Approval ✅</span>
+                  </div>
+                )}
               </div>
             )}
 
