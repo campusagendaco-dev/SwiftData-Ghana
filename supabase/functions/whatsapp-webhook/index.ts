@@ -1025,7 +1025,7 @@ async function resolveProfit(
 
 // ── Paystack initialization ───────────────────────────────────────────────────
 
-type PayResult = { orderId: string; status?: string; otpMessage?: string };
+type PayResult = { orderId: string; status?: string; otpMessage?: string; errorMessage?: string };
 
 async function initDataPayment(
   supabase: any,
@@ -1405,6 +1405,7 @@ async function initUtilityPayment(
         email: `wa_${normPayer}@swiftdata.tech`,
         amount: Math.round(total * 100),
         currency: "GHS",
+        reference: orderId,
         mobile_money: { phone: normPayer, provider },
         metadata,
       }),
@@ -1412,11 +1413,11 @@ async function initUtilityPayment(
     json = await res.json().catch(() => ({}));
     if (!res.ok || !json.status || !json.data?.reference) {
       console.error("[WA Bot] Paystack utility charge failed:", json);
-      return null;
+      return { orderId: "", errorMessage: json?.message || "Payment prompt could not be initiated by carrier." };
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error("[WA Bot] initUtilityPayment fetch error:", err);
-    return null;
+    return { orderId: "", errorMessage: "Network error while connecting to payment provider." };
   }
 
   const { error } = await supabase.from("orders").insert({
@@ -1428,7 +1429,7 @@ async function initUtilityPayment(
     utility_account_number: accountNumber,
     utility_account_name: accountName,
     customer_phone: normPayer,
-    amount: total,
+    amount: amount,
     paystack_fee: fee,
     cost_price: amount,
     profit: 0,
@@ -1438,10 +1439,13 @@ async function initUtilityPayment(
     failure_reason: null,
     metadata,
     payment_method: "paystack",
-    payment_reference: json.data.reference,
+    payment_reference: json.data?.reference || orderId,
   });
 
-  if (error) { console.error("[WA Bot] Utility order insert error:", error); return null; }
+  if (error) {
+    console.error("[WA Bot] Utility order insert error:", error);
+    return { orderId: "", errorMessage: "Database error recording utility order." };
+  }
   return { orderId, status: json?.data?.status, otpMessage: json?.data?.otp_message };
 }
 
@@ -1920,12 +1924,33 @@ Return ONLY a valid JSON object matching these keys.`;
               `_Reply 0 for Main Menu._`
             ].join("\n"));
           } else if (data.topupAmount) {
+            const topupUserId = data.topupAgentId || data.authProfile?.user_id || vJson.data?.metadata?.agent_id;
+            const creditAmt = Number(data.topupAmount || vJson.data?.metadata?.wallet_credit || 0);
+
+            let newBalanceMsg = "";
+            if (topupUserId && creditAmt > 0) {
+              const { data: credRes, error: credErr } = await supabase.rpc("credit_wallet", {
+                p_agent_id: topupUserId,
+                p_amount: creditAmt
+              });
+              console.log("[WA Bot] credit_wallet executed:", credRes, credErr);
+              await supabase.from("orders").update({
+                status: "fulfilled",
+                paystack_verified_amount: vJson.data?.amount ? vJson.data.amount / 100 : creditAmt
+              }).eq("id", data.lastOrderId);
+
+              if (credRes?.new_balance !== undefined) {
+                newBalanceMsg = `\n• *New Wallet Balance:* *GH₵ ${Number(credRes.new_balance).toFixed(2)}*`;
+              }
+            }
+
             await sendWhatsAppMessage(from, [
-              `💰 *Wallet Top-Up Confirmed!*`,
+              `💰 *Wallet Top-Up Confirmed & Credited!*`,
               `━━━━━━━━━━━━━━━━━━━━`,
               `• *Amount Credited:* GH₵ ${Number(data.topupAmount).toFixed(2)}`,
-              `• *Reference:* \`${data.lastOrderId}\``,
-              ``,
+              `• *Payment Status:* ✅ Successful (Paystack Verified)`,
+              `• *Reference:* \`${data.lastOrderId}\`${newBalanceMsg}`,
+              `━━━━━━━━━━━━━━━━━━━━`,
               `Your SwiftData wallet has been credited successfully and is ready to use! 🚀`,
               ``,
               `_Reply 0 for Main Menu._`
@@ -3696,7 +3721,8 @@ Return ONLY a valid JSON object matching these keys.`;
         );
 
         if (!payRes || !payRes.orderId) {
-          reply = `⚠️ *Payment Initialization Failed.* Please verify your number and try again in a moment.\n\n_Reply 0 for Menu._`;
+          const reason = payRes?.errorMessage || "Payment prompt could not be initiated by carrier.";
+          reply = `❌ *Payment Prompt Failed*\n\n${reason}\n\nPlease ensure your Mobile Money wallet (\`${payerPhone}\`) has sufficient balance to pay *GH₵ ${(data.totalPrice || 0).toFixed(2)}*, then try again.\n\n_Reply 0 for Menu._`;
           nextStep = "MENU";
           break;
         }
@@ -4244,7 +4270,13 @@ Return ONLY a valid JSON object matching these keys.`;
         }
 
         const amt = data.topupAmount;
-        const total = data.totalPrice;
+        const fee = feeAmount(amt);
+        const total = parseFloat((amt + fee).toFixed(2));
+        data.totalPrice = total;
+        const orderId = crypto.randomUUID();
+        data.lastOrderId = orderId;
+        data.topupAgentId = agentUserId;
+
         const paystackKey = await getPaystackSecretKey(supabase);
 
         if (!paystackKey) {
@@ -4253,8 +4285,33 @@ Return ONLY a valid JSON object matching these keys.`;
           break;
         }
 
+        // Insert pending top-up order record before charging
+        const { error: insErr } = await supabase.from("orders").insert({
+          id: orderId,
+          agent_id: agentUserId,
+          order_type: "wallet_topup",
+          amount: amt,
+          paystack_fee: fee,
+          profit: 0,
+          status: "pending",
+          customer_phone: payerPhone,
+          channel: "whatsapp_bot",
+          metadata: {
+            order_id: orderId,
+            order_type: "wallet_topup",
+            agent_id: agentUserId,
+            wallet_credit: amt,
+            wallet_type: "main",
+            channel: "whatsapp_bot",
+            phone: payerPhone,
+          }
+        });
+
+        if (insErr) {
+          console.error("[WA Bot] Topup pre-insert error:", insErr);
+        }
+
         const providerCode = getPaymentProvider(payerPhone);
-        const ref = `DEP-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
         try {
           const res = await fetch("https://api.paystack.co/charge", {
@@ -4267,17 +4324,19 @@ Return ONLY a valid JSON object matching these keys.`;
               amount: Math.round(total * 100),
               email: `wa-${payerPhone}@swiftdatagh.shop`,
               currency: "GHS",
-              reference: ref,
+              reference: orderId,
               mobile_money: {
                 phone: payerPhone,
                 provider: providerCode,
               },
               metadata: {
-                type: "wallet_deposit",
+                order_id: orderId,
+                order_type: "wallet_topup",
                 agent_id: agentUserId,
-                amount: amt,
-                phone: payerPhone,
+                wallet_credit: amt,
+                wallet_type: "main",
                 channel: "whatsapp_bot",
+                phone: payerPhone,
               },
             }),
           });
@@ -4289,7 +4348,7 @@ Return ONLY a valid JSON object matching these keys.`;
             break;
           }
 
-          data.lastOrderId = ref;
+          data.lastOrderId = orderId;
           reply = [
             `📲 *MoMo Deposit Prompt Sent!*`,
             ``,
