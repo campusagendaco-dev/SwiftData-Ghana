@@ -3932,27 +3932,51 @@ Return ONLY a valid JSON object matching these keys.`;
         }
         data.recipient = phone;
 
-        // Handle Agent Wholesale Direct Wallet Debit Purchase (proceeds straight to confirmation)
-        if (data.isAgentWholesale) {
-          const summary: string[] = [
-            `📋 *Wholesale Order Summary*`,
+        // If sender is an Agent, prompt them to choose between Wallet Balance and Mobile Money!
+        if (isSenderAgent || data.isAgentWholesale) {
+          const agentBalance = Number(senderProfileMeta?.walletBalance || 0);
+          let costPrice = Number(data.basePrice || (data.airtimeBase ? data.airtimeBase : 0));
+
+          if (data.pkg) {
+            try {
+              const normNet = normalizeNetworkKey(data.net);
+              const normPkg = data.pkg.replace(/\s+/g, "").toUpperCase();
+              const { data: gRow } = await supabase
+                .from("global_package_settings")
+                .select("agent_price")
+                .ilike("network", normNet)
+                .ilike("package_size", normPkg)
+                .maybeSingle();
+
+              if (gRow?.agent_price && Number(gRow.agent_price) > 0) {
+                costPrice = Number(gRow.agent_price);
+              }
+            } catch (err) {
+              console.warn("[WA Bot] Could not fetch wholesale agent_price:", err);
+            }
+          }
+
+          const retailTotal = Number(data.totalPrice || (data.basePrice ? addPaystackFee(data.basePrice) : addPaystackFee(costPrice)));
+
+          data.agentBalance = agentBalance;
+          data.wholesaleCost = costPrice;
+          data.finalCost = costPrice;
+
+          reply = [
+            `💳 *Select Payment Method*`,
             `━━━━━━━━━━━━━━━━━━━━`,
             `📶 Network:   *${data.net}*`,
-          ];
-          if (data.pkg) {
-            summary.push(`📦 Bundle:    *${data.pkg}*`);
-          } else {
-            summary.push(`📱 Airtime:   *GH₵ ${data.airtimeBase?.toFixed(2)}*`);
-          }
-          summary.push(`👤 Recipient: \`${phone}\``);
-          summary.push(`💰 Wallet Cost: *GH₵ ${(data.basePrice || data.totalPrice || 0).toFixed(2)}*`);
-          summary.push(`━━━━━━━━━━━━━━━━━━━━`);
-          summary.push(``);
-          summary.push(`Reply *1* to confirm & debit wallet ✅`);
-          summary.push(`Reply *0* to cancel ❌`);
-
-          reply = summary.join("\n");
-          nextStep = "CONFIRM_ORDER";
+            data.pkg ? `📦 Bundle:    *${data.pkg}*` : `📱 Airtime:   *GH₵ ${data.airtimeBase?.toFixed(2)}*`,
+            `👤 Recipient: \`${phone}\``,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `How would you like to pay?`,
+            ``,
+            `*1* — 💳 *Wallet Balance* (GH₵ ${costPrice.toFixed(2)} — Available: GH₵ ${agentBalance.toFixed(2)})`,
+            `*2* — 📱 *Mobile Money Prompt* (GH₵ ${retailTotal.toFixed(2)})`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_Reply 1 or 2 (or reply 0 to cancel)_`
+          ].join("\n");
+          nextStep = "SELECT_AGENT_PAYMENT_METHOD";
           break;
         }
 
@@ -3983,12 +4007,142 @@ Return ONLY a valid JSON object matching these keys.`;
         break;
       }
 
+      // ── Select Agent Payment Method ──────────────────────────────────────────
+      case "SELECT_AGENT_PAYMENT_METHOD": {
+        if (input === "0") {
+          reply = `❌ *Order cancelled.* Reply *Hi* for main menu.`;
+          data = {};
+          nextStep = "MENU";
+          break;
+        }
+
+        const agentBalance = Number(senderProfileMeta?.walletBalance || 0);
+        const costPrice = Number(data.wholesaleCost || data.finalCost || data.basePrice || (data.totalPrice ? data.totalPrice : 0));
+
+        if (input === "1" || input.includes("wallet") || input.includes("bal")) {
+          // Check if wallet balance is sufficient
+          if (agentBalance < costPrice) {
+            reply = [
+              `⚠️ *Insufficient Wallet Balance*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `• Required Amount:  *GH₵ ${costPrice.toFixed(2)}*`,
+              `• Current Balance:  *GH₵ ${agentBalance.toFixed(2)}*`,
+              `• Shortage:         *GH₵ ${(costPrice - agentBalance).toFixed(2)}*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `What would you like to do?`,
+              ``,
+              `• Reply *2* to pay via Mobile Money instead 📱`,
+              `• Reply *TOPUP* to top up your wallet now 💰`,
+              `• Reply *0* to cancel ❌`
+            ].join("\n");
+            break;
+          }
+
+          data.paymentMethod = "wallet";
+          data.isAgentWholesale = true;
+          data.finalCost = costPrice;
+
+          reply = [
+            `📋 *Confirm Wallet Payment*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `📶 Network:        *${data.net}*`,
+            data.pkg ? `📦 Bundle:         *${data.pkg}*` : `📱 Airtime:        *GH₵ ${data.airtimeBase?.toFixed(2)}*`,
+            `👤 Recipient:      \`${data.recipient}\``,
+            `💰 Debit Amount:   *GH₵ ${costPrice.toFixed(2)}*`,
+            `💳 Wallet Balance: *GH₵ ${agentBalance.toFixed(2)}*`,
+            `💵 Balance After:  *GH₵ ${(agentBalance - costPrice).toFixed(2)}*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            ``,
+            `Reply *1* to confirm & debit wallet instantly ✅`,
+            `Reply *0* to cancel ❌`
+          ].join("\n");
+          nextStep = "CONFIRM_ORDER";
+          break;
+        } else if (input === "2" || input.includes("momo") || input.includes("mobile")) {
+          data.paymentMethod = "momo";
+          data.isAgentWholesale = false;
+
+          const normFrom = normalizePhone(from);
+          const isFromGhana = normFrom && normFrom.length === 10 && normFrom.startsWith("0");
+
+          const momoPromptLines: string[] = [
+            `💳 *Payment Mobile Money (MoMo) Number*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Please provide the MoMo number that will make payment of *GH₵ ${(data.totalPrice || 0).toFixed(2)}*:`,
+            ``,
+            `• Reply *1* to pay with the recipient number (\`${data.recipient}\`)`,
+          ];
+
+          if (isFromGhana && normFrom !== data.recipient) {
+            momoPromptLines.push(`• Reply *2* to pay with your WhatsApp number (\`${normFrom}\`)`);
+          }
+
+          momoPromptLines.push(
+            `• Or type any other 10-digit Ghanaian MoMo number (e.g. \`0244123456\`)`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_Reply 0 to cancel._`
+          );
+
+          reply = momoPromptLines.join("\n");
+          nextStep = "ENTER_PAYER_MOMO";
+          break;
+        } else if (input.includes("topup") || input.includes("top up") || input.includes("deposit")) {
+          data.authProfile = senderProfile;
+          data.topupAgentId = senderProfile?.user_id;
+          data.walletBalance = agentBalance;
+          reply = [
+            `💳 *Instant Wallet Top-Up*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Current Balance: *GH₵ ${agentBalance.toFixed(2)}*`,
+            ``,
+            `⚡ *Please reply with the amount in GH₵ you want to deposit:*`,
+            `_Example: 20, 50, 100_`,
+            ``,
+            `_Reply 0 to cancel._`
+          ].join("\n");
+          nextStep = "ENTER_WALLET_TOPUP_AMT";
+          break;
+        } else {
+          reply = `⚠️ Please reply *1* for Wallet Balance or *2* for Mobile Money (or reply *0* to cancel).`;
+          break;
+        }
+      }
+
       // ── Payment MoMo Number ───────────────────────────────────────────────────
       case "ENTER_PAYER_MOMO": {
         if (input === "0") {
           reply = `❌ *Order cancelled.* Reply *Hi* for main menu.`;
           data = {};
           nextStep = "MENU";
+          break;
+        }
+
+        // Support switching to wallet from MoMo input
+        if ((input === "w" || input === "wallet" || input === "bal") && (isSenderAgent || data.isAgentWholesale)) {
+          const agentBalance = Number(senderProfileMeta?.walletBalance || 0);
+          const costPrice = Number(data.wholesaleCost || data.finalCost || data.basePrice || (data.totalPrice ? data.totalPrice : 0));
+          if (agentBalance < costPrice) {
+            reply = `⚠️ *Insufficient Wallet Balance:*\n\nRequired: *GH₵ ${costPrice.toFixed(2)}*\nBalance: *GH₵ ${agentBalance.toFixed(2)}*\n\nPlease reply with your MoMo number to continue with MoMo payment, or reply *0* for menu.`;
+            break;
+          }
+          data.paymentMethod = "wallet";
+          data.isAgentWholesale = true;
+          data.finalCost = costPrice;
+          reply = [
+            `📋 *Confirm Wallet Payment*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `📶 Network:        *${data.net}*`,
+            data.pkg ? `📦 Bundle:         *${data.pkg}*` : `📱 Airtime:        *GH₵ ${data.airtimeBase?.toFixed(2)}*`,
+            `👤 Recipient:      \`${data.recipient}\``,
+            `💰 Debit Amount:   *GH₵ ${costPrice.toFixed(2)}*`,
+            `💳 Wallet Balance: *GH₵ ${agentBalance.toFixed(2)}*`,
+            `💵 Balance After:  *GH₵ ${(agentBalance - costPrice).toFixed(2)}*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            ``,
+            `Reply *1* to confirm & debit wallet instantly ✅`,
+            `Reply *0* to cancel ❌`
+          ].join("\n");
+          nextStep = "CONFIRM_ORDER";
           break;
         }
 
@@ -4087,9 +4241,9 @@ Return ONLY a valid JSON object matching these keys.`;
         }
 
         // Handle Agent Wholesale Direct Wallet Debit Purchase
-        if (data.isAgentWholesale && senderProfileMeta?.profile?.user_id) {
-          const agentId = senderProfileMeta.profile.user_id;
-          const cost = Number(data.basePrice || data.totalPrice || 0);
+        const agentId = senderProfileMeta?.profile?.user_id || senderProfile?.user_id || data.agentBuyerId || data.authProfile?.user_id;
+        if ((data.paymentMethod === "wallet" || data.isAgentWholesale) && agentId) {
+          const cost = Number(data.finalCost || data.wholesaleCost || data.basePrice || (data.airtimeBase ? data.airtimeBase : 0) || data.totalPrice || 0);
 
           const { data: debitRes, error: debitErr } = await supabase.rpc("debit_wallet", {
             p_agent_id: agentId,
@@ -4117,9 +4271,11 @@ Return ONLY a valid JSON object matching these keys.`;
             profit: 0,
             parent_profit: 0,
             status: "paid",
+            payment_method: "wallet",
             channel: "whatsapp_agent",
             metadata: {
               source: "whatsapp_agent_wholesale",
+              payment_method: "wallet",
               agent_phone: from,
               recipient: data.recipient
             }
