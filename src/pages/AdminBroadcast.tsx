@@ -100,8 +100,8 @@ export default function AdminBroadcast() {
 
   // WaSender Direct Connect State
   const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [personalToken, setPersonalToken] = useState<string>(() => localStorage.getItem("wasender_token") || "");
-  const [sessionId, setSessionId] = useState<string>(() => localStorage.getItem("wasender_session_id") || "");
+  const [personalToken, setPersonalToken] = useState<string>(() => localStorage.getItem("wasender_token") || "8958|70MbVNGwKgFAZVQ58IlSgdIdX7v9mxg7iThgHSio41d01332");
+  const [sessionId, setSessionId] = useState<string>(() => localStorage.getItem("wasender_session_id") || "82188");
   const [linkMethod, setLinkMethod] = useState<"qr" | "passkey">("qr");
   const [connectingSession, setConnectingSession] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -146,17 +146,14 @@ export default function AdminBroadcast() {
   }, [fetchWaSessionStatus, fetchWaGroups]);
 
   const handleConnectWaSession = useCallback(async (forcedMethod?: "qr" | "passkey") => {
-    const tokenToUse = personalToken.trim();
-    if (!tokenToUse) {
-      setConnectError("Please paste your WaSender Personal Access Token from wasenderapi.com/settings/tokens to connect.");
-      return;
-    }
-
     setConnectingSession(true);
     setConnectError(null);
     const method = forcedMethod || linkMethod;
     try {
-      localStorage.setItem("wasender_token", tokenToUse);
+      const tokenToUse = personalToken.trim();
+      if (tokenToUse) {
+        localStorage.setItem("wasender_token", tokenToUse);
+      }
       if (sessionId.trim()) {
         localStorage.setItem("wasender_session_id", sessionId.trim());
       }
@@ -164,7 +161,7 @@ export default function AdminBroadcast() {
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: {
           action: "connect_session",
-          personal_token: tokenToUse,
+          personal_token: tokenToUse || undefined,
           session_id: sessionId.trim() || undefined,
           linkMethod: method,
         }
