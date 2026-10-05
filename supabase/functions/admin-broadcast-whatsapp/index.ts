@@ -206,7 +206,7 @@ serve(async (req: Request) => {
       const sessionsResult = await getWaSenderSessions(personalToken);
       return new Response(JSON.stringify(sessionsResult), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: sessionsResult.success ? 200 : 400,
+        status: 200,
       });
     }
 
@@ -219,7 +219,7 @@ serve(async (req: Request) => {
       if (!personalToken || !sessionId) {
         try {
           const { data: dbSecrets } = await Promise.resolve(
-            supabaseAdmin.from("system_secrets").select("*").eq("id", 1).maybeSingle()
+            supabaseAdmin.from("system_secrets").select("wasender_personal_token, wasender_session_id").eq("id", 1).maybeSingle()
           );
           if (!personalToken && dbSecrets?.wasender_personal_token) {
             personalToken = dbSecrets.wasender_personal_token;
@@ -232,13 +232,25 @@ serve(async (req: Request) => {
         }
       }
 
+      // If user passed a personal token, persist it to system_secrets for future calls
+      if (body.personal_token || body.session_id) {
+        const updateData: any = {};
+        if (body.personal_token) updateData.wasender_personal_token = String(body.personal_token).trim();
+        if (body.session_id) updateData.wasender_session_id = String(body.session_id).trim();
+        try {
+          await Promise.resolve(supabaseAdmin.from("system_secrets").update(updateData).eq("id", 1));
+        } catch (_err) {
+          // silent fail
+        }
+      }
+
       if (!personalToken) {
         return new Response(JSON.stringify({
           success: false,
-          error: "Missing Personal Access Token. Please provide your Personal Access Token from wasenderapi.com/settings/tokens."
+          error: "Missing Personal Access Token. Please enter your personal access token from wasenderapi.com/settings/tokens."
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
+          status: 200,
         });
       }
 
@@ -247,14 +259,18 @@ serve(async (req: Request) => {
         const sessionsResult = await getWaSenderSessions(personalToken);
         if (sessionsResult.success && sessionsResult.sessions && sessionsResult.sessions.length > 0) {
           sessionId = sessionsResult.sessions[0].id;
+          // Also persist discovered session ID
+          try {
+            await Promise.resolve(supabaseAdmin.from("system_secrets").update({ wasender_session_id: String(sessionId) }).eq("id", 1));
+          } catch (_e) {}
         } else {
           return new Response(JSON.stringify({
             success: false,
-            error: "No WhatsApp session found or session ID unspecified. Please check your WaSender dashboard at wasenderapi.com.",
+            error: "No WhatsApp sessions found on your WaSender account. Please create or verify your session on wasenderapi.com.",
             details: sessionsResult.error,
           }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 400,
+            status: 200,
           });
         }
       }
@@ -268,7 +284,7 @@ serve(async (req: Request) => {
         linkMethod,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: connectResult.success ? 200 : 400,
+        status: 200,
       });
     }
 
@@ -292,7 +308,7 @@ serve(async (req: Request) => {
       const disconnectResult = await disconnectWaSenderSession(sessionId, personalToken);
       return new Response(JSON.stringify(disconnectResult), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: disconnectResult.success ? 200 : 400,
+        status: 200,
       });
     }
 

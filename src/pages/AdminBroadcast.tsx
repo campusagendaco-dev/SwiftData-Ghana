@@ -146,13 +146,17 @@ export default function AdminBroadcast() {
   }, [fetchWaSessionStatus, fetchWaGroups]);
 
   const handleConnectWaSession = useCallback(async (forcedMethod?: "qr" | "passkey") => {
+    const tokenToUse = personalToken.trim();
+    if (!tokenToUse) {
+      setConnectError("Please paste your WaSender Personal Access Token from wasenderapi.com/settings/tokens to connect.");
+      return;
+    }
+
     setConnectingSession(true);
     setConnectError(null);
     const method = forcedMethod || linkMethod;
     try {
-      if (personalToken.trim()) {
-        localStorage.setItem("wasender_token", personalToken.trim());
-      }
+      localStorage.setItem("wasender_token", tokenToUse);
       if (sessionId.trim()) {
         localStorage.setItem("wasender_session_id", sessionId.trim());
       }
@@ -160,7 +164,7 @@ export default function AdminBroadcast() {
       const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
         body: {
           action: "connect_session",
-          personal_token: personalToken.trim() || undefined,
+          personal_token: tokenToUse,
           session_id: sessionId.trim() || undefined,
           linkMethod: method,
         }
@@ -723,7 +727,9 @@ export default function AdminBroadcast() {
                     size="sm"
                     onClick={() => {
                       setConnectModalOpen(true);
-                      if (!qrCode) handleConnectWaSession();
+                      if (personalToken.trim() && !qrCode) {
+                        handleConnectWaSession();
+                      }
                     }}
                     className="h-6 px-2.5 text-[10px] font-bold bg-emerald-500 text-black hover:bg-emerald-400 gap-1 shadow-sm"
                   >
@@ -1176,6 +1182,71 @@ export default function AdminBroadcast() {
                   </Button>
                 </div>
               </div>
+            ) : !personalToken.trim() ? (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Enter WaSender Personal Token</h4>
+                    <p className="text-[11px] text-white/60">Required to generate pairing QR codes and link WhatsApp</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="text-white/80 font-medium">Personal Access Token</label>
+                    <a
+                      href="https://wasenderapi.com/settings/tokens"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-400 hover:underline flex items-center gap-1 font-bold text-[11px]"
+                    >
+                      Get Token on WaSender ↗
+                    </a>
+                  </div>
+                  <Input
+                    type="password"
+                    placeholder="Bearer token (from wasenderapi.com/settings/tokens)"
+                    value={personalToken}
+                    onChange={(e) => {
+                      setPersonalToken(e.target.value);
+                      setConnectError(null);
+                    }}
+                    className="bg-black/80 border-white/20 text-xs h-9 text-white font-mono"
+                  />
+                  <p className="text-[10px] text-white/40">
+                    Go to <b>wasenderapi.com &gt; Settings &gt; API Tokens</b>, create an access token, and paste it here.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] text-white/50">WhatsApp Session ID (Optional - auto-detected from account)</label>
+                  <Input
+                    placeholder="Leave blank to auto-detect"
+                    value={sessionId}
+                    onChange={(e) => setSessionId(e.target.value)}
+                    className="bg-black/80 border-white/20 text-xs h-8 text-white font-mono"
+                  />
+                </div>
+
+                {connectError && (
+                  <div className="p-2.5 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-xs">
+                    {connectError}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  disabled={!personalToken.trim() || connectingSession}
+                  onClick={() => handleConnectWaSession()}
+                  className="w-full bg-emerald-500 text-black hover:bg-emerald-400 font-bold text-xs h-9 gap-1.5 shadow-md"
+                >
+                  {connectingSession ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+                  Save Token & Generate QR Code
+                </Button>
+              </div>
             ) : (
               <>
                 {/* Method selector tabs */}
@@ -1237,7 +1308,7 @@ export default function AdminBroadcast() {
                     ) : (
                       <div className="w-[260px] h-[260px] rounded-2xl bg-white/5 border border-dashed border-white/10 flex flex-col items-center justify-center p-6 text-center space-y-3">
                         <Smartphone className="w-10 h-10 text-white/30" />
-                        <p className="text-xs text-white/60">No QR Code active</p>
+                        <p className="text-xs text-white/60">Ready to pair</p>
                         <Button
                           type="button"
                           size="sm"
@@ -1321,50 +1392,20 @@ export default function AdminBroadcast() {
                   </div>
                 )}
 
-                {/* Token Configuration Accordion */}
-                <div className="pt-2 border-t border-white/5">
+                {/* Token Configuration footer */}
+                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-white/40">
+                  <span>Token: {personalToken.slice(0, 5)}...{personalToken.slice(-3)}</span>
                   <button
                     type="button"
-                    onClick={() => setShowTokenConfig(!showTokenConfig)}
-                    className="text-[11px] text-white/40 hover:text-white flex items-center justify-between w-full"
+                    onClick={() => {
+                      setPersonalToken("");
+                      localStorage.removeItem("wasender_token");
+                      setQrCode(null);
+                    }}
+                    className="text-amber-400 hover:underline"
                   >
-                    <span>Custom Token or Session ID</span>
-                    <span>{showTokenConfig ? "▲ Hide" : "▼ Configure"}</span>
+                    Change Token
                   </button>
-
-                  {showTokenConfig && (
-                    <div className="space-y-2.5 pt-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <label className="text-white/60">Personal Access Token</label>
-                          <a
-                            href="https://wasenderapi.com/settings/tokens"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-emerald-400 hover:underline flex items-center gap-0.5"
-                          >
-                            Get Token <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        </div>
-                        <Input
-                          type="password"
-                          placeholder="Bearer token from wasenderapi.com/settings/tokens"
-                          value={personalToken}
-                          onChange={(e) => setPersonalToken(e.target.value)}
-                          className="bg-black/60 border-white/10 text-xs h-8 text-white font-mono"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-white/60">WhatsApp Session ID (Optional - auto-discovered if blank)</label>
-                        <Input
-                          placeholder="e.g. 1"
-                          value={sessionId}
-                          onChange={(e) => setSessionId(e.target.value)}
-                          className="bg-black/60 border-white/10 text-xs h-8 text-white font-mono"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
               </>
             )}
