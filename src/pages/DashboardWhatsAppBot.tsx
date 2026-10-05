@@ -65,18 +65,19 @@ const DashboardWhatsAppBot = () => {
   const [sendingPresence, setSendingPresence] = useState(false);
 
   const slug = profile?.slug || "";
+  const agentCode = ((profile as any)?.referral_code || profile?.slug || "").toUpperCase();
   const storeName = (profile as any)?.store_name || profile?.full_name || "My Store";
 
   const [selectedTemplate, setSelectedTemplate] = useState<"standard" | "reorder" | "fire">("standard");
 
-  const waLink = `https://wa.me/${PLATFORM_WA_NUMBER}?text=${encodeURIComponent(`Hi ${slug}`)}`;
+  const waLink = `https://wa.me/${PLATFORM_WA_NUMBER}?text=${encodeURIComponent(`Hi ${agentCode}`)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(waLink)}`;
-  const shareMessage = `Buy cheap data, airtime & AFA registration from ${storeName}! 📶📱🛡️\n\nScan our QR code or click to order via WhatsApp:\n${waLink}`;
+  const shareMessage = `Buy cheap data, airtime & bills from ${storeName}! 📶📱⚡\n\n👉 1-Tap WhatsApp Link:\n${waLink}\n\n💡 Or save +233 54 894 2122 and send: Hi ${agentCode}\n(Agent Code: ${agentCode})`;
 
   const statusCaptions = {
-    standard: `⚡ *Instant Data & Airtime on WhatsApp!* 📶📱\nBuy cheap MTN, Telecel & AT bundles 24/7 automatically from *${storeName}*.\n\n👉 *Order via WhatsApp here:* ${waLink}`,
-    reorder: `🔥 *Need a Data Top-Up in 5 Seconds?* 🚀\nOur WhatsApp bot is active! If you ordered before, just reply *YES* to reorder instantly!\n\n👉 *Tap to Order:* ${waLink}`,
-    fire: `🚀 *DELIVERY IS ON FIRE TODAY!* ⚡\nAll MTN, Telecel & AT bundles arriving in under 2 minutes! Order from *${storeName}* now.\n\n👉 *Chat with bot:* ${waLink}`
+    standard: `⚡ *Instant Data & Airtime on WhatsApp!* 📶📱\nBuy cheap MTN, Telecel & AT bundles 24/7 automatically from *${storeName}*.\n\n👉 *Order via WhatsApp here:* ${waLink}\n🏷️ *Or message bot with Agent Code:* *${agentCode}*`,
+    reorder: `🔥 *Need a Data Top-Up in 5 Seconds?* 🚀\nOur WhatsApp bot is active! If you ordered before, just reply *YES* to reorder instantly!\n\n👉 *Tap to Order:* ${waLink}\nAgent Code: *${agentCode}*`,
+    fire: `🚀 *DELIVERY IS ON FIRE TODAY!* ⚡\nAll MTN, Telecel & AT bundles arriving in under 2 minutes! Order from *${storeName}* now.\n\n👉 *Chat with bot:* ${waLink}\nAgent Code: *${agentCode}*`
   };
 
   const handleCopy = (text: string, id: string) => {
@@ -251,6 +252,38 @@ const DashboardWhatsAppBot = () => {
         </div>
 
         <div className="space-y-4">
+          {/* Agent Code Card */}
+          <div className={cn("rounded-2xl border p-4", isDark ? "border-amber-500/20 bg-amber-500/[0.04]" : "border-amber-200 bg-amber-50/50")}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Your Unique Agent Code</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopy(agentCode, "code")}
+                className={cn(
+                  "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all",
+                  copiedId === "code"
+                    ? "bg-green-500 text-white"
+                    : isDark
+                      ? "bg-white/10 hover:bg-white/20 text-white"
+                      : "bg-white hover:bg-gray-100 text-gray-700 border border-gray-200"
+                )}
+              >
+                {copiedId === "code" ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy Code</>}
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <span className="font-mono text-xl font-black tracking-wider text-amber-600 dark:text-amber-400">
+                {agentCode}
+              </span>
+              <span className={cn("text-[11px]", isDark ? "text-white/50" : "text-gray-500")}>
+                Customers can send <strong>Hi {agentCode}</strong> or <strong>CODE {agentCode}</strong> to the bot to buy from your store!
+              </span>
+            </div>
+          </div>
+
           {/* Bot link */}
           <div className={cn("rounded-2xl border p-4", isDark ? "border-white/8 bg-white/[0.02]" : "border-gray-100 bg-gray-50")}>
             <div className="flex items-center justify-between mb-2">

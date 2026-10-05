@@ -243,13 +243,20 @@ type Agent = {
   wa: string | null;
   isSubAgent: boolean;
   parentAgentId: string | null;
+  slug?: string;
+  referralCode?: string;
 };
 
 async function getAgent(supabase: any, val: string, byId = false): Promise<Agent | null> {
+  if (!val) return null;
+  const cleanVal = val.trim();
   const q = supabase.from("profiles").select(
-    "user_id, store_name, full_name, agent_prices, slug, agent_approved, sub_agent_approved, whatsapp_number, is_sub_agent, parent_agent_id"
+    "user_id, store_name, full_name, agent_prices, slug, referral_code, agent_approved, sub_agent_approved, whatsapp_number, is_sub_agent, parent_agent_id"
   );
-  const { data: p } = await (byId ? q.eq("user_id", val) : q.eq("slug", val.toLowerCase())).maybeSingle();
+  const { data: p } = await (byId
+    ? q.eq("user_id", cleanVal).maybeSingle()
+    : q.or(`slug.ilike.${cleanVal},referral_code.ilike.${cleanVal}`).limit(1).maybeSingle()
+  );
   if (!p) return null;
   if (!byId && !p.agent_approved && !p.sub_agent_approved) return null;
   return {
@@ -259,6 +266,8 @@ async function getAgent(supabase: any, val: string, byId = false): Promise<Agent
     wa: p.whatsapp_number || null,
     isSubAgent: Boolean(p.is_sub_agent),
     parentAgentId: p.parent_agent_id || null,
+    slug: p.slug || "",
+    referralCode: p.referral_code || p.slug || "",
   };
 }
 
@@ -278,7 +287,7 @@ async function getUserProfileAndWallet(supabase: any, rawPhone: string): Promise
 
   const { data: profiles, error } = await supabase
     .from("profiles")
-    .select("user_id, full_name, phone, whatsapp_number, store_name, slug, is_agent, is_sub_agent, agent_approved, sub_agent_approved, agent_prices")
+    .select("user_id, full_name, phone, whatsapp_number, store_name, slug, referral_code, is_agent, is_sub_agent, agent_approved, sub_agent_approved, agent_prices")
     .or(`phone.ilike.%${short}%,whatsapp_number.ilike.%${short}%,phone.eq.${norm},whatsapp_number.eq.${norm}`)
     .limit(1);
 
@@ -517,20 +526,22 @@ async function lookupUserProfileDossier(supabase: any, query: string): Promise<s
   return lines.join("\n");
 }
 
-function formatAgentMenu(storeName: string, walletBalance: number, slug: string): string {
+function formatAgentMenu(storeName: string, walletBalance: number, slug: string, agentCode?: string): string {
   const WHATSAPP_BOT_NUMBER = "233548942122";
+  const displayCode = (agentCode || slug || "AGENT").toUpperCase();
   return [
     `💼 *SwiftData Agent Business Hub*`,
     `Store: *${storeName}* 🇬🇭`,
+    `Agent Code: *${displayCode}* 🏷️`,
     `━━━━━━━━━━━━━━━━━━━━`,
     `💳 *Agent Wallet:* *GH₵ ${walletBalance.toFixed(2)}*`,
-    `👉 *Store Link:* \`https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${slug}\``,
+    `👉 *Your Bot Link:* \`https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${displayCode}\``,
     `━━━━━━━━━━━━━━━━━━━━`,
     `*1* — 💳 My Agent Wallet & Commission`,
     `*2* — ⚡ Instant Wallet Top-Up (MoMo)`,
     `*3* — 🛍️ Buy Wholesale Data (Agent Pricing)`,
     `*4* — 📊 Today's Store Sales & Profit Report`,
-    `*5* — 🔗 Store Links, Referral & Promo Captions`,
+    `*5* — 📲 Share Bot with Customers (My Code & Promo Message)`,
     `*6* — 📦 My Customers' Recent Orders`,
     `*7* — 💸 Request Withdrawal / Payout`,
     `*8* — 🛒 Switch to Standard Customer Menu`,
@@ -572,26 +583,45 @@ async function getAgentTodayReport(supabase: any, agentId: string, storeName: st
   ].join("\n");
 }
 
-function getAgentPromoCaptions(storeName: string, slug: string): string {
-  const botLink = `https://wa.me/233548942122?text=Hi+${encodeURIComponent(slug)}`;
-  const storeLink = `https://swiftdatagh.shop/store/${slug}`;
+function getAgentPromoCaptions(storeName: string, slug: string, referralCode?: string): string {
+  const WHATSAPP_BOT_NUMBER = "233548942122";
+  const agentCode = (referralCode || slug || "").toUpperCase();
+  const botLink = `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${encodeURIComponent(agentCode)}`;
+  const storeLink = `https://swiftdatagh.shop/store/${slug || agentCode.toLowerCase()}`;
 
   return [
-    `🔗 *Your Store Links & WhatsApp Status Captions*`,
+    `📲 *Share Bot with Customers (Forwardable Promo Kit)*`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `🤖 *WhatsApp Bot Link:*`,
+    `🏷️ *Your Agent Code:* *${agentCode}*`,
+    `🤖 *1-Click WhatsApp Bot Link:*`,
     `${botLink}`,
     ``,
     `🌐 *Online Web Store:*`,
     `${storeLink}`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `📲 *Copy-Paste Status Caption #1:*`,
-    `⚡ *Instant Data & Airtime on WhatsApp!* 📶📱\nBuy cheap MTN, Telecel & AT bundles 24/7 automatically from *${storeName}*.\n\n👉 *Tap to order on WhatsApp:* ${botLink}`,
+    `✨ *READY-TO-FORWARD PROMO MESSAGE #1 (Quick Order):*`,
+    `_(Long-press & Forward to your WhatsApp Status or contacts)_ ⬇️`,
     ``,
-    `🔥 *Copy-Paste Status Caption #2:*`,
-    `🚀 *Need a Fast Data Top-Up in 60 Seconds?* ⚡\nDeliveries arriving instantly! Order directly from *${storeName}* here:\n👉 ${botLink}`,
+    `⚡ *Instant MTN, Telecel & AT Data Bundles 24/7!* 📱🚀`,
+    `Delivered automatically to your phone in under 2 minutes!`,
+    ``,
+    `👉 *Option 1 — Tap to Order via WhatsApp:*`,
+    `${botLink}`,
+    ``,
+    `👉 *Option 2 — Save & Chat:*`,
+    `Save bot number: *+233 54 894 2122*`,
+    `Send message: *Hi ${agentCode}*`,
+    `Agent Code: *${agentCode}*`,
+    ``,
+    `Order directly from *${storeName}* anytime!`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `_Reply 0 for Agent Hub._`
+    `🔥 *READY-TO-FORWARD PROMO MESSAGE #2 (Promo Blast):*`,
+    `🚀 *Need a Fast Data Top-Up in 60 Seconds?* ⚡`,
+    `Cheapest bundle rates in Ghana from *${storeName}*!`,
+    `👉 Tap to buy: ${botLink}`,
+    `My Agent Code: *${agentCode}*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_Reply 0 for Agent Business Hub._`
   ].join("\n");
 }
 
@@ -1871,6 +1901,44 @@ Return ONLY a valid JSON object matching these keys.`;
       input = "";
     }
 
+    // ── Explicit Agent Linking by Code / Name anytime ──────────────────────────
+    const agentCodeMatch = text.match(/^(?:code|agent|store|vendor|ref)\s+([a-z0-9_-]+)$/i);
+    if (agentCodeMatch) {
+      const codeWord = agentCodeMatch[1].trim();
+      const found = await getAgent(supabase, codeWord);
+      if (found) {
+        agentId = found.id;
+        session.agent_id = found.id;
+        data = { ...data, agentId: found.id };
+        step = "MENU";
+        input = "";
+        await supabase
+          .from("whatsapp_sessions")
+          .update({
+            agent_id: found.id,
+            step: "MENU",
+            session_data: data,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("phone", from);
+
+        const agentWelcome = [
+          `✅ *Connected to ${found.name}!*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `You are now shopping with *${found.name}*'s special bundle rates.`,
+          ``,
+          `_Loading store menu..._`
+        ].join("\n");
+        await sendWhatsAppMessage(from, agentWelcome);
+      } else {
+        await sendWhatsAppMessage(
+          from,
+          `❌ *Agent Code Not Found*\n\nWe couldn't find an active agent with code *${agentCodeMatch[1].toUpperCase()}*. Please check the spelling or reply *0* for main menu.`
+        );
+        return new Response("ok");
+      }
+    }
+
     // ── Agent detection on first contact ─────────────────────────────────────
     if (step === "MENU" && !agentId) {
       for (const rawWord of text.split(/\s+/)) {
@@ -2065,22 +2133,25 @@ Return ONLY a valid JSON object matching these keys.`;
           const storeTitle = senderProfile?.store_name || senderProfile?.full_name || "My Store";
           const bal = Number(senderProfileMeta?.walletBalance || 0);
           const slug = senderProfile?.slug || "";
-          reply = formatAgentMenu(storeTitle, bal, slug);
+          const agentCode = (senderProfile?.referral_code || slug || "").toUpperCase();
+          reply = formatAgentMenu(storeTitle, bal, slug, agentCode);
           nextStep = "SELECT_AGENT_SERVICE";
           break;
         }
 
+        const agentCodeStr = (senderProfile?.referral_code || senderProfile?.slug || "").toUpperCase();
         const agentBar = isSenderAgent ? [
           `💼 *Agent Terminal Active:* *${senderProfile?.store_name || senderProfile?.full_name}*`,
           `💳 *Wallet:* GH₵ ${(senderProfileMeta?.walletBalance || 0).toFixed(2)}`,
-          `👉 *Your Bot Link:* \`https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${senderProfile?.slug || ""}\``,
+          `🏷️ *Your Agent Code:* *${agentCodeStr}*`,
+          `👉 *Your Bot Link:* \`https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${agentCodeStr}\``,
           `_(Share with your customers so they order directly from your bot!)_`,
           ``
         ] : [];
 
         const modeHint = isSenderAdmin
           ? `_🛡️ Admin Terminal Active: Reply *ADMIN* to switch._`
-          : (isSenderAgent ? `_💼 Agent Hub Active: Reply *AGENT* to switch._` : `_Tip: Shopping from an Agent store? Reply with their store name (e.g. 'fredi')_`);
+          : (isSenderAgent ? `_💼 Agent Hub Active: Reply *AGENT* to switch._` : `_🏷️ Have an Agent Code? Reply *CODE <your_code>* or send the code anytime to connect to your agent!_`);
 
         if (!agent) {
           reply = [
@@ -2525,7 +2596,35 @@ Return ONLY a valid JSON object matching these keys.`;
           reply = `ℹ️ *AFA Registration has been discontinued.* Please explore our high-speed Data Bundles (Option 1) or MTN Mash Up (Option 3).\n\n_Reply 0 for Main Menu._`;
           nextStep = "MENU";
         } else {
-          reply = `⚠️ Please reply with a number from *1 to 14* (or *YES* to reorder).`;
+          // Check if user replied directly with an agent code or store slug!
+          const maybeAgent = await getAgent(supabase, input);
+          if (maybeAgent) {
+            agentId = maybeAgent.id;
+            session.agent_id = maybeAgent.id;
+            data = { ...data, agentId: maybeAgent.id };
+            nextStep = "SELECT_SERVICE";
+            reply = [
+              `✅ *Connected to ${maybeAgent.name}!*`,
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `You are now connected to *${maybeAgent.name}*'s store.`,
+              ``,
+              `Please choose a service:`,
+              `*1* — Buy Data 📶`,
+              `*2* — Buy Airtime 📱`,
+              `*3* — MTN Mash Up ⚡`,
+              `*4* — ECG Electricity 💡`,
+              `*5* — Water & Pay TV Bills 💧`,
+              `*6* — WAEC Result Checker 🎓`,
+              `*7* — Verify MTN Beneficiary 🛡️`,
+              `*8* — Wallet Balance 💰`,
+              `*9* — Track Order 🔍`,
+              `*10* — Contact Store Support 🎧`,
+              ``,
+              `_Reply 1 to buy data at this store's special rates._`
+            ].join("\n");
+            break;
+          }
+          reply = `⚠️ Please reply with a number from *1 to 14* (or reply *CODE <agent_code>* to connect to an agent).`;
         }
         break;
       }
@@ -2680,8 +2779,9 @@ Return ONLY a valid JSON object matching these keys.`;
         } else if (input === "4" || input.includes("report") || input.includes("sales") || input.includes("profit")) {
           reply = await getAgentTodayReport(supabase, agentUserId, storeTitle, bal);
           nextStep = "SELECT_AGENT_SERVICE";
-        } else if (input === "5" || input.includes("link") || input.includes("caption") || input.includes("promo")) {
-          reply = getAgentPromoCaptions(storeTitle, slug);
+        } else if (input === "5" || input.includes("link") || input.includes("caption") || input.includes("promo") || input.includes("share") || input.includes("code")) {
+          const agentCode = (senderProfile?.referral_code || slug || "").toUpperCase();
+          reply = getAgentPromoCaptions(storeTitle, slug, agentCode);
           nextStep = "SELECT_AGENT_SERVICE";
         } else if (input === "6" || input.includes("order") || input.includes("customer")) {
           reply = await getAgentRecentOrders(supabase, agentUserId);
@@ -2708,7 +2808,8 @@ Return ONLY a valid JSON object matching these keys.`;
           reply = `🔄 *Switched to Customer Retail Menu!*\n\n_Reply *Hi* or any service to browse._`;
           nextStep = "MENU";
         } else if (input === "0") {
-          reply = formatAgentMenu(storeTitle, bal, slug);
+          const agentCode = (senderProfile?.referral_code || slug || "").toUpperCase();
+          reply = formatAgentMenu(storeTitle, bal, slug, agentCode);
           nextStep = "SELECT_AGENT_SERVICE";
         } else {
           reply = `⚠️ Please reply with a valid option from *1 to 8*, or reply *0* for Agent Hub.`;
@@ -2722,7 +2823,8 @@ Return ONLY a valid JSON object matching these keys.`;
           const storeTitle = senderProfile?.store_name || senderProfile?.full_name || "My Store";
           const bal = Number(senderProfileMeta?.walletBalance || 0);
           const slug = senderProfile?.slug || "";
-          reply = formatAgentMenu(storeTitle, bal, slug);
+          const agentCode = (senderProfile?.referral_code || slug || "").toUpperCase();
+          reply = formatAgentMenu(storeTitle, bal, slug, agentCode);
           nextStep = "SELECT_AGENT_SERVICE";
           break;
         }
