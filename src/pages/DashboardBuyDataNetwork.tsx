@@ -285,7 +285,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     const timer = setTimeout(triggerBeneficiaryCheck, 300);
     return () => clearTimeout(timer);
-  }, [normalizedPhone, network, isPhoneValid, checkedPhone, beneficiaryCheckEnabled]);
+  }, [normalizedPhone, network, isPhoneValid, checkedPhone, beneficiaryCheckEnabled, selectedTypeOrCategory]);
 
   useEffect(() => {
     const loadPricing = async () => {
@@ -348,7 +348,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           korbaMappings: mappings,
           expiry: Date.now() + 10 * 60 * 1000 // Cache for 10 minutes
         }));
-      } catch (e) {}
+      } catch (e) {
+        console.debug("Pricing cache write failed", e);
+      }
 
       if (profile?.is_sub_agent && profile?.parent_agent_id) {
         const { data: parentProfile } = await supabase
@@ -391,7 +393,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
               allow_non_beneficiary_continue: allowContinue,
               expiry: Date.now() + 5 * 60 * 1000 // Cache for 5 minutes
             }));
-          } catch (e) {}
+          } catch (e) {
+            console.debug("System settings cache write failed", e);
+          }
         }
       });
   }, [profile?.is_sub_agent, profile?.parent_agent_id, user, network]);
@@ -457,9 +461,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
         const resolvedBasePrice = (() => {
           // If they are an API user, use API price (custom or global)
-          if (profile?.api_access_enabled) {
+          if ((profile as any)?.api_access_enabled) {
             const customApiPrice = getAssignedSubAgentPrice(
-              profile?.api_custom_prices as Record<string, Record<string, string | number>> | undefined,
+              (profile as any)?.api_custom_prices as Record<string, Record<string, string | number>> | undefined,
               dbNetwork,
               item.size
             );
@@ -512,7 +516,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     processed.sort((a, b) => a.price - b.price);
     return processed;
-  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, basePackages, activeGateway, korbaMappings]);
+  }, [globalSettings, isPaidAgent, network, parentAssignedPrices, priceMultiplier, profile, korbaMappings]);
 
   // Get all available dropdown options for the current network
   const dropdownOptions = useMemo(() => {
@@ -565,13 +569,13 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
   const packages = filteredPackages;
 
-  const refreshBalance = async () => {
+  const refreshBalance = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).maybeSingle();
     setWalletBalance(Number(data?.balance || 0));
-  };
+  }, [user]);
 
-  useEffect(() => { void refreshBalance(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void refreshBalance(); }, [refreshBalance]);
  
   useEffect(() => {
     const handleSyncComplete = () => {
@@ -581,7 +585,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     return () => {
       window.removeEventListener("offline-sync-complete", handleSyncComplete);
     };
-  }, []);
+  }, [refreshBalance]);
 
   useEffect(() => { 
     setSelectedSize(""); 
@@ -810,7 +814,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           customer_phone: phone,
           amount: selectedPackage!.price,
           reference: orderId,
-          is_korba: korbaMappings.some((m: any) => m.network === network && m.package_name === selectedPackage!.size),
+          is_korba: false,
           bypass_beneficiary: bypassBeneficiary ? true : undefined,
         },
       });
@@ -903,7 +907,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       customer_phone: normalizedPhone,
       fee: paystackFee,
       agent_id: user?.id,
-      is_korba: korbaMappings.some((m: any) => m.network === network && m.package_name === selectedPackage!.size),
+      is_korba: false,
       bypass_beneficiary: bypassBeneficiary ? true : undefined,
       callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? {
@@ -948,7 +952,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         <div>
           <h1 className="font-display text-2xl font-bold">Buy Data</h1>
           <p className="text-sm text-muted-foreground">
-            {profile?.api_access_enabled 
+            {(profile as any)?.api_access_enabled 
               ? "API Developer prices applied." 
               : isPaidAgent 
                 ? "Agent prices applied." 
@@ -1224,7 +1228,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       <Label htmlFor="beneficiary-name" className="text-[9px] font-bold text-muted-foreground uppercase">Contact Name</Label>
                       <Input
                         id="beneficiary-name"
-                        size="sm"
                         value={beneficiaryName}
                         onChange={(e) => setBeneficiaryName(e.target.value)}
                         placeholder="e.g. Yaw Sarpong"
@@ -1369,7 +1372,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20" 
                       : "bg-slate-900 text-white dark:bg-white dark:text-black hover:opacity-90 shadow-lg shadow-slate-900/10 dark:shadow-white/10"
                   }`}
-                  onClick={payMethod === "wallet" ? handleWalletBuy : handlePaystackBuy}
+                  onClick={() => {
+                    if (payMethod === "wallet") void handleWalletBuy();
+                    else void handlePaystackBuy();
+                  }}
                   disabled={buying || isCheckingBeneficiary || !resolvedName || !selectedPackage}
                 >
                   {buying ? (

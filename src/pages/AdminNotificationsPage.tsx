@@ -19,6 +19,7 @@ import {
   Search, ShieldAlert, Check, Terminal, ExternalLink,
   Radio, Smartphone, Laptop, Globe, Zap
 } from "lucide-react";
+import { BulkPushBroadcaster } from "@/components/BulkPushBroadcaster";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1663,6 +1664,20 @@ const AdminNotificationsPage = () => {
       {/* Tab 4: Web Push (Offline Devices & Delivery Audit) */}
       {activeTab === "web_push" && (
         <div className="space-y-6">
+          {/* Action Callout Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-3xl bg-cyan-500/10 border border-cyan-500/20 shadow-xl">
+            <div>
+              <h2 className="text-base font-black text-white flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-cyan-400" />
+                Live Web Push Network
+              </h2>
+              <p className="text-xs text-white/50 mt-0.5">
+                Reach {pushSubscribers.length.toLocaleString()} registered devices across Ghana even when their browser tab is closed.
+              </p>
+            </div>
+            <BulkPushBroadcaster triggerClassName="bg-cyan-500 hover:bg-cyan-400 text-black border-none" />
+          </div>
+
           {/* Top Metric Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl">

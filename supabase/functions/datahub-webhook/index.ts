@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { log } from "../_shared/logger.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
+import { checkAndTriggerDeliveryOnFire, sendWhatsAppOrderReceipt } from "../_shared/whatsapp.ts";
 
 async function triggerPushNotification(supabaseAdmin: any, payload: { user_id: string; title: string; body: string; url?: string; icon?: string }) {
   try {
@@ -221,7 +222,11 @@ serve(async (req: Request) => {
     };
 
     if (systemStatus === "fulfillment_failed") {
-      patch.failure_reason = `DataHub reported: ${datahubStatus}`;
+      if (datahubStatus === "REFUNDED") {
+        patch.failure_reason = "Delivery could not be completed by carrier network and was refunded.";
+      } else {
+        patch.failure_reason = `Carrier network reported: ${datahubStatus}`;
+      }
     }
 
     const { error: updateError } = await supabaseAdmin.from("orders").update(patch).eq("id", order.id);
@@ -241,6 +246,9 @@ serve(async (req: Request) => {
       }
       await notifyApiClient(supabaseAdmin, order.id, "fulfilled");
       log(supabaseAdmin, { level: "info", source: "datahub-webhook", event: "order.fulfilled", message: `Order fulfilled via DataHub webhook`, order_id: order.id, data: { datahubStatus, datahubReference, profit: order.profit, parent_profit: order.parent_profit } });
+
+      // Check if 2+ orders were fulfilled recently -> post Delivery On Fire alert to Channel
+      checkAndTriggerDeliveryOnFire(supabaseAdmin).catch((err) => console.warn("[datahub-webhook] Delivery fire alert check:", err));
 
       // Trigger Push Notification for Agent
       if (order.agent_id && order.agent_id !== '00000000-0000-0000-0000-000000000000') {
@@ -288,6 +296,21 @@ serve(async (req: Request) => {
           await sendPaymentSms(supabaseAdmin, order.customer_phone, "custom", { message: customMsg }, order.agent_id);
         } catch (smsErr) {
           console.error("[datahub-webhook] Success SMS dispatch failed:", smsErr);
+        }
+
+        // Trigger WhatsApp Push Notification for Customer
+        try {
+          sendWhatsAppOrderReceipt(order.customer_phone, {
+            id: order.id,
+            network: order.network,
+            package_size: order.package_size,
+            amount: order.amount,
+            order_type: order.order_type,
+            customer_phone: order.customer_phone,
+            token: (order.metadata as any)?.prepaid_token || null,
+          }).catch((waErr) => console.warn("[datahub-webhook] WhatsApp order receipt error:", waErr));
+        } catch (waErr) {
+          console.error("[datahub-webhook] WhatsApp dispatch error:", waErr);
         }
       }
     } else if (systemStatus === "fulfillment_failed") {

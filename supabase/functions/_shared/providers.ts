@@ -71,7 +71,21 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     .eq("name", "Korba")
     .maybeSingle();
 
-  const isExplicitKorba = korbaProvider && (
+  const rawNetUpper = String(order?.network || "").toUpperCase();
+  const isDataOrder = orderType === "data" || !orderType || orderType === "sme";
+  // Affirm rule: Affordable SME bundles (MTN, Telecel, AirtelTigo) are NEVER routed to Korba
+  const isAffordableSmeBundle = isDataOrder && (
+    rawNetUpper.includes("MTN") || 
+    rawNetUpper.includes("YELLO") || 
+    rawNetUpper.includes("TELECEL") || 
+    rawNetUpper.includes("VODA") || 
+    rawNetUpper.includes("AIRTEL") || 
+    rawNetUpper.includes("TIGO") || 
+    rawNetUpper.includes("AT") ||
+    rawNetUpper.includes("SME")
+  );
+
+  const isExplicitKorba = korbaProvider && !isAffordableSmeBundle && (
     uppercaseNet.startsWith("KORBA") || 
     order?.metadata?.is_korba === true || 
     order?.metadata?.is_korba === "true" ||
@@ -110,8 +124,24 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     activeProviders = activeProviders.filter((p: any) => p.handler_type !== "spendless");
   }
 
-  // 5. Exclude Korba from primary list, but keep it available as fallback below
-  activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
+  // Route ECG and Utilities directly to Korba API
+  if (orderType === "utility") {
+    if (korbaProvider && korbaProvider.is_active) {
+      console.log(`[resolveProvidersForOrder] Routing utility/ECG order ${order?.id} directly to Korba API`);
+      return [korbaProvider, ...activeProviders.filter((p: any) => p.id !== korbaProvider.id)];
+    }
+  }
+
+  // Route Airtime orders to Korba API as primary/preferred provider
+  if (orderType === "airtime") {
+    if (korbaProvider && korbaProvider.is_active) {
+      console.log(`[resolveProvidersForOrder] Routing airtime order ${order?.id} to Korba API`);
+      activeProviders = [korbaProvider, ...activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba")];
+    }
+  } else {
+    // 5. Exclude Korba from primary list for standard data orders, but keep it available as fallback below
+    activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
+  }
 
   // Round-robin load balancing for providers sharing top priority (e.g. DataHub & BundleZone both at Priority 1)
   if (activeProviders.length > 1) {
@@ -130,14 +160,10 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // 6. Append Korba at the end of activeProviders as a fallback provider:
+  // 6. Append Korba at the end of activeProviders as a fallback provider for Airtime ONLY:
   // - Airtime: All networks supported
-  // - Data: Telecel and AirtelTigo supported
-  // - Note: Standard MTN data is NOT in Korba's catalog (Korba only has special retail/IDD bundles)
-  const rawNetUpper = String(order?.network || "").toUpperCase();
-  const isMtnStandardData = (orderType === "data" || !orderType) && (rawNetUpper.includes("MTN") || rawNetUpper.includes("YELLO"));
-
-  if (korbaProvider && korbaProvider.is_active && !isAfaOrder && !isMtnStandardData && (orderType === "data" || orderType === "airtime")) {
+  // - Affordable SME bundles: NEVER routed to Korba
+  if (korbaProvider && korbaProvider.is_active && !isAfaOrder && !isAffordableSmeBundle && orderType === "airtime") {
     if (!activeProviders.some((p: any) => p.id === korbaProvider.id)) {
       activeProviders.push(korbaProvider);
     }

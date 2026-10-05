@@ -110,6 +110,10 @@ interface SystemSettings {
   mashup_export_threshold: string;
   mashup_whatsapp_number: string;
   mashup_delivery_delay_mins: string;
+  wati_token?: string;
+  wati_endpoint?: string;
+  meta_whatsapp_access_token?: string;
+  meta_whatsapp_phone_number_id?: string;
 }
 
 const AdminSettings = () => {
@@ -211,6 +215,10 @@ const AdminSettings = () => {
     mashup_export_threshold: "10",
     mashup_whatsapp_number: "",
     mashup_delivery_delay_mins: "15",
+    wati_token: "wati_ea74c4f2-6576-4843-83ce-80e77dcdbf36.-GT_zdfVSBt0CfBNqHYobLUcpKiOcCSPMtbL9_anZ2YWg48Xp3WxJno6plOTJT370pLCoiOKKZD_7XFd-TvHtIf7Q1ZUNKPxeiCp7nLRJ8hsCvB04SpGNeQtnh11x3la",
+    wati_endpoint: "https://live-mt-server.wati.io/10263110",
+    meta_whatsapp_access_token: "EAAUiG1CZBGlIBSgZCxTy0PYwDGJwZBOUrN2l2gZCMWkndV3DpNAAMJ0emlP8X9toY8YDCiVeHtgn4YEr13Fxu1w4Yn1qFDCP68Sj4wNgAZB6TWqu2mCZBIdPPSW8JX3Jy4oLfKvFl579qerRfUcDZC1aOjlhgZBuqbqHW7fcftnz8Kofuox3eUKNtm0VkzfsXytzPkvMVISA1V9t021MJfc4SvSM9dbFVuhX0b8qZCAIOSpgU70Je8jDw3ri91Gs7BrVuG1ZAXpZBGNpDIglp5C5IdLnczCPAZDZD",
+    meta_whatsapp_phone_number_id: "",
   });
 
   const [currentIp, setCurrentIp] = useState("");
@@ -645,6 +653,10 @@ const AdminSettings = () => {
       mashup_export_threshold: parseInt(settings.mashup_export_threshold) || 10,
       mashup_whatsapp_number: settings.mashup_whatsapp_number.trim(),
       mashup_delivery_delay_mins: parseInt(settings.mashup_delivery_delay_mins) || 15,
+      wati_token: (settings.wati_token || "").trim(),
+      wati_endpoint: (settings.wati_endpoint || "").trim(),
+      meta_whatsapp_access_token: (settings.meta_whatsapp_access_token || "").trim(),
+      meta_whatsapp_phone_number_id: (settings.meta_whatsapp_phone_number_id || "").trim(),
     };
 
     try {
@@ -1229,13 +1241,81 @@ const AdminSettings = () => {
                   value={settings.support_channel_link}
                   onChange={(e) => setSettings({ ...settings, support_channel_link: e.target.value })}
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-500/20 bg-emerald-500/5">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageCircle className="w-5 h-5 text-emerald-500" />
+                WATI WhatsApp API Configuration
+              </CardTitle>
+              <CardDescription>
+                Configure WATI API endpoints and access tokens for official WhatsApp automated messaging.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="wati-token">WATI Access Token / Bearer Token</Label>
+                <Input
+                  id="wati-token"
+                  type="password"
+                  placeholder="wati_..."
+                  value={settings.wati_token || ""}
+                  onChange={(e) => setSettings({ ...settings, wati_token: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="wati-endpoint">WATI API Endpoint URL</Label>
+                <Input
+                  id="wati-endpoint"
+                  placeholder="https://live-mt-server.wati.io/10263110"
+                  value={settings.wati_endpoint || ""}
+                  onChange={(e) => setSettings({ ...settings, wati_endpoint: e.target.value })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-blue-500/20 bg-blue-500/5">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-500" />
+                Meta Official WhatsApp Cloud API
+              </CardTitle>
+              <CardDescription>
+                Direct native integration with Facebook Graph API for official WhatsApp Cloud API messaging.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="meta-token">Meta Permanent System User Token</Label>
+                <Input
+                  id="meta-token"
+                  type="password"
+                  placeholder="EAAG..."
+                  value={settings.meta_whatsapp_access_token || ""}
+                  onChange={(e) => setSettings({ ...settings, meta_whatsapp_access_token: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="meta-phone-id">Meta Phone Number ID</Label>
+                <Input
+                  id="meta-phone-id"
+                  placeholder="e.g. 1098234857..."
+                  value={settings.meta_whatsapp_phone_number_id || ""}
+                  onChange={(e) => setSettings({ ...settings, meta_whatsapp_phone_number_id: e.target.value })}
+                />
                 <p className="text-xs text-muted-foreground">
-                  The floating WhatsApp button and Footer will link here.
+                  Found in your Meta Developer Portal under WhatsApp ➔ API Setup.
                 </p>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
@@ -2714,9 +2794,11 @@ const AdminSettings = () => {
                                   throw new Error(data.error || "Unknown sync error");
                                 }
                                 
+                                const balNum = Number(data.balance);
+                                const balanceStr = !isNaN(balNum) && data.balance !== null ? `GHS ${balNum.toFixed(2)}` : "GHS 0.00";
                                 toast({ 
                                   title: "Sync Successful", 
-                                  description: `Synced ${data.packages_synced} packages and balance GHS ${data.balance.toFixed(2)}.` 
+                                  description: `Synced ${data.packages_synced ?? 0} packages and balance ${balanceStr}.` 
                                 });
                                 fetchProviders();
                               } catch (err: any) {
@@ -2834,7 +2916,7 @@ const AdminSettings = () => {
                       {provider.is_active && (provider.consecutive_failures || 0) > 0 && (
                         <div className="flex items-center gap-2 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-medium">
                           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                          <span>Warning: {provider.consecutive_failures} consecutive failure(s). Auto-disables at 5.</span>
+                          <span>Notice: {provider.consecutive_failures} recent failure(s). Failover routing active.</span>
                         </div>
                       )}
 

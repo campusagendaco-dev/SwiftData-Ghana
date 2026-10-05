@@ -68,6 +68,9 @@ serve(async (req: Request) => {
     const hasEndpoint = typeof endpoint === "string" && endpoint.trim().length > 0;
     const validUserIds = Array.isArray(user_ids) ? user_ids.filter(isValidUuid) : [];
     const validUserId = isValidUuid(user_id) ? user_id.trim() : null;
+    const batchOffset = typeof body.offset === "number" && !isNaN(body.offset) ? Math.max(0, Math.floor(body.offset)) : 0;
+    const requestedLimit = typeof body.limit === "number" && !isNaN(body.limit) ? Math.floor(body.limit) : 50;
+    const batchLimit = Math.min(100, Math.max(1, requestedLimit));
 
     if (!hasEndpoint && !validUserId && validUserIds.length === 0 && !isBroadcast) {
       if (user_id) {
@@ -88,7 +91,7 @@ serve(async (req: Request) => {
       });
     }
 
-    console.log(`[Push] Processing request. Broadcast: ${isBroadcast}, Endpoint: ${hasEndpoint}, Valid User: ${validUserId || "none"}, Multiple: ${validUserIds.length}`);
+    console.log(`[Push] Processing request. Broadcast: ${isBroadcast}, Endpoint: ${hasEndpoint}, Valid User: ${validUserId || "none"}, Multiple: ${validUserIds.length}, Offset: ${batchOffset}, Limit: ${batchLimit}`);
 
     // 1. Fetch relevant subscriptions
     let query = supabaseAdmin
@@ -98,10 +101,28 @@ serve(async (req: Request) => {
     if (hasEndpoint) {
       query = query.eq("endpoint", endpoint.trim()).limit(1);
     } else if (isBroadcast) {
-      // Prioritize most recent active devices up to a safe batch size
-      query = query.order("created_at", { ascending: false }).limit(200);
+      // Fetch window of subscribers ordered by newest first
+      query = query
+        .order("created_at", { ascending: false })
+        .range(batchOffset, batchOffset + batchLimit - 1);
     } else if (validUserIds.length > 0) {
-      query = query.in("user_id", validUserIds).limit(100);
+      const slice = validUserIds.slice(batchOffset, batchOffset + batchLimit);
+      if (slice.length === 0) {
+        return new Response(JSON.stringify({
+          success: true,
+          sent: 0,
+          devices: 0,
+          cleaned: 0,
+          offset: batchOffset,
+          limit: batchLimit,
+          has_more: false,
+          message: "All target users processed"
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      query = query.in("user_id", slice);
     } else if (validUserId) {
       query = query.eq("user_id", validUserId).limit(20);
     }
@@ -110,24 +131,17 @@ serve(async (req: Request) => {
     if (fetchError) throw fetchError;
 
     if (!subscriptions || subscriptions.length === 0) {
-      console.log(`[Push] No active subscriptions found. Skipping.`);
-      try {
-        await supabaseAdmin.from("push_notification_logs").insert({
-          user_id: validUserId,
-          title: title || "SwiftData Ghana",
-          body: messageBody || "New update from SwiftData",
-          url: url || "/dashboard",
-          device_count: 0,
-          success_count: 0,
-          failure_count: 0,
-          status: "no_devices",
-          error_details: "No active browser push subscriptions found",
-        });
-      } catch (logErr) {
-        console.warn("[Push] Failed to insert log:", logErr);
-      }
-
-      return new Response(JSON.stringify({ success: true, sent: 0, message: "No active subscriptions" }), {
+      console.log(`[Push] No subscriptions found at offset ${batchOffset}.`);
+      return new Response(JSON.stringify({ 
+        success: true, 
+        sent: 0, 
+        devices: 0,
+        cleaned: 0,
+        offset: batchOffset,
+        limit: batchLimit,
+        has_more: false,
+        message: "No active subscriptions in this range" 
+      }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -229,11 +243,39 @@ serve(async (req: Request) => {
       console.warn("[Push] Failed to insert log:", logErr);
     }
 
+    // 6. Synchronize broadcast push notifications with WhatsApp blast notification only if explicitly requested on first batch
+    if (body.sync_whatsapp === true && batchOffset === 0) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+        fetch(`${supabaseUrl}/functions/v1/admin-broadcast-whatsapp`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            title: title || "SwiftData Ghana",
+            message: messageBody || "New update from SwiftData",
+            site_url: url ? `https://swiftdatagh.shop${url.startsWith("/") ? url : `/${url}`}` : "https://swiftdatagh.shop",
+            broadcast_to_channel: true,
+          }),
+        }).catch((waErr: any) => console.warn("[Push] WhatsApp broadcast sync error:", waErr?.message));
+      } catch (err) {
+        console.warn("[Push] Sync trigger error:", err);
+      }
+    }
+
+    const hasMore = uniqueSubs.length >= batchLimit;
     return new Response(JSON.stringify({
       success: true,
       sent: sentCount,
       devices: uniqueSubs.length,
       cleaned: failedEndpoints.length,
+      offset: batchOffset,
+      limit: batchLimit,
+      has_more: hasMore,
+      next_offset: batchOffset + uniqueSubs.length,
       duration_ms: Date.now() - START_TIME
     }), {
       status: 200,

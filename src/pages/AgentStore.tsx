@@ -1080,7 +1080,7 @@ const AgentStore = () => {
       fee,
       agent_id: agent.user_id,
       payment_source: "agent_store",
-      is_korba: selectedService === "utility" || (selectedService === "data" && korbaMappings.some((m: any) => m.network === selectedNetwork && m.package_name === selectedPkg?.size)),
+      is_korba: selectedService === "utility",
       bypass_beneficiary: bypassBeneficiary ? true : undefined,
       callback_url: slug
         ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`

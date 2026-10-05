@@ -475,9 +475,22 @@ serve(async (req: Request) => {
 
     const orderId = reference || crypto.randomUUID();
 
-    let finalIsKorba = is_korba === true || is_korba === "true";
-    if (!finalIsKorba) {
-      const dbNet = normalizeNetworkForPricing(networkRaw);
+    // Affordable SME bundles are NEVER routed to Korba
+    const dbNet = normalizeNetworkForPricing(networkRaw);
+    const upperDbNet = dbNet.toUpperCase();
+    const isAffordableSme = (
+      upperDbNet.includes("MTN") || 
+      upperDbNet.includes("YELLO") || 
+      upperDbNet.includes("TELECEL") || 
+      upperDbNet.includes("VODA") || 
+      upperDbNet.includes("AIRTEL") || 
+      upperDbNet.includes("TIGO") || 
+      upperDbNet.includes("AT") ||
+      upperDbNet.includes("SME")
+    );
+
+    let finalIsKorba = !isAffordableSme && (is_korba === true || is_korba === "true");
+    if (!finalIsKorba && !isAffordableSme) {
       const queryNetwork = dbNet.startsWith("Korba ") ? dbNet : `Korba ${dbNet}`;
       const { data: mappings } = await supabaseAdmin
         .from("provider_packages")

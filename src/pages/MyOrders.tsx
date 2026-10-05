@@ -45,7 +45,9 @@ function translateFailureReason(reason?: string): string {
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
     return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
   }
-  return reason;
+  return reason
+    .replace(/\b(DataHub|BundleZone|DataMart|Datamart|Xcel|Hubnet|Korba|Korba365|SKDataPlug|SKPlug|Spendless|TxtConnect|Mnotify|Arkesel|Hubtel)\b/gi, "Carrier Network")
+    .replace(/Carrier Network reported:\s*/gi, "Carrier reported: ");
 }
 
 const MyOrders = () => {
@@ -221,6 +223,12 @@ const MyOrders = () => {
   };
 
   const isBeneficiaryOrder = (order: Order): boolean => {
+    if (order.status !== "fulfillment_failed") return false;
+    const net = String(order.network || "").toUpperCase();
+    const isMtn = net.includes("MTN") || net.includes("YELLO");
+    const isData = !order.order_type || order.order_type === "data" || order.order_type === "sme";
+    if (!isMtn || !isData) return false;
+
     const r = (order.failure_reason || "").toLowerCase();
     return (
       r.includes("beneficiary") ||

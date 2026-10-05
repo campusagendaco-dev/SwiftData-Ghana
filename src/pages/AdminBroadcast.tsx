@@ -9,14 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   Send, Users, Filter, RefreshCw,
-  Megaphone, Bell, MessageSquare, BarChart3, Sparkles, Smartphone
+  Megaphone, Bell, MessageSquare, BarChart3, Sparkles, Smartphone,
+  CheckCircle2, XCircle, Search, ShieldCheck, FileText, Paperclip
 } from "lucide-react";
+import { BulkPushBroadcaster } from "@/components/BulkPushBroadcaster";
 
-type Segment = "all_agents" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
-type Channel = "notification" | "push" | "sms" | "both";
+type Segment = "all_agents" | "all_users" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
+type Channel = "notification" | "push" | "sms" | "whatsapp" | "both";
 
 const SEGMENTS: { value: Segment; label: string; desc: string }[] = [
   { value: "all_agents",     label: "All Agents",         desc: "Every active agent on the platform" },
+  { value: "all_users",      label: "All Registered Users", desc: "Every user account on SwiftData (~4.9k users)" },
   { value: "top_agents",     label: "Top Performers",     desc: "Agents with > GHS 500 revenue in last 30 days" },
   { value: "dormant_agents", label: "Dormant Agents",     desc: "No orders in the last 14 days" },
   { value: "sub_agents",     label: "Sub-Agents Only",    desc: "All registered sub-agents" },
@@ -24,6 +27,7 @@ const SEGMENTS: { value: Segment; label: string; desc: string }[] = [
 ];
 
 const TEMPLATES = [
+  { label: "🔥 Delivery On Fire!", title: "⚡ DELIVERY IS ON FIRE! 🚀", body: "Our automated engine just delivered 2 orders in under 2 minutes! High-speed delivery is 100% active on all networks right now.\n\n👉 Order Data Now: https://swiftdatagh.shop\n📢 Join Official WhatsApp Channel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40" },
   { label: "⚡ System Upgrade & Refunds", title: "🚀 System Upgrade: Faster Deliveries & Instant MoMo Refunds!", body: "We have upgraded our system for rock-solid, ultra-fast bundle delivery, live carrier tracking, and an automated instant Mobile Money refund guarantee! Your orders are 100% secured.\n\n👉 Order Now: https://swiftdatagh.shop\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
   { label: "WASSCE 2026 Checkers", title: "🎓 WASSCE 2026 Results Checkers In Stock! 📜", body: "WASSCE 2026 Results are officially out! WAEC Results Checker serials & PINs are now live and in stock on SwiftData at wholesale rates. Buy instantly for yourself or your customers now at https://swiftdatagh.shop!\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
   { label: "Withdrawal Info",    title: "Profit Withdrawals Active 💸", body: "Good news! You can now withdraw your earned profits. Navigate to the Withdrawals tab on your dashboard to request a payout. Minimum withdrawal is GHS 25.00. Please try your withdrawal again.\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
@@ -37,14 +41,6 @@ const TEMPLATES = [
   { label: "Wallet Bonus",        title: "💰 2% Wallet Top-Up Bonus!", body: "Get a 2% cash bonus instantly in your wallet on all manual top-ups above GHS 200 today! Boost your selling capacity and earn more profit. 🚀\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
   { label: "Referral Bonus",      title: "🎁 Invite Friends & Earn Cash!", body: "Share your referral link with friends! Get GHS 5.00 cash bonus credited to your wallet immediately they complete their first purchase. Start sharing! 🔗\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
   { label: "AFA Update",          title: "AFA Registration Active 🛡️", body: "AFA Registration is now live on SwiftData! You can register yourself or customers for AFA at just GHS 15.00. Keep selling and earning commissions! 🚀\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "MTN Mash Up Promo",  title: "⚡ MTN Mash Up Bundles Live! 📲", body: "Sell MTN Mash Up bundles directly to clients! Purchase at agent wholesale rates and earn up to GHS 5.00 commission per transaction. Log in to https://swiftdatagh.shop to start selling now!\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "Telecel Promo",      title: "🔥 Telecel Cash & Data Active!", body: "Earn massive agent commissions on all Telecel packages. Fast delivery and high reliability. Check wholesale pricing at https://swiftdatagh.shop today!\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "AirtelTigo Promo",   title: "💰 AirtelTigo Big Time Data! 🚀", body: "Enjoy wholesale agent commissions on AirtelTigo packages. Fast, instant top-ups for your customers. Log in to https://swiftdatagh.shop to make a sale.\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "MTN SME wholesale",  title: "📦 MTN SME Affordable Data! 💸", body: "Get cheap MTN SME bundles: buy 5GB at GHS 21.20, sell at GHS 23.74, and make GHS 2.54 commission instantly! Visit https://swiftdatagh.shop.\n\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "⚡ ECG Prepaid Meter", title: "💡 Instant ECG Prepaid Token Recharge 24/7! ⚡", body: "Never stay in the dark! Buy ECG Prepaid electricity tokens anytime on SwiftData with instant token delivery to your phone. Pay easily with MoMo or Wallet balance.\n\n👉 Buy Now: https://swiftdatagh.shop/utilities\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "📺 DStv & GOtv Renew", title: "📺 Instant DStv & GOtv Subscription Renewal! 🍿", body: "Catch every live match and show without interruption! Renew your DStv or GOtv decoder package instantly on SwiftData with zero delay and instant activation.\n\n👉 Renew Now: https://swiftdatagh.shop/utilities\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "📲 Airtime Top-Up",   title: "📲 Instant Airtime for MTN, Telecel & AT! 💸", body: "Top up airtime for yourself or your customers on SwiftData! Enjoy instant delivery and discounted agent rates on MTN, Telecel, and AirtelTigo.\n\n👉 Top Up Airtime: https://swiftdatagh.shop/airtime\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
-  { label: "🚀 Utilities & Bills", title: "⚡ Airtime, ECG & TV Bills on SwiftData! 📺", body: "Pay all your bills in one place! Recharge ECG Prepaid meters, renew DStv/GOtv decoder packages, and top up Airtime instantly at wholesale rates.\n\n👉 Explore Services: https://swiftdatagh.shop/utilities\nChannel: https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40\nSupport: 0598170947" },
   { label: "Custom",              title: "",                       body: "" },
 ];
 
@@ -64,11 +60,19 @@ export default function AdminBroadcast() {
   const { user } = useAuth();
 
   const [segment, setSegment] = useState<Segment>("all_agents");
-  const [channel, setChannel] = useState<Channel>("notification");
+  const [channel, setChannel] = useState<Channel>("whatsapp");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [senderId, setSenderId] = useState("SwiftDataGh");
-  const [templateIdx, setTemplateIdx] = useState(5);
+  const [stickerUrl, setStickerUrl] = useState("https://swiftdatagh.shop/stickers/delivery_fire.webp");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [mediaFileName, setMediaFileName] = useState("");
+  const [verifyBeforeSend, setVerifyBeforeSend] = useState(false);
+  const [postToChannel, setPostToChannel] = useState(true);
+  const [testContact, setTestContact] = useState("");
+  const [testingContact, setTestingContact] = useState(false);
+  const [contactResult, setContactResult] = useState<any>(null);
+  const [templateIdx, setTemplateIdx] = useState(0);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [counting, setCounting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -90,7 +94,8 @@ export default function AdminBroadcast() {
   const buildSegmentQuery = useCallback((q: any) => {
     switch (segment) {
       case "all_agents":     return q.or("is_agent.eq.true,sub_agent_approved.eq.true");
-      case "top_agents":     return q.or("is_agent.eq.true,sub_agent_approved.eq.true"); // filtered post-fetch via v_agent_performance
+      case "all_users":      return q;
+      case "top_agents":     return q.or("is_agent.eq.true,sub_agent_approved.eq.true");
       case "dormant_agents": return q.or("is_agent.eq.true,sub_agent_approved.eq.true");
       case "sub_agents":     return q.eq("is_sub_agent", true);
       case "active_7d":      return q.or("is_agent.eq.true,sub_agent_approved.eq.true");
@@ -129,7 +134,7 @@ export default function AdminBroadcast() {
 
     try {
       // Fetch recipient user_ids based on segment
-      let query = (supabase as any).from("profiles").select("user_id, phone");
+      let query = (supabase as any).from("profiles").select("user_id, phone, whatsapp_number, phone_number");
       query = buildSegmentQuery(query);
       const { data: recipients } = await query;
 
@@ -152,27 +157,72 @@ export default function AdminBroadcast() {
           data: { broadcast: true, sent_by: user?.id },
         }));
 
-        // Insert in batches of 500
         for (let i = 0; i < notifications.length; i += 500) {
           await (supabase as any).from("user_notifications").insert(notifications.slice(i, i + 500));
         }
       }
 
-      // Web push notifications (offline devices)
+      // Web push notifications (chunked in safe slices of 50)
       if (channel === "push" || channel === "both") {
-        supabase.functions.invoke("send-push-notification", {
-          body: {
-            user_ids: recipientIds,
-            title: title.trim(),
-            body: body.trim(),
-            url: "/dashboard",
-          },
-        }).catch((err) => console.warn("[Broadcast] Push notification error:", err));
+        const PUSH_BATCH_SIZE = 50;
+        for (let pOffset = 0; pOffset < recipientIds.length; pOffset += PUSH_BATCH_SIZE) {
+          supabase.functions.invoke("send-push-notification", {
+            body: {
+              user_ids: recipientIds,
+              offset: pOffset,
+              limit: PUSH_BATCH_SIZE,
+              title: title.trim(),
+              body: body.trim(),
+              url: "/dashboard",
+            },
+          }).catch((err) => console.warn("[Broadcast] Push notification error:", err));
+        }
+      }
+
+      // WhatsApp Broadcast & WhatsApp Sticker Dispatch
+      let waResultMsg = "";
+      if (channel === "whatsapp" || channel === "both") {
+        const phones = recipients
+          .map((r: any) => r.whatsapp_number || r.phone_number || r.phone)
+          .filter(Boolean);
+
+        try {
+          const { data: waData, error: waError } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+            body: {
+              recipients: phones,
+              title: title.trim(),
+              message: body.trim(),
+              sticker_url: stickerUrl.trim() || undefined,
+              document_url: mediaUrl.trim() && (mediaUrl.includes(".pdf") || mediaUrl.includes(".doc")) ? mediaUrl.trim() : undefined,
+              image_url: mediaUrl.trim() && !mediaUrl.includes(".pdf") && !mediaUrl.includes(".doc") ? mediaUrl.trim() : undefined,
+              file_name: mediaFileName.trim() || undefined,
+              verify_before_send: verifyBeforeSend,
+              broadcast_to_channel: postToChannel,
+              site_url: "https://swiftdatagh.shop",
+              channel_url: "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40"
+            }
+          });
+
+          if (waError || waData?.error) {
+            toast({
+              title: "WhatsApp Dispatch Notice",
+              description: waError?.message || waData?.error || "WhatsApp broadcast failed.",
+              variant: "destructive"
+            });
+          } else {
+            const targetCount = waData?.totalRecipients || waData?.sentCount || phones.length;
+            waResultMsg = waData?.queued
+              ? ` · WhatsApp queued for ${targetCount} users (safe humanized 2.5s jitter active to protect bot session)`
+              : ` · WhatsApp sent to ${targetCount} contacts`;
+          }
+        } catch (waInvokeErr: any) {
+          console.warn("[Broadcast] WhatsApp error:", waInvokeErr);
+        }
       }
 
       // SMS via edge function
       let smsResultMsg = "";
-      if (channel === "sms" || channel === "both") {
+      if (channel === "sms") {
         const phones = recipients.map((r: any) => r.phone).filter(Boolean);
         try {
           const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
@@ -205,11 +255,11 @@ export default function AdminBroadcast() {
         event: "broadcast.sent",
         message: `Broadcast "${title}" sent to ${count} agents via ${channel}`,
         agent_id: user?.id,
-        data: { segment, channel, title, body, recipient_count: count },
+        data: { segment, channel, title, body, recipient_count: count, sticker_url: stickerUrl },
       });
 
-      toast({ title: `Broadcast sent to ${count} agents`, description: `Channel: ${channel}${smsResultMsg}` });
-      setTitle(""); setBody(""); setTemplateIdx(4); setRecipientCount(null);
+      toast({ title: `Broadcast sent to ${count} agents`, description: `Channel: ${channel}${waResultMsg}${smsResultMsg}` });
+      setTitle(""); setBody(""); setTemplateIdx(0); setRecipientCount(null);
       loadLogs();
     } catch (e: any) {
       toast({ title: "Broadcast failed", description: e.message, variant: "destructive" });
@@ -241,9 +291,14 @@ export default function AdminBroadcast() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-white">Broadcast Messaging</h1>
-        <p className="text-white/40 text-sm mt-1">Send announcements to agents via notification or SMS</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-white">Broadcast Messaging</h1>
+          <p className="text-white/40 text-sm mt-1">Send announcements to agents and users via WhatsApp, Web Push, SMS, or in-app</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <BulkPushBroadcaster />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -437,8 +492,9 @@ export default function AdminBroadcast() {
             {([
               ["notification", Bell, "In-App Notification", "Instant, free"],
               ["push", Smartphone, "Web Push (Offline Devices)", "Hits lock-screens even when off-site"],
+              ["whatsapp", MessageSquare, "WhatsApp Broadcast & Sticker 💬", "Dispatches WhatsApp message & WebP sticker via WATI"],
               ["sms", MessageSquare, "SMS Only", "Reaches offline agents via telecom"],
-              ["both", Send, "All Channels (In-App + Push + SMS)", "Maximum reach across all devices"],
+              ["both", Send, "All Channels (In-App + Push + WA + SMS)", "Maximum reach across all platforms"],
             ] as const).map(([val, Icon, label, desc]) => (
               <button type="button" key={val} onClick={() => setChannel(val)}
                 className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all",
@@ -450,6 +506,155 @@ export default function AdminBroadcast() {
                 </div>
               </button>
             ))}
+
+            {(channel === "push" || channel === "both") && (
+              <div className="pt-2 border-t border-white/5">
+                <BulkPushBroadcaster triggerClassName="w-full text-xs h-9 justify-center" />
+              </div>
+            )}
+          </Card>
+
+          {/* WhatsApp Sticker & Media Settings Card */}
+          {(channel === "whatsapp" || channel === "both") && (
+            <Card className="bg-amber-500/10 border-amber-500/30 p-5 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-amber-400 font-black text-sm">WhatsApp Media & Verification</h3>
+                </div>
+                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">Multi-Provider</Badge>
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Sticker URL (WebP)</label>
+                  <Input
+                    value={stickerUrl}
+                    onChange={(e) => setStickerUrl(e.target.value)}
+                    placeholder="https://swiftdatagh.shop/stickers/delivery_fire.webp"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Attachment Media URL (Image / PDF / Video)</label>
+                  <Input
+                    value={mediaUrl}
+                    onChange={(e) => setMediaUrl(e.target.value)}
+                    placeholder="https://wasenderapi.com/media/... or https://..."
+                    className="bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-xs"
+                  />
+                </div>
+
+                {mediaUrl.trim() && (
+                  <div className="space-y-1.5">
+                    <label className="text-white/40 text-[10px] font-bold uppercase tracking-widest">Custom File Name (Optional)</label>
+                    <Input
+                      value={mediaFileName}
+                      onChange={(e) => setMediaFileName(e.target.value)}
+                      placeholder="e.g. SwiftData_Promo.pdf"
+                      className="bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-xs"
+                    />
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={verifyBeforeSend}
+                    onChange={(e) => setVerifyBeforeSend(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5 text-primary focus:ring-primary w-4 h-4"
+                  />
+                  <span className="text-white/70 text-xs font-semibold">
+                    Verify WhatsApp presence before dispatching (Auto-skips inactive numbers)
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={postToChannel}
+                    onChange={(e) => setPostToChannel(e.target.checked)}
+                    className="rounded border-white/20 bg-white/5 text-primary focus:ring-primary w-4 h-4"
+                  />
+                  <span className="text-white/70 text-xs font-semibold">
+                    📢 Also broadcast live to Official WhatsApp Channel (@newsletter)
+                  </span>
+                </label>
+
+                {/* Anti-Ban Safeguards Summary */}
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-400">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>WhatsApp Anti-Ban Shield Active</span>
+                  </div>
+                  <ul className="text-[11px] text-white/60 space-y-1 pl-4 list-disc">
+                    <li><strong>Humanized Pacing:</strong> 3.2s – 6.8s randomized delay between messages to emulate human typing.</li>
+                    <li><strong>Auto Opt-Out:</strong> Appends <em>"Reply STOP to unsubscribe"</em> to protect phone reputation.</li>
+                    <li><strong>Channel Push:</strong> Instant broadcast to Official WhatsApp Channel followers with 0% ban risk.</li>
+                  </ul>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Quick WhatsApp Contact Verifier */}
+          <Card className="bg-white/5 border-white/10 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-white font-black text-sm">WhatsApp Contact Verifier</h3>
+              </div>
+              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">WaSender Live</Badge>
+            </div>
+            <p className="text-white/40 text-xs">Verify any phone number or LID before sending.</p>
+            <div className="flex gap-2">
+              <Input
+                value={testContact}
+                onChange={(e) => setTestContact(e.target.value)}
+                placeholder="024XXXXXXX or +233..."
+                className="bg-white/5 border-white/10 text-white placeholder:text-white/20 h-9 text-xs"
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={async () => {
+                  if (!testContact.trim()) return;
+                  setTestingContact(true);
+                  setContactResult(null);
+                  try {
+                    const { data, error } = await supabase.functions.invoke("whatsapp-webhook", {
+                      body: { action: "check_on_whatsapp", contact: testContact.trim() }
+                    });
+                    if (error) throw error;
+                    setContactResult(data);
+                    toast({
+                      title: data?.exists ? "WhatsApp Active ✅" : "Not Registered ❌",
+                      description: data?.exists ? `${testContact} is registered on WhatsApp.` : `${testContact} is not on WhatsApp.`,
+                      variant: data?.exists ? "default" : "destructive"
+                    });
+                  } catch (err: any) {
+                    toast({ title: "Check Failed", description: err.message || "Failed to verify", variant: "destructive" });
+                  }
+                  setTestingContact(false);
+                }}
+                disabled={testingContact || !testContact.trim()}
+                className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold h-9 text-xs px-3"
+              >
+                {testingContact ? "Checking..." : "Verify"}
+              </Button>
+            </div>
+
+            {contactResult && (
+              <div className={cn(
+                "p-3 rounded-xl border text-xs flex items-center justify-between",
+                contactResult.exists ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-red-500/10 border-red-500/30 text-red-300"
+              )}>
+                <div className="flex items-center gap-2">
+                  {contactResult.exists ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-red-400" />}
+                  <span>{contactResult.exists ? "Registered on WhatsApp" : "Not Registered on WhatsApp"}</span>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* SMS Sender ID Card */}

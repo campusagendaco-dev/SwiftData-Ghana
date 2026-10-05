@@ -89,8 +89,13 @@ const STATUS_COLORS: Record<string, string> = {
   failed: "bg-rose-500/15 text-rose-400 border-rose-500/30",
 };
 
-function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason">): boolean {
+function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason"> & { network?: string; order_type?: string }): boolean {
   if (order.status !== "fulfillment_failed") return false;
+  const net = String(order.network || "").toUpperCase();
+  const isMtn = net.includes("MTN") || net.includes("YELLO");
+  const isData = !order.order_type || order.order_type === "data" || order.order_type === "sme";
+  if (!isMtn || !isData) return false;
+
   const reason = (order.failure_reason || "").toLowerCase();
   return reason.includes("beneficiary") || reason.includes("not added");
 }

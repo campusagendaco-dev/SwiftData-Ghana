@@ -403,7 +403,7 @@ export class KorbaAdapter implements ProviderAdapter {
         const isDelivered = rawStatus === "000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
         const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
 
-        let token: string | null = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || null;
+        const token: string | null = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || null;
 
         return {
           ok: true,

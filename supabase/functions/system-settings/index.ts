@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS = {
   holiday_message: "Holiday mode is active. Orders will resume soon.",
   disable_ordering: false,
   dark_mode_enabled: false,
-  customer_service_number: "0547636024",
+  customer_service_number: "0548942122",
   support_channel_link: "https://whatsapp.com/channel/0029Vb6Xwed60eBaztkH2B3m",
   sub_agent_base_fee: 80,
   agent_activation_fee: 50,

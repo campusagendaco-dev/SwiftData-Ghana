@@ -90,6 +90,8 @@ serve(async (req: Request) => {
       const requestHeaders: Record<string, string> = {
         "Authorization": apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`,
         "X-API-Key": apiKey,
+        "x-api-key": apiKey,
+        "User-Agent": "BundleZone-Client/1.0",
         "Accept": "application/json"
       };
 
@@ -119,20 +121,17 @@ serve(async (req: Request) => {
           const rawData = result.data || result.packages || result.bundles || result;
           if (rawData && typeof rawData === "object") {
             const allPackages = [];
-            const isArray = Array.isArray(rawData);
-            const networks = isArray ? ["MTN", "Telecel", "AirtelTigo"] : Object.keys(rawData);
+            const bundleList = Array.isArray(rawData) ? rawData : (Array.isArray(rawData.bundles) ? rawData.bundles : null);
 
-            for (const netKey of networks) {
-              const netPackages = isArray ? rawData : rawData[netKey];
-              if (!Array.isArray(netPackages)) continue;
+            if (bundleList) {
+              for (const pkg of bundleList) {
+                const rawNet = String(pkg.network || "").toUpperCase();
+                let dbNetwork = "MTN";
+                if (rawNet.includes("YELLO") || rawNet.includes("MTN")) dbNetwork = "MTN";
+                else if (rawNet.includes("TELECEL") || rawNet.includes("VOD")) dbNetwork = "Telecel";
+                else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO")) dbNetwork = "AirtelTigo";
 
-              let dbNetwork = netKey;
-              if (netKey === "YELLO") dbNetwork = "MTN";
-
-              for (const pkg of netPackages) {
-                if (isArray && pkg.network && pkg.network !== netKey && pkg.network !== dbNetwork) continue;
-
-                const name = pkg.name || pkg.package_name || (pkg.capacity >= 1 ? `${pkg.capacity}GB` : `${pkg.mb || 0}MB`);
+                const name = pkg.name || pkg.package_name || pkg.capacity_label || (pkg.capacity >= 1 ? `${pkg.capacity}GB` : `${pkg.mb || 0}MB`);
                 const capGb = pkg.capacity || (pkg.mb ? pkg.mb / 1024 : 0);
 
                 allPackages.push({
@@ -143,8 +142,33 @@ serve(async (req: Request) => {
                   cost_price: pkg.price || pkg.amount || pkg.cost_price || 0,
                   external_id: String(pkg.id || pkg.package_id || pkg.bundle_id || `${dbNetwork}_${capGb}`),
                   raw_data: pkg,
-                  is_active: true
+                  is_active: pkg.active !== false
                 });
+              }
+            } else {
+              const networks = Object.keys(rawData);
+              for (const netKey of networks) {
+                const netPackages = rawData[netKey];
+                if (!Array.isArray(netPackages)) continue;
+
+                let dbNetwork = netKey;
+                if (netKey === "YELLO") dbNetwork = "MTN";
+
+                for (const pkg of netPackages) {
+                  const name = pkg.name || pkg.package_name || (pkg.capacity >= 1 ? `${pkg.capacity}GB` : `${pkg.mb || 0}MB`);
+                  const capGb = pkg.capacity || (pkg.mb ? pkg.mb / 1024 : 0);
+
+                  allPackages.push({
+                    provider_id: provider.id,
+                    network: dbNetwork,
+                    package_name: name,
+                    capacity_gb: capGb,
+                    cost_price: pkg.price || pkg.amount || pkg.cost_price || 0,
+                    external_id: String(pkg.id || pkg.package_id || pkg.bundle_id || `${dbNetwork}_${capGb}`),
+                    raw_data: pkg,
+                    is_active: true
+                  });
+                }
               }
             }
 
@@ -173,8 +197,13 @@ serve(async (req: Request) => {
           const balanceRes = await fetchWithTimeout(url, { headers: requestHeaders }, 3500);
           if (balanceRes.ok) {
             const bResult = await balanceRes.json();
-            const rawBal = bResult.data?.rawBalance || bResult.data?.balance || bResult.balance || bResult.user?.balance || bResult.wallet_balance;
-            if (rawBal !== undefined) {
+            const balObj = bResult.data?.balance;
+            const rawBal = (typeof balObj === "object" && balObj !== null ? (balObj.amount ?? balObj.formatted) : balObj) ??
+                           bResult.data?.rawBalance ??
+                           bResult.balance ??
+                           bResult.user?.balance ??
+                           bResult.wallet_balance;
+            if (rawBal !== undefined && rawBal !== null) {
               balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
               console.log(`[sync:bundlezone] Found balance: ${balance}`);
               break;
@@ -1052,7 +1081,7 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ 
       success: true, 
       packages_synced: packagesSynced,
-      balance: balance 
+      balance: typeof balance === "number" ? balance : (Number(balance) || 0) 
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });

@@ -8,10 +8,11 @@ import {
   Bot, Copy, Check, MessageSquare, QrCode, Share2,
   Smartphone, Download, ExternalLink, Zap, Users,
   TrendingUp, ShieldCheck, Clock, ChevronRight, Sparkles,
-  Star, Globe, Lock
+  Star, Globe, Lock, CheckCircle2, XCircle, Search, Activity
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
-const PLATFORM_WA_NUMBER = "14642714205";
+const PLATFORM_WA_NUMBER = "233548942122";
 
 const steps = [
   {
@@ -58,13 +59,25 @@ const DashboardWhatsAppBot = () => {
   const { isDark } = useAppTheme();
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [checkNumber, setCheckNumber] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<any>(null);
+  const [sendingPresence, setSendingPresence] = useState(false);
 
   const slug = profile?.slug || "";
   const storeName = (profile as any)?.store_name || profile?.full_name || "My Store";
 
+  const [selectedTemplate, setSelectedTemplate] = useState<"standard" | "reorder" | "fire">("standard");
+
   const waLink = `https://wa.me/${PLATFORM_WA_NUMBER}?text=${encodeURIComponent(`Hi ${slug}`)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(waLink)}`;
   const shareMessage = `Buy cheap data, airtime & AFA registration from ${storeName}! 📶📱🛡️\n\nScan our QR code or click to order via WhatsApp:\n${waLink}`;
+
+  const statusCaptions = {
+    standard: `⚡ *Instant Data & Airtime on WhatsApp!* 📶📱\nBuy cheap MTN, Telecel & AT bundles 24/7 automatically from *${storeName}*.\n\n👉 *Order via WhatsApp here:* ${waLink}`,
+    reorder: `🔥 *Need a Data Top-Up in 5 Seconds?* 🚀\nOur WhatsApp bot is active! If you ordered before, just reply *YES* to reorder instantly!\n\n👉 *Tap to Order:* ${waLink}`,
+    fire: `🚀 *DELIVERY IS ON FIRE TODAY!* ⚡\nAll MTN, Telecel & AT bundles arriving in under 2 minutes! Order from *${storeName}* now.\n\n👉 *Chat with bot:* ${waLink}`
+  };
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -291,7 +304,203 @@ const DashboardWhatsAppBot = () => {
               {shareMessage}
             </p>
           </div>
+
+          {/* WhatsApp Status 1-Tap Poster */}
+          <div className={cn("rounded-2xl border p-5 space-y-3", isDark ? "border-amber-500/20 bg-amber-500/[0.04]" : "border-amber-200 bg-amber-50/50")}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-black uppercase tracking-wider text-amber-500">1-Tap WhatsApp Status Poster</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 border border-amber-500/30">
+                High Conversion
+              </span>
+            </div>
+            
+            <p className={cn("text-xs", isDark ? "text-white/60" : "text-gray-600")}>
+              Share directly to your WhatsApp Status to generate immediate orders from your contacts:
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: "standard", label: "📱 General Store Link" },
+                { id: "reorder", label: "⚡ 1-Tap Reorder Promo" },
+                { id: "fire", label: "🔥 Delivery On Fire Alert" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedTemplate(t.id as any)}
+                  className={cn(
+                    "text-xs px-3 py-1.5 rounded-xl font-bold border transition-all",
+                    selectedTemplate === t.id
+                      ? "bg-amber-500 text-black border-amber-500 shadow-sm"
+                      : isDark
+                        ? "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-100"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className={cn("p-3 rounded-xl border font-mono text-xs whitespace-pre-line leading-relaxed", isDark ? "bg-black/30 border-white/5 text-white/80" : "bg-white border-amber-200 text-gray-800")}>
+              {statusCaptions[selectedTemplate]}
+            </div>
+
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <Button
+                type="button"
+                onClick={() => {
+                  const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(statusCaptions[selectedTemplate])}`;
+                  window.open(url, "_blank");
+                }}
+                className="bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xs h-10 px-5 rounded-xl gap-2 shadow-md shadow-emerald-500/20"
+              >
+                <Share2 className="w-4 h-4" />
+                Post to WhatsApp Status
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleCopy(statusCaptions[selectedTemplate], "status_caption")}
+                className={cn(
+                  "text-xs h-10 px-4 rounded-xl gap-1.5",
+                  isDark ? "border-white/10 text-white hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-100"
+                )}
+              >
+                {copiedId === "status_caption" ? <><Check className="w-3.5 h-3.5 text-green-500" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy Text</>}
+              </Button>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* ── WhatsApp Verifier & Diagnostics Tool ── */}
+      <div className={cn(
+        "rounded-[2rem] border p-6 md:p-8 space-y-5",
+        isDark ? "bg-white/[0.03] border-white/8" : "bg-white border-gray-100 shadow-sm"
+      )}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-500/20">
+              <ShieldCheck className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-black text-sm">Customer WhatsApp Verifier</h3>
+              <p className={cn("text-[11px]", isDark ? "text-white/40" : "text-gray-400")}>
+                Verify if customer numbers are registered on WhatsApp & check Link ID (LID)
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+            WaSender Live
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <input
+            type="text"
+            value={checkNumber}
+            onChange={(e) => setCheckNumber(e.target.value)}
+            placeholder="Enter customer number (e.g. 0244123456 or +233...)"
+            className={cn(
+              "flex-1 px-4 py-2.5 rounded-xl border text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50",
+              isDark ? "bg-white/5 border-white/10 text-white placeholder:text-white/20" : "bg-gray-50 border-gray-200 text-gray-800 placeholder:text-gray-400"
+            )}
+          />
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              disabled={checking || !checkNumber.trim()}
+              onClick={async () => {
+                if (!checkNumber.trim()) return;
+                setChecking(true);
+                setCheckResult(null);
+                try {
+                  const { data, error } = await supabase.functions.invoke("whatsapp-webhook", {
+                    body: { action: "check_on_whatsapp", contact: checkNumber.trim() }
+                  });
+                  if (error) throw error;
+                  setCheckResult(data);
+                  toast({
+                    title: data?.exists ? "WhatsApp Active ✅" : "Not Registered ❌",
+                    description: data?.exists
+                      ? `${checkNumber} is active on WhatsApp.`
+                      : `${checkNumber} has no WhatsApp account.`,
+                    variant: data?.exists ? "default" : "destructive",
+                  });
+                } catch (err: any) {
+                  toast({ title: "Check failed", description: err.message || "Failed to verify", variant: "destructive" });
+                }
+                setChecking(false);
+              }}
+              className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs h-10 px-4 rounded-xl gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              {checking ? "Checking..." : "Verify Number"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sendingPresence || !checkNumber.trim()}
+              onClick={async () => {
+                if (!checkNumber.trim()) return;
+                setSendingPresence(true);
+                try {
+                  const { data, error } = await supabase.functions.invoke("whatsapp-webhook", {
+                    body: { action: "send_presence", to: checkNumber.trim(), type: "composing", delayMs: 4000 }
+                  });
+                  if (error) throw error;
+                  toast({
+                    title: "Typing Status Sent! 💬",
+                    description: `Simulated live typing on WhatsApp for ${checkNumber}.`,
+                  });
+                } catch (err: any) {
+                  toast({ title: "Failed", description: err.message, variant: "destructive" });
+                }
+                setSendingPresence(false);
+              }}
+              className={cn(
+                "text-xs h-10 px-3 rounded-xl border gap-1.5",
+                isDark ? "border-white/10 hover:bg-white/5 text-white/70" : "border-gray-200 hover:bg-gray-100 text-gray-700"
+              )}
+            >
+              <Activity className="w-3.5 h-3.5 text-blue-400" />
+              {sendingPresence ? "Simulating..." : "Test Typing"}
+            </Button>
+          </div>
+        </div>
+
+        {checkResult && (
+          <div className={cn(
+            "p-4 rounded-2xl border text-xs flex items-center justify-between",
+            checkResult.exists
+              ? isDark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : isDark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-800"
+          )}>
+            <div className="flex items-center gap-2.5">
+              {checkResult.exists ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <XCircle className="w-5 h-5 text-red-400" />}
+              <div>
+                <p className="font-bold text-sm">
+                  {checkResult.exists ? "Active WhatsApp User" : "No WhatsApp Account Found"}
+                </p>
+                <p className="opacity-70 text-[11px]">
+                  {checkResult.exists ? "Safe to fulfill orders or dispatch receipts." : "This number is not registered on WhatsApp."}
+                </p>
+              </div>
+            </div>
+            <span className={cn(
+              "px-2.5 py-1 rounded-full font-bold text-[10px]",
+              checkResult.exists ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
+            )}>
+              {checkResult.exists ? "ACTIVE" : "UNAVAILABLE"}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Quick Actions ── */}

@@ -298,8 +298,7 @@ serve(async (req: Request) => {
                   status: "verified",
                   verification_status: "VERIFIED",
                   can_order: true,
-                  provider: "bundlezone",
-                  message: match.message || "Number verified and ready for ordering.",
+                                    message: match.message || "Number verified and ready for ordering.",
                 }),
                 { headers: { ...corsHeaders, "Content-Type": "application/json" } }
               );
@@ -388,7 +387,7 @@ serve(async (req: Request) => {
         exists: true, 
         is_non_beneficiary: true,
         route_via_datamart: true,
-        message: "Number verified for Datamart Instant API routing (No beneficiary registration required)." 
+        message: "Number verified and eligible for instant carrier delivery." 
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

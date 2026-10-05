@@ -7,6 +7,7 @@ Use the API to retrieve available bundles, verify beneficiary numbers, place sin
 ---
 
 ## Important Usage Notes
+
 - **Phone Number Format**: Use Ghana local phone number format, for example `0551234567` (10 digits starting with `0`).
 - **Capacity**: Measured in GB. For example, `1` means 1GB, `2` means 2GB, `0.5` means 500MB.
 - **Fetch Bundles**: Always fetch current bundles from `/api/bundles.php` before placing an order. Use the exact network and capacity returned by the bundles endpoint.
@@ -20,6 +21,7 @@ Use the API to retrieve available bundles, verify beneficiary numbers, place sin
 ---
 
 ## Authentication
+
 Send your API key in every request using the configured API-key header:
 
 ```http
@@ -32,11 +34,13 @@ Content-Type: application/json
 ## Endpoints
 
 ### 1. Bundles
+
 - **Method**: `GET`
 - **Path**: `/api/bundles.php`
 - **Description**: Fetch available bundles before placing an order. Use the exact network and capacity values returned by this endpoint.
 
 **Example Request:**
+
 ```bash
 curl "https://bundlezone.shop/api/bundles.php" \
   -H "x-api-key: YOUR_API_KEY"
@@ -45,11 +49,13 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ---
 
 ### 2. Beneficiary Check
+
 - **Method**: `POST`
 - **Path**: `/api/beneficiary-check.php`
 - **Description**: Check whether one or more MTN or Yello numbers are ready before placing an order. AT and Telecel do not require this check. A maximum of 1,000 unique phone numbers is accepted per authenticated precheck request. A precheck never creates an order and never changes the wallet balance.
 
 **Single Number Request:**
+
 ```json
 {
   "network": "MTN",
@@ -58,6 +64,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ```
 
 **Multiple Numbers Request:**
+
 ```json
 {
   "network": "MTN",
@@ -70,6 +77,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ```
 
 **Verified Response:**
+
 ```json
 {
   "success": true,
@@ -94,6 +102,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ```
 
 **Unverified Response:**
+
 ```json
 {
   "success": true,
@@ -117,6 +126,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ```
 
 #### Status Meaning
+
 | Status | Meaning | Action |
 | :--- | :--- | :--- |
 | **VERIFIED** | Can proceed to order | Safe to place order |
@@ -129,10 +139,12 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ---
 
 ### 3. Single Order
+
 - **Method**: `POST`
 - **Path**: `/api/order.php`
 
 **Request:**
+
 ```json
 {
   "mode": "single",
@@ -143,6 +155,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ```
 
 **Accepted Response:**
+
 ```json
 {
   "success": true,
@@ -160,6 +173,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ```
 
 **Unverified Beneficiary Response:**
+
 ```json
 {
   "success": false,
@@ -183,12 +197,14 @@ curl "https://bundlezone.shop/api/bundles.php" \
 ---
 
 ### 4. Bulk Order
+
 - **Method**: `POST`
 - **Path**: `/api/order.php`
 
 All rows in a bulk request use the network supplied at the top level. Authenticated API clients may submit a maximum of 1,000 rows per request.
 
 **Request:**
+
 ```json
 {
   "mode": "bulk",
@@ -215,6 +231,7 @@ All rows in a bulk request use the network supplied at the top level. Authentica
 Webhooks provide asynchronous status updates for orders created through the API. When an eligible order changes status, the platform sends an HTTP POST request containing JSON to the configured callback URL.
 
 ### Delivery Details
+
 - **HTTP Method**: `POST`
 - **Content-Type**: `application/json`
 - **Event Name**: `order.status_changed`
@@ -222,6 +239,7 @@ Webhooks provide asynchronous status updates for orders created through the API.
 - **Timeout**: 25 seconds
 
 ### Headers
+
 ```http
 Content-Type: application/json
 Accept: application/json
@@ -231,13 +249,16 @@ X-BundleZone-Signature: sha256=HMAC_HEX_DIGEST
 ```
 
 ### Signature Verification
+
 The signed value is constructed from the timestamp header, a full stop (`.`), and the raw HTTP body:
-```
+
+```text
 signed_payload = X-BundleZone-Timestamp + "." + raw_request_body
 expected_signature = "sha256=" + HMAC_SHA256_HEX(signed_payload, WEBHOOK_SECRET)
 ```
 
 ### Example Payload
+
 ```json
 {
   "event": "order.status_changed",

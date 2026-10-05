@@ -999,8 +999,10 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ received: true, error: "Currency mismatch" }), { status: 200, headers: corsHeaders });
       }
 
-      const expectedAmount = Number(existingOrder.amount) + 
-        ((existingOrder.order_type === "wallet_topup" || existingOrder.order_type === "store_wallet_topup") ? Number(existingOrder.paystack_fee || 0) : 0);
+      const feeToAdd = (Number(existingOrder.paystack_fee) > 0 && Math.abs(verifiedAmount - (Number(existingOrder.amount) + Number(existingOrder.paystack_fee))) <= 0.05) 
+        ? Number(existingOrder.paystack_fee) 
+        : ((existingOrder.order_type === "wallet_topup" || existingOrder.order_type === "store_wallet_topup") ? Number(existingOrder.paystack_fee || 0) : 0);
+      const expectedAmount = Number(existingOrder.amount) + feeToAdd;
       
       const amountDiff = Math.abs(verifiedAmount - expectedAmount);
       if (amountDiff > 0.05) {
@@ -1211,29 +1213,81 @@ serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const agentId = metadata?.agent_id;
+      let agentId = metadata?.agent_id;
+      const isWhatsApp = metadata?.channel === "whatsapp" || Boolean(metadata?.wa_from);
+      const waFrom = metadata?.wa_from || metadata?.customer_phone;
+      const normWaFrom = waFrom ? normalizePhone(waFrom) : "";
+
+      if (!agentId && isWhatsApp && normWaFrom) {
+        const { data: existingProf } = await supabaseAdmin
+          .from("profiles")
+          .select("user_id, email, full_name, store_name, slug")
+          .or(`phone.eq.${normWaFrom},whatsapp_number.eq.${normWaFrom}`)
+          .maybeSingle();
+
+        const agentEmail = metadata?.email || `agent${normWaFrom}@swiftdatagh.shop`;
+        const generatedPassword = metadata?.generated_password || `Swift${Math.floor(1000 + Math.random() * 9000)}#${normWaFrom.slice(-4)}`;
+
+        if (existingProf?.user_id) {
+          agentId = existingProf.user_id;
+          try {
+            await supabaseAdmin.auth.admin.updateUserById(agentId, {
+              password: generatedPassword,
+              email: existingProf.email || agentEmail,
+              email_confirm: true,
+            });
+          } catch (_) {}
+        } else {
+          const { data: newAuthUser } = await supabaseAdmin.auth.admin.createUser({
+            email: agentEmail,
+            password: generatedPassword,
+            email_confirm: true,
+            user_metadata: {
+              full_name: metadata?.full_name || "Partner",
+              phone: normWaFrom,
+              store_name: metadata?.store_name || "Swift Reseller",
+              role: "agent",
+            },
+          });
+          if (newAuthUser?.user?.id) {
+            agentId = newAuthUser.user.id;
+          } else {
+            const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+            const existingAuth = (listData?.users || []).find((u: any) => u.email?.toLowerCase() === agentEmail.toLowerCase());
+            if (existingAuth) {
+              agentId = existingAuth.id;
+              await supabaseAdmin.auth.admin.updateUserById(agentId, { password: generatedPassword, email_confirm: true });
+            }
+          }
+        }
+      }
+
       if (agentId) {
         // Fetch current profile details
         const { data: prof } = await supabaseAdmin
           .from("profiles")
-          .select("user_id, full_name, store_name, slug, phone")
+          .select("user_id, full_name, store_name, slug, phone, email")
           .eq("user_id", agentId)
           .maybeSingle();
 
-        const storeName = prof?.store_name || prof?.full_name || "Swift Reseller";
-        let rawSlug = prof?.slug;
+        const storeName = prof?.store_name || metadata?.store_name || prof?.full_name || metadata?.full_name || "Swift Reseller";
+        let rawSlug = prof?.slug || metadata?.slug;
         if (!rawSlug) {
           rawSlug = storeName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
         }
 
-        await supabaseAdmin.from("profiles").update({ 
+        await supabaseAdmin.from("profiles").upsert({ 
+          user_id: agentId,
           is_agent: true, 
           agent_approved: true,
           onboarding_complete: true,
           is_sub_agent: false,
           parent_agent_id: null,
-          slug: rawSlug
-        }).eq("user_id", agentId);
+          slug: rawSlug,
+          store_name: storeName,
+          full_name: prof?.full_name || metadata?.full_name || storeName,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "user_id" });
 
         // Auto-sync reseller_stores table
         if (rawSlug) {
@@ -1241,19 +1295,73 @@ serve(async (req: Request) => {
             user_id: agentId,
             slug: rawSlug,
             store_name: storeName,
+            store_primary_color: "#fbbf24",
+            approved: true,
+            agent_approved: true,
             updated_at: new Date().toISOString()
           }, { onConflict: "user_id" }).catch(console.error);
         }
 
-        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", orderId);
+        // Ensure wallet exists
+        const { data: existingWallet } = await supabaseAdmin.from("wallets").select("id").eq("agent_id", agentId).maybeSingle();
+        if (!existingWallet) {
+          await supabaseAdmin.from("wallets").insert({
+            agent_id: agentId,
+            balance: 0.00,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).catch(console.error);
+        }
+
+        await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null, agent_id: agentId }).eq("id", orderId);
         console.log("Agent activated via webhook:", agentId);
 
+        // Send Welcome WhatsApp Message if registered via WhatsApp
+        if (isWhatsApp && waFrom) {
+          const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "233548942122";
+          const APP_BASE_URL = "https://swiftdatagh.shop";
+          const portalLoginUrl = `${APP_BASE_URL}/auth?role=agent`;
+          const storeUrl = `${APP_BASE_URL}/store/${rawSlug}`;
+          const botLink = `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${rawSlug}`;
+          const passwordToShow = metadata?.generated_password || "[Check SMS / Reset via Forgot Password]";
+
+          await sendWhatsAppMessage(waFrom, [
+            `🎉 *Payment Confirmed! Your Agent Store is LIVE!* 🚀`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Congratulations *${prof?.full_name || metadata?.full_name || "Partner"}*! Your GH₵ ${AGENT_ACTIVATION_MINIMUM.toFixed(2)} activation payment has been verified.`,
+            `Your reseller portal & custom storefront are now fully approved and active!`,
+            ``,
+            `🔑 *Your Web Dashboard Login:*`,
+            `• 🌐 *Login Portal:* ${portalLoginUrl}`,
+            `• 📧 *Email:* \`${prof?.email || metadata?.email || `agent${normWaFrom}@swiftdatagh.shop`}\``,
+            `• 🔒 *Password:* \`${passwordToShow}\``,
+            `_(You can change your password anytime after logging in)_`,
+            ``,
+            `🛒 *Your Customer Store Link:*`,
+            `👉 ${storeUrl}`,
+            `_(Share with customers — they order directly from you!)_`,
+            ``,
+            `🤖 *Your Dedicated WhatsApp Bot Link:*`,
+            `👉 ${botLink}`,
+            `_(Your customers can order directly from this bot 24/7!)_`,
+            ``,
+            `💼 *Next Steps:*`,
+            `1. Reply *6* to fund your wallet via MoMo`,
+            `2. Log in to your portal to set your custom package prices & profit margins`,
+            `3. Reply *8* anytime to view your sales and profit reports`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_Reply 0 for Main Menu._`
+          ].join("\n")).catch(console.error);
+
+          await supabaseAdmin.from("whatsapp_sessions").delete().eq("phone_number", waFrom).catch(console.error);
+        }
+
         // Send Welcome SMS
-        const targetPhone = normalizePhone(prof?.phone);
+        const targetPhone = normalizePhone(prof?.phone || normWaFrom);
         if (targetPhone) {
           const { apiKey: txtApiKey } = await getSmsConfig(supabaseAdmin);
           if (txtApiKey) {
-            const welcomeMsg = `Congratulations ${prof?.full_name || "Partner"}! Your SwiftData reseller account and storefront (https://swiftdatagh.shop/store/${rawSlug}) are now LIVE! Log in to start selling.`;
+            const welcomeMsg = `Congratulations ${prof?.full_name || metadata?.full_name || "Partner"}! Your SwiftData reseller account and storefront (https://swiftdatagh.shop/store/${rawSlug}) are now LIVE! Log in to start selling.`;
             await sendSmsViaTxtConnect(txtApiKey, "SwiftDataGh", targetPhone, welcomeMsg).catch(console.error);
           }
         }

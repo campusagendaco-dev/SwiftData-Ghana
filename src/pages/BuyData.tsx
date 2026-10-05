@@ -613,7 +613,7 @@ const BuyData = () => {
       customer_name: resolvedName,
       fee,
       payment_source: "direct",
-      is_korba: korbaMappings.some((m: any) => m.network === selectedNetwork && m.package_name === selectedPkg.size),
+      is_korba: false,
       callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? {
         promo_code: promoCode.trim(),

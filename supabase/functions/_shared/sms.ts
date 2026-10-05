@@ -805,7 +805,11 @@ export async function dispatchUnifiedSms(
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   let supabaseAdmin: any = null;
   if (url && serviceKey) {
-    try { supabaseAdmin = createClient(url, serviceKey); } catch {}
+    try {
+      supabaseAdmin = createClient(url, serviceKey);
+    } catch (_err) {
+      /* ignore client init error */
+    }
   }
 
   let sysConfig: SmsConfig | null = null;
@@ -814,11 +818,12 @@ export async function dispatchUnifiedSms(
     const currentGw = item.g;
     try {
       if (currentGw === "mnotify") {
-        let mKey = item.keyOverride?.startsWith("mnotify:") ? item.keyOverride.slice(8) : item.keyOverride;
+        let mKey: string = (item.keyOverride?.startsWith("mnotify:") ? item.keyOverride.slice(8) : item.keyOverride) || "";
         if (!mKey || mKey === "mnotify") {
           if (!sysConfig && supabaseAdmin) sysConfig = await getSmsConfig(supabaseAdmin, agentId);
           mKey = sysConfig?.gatewayConfig.mnotify.apiKey || Deno.env.get("MNOTIFY_API_KEY") || Deno.env.get("MNOTIFY_KEY") || "";
         }
+        if (!mKey) continue;
         const rawSender = sysConfig?.gatewayConfig.mnotify.senderId || from || "Swiftinfo";
         const sender = (rawSender === "SwiftData" || rawSender === "Orderinfo") ? "Swiftinfo" : rawSender.slice(0, 11);
         return await sendSmsViaMnotify(mKey, sender, recipient, body, type, agentId);
