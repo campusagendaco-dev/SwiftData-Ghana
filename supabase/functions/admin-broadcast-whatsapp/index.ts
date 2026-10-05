@@ -408,6 +408,17 @@ serve(async (req: Request) => {
           });
         }
       }
+    } else if (body.segment === "active_sessions") {
+      // Query users who actively chatted with the WhatsApp bot
+      const { data: sessions } = await supabaseAdmin
+        .from("whatsapp_sessions")
+        .select("phone");
+      (sessions || []).forEach((s: any) => {
+        const ph = String(s.phone || "").trim();
+        if (ph && ph !== "0000000000" && !ph.includes("@") && ph.length >= 9 && ph.length <= 15) {
+          phoneList.push(ph);
+        }
+      });
     } else if (body.broadcast_to_users === true || (body.segment && body.segment !== "none")) {
       // Broadcast to ALL users (fetching across all tables) ONLY if explicitly requested
       let page = 0;

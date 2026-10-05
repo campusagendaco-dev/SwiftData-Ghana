@@ -469,9 +469,10 @@ function formatAdminMenu(adminName: string): string {
     `*4* — 📈 Today's Financials (Volume, Orders, Profit)`,
     `*5* — 🔍 User / Agent Lookup (By phone or slug)`,
     `*6* — ⚙️ Maintenance & Platform Status`,
-    `*7* — 🛒 Switch to Customer Retail Menu`,
+    `*7* — 📢 Send Broadcast to Active User Sessions`,
+    `*8* — 🛒 Switch to Customer Retail Menu`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `_Reply with 1 to 7 — or reply 'CUSTOMER' anytime to browse retail._`
+    `_Reply with 1 to 8 — or reply 'CUSTOMER' anytime to browse retail._`
   ].join("\n");
 }
 
@@ -2055,6 +2056,9 @@ Return ONLY a valid JSON object matching these keys.`;
         await sendWhatsAppMessage(from, "🔒 *Access Denied:* Your WhatsApp number is not authorized for Admin Terminal access.");
         return new Response("ok");
       }
+    } else if (isSenderAdmin && (input === "broadcast" || input === "announce" || input === "notify sessions")) {
+      step = "SELECT_ADMIN_SERVICE";
+      input = "7";
     } else if (["agent", "agent menu", "reseller", "reseller menu", "agent hub", "agent portal"].includes(input)) {
       if (isSenderAgent || isSenderAdmin) {
         step = "AGENT_MENU";
@@ -3211,7 +3215,29 @@ Return ONLY a valid JSON object matching these keys.`;
             `_Reply 0 for Admin Terminal._`
           ].join("\n");
           nextStep = "SELECT_ADMIN_SERVICE";
-        } else if (input === "7" || input.includes("customer") || input.includes("retail") || input.includes("shop")) {
+        } else if (input === "7" || input.includes("broadcast") || input.includes("session") || input.includes("notify") || input.includes("announc")) {
+          const { data: sessionRows } = await supabase
+            .from("whatsapp_sessions")
+            .select("phone");
+          const validSessionList = (sessionRows || []).filter((s: any) => {
+            const p = String(s.phone || "").trim();
+            return p && p !== "0000000000" && !p.includes("@") && p.length >= 9 && p.length <= 15;
+          });
+          const uniqueSessionCount = new Set(validSessionList.map((s: any) => s.phone)).size;
+
+          reply = [
+            `📢 *Broadcast to Active User Sessions*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `• *Target Audience:* *${uniqueSessionCount}* active WhatsApp user sessions`,
+            `• *Channel Update:* Also posted to official channel`,
+            `• *Protection:* Safe 2.5s jitter & auto opt-out footer`,
+            ``,
+            `Please reply with the *Announcement Message* you want to broadcast to these user sessions:`,
+            ``,
+            `_Reply 0 to cancel and return to Admin Terminal._`
+          ].join("\n");
+          nextStep = "ADMIN_BROADCAST_COMPOSE";
+        } else if (input === "8" || input.includes("customer") || input.includes("retail") || input.includes("shop")) {
           data.viewMode = "customer";
           reply = `🔄 *Switched to Customer Retail Menu!*\n\n_Reply *Hi* or any service to browse._`;
           nextStep = "MENU";
@@ -3219,9 +3245,106 @@ Return ONLY a valid JSON object matching these keys.`;
           reply = formatAdminMenu(senderProfile?.full_name || "Admin");
           nextStep = "SELECT_ADMIN_SERVICE";
         } else {
-          reply = `⚠️ Please reply with a valid option from *1 to 7*, or reply *0* for Admin Terminal.`;
+          reply = `⚠️ Please reply with a valid option from *1 to 8*, or reply *0* for Admin Terminal.`;
           nextStep = "SELECT_ADMIN_SERVICE";
         }
+        break;
+      }
+
+      case "ADMIN_BROADCAST_COMPOSE": {
+        if (input === "0" || input === "cancel") {
+          reply = formatAdminMenu(senderProfile?.full_name || "Admin");
+          nextStep = "SELECT_ADMIN_SERVICE";
+          break;
+        }
+
+        const composeMsg = text.trim();
+        if (composeMsg.length < 4) {
+          reply = `⚠️ Announcement message is too short. Please type a message to broadcast, or reply *0* to cancel:`;
+          nextStep = "ADMIN_BROADCAST_COMPOSE";
+          break;
+        }
+
+        data.broadcastMsg = composeMsg;
+
+        const { data: composeSessions } = await supabase
+          .from("whatsapp_sessions")
+          .select("phone");
+        const validComposeSessions = (composeSessions || []).filter((s: any) => {
+          const p = String(s.phone || "").trim();
+          return p && p !== "0000000000" && !p.includes("@") && p.length >= 9 && p.length <= 15;
+        });
+        const composeTargetCount = new Set(validComposeSessions.map((s: any) => s.phone)).size;
+        data.broadcastCount = composeTargetCount;
+
+        reply = [
+          `📢 *Confirm Broadcast to User Sessions*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `• *Audience:* *${composeTargetCount}* Active User Sessions`,
+          ``,
+          `*Message Preview:*`,
+          `"${composeMsg}"`,
+          ``,
+          `Reply *SEND* to dispatch now.`,
+          `Reply *0* to cancel.`,
+        ].join("\n");
+        nextStep = "ADMIN_BROADCAST_CONFIRM";
+        break;
+      }
+
+      case "ADMIN_BROADCAST_CONFIRM": {
+        if (input === "0" || input === "cancel") {
+          delete data.broadcastMsg;
+          delete data.broadcastCount;
+          reply = `❌ Broadcast cancelled.\n\n` + formatAdminMenu(senderProfile?.full_name || "Admin");
+          nextStep = "SELECT_ADMIN_SERVICE";
+          break;
+        }
+
+        if (input === "send" || input === "yes" || input === "confirm") {
+          const messageToSend = data.broadcastMsg;
+          const countSent = data.broadcastCount || 0;
+          delete data.broadcastMsg;
+          delete data.broadcastCount;
+
+          if (!messageToSend) {
+            reply = `⚠️ No broadcast message pending.\n\n` + formatAdminMenu(senderProfile?.full_name || "Admin");
+            nextStep = "SELECT_ADMIN_SERVICE";
+            break;
+          }
+
+          // Trigger admin-broadcast-whatsapp in background
+          try {
+            fetch(`${SUPABASE_URL}/functions/v1/admin-broadcast-whatsapp`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+              },
+              body: JSON.stringify({
+                segment: "active_sessions",
+                message: messageToSend,
+                title: "Announcement",
+                broadcast_to_channel: true,
+              })
+            }).catch(e => console.warn("[WA Bot] Admin broadcast invoke error:", e));
+          } catch (_e) {}
+
+          reply = [
+            `✅ *Broadcast Queued Successfully!* 🚀`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `• Dispatched to *${countSent}* active user sessions.`,
+            `• Also posted to official WhatsApp channel.`,
+            `• Anti-spam humanized rate limiting is active.`,
+            ``,
+            `_Reply 0 for Admin Terminal._`
+          ].join("\n");
+          nextStep = "SELECT_ADMIN_SERVICE";
+          break;
+        }
+
+        reply = `⚠️ Please reply *SEND* to confirm dispatch, or *0* to cancel.`;
+        nextStep = "ADMIN_BROADCAST_CONFIRM";
         break;
       }
 

@@ -23,16 +23,17 @@ import {
 } from "@/components/ui/dialog";
 import { BulkPushBroadcaster } from "@/components/BulkPushBroadcaster";
 
-type Segment = "all_agents" | "all_users" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
+type Segment = "all_agents" | "active_sessions" | "all_users" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
 type Channel = "notification" | "push" | "sms" | "whatsapp" | "both";
 
 const SEGMENTS: { value: Segment; label: string; desc: string }[] = [
-  { value: "all_agents",     label: "All Agents",         desc: "Every active agent on the platform" },
-  { value: "all_users",      label: "All Registered Users", desc: "Every user account on SwiftData (~4.9k users)" },
-  { value: "top_agents",     label: "Top Performers",     desc: "Agents with > GHS 500 revenue in last 30 days" },
-  { value: "dormant_agents", label: "Dormant Agents",     desc: "No orders in the last 14 days" },
-  { value: "sub_agents",     label: "Sub-Agents Only",    desc: "All registered sub-agents" },
-  { value: "active_7d",      label: "Active This Week",   desc: "Placed at least 1 order in last 7 days" },
+  { value: "all_agents",      label: "All Agents",         desc: "Every active agent on the platform" },
+  { value: "active_sessions", label: "Active WhatsApp Sessions", desc: "Users who have actively chatted with the WhatsApp bot" },
+  { value: "all_users",       label: "All Registered Users", desc: "Every user account on SwiftData (~4.9k users)" },
+  { value: "top_agents",      label: "Top Performers",     desc: "Agents with > GHS 500 revenue in last 30 days" },
+  { value: "dormant_agents",  label: "Dormant Agents",     desc: "No orders in the last 14 days" },
+  { value: "sub_agents",      label: "Sub-Agents Only",    desc: "All registered sub-agents" },
+  { value: "active_7d",       label: "Active This Week",   desc: "Placed at least 1 order in last 7 days" },
 ];
 
 const TEMPLATES = [
@@ -279,10 +280,22 @@ export default function AdminBroadcast() {
     setCounting(true);
     setRecipientCount(null);
     try {
-      let query = (supabase as any).from("profiles").select("user_id", { count: "exact", head: true });
-      query = buildSegmentQuery(query);
-      const { count } = await query;
-      setRecipientCount(count || 0);
+      if (segment === "active_sessions") {
+        const { data: sessions } = await (supabase as any)
+          .from("whatsapp_sessions")
+          .select("phone");
+        const valid = (sessions || []).filter((s: any) => {
+          const p = String(s.phone || "").trim();
+          return p && p !== "0000000000" && !p.includes("@") && p.length >= 9 && p.length <= 15;
+        });
+        const unique = new Set(valid.map((s: any) => s.phone));
+        setRecipientCount(unique.size);
+      } else {
+        let query = (supabase as any).from("profiles").select("user_id", { count: "exact", head: true });
+        query = buildSegmentQuery(query);
+        const { count } = await query;
+        setRecipientCount(count || 0);
+      }
     } catch {
       setRecipientCount(0);
     }
@@ -335,22 +348,50 @@ export default function AdminBroadcast() {
         return;
       }
 
-      // Fetch recipient user_ids based on segment
-      let query = (supabase as any).from("profiles").select("user_id, phone, whatsapp_number, phone_number");
-      query = buildSegmentQuery(query);
-      const { data: recipients } = await query;
+      // Fetch recipient user_ids / phone numbers based on segment
+      let phones: string[] = [];
+      let recipientIds: string[] = [];
 
-      if (!recipients?.length) {
-        toast({ title: "No recipients found", description: "Segment returned 0 users.", variant: "destructive" });
-        setSending(false);
-        return;
+      if (segment === "active_sessions") {
+        const { data: sessionRows, error: sessErr } = await (supabase as any)
+          .from("whatsapp_sessions")
+          .select("phone, user_id");
+        if (sessErr) throw sessErr;
+
+        const validSessions = (sessionRows || []).filter((s: any) => {
+          const p = String(s.phone || "").trim();
+          return p && p !== "0000000000" && !p.includes("@") && p.length >= 9 && p.length <= 15;
+        });
+
+        phones = Array.from(new Set(validSessions.map((s: any) => s.phone).filter(Boolean)));
+        recipientIds = Array.from(new Set(validSessions.map((s: any) => s.user_id).filter(Boolean)));
+
+        if (phones.length === 0) {
+          toast({ title: "No active sessions found", description: "No valid user sessions found in database.", variant: "destructive" });
+          setSending(false);
+          return;
+        }
+      } else {
+        let query = (supabase as any).from("profiles").select("user_id, phone, whatsapp_number, phone_number");
+        query = buildSegmentQuery(query);
+        const { data: recipients } = await query;
+
+        if (!recipients?.length) {
+          toast({ title: "No recipients found", description: "Segment returned 0 users.", variant: "destructive" });
+          setSending(false);
+          return;
+        }
+
+        recipientIds = recipients.map((r: any) => r.user_id);
+        phones = recipients
+          .map((r: any) => r.whatsapp_number || r.phone_number || r.phone)
+          .filter(Boolean);
       }
 
-      const recipientIds: string[] = recipients.map((r: any) => r.user_id);
-      const count = recipientIds.length;
+      const count = segment === "active_sessions" ? phones.length : recipientIds.length;
 
       // In-app notifications
-      if (channel === "notification" || channel === "both") {
+      if ((channel === "notification" || channel === "both") && recipientIds.length > 0) {
         const notifications = recipientIds.map((uid) => ({
           user_id: uid,
           title: title.trim(),
@@ -365,7 +406,7 @@ export default function AdminBroadcast() {
       }
 
       // Web push notifications (chunked in safe slices of 50)
-      if (channel === "push" || channel === "both") {
+      if ((channel === "push" || channel === "both") && recipientIds.length > 0) {
         const PUSH_BATCH_SIZE = 50;
         for (let pOffset = 0; pOffset < recipientIds.length; pOffset += PUSH_BATCH_SIZE) {
           supabase.functions.invoke("send-push-notification", {
@@ -384,14 +425,11 @@ export default function AdminBroadcast() {
       // WhatsApp Broadcast & WhatsApp Sticker Dispatch
       let waResultMsg = "";
       if (channel === "whatsapp" || channel === "both") {
-        const phones = recipients
-          .map((r: any) => r.whatsapp_number || r.phone_number || r.phone)
-          .filter(Boolean);
-
         try {
           const { data: waData, error: waError } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
             body: {
               recipients: phones,
+              segment: segment,
               title: title.trim(),
               message: body.trim(),
               sticker_url: stickerUrl.trim() || undefined,
@@ -424,8 +462,7 @@ export default function AdminBroadcast() {
 
       // SMS via edge function
       let smsResultMsg = "";
-      if (channel === "sms") {
-        const phones = recipients.map((r: any) => r.phone).filter(Boolean);
+      if (channel === "sms" && phones.length > 0) {
         try {
           const { data: smsData, error: smsError } = await supabase.functions.invoke("admin-send-sms", {
             body: { 
