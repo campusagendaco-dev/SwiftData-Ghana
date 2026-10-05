@@ -8,6 +8,9 @@ import {
   checkIsOnWhatsApp,
   getWaSenderStatus,
   getWaSenderGroups,
+  getWaSenderSessions,
+  connectWaSenderSession,
+  disconnectWaSenderSession,
   normalizePhone
 } from "../_shared/whatsapp.ts";
 
@@ -184,6 +187,112 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify(groupsResult), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
+      });
+    }
+
+    // Action: List WhatsApp Sessions (via WaSender Personal Access Token)
+    if (body.action === "list_sessions" || body.action === "sessions") {
+      let personalToken = Deno.env.get("WASENDER_PERSONAL_ACCESS_TOKEN") || Deno.env.get("WASENDER_TOKEN") || body.personal_token || "";
+      if (!personalToken) {
+        try {
+          const { data: dbSecrets } = await Promise.resolve(
+            supabaseAdmin.from("system_secrets").select("wasender_personal_token").eq("id", 1).maybeSingle()
+          );
+          personalToken = dbSecrets?.wasender_personal_token || "";
+        } catch (_e) {
+          // ignore
+        }
+      }
+      const sessionsResult = await getWaSenderSessions(personalToken);
+      return new Response(JSON.stringify(sessionsResult), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: sessionsResult.success ? 200 : 400,
+      });
+    }
+
+    // Action: Connect WhatsApp Session (QR Code or Passkey)
+    // Endpoint: POST https://wasenderapi.com/api/whatsapp-sessions/{whatsappSession}/connect
+    if (body.action === "connect_session" || body.action === "connect") {
+      let personalToken = Deno.env.get("WASENDER_PERSONAL_ACCESS_TOKEN") || Deno.env.get("WASENDER_TOKEN") || body.personal_token || "";
+      let sessionId = body.session_id || body.whatsappSession || Deno.env.get("WASENDER_SESSION_ID") || "";
+
+      if (!personalToken || !sessionId) {
+        try {
+          const { data: dbSecrets } = await Promise.resolve(
+            supabaseAdmin.from("system_secrets").select("*").eq("id", 1).maybeSingle()
+          );
+          if (!personalToken && dbSecrets?.wasender_personal_token) {
+            personalToken = dbSecrets.wasender_personal_token;
+          }
+          if (!sessionId && dbSecrets?.wasender_session_id) {
+            sessionId = dbSecrets.wasender_session_id;
+          }
+        } catch (_e) {
+          // ignore
+        }
+      }
+
+      if (!personalToken) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Missing Personal Access Token. Please provide your Personal Access Token from wasenderapi.com/settings/tokens."
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        });
+      }
+
+      // If session ID is not specified, auto-discover by querying sessions list
+      if (!sessionId) {
+        const sessionsResult = await getWaSenderSessions(personalToken);
+        if (sessionsResult.success && sessionsResult.sessions && sessionsResult.sessions.length > 0) {
+          sessionId = sessionsResult.sessions[0].id;
+        } else {
+          return new Response(JSON.stringify({
+            success: false,
+            error: "No WhatsApp session found or session ID unspecified. Please check your WaSender dashboard at wasenderapi.com.",
+            details: sessionsResult.error,
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          });
+        }
+      }
+
+      const linkMethod = body.linkMethod === "passkey" ? "passkey" : "qr";
+      const connectResult = await connectWaSenderSession(sessionId, personalToken, linkMethod);
+
+      return new Response(JSON.stringify({
+        ...connectResult,
+        sessionId,
+        linkMethod,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: connectResult.success ? 200 : 400,
+      });
+    }
+
+    // Action: Disconnect WhatsApp Session
+    if (body.action === "disconnect_session" || body.action === "disconnect") {
+      let personalToken = Deno.env.get("WASENDER_PERSONAL_ACCESS_TOKEN") || Deno.env.get("WASENDER_TOKEN") || body.personal_token || "";
+      let sessionId = body.session_id || body.whatsappSession || Deno.env.get("WASENDER_SESSION_ID") || "";
+
+      if (!personalToken || !sessionId) {
+        try {
+          const { data: dbSecrets } = await Promise.resolve(
+            supabaseAdmin.from("system_secrets").select("*").eq("id", 1).maybeSingle()
+          );
+          personalToken = personalToken || dbSecrets?.wasender_personal_token || "";
+          sessionId = sessionId || dbSecrets?.wasender_session_id || "";
+        } catch (_e) {
+          // ignore
+        }
+      }
+
+      const disconnectResult = await disconnectWaSenderSession(sessionId, personalToken);
+      return new Response(JSON.stringify(disconnectResult), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: disconnectResult.success ? 200 : 400,
       });
     }
 

@@ -10,8 +10,17 @@ import { cn } from "@/lib/utils";
 import {
   Send, Users, Filter, RefreshCw,
   Megaphone, Bell, MessageSquare, BarChart3, Sparkles, Smartphone,
-  CheckCircle2, XCircle, Search, ShieldCheck, FileText, Paperclip
+  CheckCircle2, XCircle, Search, ShieldCheck, FileText, Paperclip,
+  QrCode, KeyRound, LogOut, ExternalLink, Loader2, ArrowRight
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { BulkPushBroadcaster } from "@/components/BulkPushBroadcaster";
 
 type Segment = "all_agents" | "all_users" | "top_agents" | "dormant_agents" | "sub_agents" | "active_7d";
@@ -89,6 +98,18 @@ export default function AdminBroadcast() {
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [broadcastMode, setBroadcastMode] = useState<"users" | "groups">("users");
 
+  // WaSender Direct Connect State
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [personalToken, setPersonalToken] = useState<string>(() => localStorage.getItem("wasender_token") || "");
+  const [sessionId, setSessionId] = useState<string>(() => localStorage.getItem("wasender_session_id") || "");
+  const [linkMethod, setLinkMethod] = useState<"qr" | "passkey">("qr");
+  const [connectingSession, setConnectingSession] = useState(false);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [connectStatus, setConnectStatus] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [showTokenConfig, setShowTokenConfig] = useState(false);
+
   const fetchWaSessionStatus = useCallback(async () => {
     setLoadingWaStatus(true);
     try {
@@ -123,6 +144,109 @@ export default function AdminBroadcast() {
     fetchWaSessionStatus();
     fetchWaGroups();
   }, [fetchWaSessionStatus, fetchWaGroups]);
+
+  const handleConnectWaSession = useCallback(async (forcedMethod?: "qr" | "passkey") => {
+    setConnectingSession(true);
+    setConnectError(null);
+    const method = forcedMethod || linkMethod;
+    try {
+      if (personalToken.trim()) {
+        localStorage.setItem("wasender_token", personalToken.trim());
+      }
+      if (sessionId.trim()) {
+        localStorage.setItem("wasender_session_id", sessionId.trim());
+      }
+
+      const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+        body: {
+          action: "connect_session",
+          personal_token: personalToken.trim() || undefined,
+          session_id: sessionId.trim() || undefined,
+          linkMethod: method,
+        }
+      });
+
+      if (error || !data?.success) {
+        const errMsg = data?.error || error?.message || "Failed to initiate WhatsApp session connection.";
+        setConnectError(errMsg);
+        toast({ title: "Connection Failed", description: errMsg, variant: "destructive" });
+      } else {
+        const status = data?.data?.status || "NEED_SCAN";
+        setConnectStatus(status);
+        if (data?.data?.qrCode) {
+          setQrCode(data.data.qrCode);
+        }
+        if (data?.sessionId) {
+          setSessionId(String(data.sessionId));
+          localStorage.setItem("wasender_session_id", String(data.sessionId));
+        }
+        if (status === "CONNECTED" || status === "open") {
+          toast({ title: "🎉 WhatsApp Connected!", description: "WhatsApp session is live and active." });
+          fetchWaSessionStatus();
+          fetchWaGroups();
+          setTimeout(() => setConnectModalOpen(false), 1800);
+        }
+      }
+    } catch (err: any) {
+      setConnectError(err?.message || "Error connecting WhatsApp session");
+    } finally {
+      setConnectingSession(false);
+    }
+  }, [personalToken, sessionId, linkMethod, fetchWaSessionStatus, fetchWaGroups, toast]);
+
+  // Auto-poll WhatsApp status when connect modal is open
+  useEffect(() => {
+    if (!connectModalOpen) return;
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+          body: { action: "session_status" }
+        });
+        if (data?.connected) {
+          setWaSessionStatus(data);
+          setConnectStatus("CONNECTED");
+          toast({
+            title: "🎉 WhatsApp Connected Successfully!",
+            description: `Session paired with account ${data?.user?.name || data?.user?.phone || ''}.`,
+          });
+          fetchWaGroups();
+          setTimeout(() => {
+            setConnectModalOpen(false);
+          }, 2000);
+        }
+      } catch (_e) {
+        // silent polling
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [connectModalOpen, fetchWaGroups, toast]);
+
+  const handleDisconnectWaSession = async () => {
+    if (!confirm("Are you sure you want to disconnect this WhatsApp session? You will need to scan QR code again to reconnect.")) return;
+    setDisconnecting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-broadcast-whatsapp", {
+        body: {
+          action: "disconnect_session",
+          personal_token: personalToken.trim() || undefined,
+          session_id: sessionId.trim() || undefined,
+        }
+      });
+      if (error || !data?.success) {
+        toast({ title: "Disconnect Failed", description: data?.error || error?.message, variant: "destructive" });
+      } else {
+        toast({ title: "WhatsApp Disconnected", description: "The session has been logged out successfully." });
+        setQrCode(null);
+        setConnectStatus(null);
+        fetchWaSessionStatus();
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e?.message, variant: "destructive" });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
 
   useEffect(() => {
     supabase
@@ -557,29 +681,57 @@ export default function AdminBroadcast() {
               </Button>
             </div>
 
-            <div className="flex items-center justify-between bg-black/40 rounded-xl p-2.5 border border-white/5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-black/40 rounded-xl p-2.5 border border-white/5 gap-2.5">
               <div className="space-y-0.5">
                 <p className="text-[11px] font-bold text-white flex items-center gap-1.5">
                   <span className={cn(
                     "w-2 h-2 rounded-full",
                     waSessionStatus?.connected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
                   )} />
-                  {waSessionStatus?.connected ? "WhatsApp Connected" : (waSessionStatus?.status === "logged_out" ? "Logged Out" : "Session Checking...")}
+                  {waSessionStatus?.connected ? "WhatsApp Connected" : (waSessionStatus?.status === "logged_out" ? "Logged Out" : "Session Disconnected")}
                 </p>
                 <p className="text-[10px] text-white/40">
                   {waSessionStatus?.user?.name || waSessionStatus?.user?.phone
                     ? `Account: ${waSessionStatus.user.name || ''} (${waSessionStatus.user.phone || ''})`
-                    : (waSessionStatus?.connected ? "Ready to dispatch" : "Scan QR in WaSender dashboard if disconnected")}
+                    : (waSessionStatus?.connected ? "Ready to dispatch" : "Scan QR code to pair WhatsApp on this device")}
                 </p>
               </div>
-              <Badge className={cn(
-                "text-[10px] px-2 py-0.5 border",
-                waSessionStatus?.connected
-                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-              )}>
-                {waSessionStatus?.connected ? "Live & Ready" : (waSessionStatus?.status || "Idle")}
-              </Badge>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Badge className={cn(
+                  "text-[10px] px-2 py-0.5 border",
+                  waSessionStatus?.connected
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                    : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                )}>
+                  {waSessionStatus?.connected ? "Live & Ready" : (waSessionStatus?.status || "Idle")}
+                </Badge>
+                {waSessionStatus?.connected ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnectWaSession}
+                    disabled={disconnecting}
+                    className="h-6 px-2 text-[10px] border-red-500/30 text-red-400 hover:bg-red-500/10 gap-1"
+                  >
+                    <LogOut className="w-3 h-3" />
+                    Logout
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setConnectModalOpen(true);
+                      if (!qrCode) handleConnectWaSession();
+                    }}
+                    className="h-6 px-2.5 text-[10px] font-bold bg-emerald-500 text-black hover:bg-emerald-400 gap-1 shadow-sm"
+                  >
+                    <QrCode className="w-3 h-3" />
+                    Connect QR
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Target Mode Toggle */}
@@ -965,6 +1117,260 @@ export default function AdminBroadcast() {
           </div>
         )}
       </Card>
+
+      {/* WhatsApp Session Connect Modal */}
+      <Dialog open={connectModalOpen} onOpenChange={setConnectModalOpen}>
+        <DialogContent className="sm:max-w-md bg-slate-950 border-white/10 text-white p-6">
+          <DialogHeader className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <QrCode className="w-4 h-4" />
+              </div>
+              <DialogTitle className="text-lg font-black text-white">
+                Connect WhatsApp Session
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-white/50">
+              Pair your WhatsApp account to enable automated bot replies, multi-device delivery, and group broadcasts via WaSender.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* If currently connected */}
+            {waSessionStatus?.connected ? (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">WhatsApp Session is Connected!</p>
+                  <p className="text-xs text-emerald-300/80 mt-1">
+                    Linked Account: {waSessionStatus?.user?.name || waSessionStatus?.user?.phone || "Live WhatsApp Device"}
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      fetchWaSessionStatus();
+                      fetchWaGroups();
+                      toast({ title: "Refreshed", description: "WhatsApp session status updated." });
+                    }}
+                    className="border-white/10 text-xs text-white/70"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                    Verify Status
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    disabled={disconnecting}
+                    onClick={handleDisconnectWaSession}
+                    className="text-xs"
+                  >
+                    <LogOut className="w-3.5 h-3.5 mr-1" />
+                    Disconnect Account
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Method selector tabs */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-black/40 border border-white/5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkMethod("qr");
+                      handleConnectWaSession("qr");
+                    }}
+                    className={cn(
+                      "py-1.5 px-2 rounded-lg font-bold transition-all text-xs flex items-center justify-center gap-1.5",
+                      linkMethod === "qr" ? "bg-emerald-500 text-black shadow" : "text-white/50 hover:text-white"
+                    )}
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    QR Code (Default)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkMethod("passkey");
+                      handleConnectWaSession("passkey");
+                    }}
+                    className={cn(
+                      "py-1.5 px-2 rounded-lg font-bold transition-all text-xs flex items-center justify-center gap-1.5",
+                      linkMethod === "passkey" ? "bg-emerald-500 text-black shadow" : "text-white/50 hover:text-white"
+                    )}
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    Passkey Linking
+                  </button>
+                </div>
+
+                {/* QR Code Presentation */}
+                {linkMethod === "qr" && (
+                  <div className="flex flex-col items-center justify-center space-y-3">
+                    {connectingSession ? (
+                      <div className="w-[260px] h-[260px] rounded-2xl bg-white/5 border border-white/10 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+                        <p className="text-xs text-white/70 font-medium">Generating WhatsApp pairing QR...</p>
+                        <p className="text-[10px] text-white/40">Connecting to WaSender session engine</p>
+                      </div>
+                    ) : qrCode ? (
+                      <div className="relative group">
+                        <div className="p-3.5 bg-white rounded-2xl shadow-2xl border border-white/20">
+                          <QRCodeSVG
+                            value={qrCode}
+                            size={230}
+                            level="M"
+                            includeMargin={false}
+                          />
+                        </div>
+                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-black text-[10px] font-black tracking-wider uppercase shadow-md flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
+                          Live Code
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-[260px] h-[260px] rounded-2xl bg-white/5 border border-dashed border-white/10 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                        <Smartphone className="w-10 h-10 text-white/30" />
+                        <p className="text-xs text-white/60">No QR Code active</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleConnectWaSession("qr")}
+                          className="bg-emerald-500 text-black text-xs font-bold hover:bg-emerald-400"
+                        >
+                          Generate QR Code
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Step-by-step instructions */}
+                    <div className="w-full bg-black/40 rounded-xl p-3 border border-white/5 text-[11px] space-y-1.5 text-white/70">
+                      <p className="font-bold text-white text-xs flex items-center gap-1.5 text-emerald-400">
+                        <Smartphone className="w-3.5 h-3.5" />
+                        How to Link:
+                      </p>
+                      <div className="grid grid-cols-1 gap-1 pl-1">
+                        <p className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-white/10 text-[9px] font-bold flex items-center justify-center text-white">1</span>
+                          Open WhatsApp on your phone
+                        </p>
+                        <p className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-white/10 text-[9px] font-bold flex items-center justify-center text-white">2</span>
+                          Tap <b>Settings</b> (iOS) or <b>⋮ Menu</b> (Android) &gt; <b>Linked Devices</b>
+                        </p>
+                        <p className="flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-white/10 text-[9px] font-bold flex items-center justify-center text-white">3</span>
+                          Tap <b>Link a Device</b> and point camera at the QR code
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between w-full pt-1">
+                      <div className="flex items-center gap-1.5 text-[11px] text-white/40">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Listening for phone scan...
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={connectingSession}
+                        onClick={() => handleConnectWaSession("qr")}
+                        className="h-7 text-xs text-emerald-400 hover:bg-emerald-500/10 gap-1"
+                      >
+                        <RefreshCw className={cn("w-3 h-3", connectingSession && "animate-spin")} />
+                        Refresh QR
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Passkey Linking Mode */}
+                {linkMethod === "passkey" && (
+                  <div className="p-4 rounded-xl bg-black/40 border border-white/5 space-y-3 text-center">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center">
+                      <KeyRound className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Passkey Linking Mode</p>
+                      <p className="text-[11px] text-white/50 mt-1">
+                        Passkey linking uses your browser extension or desktop helper to approve WhatsApp authentication directly without scanning.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      disabled={connectingSession}
+                      onClick={() => handleConnectWaSession("passkey")}
+                      className="bg-emerald-500 text-black text-xs font-bold hover:bg-emerald-400 gap-1.5"
+                    >
+                      {connectingSession && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      Send Passkey Continuation
+                    </Button>
+                  </div>
+                )}
+
+                {connectError && (
+                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                    {connectError}
+                  </div>
+                )}
+
+                {/* Token Configuration Accordion */}
+                <div className="pt-2 border-t border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setShowTokenConfig(!showTokenConfig)}
+                    className="text-[11px] text-white/40 hover:text-white flex items-center justify-between w-full"
+                  >
+                    <span>Custom Token or Session ID</span>
+                    <span>{showTokenConfig ? "▲ Hide" : "▼ Configure"}</span>
+                  </button>
+
+                  {showTokenConfig && (
+                    <div className="space-y-2.5 pt-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <label className="text-white/60">Personal Access Token</label>
+                          <a
+                            href="https://wasenderapi.com/settings/tokens"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-emerald-400 hover:underline flex items-center gap-0.5"
+                          >
+                            Get Token <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                        <Input
+                          type="password"
+                          placeholder="Bearer token from wasenderapi.com/settings/tokens"
+                          value={personalToken}
+                          onChange={(e) => setPersonalToken(e.target.value)}
+                          className="bg-black/60 border-white/10 text-xs h-8 text-white font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-white/60">WhatsApp Session ID (Optional - auto-discovered if blank)</label>
+                        <Input
+                          placeholder="e.g. 1"
+                          value={sessionId}
+                          onChange={(e) => setSessionId(e.target.value)}
+                          className="bg-black/60 border-white/10 text-xs h-8 text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -401,6 +401,143 @@ export async function getWaSenderGroups(apiKey?: string): Promise<{
 }
 
 /**
+ * List all WhatsApp sessions under account via WaSender API.
+ * Endpoint: GET https://wasenderapi.com/api/whatsapp-sessions
+ * Requires Personal Access Token (from wasenderapi.com/settings/tokens)
+ */
+export async function getWaSenderSessions(personalToken?: string): Promise<{
+  success: boolean;
+  sessions: any[];
+  error?: string;
+}> {
+  const token = personalToken || Deno.env.get("WASENDER_PERSONAL_ACCESS_TOKEN") || Deno.env.get("WASENDER_TOKEN") || "";
+  if (!token) {
+    return { success: false, sessions: [], error: "Missing WaSender Personal Access Token (WASENDER_PERSONAL_ACCESS_TOKEN)" };
+  }
+
+  try {
+    const res = await fetch("https://wasenderapi.com/api/whatsapp-sessions", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      return { success: false, sessions: [], error: json?.message || `Failed to fetch sessions (${res.status})` };
+    }
+
+    const sessions = Array.isArray(json?.data) ? json.data : (Array.isArray(json) ? json : []);
+    return { success: true, sessions };
+  } catch (err: any) {
+    return { success: false, sessions: [], error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Connects a WhatsApp session via WaSender API using QR code or Passkey.
+ * Endpoint: POST https://wasenderapi.com/api/whatsapp-sessions/{whatsappSession}/connect
+ *
+ * @param sessionId - Numeric or string ID of the WhatsApp session.
+ * @param personalToken - Personal Access Token (Bearer token from wasenderapi.com/settings/tokens).
+ * @param linkMethod - Optional linking method. "qr" or "passkey". Defaults to "qr".
+ */
+export async function connectWaSenderSession(
+  sessionId: number | string,
+  personalToken?: string,
+  linkMethod: "qr" | "passkey" = "qr"
+): Promise<{
+  success: boolean;
+  data?: {
+    status: string;
+    qrCode?: string;
+    [key: string]: any;
+  };
+  error?: string;
+}> {
+  const token = personalToken || Deno.env.get("WASENDER_PERSONAL_ACCESS_TOKEN") || Deno.env.get("WASENDER_TOKEN") || "";
+  if (!token) {
+    return {
+      success: false,
+      error: "Missing WaSender Personal Access Token. Generate one at wasenderapi.com/settings/tokens.",
+    };
+  }
+
+  const cleanSessionId = String(sessionId || "").trim();
+  if (!cleanSessionId) {
+    return { success: false, error: "Missing WhatsApp Session ID." };
+  }
+
+  try {
+    const url = `https://wasenderapi.com/api/whatsapp-sessions/${encodeURIComponent(cleanSessionId)}/connect`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ linkMethod: linkMethod || "qr" }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      return {
+        success: false,
+        error: json?.message || json?.error || `WaSender session connect failed (${res.status})`,
+      };
+    }
+
+    return {
+      success: true,
+      data: json?.data || json,
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Disconnects a WhatsApp session via WaSender API.
+ * Endpoint: POST https://wasenderapi.com/api/whatsapp-sessions/{whatsappSession}/disconnect
+ */
+export async function disconnectWaSenderSession(
+  sessionId: number | string,
+  personalToken?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const token = personalToken || Deno.env.get("WASENDER_PERSONAL_ACCESS_TOKEN") || Deno.env.get("WASENDER_TOKEN") || "";
+  if (!token) {
+    return { success: false, error: "Missing WaSender Personal Access Token." };
+  }
+
+  const cleanSessionId = String(sessionId || "").trim();
+  if (!cleanSessionId) {
+    return { success: false, error: "Missing WhatsApp Session ID." };
+  }
+
+  try {
+    const url = `https://wasenderapi.com/api/whatsapp-sessions/${encodeURIComponent(cleanSessionId)}/disconnect`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      return { success: false, error: json?.message || `Failed to disconnect (${res.status})` };
+    }
+
+    return { success: true, message: json?.message || "Session disconnected successfully" };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+/**
  * Fetches WhatsApp username metadata for a contact via WaSender API.
  * Endpoint: GET https://www.wasenderapi.com/api/fetch-username/{contact_identifier}
  *
