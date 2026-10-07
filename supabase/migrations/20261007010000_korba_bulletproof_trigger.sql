@@ -11,14 +11,16 @@ BEGIN
     v_pkg := UPPER(NEW.package_size);
     v_cat := LOWER(COALESCE(NEW.metadata->>'category', NEW.metadata->>'package_category', ''));
     
-    IF v_pkg LIKE 'GHS%' OR 
-       v_pkg LIKE '%RACT_DATA%' OR 
-       v_pkg LIKE '%KOKROKOO%' OR 
-       v_pkg LIKE '%MIDNIGHT%' OR 
-       v_pkg LIKE '%SOCIAL%' OR 
-       v_pkg LIKE '%VIDEO%' OR 
-       v_pkg LIKE '%IDD%' OR
-       (v_cat <> '' AND v_cat <> 'affordable' AND v_cat <> 'sme' AND v_cat <> 'mashup' AND v_cat NOT LIKE '%sme%') THEN
+    -- Korba tagging ONLY applies to explicit Korba retail patterns (GHS..., RACT_DATA, KOKROKOO, MIDNIGHT, SOCIAL, VIDEO, IDD).
+    -- Standard GB sizes (e.g. 1GB, 2GB, 3GB, 5GB, 10GB) are SME data bundles and MUST NEVER be tagged as Korba.
+    IF (v_pkg LIKE 'GHS%' OR 
+        v_pkg LIKE '%RACT_DATA%' OR 
+        v_pkg LIKE '%KOKROKOO%' OR 
+        v_pkg LIKE '%MIDNIGHT%' OR 
+        v_pkg LIKE '%SOCIAL%' OR 
+        v_pkg LIKE '%VIDEO%' OR 
+        v_pkg LIKE '%IDD%') AND 
+        v_pkg !~ '^\d+(\.\d+)?\s*GB$' THEN
        
       NEW.metadata := COALESCE(NEW.metadata, '{}'::jsonb) || jsonb_build_object('is_korba', true);
       IF NOT (NEW.metadata ? 'category') OR (NEW.metadata->>'category' = 'affordable') OR (NEW.metadata->>'category' = 'sme') THEN

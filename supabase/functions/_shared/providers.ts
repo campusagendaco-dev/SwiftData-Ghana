@@ -92,19 +92,25 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     pkgUpper.includes("VIDEO") || 
     pkgUpper.includes("IDD");
 
-  let isExplicitKorba = korbaProvider && (
+  const isStandardSmeSize = /^\d+(\.\d+)?\s*GB$/i.test(String(order?.package_size || "").trim());
+  const isAffordableSmeBundle = isDataOrder && (
+    orderCategory === "affordable" || 
+    orderCategory === "sme" || 
+    orderCategory.includes("sme") ||
+    (isStandardSmeSize && !isKorbaPackagePattern)
+  );
+
+  let isExplicitKorba = !isAffordableSmeBundle && korbaProvider && (
     uppercaseNet.startsWith("KORBA") || 
     order?.metadata?.is_korba === true || 
     order?.metadata?.is_korba === "true" ||
     orderCategory === "korba" ||
-    orderCategory === "standard" ||
     isExplicitKorbaCategory ||
     isKorbaPackagePattern ||
-    order?.metadata?.provider_type === "korba" ||
-    order?.payment_method === "korba"
+    order?.metadata?.provider_type === "korba"
   );
 
-  if (!isExplicitKorba && korbaProvider && order?.package_size) {
+  if (!isExplicitKorba && !isAffordableSmeBundle && korbaProvider && order?.package_size) {
     const cleanPkg = String(order.package_size).replace(/\s+/g, "").toUpperCase();
     const { data: korbaPkgs } = await supabaseAdmin
       .from("provider_packages")
@@ -130,18 +136,6 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     console.log(`[resolveProvidersForOrder] Resolved Korba provider for Korba order ${order?.id}`);
     return [korbaProvider];
   }
-
-  // Affirm rule: Affordable SME bundles (MTN, Telecel, AirtelTigo) are NEVER routed to Korba
-  const isAffordableSmeBundle = isDataOrder && !isExplicitKorba && (
-    rawNetUpper.includes("MTN") || 
-    rawNetUpper.includes("YELLO") || 
-    rawNetUpper.includes("TELECEL") || 
-    rawNetUpper.includes("VODA") || 
-    rawNetUpper.includes("AIRTEL") || 
-    rawNetUpper.includes("TIGO") || 
-    rawNetUpper.includes("AT") ||
-    rawNetUpper.includes("SME")
-  );
 
   // 2. Check if AFA order
   const isAfaOrder = orderType.toLowerCase() === "afa" || uppercaseNet === "AFA" || uppercaseNet.startsWith("AFA");
