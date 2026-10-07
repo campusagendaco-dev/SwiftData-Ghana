@@ -5,6 +5,7 @@ import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate } fr
 import { verifyAdmin } from "../_shared/auth.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
+import { resolveProvidersForOrder } from "../_shared/providers.ts";
 import https from "node:https";
 import { HttpsProxyAgent } from "npm:https-proxy-agent";
 
@@ -329,6 +330,12 @@ serve(async (req: Request) => {
 
     if (!action) {
       return json({ error: `Missing action. Received body: ${JSON.stringify(body)}` }, 400);
+    }
+
+    if (action === "test_resolve_providers") {
+      const testOrder = body.order || {};
+      const providers = await resolveProvidersForOrder(supabaseAdmin, testOrder);
+      return json({ success: true, providers });
     }
 
     switch (action as AdminUserAction) {
