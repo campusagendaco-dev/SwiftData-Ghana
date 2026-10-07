@@ -506,6 +506,350 @@ function formatAdminMenu(adminName: string): string {
   ].join("\n");
 }
 
+// ── Self-Service Conversational Helpers (Refunds, Registration, Agent Onboarding) ──
+
+async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string, orderRefInput?: string): Promise<string> {
+  const normPhone = normalizePhone(fromPhone) || fromPhone.replace(/\D/g, "");
+  const shortPhone = normPhone.length >= 9 ? normPhone.slice(-9) : normPhone;
+
+  // Resolve Profile & Wallet
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, full_name, phone, whatsapp_number")
+    .or(`phone.ilike.%${shortPhone}%,whatsapp_number.ilike.%${shortPhone}%,phone.eq.${normPhone},whatsapp_number.eq.${normPhone}`)
+    .limit(1);
+
+  const profile = profiles?.[0];
+  const userId = profile?.user_id || null;
+
+  // 1. If specific order reference was provided (e.g. REFUND 622b3328)
+  const cleanRef = orderRefInput?.trim().replace(/^refund\s+/i, "").trim().toUpperCase();
+  if (cleanRef) {
+    const { data: order } = await supabase
+      .from("orders")
+      .select("id, status, amount, network, package_size, customer_phone, agent_id, failure_reason, created_at, metadata")
+      .or(`id.ilike.${cleanRef}%,metadata->>client_reference.eq.${cleanRef}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!order) {
+      return `❌ *Order Not Found*\n\nNo order was found matching reference \`${cleanRef}\`. Please check your order ID or reply *4* to track status.`;
+    }
+
+    const isOwner = Boolean((userId && order.agent_id === userId) || (normalizePhone(order.customer_phone) === normPhone));
+    if (!isOwner) {
+      return `🔒 *Authorization Error*\n\nOrder #${order.id.slice(0, 8)} is not linked to your phone number (\`${normPhone}\`).`;
+    }
+
+    const st = String(order.status || "").toLowerCase();
+    if (st === "refunded" || order.metadata?.is_refunded) {
+      return `ℹ️ *Already Refunded*\n\nOrder #${order.id.slice(0, 8)} (${order.network || ""} ${order.package_size || ""}) was already refunded to your wallet balance.`;
+    }
+
+    const isEligible = (st === "failed" || st === "cancelled" || st === "unfulfilled" || st === "fulfillment_failed" || st === "rejected");
+    if (!isEligible) {
+      if (st === "fulfilled" || st === "completed" || st === "success") {
+        return `✅ *Order Delivered Successfully*\n\nOrder #${order.id.slice(0, 8)} (${order.network || ""} ${order.package_size || ""}) was delivered to recipient \`${order.customer_phone}\`. Completed orders cannot be refunded.`;
+      }
+      return `⏳ *Order Processing*\n\nOrder #${order.id.slice(0, 8)} is currently processing with carrier servers. If delivery cannot be completed, it will become eligible for an instant refund shortly.`;
+    }
+
+    const refundAmt = Number(order.amount || 0);
+    if (!userId) {
+      return `⚠️ *Account Required*\n\nTo receive an instant wallet refund for Order #${order.id.slice(0, 8)} (GH₵ ${refundAmt.toFixed(2)}), please reply *REGISTER* to activate your free account!`;
+    }
+
+    const { data: credRes, error: credErr } = await supabase.rpc("credit_wallet", {
+      p_agent_id: userId,
+      p_amount: refundAmt
+    });
+
+    if (credErr) {
+      console.error("[WA Refund] credit_wallet error:", credErr);
+      return `⚠️ *Refund Processing Error*\n\nCould not process refund right now: ${credErr.message || "Database error"}. Please contact support (0598170947).`;
+    }
+
+    await supabase.from("orders").update({
+      status: "refunded",
+      failure_reason: "Refunded via WhatsApp self-service portal"
+    }).eq("id", order.id);
+
+    const newBal = Number(credRes?.new_balance || 0);
+    const shortId = order.id.slice(0, 8);
+
+    return [
+      `✅ *Refund Processed Successfully!*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `• *Order ID:* #${shortId}`,
+      `• *Package:* ${order.network || ""} ${order.package_size || "Data"}`,
+      `• *Recipient:* \`${order.customer_phone}\``,
+      `• *Refund Amount:* *GH₵ ${refundAmt.toFixed(2)}*`,
+      `• *New Balance:* *GH₵ ${newBal.toFixed(2)}*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `The funds have been returned to your wallet balance and are available to place new orders immediately! 🚀`,
+      ``,
+      `_Reply 0 for Main Menu._`
+    ].join("\n");
+  }
+
+  // 2. Query recent unrefunded failed orders
+  let query = supabase
+    .from("orders")
+    .select("id, status, amount, network, package_size, customer_phone, created_at")
+    .in("status", ["failed", "cancelled", "unfulfilled", "fulfillment_failed"])
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (userId) {
+    query = query.or(`agent_id.eq.${userId},customer_phone.ilike.%${shortPhone}%`);
+  } else {
+    query = query.ilike("customer_phone", `%${shortPhone}%`);
+  }
+
+  const { data: failedOrders } = await query;
+  if (!failedOrders || failedOrders.length === 0) {
+    return [
+      `ℹ️ *No Unrefunded Failed Orders Found*`,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `We couldn't find any recent failed or unrefunded orders linked to phone number \`${normPhone}\`.`,
+      ``,
+      `If you have a specific order ID or reference number, please reply:`,
+      `👉 *REFUND <order_id>* (e.g. \`REFUND 622b3328\`)`,
+      ``,
+      `_Reply 0 for Main Menu._`
+    ].join("\n");
+  }
+
+  const orderLines = failedOrders.map((o: any) => {
+    const sId = o.id.slice(0, 8);
+    const pkg = `${o.network || ""} ${o.package_size || "Data"}`.trim();
+    const amt = Number(o.amount || 0).toFixed(2);
+    return `• *#${sId}* — ${pkg} to \`${o.customer_phone}\` (GH₵ ${amt})\n  👉 Reply: \`REFUND ${sId}\``;
+  });
+
+  return [
+    `↩️ *Eligible Orders for Instant Wallet Refund:*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    ...orderLines,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `Reply with \`REFUND <order_id>\` to instantly return the funds to your wallet!`,
+    ``,
+    `_Reply 0 for Main Menu._`
+  ].join("\n");
+}
+
+async function handleUserRegistrationStep(supabase: any, fromPhone: string, currentStep: string, textInput: string, dataObj: any): Promise<{ reply: string; nextStep: string; updatedData: any }> {
+  const normPhone = normalizePhone(fromPhone) || fromPhone.replace(/\D/g, "");
+
+  if (currentStep === "REG_FULL_NAME") {
+    const name = textInput.trim();
+    if (!name || name.length < 2) {
+      return {
+        reply: "⚠️ Please enter a valid *Full Name* (e.g. Senyo Kwami):",
+        nextStep: "REG_FULL_NAME",
+        updatedData: dataObj
+      };
+    }
+    return {
+      reply: [
+        `Great, *${name}*! 👋`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Now please reply with your *Email Address* (e.g. \`senyo@gmail.com\`):`,
+        ``,
+        `_Reply 0 to cancel._`
+      ].join("\n"),
+      nextStep: "REG_EMAIL",
+      updatedData: { ...dataObj, regName: name }
+    };
+  }
+
+  if (currentStep === "REG_EMAIL") {
+    const email = textInput.trim().toLowerCase();
+    if (!email.includes("@") || !email.includes(".")) {
+      return {
+        reply: "⚠️ Please enter a valid *Email Address* (e.g. \`senyo@gmail.com\`):",
+        nextStep: "REG_EMAIL",
+        updatedData: dataObj
+      };
+    }
+
+    const regName = dataObj.regName || "User";
+    const newUserId = crypto.randomUUID();
+    const shortPhone = normPhone.slice(-9);
+
+    const { error: profErr } = await supabase.from("profiles").insert({
+      user_id: newUserId,
+      full_name: regName,
+      email: email,
+      phone: normPhone,
+      whatsapp_number: normPhone,
+      is_agent: false,
+      is_sub_agent: false,
+      created_at: new Date().toISOString()
+    });
+
+    if (profErr) {
+      console.error("[WA Reg] Profile insert warning:", profErr);
+      await supabase.from("profiles").update({
+        full_name: regName,
+        email: email,
+        whatsapp_number: normPhone
+      }).or(`phone.eq.${normPhone},phone.ilike.%${shortPhone}%`);
+    }
+
+    await supabase.from("wallets").insert({
+      agent_id: newUserId,
+      balance: 0,
+      loyalty_balance: 0,
+      updated_at: new Date().toISOString()
+    }).catch(console.error);
+
+    return {
+      reply: [
+        `🎉 *Account Created Successfully!*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Welcome to SwiftData Ghana, *${regName}*! 🇬🇭`,
+        ``,
+        `• *Phone:* \`${normPhone}\``,
+        `• *Email:* \`${email}\``,
+        `• *Wallet Balance:* GH₵ 0.00`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 *Get Started:*`,
+        `• Reply *BAL* to check balance & top up`,
+        `• Reply *BUY 1GB ${normPhone}* to order data instantly!`,
+        ``,
+        `_Reply 0 for Main Menu._`
+      ].join("\n"),
+      nextStep: "MENU",
+      updatedData: {}
+    };
+  }
+
+  return { reply: "Registration process active.", nextStep: "MENU", updatedData: {} };
+}
+
+async function handleAgentRegistrationStep(supabase: any, fromPhone: string, currentStep: string, textInput: string, dataObj: any): Promise<{ reply: string; nextStep: string; updatedData: any }> {
+  const normPhone = normalizePhone(fromPhone) || fromPhone.replace(/\D/g, "");
+  const userMeta = await getUserProfileAndWallet(supabase, fromPhone);
+  const profile = userMeta?.profile;
+  const userId = profile?.user_id;
+
+  if (currentStep === "AGENT_REG_STORE_NAME") {
+    const storeName = textInput.trim();
+    if (!storeName || storeName.length < 3) {
+      return {
+        reply: "⚠️ Please enter a valid *Store Name* (at least 3 characters, e.g. Kwami Data Hub):",
+        nextStep: "AGENT_REG_STORE_NAME",
+        updatedData: dataObj
+      };
+    }
+
+    const slug = storeName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const refCode = storeName.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    const actFee = await getAgentActivationFee(supabase);
+    const walletBal = Number(userMeta?.walletBalance || 0);
+
+    const updatedData = {
+      ...dataObj,
+      agentStoreName: storeName,
+      agentSlug: slug,
+      agentRefCode: refCode,
+      actFee
+    };
+
+    if (walletBal >= actFee) {
+      return {
+        reply: [
+          `🏪 *Store Name Confirmed:* *${storeName}*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `One-Time Lifetime Activation Fee: *GH₵ ${actFee.toFixed(2)}*`,
+          `Your Wallet Balance: *GH₵ ${walletBal.toFixed(2)}*`,
+          ``,
+          `Select how you'd like to pay:`,
+          `*1* — Pay GH₵ ${actFee.toFixed(2)} using Wallet Balance ✅`,
+          `*2* — Pay via Mobile Money (MoMo Prompt) 📲`,
+          ``,
+          `_Reply 1 or 2 — or 0 to cancel._`
+        ].join("\n"),
+        nextStep: "AGENT_REG_PAY_CHOICE",
+        updatedData
+      };
+    } else {
+      return {
+        reply: [
+          `🏪 *Store Name Confirmed:* *${storeName}*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `One-Time Lifetime Activation Fee: *GH₵ ${actFee.toFixed(2)}*`,
+          ``,
+          `📱 Please reply with your Mobile Money (MTN/Telecel/AT) phone number to receive the payment prompt:`,
+          `_Example: 0244123456_`,
+          ``,
+          `_Reply 0 to cancel._`
+        ].join("\n"),
+        nextStep: "AGENT_REG_MOMO_PHONE",
+        updatedData
+      };
+    }
+  }
+
+  if (currentStep === "AGENT_REG_PAY_CHOICE") {
+    const actFee = Number(dataObj.actFee || 15.00);
+    const storeName = dataObj.agentStoreName || "Reseller Store";
+    const slug = dataObj.agentSlug || "store";
+    const refCode = dataObj.agentRefCode || "AGENT";
+
+    if (textInput === "1") {
+      if (!userId) {
+        return { reply: "⚠️ Profile not found. Reply REGISTER to create your account first.", nextStep: "MENU", updatedData: {} };
+      }
+
+      const { error: debitErr } = await supabase.from("wallets").update({
+        balance: (userMeta?.walletBalance || 0) - actFee,
+        updated_at: new Date().toISOString()
+      }).eq("agent_id", userId);
+
+      if (debitErr) {
+        return { reply: `⚠️ Wallet debit failed: ${debitErr.message}`, nextStep: "MENU", updatedData: {} };
+      }
+
+      await supabase.from("profiles").update({
+        is_agent: true,
+        agent_approved: true,
+        store_name: storeName,
+        slug: slug,
+        referral_code: refCode
+      }).eq("user_id", userId);
+
+      await supabase.from("reseller_stores").upsert({
+        user_id: userId,
+        store_name: storeName,
+        slug: slug,
+        is_active: true
+      }, { onConflict: "user_id" }).catch(console.error);
+
+      return {
+        reply: [
+          `🎉 *Congratulations! You are now an Official SwiftData Agent!* 💼`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `• *Store Name:* *${storeName}*`,
+          `• *Agent Code:* *${refCode}*`,
+          `• *Store Web Link:* *${APP_BASE_URL}/store/${slug}*`,
+          `• *Your Bot Link:* *https://wa.me/${WHATSAPP_BOT_NUMBER}?text=Hi+${refCode}*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Share your Bot Link with your customers so they order directly with your custom prices!`,
+          ``,
+          `_Reply *AGENT* anytime to access your Agent Hub._`
+        ].join("\n"),
+        nextStep: "MENU",
+        updatedData: {}
+      };
+    }
+  }
+
+  return { reply: "Agent registration process active.", nextStep: "MENU", updatedData: {} };
+}
+
 async function getSystemHealthReport(supabase: any): Promise<string> {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -1797,6 +2141,92 @@ Return ONLY a valid JSON object matching these keys.`;
       }
     }
 
+    // ── GLOBAL: Self-Service Refund Command ─────────────────────────────────
+    if (input.startsWith("refund") || input === "request refund" || input === "my refund" || input === "claim refund") {
+      const refundReply = await processWhatsAppSelfServiceRefund(supabase, from, text);
+      await sendWhatsAppMessage(from, refundReply);
+      return new Response("ok", { headers: corsHeaders });
+    }
+
+    // ── GLOBAL: Self-Service Account Registration Command ───────────────────
+    if (["register", "signup", "sign up", "create account", "new account", "new user", "join"].includes(input)) {
+      const userMeta = await getUserProfileAndWallet(supabase, from);
+      if (userMeta?.profile) {
+        await sendWhatsAppMessage(from, [
+          `ℹ️ *Account Already Active!*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Hi *${userMeta.profile.full_name || "Agent"}*! You already have an active account registered to phone \`${normalizePhone(from) || from}\`.`,
+          `• *Wallet Balance:* GH₵ ${(userMeta.walletBalance || 0).toFixed(2)}`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `• Reply *BAL* to check balance & top up`,
+          `• Reply *BUY 1GB ${normalizePhone(from) || from}* to order data instantly!`,
+          ``,
+          `_Reply 0 for Main Menu._`
+        ].join("\n"));
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      await supabase.from("whatsapp_sessions").upsert({
+        phone_number: from,
+        agent_id: agentId || "",
+        current_step: "REG_FULL_NAME",
+        order_data: {},
+        updated_at: new Date().toISOString(),
+      });
+
+      await sendWhatsAppMessage(from, [
+        `📝 *SwiftData Ghana Account Registration*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Welcome to SwiftData Ghana! Let's set up your free account in 30 seconds.`,
+        ``,
+        `Please reply with your *Full Name* (e.g. Senyo Kwami):`,
+        ``,
+        `_Reply 0 to cancel._`
+      ].join("\n"));
+      return new Response("ok", { headers: corsHeaders });
+    }
+
+    // ── GLOBAL: Self-Service Reseller Agent Onboarding Command ──────────────
+    if (["become agent", "join agent", "upgrade agent", "agent signup", "register agent", "reseller signup", "upgrade to agent"].includes(input)) {
+      const userMeta = await getUserProfileAndWallet(supabase, from);
+      if (userMeta?.isAgent) {
+        await sendWhatsAppMessage(from, [
+          `💼 *Reseller Agent Account Active!*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Store: *${userMeta.profile?.store_name || "My Store"}*`,
+          `Agent Code: *${(userMeta.profile?.referral_code || userMeta.profile?.slug || "").toUpperCase()}*`,
+          ``,
+          `Reply *AGENT* to access your Agent Hub & Performance Report!`,
+          ``,
+          `_Reply 0 for Main Menu._`
+        ].join("\n"));
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      const actFee = await getAgentActivationFee(supabase);
+      await supabase.from("whatsapp_sessions").upsert({
+        phone_number: from,
+        agent_id: agentId || "",
+        current_step: "AGENT_REG_STORE_NAME",
+        order_data: { actFee },
+        updated_at: new Date().toISOString(),
+      });
+
+      await sendWhatsAppMessage(from, [
+        `💼 *Join SwiftData Reseller Agent Program*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `Start your own telecom data business directly on WhatsApp!`,
+        `• Wholesale rates & set your own prices to keep 100% profit`,
+        `• Your custom WhatsApp bot link & web storefront`,
+        `• One-Time Lifetime Activation Fee: *GH₵ ${actFee.toFixed(2)}*`,
+        ``,
+        `Please reply with your desired *Store Name* (e.g. Kwami Data Hub):`,
+        ``,
+        `_Reply 0 to cancel._`
+      ].join("\n"));
+      return new Response("ok", { headers: corsHeaders });
+    }
+
     // ── GLOBAL: "r" or "retry" — instant automated order delivery retry ───────
     if (["r", "retry", "re-try", "retry order", "try again"].includes(input)) {
       let targetOrderId = data.lastFailedOrderId || data.lastOrderId;
@@ -2476,6 +2906,36 @@ Return ONLY a valid JSON object matching these keys.`;
 
     // ── State machine ─────────────────────────────────────────────────────────
     switch (step) {
+      // ── Self-Service Registration & Onboarding Steps ────────────────────────
+      case "REG_FULL_NAME":
+      case "REG_EMAIL": {
+        const regRes = await handleUserRegistrationStep(supabase, from, step, text, data);
+        await sendWhatsAppMessage(from, regRes.reply);
+        await supabase.from("whatsapp_sessions").upsert({
+          phone_number: from,
+          agent_id: agentId || "",
+          current_step: regRes.nextStep,
+          order_data: regRes.updatedData,
+          updated_at: new Date().toISOString(),
+        });
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      case "AGENT_REG_STORE_NAME":
+      case "AGENT_REG_PAY_CHOICE":
+      case "AGENT_REG_MOMO_PHONE": {
+        const agRes = await handleAgentRegistrationStep(supabase, from, step, text, data);
+        await sendWhatsAppMessage(from, agRes.reply);
+        await supabase.from("whatsapp_sessions").upsert({
+          phone_number: from,
+          agent_id: agentId || "",
+          current_step: agRes.nextStep,
+          order_data: agRes.updatedData,
+          updated_at: new Date().toISOString(),
+        });
+        return new Response("ok", { headers: corsHeaders });
+      }
+
       // ── MENU ─────────────────────────────────────────────────────────────────
       case "MENU": {
         // Check for recent successful order to offer 1-tap reorder
