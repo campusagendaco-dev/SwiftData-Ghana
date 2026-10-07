@@ -57,7 +57,7 @@ async function performRenderFallback(url: string, options: any, originalErr: any
         "Content-Type": "application/json",
         "x-proxy-secret": proxySecret
       },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(15000),
       body: JSON.stringify({
         url: url,
         method: options.method || "GET",
@@ -127,7 +127,7 @@ export async function fetchViaDb(
           "Content-Type": "application/json",
           "x-bridge-secret": bridgeSecret
         },
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           url: url,
           method: options.method || "POST",
