@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { corsHeaders } from "../_shared/cors.ts";
 import { callAiAgent } from "../_shared/ai.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
 
 declare const Deno: any;
 
@@ -310,15 +311,43 @@ Question from customer: "${userText}"`;
 
   console.log(`[android-sms-bot] Outbound Reply to ${senderPhone}: "${replyText}"`);
 
-  // Return standard Android SMS Gateway API JSON response
+  // Dual Dispatch: Send SMS via Server-side Gateway (TxtConnect / mNotify / Korba)
+  // This guarantees delivery even if the physical Android app only forwards incoming webhooks.
+  try {
+    const { gateway, apiKey, senderId } = await getSmsConfig(supabaseAdmin, userId || undefined);
+    await dispatchUnifiedSms(
+      gateway,
+      apiKey,
+      senderId || "SwiftData",
+      senderPhone,
+      replyText,
+      "sms_bot",
+      userId || undefined
+    );
+    console.log(`[android-sms-bot] Server-side SMS dispatched to ${senderPhone} via ${gateway}`);
+  } catch (smsErr) {
+    console.warn(`[android-sms-bot] Direct server SMS dispatch notice (Android app payload fallback active):`, smsErr);
+  }
+
+  // Return standard Android SMS Gateway API JSON response with all common key formats
   return json({
     success: true,
+    status: "success",
     from: senderPhone,
     recipient: senderPhone,
     phone: senderPhone,
+    address: senderPhone,
     message: replyText,
     reply: replyText,
+    text: replyText,
     sms: replyText,
-    response: replyText
+    response: replyText,
+    content: replyText,
+    messages: [
+      {
+        to: senderPhone,
+        message: replyText
+      }
+    ]
   });
 });

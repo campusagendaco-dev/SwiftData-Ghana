@@ -204,4 +204,6 @@ verify_jwt = false
 [functions.check-order-status]
 verify_jwt = false
 
+[functions.android-sms-bot]
+verify_jwt = false
 
