@@ -68,13 +68,71 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   const { data: korbaProvider } = await supabaseAdmin
     .from("providers")
     .select("*")
-    .eq("name", "Korba")
+    .eq("handler_type", "korba")
+    .eq("is_active", true)
+    .limit(1)
     .maybeSingle();
 
   const rawNetUpper = String(order?.network || "").toUpperCase();
   const isDataOrder = orderType === "data" || !orderType || orderType === "sme";
+
+  const orderCategory = String(order?.metadata?.category || order?.metadata?.package_category || "").toLowerCase();
+  const isExplicitKorbaCategory = orderCategory !== "" && 
+    orderCategory !== "affordable" && 
+    orderCategory !== "sme" && 
+    orderCategory !== "mashup" && 
+    !orderCategory.includes("sme");
+
+  const pkgUpper = String(order?.package_size || "").toUpperCase();
+  const isKorbaPackagePattern = pkgUpper.startsWith("GHS") || 
+    pkgUpper.includes("RACT_DATA") || 
+    pkgUpper.includes("KOKROKOO") || 
+    pkgUpper.includes("MIDNIGHT") || 
+    pkgUpper.includes("SOCIAL") || 
+    pkgUpper.includes("VIDEO") || 
+    pkgUpper.includes("IDD");
+
+  let isExplicitKorba = korbaProvider && (
+    uppercaseNet.startsWith("KORBA") || 
+    order?.metadata?.is_korba === true || 
+    order?.metadata?.is_korba === "true" ||
+    orderCategory === "korba" ||
+    orderCategory === "standard" ||
+    isExplicitKorbaCategory ||
+    isKorbaPackagePattern ||
+    order?.metadata?.provider_type === "korba" ||
+    order?.payment_method === "korba"
+  );
+
+  if (!isExplicitKorba && korbaProvider && order?.package_size) {
+    const cleanPkg = String(order.package_size).replace(/\s+/g, "").toUpperCase();
+    const { data: korbaPkgs } = await supabaseAdmin
+      .from("provider_packages")
+      .select("external_id, package_name, raw_data")
+      .eq("provider_id", korbaProvider.id)
+      .eq("is_active", true);
+
+    if (korbaPkgs && korbaPkgs.length > 0) {
+      const matched = korbaPkgs.some((p: any) => 
+        String(p.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanPkg ||
+        String(p.external_id || "").replace(/\s+/g, "").toUpperCase() === cleanPkg ||
+        String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase().includes(cleanPkg) ||
+        String(p.raw_data?.product_id || "").replace(/\s+/g, "").toUpperCase() === cleanPkg
+      );
+      if (matched) {
+        console.log(`[resolveProvidersForOrder] Order ${order?.id} package ${order?.package_size} matched Korba provider_packages row.`);
+        isExplicitKorba = true;
+      }
+    }
+  }
+
+  if (isExplicitKorba) {
+    console.log(`[resolveProvidersForOrder] Resolved Korba provider for Korba order ${order?.id}`);
+    return [korbaProvider];
+  }
+
   // Affirm rule: Affordable SME bundles (MTN, Telecel, AirtelTigo) are NEVER routed to Korba
-  const isAffordableSmeBundle = isDataOrder && (
+  const isAffordableSmeBundle = isDataOrder && !isExplicitKorba && (
     rawNetUpper.includes("MTN") || 
     rawNetUpper.includes("YELLO") || 
     rawNetUpper.includes("TELECEL") || 
@@ -84,18 +142,6 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     rawNetUpper.includes("AT") ||
     rawNetUpper.includes("SME")
   );
-
-  const isExplicitKorba = korbaProvider && !isAffordableSmeBundle && (
-    uppercaseNet.startsWith("KORBA") || 
-    order?.metadata?.is_korba === true || 
-    order?.metadata?.is_korba === "true" ||
-    order?.payment_method === "korba"
-  );
-  
-  if (isExplicitKorba) {
-    console.log(`[resolveProvidersForOrder] Resolved Korba provider for explicit Korba order ${order?.id}`);
-    return [korbaProvider];
-  }
 
   // 2. Check if AFA order
   const isAfaOrder = orderType.toLowerCase() === "afa" || uppercaseNet === "AFA" || uppercaseNet.startsWith("AFA");

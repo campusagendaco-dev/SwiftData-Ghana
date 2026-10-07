@@ -259,13 +259,24 @@ serve(async (req: Request) => {
 
     const detectedOrderType = String(metadata?.order_type || payload?.order_type || "").toLowerCase();
     const network = String(metadata?.network || payload?.network || "");
+    const catLower = String(metadata?.category || metadata?.package_category || payload?.category || "").toLowerCase();
+    const isNonSmeCategory = catLower !== "" && catLower !== "affordable" && catLower !== "sme" && catLower !== "mashup" && !catLower.includes("sme");
+
     const isKorbaPackage = 
       isKorba || 
+      isNonSmeCategory ||
       detectedOrderType === "airtime" || 
       detectedOrderType === "utility" ||
       network.toUpperCase().startsWith("KORBA") ||
       metadata?.is_instant === true ||
       metadata?.is_instant === "true";
+
+    if (isKorbaPackage) {
+      metadata.is_korba = true;
+      if (!metadata.category || metadata.category === "affordable" || metadata.category === "sme") {
+        metadata.category = "korba";
+      }
+    }
 
     let activeGateway = settings?.active_payment_gateway || "paystack";
 

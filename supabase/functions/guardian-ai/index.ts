@@ -40,7 +40,7 @@ serve(async (req: Request) => {
     // 2. Fetch Data (Orders & Security Logs) for the last 15 minutes
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const [ordersRes, logsRes] = await Promise.all([
-      supabaseAdmin.from("orders").select("agent_id, network, amount, status, order_type").gte("created_at", fifteenMinsAgo),
+      supabaseAdmin.from("orders").select("id, agent_id, network, amount, status, order_type, payment_method, paystack_verified_amount, provider_id, provider_order_id, failure_reason").gte("created_at", fifteenMinsAgo),
       supabaseAdmin.from("security_logs").select("user_id, ip_address, action, metadata").gte("created_at", fifteenMinsAgo)
     ]);
 
@@ -48,6 +48,43 @@ serve(async (req: Request) => {
     
     const recentOrders = ordersRes.data || [];
     const securityLogs = logsRes.data || [];
+
+    // --- MODULE: Autonomous Order Integrity, Provider Consistency & Payment Verification ---
+    let orderDiscrepanciesRepaired = 0;
+    let quarantinedOrders = 0;
+
+    for (const ord of recentOrders) {
+      const isPaidGateway = Number(ord.paystack_verified_amount || 0) > 0;
+      
+      // 1. Strict Payment Proof Verification: Quarantine any gateway order in processing/paid without payment proof
+      if (ord.payment_method === "paystack" && !isPaidGateway && (ord.status === "processing" || ord.status === "paid")) {
+        console.warn(`[Guardian AI] QUARANTINE: Order ${ord.id} is marked ${ord.status} but lacks Paystack verified payment proof.`);
+        await supabaseAdmin.from("orders").update({
+          status: "fulfillment_failed",
+          failure_reason: "SECURITY_QUARANTINE: Missing verified payment proof",
+          updated_at: new Date().toISOString()
+        }).eq("id", ord.id);
+        quarantinedOrders++;
+      }
+
+      // 2. Provider Signature Integrity Watchdog: Auto-repair mismatched provider badges
+      const ref = String(ord.provider_order_id || "");
+      if (ref.startsWith("SKP")) {
+        const { data: skP } = await supabaseAdmin.from("providers").select("id").eq("handler_type", "skdataplug").maybeSingle();
+        if (skP && ord.provider_id !== skP.id) {
+          console.warn(`[Guardian AI] Correcting provider_id mismatch on order ${ord.id} (ref: ${ref}). Re-linking to SKPlug.`);
+          await supabaseAdmin.from("orders").update({
+            provider_id: skP.id,
+            updated_at: new Date().toISOString()
+          }).eq("id", ord.id);
+          orderDiscrepanciesRepaired++;
+        }
+      }
+    }
+
+    if (quarantinedOrders > 0) {
+      await notifyAdmin(`SECURITY WATCHDOG: Quarantined ${quarantinedOrders} order(s) lacking verified payment.`);
+    }
 
     // --- MODULE: Rapid Wallet Draining & Micro-Transaction Analysis ---
     const agentActivity: Record<string, { total: number; failed: number; volume: number; cashout_volume: number; micro_txns: number; distinct_ips: Set<string> }> = {};

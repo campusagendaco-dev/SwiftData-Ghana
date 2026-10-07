@@ -29,7 +29,7 @@ export class KorbaAdapter implements ProviderAdapter {
     const rawRef = String(data.reference || data.orderReference || data.order_id || data.id || "").trim();
     const transactionId = rawRef ? (rawRef.endsWith("_disb") ? rawRef : `${rawRef}_disb`) : `ord_${crypto.randomUUID()}_disb`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/korba-webhook`);
-    const baseUrl = (provider.base_url || "").replace(/\/+$/, "");
+    const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
 
     let targetUrl = `${baseUrl}/transaction_status/`;
     let korbaPayload: Record<string, any> = {};
@@ -131,6 +131,7 @@ export class KorbaAdapter implements ProviderAdapter {
       targetUrl = `${baseUrl}/${targetPath}`;
 
       let packageId = String(data.plan || data.package_size || "");
+      let matchedPackage: any = null;
       try {
         const rawNetwork = String(data.networkRaw || data.network || "").toUpperCase();
         let dbNet = "MTN";
@@ -140,7 +141,7 @@ export class KorbaAdapter implements ProviderAdapter {
 
         const { data: pkgMappings } = await supabaseAdmin
           .from("provider_packages")
-          .select("external_id, package_name, capacity_gb, network, raw_data")
+          .select("external_id, package_name, capacity_gb, cost_price, network, raw_data")
           .eq("provider_id", provider.id);
 
         if (pkgMappings && pkgMappings.length > 0) {
@@ -151,31 +152,43 @@ export class KorbaAdapter implements ProviderAdapter {
           const netPkgs = pkgMappings.filter((p: any) => 
             p.network === dbNet || 
             p.network === rawNetwork || 
+            p.network?.toUpperCase().includes(dbNet.toUpperCase()) ||
+            p.network?.toUpperCase().includes(rawNetwork.toUpperCase()) ||
             (dbNet === "MTN" && (p.network === "MTN" || p.network === "YELLO"))
           );
 
+          const searchPool = netPkgs.length > 0 ? netPkgs : pkgMappings;
+
           // 1. Exact match on external_id
-          let match = netPkgs.find((p: any) => p.external_id === reqSize);
+          matchedPackage = searchPool.find((p: any) => p.external_id === reqSize);
           // 2. Exact match on package_name (ignoring spaces & case)
-          if (!match) {
-            match = netPkgs.find((p: any) => String(p.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanReqSize);
+          if (!matchedPackage) {
+            matchedPackage = searchPool.find((p: any) => String(p.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanReqSize);
           }
-          // 3. Match on capacity_gb
-          if (!match && reqCapGb > 0) {
-            match = netPkgs.find((p: any) => Math.abs(Number(p.capacity_gb || 0) - reqCapGb) < 0.05);
+          // 3. Match on raw_data product_id / bundle_id / name
+          if (!matchedPackage) {
+            matchedPackage = searchPool.find((p: any) => 
+              String(p.raw_data?.product_id || "").toUpperCase() === cleanReqSize ||
+              String(p.raw_data?.bundle_id || "").toUpperCase() === cleanReqSize ||
+              String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase() === cleanReqSize
+            );
           }
-          // 4. Substring match in package_name or raw_data.name
-          if (!match) {
-            match = netPkgs.find((p: any) => {
+          // 4. Match on capacity_gb
+          if (!matchedPackage && reqCapGb > 0) {
+            matchedPackage = searchPool.find((p: any) => Math.abs(Number(p.capacity_gb || 0) - reqCapGb) < 0.05);
+          }
+          // 5. Substring match in package_name or raw_data.name
+          if (!matchedPackage) {
+            matchedPackage = searchPool.find((p: any) => {
               const pName = String(p.package_name || "").replace(/\s+/g, "").toUpperCase();
               const rawName = String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase();
               return pName.includes(cleanReqSize) || rawName.includes(cleanReqSize);
             });
           }
 
-          if (match?.external_id) {
-            packageId = match.external_id;
-            console.log(`[korba-payload-resolve] Mapped ${rawNetwork} ${reqSize} -> Korba ID: ${packageId} (${match.package_name})`);
+          if (matchedPackage?.external_id) {
+            packageId = matchedPackage.external_id;
+            console.log(`[korba-payload-resolve] Mapped ${rawNetwork} ${reqSize} -> Korba ID: ${packageId} (${matchedPackage.package_name})`);
           }
         }
       } catch (e: any) {
@@ -185,13 +198,26 @@ export class KorbaAdapter implements ProviderAdapter {
       const isVodafone = rawNet.includes("TELECEL") || rawNet.includes("VODA");
       const isGlo = rawNet.includes("GLO");
 
+      const korbaAmount = (matchedPackage?.raw_data?.amount !== undefined && Number(matchedPackage.raw_data.amount) > 0)
+        ? Number(matchedPackage.raw_data.amount)
+        : ((matchedPackage?.cost_price !== undefined && Number(matchedPackage.cost_price) > 0)
+          ? Number(matchedPackage.cost_price)
+          : Number(data.amount || 0));
+
+      const reqCapGb = parseCapacity(data.package_size || data.plan);
+      const reqCapMb = Math.round(reqCapGb * 1024);
+      const safeCapacity = reqCapMb > 0 ? reqCapMb : (reqCapGb > 0 ? reqCapGb : 1);
+
       korbaPayload = {
         customer_number: recipient,
         client_id: parseInt(KORBA_CLIENT_ID) || 2419,
-        amount: Number(data.amount || 0),
+        amount: korbaAmount,
         transaction_id: transactionId,
         callback_url: callbackUrl,
         description: `${rawNet} ${data.package_size || ""}`,
+        capacity: safeCapacity,
+        capacity_mb: reqCapMb > 0 ? reqCapMb : undefined,
+        capacity_gb: reqCapGb > 0 ? reqCapGb : undefined,
       };
 
       if (isVodafone || isGlo) {
@@ -351,7 +377,7 @@ export class KorbaAdapter implements ProviderAdapter {
     }
     if (!txId) return { ok: false, reason: "Missing transaction ID for status check." };
 
-    const baseUrl = (provider.base_url || "https://sme.korbaweb.com/api/v1.0").replace(/\/+$/, "");
+    const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
     const targetUrl = `${baseUrl}/transaction_status/`;
 
     const payload = {

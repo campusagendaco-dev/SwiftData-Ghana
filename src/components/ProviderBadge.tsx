@@ -84,6 +84,16 @@ export function getProviderDetails(
   const allProviders = (providersList && providersList.length > 0) ? providersList : (globalProvidersCache || []);
   const activeProvidersOnly = allProviders.filter(p => p.is_active !== false);
 
+  const rawRefStr = String(providerOrderId || metadata?.provider_order_id || "").trim();
+
+  // If reference explicitly begins with an unmistakable vendor prefix (e.g. SKP), resolve to that provider
+  if (rawRefStr.startsWith("SKP")) {
+    const skProvider = allProviders.find(p => p.handler_type === "skdataplug" || p.name?.toLowerCase().includes("skplug"));
+    if (skProvider) {
+      matchedName = skProvider.name;
+    }
+  }
+
   // 1. Try matching providerId in all providers list (including explicit provider_id assignment)
   if (!matchedName && providerId && allProviders.length > 0) {
     const found = allProviders.find((p) => p.id === providerId);

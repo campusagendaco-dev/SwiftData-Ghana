@@ -604,6 +604,14 @@ const BuyData = () => {
       phone: phoneDigits,
     });
 
+    const isKorbaPackage = (
+      selectedTypeOrCategory !== "affordable" && 
+      selectedTypeOrCategory !== "sme" && 
+      selectedTypeOrCategory !== "mashup"
+    ) || (
+      korbaMappings?.some((m: any) => m.package_name === selectedPkg.size)
+    );
+
     const meta = {
       order_id: orderId,
       order_type: "data",
@@ -613,7 +621,8 @@ const BuyData = () => {
       customer_name: resolvedName,
       fee,
       payment_source: "direct",
-      is_korba: false,
+      is_korba: isKorbaPackage,
+      category: isKorbaPackage ? (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme" || selectedTypeOrCategory === "mashup" ? "korba" : selectedTypeOrCategory) : selectedTypeOrCategory,
       callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? {
         promo_code: promoCode.trim(),

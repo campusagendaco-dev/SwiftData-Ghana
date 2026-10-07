@@ -1071,6 +1071,13 @@ const AgentStore = () => {
       ...(slug ? { slug } : {}),
     });
 
+    const isKorbaPackage = selectedService === "utility" || selectedService === "airtime" || (
+      selectedService === "data" && 
+      selectedTypeOrCategory !== "affordable" && 
+      selectedTypeOrCategory !== "sme" && 
+      selectedTypeOrCategory !== "mashup"
+    );
+
     const meta = {
       order_id: orderId,
       order_type: orderType,
@@ -1080,7 +1087,8 @@ const AgentStore = () => {
       fee,
       agent_id: agent.user_id,
       payment_source: "agent_store",
-      is_korba: selectedService === "utility",
+      is_korba: isKorbaPackage,
+      category: isKorbaPackage ? (selectedService === "data" ? selectedTypeOrCategory : selectedService) : selectedTypeOrCategory,
       bypass_beneficiary: bypassBeneficiary ? true : undefined,
       callback_url: slug
         ? `${window.location.origin}/store/${slug}/order-status?${callbackParams.toString()}`

@@ -5,6 +5,13 @@ declare const Deno: any;
  */
 export function formatWhatsAppRecipient(to: string): string {
   let clean = to.replace(/\s+/g, "").replace(/-/g, "").replace(/^whatsapp:/i, "");
+  if (clean.endsWith("@lid") || clean.endsWith("@newsletter") || clean.endsWith("@g.us")) {
+    return clean;
+  }
+  const digits = clean.replace(/\D/g, "");
+  if (digits.length >= 14 && !digits.startsWith("233")) {
+    return `${digits}@lid`;
+  }
   if (clean.startsWith("0") && clean.length === 10) {
     clean = "+233" + clean.slice(1);
   } else if (clean.startsWith("233") && !clean.startsWith("+")) {
@@ -17,7 +24,9 @@ export function formatWhatsAppRecipient(to: string): string {
 
 export function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
+  if (raw.endsWith("@lid")) return null;
   const clean = raw.replace(/\D/g, "");
+  if (clean.length >= 14 && !clean.startsWith("233")) return null;
   if (clean.startsWith("0") && clean.length === 10) {
     return "233" + clean.slice(1);
   }
@@ -146,6 +155,11 @@ export async function sendWaSenderMessage(
 
   // Format destination: if channel, group, lid, or username, keep as is. Otherwise format international.
   let formattedTo = to.trim();
+  const digits = formattedTo.replace(/\D/g, "");
+  if (!formattedTo.includes("@") && digits.length >= 14 && !digits.startsWith("233")) {
+    formattedTo = `${digits}@lid`;
+  }
+
   if (
     !formattedTo.endsWith("@newsletter") &&
     !formattedTo.endsWith("@g.us") &&

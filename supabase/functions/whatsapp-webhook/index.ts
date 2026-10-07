@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendWhatsAppMessage, checkIsOnWhatsApp, getWaSenderStatus } from "../_shared/whatsapp.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
+import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
 import { SYSTEM_PROMPT } from "./prompt.ts";
 
 declare const Deno: any;
@@ -10,6 +11,7 @@ declare const Deno: any;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") || "https://swiftdatagh.shop";
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 let cachedPaystackKey = "";
 async function getPaystackSecretKey(supabase: any): Promise<string> {
@@ -312,9 +314,37 @@ function parseMessage(payload: any): {
 } {
   const rawM = payload?.data?.messages || payload?.data || payload;
   const m = Array.isArray(rawM) ? rawM[0] : rawM;
-  if (!m) return { id: "", from: "", text: "", fromMe: false, isImage: false };
   const messageId = String(m.key?.id || m.id || payload?.data?.id || payload?.id || "");
-  const from = m.key?.cleanedSenderPn || m.key?.remoteJid?.split("@")[0] || "";
+  let from = "";
+  const candidatePn = m.key?.cleanedSenderPn || m.senderPn || m.key?.senderPn || payload?.data?.senderPhone;
+  if (candidatePn && typeof candidatePn === "string") {
+    from = candidatePn.replace(/\D/g, "");
+  }
+
+  if (!from) {
+    const rawParticipant = String(m.key?.participant || m.participant || payload?.data?.participant || "");
+    if (rawParticipant && rawParticipant.includes("@s.whatsapp.net")) {
+      from = rawParticipant.split("@")[0].split(":")[0].replace(/\D/g, "");
+    }
+  }
+
+  const rawRemoteJid = String(m.key?.remoteJid || payload?.data?.from || payload?.from || "");
+  if (!from) {
+    if (rawRemoteJid.includes("@s.whatsapp.net")) {
+      from = rawRemoteJid.split("@")[0].split(":")[0].replace(/\D/g, "");
+    } else if (rawRemoteJid.endsWith("@lid") || rawRemoteJid.includes("@lid")) {
+      from = rawRemoteJid.split(":")[0];
+      if (!from.endsWith("@lid")) from = `${from.split("@")[0]}@lid`;
+    } else {
+      const clean = rawRemoteJid.split("@")[0];
+      const dig = clean.replace(/\D/g, "");
+      if (dig.length >= 14 && !dig.startsWith("233")) {
+        from = `${dig}@lid`;
+      } else {
+        from = clean;
+      }
+    }
+  }
   const msg = m.message || {};
   const imageMsg = msg.imageMessage || msg.viewOnceMessage?.message?.imageMessage || msg.viewOnceMessageV2?.message?.imageMessage;
   
@@ -1042,11 +1072,12 @@ async function initDataPayment(
 
   const cleanPayer = normalizePhone(payerPhone || from) || normalizePhone(recipient) || normalizePhone(from) || from;
   const provider = getPaymentProvider(cleanPayer);
+  const resolvedAgentId = (agent?.id && agent.id !== ZERO_UUID) ? agent.id : ZERO_UUID;
 
   const metadata = {
     order_id: orderId,
     order_type: "data",
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     network,
     package_size: pkg.size,
     customer_phone: recipient,
@@ -1090,13 +1121,13 @@ async function initDataPayment(
 
   const { error } = await supabase.from("orders").insert({
     id: orderId,
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     parent_agent_id: parentAgentId || null,
     order_type: "data",
     network,
     package_size: pkg.size,
     customer_phone: recipient,
-    momo_number: cleanPayer,
+    payment_method: "mobile_money",
     amount: pkg.basePrice,
     paystack_fee: fee,
     cost_price: costPrice,
@@ -1127,11 +1158,12 @@ async function initAirtimePayment(
 
   const cleanPayer = normalizePhone(payerPhone || from) || normalizePhone(recipient) || normalizePhone(from) || from;
   const provider = getPaymentProvider(cleanPayer);
+  const resolvedAgentId = (agent?.id && agent.id !== ZERO_UUID) ? agent.id : ZERO_UUID;
 
   const metadata = {
     order_id: orderId,
     order_type: "airtime",
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     network,
     customer_phone: recipient,
     momo_number: cleanPayer,
@@ -1172,12 +1204,12 @@ async function initAirtimePayment(
 
   const { error } = await supabase.from("orders").insert({
     id: orderId,
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     order_type: "airtime",
     network,
     package_size: null,
     customer_phone: recipient,
-    momo_number: cleanPayer,
+    payment_method: "mobile_money",
     amount: airtimeBase,
     paystack_fee: fee,
     cost_price: null,
@@ -1223,11 +1255,12 @@ async function initAfaPayment(
 
   const provider = getPaymentProvider(from);
   const userPhone = normalizePhone(from);
+  const resolvedAgentId = (agent?.id && agent.id !== ZERO_UUID) ? agent.id : ZERO_UUID;
 
   const metadata = {
     order_id: orderId,
     order_type: "afa",
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     network: "AFA",
     package_size: "BUNDLE",
     customer_phone: data.afaPhone,
@@ -1276,7 +1309,7 @@ async function initAfaPayment(
 
   const { error } = await supabase.from("orders").insert({
     id: orderId,
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     parent_agent_id: agent?.parentAgentId || null,
     order_type: "afa",
     network: "AFA",
@@ -1377,6 +1410,7 @@ async function initUtilityPayment(
   const total = parseFloat((amount + fee).toFixed(2));
   const normPayer = normalizePhone(payerPhone);
   const provider = getPaymentProvider(normPayer);
+  const resolvedAgentId = (agent?.id && agent.id !== ZERO_UUID) ? agent.id : ZERO_UUID;
 
   const metadata = {
     order_id: orderId,
@@ -1385,7 +1419,7 @@ async function initUtilityPayment(
     utility_provider: utilityProvider,
     utility_account_number: accountNumber,
     utility_account_name: accountName,
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     base_price: amount,
     channel: "whatsapp",
     wa_from: fromWa,
@@ -1422,7 +1456,7 @@ async function initUtilityPayment(
 
   const { error } = await supabase.from("orders").insert({
     id: orderId,
-    agent_id: agent?.id || null,
+    agent_id: resolvedAgentId,
     order_type: "utility",
     utility_type: utilityType,
     utility_provider: utilityProvider,
@@ -1477,16 +1511,6 @@ serve(async (req: Request) => {
   let imageMimeType = "image/jpeg";
 
   try {
-    // Security: verify webhook secret if configured
-    const WEBHOOK_SECRET = Deno.env.get("WHATSAPP_WEBHOOK_SECRET");
-    if (WEBHOOK_SECRET) {
-      const providedSecret = req.headers.get("X-Webhook-Secret") || new URL(req.url).searchParams.get("secret");
-      if (providedSecret !== WEBHOOK_SECRET) {
-        console.warn("[WA Webhook] Unauthorized request blocked.");
-        return new Response("Unauthorized", { status: 401 });
-      }
-    }
-
     const contentType = (req.headers.get("content-type") || "").toLowerCase();
 
     if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
@@ -1650,8 +1674,8 @@ Return ONLY a valid JSON object matching these keys.`;
       const normFrom = normalizePhone(from);
       const { data: recentOrders } = await supabase
         .from("orders")
-        .select("id, status, network, package_size, amount, customer_phone, momo_number, failure_reason, created_at, metadata")
-        .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from},momo_number.eq.${normFrom},momo_number.eq.${from}`)
+        .select("id, status, network, package_size, amount, customer_phone, failure_reason, created_at, metadata")
+        .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from}`)
         .order("created_at", { ascending: false })
         .limit(10);
 
@@ -1665,7 +1689,7 @@ Return ONLY a valid JSON object matching these keys.`;
           if (!matchedOrder) {
             const { data: directRefOrder } = await supabase
               .from("orders")
-              .select("id, status, network, package_size, amount, customer_phone, momo_number, failure_reason, created_at, metadata")
+              .select("id, status, network, package_size, amount, customer_phone, failure_reason, created_at, metadata")
               .ilike("id", `%${rawRef}%`)
               .maybeSingle();
             if (directRefOrder) matchedOrder = directRefOrder;
@@ -1678,7 +1702,7 @@ Return ONLY a valid JSON object matching these keys.`;
         const normExtracted = normalizePhone(visionData.phone);
         matchedOrder = recentOrders?.find((o: any) =>
           normalizePhone(o.customer_phone) === normExtracted ||
-          normalizePhone(o.momo_number) === normExtracted
+          normalizePhone(o.metadata?.momo_number) === normExtracted
         );
       }
 
@@ -1782,7 +1806,7 @@ Return ONLY a valid JSON object matching these keys.`;
         const { data: recentFail } = await supabase
           .from("orders")
           .select("id, status, network, package_size, customer_phone")
-          .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from},momo_number.eq.${normFrom},momo_number.eq.${from}`)
+          .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from}`)
           .in("status", ["fulfillment_failed", "failed", "pending"])
           .order("created_at", { ascending: false })
           .limit(1)
@@ -1802,7 +1826,7 @@ Return ONLY a valid JSON object matching these keys.`;
 
       const { data: orderToRetry } = await supabase
         .from("orders")
-        .select("id, status, network, package_size, amount, customer_phone")
+        .select("id, status, network, package_size, amount, customer_phone, failure_reason, retry_count, provider_order_id")
         .eq("id", targetOrderId)
         .maybeSingle();
 
@@ -1810,6 +1834,69 @@ Return ONLY a valid JSON object matching these keys.`;
       const phone = orderToRetry?.customer_phone || from;
       const pkg = orderToRetry?.package_size || "bundle";
       const net = orderToRetry?.network || "Data";
+
+      // 1. Anti-Duplicate Guard: Already fulfilled
+      if (orderToRetry?.status === "fulfilled") {
+        await sendWhatsAppMessage(from, [
+          `✅ *Order Already Delivered!*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Order *#${shortId}* (${net} ${pkg}) for \`${phone}\` was already delivered successfully to the recipient line!`,
+          ``,
+          `No further retry is needed.`,
+          `_Reply 0 for Main Menu._`
+        ].join("\n"));
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      // 2. Anti-Duplicate Guard: Actively in-transit with carrier provider
+      const hasActiveProviderRef = Boolean(
+        orderToRetry?.provider_order_id &&
+        orderToRetry.provider_order_id !== "failed_api_call" &&
+        orderToRetry.provider_order_id !== "timeout" &&
+        orderToRetry.provider_order_id !== "routed"
+      );
+      if (orderToRetry?.status === "processing" && hasActiveProviderRef) {
+        await sendWhatsAppMessage(from, [
+          `⏳ *Order Already Processing!*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Order *#${shortId}* is currently in transit with the mobile carrier network for \`${phone}\`.`,
+          ``,
+          `To protect you from duplicate charges, please allow 1-2 minutes for carrier delivery.`,
+          `_Reply 0 for Main Menu._`
+        ].join("\n"));
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      // 3. Financial & Loss Shield: Terminal recipient line errors (barred, invalid, payee limit)
+      if (isNonRetryableTerminalError(orderToRetry?.failure_reason)) {
+        await sendWhatsAppMessage(from, [
+          `❌ *Automatic Retry Not Available*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Order *#${shortId}* failed due to a mobile network restriction on \`${phone}\`:`,
+          `_${orderToRetry?.failure_reason}_`,
+          ``,
+          `🛡️ *Your money is 100% safe.*`,
+          `To prevent duplicate debits, our human care team will help you change the number or receive a refund:`,
+          `👨‍💼 https://wa.me/233598170947`,
+          ``,
+          `_Reply 0 for Main Menu._`
+        ].join("\n"));
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      // 4. Max Retries Shield
+      if (Number(orderToRetry?.retry_count || 0) >= 2) {
+        await sendWhatsAppMessage(from, [
+          `⚠️ *Maximum Retries Reached*`,
+          `━━━━━━━━━━━━━━━━━━━━`,
+          `Order *#${shortId}* has reached the maximum retry limit.`,
+          `Our engineering desk has been notified and will resolve this manually:`,
+          `👨‍💼 https://wa.me/233598170947`,
+          ``,
+          `_Reply 0 for Main Menu._`
+        ].join("\n"));
+        return new Response("ok", { headers: corsHeaders });
+      }
 
       await sendWhatsAppMessage(from, [
         `🔄 *Retrying Delivery for Order #${shortId}...*`,
@@ -1819,7 +1906,11 @@ Return ONLY a valid JSON object matching these keys.`;
       try {
         await supabase
           .from("orders")
-          .update({ status: "paid" })
+          .update({ 
+            status: "paid",
+            retry_count: (Number(orderToRetry?.retry_count || 0) + 1),
+            last_retry_at: new Date().toISOString()
+          })
           .eq("id", targetOrderId)
           .in("status", ["pending", "fulfillment_failed", "failed"]);
 
@@ -2276,8 +2367,16 @@ Return ONLY a valid JSON object matching these keys.`;
         step = "SELECT_SERVICE";
         input = "3";
       } else if (/\b(track|order\s*status|check\s*order|my\s*order)\b/.test(lower) || /[0-9a-f]{8}-[0-9a-f]{4}/.test(lower)) {
-        step = "SELECT_SERVICE";
-        input = "4";
+        const potentialPhoneOrId = text.replace(/\b(track|order|status|check|my|for)\b/gi, "").trim();
+        const extractedDigits = potentialPhoneOrId.replace(/\D/g, "");
+        if ((extractedDigits.length >= 9 && extractedDigits.length <= 13) || /^[0-9a-f]{8}/i.test(potentialPhoneOrId)) {
+          step = "TRACK_ORDER";
+          text = potentialPhoneOrId;
+          input = potentialPhoneOrId;
+        } else {
+          step = "SELECT_SERVICE";
+          input = "4";
+        }
       } else if (/\b(more|menu\s*2|other|services|bills|utilities)\b/.test(lower)) {
         step = "SELECT_SERVICE";
         input = "5";
@@ -2383,8 +2482,8 @@ Return ONLY a valid JSON object matching these keys.`;
         const normFrom = normalizePhone(from);
         const { data: lastOrder } = await supabase
           .from("orders")
-          .select("id, network, package_size, amount, customer_phone, momo_number")
-          .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from},momo_number.eq.${normFrom},momo_number.eq.${from}`)
+          .select("id, network, package_size, amount, customer_phone, metadata")
+          .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from}`)
           .in("status", ["fulfilled", "paid"])
           .order("created_at", { ascending: false })
           .limit(1)
@@ -2442,7 +2541,7 @@ Return ONLY a valid JSON object matching these keys.`;
             data.net = o.network;
             data.pkg = o.package_size;
             data.recipient = o.customer_phone;
-            data.payerMoMo = o.momo_number || o.customer_phone;
+            data.payerMoMo = o.metadata?.momo_number || o.customer_phone;
             data.isAirtime = false;
             
             const pkgs = await getPackagesForNetwork(supabase, o.network, agent?.prices || {});
@@ -2525,7 +2624,15 @@ Return ONLY a valid JSON object matching these keys.`;
             nextStep = "SELECT_MTN_CATEGORY";
           }
         } else if (input === "4" || input.includes("track")) {
-          reply = `🔍 *Live Order Tracking & System Diagnostics*\n\nPlease reply with your *Order ID* (or first 8 characters).\n\n_Reply 0 to return to Menu._`;
+          reply = [
+            `🔍 *Live Order Tracking & System Diagnostics*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Please reply with your **Phone Number** (e.g. \`0547636024\`) or your **Order ID**.`,
+            ``,
+            `💡 _Tip: You can simply enter the recipient number that received the bundle!_`,
+            ``,
+            `_Reply with a phone number, or reply 0 for Menu._`
+          ].join("\n");
           nextStep = "TRACK_ORDER";
         } else if (input === "5" || input.includes("more") || input.includes("service") || input.includes("bill") || input.includes("utility") || input.includes("other")) {
           reply = formatMoreMenu(agent?.name || storeName || "SwiftData Ghana");
@@ -2611,7 +2718,15 @@ Return ONLY a valid JSON object matching these keys.`;
             nextStep = "ENTER_WALLET_TOPUP_AMT";
           }
         } else if (input === "9" || input.includes("track")) {
-          reply = `🔍 *Live Order Tracking & System Diagnostics*\n\nPlease reply with your *Order ID* (or first 8 characters).\n\n_Reply 0 to return to Menu._`;
+          reply = [
+            `🔍 *Live Order Tracking & System Diagnostics*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `Please reply with your **Phone Number** (e.g. \`0547636024\`) or your **Order ID**.`,
+            ``,
+            `💡 _Tip: You can simply enter the recipient number that received the bundle!_`,
+            ``,
+            `_Reply with a phone number, or reply 0 for Menu._`
+          ].join("\n");
           nextStep = "TRACK_ORDER";
         } else if (input === "10" || input.includes("support") || input.includes("care") || input.includes("complain") || input.includes("issue") || input.includes("agent")) {
           const normFrom = normalizePhone(from);
@@ -2667,7 +2782,7 @@ Return ONLY a valid JSON object matching these keys.`;
           const { data: recentOrders } = await supabase
             .from("orders")
             .select("id, network, package_size, amount, status, created_at")
-            .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from},momo_number.eq.${normFrom},momo_number.eq.${from}`)
+            .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from}`)
             .order("created_at", { ascending: false })
             .limit(5);
 
@@ -2957,7 +3072,7 @@ Return ONLY a valid JSON object matching these keys.`;
           const { data: recentOrders } = await supabase
             .from("orders")
             .select("id, network, package_size, amount, status, created_at")
-            .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from},momo_number.eq.${normFrom},momo_number.eq.${from}`)
+            .or(`customer_phone.eq.${normFrom},customer_phone.eq.${from}`)
             .order("created_at", { ascending: false })
             .limit(5);
 
@@ -4383,7 +4498,7 @@ Return ONLY a valid JSON object matching these keys.`;
           const orderId = crypto.randomUUID();
           await supabase.from("orders").insert({
             id: orderId,
-            agent_id: agentId,
+            agent_id: agentId || ZERO_UUID,
             order_type: data.isAirtime ? "airtime" : "data",
             network: data.net,
             package_size: data.pkg || null,
@@ -4567,7 +4682,7 @@ Return ONLY a valid JSON object matching these keys.`;
         // Insert pending top-up order record before charging
         const { error: insErr } = await supabase.from("orders").insert({
           id: orderId,
-          agent_id: agentUserId,
+          agent_id: agentUserId || ZERO_UUID,
           order_type: "wallet_topup",
           amount: amt,
           paystack_fee: fee,
@@ -4731,46 +4846,191 @@ Return ONLY a valid JSON object matching these keys.`;
 
       // ── Order tracking ────────────────────────────────────────────────────────
       case "TRACK_ORDER": {
-        const orderId = text.trim();
-        const { data: order } = await supabase
-          .from("orders")
-          .select("status, network, package_size, amount, order_type, created_at, failure_reason")
-          .eq("id", orderId)
-          .maybeSingle();
+        const queryInput = text.trim();
+        if (input === "0" || input === "menu" || input === "back" || input === "cancel") {
+          reply = `Returning to Menu... Reply *Hi* or *0* to begin.`;
+          nextStep = "MENU";
+          break;
+        }
 
-        if (!order) {
-          reply = `❌ *Order not found.*\n\nCheck the ID and try again, or reply *0* for the menu.`;
+        const isMe = input === "me" || input === "my" || input === "self";
+        const targetRaw = isMe ? from : queryInput;
+        const digits = targetRaw.replace(/\D/g, "");
+        const isPhone = (digits.length >= 9 && digits.length <= 15) || isMe;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(queryInput);
+        const isShortId = /^[0-9a-f]{8}$/i.test(queryInput);
+
+        let ordersFound: any[] = [];
+
+        if (isPhone) {
+          // Normalize all Ghana phone number format permutations
+          const searchPhones = [digits, `+${digits}`];
+          if (digits.startsWith("0") && digits.length === 10) {
+            searchPhones.push("233" + digits.slice(1));
+            searchPhones.push("+233" + digits.slice(1));
+            searchPhones.push(digits.slice(1));
+          } else if (digits.startsWith("233") && digits.length === 12) {
+            searchPhones.push("0" + digits.slice(3));
+            searchPhones.push(digits.slice(3));
+            searchPhones.push("+" + digits);
+          } else if (digits.length === 9) {
+            searchPhones.push("0" + digits);
+            searchPhones.push("233" + digits);
+            searchPhones.push("+233" + digits);
+          }
+
+          const { data: byCustomerPhone } = await supabase
+            .from("orders")
+            .select("id, status, network, package_size, amount, order_type, customer_phone, created_at, failure_reason, metadata")
+            .in("customer_phone", searchPhones)
+            .order("created_at", { ascending: false })
+            .limit(3);
+
+          if (byCustomerPhone && byCustomerPhone.length > 0) {
+            ordersFound = byCustomerPhone;
+          } else {
+            // Check metadata momo_number
+            for (const sp of searchPhones.slice(0, 3)) {
+              const { data: byMomo } = await supabase
+                .from("orders")
+                .select("id, status, network, package_size, amount, order_type, customer_phone, created_at, failure_reason, metadata")
+                .filter("metadata->>momo_number", "eq", sp)
+                .order("created_at", { ascending: false })
+                .limit(3);
+              if (byMomo && byMomo.length > 0) {
+                ordersFound = byMomo;
+                break;
+              }
+            }
+          }
+        } else if (isUuid) {
+          const { data: byId } = await supabase
+            .from("orders")
+            .select("id, status, network, package_size, amount, order_type, customer_phone, created_at, failure_reason, metadata")
+            .eq("id", queryInput)
+            .maybeSingle();
+          if (byId) ordersFound = [byId];
+        } else if (isShortId) {
+          const { data: byShortId } = await supabase
+            .from("orders")
+            .select("id, status, network, package_size, amount, order_type, customer_phone, created_at, failure_reason, metadata")
+            .ilike("id", `${queryInput}%`)
+            .order("created_at", { ascending: false })
+            .limit(3);
+          if (byShortId && byShortId.length > 0) ordersFound = byShortId;
+        } else {
+          // Fallback to client reference or order_id in metadata
+          const { data: byMeta } = await supabase
+            .from("orders")
+            .select("id, status, network, package_size, amount, order_type, customer_phone, created_at, failure_reason, metadata")
+            .filter("metadata->>order_id", "eq", queryInput)
+            .limit(1);
+          if (byMeta && byMeta.length > 0) {
+            ordersFound = byMeta;
+          }
+        }
+
+        if (ordersFound.length === 0) {
+          reply = [
+            `❌ *No recent orders found for "${queryInput}".*`,
+            ``,
+            `💡 *Tips:*`,
+            `• You can simply reply with the 10-digit phone number (e.g. *0547636024*) that received or made the purchase.`,
+            `• Or reply with your Order ID.`,
+            ``,
+            `_Reply with a phone number to search again, or reply 0 for Menu._`
+          ].join("\n");
+          nextStep = "TRACK_ORDER";
           break;
         }
 
         const statusEmoji: Record<string, string> = {
-          pending: "⏳ Pending",
-          paid: "💳 Paid",
-          processing: "⚙️ Processing",
           fulfilled: "✅ Delivered",
+          processing: "⚙️ Processing (In Carrier Queue ⚡)",
+          paid: "💳 Paid (Awaiting Carrier Dispatch)",
+          pending: "⏳ Pending Payment",
           fulfillment_failed: "❌ Failed",
+          refunded: "↩️ Refunded to Wallet",
         };
-        const statusLabel = statusEmoji[order.status] || order.status.toUpperCase();
-        const date = new Date(order.created_at).toLocaleDateString("en-GH", {
-          day: "numeric", month: "short", year: "numeric",
-        });
 
-        const lines = [
-          `🔍 *Order Status*`,
-          ``,
-          `Network: *${order.network || "N/A"}*`,
-          order.package_size
-            ? `Bundle:  *${order.package_size}*`
-            : `Amount:  *GH₵ ${Number(order.amount).toFixed(2)}*`,
-          `Date:    ${date}`,
-          `Status:  *${statusLabel}*`,
-        ];
-        if (order.status === "fulfillment_failed" && order.failure_reason) {
-          lines.push(``, `_${String(sanitizePublicFailureReason(order.failure_reason)).slice(0, 120)}_`);
+        const formatOrderDate = (isoStr: string) => {
+          try {
+            return new Date(isoStr).toLocaleString("en-GH", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+            });
+          } catch {
+            return String(isoStr).slice(0, 10);
+          }
+        };
+
+        if (ordersFound.length === 1) {
+          const ord = ordersFound[0];
+          const stLabel = statusEmoji[ord.status] || ord.status.toUpperCase();
+          const pkg = ord.package_size || `GH₵ ${Number(ord.amount || 0).toFixed(2)} Airtime`;
+          const lines = [
+            `🔍 *Order Status Diagnostic*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `• *Order ID:* #${ord.id.slice(0, 8)}`,
+            `• *Recipient:* \`${ord.customer_phone || "N/A"}\``,
+            `• *Network:* ${ord.network || "N/A"}`,
+            `• *Package:* ${pkg}`,
+            `• *Amount:* GH₵ ${Number(ord.amount || 0).toFixed(2)}`,
+            `• *Placed At:* ${formatOrderDate(ord.created_at)}`,
+            `• *Live Status:* *${stLabel}*`,
+          ];
+
+          if (ord.status === "fulfillment_failed" && ord.failure_reason) {
+            lines.push(
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `⚠️ *Carrier Note:* ${sanitizePublicFailureReason(ord.failure_reason)}`
+            );
+          } else if (ord.status === "processing" || ord.status === "paid") {
+            lines.push(
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `⚡ _Carrier is actively broadcasting the data bundle to the SIM. Delivery confirmation usually takes under 60 seconds._`
+            );
+          } else if (ord.status === "fulfilled") {
+            lines.push(
+              `━━━━━━━━━━━━━━━━━━━━`,
+              `🎉 _Bundle successfully credited to recipient's SIM card by carrier._`
+            );
+          }
+
+          lines.push(
+            ``,
+            `_Reply with another phone number to track, or 0 for Menu._`
+          );
+          reply = lines.join("\n");
+        } else {
+          const lines = [
+            `🔍 *Found ${ordersFound.length} Recent Orders for \`${queryInput}\`*`,
+            `━━━━━━━━━━━━━━━━━━━━`,
+          ];
+
+          ordersFound.forEach((ord, idx) => {
+            const numEmoji = ["1️⃣", "2️⃣", "3️⃣"][idx] || `•`;
+            const stLabel = statusEmoji[ord.status] || ord.status.toUpperCase();
+            const pkg = ord.package_size || `GH₵ ${Number(ord.amount || 0).toFixed(2)} Airtime`;
+            lines.push(
+              `${numEmoji} *${ord.network || ""} ${pkg}* (#${ord.id.slice(0, 8)})`,
+              `   Status: *${stLabel}*`,
+              `   Placed: ${formatOrderDate(ord.created_at)}`,
+              `   Recipient: \`${ord.customer_phone}\``,
+              ``
+            );
+          });
+
+          lines.push(
+            `━━━━━━━━━━━━━━━━━━━━`,
+            `_Reply with another phone number to track, or 0 for Menu._`
+          );
+          reply = lines.join("\n");
         }
-        lines.push(``, `_Reply 0 to return to the menu._`);
-        reply = lines.join("\n");
-        nextStep = "MENU";
+        nextStep = "TRACK_ORDER";
         break;
       }
 

@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { fetchViaDb } from "./db_proxy.ts";
 import { getActiveProviders, resolveProvidersForOrder, Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
+import { isNonRetryableTerminalError } from "./providers/utils.ts";
 
 export interface DispatchResult {
   ok: boolean;
@@ -146,6 +147,17 @@ export async function dispatchOrderWithFailover(
       const isProviderSideIssue = /balance|limit|maintenance|out of stock|server error|502|timeout|down/i.test(lastFailureReason);
       if (isProviderSideIssue && provider.id) {
         Promise.resolve(supabaseAdmin.from("providers").update({ consecutive_failures: (provider.consecutive_failures || 0) + 1 }).eq("id", provider.id)).catch(() => {});
+      }
+
+      // Financial & Duplicate Safety Guard: If rejection is a permanent client/recipient error, HALT CASCADE immediately
+      // This prevents multi-provider duplicate charges, vendor bans, and company financial losses
+      if (isNonRetryableTerminalError(lastFailureReason)) {
+        console.warn(`[HybridRouter] Halting cascade for order ${order.id}: Terminal recipient error (${lastFailureReason}). Prevented duplicate provider debits.`);
+        return {
+          ok: false,
+          status: "fulfillment_failed",
+          reason: lastFailureReason,
+        };
       }
 
       if (!isLastProvider) {

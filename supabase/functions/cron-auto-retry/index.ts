@@ -1,6 +1,7 @@
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
 import { log } from "../_shared/logger.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
 
@@ -92,6 +93,27 @@ serve(async (req) => {
 
       if (!isTelecomOrder) {
         console.log(`[cron-auto-retry] Order ${order.id} is non-telecom type (${orderType}). Skipping telecom dispatch.`);
+        continue;
+      }
+
+      // Anti-Loss & Non-Retryable Guard: Never reprocess orders with permanent recipient errors
+      // (e.g. barred number, invalid recipient, payee limit reached, or duplicate order detected)
+      if (isNonRetryableTerminalError(order.failure_reason)) {
+        console.log(`[cron-auto-retry] Order ${order.id} has permanent non-retryable error (${order.failure_reason}). Skipping to prevent losses.`);
+        continue;
+      }
+
+      // Anti-Duplicate Delivery Shield: If order already has an active upstream provider reference
+      // (e.g. SKP..., API_..., DH_...) that is NOT timeout or failed_api_call, DO NOT re-dispatch to another provider!
+      // This prevents double-fulfillment and paying twice for the same bundle.
+      const hasActiveProviderRef = Boolean(
+        order.provider_order_id &&
+        order.provider_order_id !== "failed_api_call" &&
+        order.provider_order_id !== "timeout" &&
+        order.provider_order_id !== "routed"
+      );
+      if (hasActiveProviderRef && (order.status === "processing" || order.status === "paid")) {
+        console.log(`[cron-auto-retry] Order ${order.id} is already in transit with provider (${order.provider_order_id}). Skipping re-dispatch to avoid double fulfillment.`);
         continue;
       }
 

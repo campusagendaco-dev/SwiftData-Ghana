@@ -475,10 +475,38 @@ serve(async (req: Request) => {
 
     const orderId = reference || crypto.randomUUID();
 
-    // Affordable SME bundles are NEVER routed to Korba
     const dbNet = normalizeNetworkForPricing(networkRaw);
     const upperDbNet = dbNet.toUpperCase();
-    const isAffordableSme = (
+    const reqCategory = String(customMetadata?.category || customMetadata?.package_category || payload?.category || "").toLowerCase();
+    const isExplicitKorbaCategory = reqCategory !== "" && 
+      reqCategory !== "affordable" && 
+      reqCategory !== "sme" && 
+      reqCategory !== "mashup" && 
+      !reqCategory.includes("sme");
+
+    const pkgUpper = String(package_size || "").toUpperCase();
+    const isKorbaPackagePattern = pkgUpper.startsWith("GHS") || 
+      pkgUpper.includes("RACT_DATA") || 
+      pkgUpper.includes("KOKROKOO") || 
+      pkgUpper.includes("MIDNIGHT") || 
+      pkgUpper.includes("SOCIAL") || 
+      pkgUpper.includes("VIDEO") || 
+      pkgUpper.includes("IDD");
+
+    const isExplicitKorbaRequest = (
+      is_korba === true || 
+      is_korba === "true" || 
+      upperDbNet.startsWith("KORBA") ||
+      customMetadata?.is_korba === true ||
+      customMetadata?.is_korba === "true" ||
+      reqCategory === "korba" ||
+      reqCategory === "standard" ||
+      isExplicitKorbaCategory ||
+      isKorbaPackagePattern
+    );
+
+    let finalIsKorba = isExplicitKorbaRequest;
+    const isAffordableSme = !isExplicitKorbaRequest && (
       upperDbNet.includes("MTN") || 
       upperDbNet.includes("YELLO") || 
       upperDbNet.includes("TELECEL") || 
@@ -489,7 +517,6 @@ serve(async (req: Request) => {
       upperDbNet.includes("SME")
     );
 
-    let finalIsKorba = !isAffordableSme && (is_korba === true || is_korba === "true");
     if (!finalIsKorba && !isAffordableSme) {
       const queryNetwork = dbNet.startsWith("Korba ") ? dbNet : `Korba ${dbNet}`;
       const { data: mappings } = await supabaseAdmin
@@ -526,9 +553,10 @@ serve(async (req: Request) => {
       promo_code_id: appliedPromoId || undefined,
       discount_amount: appliedDiscountAmount > 0 ? appliedDiscountAmount : 0,
       metadata: {
+        ...(customMetadata || {}),
         is_korba: finalIsKorba,
+        category: finalIsKorba ? (customMetadata?.category || "korba") : (customMetadata?.category || "affordable"),
         bypass_beneficiary: (bypass_beneficiary === true || bypass_beneficiary === "true") ? true : undefined,
-        ...(customMetadata || {})
       }
     });
 

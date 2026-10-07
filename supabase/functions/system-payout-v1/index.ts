@@ -2500,6 +2500,42 @@ serve(async (req: Request) => {
         });
       }
 
+      case "test_korba_payload": {
+        const { targetUrl, payload: testPayload } = body;
+        const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "189eae68808be2089295211d065ecf14d4f34b3c";
+        const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
+
+        const sortedKeys = Object.keys(testPayload).sort();
+        const messageParts = [];
+        for (const key of sortedKeys) {
+          if (testPayload[key] !== undefined) {
+            messageParts.push(`${key}=${testPayload[key]}`);
+          }
+        }
+        const message = messageParts.join("&");
+        const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+        const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const messageData = new TextEncoder().encode(message);
+        const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+        const signatureHex = Array.from(new Uint8Array(signatureBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const res = await fetchViaDb(supabaseAdmin, targetUrl || "https://xchange.korba365.com/api/v1.0/mtn_data_topup/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+          },
+          body: JSON.stringify(testPayload),
+        }, 20);
+
+        const text = await res.text();
+        return new Response(JSON.stringify({ status: res.status, ok: res.ok, hmac_message: message, response: text }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         return new Response(JSON.stringify({ error: `Invalid action: ${action}. Check if function is deployed with latest code.` }), {
           status: 400,

@@ -113,6 +113,7 @@ const AdminSmsTemplates = lazy(() => import("./pages/AdminSmsTemplates"));
 const AdminCreditManagement = lazy(() => import("./pages/AdminCreditManagement"));
 const AdminSentinelAI = lazy(() => import("./pages/AdminSentinelAI"));
 const AdminSwiftVendorPro = lazy(() => import("./pages/AdminSwiftVendorPro"));
+const AdminStickers = lazy(() => import("./pages/AdminStickers"));
 const AdminAIStrategy = lazy(() => import("./pages/AdminAIStrategy"));
 const AdminAPINetwork = lazy(() => import("./pages/AdminAPINetwork"));
 const SubAgentSignup = lazy(() => import("./pages/SubAgentSignup"));
@@ -519,6 +520,8 @@ const AppContent = () => {
           <Route path="engagement" element={<AdminEngagement />} />
           <Route path="system-logs" element={<AdminSystemLogs />} />
           <Route path="broadcast" element={<AdminBroadcast />} />
+          <Route path="stickers" element={<AdminStickers />} />
+          <Route path="whatsapp-stickers" element={<AdminStickers />} />
           <Route path="voice-sms" element={<AdminVoiceSMS />} />
           <Route path="feature-flags" element={<AdminFeatureFlags />} />
           <Route path="sms-templates" element={<AdminSmsTemplates />} />

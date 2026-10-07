@@ -142,12 +142,21 @@ export function parseProviderResponse(body: string, contentType: string | null):
       return { ok: true, id: orderId || undefined, status: effectiveStatus || "processing" };
     }
     
-    const isFailed = parsed?.success === false || technicalStatus === "false" || technicalStatus === "error" || technicalStatus === "failed" || technicalStatus === "failure";
+    const isFailed = parsed?.success === false || 
+                     technicalStatus === "false" || 
+                     technicalStatus === "error" || 
+                     technicalStatus === "failed" || 
+                     technicalStatus === "failure" ||
+                     technicalStatus === "refunded" ||
+                     technicalStatus === "reversed" ||
+                     deliveryStatus === "failed" ||
+                     deliveryStatus === "refunded" ||
+                     deliveryStatus === "reversed";
     if (isFailed) {
       const code = parsed?.code || parsed?.error_code || data?.code || parsed?.data?.code;
-      const baseReason = message || data?.order?.message || data?.message || "Provider rejected this order.";
+      const baseReason = message || data?.order?.message || data?.message || (effectiveStatus === "refunded" ? "Provider refunded order" : "Provider rejected this order.");
       const errReason = code ? `${code}: ${baseReason}` : baseReason;
-      return { ok: false, reason: errReason };
+      return { ok: false, id: orderId || undefined, status: effectiveStatus || "fulfillment_failed", reason: errReason };
     }
 
     const statusCode = Number(parsed?.statusCode);
@@ -165,3 +174,37 @@ export function parseProviderResponse(body: string, contentType: string | null):
 
   return { ok: true };
 }
+
+/**
+ * Checks whether an order failure reason represents a permanent, non-retryable recipient/client error.
+ * These errors MUST NEVER be cascaded to another provider or automatically reprocessed,
+ * as doing so wastes API calls, triggers provider penalties, and risks double-debits.
+ */
+export function isNonRetryableTerminalError(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const r = String(reason).toLowerCase();
+  return (
+    r.includes("invalid number") ||
+    r.includes("invalid recipient") ||
+    r.includes("wrong network") ||
+    r.includes("not an mtn") ||
+    r.includes("not a telecel") ||
+    r.includes("not an at") ||
+    r.includes("barred") ||
+    r.includes("blocked") ||
+    r.includes("blacklisted") ||
+    r.includes("payee limit") ||
+    r.includes("limit reached") ||
+    r.includes("daily limit") ||
+    r.includes("duplicate") ||
+    r.includes("identical") ||
+    r.includes("inactive number") ||
+    r.includes("suspended") ||
+    r.includes("unregistered") ||
+    r.includes("line not found") ||
+    r.includes("subscriber not found") ||
+    r.includes("already placed") ||
+    r.includes("currently being processed")
+  );
+}
+

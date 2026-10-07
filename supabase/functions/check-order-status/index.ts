@@ -183,7 +183,7 @@ serve(async (req: Request) => {
           const rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
-          const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled";
+          const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "refunded" || rawStatus === "reversed" || rawStatus === "declined" || pRes?.ok === false;
 
           if (isDelivered) {
             currentStatus = "fulfilled";
@@ -205,8 +205,8 @@ serve(async (req: Request) => {
             }
           } else if (isFailed) {
             currentStatus = "fulfillment_failed";
-            currentFailureReason = pRes.reason || "Carrier dispatch rejected";
-            carrierStatusDesc = "Carrier rejected dispatch";
+            currentFailureReason = pRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Carrier dispatch rejected");
+            carrierStatusDesc = rawStatus === "refunded" ? "Provider refunded order" : "Carrier rejected dispatch";
 
             if (order.status !== "fulfillment_failed") {
               await supabaseAdmin.from("orders").update({

@@ -806,6 +806,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     const startTime = Date.now();
     const orderId = crypto.randomUUID();
     
+    const isKorbaPackage = (
+      selectedTypeOrCategory !== "affordable" && 
+      selectedTypeOrCategory !== "sme" && 
+      selectedTypeOrCategory !== "mashup"
+    ) || (
+      korbaMappings.some(m => m.package_name === selectedPackage?.size && (m.network === network || m.network === `Korba ${network}`))
+    );
+
     try {
       const { data, error } = await invokePublicFunctionAsUser("wallet-buy-data", {
         body: {
@@ -814,7 +822,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           customer_phone: phone,
           amount: selectedPackage!.price,
           reference: orderId,
-          is_korba: false,
+          is_korba: isKorbaPackage,
+          category: isKorbaPackage ? "korba" : selectedTypeOrCategory,
           bypass_beneficiary: bypassBeneficiary ? true : undefined,
         },
       });
@@ -899,6 +908,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       phone: normalizedPhone,
     });
 
+    const isKorbaPackage = (
+      selectedTypeOrCategory !== "affordable" && 
+      selectedTypeOrCategory !== "sme" && 
+      selectedTypeOrCategory !== "mashup"
+    ) || (
+      korbaMappings.some(m => m.package_name === selectedPackage?.size && (m.network === network || m.network === `Korba ${network}`))
+    );
+
     const meta = {
       order_id: orderId,
       order_type: "data",
@@ -907,7 +924,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       customer_phone: normalizedPhone,
       fee: paystackFee,
       agent_id: user?.id,
-      is_korba: false,
+      is_korba: isKorbaPackage,
+      category: isKorbaPackage ? (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme" || selectedTypeOrCategory === "mashup" ? "korba" : selectedTypeOrCategory) : selectedTypeOrCategory,
       bypass_beneficiary: bypassBeneficiary ? true : undefined,
       callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? {

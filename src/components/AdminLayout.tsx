@@ -92,6 +92,7 @@ export const NAV_SECTIONS: NavSection[] = [
     permKey: "communications",
     items: [
       { label: "Broadcast",         icon: Megaphone,   path: "/admin/broadcast", permKey: "communications" },
+      { label: "WhatsApp Stickers", icon: Sparkles,    path: "/admin/stickers", permKey: "communications" },
       { label: "Voice Calls (mNotify)", icon: PhoneCall, path: "/admin/voice-sms", permKey: "communications" },
       { label: "Promo Banners",     icon: ImageIcon,   path: "/admin/banners", permKey: "communications" },
       { label: "SMS Templates",  icon: MessageSquare, path: "/admin/sms-templates", permKey: "communications" },

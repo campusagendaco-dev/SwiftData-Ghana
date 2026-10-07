@@ -371,6 +371,150 @@ serve(async (req: Request) => {
       });
     }
 
+    // Action: Instant Sticker / Channel Post Dispatch
+    if (body.action === "send_sticker_instant") {
+      const { to, sticker_url, image_url, message, title } = body;
+      const channelDefault = Deno.env.get("WHATSAPP_CHANNEL_JID") || "120363425720623850@newsletter";
+      const target = (to || channelDefault).trim();
+      const isChannel = target.endsWith("@newsletter") || target.toLowerCase() === "channel";
+      const dest = isChannel ? channelDefault : target;
+
+      let sent = false;
+      if (isChannel) {
+        // Channel displays media images and captions
+        const caption = message || (title ? `*${title}* ⚡` : undefined);
+        sent = await sendWaSenderMessage(dest, caption, {
+          imageUrl: image_url || sticker_url,
+        });
+      } else {
+        // Direct chat supports native stickerUrl + optional text
+        sent = await sendWaSenderMessage(dest, message, {
+          stickerUrl: sticker_url,
+          imageUrl: image_url,
+        });
+      }
+
+      await supabaseAdmin.from("system_logs").insert({
+        level: "info",
+        source: "whatsapp_stickers",
+        event: "sticker.dispatched_instant",
+        message: `Dispatched sticker to ${dest} (Success: ${sent})`,
+        data: { dest, sticker_url, title }
+      });
+
+      return new Response(JSON.stringify({ success: sent, target: dest }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Action: Schedule Sticker Post
+    if (body.action === "schedule_sticker_post") {
+      const {
+        title,
+        target_type = "channel",
+        target,
+        message,
+        sticker_url,
+        image_url,
+        scheduled_for,
+        repeat_frequency = "none",
+      } = body;
+
+      const channelDefault = Deno.env.get("WHATSAPP_CHANNEL_JID") || "120363425720623850@newsletter";
+      const recipient = target_type === "channel" ? channelDefault : (target || "all_customers");
+
+      const { data: item, error: insErr } = await supabaseAdmin
+        .from("whatsapp_broadcast_queue")
+        .insert({
+          recipient_phone: recipient,
+          message: message || title || "Scheduled Sticker Post",
+          status: "scheduled",
+          options: {
+            title: title || "Scheduled Sticker Post",
+            target_type,
+            sticker_url,
+            image_url,
+            scheduled_for: scheduled_for || new Date().toISOString(),
+            repeat_frequency,
+            is_sticker_post: true,
+          },
+        })
+        .select()
+        .single();
+
+      if (insErr) throw insErr;
+
+      return new Response(JSON.stringify({ success: true, item }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Action: List Scheduled Sticker Posts
+    if (body.action === "list_scheduled_stickers") {
+      const { data: items } = await supabaseAdmin
+        .from("whatsapp_broadcast_queue")
+        .select("*")
+        .or("status.eq.scheduled,options->>is_sticker_post.eq.true")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      return new Response(JSON.stringify({ success: true, items: items || [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Action: Cancel Scheduled Sticker Post
+    if (body.action === "cancel_scheduled_sticker") {
+      const { id } = body;
+      if (id) {
+        await supabaseAdmin.from("whatsapp_broadcast_queue").update({ status: "cancelled" }).eq("id", id);
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Action: Trigger Due Scheduled Sticker Posts (cron / heartbeat)
+    if (body.action === "trigger_due_scheduled") {
+      const nowIso = new Date().toISOString();
+      const { data: dueItems } = await supabaseAdmin
+        .from("whatsapp_broadcast_queue")
+        .select("*")
+        .eq("status", "scheduled");
+
+      const processed = [];
+      const channelDefault = Deno.env.get("WHATSAPP_CHANNEL_JID") || "120363425720623850@newsletter";
+
+      for (const item of dueItems || []) {
+        const schedTime = item.options?.scheduled_for;
+        if (!schedTime || new Date(schedTime) <= new Date()) {
+          const dest = item.recipient_phone || channelDefault;
+          const isChannel = dest.endsWith("@newsletter") || item.options?.target_type === "channel";
+          const sent = await sendWaSenderMessage(dest, item.message, {
+            imageUrl: isChannel ? (item.options?.image_url || item.options?.sticker_url) : item.options?.image_url,
+            stickerUrl: !isChannel ? item.options?.sticker_url : undefined,
+          });
+
+          await supabaseAdmin.from("whatsapp_broadcast_queue").update({
+            status: sent ? "sent" : "failed",
+            sent_at: sent ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          }).eq("id", item.id);
+
+          processed.push({ id: item.id, dest, sent });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, processed }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
     // Action: Standard Broadcast Dispatch (with progressive queueing)
     const {
       recipients, // array of phone numbers or user_ids

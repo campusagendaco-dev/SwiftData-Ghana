@@ -235,10 +235,12 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "datahub") {
+      const dhCapNum = capNum > 0 ? capNum : (parseFloat(capacityStr) || 0);
+      const safeDhCapacity = dhCapNum > 0 ? String(dhCapNum) : (pkgSize.match(/(\d+(?:\.\d+)?)/)?.[1] || "1");
       return {
         networkKey: netKey,
         recipient: recipient,
-        capacity: capacityStr,
+        capacity: safeDhCapacity,
         reference: targetRef,
       };
     }
@@ -713,11 +715,12 @@ export class StandardAdapter implements ProviderAdapter {
               if (json.success && json.data) {
                 const s = String(json.data.status || "").toLowerCase();
                 const isDelivered = ["completed", "delivered", "fulfilled", "success", "successful"].includes(s);
-                const isFailed = ["failed", "rejected", "cancelled", "reversed"].includes(s);
+                const isFailed = ["failed", "rejected", "cancelled", "reversed", "refunded"].includes(s);
                 return {
-                  ok: true,
+                  ok: !isFailed,
                   status: isDelivered ? "fulfilled" : (isFailed ? "fulfillment_failed" : "processing"),
-                  reason: json.data.message || json.message,
+                  reason: json.data.message || json.message || (isFailed ? `BundleZone order ${s}` : undefined),
+                  id: String(json.data.order_id || cand),
                   raw: json.data
                 };
               }
@@ -727,7 +730,7 @@ export class StandardAdapter implements ProviderAdapter {
       } catch (err: any) {
         console.warn("[BundleZone-checkStatus] Error:", err.message);
       }
-      return { ok: true, status: "processing", reason: "BundleZone relies on webhook callbacks for status updates." };
+      return { ok: false, status: "not_found", reason: "Order not found on BundleZone." };
     }
     if (handlerType === "spendless") {
       try {
@@ -754,7 +757,7 @@ export class StandardAdapter implements ProviderAdapter {
               if (st === "delivered" || st === "successful" || st === "completed") {
                 return { ok: true, status: "delivered", id: String(match.reference || match.orderId), raw: match };
               }
-              if (st === "failed" || st === "rejected" || st === "cancelled") {
+              if (st === "failed" || st === "rejected" || st === "cancelled" || st === "reversed" || st === "refunded") {
                 return { ok: false, status: "failed", reason: match.reason || `Spendless order ${st}`, raw: match };
               }
               return { ok: true, status: "processing", id: String(match.reference || match.orderId), raw: match };
@@ -764,7 +767,7 @@ export class StandardAdapter implements ProviderAdapter {
       } catch (err: any) {
         console.warn("[Spendless checkStatus] Fallback to /api/transactions error:", err?.message || err);
       }
-      return { ok: true, status: "processing", reason: "Spendless relies on webhook callbacks for status updates." };
+      return { ok: false, status: "not_found", reason: "Order not found on Spendless." };
     }
 
     const activeProviderOrderId = (providerOrderId && providerOrderId !== "timeout" && providerOrderId !== "failed_api_call") ? providerOrderId : reference;

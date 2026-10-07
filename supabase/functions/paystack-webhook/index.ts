@@ -2041,101 +2041,19 @@ serve(async (req: Request) => {
         (chosenProvider?.base_url || "").toLowerCase().includes("datamart") ? "datamart" : "standard"
       );
 
-      let currentPayload: any = dataPayload;
-
-      if (ht === "spendless") {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
-        const webhookUrl = supabaseUrl
-          ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
-          : undefined;
-        currentPayload = {
-          networkKey: mapDataNetworkKey(network),
-          networkRaw: network,
-          recipient: normalizeRecipient(customerPhone),
-          capacity: Number(parseCapacity(packageSize)) || 1,
-          package_size: packageSize,
-          reference: orderId,
-          orderReference: orderId,
-          bypass_beneficiary: existingOrder?.metadata?.bypass_beneficiary,
-          category: existingOrder?.metadata?.category,
-          webhook_url: webhookUrl,
-        };
-      } else if (ht === "datahub") {
-        currentPayload = {
-          networkKey: mapDataNetworkKey(network),
-          networkRaw: network,
-          recipient: normalizeRecipient(customerPhone),
-          capacity: String(parseCapacity(packageSize)),
-          package_size: packageSize,
-          reference: orderId,
-          orderReference: orderId,
-          bypass_beneficiary: existingOrder?.metadata?.bypass_beneficiary,
-          category: existingOrder?.metadata?.category,
-        };
-      } else if (ht === "datamart") {
-        let externalId = packageSize;
-        const capNum = parseCapacity(packageSize);
-        const datamartNet = (network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO")
-          ? "YELLO"
-          : ((network.toUpperCase().includes("TELECEL") || network.toUpperCase().includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
-
-        try {
-          const { data: pkgMapping } = await supabaseAdmin
-            .from("provider_packages")
-            .select("external_id")
-            .eq("provider_id", chosenProvider.id)
-            .eq("network", "MTN")
-            .eq("package_name", packageSize)
-            .maybeSingle();
-          if (pkgMapping?.external_id) {
-            externalId = pkgMapping.external_id;
-          } else if (capNum > 0) {
-            externalId = `MTN_${capNum}`;
-          }
-        } catch (e) {
-          console.error("[datamart-webhook-payload] Error:", e);
-        }
-
-        currentPayload = {
-          phoneNumber: normalizeRecipient(customerPhone),
-          recipient: normalizeRecipient(customerPhone),
-          phone: normalizeRecipient(customerPhone),
-          network: datamartNet,
-          package_size: packageSize,
-          planId: externalId,
-          plan: externalId,
-          bundle: externalId,
-          capacity: String(capNum > 0 ? capNum : packageSize),
-          orderReference: orderId,
-          reference: orderId,
-          gateway: "wallet"
-        };
-      } else if (ht === "skdataplug") {
-        currentPayload = {
-          networkRaw: network,
-          network: network,
-          networkKey: mapDataNetworkKey(network),
-          recipient: normalizeRecipient(customerPhone),
-          package_size: packageSize,
-          plan: packageSize,
-          capacity: String(parseCapacity(packageSize)),
-          amount: deliveryAmount,
-          reference: orderId,
-          orderReference: orderId,
-          order_id: orderId,
-        };
-      }
-
       let result: any;
       try {
-        result = await callProviderApi(
-          targetBaseUrl,
-          targetApiKey,
-          "purchase",
-          currentPayload,
-          DATA_PROVIDER_WEBHOOK_URL,
-        );
+        const adapter = getProviderAdapter(ht);
+        const purchaseOrder = existingOrder || {
+          id: orderId,
+          network,
+          package_size: packageSize,
+          customer_phone: customerPhone,
+          recipient: customerPhone,
+          phoneNumber: customerPhone,
+          metadata: existingOrder?.metadata || {}
+        };
+        result = await adapter.purchase(supabaseAdmin, chosenProvider, purchaseOrder);
       } catch (callErr: any) {
         isTimeoutOrNetworkError = true;
         result = { ok: false, reason: callErr?.message || "Network timeout connecting to provider" };

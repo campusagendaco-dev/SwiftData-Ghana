@@ -854,8 +854,24 @@ serve(async (req: any) => {
     const shouldCheckProvider = !!existingOrder?.provider_order_id;
 
     if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed") && isProviderOrder && shouldCheckProvider) {
-      const providers = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
-      for (const provider of providers) {
+      let providersToCheck: any[] = [];
+      const currentRef = String(existingOrder?.provider_order_id || "");
+
+      if (existingOrder?.provider_id) {
+        const { data: assignedP } = await supabaseAdmin.from("providers").select("*").eq("id", existingOrder.provider_id).maybeSingle();
+        if (assignedP && assignedP.is_active) providersToCheck = [assignedP];
+      }
+
+      if (providersToCheck.length === 0 && currentRef.startsWith("SKP")) {
+        const { data: skP } = await supabaseAdmin.from("providers").select("*").eq("handler_type", "skdataplug").maybeSingle();
+        if (skP && skP.is_active) providersToCheck = [skP];
+      }
+
+      if (providersToCheck.length === 0) {
+        providersToCheck = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
+      }
+
+      for (const provider of providersToCheck) {
         console.log(`[verify-payment] Pre-check status for ${targetReference} at ${provider.name}`);
         const checkResult = await callProviderApi(supabaseAdmin, provider, { 
           transaction_id: targetReference,
@@ -864,14 +880,27 @@ serve(async (req: any) => {
         }, "status");
         
         if (checkResult.ok) {
-          const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
-          const isProcessing = checkResult.status === "processing" || checkResult.status === "pending" || checkResult.status === "queued" || checkResult.status === "ongoing";
+          const rawStatus = String(checkResult.status || "").toLowerCase();
+          const isDelivered = rawStatus === "delivered" || rawStatus === "success" || rawStatus === "successful" || rawStatus === "fulfilled" || rawStatus === "completed" || rawStatus === "sent";
+          const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "refunded" || rawStatus === "reversed";
+          const isProcessing = !isFailed && (rawStatus === "processing" || rawStatus === "pending" || rawStatus === "queued" || rawStatus === "ongoing");
           
           if (isDelivered) {
             console.log(`[verify-payment] Found fulfilled order ${targetReference} at ${provider.name} during pre-check.`);
             const token = (checkResult as any).raw?.prepaid_token;
             await fulfillOrder(supabaseAdmin, targetReference, provider.id, checkResult.id || existingOrder.provider_order_id || null, token || null);
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || existingOrder.provider_order_id }), { headers: corsHeaders });
+          } else if (isFailed) {
+            console.log(`[verify-payment] Found failed/refunded order ${targetReference} at ${provider.name} during pre-check (${rawStatus}).`);
+            const failReason = checkResult.reason || (rawStatus === "refunded" ? "Provider refunded order" : `Provider reported ${rawStatus}`);
+            await supabaseAdmin.from("orders").update({
+              status: "fulfillment_failed",
+              provider_id: provider.id,
+              provider_order_id: checkResult.id || existingOrder.provider_order_id || null,
+              failure_reason: failReason,
+              updated_at: new Date().toISOString()
+            }).eq("id", targetReference);
+            return new Response(JSON.stringify({ status: "fulfillment_failed", reason: failReason }), { headers: corsHeaders });
           } else if (isProcessing) {
             console.log(`[verify-payment] Found processing/pending order ${targetReference} at ${provider.name} during pre-check.`);
             await supabaseAdmin.from("orders").update({ 
@@ -1677,7 +1706,9 @@ serve(async (req: any) => {
           category: claimedOrder.metadata?.category 
         };
       }
-      if (ht === "datahub") return { networkKey: netKey, recipient, capacity: String(parseCapacity(packageSize)), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
+      const parsedCapVal = parseCapacity(packageSize);
+      const safeCap = parsedCapVal > 0 ? (parsedCapVal < 1 ? 1 : Math.round(parsedCapVal)) : 1;
+      if (ht === "datahub") return { networkKey: netKey, recipient, capacity: String(safeCap), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
       if (ht === "spendless") {
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
         const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
@@ -1687,7 +1718,7 @@ serve(async (req: any) => {
         const payload: any = {
           networkKey: netKey,
           recipient,
-          capacity: Number(parseCapacity(packageSize)) || 1,
+          capacity: safeCap,
           reference: targetReference,
           bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary,
           category: claimedOrder.metadata?.category,
