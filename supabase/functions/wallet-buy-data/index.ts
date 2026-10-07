@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms, getSmsConfig, sendSmsViaTxtConnect } from "../_shared/sms.ts";
+import { sendWhatsAppOrderReceipt } from "../_shared/whatsapp.ts";
 import { log } from "../_shared/logger.ts";
 
 // --- HELPERS ---
@@ -588,7 +589,7 @@ serve(async (req: Request) => {
       (globalThis as any).EdgeRuntime.waitUntil(triggerPromise);
     }
 
-    // 3. TRIGGER SMS (NON-BLOCKING)
+    // 3. TRIGGER SMS & WHATSAPP RECEIPT (NON-BLOCKING)
     sendPaymentSms(supabaseAdmin, customer_phone, "payment_success", {
       phone: customer_phone,
       network: normalizedNet,
@@ -596,6 +597,14 @@ serve(async (req: Request) => {
       amount: amountNum,
       id: orderId
     }, user.id).catch(e => console.error("[SMS-ERROR]", e));
+
+    sendWhatsAppOrderReceipt(customer_phone, {
+      id: orderId,
+      network: normalizedNet,
+      package_size: package_size,
+      amount: resolvedChargeAmount,
+      customer_phone: customer_phone
+    }).catch(e => console.error("[WA-PUSH-RECEIPT-ERROR]", e));
 
     if (normalizedNet === "MTN Mash Up" && agentProfile?.phone) {
       getSmsConfig(supabaseAdmin, user.id).then(async (smsConfig) => {

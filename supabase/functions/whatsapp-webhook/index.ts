@@ -506,7 +506,60 @@ function formatAdminMenu(adminName: string): string {
   ].join("\n");
 }
 
-// ── Self-Service Conversational Helpers (Refunds, Registration, Agent Onboarding) ──
+async function getAiPackageRecommendation(supabase: any, userPhone: string, network: string, pkgs: any[]): Promise<string | null> {
+  try {
+    const normPhone = normalizePhone(userPhone) || userPhone.replace(/\D/g, "");
+    const shortPhone = normPhone.length >= 9 ? normPhone.slice(-9) : normPhone;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: recentOrders } = await supabase
+      .from("orders")
+      .select("package_size, amount")
+      .eq("network", network)
+      .or(`customer_phone.ilike.%${shortPhone}%,customer_phone.eq.${normPhone}`)
+      .in("status", ["fulfilled", "paid"])
+      .gte("created_at", sevenDaysAgo);
+
+    if (!recentOrders || recentOrders.length < 2) return null;
+
+    const counts: Record<string, { count: number; totalSpent: number }> = {};
+    for (const o of recentOrders) {
+      const sz = String(o.package_size || "").toUpperCase();
+      if (!sz) continue;
+      if (!counts[sz]) counts[sz] = { count: 0, totalSpent: 0 };
+      counts[sz].count++;
+      counts[sz].totalSpent += Number(o.amount || 0);
+    }
+
+    let topSize = "";
+    let topCount = 0;
+    let topSpend = 0;
+    for (const [sz, info] of Object.entries(counts)) {
+      if (info.count > topCount) {
+        topSize = sz;
+        topCount = info.count;
+        topSpend = info.totalSpent;
+      }
+    }
+
+    if (!topSize || topCount < 2) return null;
+
+    if (topSize === "1GB" || topSize === "1.0GB") {
+      const target5gb = pkgs.find(p => p.size.toUpperCase() === "5GB" || p.size.toUpperCase() === "5 GB");
+      if (target5gb) {
+        return `💡 *Smart Savings Recommendation:*\nYou've purchased 1GB ${topCount} times this week (GH₵ ${topSpend.toFixed(2)}). Upgrade to *5GB for GH₵ ${target5gb.total.toFixed(2)}* to get 2GB extra data and save money!`;
+      }
+    } else if (topSize === "2GB" || topSize === "2.0GB") {
+      const targetBulk = pkgs.find(p => p.size.toUpperCase() === "10GB" || p.size.toUpperCase() === "5GB");
+      if (targetBulk) {
+        return `💡 *Smart Savings Recommendation:*\nYou've purchased 2GB ${topCount} times recently! Upgrade to *${targetBulk.size} for GH₵ ${targetBulk.total.toFixed(2)}* for better bulk savings!`;
+      }
+    }
+  } catch (err) {
+    console.warn("[WA AI Recommendation] Error:", err);
+  }
+  return null;
+}
 
 async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string, orderRefInput?: string): Promise<string> {
   const normPhone = normalizePhone(fromPhone) || fromPhone.replace(/\D/g, "");
@@ -4508,7 +4561,9 @@ Return ONLY a valid JSON object matching these keys.`;
 
         data.pkgList = pkgs;
         const lines = pkgs.map((p, i) => `*${i + 1}*. ${p.size} — GH₵ ${p.total.toFixed(2)}`);
-        reply = `📦 *${net} Data Bundles:*\n_(prices include payment fee)_\n\n${lines.join("\n")}\n\n_Reply with the bundle number — or 0 to go back_`;
+        const aiRec = await getAiPackageRecommendation(supabase, from, net, pkgs);
+        const aiRecBanner = aiRec ? `${aiRec}\n\n` : "";
+        reply = `${aiRecBanner}📦 *${net} Data Bundles:*\n_(prices include payment fee)_\n\n${lines.join("\n")}\n\n_Reply with the bundle number — or 0 to go back_`;
         nextStep = "SELECT_PACKAGE";
         break;
       }
@@ -4557,7 +4612,9 @@ Return ONLY a valid JSON object matching these keys.`;
 
         data.pkgList = pkgs;
         const lines = pkgs.map((p, i) => `*${i + 1}*. ${p.size} — GH₵ ${p.total.toFixed(2)}`);
-        reply = `📦 *MTN — ${chosen.label}:*\n_(prices include payment fee)_\n\n${lines.join("\n")}\n\n_Reply with the bundle number — or 0 to go back_`;
+        const aiRecCategory = await getAiPackageRecommendation(supabase, from, "MTN", pkgs);
+        const aiRecCatBanner = aiRecCategory ? `${aiRecCategory}\n\n` : "";
+        reply = `${aiRecCatBanner}📦 *MTN — ${chosen.label}:*\n_(prices include payment fee)_\n\n${lines.join("\n")}\n\n_Reply with the bundle number — or 0 to go back_`;
         nextStep = "SELECT_PACKAGE";
         break;
       }
