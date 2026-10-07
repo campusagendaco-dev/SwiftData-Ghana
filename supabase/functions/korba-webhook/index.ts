@@ -90,57 +90,68 @@ async function verifyKorbaStatusViaApi(
   transactionId: string
 ): Promise<boolean> {
   try {
-    const statusPayload = {
-      transaction_id: transactionId,
-      client_id: parseInt(clientId) || 2419,
-    };
+    const candidateIds = [
+      transactionId.endsWith("_disb") ? transactionId : `${transactionId}_disb`,
+      transactionId.replace(/_disb$/, "")
+    ];
 
-    const sortedKeys = Object.keys(statusPayload).sort();
-    const messageParts = [];
-    for (const key of sortedKeys) {
-      messageParts.push(`${key}=${(statusPayload as any)[key]}`);
+    for (const txId of candidateIds) {
+      const statusPayload = {
+        transaction_id: txId,
+        client_id: parseInt(clientId) || 2419,
+      };
+
+      const sortedKeys = Object.keys(statusPayload).sort();
+      const messageParts = [];
+      for (const key of sortedKeys) {
+        messageParts.push(`${key}=${(statusPayload as any)[key]}`);
+      }
+      const message = messageParts.join("&");
+
+      const keyData = new TextEncoder().encode(secretKey);
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const messageData = new TextEncoder().encode(message);
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+      const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/transaction_status/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `HMAC ${clientKey}:${signatureHex}`,
+        },
+        body: JSON.stringify(statusPayload),
+        disableFallback: false,
+      });
+
+      if (response.ok) {
+        const resData = await response.json();
+        const rawStatus = String(resData?.status || resData?.results || resData?.delivery_status || resData?.code || "").toLowerCase();
+        
+        const isExplicitSuccess = 
+          rawStatus === "success" || 
+          rawStatus === "successful" || 
+          rawStatus === "paid" || 
+          rawStatus === "completed" || 
+          rawStatus === "fulfilled" ||
+          resData?.code === "0000" ||
+          resData?.status_code === "0000";
+
+        if (isExplicitSuccess) {
+          console.log(`[korba-webhook] Confirmed Korba status as SUCCESS via status API for txId: ${txId}`);
+          return true;
+        }
+      }
     }
-    const message = messageParts.join("&");
-
-    const keyData = new TextEncoder().encode(secretKey);
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const messageData = new TextEncoder().encode(message);
-    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    const response = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/transaction_status/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `HMAC ${clientKey}:${signatureHex}`,
-      },
-      body: JSON.stringify(statusPayload),
-      disableFallback: false,
-    });
-
-    if (!response.ok) return false;
-    const resData = await response.json();
-    const rawStatus = String(resData?.status || resData?.results || resData?.delivery_status || resData?.code || "").toLowerCase();
-    
-    // Explicit success check only — resData?.success === true alone is insufficient as HTTP wrapper returns success: true when status is PENDING!
-    const isExplicitSuccess = 
-      rawStatus === "success" || 
-      rawStatus === "successful" || 
-      rawStatus === "paid" || 
-      rawStatus === "completed" || 
-      rawStatus === "fulfilled" ||
-      resData?.code === "0000" ||
-      resData?.status_code === "0000";
-
-    return isExplicitSuccess;
+    return false;
   } catch (err) {
     console.error("[korba-webhook] verifyKorbaStatusViaApi error:", err);
     return false;
