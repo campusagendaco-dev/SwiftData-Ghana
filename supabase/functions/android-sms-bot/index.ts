@@ -57,32 +57,72 @@ serve(async (req: Request) => {
     req.headers.get("x-api-secret") || 
     url.searchParams.get("secret");
 
-  let rawSender = url.searchParams.get("from") || url.searchParams.get("sender") || url.searchParams.get("phone") || "";
-  let rawText = url.searchParams.get("message") || url.searchParams.get("text") || url.searchParams.get("body") || "";
+  let rawSender = url.searchParams.get("from") || url.searchParams.get("sender") || url.searchParams.get("phone") || url.searchParams.get("number") || url.searchParams.get("address") || "";
+  let rawText = url.searchParams.get("message") || url.searchParams.get("text") || url.searchParams.get("body") || url.searchParams.get("content") || url.searchParams.get("msg") || "";
   let bodySecret = "";
 
-  if (req.method === "POST") {
+  if (req.method === "POST" || req.method === "PUT") {
     try {
-      const contentType = req.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        const body = await req.json();
-        if (body.from || body.sender || body.phone || body.number || body.address) {
-          rawSender = body.from || body.sender || body.phone || body.number || body.address;
+      const bodyText = await req.text();
+      let bodyObj: any = null;
+
+      if (bodyText && bodyText.trim()) {
+        // Try parsing JSON first regardless of Content-Type header (many Android apps omit application/json)
+        try {
+          bodyObj = JSON.parse(bodyText);
+        } catch {
+          // If JSON fails, fall back to URLSearchParams
+          try {
+            const params = new URLSearchParams(bodyText);
+            bodyObj = {};
+            for (const [k, v] of params.entries()) {
+              bodyObj[k] = v;
+            }
+          } catch {
+            /* ignore */
+          }
         }
-        if (body.message || body.text || body.content || body.msg || body.body) {
-          rawText = body.message || body.text || body.content || body.msg || body.body;
+      }
+
+      const extractFromObj = (obj: any) => {
+        if (!obj || typeof obj !== "object") return;
+        // Search root level and common nested containers (data, sms, payload, notification, message)
+        const candidates = [
+          obj,
+          obj.data,
+          obj.sms,
+          obj.payload,
+          obj.notification,
+          obj.message_data,
+          obj.message
+        ];
+
+        for (const candidate of candidates) {
+          if (!candidate || typeof candidate !== "object") continue;
+
+          if (!rawSender) {
+            rawSender = 
+              candidate.from || candidate.sender || candidate.phone || candidate.phone_number ||
+              candidate.number || candidate.address || candidate.contact || candidate.originator ||
+              candidate.src || candidate.source || candidate.mobile || candidate.sender_phone || "";
+          }
+
+          if (!rawText) {
+            const msgVal = candidate.message || candidate.text || candidate.content || candidate.msg ||
+              candidate.body || candidate.payload || candidate.sms || candidate.sms_text || candidate.text_message;
+            if (typeof msgVal === "string" && msgVal.trim()) {
+              rawText = msgVal;
+            }
+          }
+
+          if (!bodySecret && candidate.secret) {
+            bodySecret = String(candidate.secret);
+          }
         }
-        if (body.secret) bodySecret = body.secret;
-      } else {
-        const bodyText = await req.text();
-        const params = new URLSearchParams(bodyText);
-        if (params.get("from") || params.get("sender") || params.get("phone")) {
-          rawSender = params.get("from") || params.get("sender") || params.get("phone") || "";
-        }
-        if (params.get("message") || params.get("text") || params.get("body")) {
-          rawText = params.get("message") || params.get("text") || params.get("body") || "";
-        }
-        if (params.get("secret")) bodySecret = params.get("secret") || "";
+      };
+
+      if (bodyObj) {
+        extractFromObj(bodyObj);
       }
     } catch (e) {
       console.error("[android-sms-bot] Body parsing error:", e);
