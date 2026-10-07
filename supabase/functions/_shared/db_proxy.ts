@@ -138,7 +138,9 @@ export async function fetchViaDb(
 
       const resText = await bridgeRes.text();
       const responseHeaders = new Headers(bridgeRes.headers);
-      if (bridgeRes.ok) {
+      // If Vercel bridge connected to upstream and received a response (2xx, 4xx, 500 from provider), return it directly.
+      // Only fall back if Vercel itself returned a Gateway Timeout (504) or Bad Gateway (502).
+      if (bridgeRes.ok || (bridgeRes.status !== 502 && bridgeRes.status !== 504 && !resText.includes("502 Bad Gateway") && !resText.includes("504 Gateway Time-out"))) {
         return {
           ok: bridgeRes.ok,
           status: bridgeRes.status,
@@ -153,21 +155,23 @@ export async function fetchViaDb(
           headers: responseHeaders
         };
       }
-      console.warn(`[db_proxy] Vercel bridge returned status ${bridgeRes.status}. Falling back...`);
+      console.warn(`[db_proxy] Vercel bridge returned gateway error ${bridgeRes.status}. Falling back...`);
     } catch (bridgeErr: any) {
       console.error(`[db_proxy] Vercel bridge connection failed: ${bridgeErr?.message || bridgeErr}. Falling back...`);
     }
   }
 
-  // 1. Try Direct Native Fetch First (fastest response path, ~100-200ms)
-  try {
-    const directResult = await performDirectFetch(url, options);
-    if (directResult.ok || (directResult.status >= 200 && directResult.status < 500)) {
-      return directResult;
+  // 1. Try Direct Native Fetch First (fastest response path, ~100-200ms) - Skip for Korba as Deno Edge IPs are not whitelisted
+  if (!url.includes("korba365.com")) {
+    try {
+      const directResult = await performDirectFetch(url, options);
+      if (directResult.ok || (directResult.status >= 200 && directResult.status < 500)) {
+        return directResult;
+      }
+      console.warn(`[db_proxy] Direct native fetch returned status ${directResult.status}. Trying DB RPC fallback...`);
+    } catch (directErr) {
+      console.warn(`[db_proxy] Direct native fetch failed: ${directErr}. Trying DB RPC fallback...`);
     }
-    console.warn(`[db_proxy] Direct native fetch returned status ${directResult.status}. Trying DB RPC fallback...`);
-  } catch (directErr) {
-    console.warn(`[db_proxy] Direct native fetch failed: ${directErr}. Trying DB RPC fallback...`);
   }
 
   // 2. Fallback to DB RPC if direct fetch failed

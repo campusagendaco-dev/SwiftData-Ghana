@@ -276,8 +276,12 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
         .eq("id", order.provider_id)
         .maybeSingle();
       if (explicitProvider && explicitProvider.is_active) {
-        activeProviders.unshift(explicitProvider);
-        console.log(`[resolveProvidersForOrder] Prioritizing assigned provider ${explicitProvider.name} for order ${order?.id}`);
+        if (explicitProvider.handler_type === "korba" && isAffordableSmeBundle) {
+          console.log(`[resolveProvidersForOrder] Blocked assigned Korba provider for SME bundle ${order?.id}`);
+        } else {
+          activeProviders.unshift(explicitProvider);
+          console.log(`[resolveProvidersForOrder] Prioritizing assigned provider ${explicitProvider.name} for order ${order?.id}`);
+        }
       }
     }
   }
