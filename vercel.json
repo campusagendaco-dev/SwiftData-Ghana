@@ -40,7 +40,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|.*\\.(?:ico|png|jpg|jpeg|svg|xml|txt|json|webmanifest|js|css)$).*)",
+      "source": "/((?!api/|.*\\.(?:ico|png|jpg|jpeg|svg|xml|txt|json|webmanifest|js|css|html)$).*)",
       "destination": "/index.html"
     }
   ]
