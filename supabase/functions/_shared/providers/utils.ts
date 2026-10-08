@@ -122,6 +122,26 @@ export function parseProviderResponse(body: string, contentType: string | null):
       ""
     );
 
+    const isFailed = parsed?.success === false || 
+                     technicalStatus === "false" || 
+                     technicalStatus === "error" || 
+                     technicalStatus === "failed" || 
+                     technicalStatus === "failure" ||
+                     technicalStatus === "refunded" ||
+                     technicalStatus === "reversed" ||
+                     deliveryStatus === "failed" ||
+                     deliveryStatus === "refunded" ||
+                     deliveryStatus === "reversed" ||
+                     effectiveStatus === "failed" ||
+                     message === "FAILED";
+
+    if (isFailed) {
+      const code = parsed?.code || parsed?.error_code || data?.code || parsed?.data?.code;
+      const baseReason = message || data?.order?.message || data?.message || (effectiveStatus === "refunded" ? "Provider refunded order" : "Provider rejected this order.");
+      const errReason = code ? `${code}: ${baseReason}` : baseReason;
+      return { ok: false, id: orderId || undefined, status: effectiveStatus || "fulfillment_failed", reason: errReason };
+    }
+
     const ok = technicalStatus === "success" || 
                technicalStatus === "true" || 
                technicalStatus === "1" || 
@@ -140,23 +160,6 @@ export function parseProviderResponse(body: string, contentType: string | null):
 
     if (ok && parsed?.success !== false) {
       return { ok: true, id: orderId || undefined, status: effectiveStatus || "processing" };
-    }
-    
-    const isFailed = parsed?.success === false || 
-                     technicalStatus === "false" || 
-                     technicalStatus === "error" || 
-                     technicalStatus === "failed" || 
-                     technicalStatus === "failure" ||
-                     technicalStatus === "refunded" ||
-                     technicalStatus === "reversed" ||
-                     deliveryStatus === "failed" ||
-                     deliveryStatus === "refunded" ||
-                     deliveryStatus === "reversed";
-    if (isFailed) {
-      const code = parsed?.code || parsed?.error_code || data?.code || parsed?.data?.code;
-      const baseReason = message || data?.order?.message || data?.message || (effectiveStatus === "refunded" ? "Provider refunded order" : "Provider rejected this order.");
-      const errReason = code ? `${code}: ${baseReason}` : baseReason;
-      return { ok: false, id: orderId || undefined, status: effectiveStatus || "fulfillment_failed", reason: errReason };
     }
 
     const statusCode = Number(parsed?.statusCode);

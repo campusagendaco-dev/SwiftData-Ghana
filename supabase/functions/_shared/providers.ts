@@ -114,19 +114,31 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     const cleanPkg = String(order.package_size).replace(/\s+/g, "").toUpperCase();
     const { data: korbaPkgs } = await supabaseAdmin
       .from("provider_packages")
-      .select("external_id, package_name, raw_data")
+      .select("external_id, package_name, raw_data, network")
       .eq("provider_id", korbaProvider.id)
       .eq("is_active", true);
 
     if (korbaPkgs && korbaPkgs.length > 0) {
-      const matched = korbaPkgs.some((p: any) => 
-        String(p.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanPkg ||
-        String(p.external_id || "").replace(/\s+/g, "").toUpperCase() === cleanPkg ||
-        String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase().includes(cleanPkg) ||
-        String(p.raw_data?.product_id || "").replace(/\s+/g, "").toUpperCase() === cleanPkg
-      );
+      const matched = korbaPkgs.some((p: any) => {
+        const pkgNet = String(p.network || "").toUpperCase();
+        const netMatches = !pkgNet ||
+          pkgNet === uppercaseNet ||
+          (uppercaseNet.includes("MTN") && pkgNet.includes("MTN")) ||
+          ((uppercaseNet.includes("TELECEL") || uppercaseNet.includes("VODA")) && (pkgNet.includes("TELECEL") || pkgNet.includes("VODA"))) ||
+          ((uppercaseNet.includes("AIRTEL") || uppercaseNet.includes("AT") || uppercaseNet.includes("TIGO")) && (pkgNet.includes("AIRTEL") || pkgNet.includes("AT") || pkgNet.includes("TIGO")));
+
+        if (!netMatches) return false;
+
+        return (
+          String(p.package_name || "").replace(/\s+/g, "").toUpperCase() === cleanPkg ||
+          String(p.external_id || "").replace(/\s+/g, "").toUpperCase() === cleanPkg ||
+          String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase().includes(cleanPkg) ||
+          String(p.raw_data?.product_id || "").replace(/\s+/g, "").toUpperCase() === cleanPkg
+        );
+      });
+
       if (matched) {
-        console.log(`[resolveProvidersForOrder] Order ${order?.id} package ${order?.package_size} matched Korba provider_packages row.`);
+        console.log(`[resolveProvidersForOrder] Order ${order?.id} package ${order?.package_size} matched Korba provider_packages row for ${uppercaseNet}.`);
         isExplicitKorba = true;
       }
     }
@@ -227,8 +239,12 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   if (isAcceptedByProvider) {
     const assigned = activeProviders.find((p: any) => p.id === order.provider_id);
     if (assigned) {
-      console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${assigned.name} (${assigned.id}). Locking to assigned provider ONLY.`);
-      return [assigned];
+      if (assigned.handler_type === "korba" && isAffordableSmeBundle) {
+        console.log(`[resolveProvidersForOrder] Overriding improperly assigned Korba provider for SME bundle ${order?.id}`);
+      } else {
+        console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${assigned.name} (${assigned.id}). Locking to assigned provider ONLY.`);
+        return [assigned];
+      }
     }
     const { data: explicitProvider } = await supabaseAdmin
       .from("providers")
@@ -236,8 +252,12 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       .eq("id", order.provider_id)
       .maybeSingle();
     if (explicitProvider && explicitProvider.is_active) {
-      console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${explicitProvider.name}. Locking to assigned provider ONLY.`);
-      return [explicitProvider];
+      if (explicitProvider.handler_type === "korba" && isAffordableSmeBundle) {
+        console.log(`[resolveProvidersForOrder] Overriding improperly assigned Korba provider for SME bundle ${order?.id}`);
+      } else {
+        console.log(`[resolveProvidersForOrder] Order ${order?.id} ALREADY ACCEPTED by provider ${explicitProvider.name}. Locking to assigned provider ONLY.`);
+        return [explicitProvider];
+      }
     }
   }
 
