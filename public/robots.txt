@@ -19,6 +19,10 @@ Allow: /api-docs
 Allow: /login
 Allow: /llms.txt
 Allow: /llms-full.txt
+Allow: /ai-knowledge.html
+Allow: /bot-training.html
+Allow: /ai-training.html
+Allow: /knowledge.html
 Disallow: /admin/
 Disallow: /admin/*
 Disallow: /dashboard/

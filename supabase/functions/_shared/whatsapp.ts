@@ -1718,19 +1718,11 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
     }
   }
 
-  // 1. Kova API (Arkesel WhatsApp Business)
-  const kovaSuccess = await sendKovaWhatsAppMessage(to, text);
-  if (kovaSuccess) return;
+  // 1. Primary WhatsApp Engine: WaSender API (Multi-device conversational bot)
+  const wasenderSuccess = await sendWaSenderMessage(to, text, apiKey);
+  if (wasenderSuccess) return;
 
-  // 2. Primary: WATI API
-  const watiSuccess = await sendWatiMessage(to, text);
-  if (watiSuccess) return;
-
-  // 3. Secondary: Meta Official WhatsApp Cloud API
-  const metaSuccess = await sendMetaWhatsAppCloudMessage(to, text);
-  if (metaSuccess) return;
-
-  // 3. Tertiary: Twilio WhatsApp API
+  // 2. Secondary: Twilio WhatsApp API
   let twilioSid = Deno.env.get("TWILIO_ACCOUNT_SID");
   let twilioToken = Deno.env.get("TWILIO_AUTH_TOKEN");
   let twilioFrom = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || Deno.env.get("TWILIO_FROM_NUMBER");
@@ -1767,11 +1759,13 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
       fromNumber: twilioFrom,
     });
     if (twilioSuccess) return;
-    console.warn("[WhatsApp] Twilio dispatch unsuccessful; attempting fallback to WaSender API...");
   }
 
-  // 3. Tertiary / Fallback: WaSender API
-  await sendWaSenderMessage(to, text, apiKey);
+  // 3. Fallbacks: Meta Cloud API / WATI (if active tokens exist)
+  const metaSuccess = await sendMetaWhatsAppCloudMessage(to, text);
+  if (metaSuccess) return;
+
+  await sendWatiMessage(to, text);
 }
 
 /**

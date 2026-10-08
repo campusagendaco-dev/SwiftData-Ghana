@@ -400,29 +400,63 @@ function parseMessage(payload: any): {
   };
 }
 
-async function verifyKovaHmac(rawBody: string, signatureHeader: string, secret: string): Promise<boolean> {
+async function verifyKovaHmac(
+  rawBody: string,
+  signatureHeader: string,
+  secret: string,
+  timestampHeader?: string | null
+): Promise<boolean> {
   try {
     const cleanSecret = secret.trim();
-    if (!cleanSecret) return true;
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(cleanSecret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
-    const hashArray = Array.from(new Uint8Array(signatureBuffer));
-    const hex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-    const expected = `sha256=${hex}`;
+    if (!cleanSecret || !signatureHeader) return true;
 
-    if (signatureHeader.trim().length !== expected.length) return false;
-    let result = 0;
-    for (let i = 0; i < expected.length; i++) {
-      result |= signatureHeader.charCodeAt(i) ^ expected.charCodeAt(i);
+    const encoder = new TextEncoder();
+    const candidateSecrets: Uint8Array[] = [
+      encoder.encode(cleanSecret),
+      encoder.encode(cleanSecret.replace(/^whsec_/, "")),
+    ];
+
+    try {
+      const stripped = cleanSecret.replace(/^whsec_/, "");
+      const binary = atob(stripped);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      candidateSecrets.push(bytes);
+    } catch (_) {}
+
+    const candidatePayloads: string[] = [rawBody];
+    if (timestampHeader) {
+      candidatePayloads.unshift(`${timestampHeader.trim()}.${rawBody}`);
     }
-    return result === 0;
+
+    const cleanSig = signatureHeader.trim().toLowerCase();
+    const sigTokens = cleanSig.split(/[,\s]+/).map(t => t.replace(/^(v\d+=?|sha256=)/i, "").trim());
+
+    for (const secBytes of candidateSecrets) {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        secBytes,
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+
+      for (const payloadText of candidatePayloads) {
+        const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payloadText));
+        const hashArray = Array.from(new Uint8Array(signatureBuffer));
+        const hex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+        const b64 = btoa(String.fromCharCode(...hashArray));
+
+        for (const token of sigTokens) {
+          if (token === hex || token === hex.toLowerCase() || token === b64) {
+            return true;
+          }
+        }
+      }
+    }
+
+    console.warn(`[Kova HMAC] Signature mismatch. Received: "${signatureHeader.slice(0, 35)}..."`);
+    return false;
   } catch (err) {
     console.error("[Kova HMAC] Error:", err);
     return false;
@@ -441,7 +475,23 @@ function parseKovaPayload(payload: any): { from: string; text: string; messageId
 
   // Check Kova data/message object
   const d = payload?.data || payload?.message || payload;
-  const rawFrom = String(d?.from || d?.sender || d?.customer_phone || d?.phone || d?.recipient || payload?.from || payload?.sender || "");
+  const rawFrom = String(
+    d?.customer?.phone ||
+    d?.contact?.phone ||
+    d?.customer?.phone_number ||
+    d?.contact?.phone_number ||
+    d?.customer_phone ||
+    d?.sender_phone ||
+    d?.from ||
+    d?.sender ||
+    d?.phone ||
+    d?.recipient ||
+    payload?.customer?.phone ||
+    payload?.contact?.phone ||
+    payload?.from ||
+    payload?.sender ||
+    ""
+  );
   const from = rawFrom.replace(/\D/g, "");
   const text = String(
     d?.text?.body || 
@@ -449,13 +499,16 @@ function parseKovaPayload(payload: any): { from: string; text: string; messageId
     d?.message?.text || 
     d?.message?.body || 
     d?.message || 
+    d?.message_content ||
+    d?.message_text ||
     d?.body || 
     d?.content || 
     payload?.text || 
     payload?.message || 
+    payload?.content ||
     ""
   ).trim();
-  const messageId = String(d?.id || d?.message_id || payload?.id || payload?.delivery_id || "");
+  const messageId = String(d?.id || d?.message_id || d?.uuid || payload?.id || payload?.delivery_id || "");
   const isImage = d?.type === "image" || Boolean(d?.image || d?.media_url);
   const imageUrl = d?.image?.url || d?.media_url || null;
 
@@ -1968,12 +2021,25 @@ serve(async (req: Request) => {
   let imageUrl: string | null = null;
   let imageBase64: string | null = null;
   let imageMimeType = "image/jpeg";
+  const contentType = req.headers.get("content-type") || "";
 
   try {
-    const kovaEvent = req.headers.get("x-kova-callback-event");
-    const kovaSig = req.headers.get("x-kova-signature");
-    const kovaDelivery = req.headers.get("x-kova-delivery");
-    const isKova = Boolean(kovaEvent || kovaSig || kovaDelivery);
+    const kovaSig = req.headers.get("x-kova-signature") ||
+                    req.headers.get("x-webhook-signature") ||
+                    req.headers.get("webhook-signature") ||
+                    req.headers.get("svix-signature");
+    const kovaTimestamp = req.headers.get("x-kova-timestamp") ||
+                          req.headers.get("x-webhook-timestamp") ||
+                          req.headers.get("webhook-timestamp") ||
+                          req.headers.get("svix-timestamp");
+    const kovaEvent = req.headers.get("x-kova-callback-event") ||
+                      req.headers.get("x-webhook-event") ||
+                      req.headers.get("webhook-event");
+    const kovaDelivery = req.headers.get("x-kova-delivery") ||
+                         req.headers.get("x-webhook-id") ||
+                         req.headers.get("webhook-id") ||
+                         req.headers.get("svix-id");
+    const isKova = Boolean(kovaEvent || kovaSig || kovaDelivery || kovaTimestamp);
 
     if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
       // Incoming from Twilio WhatsApp API
@@ -2002,7 +2068,7 @@ serve(async (req: Request) => {
       const kovaSecret = Deno.env.get("KOVA_SIGNING_SECRET") || "";
 
       if (kovaSecret && kovaSig) {
-        const valid = await verifyKovaHmac(rawBody, kovaSig, kovaSecret);
+        const valid = await verifyKovaHmac(rawBody, kovaSig, kovaSecret, kovaTimestamp);
         if (!valid) {
           console.warn("[WA Webhook] Kova HMAC verification failed.");
           return new Response("Unauthorized signature", { status: 401, headers: corsHeaders });
@@ -2027,7 +2093,7 @@ serve(async (req: Request) => {
 
       console.log(`[WA Webhook] Kova incoming from: ${from}, event: ${kovaEvent || "message"}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
     } else {
-      // Incoming from WaSender API (JSON)
+      // Incoming JSON (WaSender, Meta Cloud API, or raw Kova)
       const payload = await req.json().catch(() => null);
       if (payload?.action === "check_on_whatsapp" || payload?.action === "check_whatsapp") {
         const checkResult = await checkIsOnWhatsApp(payload.contact || payload.phone || payload.number || "");
@@ -2043,19 +2109,32 @@ serve(async (req: Request) => {
           status: 200,
         });
       }
-      if (!payload || !payload?.event?.includes("message")) {
+
+      if (payload?.entry || payload?.inbox_id || payload?.ticket || payload?.customer_id) {
+        // Meta Cloud API or Kova without custom headers
+        const parsed = parseKovaPayload(payload);
+        messageId = parsed.messageId || "";
+        from = normalizePhone(parsed.from) || parsed.from;
+        text = parsed.text;
+        fromMe = false;
+        isImage = parsed.isImage;
+        imageUrl = parsed.imageUrl || null;
+        console.log(`[WA Webhook] Kova/Meta JSON incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+      } else if (payload?.event?.includes("message")) {
+        // WaSender API
+        const parsed = parseMessage(payload);
+        messageId = parsed.id || "";
+        from = parsed.from;
+        text = parsed.text;
+        fromMe = parsed.fromMe;
+        isImage = parsed.isImage;
+        imageUrl = parsed.imageUrl || null;
+        imageBase64 = parsed.imageBase64 || null;
+        imageMimeType = parsed.mimeType || "image/jpeg";
+        console.log(`[WA Webhook] WaSender incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+      } else {
         return new Response("ok", { headers: corsHeaders });
       }
-      const parsed = parseMessage(payload);
-      messageId = parsed.id || "";
-      from = parsed.from;
-      text = parsed.text;
-      fromMe = parsed.fromMe;
-      isImage = parsed.isImage;
-      imageUrl = parsed.imageUrl || null;
-      imageBase64 = parsed.imageBase64 || null;
-      imageMimeType = parsed.mimeType || "image/jpeg";
-      console.log(`[WA Webhook] WaSender incoming from: ${from}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
     }
 
     if (!from || (!text && !isImage) || fromMe) {
@@ -2067,6 +2146,16 @@ serve(async (req: Request) => {
       }
       return new Response("ok", { headers: corsHeaders });
     }
+
+    try {
+      await supabase.from("system_logs").insert({
+        source: "whatsapp-webhook",
+        event: "webhook.incoming",
+        level: "info",
+        message: `Incoming WhatsApp from ${from}: "${text.slice(0, 50)}"`,
+        data: { from, text: text.slice(0, 200), messageId, isKova, isTwilio },
+      });
+    } catch (_) {}
 
     // ── INCOMING DEDUPLICATION SAFEGUARD ─────────────────────────────────────
     // 1. In-memory short-burst dedup check (prevents double executions within 3.5s)
@@ -5703,6 +5792,23 @@ Return ONLY a valid JSON object matching these keys.`;
 
     const finalReply = isSenderAdmin ? reply : sanitizePublicFailureReason(reply);
     if (finalReply) await sendWhatsAppMessage(from, finalReply);
+
+    if (isKova) {
+      return new Response(JSON.stringify({
+        status: "success",
+        reply: finalReply,
+        message: finalReply,
+        text: finalReply,
+        data: {
+          recipient: from,
+          message: finalReply,
+          text: finalReply,
+        }
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
 
     if (isTwilio) {
       return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`, {
