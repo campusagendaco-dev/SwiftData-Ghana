@@ -2048,7 +2048,50 @@ export async function checkAndTriggerDeliveryOnFire(
       cleanBotPhone = "233" + cleanBotPhone;
     }
 
-    // 4. Construct high-conversion dynamic delivery fire alert message
+    // 4. Resolve live popular package prices
+    let mtn1Gb = "4.40";
+    let mtn2Gb = "8.50";
+    let mtn5Gb = "24.00";
+    let telecel1Gb = "2.00";
+    let at1Gb = "6.00";
+    let waecPrice = "18.00";
+
+    try {
+      const { data: pkgs } = await supabaseAdmin
+        .from("global_package_settings")
+        .select("network, package_size, public_price")
+        .eq("is_unavailable", false)
+        .in("package_size", ["1GB", "2GB", "5GB", "10GB"]);
+
+      if (pkgs && pkgs.length > 0) {
+        const findPrice = (net: string, size: string) => {
+          const match = pkgs.find((p: any) => 
+            p.network?.toUpperCase().includes(net.toUpperCase()) && 
+            p.package_size?.toUpperCase() === size.toUpperCase()
+          );
+          return match?.public_price ? Number(match.public_price).toFixed(2) : null;
+        };
+
+        mtn1Gb = findPrice("MTN", "1GB") || mtn1Gb;
+        mtn2Gb = findPrice("MTN", "2GB") || mtn2Gb;
+        mtn5Gb = findPrice("MTN", "5GB") || mtn5Gb;
+        telecel1Gb = findPrice("Telecel", "1GB") || telecel1Gb;
+        at1Gb = findPrice("Airtel", "1GB") || findPrice("AT", "1GB") || at1Gb;
+      }
+
+      const { data: sysSet } = await supabaseAdmin
+        .from("system_settings")
+        .select("wassce_price")
+        .eq("id", 1)
+        .maybeSingle();
+      if (sysSet?.wassce_price) {
+        waecPrice = Number(sysSet.wassce_price).toFixed(2);
+      }
+    } catch (priceErr) {
+      console.warn("[Delivery On Fire] Failed to fetch live prices:", priceErr);
+    }
+
+    // 5. Construct high-conversion dynamic delivery fire alert message
     const headline = orderCount >= 50 ? `🔥 *50+ ORDERS DELIVERED & COUNTING!* ⚡🚀` : `🔥 *DELIVERY IS ON FIRE!* ⚡🚀`;
     const subline = orderCount >= 10
       ? `Over *${orderCount} data bundles & telecom orders* have just been successfully fulfilled in real-time with zero delays! 🇬🇭✨`
@@ -2060,12 +2103,18 @@ export async function checkAndTriggerDeliveryOnFire(
       `*Automated Delivery Engine is 100% ACTIVE!*`,
       subline,
       ``,
-      `📶 *MTN Bundles* (SME, Retail, MashUp, Social, Midnight)`,
-      `📶 *Telecel Bundles* (Instant automated top-ups)`,
-      `📶 *AirtelTigo Bundles* (Instant data delivery)`,
-      `📱 *Airtime Recharge* (All networks)`,
-      `💡 *ECG & Utility Bills* (Prepaid meter tokens & postpaid)`,
-      `🎓 *WAEC Result Checkers* (WASSCE & BECE Instant PINs)`,
+      `💥 *POPULAR PACKAGE PRICES:*`,
+      `💛 *MTN SME / Data:*`,
+      `  • 1GB — *GH₵${mtn1Gb}*`,
+      `  • 2GB — *GH₵${mtn2Gb}*`,
+      `  • 5GB — *GH₵${mtn5Gb}*`,
+      `🔴 *Telecel Data:*`,
+      `  • 1GB — *from GH₵${telecel1Gb}*`,
+      `🔵 *AirtelTigo / AT Data:*`,
+      `  • 1GB — *from GH₵${at1Gb}*`,
+      `🎓 *WAEC Result Checkers:* *GH₵${waecPrice}*`,
+      `📱 *Airtime:* All Networks (Instant top-up)`,
+      `💡 *ECG & Utilities:* Instant Prepaid Tokens`,
       ``,
       `👉 *Order via Website:* ${targetSiteUrl}`,
       `🤖 *Order via WhatsApp Bot:* https://wa.me/${cleanBotPhone}?text=Hi`,
