@@ -178,6 +178,7 @@ export default function AdminOrders() {
   const [receiptOrder, setReceiptOrder] = useState<OrderRow | null>(null);
   const [resendingSmsId, setResendingSmsId] = useState<string | null>(null);
   const [bulkResendingSms, setBulkResendingSms] = useState(false);
+  const [bulkCheckingStatus, setBulkCheckingStatus] = useState(false);
 
   const handleQuickResendSms = async (order: OrderRow) => {
     if (!order.customer_phone) {
@@ -946,6 +947,80 @@ export default function AdminOrders() {
     setBulkUpdating(false);
   };
 
+  const handleBulkCheckStatus = async (targetOrderIds?: string[]) => {
+    const isExplicit = Array.isArray(targetOrderIds) && targetOrderIds.length > 0;
+    const ids = isExplicit
+      ? targetOrderIds
+      : (selectedIds.size > 0 
+          ? Array.from(selectedIds) 
+          : allOrders.filter(o => o.status === "processing" || o.status === "paid" || o.status === "in_queue").map(o => o.id));
+
+    if (ids.length === 0) {
+      toast({
+        title: "No Orders to Check 📡",
+        description: "Select orders using the checkboxes, or ensure there are active processing orders on the page.",
+      });
+      return;
+    }
+
+    setBulkCheckingStatus(true);
+    toast({
+      title: "Checking Live Provider Status 📡",
+      description: `Querying carrier APIs for ${ids.length} order(s)...`,
+    });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("check-order-status", {
+        body: { order_ids: ids },
+      });
+
+      if (error) throw error;
+      if (!data || !data.success) {
+        throw new Error(data?.error || "Failed to check order statuses");
+      }
+
+      const summary = data.summary || {};
+      const results = data.results || [];
+      const updatedCount = summary.updated || results.filter((r: any) => r.updated).length;
+
+      // Update local state immediately with updated order statuses
+      if (Array.isArray(results) && results.length > 0) {
+        const resultMap = new Map(results.map((r: any) => [r.id, r]));
+        setAllOrders(prev => prev.map(o => {
+          const match = resultMap.get(o.id);
+          if (!match) return o;
+          return {
+            ...o,
+            status: match.status || o.status,
+            failure_reason: match.failure_reason !== undefined ? match.failure_reason : o.failure_reason
+          };
+        }));
+      }
+
+      toast({
+        title: `Bulk Status Check Complete! 📡`,
+        description: `Checked ${ids.length} orders: ${summary.fulfilled || 0} Fulfilled ✅, ${summary.failed || 0} Failed ❌, ${summary.processing || 0} In Processing ⏳${updatedCount > 0 ? ` (${updatedCount} updated)` : ""}`,
+      });
+
+      if (currentUser) {
+        await logAudit(currentUser.id, "bulk_check_order_status", {
+          total: ids.length,
+          summary
+        });
+      }
+
+      await fetchOrders(true);
+    } catch (err: any) {
+      toast({
+        title: "Bulk Status Check Error",
+        description: err.message || "Failed to verify statuses with upstream providers",
+        variant: "destructive",
+      });
+    } finally {
+      setBulkCheckingStatus(false);
+    }
+  };
+
   // Full CSV / Excel Export
   const handleExportCSV = () => {
     if (allOrders.length === 0) {
@@ -1287,11 +1362,12 @@ export default function AdminOrders() {
             <Button
               size="sm"
               className="gap-2 h-10 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold transition-all active:scale-95"
-              onClick={handleHealProcessingOrders}
-              disabled={healingProcessing || allOrders.filter(o => o.status === "processing").length === 0}
+              onClick={() => handleBulkCheckStatus(allOrders.filter(o => o.status === "processing").map(o => o.id))}
+              disabled={bulkCheckingStatus || allOrders.filter(o => o.status === "processing").length === 0}
+              title="Query upstream carrier/provider API live for all processing orders on this page"
             >
-              {healingProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
-              {healingProcessing ? "Polling…" : `Poll Provider (${allOrders.filter(o => o.status === "processing").length})`}
+              {bulkCheckingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {bulkCheckingStatus ? "Checking Status..." : `Bulk Check Status (${allOrders.filter(o => o.status === "processing").length})`}
             </Button>
 
             <Button
@@ -1659,6 +1735,17 @@ export default function AdminOrders() {
             >
               {bulkUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Apply Bulk Change
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || bulkCheckingStatus}
+              onClick={() => handleBulkCheckStatus()}
+              className="h-8 gap-1.5 rounded-lg text-xs font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+              title="Query upstream carrier/provider API live for all selected orders"
+            >
+              {bulkCheckingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Check Provider Status ({selectedIds.size})
             </Button>
             <Button
               size="sm"

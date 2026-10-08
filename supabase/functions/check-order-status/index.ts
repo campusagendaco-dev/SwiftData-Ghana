@@ -59,14 +59,6 @@ serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const targetReference = String(body.order_id || body.reference || body.orderId || "").trim();
-
-    if (!targetReference) {
-      return new Response(JSON.stringify({ error: "Missing order_id or reference parameter" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     // 1. Determine caller role (Admin vs Regular User/Guest)
     let isAdmin = false;
@@ -90,6 +82,192 @@ serve(async (req: Request) => {
         const { data: { user } } = await supabaseAdmin.auth.getUser(token).catch(() => ({ data: { user: null } }));
         authUser = user;
       }
+    }
+
+    // 1.5. Bulk Order Status Verification Mode
+    const rawOrderIds = body.order_ids || body.orderIds;
+    if (Array.isArray(rawOrderIds) && rawOrderIds.length > 0) {
+      const orderIds = Array.from(new Set(rawOrderIds.map((id: any) => String(id || "").trim()).filter(Boolean))).slice(0, 100);
+
+      if (orderIds.length === 0) {
+        return new Response(JSON.stringify({ error: "No valid order IDs provided" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Fetch target orders
+      const { data: orders, error: ordersErr } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .in("id", orderIds);
+
+      if (ordersErr || !orders || orders.length === 0) {
+        return new Response(JSON.stringify({ error: "No matching orders found", details: ordersErr?.message }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Permission Check: Non-admins can only check their own orders
+      let targetOrders = orders;
+      if (!isAdmin) {
+        if (!authUser) {
+          return new Response(JSON.stringify({ error: "Unauthorized access to bulk order status" }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        targetOrders = orders.filter((o: any) => (o.agent_id === authUser.id) || (o.customer_id === authUser.id));
+        if (targetOrders.length === 0) {
+          return new Response(JSON.stringify({ error: "Unauthorized access to requested orders" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      // Preload active providers
+      const { data: provList } = await supabaseAdmin.from("providers").select("*");
+      const providerMap = new Map((provList || []).map((p: any) => [p.id, p]));
+
+      let fulfilledCount = 0;
+      let failedCount = 0;
+      let processingCount = 0;
+      let unchangedCount = 0;
+      let errorCount = 0;
+      const results: any[] = [];
+
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < targetOrders.length; i += BATCH_SIZE) {
+        const batch = targetOrders.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(async (order: any) => {
+          let currentStatus = order.status;
+          let currentFailureReason = order.failure_reason;
+          let providerInfo = order.provider_id ? providerMap.get(order.provider_id) : null;
+          let liveProviderResult: any = null;
+          let rawStatus = "";
+          let wasUpdated = false;
+
+          try {
+            if (currentStatus === "fulfilled") {
+              fulfilledCount++;
+              unchangedCount++;
+              rawStatus = "delivered";
+            } else if (currentStatus === "refunded") {
+              unchangedCount++;
+              rawStatus = "refunded";
+            } else if (!providerInfo) {
+              if (currentStatus === "processing") processingCount++;
+              else unchangedCount++;
+              rawStatus = currentStatus;
+            } else {
+              const adapter = getProviderAdapter(providerInfo.handler_type);
+              const activeOrderId = order.provider_order_id || order.id;
+
+              console.log(`[check-order-status-bulk] Checking ${providerInfo.name} for order ${order.id} (tx: ${activeOrderId})...`);
+              const pRes = await adapter.checkStatus(
+                supabaseAdmin,
+                providerInfo,
+                activeOrderId,
+                order.id
+              );
+
+              liveProviderResult = pRes;
+              rawStatus = String(pRes?.status || "").toLowerCase().trim();
+
+              const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
+              const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "refunded" || rawStatus === "reversed" || rawStatus === "declined" || pRes?.ok === false;
+
+              if (isDelivered) {
+                currentStatus = "fulfilled";
+                currentFailureReason = null;
+                fulfilledCount++;
+                wasUpdated = order.status !== "fulfilled";
+
+                if (order.status !== "fulfilled") {
+                  await supabaseAdmin.from("orders").update({
+                    status: "fulfilled",
+                    failure_reason: null,
+                    provider_response: pRes.raw || pRes,
+                    updated_at: new Date().toISOString()
+                  }).eq("id", order.id);
+
+                  await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                  console.log(`[check-order-status-bulk] Order ${order.id} marked FULFILLED.`);
+                }
+              } else if (isFailed) {
+                currentStatus = "fulfillment_failed";
+                currentFailureReason = pRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Carrier dispatch rejected");
+                failedCount++;
+                wasUpdated = order.status !== "fulfillment_failed";
+
+                if (order.status !== "fulfillment_failed") {
+                  await supabaseAdmin.from("orders").update({
+                    status: "fulfillment_failed",
+                    failure_reason: currentFailureReason,
+                    provider_response: pRes.raw || pRes,
+                    updated_at: new Date().toISOString()
+                  }).eq("id", order.id);
+                  console.log(`[check-order-status-bulk] Order ${order.id} marked FAILED (${currentFailureReason}).`);
+                }
+              } else {
+                processingCount++;
+                if (pRes.raw || pRes.id) {
+                  await supabaseAdmin.from("orders").update({
+                    provider_response: pRes.raw || pRes,
+                    updated_at: new Date().toISOString()
+                  }).eq("id", order.id);
+                }
+              }
+            }
+          } catch (itemErr: any) {
+            errorCount++;
+            console.warn(`[check-order-status-bulk] Error checking order ${order.id}:`, itemErr?.message || itemErr);
+          }
+
+          results.push({
+            id: order.id,
+            network: order.network,
+            package_size: order.package_size,
+            customer_phone: order.customer_phone,
+            previous_status: order.status,
+            status: currentStatus,
+            updated: wasUpdated,
+            provider_name: isAdmin ? (providerInfo?.name || null) : undefined,
+            raw_status: rawStatus || currentStatus,
+            failure_reason: isAdmin ? currentFailureReason : sanitizeForUser(currentFailureReason)
+          });
+        }));
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        is_admin: isAdmin,
+        summary: {
+          total: targetOrders.length,
+          fulfilled: fulfilledCount,
+          failed: failedCount,
+          processing: processingCount,
+          unchanged: unchangedCount,
+          errors: errorCount,
+          updated: results.filter(r => r.updated).length
+        },
+        results,
+        last_checked_at: new Date().toISOString(),
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const targetReference = String(body.order_id || body.reference || body.orderId || "").trim();
+
+    if (!targetReference) {
+      return new Response(JSON.stringify({ error: "Missing order_id, order_ids, or reference parameter" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // 2. Fetch the target order

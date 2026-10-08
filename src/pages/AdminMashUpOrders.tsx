@@ -94,6 +94,7 @@ const AdminMashUpOrders = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkCheckingStatus, setBulkCheckingStatus] = useState(false);
 
   useEffect(() => {
     const fetchProviders = async () => {
@@ -382,6 +383,79 @@ const AdminMashUpOrders = () => {
       fetchOrders();
     }
     setBulkUpdating(false);
+  };
+
+  const handleBulkCheckStatus = async (targetOrderIds?: string[]) => {
+    const isExplicit = Array.isArray(targetOrderIds) && targetOrderIds.length > 0;
+    const ids = isExplicit
+      ? targetOrderIds
+      : (selectedIds.size > 0 
+          ? Array.from(selectedIds) 
+          : allOrders.filter(o => o.status === "processing" || o.status === "paid").map(o => o.id));
+
+    if (ids.length === 0) {
+      toast({
+        title: "No Orders to Check 📡",
+        description: "Select orders using the checkboxes, or ensure there are active processing orders on the page.",
+      });
+      return;
+    }
+
+    setBulkCheckingStatus(true);
+    toast({
+      title: "Checking Live Provider Status 📡",
+      description: `Querying carrier APIs for ${ids.length} order(s)...`,
+    });
+
+    try {
+      const { data, error } = await supabase.functions.invoke("check-order-status", {
+        body: { order_ids: ids },
+      });
+
+      if (error) throw error;
+      if (!data || !data.success) {
+        throw new Error(data?.error || "Failed to check order statuses");
+      }
+
+      const summary = data.summary || {};
+      const results = data.results || [];
+      const updatedCount = summary.updated || results.filter((r: any) => r.updated).length;
+
+      if (Array.isArray(results) && results.length > 0) {
+        const resultMap = new Map(results.map((r: any) => [r.id, r]));
+        setAllOrders(prev => prev.map(o => {
+          const match = resultMap.get(o.id);
+          if (!match) return o;
+          return {
+            ...o,
+            status: match.status || o.status,
+            failure_reason: match.failure_reason !== undefined ? match.failure_reason : o.failure_reason
+          };
+        }));
+      }
+
+      toast({
+        title: `Bulk Status Check Complete! 📡`,
+        description: `Checked ${ids.length} orders: ${summary.fulfilled || 0} Fulfilled ✅, ${summary.failed || 0} Failed ❌, ${summary.processing || 0} In Processing ⏳${updatedCount > 0 ? ` (${updatedCount} updated)` : ""}`,
+      });
+
+      if (currentUser) {
+        await logAudit(currentUser.id, "bulk_check_mashup_status", {
+          total: ids.length,
+          summary
+        });
+      }
+
+      await fetchOrders(true);
+    } catch (err: any) {
+      toast({
+        title: "Bulk Status Check Error",
+        description: err.message || "Failed to verify statuses with upstream providers",
+        variant: "destructive",
+      });
+    } finally {
+      setBulkCheckingStatus(false);
+    }
   };
 
   const handleHealProcessingOrders = async () => {
@@ -728,6 +802,16 @@ const AdminMashUpOrders = () => {
         >
           {bulkUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Update Selected ({selectedIds.size})
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={selectedIds.size === 0 || bulkCheckingStatus}
+          onClick={() => handleBulkCheckStatus()}
+          className="gap-2 border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+        >
+          {bulkCheckingStatus ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          Check Status ({selectedIds.size})
         </Button>
       </div>
 
