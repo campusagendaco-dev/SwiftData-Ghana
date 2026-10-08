@@ -9,6 +9,7 @@ interface ProviderBadgeProps {
   providerOrderId?: string | null;
   network?: string | null;
   orderType?: string | null;
+  paymentMethod?: string | null;
   metadata?: any;
   status?: string;
   providers?: any[];
@@ -45,7 +46,8 @@ export function getProviderDetails(
   status?: string,
   providersList?: any[],
   network?: string | null,
-  orderType?: string | null
+  orderType?: string | null,
+  paymentMethod?: string | null
 ) {
   // 0. Handle non-telecom order types (Wallet Top-up, Direct Debit, Agent Activation)
   const typeLower = String(orderType || "").toLowerCase();
@@ -55,16 +57,44 @@ export function getProviderDetails(
   const isAgentActivation = typeLower === "agent_activation" || typeLower === "sub_agent_activation" || pkgUpper.includes("ACTIVATION");
 
   if (isWalletTopup) {
-    const isDirect = metadata?.payment_method === "direct_debit" || metadata?.gateway === "direct_debit" || metadata?.payment_type === "direct_debit";
-    const isWalletTransfer = metadata?.payment_method === "wallet" || metadata?.gateway === "wallet";
+    const pmLower = String(paymentMethod || metadata?.payment_method || metadata?.gateway || metadata?.payment_type || "").toLowerCase();
+    const isDirect = pmLower === "direct_debit";
+    const isWalletTransfer = pmLower === "wallet";
+    
+    // Explicit Admin deposit detection
+    const isExplicitAdmin = 
+      pmLower === "admin" || 
+      pmLower === "manual" || 
+      pmLower === "system" ||
+      metadata?.source === "admin" || 
+      metadata?.method === "admin_manual_credit" || 
+      metadata?.type === "admin_deposit";
+
+    const hasPaystackRef = Boolean(
+      metadata?.paystack_reference || 
+      (typeof metadata?.reference === "string" && (metadata.reference.startsWith("DEP-") || metadata.reference.startsWith("T"))) ||
+      (providerOrderId && String(providerOrderId).toLowerCase().includes("paystack")) ||
+      pmLower === "paystack"
+    );
+
     const ref = providerOrderId || metadata?.paystack_reference || metadata?.reference || metadata?.transaction_id || null;
-    let name = isDirect ? "Direct Debit" : (isWalletTransfer ? "Wallet Transfer" : "Paystack Gateway");
-    if (providerName && (providerName.toLowerCase().includes("paystack") || providerName.toLowerCase().includes("direct"))) {
+
+    if (isExplicitAdmin || (!hasPaystackRef && !isDirect && !isWalletTransfer)) {
+      return {
+        name: "Admin Deposit",
+        badgeClass: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+        refId: ref || metadata?.admin_id || null,
+        isPendingDispatch: false,
+      };
+    }
+
+    let name = isDirect ? "Direct Debit" : (isWalletTransfer ? "Wallet Transfer" : (hasPaystackRef ? "Paystack Gateway" : "Wallet Top-up"));
+    if (providerName && (providerName.toLowerCase().includes("paystack") || providerName.toLowerCase().includes("direct") || providerName.toLowerCase().includes("admin"))) {
       name = providerName;
     }
     return {
       name,
-      badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+      badgeClass: isDirect ? "bg-amber-500/15 text-amber-400 border-amber-500/30" : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
       refId: ref,
       isPendingDispatch: false,
     };
@@ -177,6 +207,7 @@ export function ProviderBadge({
   providerOrderId,
   network,
   orderType,
+  paymentMethod,
   metadata,
   status,
   providers = [],
@@ -202,7 +233,8 @@ export function ProviderBadge({
     status,
     providers,
     network,
-    orderType
+    orderType,
+    paymentMethod
   );
 
   return (

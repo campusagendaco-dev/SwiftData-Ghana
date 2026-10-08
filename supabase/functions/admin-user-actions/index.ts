@@ -691,6 +691,14 @@ serve(async (req: Request) => {
             amount,
             profit: 0,
             status: "fulfilled",
+            payment_method: "admin",
+            package_size: "Admin Credit",
+            metadata: {
+              source: "admin",
+              payment_method: "admin",
+              method: "admin_manual_credit",
+              wallet_type: "main",
+            },
           });
 
         if (orderError) throw orderError;
@@ -728,6 +736,14 @@ serve(async (req: Request) => {
             amount,
             profit: 0,
             status: "fulfilled",
+            payment_method: "admin",
+            package_size: "Admin Credit (API)",
+            metadata: {
+              source: "admin",
+              payment_method: "admin",
+              method: "admin_manual_credit",
+              wallet_type: "api",
+            },
           });
 
         if (orderError) throw orderError;

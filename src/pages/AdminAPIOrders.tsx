@@ -652,6 +652,7 @@ export default function AdminAPIOrders() {
                           providerOrderId={o.provider_order_id}
                           network={o.network}
                           orderType={o.order_type}
+                          paymentMethod={o.payment_method}
                           metadata={o.metadata}
                           status={o.status}
                         />

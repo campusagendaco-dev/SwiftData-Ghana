@@ -730,6 +730,7 @@ const AdminStandardOrders = () => {
                             providerOrderId={o.provider_order_id}
                             network={o.network}
                             orderType={o.order_type}
+                            paymentMethod={(o as any).payment_method}
                             metadata={o.metadata}
                             status={o.status}
                           />

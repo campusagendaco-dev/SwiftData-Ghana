@@ -1906,12 +1906,14 @@ export default function AdminOrders() {
 
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <Badge className={`text-[10px] border font-bold ${getNetworkBadge(order.network)}`}>
-                        {order.network || "Standard"}
+                        {order.network || (order.order_type === "wallet_topup" ? (order.payment_method === "admin" ? "Admin" : "Deposit") : "Standard")}
                       </Badge>
                     </td>
 
                     <td className="px-4 py-3.5 max-w-[150px]">
-                      <p className="font-semibold text-foreground truncate">{order.package_size || "—"}</p>
+                      <p className="font-semibold text-foreground truncate">
+                        {order.package_size || (order.order_type === "wallet_topup" ? (order.payment_method === "admin" ? "Admin Credit" : "Wallet Top-up") : "—")}
+                      </p>
                       {order.metadata?.prepaid_token && (
                         <div className="mt-1 text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-mono truncate" title={order.metadata.prepaid_token}>
                           ECG: {order.metadata.prepaid_token}
@@ -1925,6 +1927,7 @@ export default function AdminOrders() {
                         providerOrderId={order.provider_order_id}
                         network={order.network}
                         orderType={order.order_type}
+                        paymentMethod={order.payment_method}
                         metadata={order.metadata}
                         status={order.status}
                         providers={providers}
@@ -2140,7 +2143,9 @@ export default function AdminOrders() {
                 </div>
                 <div>
                   <p className="text-[10px] uppercase font-bold text-muted-foreground">Network & Package</p>
-                  <p className="font-bold text-foreground mt-0.5">{order.network || "—"} ({order.package_size || "—"})</p>
+                  <p className="font-bold text-foreground mt-0.5">
+                    {order.network || (order.order_type === "wallet_topup" ? (order.payment_method === "admin" ? "Admin" : "Deposit") : "—")} ({order.package_size || (order.order_type === "wallet_topup" ? (order.payment_method === "admin" ? "Admin Credit" : "Wallet Top-up") : "—")})
+                  </p>
                 </div>
                 <div className="col-span-2 flex items-center justify-between pt-1.5 border-t border-white/5">
                   <span className="text-[10px] uppercase font-bold text-muted-foreground">Provider Gateway:</span>
@@ -2149,6 +2154,7 @@ export default function AdminOrders() {
                     providerOrderId={order.provider_order_id}
                     network={order.network}
                     orderType={order.order_type}
+                    paymentMethod={order.payment_method}
                     metadata={order.metadata}
                     status={order.status}
                     providers={providers}
