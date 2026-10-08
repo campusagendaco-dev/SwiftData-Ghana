@@ -2052,6 +2052,9 @@ export async function checkAndTriggerDeliveryOnFire(
     let mtn1Gb = "4.40";
     let mtn2Gb = "8.50";
     let mtn5Gb = "24.00";
+    let mtn10Gb = "42.50";
+    let mtn50Gb = "195.00";
+    let mtn100Gb = "375.00";
     let telecel1Gb = "2.00";
     let at1Gb = "6.00";
     let waecPrice = "18.00";
@@ -2061,7 +2064,7 @@ export async function checkAndTriggerDeliveryOnFire(
         .from("global_package_settings")
         .select("network, package_size, public_price")
         .eq("is_unavailable", false)
-        .in("package_size", ["1GB", "2GB", "5GB", "10GB"]);
+        .in("package_size", ["1GB", "2GB", "5GB", "10GB", "50GB", "100GB"]);
 
       if (pkgs && pkgs.length > 0) {
         const findPrice = (net: string, size: string) => {
@@ -2075,6 +2078,9 @@ export async function checkAndTriggerDeliveryOnFire(
         mtn1Gb = findPrice("MTN", "1GB") || mtn1Gb;
         mtn2Gb = findPrice("MTN", "2GB") || mtn2Gb;
         mtn5Gb = findPrice("MTN", "5GB") || mtn5Gb;
+        mtn10Gb = findPrice("MTN", "10GB") || mtn10Gb;
+        mtn50Gb = findPrice("MTN", "50GB") || mtn50Gb;
+        mtn100Gb = findPrice("MTN", "100GB") || mtn100Gb;
         telecel1Gb = findPrice("Telecel", "1GB") || telecel1Gb;
         at1Gb = findPrice("Airtel", "1GB") || findPrice("AT", "1GB") || at1Gb;
       }
@@ -2103,17 +2109,21 @@ export async function checkAndTriggerDeliveryOnFire(
       `*Automated Delivery Engine is 100% ACTIVE!*`,
       subline,
       ``,
-      `💥 *POPULAR PACKAGE PRICES:*`,
-      `💛 *MTN SME / Data:*`,
-      `  • 1GB — *GH₵${mtn1Gb}*`,
-      `  • 2GB — *GH₵${mtn2Gb}*`,
-      `  • 5GB — *GH₵${mtn5Gb}*`,
-      `🔴 *Telecel Data:*`,
-      `  • 1GB — *from GH₵${telecel1Gb}*`,
-      `🔵 *AirtelTigo / AT Data:*`,
-      `  • 1GB — *from GH₵${at1Gb}*`,
+      `💥 *AVAILABLE PACKAGES & PRICES:*`,
+      `💛 *MTN Data (1GB – 100GB):*`,
+      `  • 1GB – 100GB — *from GH₵${mtn1Gb} to GH₵${mtn100Gb}*`,
+      `  • 1GB: *GH₵${mtn1Gb}* | 2GB: *GH₵${mtn2Gb}*`,
+      `  • 5GB: *GH₵${mtn5Gb}* | 10GB: *GH₵${mtn10Gb}*`,
+      `  • 50GB: *GH₵${mtn50Gb}* | 100GB: *GH₵${mtn100Gb}*`,
+      ``,
+      `🔴 *Telecel Data (1GB – 50GB):*`,
+      `  • 1GB – 50GB — *from GH₵${telecel1Gb}*`,
+      ``,
+      `🔵 *AirtelTigo / AT Data (1GB – 50GB):*`,
+      `  • 1GB – 50GB — *from GH₵${at1Gb}*`,
+      ``,
       `🎓 *WAEC Result Checkers:* *GH₵${waecPrice}*`,
-      `📱 *Airtime:* All Networks (Instant top-up)`,
+      `📱 *Airtime:* All Networks (0% Fee Instant Top-up)`,
       `💡 *ECG & Utilities:* Instant Prepaid Tokens`,
       ``,
       `👉 *Order via Website:* ${targetSiteUrl}`,
