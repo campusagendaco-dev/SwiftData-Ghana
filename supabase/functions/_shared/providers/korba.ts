@@ -120,6 +120,27 @@ export class KorbaAdapter implements ProviderAdapter {
       }
     } else {
       // Data Topup
+      const pkgUpper = String(data.package_size || data.plan || "").toUpperCase();
+      const isStandardSmeSize = /^\d+(\.\d+)?\s*(GB|MB)$/i.test(String(data.package_size || data.plan || "").trim());
+      const isKorbaPackagePattern = pkgUpper.startsWith("GHS") || 
+        pkgUpper.includes("RACT_DATA") || 
+        pkgUpper.includes("KOKROKOO") || 
+        pkgUpper.includes("MIDNIGHT") || 
+        pkgUpper.includes("SOCIAL") || 
+        pkgUpper.includes("VIDEO") || 
+        pkgUpper.includes("IDD");
+      const orderCat = String(data.metadata?.category || data.metadata?.package_category || "").toLowerCase();
+      const isExplicitKorba = data.metadata?.is_korba === true || data.metadata?.is_korba === "true" || orderCat === "korba" || orderCat === "retail";
+
+      if (!isExplicitKorba && (orderCat === "affordable" || orderCat === "sme" || orderCat.includes("sme") || (isStandardSmeSize && !isKorbaPackagePattern))) {
+        console.warn(`[KorbaAdapter] Blocked attempt to purchase SME data bundle via Korba: ${data.package_size || data.plan} for ${rawNet}`);
+        return {
+          ok: false,
+          reason: "Affordable SME data bundles cannot be fulfilled by Korba API. Routing to primary aggregators.",
+          status: "failed"
+        };
+      }
+
       let targetPath = "mtn_data_topup/";
       if (rawNet.includes("TELECEL") || rawNet.includes("VODA")) {
         targetPath = "vodafone_data_topup/";
@@ -157,7 +178,8 @@ export class KorbaAdapter implements ProviderAdapter {
             (dbNet === "MTN" && (p.network === "MTN" || p.network === "YELLO"))
           );
 
-          const searchPool = netPkgs.length > 0 ? netPkgs : pkgMappings;
+          // Never search across other networks
+          const searchPool = netPkgs;
 
           // 1. Exact match on external_id
           matchedPackage = searchPool.find((p: any) => p.external_id === reqSize);

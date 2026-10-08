@@ -92,12 +92,15 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     pkgUpper.includes("VIDEO") || 
     pkgUpper.includes("IDD");
 
-  const isStandardSmeSize = /^\d+(\.\d+)?\s*GB$/i.test(String(order?.package_size || "").trim());
+  const isStandardSmeSize = /^\d+(\.\d+)?\s*(GB|MB)$/i.test(String(order?.package_size || "").trim());
+  const isTelecomNetwork = uppercaseNet.includes("MTN") || uppercaseNet.includes("TELECEL") || uppercaseNet.includes("VODA") || uppercaseNet.includes("AT") || uppercaseNet.includes("AIRTEL");
+
   const isAffordableSmeBundle = isDataOrder && (
     orderCategory === "affordable" || 
     orderCategory === "sme" || 
     orderCategory.includes("sme") ||
-    (isStandardSmeSize && !isKorbaPackagePattern)
+    (isStandardSmeSize && !isKorbaPackagePattern) ||
+    (isTelecomNetwork && !isKorbaPackagePattern && !isExplicitKorbaCategory && order?.metadata?.is_korba !== true && order?.metadata?.is_korba !== "true")
   );
 
   let isExplicitKorba = !isAffordableSmeBundle && korbaProvider && (
@@ -314,6 +317,11 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary bypass. Prioritizing ${nonBeneficiaryProv.name}...`);
       return [nonBeneficiaryProv, ...activeProviders.filter((p: any) => p.id !== nonBeneficiaryProv.id)];
     }
+  }
+
+  // Final Ironclad Safety: SME bundles must NEVER have Korba in activeProviders
+  if (isAffordableSmeBundle) {
+    activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
   }
 
   return activeProviders;
