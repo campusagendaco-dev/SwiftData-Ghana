@@ -1998,7 +1998,7 @@ export async function checkAndTriggerDeliveryOnFire(
       }
     }
 
-    // 2. Count fulfilled orders in the recent window (Threshold: 2+ successful fulfillments)
+    // 2. Count fulfilled orders in the recent window (Threshold: 20+ successful fulfillments)
     const { data: fulfilledOrders, error } = await supabaseAdmin
       .from("orders")
       .select("id, status, updated_at, network, package_size")
@@ -2006,7 +2006,7 @@ export async function checkAndTriggerDeliveryOnFire(
       .gte("updated_at", windowStart)
       .limit(100);
 
-    const minThreshold = options?.minOrders || 2;
+    const minThreshold = options?.minOrders || 20;
     if (error || !fulfilledOrders || fulfilledOrders.length < minThreshold) {
       if (!options?.force) return false;
     }
