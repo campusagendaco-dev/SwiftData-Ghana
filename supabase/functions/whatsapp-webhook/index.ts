@@ -400,6 +400,68 @@ function parseMessage(payload: any): {
   };
 }
 
+async function verifyKovaHmac(rawBody: string, signatureHeader: string, secret: string): Promise<boolean> {
+  try {
+    const cleanSecret = secret.trim();
+    if (!cleanSecret) return true;
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(cleanSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+    const hashArray = Array.from(new Uint8Array(signatureBuffer));
+    const hex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    const expected = `sha256=${hex}`;
+
+    if (signatureHeader.trim().length !== expected.length) return false;
+    let result = 0;
+    for (let i = 0; i < expected.length; i++) {
+      result |= signatureHeader.charCodeAt(i) ^ expected.charCodeAt(i);
+    }
+    return result === 0;
+  } catch (err) {
+    console.error("[Kova HMAC] Error:", err);
+    return false;
+  }
+}
+
+function parseKovaPayload(payload: any): { from: string; text: string; messageId: string; isImage: boolean; imageUrl?: string | null } {
+  // Check Meta Cloud API nested structure
+  const metaMsg = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  if (metaMsg) {
+    const from = String(metaMsg.from || "").replace(/\D/g, "");
+    const text = String(metaMsg.text?.body || metaMsg.caption || metaMsg.button?.text || "");
+    const isImage = metaMsg.type === "image";
+    return { from, text, messageId: metaMsg.id || "", isImage, imageUrl: metaMsg.image?.link || null };
+  }
+
+  // Check Kova data/message object
+  const d = payload?.data || payload?.message || payload;
+  const rawFrom = String(d?.from || d?.sender || d?.customer_phone || d?.phone || d?.recipient || payload?.from || payload?.sender || "");
+  const from = rawFrom.replace(/\D/g, "");
+  const text = String(
+    d?.text?.body || 
+    d?.text || 
+    d?.message?.text || 
+    d?.message?.body || 
+    d?.message || 
+    d?.body || 
+    d?.content || 
+    payload?.text || 
+    payload?.message || 
+    ""
+  ).trim();
+  const messageId = String(d?.id || d?.message_id || payload?.id || payload?.delivery_id || "");
+  const isImage = d?.type === "image" || Boolean(d?.image || d?.media_url);
+  const imageUrl = d?.image?.url || d?.media_url || null;
+
+  return { from, text, messageId, isImage, imageUrl };
+}
+
 // ── Data access ───────────────────────────────────────────────────────────────
 
 type Agent = {
@@ -1908,7 +1970,10 @@ serve(async (req: Request) => {
   let imageMimeType = "image/jpeg";
 
   try {
-    const contentType = (req.headers.get("content-type") || "").toLowerCase();
+    const kovaEvent = req.headers.get("x-kova-callback-event");
+    const kovaSig = req.headers.get("x-kova-signature");
+    const kovaDelivery = req.headers.get("x-kova-delivery");
+    const isKova = Boolean(kovaEvent || kovaSig || kovaDelivery);
 
     if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
       // Incoming from Twilio WhatsApp API
@@ -1931,6 +1996,36 @@ serve(async (req: Request) => {
       }
 
       console.log(`[WA Webhook] Twilio incoming from: ${from} (raw: ${rawFrom}), text: "${text.slice(0, 50)}", isImage: ${isImage}`);
+    } else if (isKova) {
+      // Incoming from Arkesel Kova WhatsApp Business API
+      const rawBody = await req.text().catch(() => "");
+      const kovaSecret = Deno.env.get("KOVA_SIGNING_SECRET") || "";
+
+      if (kovaSecret && kovaSig) {
+        const valid = await verifyKovaHmac(rawBody, kovaSig, kovaSecret);
+        if (!valid) {
+          console.warn("[WA Webhook] Kova HMAC verification failed.");
+          return new Response("Unauthorized signature", { status: 401, headers: corsHeaders });
+        }
+      }
+
+      let payload: any = null;
+      try {
+        payload = JSON.parse(rawBody);
+      } catch (pErr) {
+        console.error("[WA Webhook] Failed to parse Kova JSON:", pErr);
+        return new Response("ok", { headers: corsHeaders });
+      }
+
+      const parsed = parseKovaPayload(payload);
+      messageId = kovaDelivery || parsed.messageId || "";
+      from = normalizePhone(parsed.from) || parsed.from;
+      text = parsed.text;
+      fromMe = false;
+      isImage = parsed.isImage;
+      imageUrl = parsed.imageUrl || null;
+
+      console.log(`[WA Webhook] Kova incoming from: ${from}, event: ${kovaEvent || "message"}, text: "${text.slice(0, 50)}", isImage: ${isImage}`);
     } else {
       // Incoming from WaSender API (JSON)
       const payload = await req.json().catch(() => null);

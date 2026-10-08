@@ -1638,6 +1638,65 @@ export async function sendMetaWhatsAppCloudMessage(
  */
 const recentMessageDedupCache = new Map<string, number>();
 
+/**
+ * Arkesel KOVA IQ WhatsApp Business API Message Sender
+ */
+export async function sendKovaWhatsAppMessage(
+  to: string,
+  text: string,
+  options?: { instanceId?: string; apiToken?: string }
+): Promise<boolean> {
+  const instanceId =
+    options?.instanceId ||
+    Deno.env.get("KOVA_INSTANCE_ID") ||
+    "019bd5d4-97b8-728d-bc0c-be10b6850709";
+  const apiToken =
+    options?.apiToken ||
+    Deno.env.get("KOVA_API_TOKEN") ||
+    Deno.env.get("ARKESEL_API_KEY") ||
+    "";
+
+  if (!apiToken) {
+    return false;
+  }
+
+  const cleanTo = normalizePhone(to) || to.replace(/\D/g, "");
+  const fullPhone = cleanTo.startsWith("0") && cleanTo.length === 10
+    ? "233" + cleanTo.slice(1)
+    : (cleanTo.startsWith("233") ? cleanTo : "233" + cleanTo);
+
+  const endpoint = `https://kova-api.arkesel.com/ext-api/v1/whatsapp-business/${instanceId}/messages`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Token": apiToken,
+        "Authorization": `Bearer ${apiToken}`,
+      },
+      body: JSON.stringify({
+        recipient: fullPhone,
+        message: text,
+        type: "text",
+        to: fullPhone,
+        text: { body: text },
+      }),
+    });
+
+    if (res.ok) {
+      console.log(`[Kova] Message successfully sent to ${fullPhone}`);
+      return true;
+    }
+    const errText = await res.text().catch(() => "");
+    console.warn(`[Kova] Send failed (${res.status}):`, errText);
+    return false;
+  } catch (err: any) {
+    console.error("[Kova] Send error:", err?.message || err);
+    return false;
+  }
+}
+
 export async function sendWhatsAppMessage(to: string, text: string, apiKey?: string) {
   if (!to || !text) return;
   const cleanTo = normalizePhone(to) || to.replace(/\D/g, "");
@@ -1659,11 +1718,15 @@ export async function sendWhatsAppMessage(to: string, text: string, apiKey?: str
     }
   }
 
-  // 1. Primary: WATI API
+  // 1. Kova API (Arkesel WhatsApp Business)
+  const kovaSuccess = await sendKovaWhatsAppMessage(to, text);
+  if (kovaSuccess) return;
+
+  // 2. Primary: WATI API
   const watiSuccess = await sendWatiMessage(to, text);
   if (watiSuccess) return;
 
-  // 2. Secondary: Meta Official WhatsApp Cloud API
+  // 3. Secondary: Meta Official WhatsApp Cloud API
   const metaSuccess = await sendMetaWhatsAppCloudMessage(to, text);
   if (metaSuccess) return;
 
