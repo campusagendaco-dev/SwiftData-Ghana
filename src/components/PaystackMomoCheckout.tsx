@@ -197,7 +197,11 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
         if (data) {
           const settings = data as any;
-          if (settings.auto_gateway_switch_by_package && (metadata?.is_korba === true || metadata?.is_korba === "true")) {
+          const isExplicitKorba = metadata?.is_korba === true || metadata?.is_korba === "true";
+          const cat = String(metadata?.category || "").toLowerCase();
+          const isSmeData = cat === "affordable" || cat === "sme" || cat === "mashup" || (metadata?.order_type === "data" && !cat.includes("retail") && !cat.includes("korba"));
+
+          if (settings.auto_gateway_switch_by_package && isExplicitKorba && !isSmeData) {
             setActiveGateway("korba");
           } else if (settings.active_payment_gateway) {
             setActiveGateway(settings.active_payment_gateway);

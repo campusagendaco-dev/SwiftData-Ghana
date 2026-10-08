@@ -260,28 +260,34 @@ serve(async (req: Request) => {
     const detectedOrderType = String(metadata?.order_type || payload?.order_type || "").toLowerCase();
     const network = String(metadata?.network || payload?.network || "");
     const catLower = String(metadata?.category || metadata?.package_category || payload?.category || "").toLowerCase();
-    const isNonSmeCategory = catLower !== "" && catLower !== "affordable" && catLower !== "sme" && catLower !== "mashup" && !catLower.includes("sme");
+    const isSmeCategory = catLower === "affordable" || catLower === "sme" || catLower === "mashup" || catLower.includes("sme") || (detectedOrderType === "data" && !catLower.includes("retail") && !catLower.includes("korba"));
 
     const isKorbaPackage = 
-      isKorba || 
-      isNonSmeCategory ||
-      detectedOrderType === "airtime" || 
-      detectedOrderType === "utility" ||
-      network.toUpperCase().startsWith("KORBA") ||
-      metadata?.is_instant === true ||
-      metadata?.is_instant === "true";
+      !isSmeCategory && (
+        isKorba || 
+        detectedOrderType === "airtime" || 
+        detectedOrderType === "utility" ||
+        network.toUpperCase().startsWith("KORBA") ||
+        metadata?.is_instant === true ||
+        metadata?.is_instant === "true"
+      );
 
     if (isKorbaPackage) {
       metadata.is_korba = true;
       if (!metadata.category || metadata.category === "affordable" || metadata.category === "sme") {
         metadata.category = "korba";
       }
+    } else {
+      metadata.is_korba = false;
     }
 
     let activeGateway = settings?.active_payment_gateway || "paystack";
 
-    if (isKorbaPackage) {
-      console.log(`[initialize-payment] Auto-routing to Korba gateway because it is a Korba/Instant/Airtime package`);
+    // Auto-routing to Korba payment gateway ONLY occurs when:
+    // 1. auto_gateway_switch_by_package is explicitly enabled in system settings, AND
+    // 2. It is strictly an airtime/utility or explicit retail Korba package, NEVER for SME data!
+    if (Boolean(settings?.auto_gateway_switch_by_package) && isKorbaPackage && !isSmeCategory) {
+      console.log(`[initialize-payment] Auto-routing to Korba gateway because it is a Korba/Instant/Airtime package and auto_gateway_switch_by_package is enabled`);
       activeGateway = "korba";
     }
 

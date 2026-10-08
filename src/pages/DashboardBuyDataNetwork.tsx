@@ -806,11 +806,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     const startTime = Date.now();
     const orderId = crypto.randomUUID();
     
-    const isKorbaPackage = (
-      selectedTypeOrCategory !== "affordable" && 
-      selectedTypeOrCategory !== "sme" && 
-      selectedTypeOrCategory !== "mashup"
-    ) || (
+    const isSmeOrAffordable = 
+      selectedTypeOrCategory === "affordable" || 
+      selectedTypeOrCategory === "sme" || 
+      selectedTypeOrCategory === "mashup";
+
+    const isKorbaPackage = !isSmeOrAffordable && (
+      selectedTypeOrCategory === "retail" ||
+      selectedTypeOrCategory === "korba" ||
       korbaMappings.some(m => m.package_name === selectedPackage?.size && (m.network === network || m.network === `Korba ${network}`))
     );
 
@@ -823,7 +826,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           amount: selectedPackage!.price,
           reference: orderId,
           is_korba: isKorbaPackage,
-          category: isKorbaPackage ? "korba" : selectedTypeOrCategory,
+          category: isSmeOrAffordable ? selectedTypeOrCategory : (isKorbaPackage ? "korba" : selectedTypeOrCategory),
           bypass_beneficiary: bypassBeneficiary ? true : undefined,
         },
       });
@@ -908,11 +911,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       phone: normalizedPhone,
     });
 
-    const isKorbaPackage = (
-      selectedTypeOrCategory !== "affordable" && 
-      selectedTypeOrCategory !== "sme" && 
-      selectedTypeOrCategory !== "mashup"
-    ) || (
+    const isSmeOrAffordable = 
+      selectedTypeOrCategory === "affordable" || 
+      selectedTypeOrCategory === "sme" || 
+      selectedTypeOrCategory === "mashup";
+
+    const isKorbaPackage = !isSmeOrAffordable && (
+      selectedTypeOrCategory === "retail" ||
+      selectedTypeOrCategory === "korba" ||
       korbaMappings.some(m => m.package_name === selectedPackage?.size && (m.network === network || m.network === `Korba ${network}`))
     );
 
@@ -925,7 +931,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       fee: paystackFee,
       agent_id: user?.id,
       is_korba: isKorbaPackage,
-      category: isKorbaPackage ? (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme" || selectedTypeOrCategory === "mashup" ? "korba" : selectedTypeOrCategory) : selectedTypeOrCategory,
+      category: isSmeOrAffordable ? selectedTypeOrCategory : (isKorbaPackage ? "korba" : selectedTypeOrCategory),
       bypass_beneficiary: bypassBeneficiary ? true : undefined,
       callback_url: `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`,
       ...(validPromo && !validPromo.is_free ? {
