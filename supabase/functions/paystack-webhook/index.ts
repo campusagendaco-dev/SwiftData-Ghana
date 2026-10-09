@@ -1320,7 +1320,7 @@ serve(async (req: Request) => {
 
         // Send Welcome WhatsApp Message if registered via WhatsApp
         if (isWhatsApp && waFrom) {
-          const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "12139035565";
+          const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "12629337645";
           const APP_BASE_URL = "https://swiftdatagh.shop";
           const portalLoginUrl = `${APP_BASE_URL}/auth?role=agent`;
           const storeUrl = `${APP_BASE_URL}/store/${rawSlug}`;

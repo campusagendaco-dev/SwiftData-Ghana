@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
-const PLATFORM_WA_NUMBER = "12139035565";
+const PLATFORM_WA_NUMBER = "12629337645";
 
 const steps = [
   {
@@ -72,7 +72,7 @@ const DashboardWhatsAppBot = () => {
 
   const waLink = `https://wa.me/${PLATFORM_WA_NUMBER}?text=${encodeURIComponent(`Hi ${agentCode}`)}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(waLink)}`;
-  const shareMessage = `Buy cheap data, airtime & bills from ${storeName}! 📶📱⚡\n\n👉 1-Tap WhatsApp Link:\n${waLink}\n\n💡 Or save +1 (213) 903-5565 and send: Hi ${agentCode}\n(Agent Code: ${agentCode})`;
+  const shareMessage = `Buy cheap data, airtime & bills from ${storeName}! 📶📱⚡\n\n👉 1-Tap WhatsApp Link:\n${waLink}\n\n💡 Or save +1 (262) 933-7645 and send: Hi ${agentCode}\n(Agent Code: ${agentCode})`;
 
   const statusCaptions = {
     standard: `⚡ *Instant Data & Airtime on WhatsApp!* 📶📱\nBuy cheap MTN, Telecel & AT bundles 24/7 automatically from *${storeName}*.\n\n👉 *Order via WhatsApp here:* ${waLink}\n🏷️ *Or message bot with Agent Code:* *${agentCode}*`,

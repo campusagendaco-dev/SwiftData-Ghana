@@ -38,7 +38,7 @@ const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
 const PAYSTACK_FEE_RATE = 0.03;
 const PAYSTACK_FEE_CAP = 100; // GHS
-const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "12139035565";
+const WHATSAPP_BOT_NUMBER = Deno.env.get("WHATSAPP_BOT_NUMBER") || "12629337645";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

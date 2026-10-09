@@ -625,7 +625,7 @@ serve(async (req: Request) => {
 
     const defaultSiteUrl = site_url || "https://swiftdatagh.shop";
     const defaultChannelUrl = channel_url || "https://whatsapp.com/channel/0029VbCx0q4KLaHfJaiHLN40";
-    const defaultBotUrl = `https://wa.me/${Deno.env.get("WHATSAPP_BOT_NUMBER") || "12139035565"}?text=Hi`;
+    const defaultBotUrl = `https://wa.me/${Deno.env.get("WHATSAPP_BOT_NUMBER") || "12629337645"}?text=Hi`;
     const defaultStickerUrl = sticker_url || (is_fire_alert ? "https://swiftdatagh.shop/stickers/delivery_fire.webp" : undefined);
 
     // Delivery smoothness check from recent orders (last 60 minutes)

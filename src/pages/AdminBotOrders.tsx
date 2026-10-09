@@ -430,11 +430,11 @@ export default function AdminBotOrders() {
 
           <Button
             size="sm"
-            onClick={() => window.open("https://wa.me/12139035565", "_blank")}
+            onClick={() => window.open("https://wa.me/12629337645", "_blank")}
             className="rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold h-9 shadow-md shadow-green-600/20"
           >
             <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-            Test Bot (+12139035565)
+            Test Bot (+12629337645)
           </Button>
         </div>
       </div>

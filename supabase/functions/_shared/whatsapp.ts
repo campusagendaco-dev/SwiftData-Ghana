@@ -2090,14 +2090,14 @@ export async function checkAndTriggerDeliveryOnFire(
       targetBotNumber =
         settings?.mashup_whatsapp_number ||
         settings?.customer_service_number ||
-        "12139035565";
+        "12629337645";
 
       if (settings?.support_channel_link) {
         targetChannelLink = settings.support_channel_link;
       }
     }
 
-    let cleanBotPhone = String(targetBotNumber || "12139035565").replace(/\D/g, "");
+    let cleanBotPhone = String(targetBotNumber || "12629337645").replace(/\D/g, "");
     if (cleanBotPhone.startsWith("0") && cleanBotPhone.length === 10) {
       cleanBotPhone = "233" + cleanBotPhone.slice(1);
     }
