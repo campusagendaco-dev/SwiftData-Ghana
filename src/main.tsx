@@ -20,11 +20,20 @@ const forceAssetRecovery = async (sourceMsg?: string) => {
         await Promise.all(cacheKeys.map(key => caches.delete(key)));
         console.log("Cleared all cache storages for fresh deployment.");
       }
+
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
     } catch (err) {
       console.error("Asset recovery cleanup failed:", err);
     }
     
-    window.location.reload();
+    const url = new URL(window.location.href);
+    url.searchParams.set("v", Date.now().toString());
+    window.location.replace(url.toString());
   }
 };
 
