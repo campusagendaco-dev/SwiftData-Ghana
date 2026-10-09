@@ -242,54 +242,6 @@ const DashboardWithdraw = () => {
         </Card>
       </div>
 
-      {/* Commission Level Card */}
-      <Card className="overflow-hidden border-amber-500/10 bg-amber-500/[0.02] relative group">
-        <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-orange-500 via-yellow-500 to-amber-500" />
-        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-          <div className="space-y-2 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Active Agent Tier</span>
-              <Badge className={cn("text-[9px] font-black px-2 uppercase border border-amber-500/20", 
-                completedOrderCount >= 100 
-                  ? "bg-amber-500/10 text-amber-500" 
-                  : "bg-orange-500/10 text-orange-500"
-              )}>
-                {completedOrderCount >= 100 ? "Pro Partner (Gold)" : "Bronze Partner"}
-              </Badge>
-            </div>
-            
-            <h3 className="text-lg font-black tracking-tight text-foreground">
-              {completedOrderCount >= 100 ? "0.7% Airtime & Korba Data Commission" : "0.5% Airtime & Korba Data Commission"}
-            </h3>
-            
-            <p className="text-xs text-muted-foreground leading-normal max-w-xl">
-              You are currently earning <strong className="text-foreground">{completedOrderCount >= 100 ? "0.7%" : "0.5%"}</strong> commission on all Airtime and Korba Data sales, and <strong className="text-foreground">0.1%</strong> flat commission on ECG utility recharges.
-            </p>
-
-            {completedOrderCount < 100 && (
-              <div className="space-y-1.5 pt-1 max-w-md">
-                <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  <span>Pro Rank Progress</span>
-                  <span>{completedOrderCount} / 100 Orders</span>
-                </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden border border-border/10 p-[1px]">
-                  <div 
-                    className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-1000"
-                    style={{ width: `${Math.min(100, (completedOrderCount / 100) * 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className="text-right sm:border-l border-border/60 pl-0 sm:pl-6 space-y-1 shrink-0">
-            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Completed Orders</p>
-            <p className="text-3xl font-black text-foreground">{completedOrderCount}</p>
-            <p className="text-[9px] text-muted-foreground">Qualifies your current commission tier</p>
-          </div>
-        </CardContent>
-      </Card>
-
       {profile && (
         <Card className="overflow-hidden border-indigo-500/10">
           <CardHeader className="bg-indigo-500/5 border-b border-indigo-500/10 py-4">
