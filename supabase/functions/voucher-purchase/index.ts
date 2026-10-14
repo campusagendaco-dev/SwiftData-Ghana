@@ -1,3 +1,6 @@
+import "../deno.d.ts";
+declare const Deno: any;
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -97,7 +100,7 @@ serve(async (req: Request) => {
       .or(`user_id.eq.${currentUserId},id.eq.${currentUserId}`)
       .maybeSingle();
 
-    const isTest = body.test_mode === true || userProfile?.api_test_mode === true;
+    const isTest = userProfile?.api_test_mode === true || (body.test_mode === true && userProfile?.api_test_mode === true);
 
     // 4. Resolve dynamic prices from Admin Settings
     const { data: sysSettings } = await supabaseAdmin
@@ -123,9 +126,9 @@ serve(async (req: Request) => {
     const totalCost = userPrice * qty;
     const profitValue = (userPrice - costPrice) * qty;
 
-    // 5. Test/Mock Mode Branch (Generate vouchers and save order without debiting wallet)
+    // 5. Test/Mock Mode Branch (Generate simulated vouchers for developer test accounts)
     if (isTest) {
-      console.log(`[Vouchers] SIMULATED purchase (Test Mode) - Total cost: GHS ${totalCost}, Profit: GHS ${profitValue} for user ${currentUserId}`);
+      console.log(`[Vouchers] SIMULATED purchase (Test Mode) for user ${currentUserId}`);
       
       const mockVouchers = [];
       for (let i = 0; i < qty; i++) {
@@ -145,10 +148,9 @@ serve(async (req: Request) => {
         });
       }
 
-      // Save Order and return vouchers successfully
+      // Save Order with 0 amount/profit so test mode never generates unearned commissions
       const orderId = crypto.randomUUID();
 
-      // Find any active provider just to reference in order, or use null
       const { data: providers } = await supabaseAdmin
         .from("providers")
         .select("id")
@@ -163,10 +165,11 @@ serve(async (req: Request) => {
         customer_phone: recipientDigits,
         network: "VOUCHER",
         package_size: `${typeUpper} Results Checker x${qty}`,
-        amount: totalCost,
+        amount: 0,
         status: "fulfilled",
         provider_id: providerId,
-        profit: profitValue,
+        profit: 0,
+        profit_credited: true,
         failure_reason: null,
         metadata: {
           vouchers: mockVouchers,

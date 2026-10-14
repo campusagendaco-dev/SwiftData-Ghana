@@ -147,25 +147,76 @@ serve(async (req: Request) => {
       );
     }
 
-    // Beneficiary verification is ONLY for Affordable MTN SME packages, NEVER for Korba packages
-    const isKorba = body.is_korba === true || body.is_korba === "true" || body.category === "korba" || body.package_category === "korba" || body.package_type === "korba" || body.provider_type === "korba";
-    if (isKorba) {
-      console.log("[verify-beneficiary] Korba package detected. Beneficiary verification is not required.");
+    // Beneficiary verification is ONLY for Affordable MTN SME packages
+    const category = String(body.category || body.package_category || body.package_type || body.order_type || "").toLowerCase().trim();
+    const net = String(body.network || "").toUpperCase().trim();
+    const isMashUp = net.includes("MASH") || net.includes("COMBO") || category === "mashup" || category.includes("mash");
+    const isNonMtn = net !== "" && !net.includes("MTN") && !net.includes("YELLO");
+    const isExplicitNonSme = category !== "" && category !== "affordable" && category !== "sme" && !category.includes("sme");
+    const isKorba = body.is_korba === true || body.is_korba === "true" || category === "korba" || body.provider_type === "korba";
+    const isBypass = body.bypass_beneficiary === true || body.bypass_beneficiary === "true";
+
+    if (isKorba || isMashUp || isNonMtn || isExplicitNonSme || isBypass) {
+      console.log(`[verify-beneficiary] Beneficiary verification not required (network=${net}, category=${category}, mashup=${isMashUp}, korba=${isKorba}). Only Affordable MTN SME requires beneficiary whitelisting.`);
+
+      // If bulk numbers were supplied, return bulk response format
+      if (Array.isArray(body.phone_numbers) && body.phone_numbers.length > 0) {
+        const phoneNumbersInput: string[] = body.phone_numbers;
+        const normalizedNumbers: string[] = [];
+        for (const p of phoneNumbersInput) {
+          const clean = String(p).replace(/\D/g, "");
+          let norm = clean;
+          if (clean.startsWith("233") && clean.length === 12) {
+            norm = "0" + clean.slice(3);
+          } else if (clean.length === 9) {
+            norm = "0" + clean;
+          } else if (clean.startsWith("0") && clean.length === 10) {
+            norm = clean;
+          }
+          if (norm.length === 10 && !normalizedNumbers.includes(norm)) {
+            normalizedNumbers.push(norm);
+          }
+        }
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+              network: net || "Other",
+              count: normalizedNumbers.length,
+              summary: {
+                total: normalizedNumbers.length,
+                verified: normalizedNumbers.length,
+                not_verified: 0,
+                pending: 0,
+              },
+              results: normalizedNumbers.map((p: string) => ({
+                phone_number: p,
+                status: "not_required",
+                verification_status: "VERIFIED",
+                can_order: true,
+                message: "Beneficiary verification is only required for Affordable MTN SME packages.",
+              })),
+            },
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
           exists: true,
+          status: "not_required",
           verification_status: "NOT_REQUIRED",
           can_order: true,
-          message: "Beneficiary verification is not required for Korba packages. Only Affordable SME packages require beneficiary whitelisting."
+          message: "Beneficiary verification is only required for Affordable MTN SME packages."
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const { network } = body;
-    const net = String(network || "").toUpperCase();
-    const isMtnOrYello = net.includes("MTN") || net.includes("YELLO");
+    const isMtnOrYello = (net.includes("MTN") || net.includes("YELLO")) && !isMashUp;
 
     // Fetch BundleZone provider config
     const { data: bzProvider } = await supabaseClient
@@ -182,6 +233,30 @@ serve(async (req: Request) => {
     // ── Bulk numbers request support (up to 1,000 numbers) ──
     const phoneNumbersInput: string[] = Array.isArray(body.phone_numbers) ? body.phone_numbers : [];
     if (phoneNumbersInput.length > 0) {
+      // Clean and normalize all numbers
+      const normalizedNumbers: string[] = [];
+      for (const p of phoneNumbersInput) {
+        const clean = String(p).replace(/\D/g, "");
+        let norm = clean;
+        if (clean.startsWith("233") && clean.length === 12) {
+          norm = "0" + clean.slice(3);
+        } else if (clean.length === 9) {
+          norm = "0" + clean;
+        } else if (clean.startsWith("0") && clean.length === 10) {
+          norm = clean;
+        }
+        if (norm.length === 10 && !normalizedNumbers.includes(norm)) {
+          normalizedNumbers.push(norm);
+        }
+      }
+
+      if (normalizedNumbers.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: "No valid 10-digit Ghana phone numbers provided." }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+        );
+      }
+
       if (!isMtnOrYello) {
         return new Response(
           JSON.stringify({
@@ -189,8 +264,14 @@ serve(async (req: Request) => {
             data: {
               request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
               network: network || "Telecel",
-              count: phoneNumbersInput.length,
-              results: phoneNumbersInput.map((p: string) => ({
+              count: normalizedNumbers.length,
+              summary: {
+                total: normalizedNumbers.length,
+                verified: normalizedNumbers.length,
+                not_verified: 0,
+                pending: 0,
+              },
+              results: normalizedNumbers.map((p: string) => ({
                 phone_number: p,
                 status: "not_required",
                 verification_status: "VERIFIED",
@@ -213,14 +294,32 @@ serve(async (req: Request) => {
               "Authorization": `Bearer ${bzApiKey}`,
             },
             body: JSON.stringify({
-              network: "MTN",
-              phone_numbers: phoneNumbersInput,
+              network: "YELLO",
+              phone_numbers: normalizedNumbers,
             }),
             disableFallback: true,
-          }, 15);
+          }, 20);
 
           if (bzRes.ok) {
             const bzData = await bzRes.json();
+            const results = bzData.data?.results || [];
+            let verifiedCount = 0;
+            let unverifiedCount = 0;
+            let pendingCount = 0;
+            for (const r of results) {
+              const vs = String(r.verification_status || "").toUpperCase();
+              if (vs === "VERIFIED" || r.can_order === true) verifiedCount++;
+              else if (vs === "PENDING") pendingCount++;
+              else unverifiedCount++;
+            }
+            if (bzData.data) {
+              bzData.data.summary = {
+                total: results.length,
+                verified: verifiedCount,
+                not_verified: unverifiedCount,
+                pending: pendingCount,
+              };
+            }
             return new Response(JSON.stringify(bzData), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
@@ -229,6 +328,117 @@ serve(async (req: Request) => {
           console.error("[verify-beneficiary] BundleZone bulk check error:", bzErr);
         }
       }
+
+      // ── Fallback 2: Check DataMart Bulk Verification (/verify-number/bulk) ──
+      const { data: dmBulkProvider } = await supabaseClient
+        .from("providers")
+        .select("*")
+        .eq("handler_type", "datamart")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const dmBulkApiKey = Deno.env.get("DATAMART_API_KEY") || dmBulkProvider?.api_key || "";
+      const rawDmBulkUrl = Deno.env.get("DATAMART_BASE_URL") || dmBulkProvider?.base_url || "https://api.datamartgh.shop/api/developer";
+      const dmBulkUrl = `${rawDmBulkUrl.trim().replace(/\/+$/, "")}/verify-number/bulk`;
+
+      if (dmBulkApiKey && normalizedNumbers.length <= 100) {
+        try {
+          const dmRes = await fetchViaDb(supabaseClient, dmBulkUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": dmBulkApiKey,
+            },
+            body: JSON.stringify({ numbers: normalizedNumbers }),
+            disableFallback: true,
+          }, 20);
+
+          if (dmRes.ok) {
+            const dmData = await dmRes.json();
+            if (dmData.status === "success" && Array.isArray(dmData.results)) {
+              const resMap = new Map<string, any>();
+              dmData.results.forEach((r: any) => {
+                const num = r.normalized || r.number;
+                if (num) resMap.set(num, r);
+              });
+
+              const dmResults = normalizedNumbers.map((p) => {
+                const match = resMap.get(p);
+                const isAccepted = match?.accepted === true;
+                return {
+                  phone_number: p,
+                  status: isAccepted ? "verified" : "not_verified",
+                  verification_status: isAccepted ? "VERIFIED" : "NOT_VERIFIED",
+                  can_order: isAccepted,
+                  message: match?.reason || (isAccepted ? "Number verified on carrier delivery network." : "The beneficiary phone number is not allowed on carrier network."),
+                };
+              });
+
+              const vCount = dmResults.filter(r => r.can_order).length;
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  data: {
+                    request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+                    network: "YELLO",
+                    provider: "datamart",
+                    count: dmResults.length,
+                    summary: {
+                      total: dmResults.length,
+                      verified: vCount,
+                      not_verified: dmResults.length - vCount,
+                      pending: 0,
+                    },
+                    results: dmResults,
+                  },
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          }
+        } catch (dmBulkErr) {
+          console.error("[verify-beneficiary] DataMart bulk check error:", dmBulkErr);
+        }
+      }
+
+      // Fallback if BundleZone and DataMart API failed
+      const { data: recentOrders } = await supabaseClient
+        .from("orders")
+        .select("customer_phone")
+        .in("status", ["fulfilled", "completed"])
+        .in("customer_phone", normalizedNumbers);
+
+      const verifiedSet = new Set((recentOrders || []).map((o: any) => o.customer_phone));
+      const fallbackResults = normalizedNumbers.map((p) => {
+        const isV = verifiedSet.has(p);
+        return {
+          phone_number: p,
+          status: isV ? "verified" : "not_verified",
+          verification_status: isV ? "VERIFIED" : "NOT_VERIFIED",
+          can_order: isV,
+          message: isV ? "Verified via order history." : "Not on beneficiary whitelist.",
+        };
+      });
+
+      const vCount = fallbackResults.filter(r => r.can_order).length;
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+            network: "YELLO",
+            count: fallbackResults.length,
+            summary: {
+              total: fallbackResults.length,
+              verified: vCount,
+              not_verified: fallbackResults.length - vCount,
+              pending: 0,
+            },
+            results: fallbackResults,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // ── Single number request ──
@@ -243,7 +453,14 @@ serve(async (req: Request) => {
     // Only MTN numbers require carrier beneficiary check
     if (!isMtnOrYello) {
       return new Response(
-        JSON.stringify({ success: true, exists: true, message: "Only MTN numbers require beneficiary validation." }),
+        JSON.stringify({
+          success: true,
+          exists: true,
+          status: "not_required",
+          verification_status: "NOT_REQUIRED",
+          can_order: true,
+          message: "Only Affordable MTN SME numbers require carrier beneficiary validation."
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -293,7 +510,7 @@ serve(async (req: Request) => {
             "Authorization": `Bearer ${bzApiKey}`,
           },
           body: JSON.stringify({
-            network: "MTN",
+            network: "YELLO",
             phone_number: localFormat,
           }),
           disableFallback: true,
@@ -314,10 +531,26 @@ serve(async (req: Request) => {
                   status: "verified",
                   verification_status: "VERIFIED",
                   can_order: true,
-                                    message: match.message || "Number verified and ready for ordering.",
+                  message: match.message || "Number verified and ready for ordering.",
                 }),
                 { headers: { ...corsHeaders, "Content-Type": "application/json" } }
               );
+            } else if (vStatus === "NOT_VERIFIED" || match.can_order === false) {
+              console.log(`[verify-beneficiary] Number ${localFormat} is NOT_VERIFIED on BundleZone.`);
+              if (body.check_only === true || body.strict === true) {
+                return new Response(
+                  JSON.stringify({
+                    success: true,
+                    exists: false,
+                    status: "not_verified",
+                    verification_status: "NOT_VERIFIED",
+                    can_order: false,
+                    is_non_beneficiary: true,
+                    message: match.message || "The recipient number is not verified on the MTN beneficiary list.",
+                  }),
+                  { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+              }
             }
           }
         }
@@ -381,6 +614,77 @@ serve(async (req: Request) => {
       );
     }
 
+    // ── Fallback 2: Check DataMart Provider (/verify-number) ──
+    const { data: dmProvider } = await supabaseClient
+      .from("providers")
+      .select("*")
+      .eq("handler_type", "datamart")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    const dmApiKey = Deno.env.get("DATAMART_API_KEY") || dmProvider?.api_key || "";
+    const rawDmBaseUrl = Deno.env.get("DATAMART_BASE_URL") || dmProvider?.base_url || "https://api.datamartgh.shop/api/developer";
+    const dmCheckUrl = `${rawDmBaseUrl.trim().replace(/\/+$/, "")}/verify-number`;
+
+    if (!exists && dmApiKey) {
+      try {
+        console.log(`[verify-beneficiary] Testing DataMart verify-number for ${localFormat}...`);
+        const dmRes = await fetchViaDb(supabaseClient, dmCheckUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": dmApiKey,
+          },
+          body: JSON.stringify({
+            phoneNumber: localFormat,
+          }),
+          disableFallback: true,
+        }, 10);
+
+        if (dmRes.ok) {
+          const dmData = await dmRes.json();
+          if (dmData.status === "success" && dmData.data) {
+            const isServable = dmData.data.servable === true;
+            const recommendation = dmData.data.recommendation;
+            const dmMsg = dmData.data.message || "";
+
+            if (isServable) {
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  exists: true,
+                  status: "verified",
+                  verification_status: "VERIFIED",
+                  can_order: true,
+                  provider: "datamart",
+                  recommendation: "sell_any",
+                  message: dmMsg || "Number verified on carrier delivery network.",
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            } else if (recommendation === "activate_first") {
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  exists: false,
+                  status: "activate_first",
+                  verification_status: "NOT_VERIFIED",
+                  can_order: false,
+                  is_non_beneficiary: true,
+                  provider: "datamart",
+                  recommendation: "activate_first",
+                  message: dmMsg || "This number is new to the network (72hr activation freeze). Sell a 1GB bundle first to activate.",
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          }
+        }
+      } catch (dmErr) {
+        console.warn("[verify-beneficiary] DataMart check error:", dmErr);
+      }
+    }
+
     // Parse the error message if check fails
     let errorMessage = `The recipient number ${phone} has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.`;
     try {
@@ -396,18 +700,36 @@ serve(async (req: Request) => {
       }
     } catch { /* ignore */ }
 
+    // If caller specifically requested check_only or strict check
+    if (body.check_only === true || body.strict === true) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          exists: false,
+          status: "not_verified",
+          verification_status: "NOT_VERIFIED",
+          can_order: false,
+          is_non_beneficiary: true,
+          message: errorMessage || "Recipient is not on the MTN beneficiary list."
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Datamart API failover handles non-beneficiary numbers natively
     return new Response(
       JSON.stringify({ 
         success: true, 
-        exists: true, 
+        exists: false,
+        status: "not_verified",
+        verification_status: "NOT_VERIFIED",
+        can_order: true,
         is_non_beneficiary: true,
         route_via_datamart: true,
-        message: "Number verified and eligible for instant carrier delivery." 
+        message: "Number is not on beneficiary list, but eligible for fallback carrier delivery." 
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-
   } catch (err: any) {
     console.error("[verify-beneficiary] Verification error:", err);
     return new Response(

@@ -494,7 +494,7 @@ serve(async (req: Request) => {
       pkgUpper.includes("VIDEO") || 
       pkgUpper.includes("IDD");
 
-    const isExplicitKorbaRequest = (
+    const isExplicitKorbaRequest = !upperDbNet.includes("MASH") && reqCategory !== "mashup" && (
       is_korba === true || 
       is_korba === "true" || 
       upperDbNet.startsWith("KORBA") ||
@@ -518,7 +518,7 @@ serve(async (req: Request) => {
       upperDbNet.includes("SME")
     );
 
-    if (!finalIsKorba && !isAffordableSme) {
+    if (!finalIsKorba && !isAffordableSme && !upperDbNet.includes("MASH") && reqCategory !== "mashup") {
       const queryNetwork = dbNet.startsWith("Korba ") ? dbNet : `Korba ${dbNet}`;
       const { data: mappings } = await supabaseAdmin
         .from("provider_packages")
@@ -550,13 +550,13 @@ serve(async (req: Request) => {
       profit: agentProfit,
       parent_agent_id: parentAgentId,
       parent_profit: parentProfit,
-      status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid",
+      status: "paid",
       promo_code_id: appliedPromoId || undefined,
       discount_amount: appliedDiscountAmount > 0 ? appliedDiscountAmount : 0,
       metadata: {
         ...(customMetadata || {}),
         is_korba: finalIsKorba,
-        category: finalIsKorba ? (customMetadata?.category || "korba") : (customMetadata?.category || "affordable"),
+        category: dbNet === "MTN Mash Up" ? "mashup" : (finalIsKorba ? (customMetadata?.category || "korba") : (customMetadata?.category || "affordable")),
         bypass_beneficiary: (bypass_beneficiary === true || bypass_beneficiary === "true") ? true : undefined,
       }
     });
@@ -629,7 +629,7 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ 
       success: true, 
       order_id: orderId, 
-      status: normalizeNetworkForPricing(networkRaw) === "MTN Mash Up" ? "pending" : "paid"
+      status: "paid"
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

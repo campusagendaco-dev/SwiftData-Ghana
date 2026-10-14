@@ -12,7 +12,7 @@ export function isBeneficiaryFailure(
 ): boolean {
   if (!reason) return false;
   const net = String(network || "").toUpperCase();
-  if (network && !net.includes("MTN") && !net.includes("YELLO")) return false;
+  if (network && (!net.includes("MTN") && !net.includes("YELLO") || net.includes("MASH") || net.includes("COMBO"))) return false;
 
   const type = String(orderType || "").toLowerCase();
   if (orderType && type !== "data" && type !== "sme") return false;
@@ -85,19 +85,22 @@ export async function handleGuestBeneficiaryFailure(
     }
   }
 
-  // Guard: MTN SME Beneficiary Whitelist ONLY applies to MTN SME Data packages, NEVER for Korba, Airtime, or other carriers
+  // Guard: MTN SME Beneficiary Whitelist ONLY applies to Affordable MTN SME Data packages, NEVER for Mashup, Korba, Airtime, or other carriers
   const net = String(order.network || "").toUpperCase();
-  const isMtn = net.includes("MTN") || net.includes("YELLO");
+  const isMtn = (net.includes("MTN") || net.includes("YELLO")) && !net.includes("MASH") && !net.includes("COMBO");
   const orderType = String(order.order_type || "data").toLowerCase();
   const isData = orderType === "data" || orderType === "sme";
+  const cat = String(order.metadata?.category || "").toLowerCase();
+  const isMashUp = net.includes("MASH") || net.includes("COMBO") || cat === "mashup" || cat.includes("mash");
+  const isNonSme = cat !== "" && cat !== "affordable" && cat !== "sme" && !cat.includes("sme");
   const isKorba = String(order.provider_id || "").toLowerCase().includes("korba") || 
                   order.metadata?.category === "korba" || 
                   order.metadata?.package_category === "korba" || 
                   order.metadata?.is_korba === true ||
                   order.metadata?.provider_type === "korba";
 
-  if (!isMtn || !isData || isKorba) {
-    console.log(`[guest-refund] Order ${orderId} is non-MTN, non-SME, or Korba (${order.network || 'unknown'}, ${orderType}). Skipping MTN whitelist logic.`);
+  if (!isMtn || !isData || isKorba || isMashUp || isNonSme) {
+    console.log(`[guest-refund] Order ${orderId} is non-MTN, non-SME, Mashup, or Korba (${order.network || 'unknown'}, ${orderType}). Skipping MTN whitelist logic.`);
     await supabaseAdmin.from("orders").update({
       status: "fulfillment_failed",
       provider_order_id: "failed_api_call",

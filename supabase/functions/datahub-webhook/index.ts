@@ -106,27 +106,42 @@ serve(async (req: Request) => {
       });
     }
 
-    // Security: Verify webhook secret/HMAC signature if configured in the vault
-    const DATAHUB_WEBHOOK_SECRET = Deno.env.get("DATAHUB_WEBHOOK_SECRET") || Deno.env.get("PROVIDER_WEBHOOK_SECRET");
-    if (DATAHUB_WEBHOOK_SECRET) {
-      const signatureHeader = req.headers.get("x-webhook-signature") || req.headers.get("X-Webhook-Signature");
-      const query = new URL(req.url).searchParams;
-      const providedSecret = req.headers.get("X-Webhook-Secret") || query.get("key") || query.get("secret");
+    // Security: Verify webhook secret/HMAC signature (Env var first, then database fallback)
+    let secret = Deno.env.get("DATAHUB_WEBHOOK_SECRET") || Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+    if (!secret) {
+      const { data: dhProvider } = await supabaseAdmin
+        .from("providers")
+        .select("settings, api_key")
+        .eq("handler_type", "datahub")
+        .maybeSingle();
+      secret = dhProvider?.settings?.webhook_secret || dhProvider?.api_key;
+    }
 
-      let isAuthorized = false;
-      if (signatureHeader) {
-        isAuthorized = await verifyHmacSha256(rawBody, signatureHeader, DATAHUB_WEBHOOK_SECRET);
-      } else if (providedSecret === DATAHUB_WEBHOOK_SECRET) {
-        isAuthorized = true;
-      }
+    if (!secret) {
+      console.error("[datahub-webhook] Webhook secret not configured in environment or database.");
+      return new Response(JSON.stringify({ error: "Webhook secret not configured" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-      if (!isAuthorized) {
-        console.warn("[datahub-webhook] Unauthorized access attempt prevented (invalid signature or secret).");
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    const signatureHeader = req.headers.get("x-webhook-signature") || req.headers.get("X-Webhook-Signature");
+    const query = new URL(req.url).searchParams;
+    const providedSecret = req.headers.get("X-Webhook-Secret") || query.get("key") || query.get("secret");
+
+    let isAuthorized = false;
+    if (signatureHeader) {
+      isAuthorized = await verifyHmacSha256(rawBody, signatureHeader, secret);
+    } else if (providedSecret === secret) {
+      isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+      console.warn("[datahub-webhook] Unauthorized access attempt prevented (invalid signature or secret).");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const payload = JSON.parse(rawBody);

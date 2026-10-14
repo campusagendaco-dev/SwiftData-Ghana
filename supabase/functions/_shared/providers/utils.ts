@@ -101,6 +101,7 @@ export function parseProviderResponse(body: string, contentType: string | null):
     }
     
     const orderId = String(
+      data?.orderId ??
       data?.request_id ??
       data?.order?.order_id ??
       data?.order?.id ??
@@ -182,6 +183,8 @@ export function parseProviderResponse(body: string, contentType: string | null):
  * Checks whether an order failure reason represents a permanent, non-retryable recipient/client error.
  * These errors MUST NEVER be cascaded to another provider or automatically reprocessed,
  * as doing so wastes API calls, triggers provider penalties, and risks double-debits.
+ * NOTE: Duplicate orders are NOT terminal errors; they are transient carrier/aggregator deduplications
+ * and should be held in cooldown for auto-routing after 60 mins.
  */
 export function isNonRetryableTerminalError(reason: string | null | undefined): boolean {
   if (!reason) return false;
@@ -199,15 +202,36 @@ export function isNonRetryableTerminalError(reason: string | null | undefined): 
     r.includes("payee limit") ||
     r.includes("limit reached") ||
     r.includes("daily limit") ||
-    r.includes("duplicate") ||
-    r.includes("identical") ||
     r.includes("inactive number") ||
     r.includes("suspended") ||
     r.includes("unregistered") ||
     r.includes("line not found") ||
-    r.includes("subscriber not found") ||
-    r.includes("already placed") ||
-    r.includes("currently being processed")
+    r.includes("subscriber not found")
   );
 }
+
+/**
+ * Checks whether an order failure reason indicates a transient carrier or aggregator duplicate order rejection.
+ * These orders are NOT permanent failures; aggregators (e.g. BundleZone) or carriers reject them temporarily
+ * if an identical order was placed within a deduplication window (e.g. 5-15 mins).
+ * These must be put into a 60-minute cooldown state and re-routed after 60 minutes instead of failing.
+ */
+export function isDuplicateOrderError(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const r = String(reason).toLowerCase();
+  return (
+    r.includes("duplicate") ||
+    r.includes("identical") ||
+    r.includes("already placed") ||
+    r.includes("currently being processed") ||
+    r.includes("cooldown") ||
+    r.includes("already exist") ||
+    r.includes("already pending") ||
+    r.includes("order_already_pending") ||
+    r.includes("duplicate_order") ||
+    r.includes("duplicate_reference") ||
+    r.includes("previously submitted")
+  );
+}
+
 

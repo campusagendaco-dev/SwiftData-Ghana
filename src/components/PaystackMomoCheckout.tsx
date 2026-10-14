@@ -140,16 +140,19 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
     }
 
     const verifyRecipient = async () => {
-      const net = String(recipientNetwork || "").toUpperCase();
-      const isMtn = net.includes("MTN") || net.includes("YELLO");
-      if (!isMtn) {
+      const recNet = String(recipientNetwork || metadata?.network || "").toUpperCase();
+      const isMtn = recNet.includes("MTN") || recNet.includes("YELLO");
+      const cat = String(metadata?.category || metadata?.package_category || "").toLowerCase();
+      const isMashUp = recNet.includes("MASH") || cat.includes("mash");
+
+      if (!isMtn || isMashUp) {
         setIsBeneficiaryVerified(true);
         return;
       }
 
-      // Beneficiary verification is strictly for Affordable MTN SME packages, NEVER for Korba or standard retail packages
-      const isKorba = metadata?.is_korba === true || metadata?.is_korba === "true" || metadata?.category === "korba" || metadata?.package_category === "korba" || metadata?.provider_type === "korba";
-      const isNonSme = (metadata?.category && metadata.category !== "affordable" && metadata.category !== "sme") || (metadata?.order_type && metadata.order_type !== "data");
+      // Beneficiary verification is strictly for Affordable MTN SME packages, NEVER for Korba, Mashup, or standard retail packages
+      const isKorba = metadata?.is_korba === true || metadata?.is_korba === "true" || cat === "korba" || metadata?.provider_type === "korba";
+      const isNonSme = (cat !== "" && cat !== "affordable" && cat !== "sme" && !cat.includes("sme")) || (metadata?.order_type && metadata.order_type !== "data");
 
       if (isKorba || isNonSme || metadata?.bypass_beneficiary === true || metadata?.bypass_beneficiary === "true") {
         setIsBeneficiaryVerified(true);

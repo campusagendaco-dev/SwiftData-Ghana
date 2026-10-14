@@ -643,7 +643,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
     };
 
     void load();
-  }, [user?.user_id]);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -661,7 +661,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       )
       .subscribe();
     return () => { safeRemoveChannel(ch); };
-  }, [user?.user_id]);
+  }, [user]);
 
   if (!user) return null;
 

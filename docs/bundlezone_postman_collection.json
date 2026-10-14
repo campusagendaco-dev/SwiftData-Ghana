@@ -1,0 +1,350 @@
+{
+  "info": {
+    "name": "BundleZone API (Official)",
+    "_postman_id": "bundlezone-api-collection-v2",
+    "description": "BundleZone API collection with anti-duplicate idempotency protection, beneficiary checks, single and bulk order placement, wallet balance, order status check, and webhook callback signature verification. MTN/Yello orders require a VERIFIED beneficiary status. AT and Telecel skip beneficiary verification. Support Hotline: 0256702995 (+233 25 670 2995).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Bundles - Get Available",
+      "request": {
+        "description": "Retrieve available data bundles and exact capacity values before placing orders.",
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/bundles.php",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "bundles.php"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Beneficiary Check - Single",
+      "request": {
+        "description": "Optional MTN/Yello recipient precheck. Number is re-verified when order is submitted. AT and Telecel return not_required.",
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"network\": \"YELLO\",\n  \"phone_number\": \"0551234567\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/beneficiary-check.php",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "beneficiary-check.php"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Beneficiary Check - Bulk",
+      "request": {
+        "description": "Checks up to 1,000 unique MTN/Yello numbers without creating orders or charging the wallet. Only VERIFIED results may continue.",
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"network\": \"YELLO\",\n  \"phone_numbers\": [\n    \"0551234567\",\n    \"0598458971\",\n    \"0241234567\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/beneficiary-check.php",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "beneficiary-check.php"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Order - Single (With Anti-Duplicate Reference)",
+      "request": {
+        "description": "Place single data order. Always pass your unique merchant 'reference' and 'X-Idempotency-Key' to prevent duplicate charges. If the same reference or an identical recipient order is submitted during cooldown, BundleZone rejects or returns the existing order safely without double-charging.",
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "X-Idempotency-Key",
+            "value": "API123456789",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mode\": \"single\",\n  \"network\": \"YELLO\",\n  \"recipient\": \"0551234567\",\n  \"capacity\": 1,\n  \"reference\": \"API123456789\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/order.php",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "order.php"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Order - Bulk (Batch & Row References)",
+      "request": {
+        "description": "Maximum 1,000 rows. MTN/Yello batches are all-or-nothing: if any recipient is not VERIFIED, the complete batch is held and nothing is charged. Supply batch and row references to guarantee idempotency.",
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mode\": \"bulk\",\n  \"network\": \"YELLO\",\n  \"reference\": \"BATCH-20261014-001\",\n  \"rows\": [\n    {\"recipient\": \"0551234567\", \"capacity\": 1, \"reference\": \"BATCH-ROW-001\"},\n    {\"recipient\": \"0557654321\", \"capacity\": 2, \"reference\": \"BATCH-ROW-002\"}\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/order.php",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "order.php"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. Get Balance",
+      "request": {
+        "description": "Fetch current API wallet balance.",
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/balance.php",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "balance.php"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. Check Status",
+      "request": {
+        "description": "Query order fulfillment status by merchant reference or provider order_id.",
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-KEY",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/status.php?reference=API123456789",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "status.php"
+          ],
+          "query": [
+            {
+              "key": "reference",
+              "value": "API123456789"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "8. Webhook Callback Receiver (Example)",
+      "request": {
+        "description": "Example receiver request sent by BundleZone when order status changes. Verify the HMAC signature against the exact raw request body: sha256=HMAC_SHA256(timestamp + '.' + rawBody, WEBHOOK_SECRET).",
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "BundleZone-Webhook/1.0",
+            "type": "text"
+          },
+          {
+            "key": "X-BundleZone-Timestamp",
+            "value": "1787472000",
+            "type": "text"
+          },
+          {
+            "key": "X-BundleZone-Signature",
+            "value": "sha256=GENERATED_SIGNATURE",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event\": \"order.status_changed\",\n  \"timestamp\": \"2026-08-23T08:00:00+00:00\",\n  \"data\": {\n    \"order_id\": 12345,\n    \"reference\": \"API123456789\",\n    \"network\": \"YELLO\",\n    \"recipient\": \"0551234567\",\n    \"capacity\": 1,\n    \"price\": 5.00,\n    \"status\": \"completed\",\n    \"source\": \"api\",\n    \"created_at\": \"2026-08-23 07:50:00\",\n    \"updated_at\": \"2026-08-23 08:00:00\"\n  },\n  \"client\": {\n    \"api_client_id\": 1,\n    \"client_name\": \"My API App\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{webhook_url}}",
+          "host": [
+            "{{webhook_url}}"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://bundlezone.shop/api"
+    },
+    {
+      "key": "api_key",
+      "value": "PASTE_YOUR_API_KEY",
+      "type": "secret"
+    },
+    {
+      "key": "webhook_url",
+      "value": "https://yourwebsite.com/bundlezone-webhook"
+    },
+    {
+      "key": "webhook_secret",
+      "value": "PASTE_YOUR_WEBHOOK_SECRET",
+      "type": "secret"
+    }
+  ]
+}

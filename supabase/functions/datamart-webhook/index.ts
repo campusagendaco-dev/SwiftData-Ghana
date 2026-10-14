@@ -47,22 +47,35 @@ serve(async (req) => {
       secret = provider?.settings?.webhook_secret;
     }
 
-    // Verify Signature if secret is found
-    if (secret) {
-      const enc = new TextEncoder();
-      const cryptoKey = await crypto.subtle.importKey(
-        "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-      );
-      const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(rawBody));
-      const expectedSignature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+    // Verify Signature: Require secret to be present and reject if missing
+    if (!secret) {
+      console.error("[DataMart Webhook] Webhook secret not configured in environment or database.");
+      return new Response(JSON.stringify({ error: "Webhook secret not configured" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-      if (signature !== expectedSignature) {
-        console.error("[DataMart Webhook] Invalid signature");
-        return new Response(JSON.stringify({ error: "Invalid signature" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    const enc = new TextEncoder();
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(rawBody));
+    const expectedSignature = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+    const sigA = signature.toLowerCase().trim();
+    const sigB = expectedSignature.toLowerCase().trim();
+    let diff = sigA.length ^ sigB.length;
+    for (let i = 0; i < Math.min(sigA.length, sigB.length); i++) {
+      diff |= sigA.charCodeAt(i) ^ sigB.charCodeAt(i);
+    }
+
+    if (diff !== 0) {
+      console.error("[DataMart Webhook] Invalid signature");
+      return new Response(JSON.stringify({ error: "Invalid signature" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const payload = JSON.parse(rawBody);

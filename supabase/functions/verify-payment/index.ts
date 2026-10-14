@@ -11,6 +11,7 @@ import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
 import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
+import { isDuplicateOrderError } from "../_shared/providers/utils.ts";
 
 // --- Utilities ---
 
@@ -819,10 +820,6 @@ serve(async (req: any) => {
     const secondsSinceUpdate = (Date.now() - orderUpdatedAt) / 1000;
 
     if (existingOrder && existingOrder.status === "processing" && !force) {
-      if (existingOrder.network === "MTN Mash Up") {
-        return new Response(JSON.stringify({ status: "processing", message: "MTN Mash Up order is processing manually by admin" }), { headers: corsHeaders });
-      }
-
       // If already assigned to an external provider order ID (and not just our dispatching lock)
       if (hasAssignedProvider && existingOrder.provider_order_id !== "dispatching") {
         console.log(`[verify-payment] Order ${targetReference} is currently in processing state with provider ${existingOrder.provider_id}. Awaiting provider status update.`);
@@ -919,7 +916,9 @@ serve(async (req: any) => {
     let verifiedAmount = 0;
     let paystackFeeOnVerified = 0;
     let currentOrderType = (existingOrder?.order_type || "data") as string;
-    if (currentOrderType.toLowerCase() === "api") {
+    if (existingOrder?.network === "AFA" || existingOrder?.network?.toUpperCase().includes("AFA") || existingOrder?.afa_ghana_card) {
+      currentOrderType = "afa";
+    } else if (currentOrderType.toLowerCase() === "api") {
       if (String(existingOrder?.package_size).toUpperCase() === "AIRTIME") {
         currentOrderType = "airtime";
       } else {
@@ -1259,8 +1258,23 @@ serve(async (req: any) => {
       ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing"]
       : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
 
-    const isMashUp = existingOrder?.network === "MTN Mash Up";
-    const targetStatus = isMashUp ? "pending" : "processing";
+    const isMashUp = 
+      existingOrder?.network === "MTN Mash Up" || 
+      String(existingOrder?.network || "").toUpperCase().includes("MASH") ||
+      (existingOrder?.metadata?.category || "").toLowerCase() === "mashup";
+    let targetStatus = "processing";
+    if (isMashUp) {
+      const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
+      const { data: dmActive } = await supabaseAdmin
+        .from("providers")
+        .select("id, is_active")
+        .or("handler_type.eq.datamart,name.ilike.%datamart%")
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!dmActive && !dmApiKey) {
+        targetStatus = "pending";
+      }
+    }
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({ 
@@ -1361,12 +1375,28 @@ serve(async (req: any) => {
       }
     }
 
-    if (claimedOrder?.network === "MTN Mash Up") {
-      console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. Set status as 'pending' for manual export.`);
-      return new Response(JSON.stringify({
-        status: "pending",
-        message: "MTN Mash Up order queued for manual processing"
-      }), { headers: corsHeaders });
+    const isMashUpOrderCheck = 
+      claimedOrder?.network === "MTN Mash Up" || 
+      String(claimedOrder?.network || "").toUpperCase().includes("MASH") ||
+      (claimedOrder?.metadata?.category || "").toLowerCase() === "mashup";
+
+    if (isMashUpOrderCheck) {
+      const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
+      const { data: dmActive } = await supabaseAdmin
+        .from("providers")
+        .select("id, is_active")
+        .or("handler_type.eq.datamart,name.ilike.%datamart%")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!dmActive && !dmApiKey) {
+        console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. DataMart not configured for automated MashUp. Keeping status as 'pending' for manual export.`);
+        return new Response(JSON.stringify({
+          status: "pending",
+          message: "MTN Mash Up order queued for manual processing"
+        }), { headers: corsHeaders });
+      }
+      console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. Proceeding to automated DataMart fulfillment.`);
     }
 
     // --- 4. FULFILLMENT ---
@@ -1549,17 +1579,17 @@ serve(async (req: any) => {
     const activeProviders = await resolveProvidersForOrder(supabaseAdmin, claimedOrder);
 
     // --- SIBLING DUPLICATE PROTECTION ---
-    // Look for any identical order submitted in the last 10 seconds for the same phone, network, package, and amount.
-    // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 10 seconds).
+    // Look for any identical order submitted in the last 60 seconds for the same phone, network, package, and amount.
+    // We check if an active sibling order for identical details is currently processing (e.g. rapid double-click or webhook race condition within 60 seconds).
     if (isProviderOrder && customerPhone && network && packageSize) {
-      const tenSecondsAgo = new Date(Date.now() - 10 * 1000).toISOString();
+      const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
       const { data: rawSiblings } = await supabaseAdmin
         .from("orders")
         .select("id, status, provider_order_id, provider_id, profit, parent_profit, parent_agent_id, created_at, network, package_size, amount")
         .eq("customer_phone", customerPhone)
         .neq("id", targetReference)
         .in("status", ["processing", "paid"])
-        .gte("created_at", tenSecondsAgo)
+        .gte("created_at", sixtySecondsAgo)
         .order("created_at", { ascending: false });
 
       const siblingOrders = (rawSiblings || []).filter((o: any) => {
@@ -1668,25 +1698,87 @@ serve(async (req: any) => {
       if (ht === "datamart") {
         let externalId = packageSize;
         const capNum = parseCapacity(packageSize);
-        const datamartNet = (network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO")
-          ? "YELLO"
-          : ((network.toUpperCase().includes("TELECEL") || network.toUpperCase().includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
+        const pkgUpper = String(packageSize || "").toUpperCase();
+        const isMashUp = 
+          network.toUpperCase().includes("MASH") || 
+          network.toUpperCase().includes("COMBO") ||
+          claimedOrder?.network === "MTN Mash Up" ||
+          (claimedOrder?.metadata?.category || "").toLowerCase() === "mashup" ||
+          (pkgUpper.includes("MINS") && network.toUpperCase().includes("MTN"));
 
-        try {
-          const { data: pkgMapping } = await supabaseAdmin
-            .from("provider_packages")
-            .select("external_id")
-            .eq("provider_id", provider.id)
-            .eq("network", "MTN")
-            .eq("package_name", packageSize)
-            .maybeSingle();
-          if (pkgMapping?.external_id) {
-            externalId = pkgMapping.external_id;
-          } else if (capNum > 0) {
-            externalId = `MTN_${capNum}`;
+        const datamartNet = isMashUp
+          ? "MTN_COMBO"
+          : ((network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO")
+            ? "YELLO"
+            : ((network.toUpperCase().includes("TELECEL") || network.toUpperCase().includes("VODA")) ? "TELECEL" : "AT_PREMIUM"));
+
+        let comboCost: number | undefined = undefined;
+        if (isMashUp) {
+          const cleanPkgKey = packageSize.toLowerCase().replace(/[\s\-_+]/g, "");
+          const MASHUP_COMBO_MAP: Record<string, number> = {
+            "511mb176mins": 10,
+            "2.6gb1077mins": 20,
+            "4.5gb1800mins": 30,
+            "3.4gbonly": 35,
+            "3.4gb": 35,
+            "6gb700mins": 40,
+            "10gb1800mins": 50,
+            "5.1gbonly": 55,
+            "5.1gb": 55,
+            "6.8gbonly": 60,
+            "6.8gb": 60,
+            "8.5only": 75,
+            "8.5gbonly": 75,
+            "8.5gb": 75,
+            "8.5": 75,
+            "10gbonly": 80,
+            "870mb360mins": 85,
+            "3.5gb14500mins": 100,
+            "3.5gb1450mins": 100,
+          };
+          const VALID_COMBO_COSTS = new Set([10, 20, 30, 35, 40, 50, 55, 60, 75, 80, 85, 100]);
+          if (MASHUP_COMBO_MAP[cleanPkgKey]) {
+            comboCost = MASHUP_COMBO_MAP[cleanPkgKey];
           }
-        } catch (e) {
-          console.error("[datamart-payload-resolve] Error:", e);
+
+          try {
+            const { data: pkgMapping } = await supabaseAdmin
+              .from("provider_packages")
+              .select("external_id")
+              .eq("provider_id", provider.id)
+              .or("network.ilike.%MASH%,network.eq.MTN_COMBO")
+              .or(`package_name.eq.${packageSize},package_name.ilike.%${packageSize.trim()}%`)
+              .maybeSingle();
+            if (pkgMapping?.external_id && VALID_COMBO_COSTS.has(Number(pkgMapping.external_id))) {
+              comboCost = Number(pkgMapping.external_id);
+            }
+          } catch (e) {
+            console.error("[datamart-mashup-resolve] Error:", e);
+          }
+
+          if (!comboCost || !VALID_COMBO_COSTS.has(comboCost)) {
+            if (cleanPkgKey.includes("10gb") && cleanPkgKey.includes("only")) comboCost = 80;
+            else if (cleanPkgKey.includes("10gb")) comboCost = 50;
+            else comboCost = 10;
+          }
+          externalId = String(comboCost);
+        } else {
+          try {
+            const { data: pkgMapping } = await supabaseAdmin
+              .from("provider_packages")
+              .select("external_id")
+              .eq("provider_id", provider.id)
+              .eq("network", "MTN")
+              .eq("package_name", packageSize)
+              .maybeSingle();
+            if (pkgMapping?.external_id) {
+              externalId = pkgMapping.external_id;
+            } else if (capNum > 0) {
+              externalId = `MTN_${capNum}`;
+            }
+          } catch (e) {
+            console.error("[datamart-payload-resolve] Error:", e);
+          }
         }
 
         return { 
@@ -1699,11 +1791,12 @@ serve(async (req: any) => {
           plan: externalId, 
           bundle: externalId, 
           capacity: String(capNum > 0 ? capNum : packageSize), 
+          comboCost: comboCost,
           orderReference: targetReference, 
           reference: targetReference,
           gateway: "wallet", 
           bypass_beneficiary: true, 
-          category: claimedOrder.metadata?.category 
+          category: isMashUp ? "mashup" : claimedOrder.metadata?.category 
         };
       }
       const parsedCapVal = parseCapacity(packageSize);
@@ -1753,6 +1846,36 @@ serve(async (req: any) => {
         };
       }
       
+      // Standard request body for other providers
+      const requestBody: Record<string, unknown> = {
+        networkRaw: network,
+        networkKey: netKey,
+        recipient,
+        phoneNumber: recipient,
+        phone: recipient,
+        package_size: packageSize,
+        amount: deliveryAmount,
+        price: deliveryAmount,
+        reference: targetReference,
+        order_id: targetReference,
+        metadata: claimedOrder.metadata,
+        afa_full_name: claimedOrder.afa_full_name || claimedOrder.metadata?.afa_full_name || metadata.afa_full_name,
+        fullName: claimedOrder.afa_full_name || claimedOrder.metadata?.afa_full_name || metadata.afa_full_name,
+        afa_ghana_card: claimedOrder.afa_ghana_card || claimedOrder.metadata?.afa_ghana_card || metadata.afa_ghana_card,
+        ghana_card: claimedOrder.afa_ghana_card || claimedOrder.metadata?.afa_ghana_card || metadata.afa_ghana_card,
+        ghanaCardNumber: claimedOrder.afa_ghana_card || claimedOrder.metadata?.afa_ghana_card || metadata.afa_ghana_card,
+        afa_occupation: claimedOrder.afa_occupation || claimedOrder.metadata?.afa_occupation || metadata.afa_occupation,
+        occupation: claimedOrder.afa_occupation || claimedOrder.metadata?.afa_occupation || metadata.afa_occupation,
+        afa_residence: claimedOrder.afa_residence || claimedOrder.metadata?.afa_residence || metadata.afa_residence,
+        location: claimedOrder.afa_residence || claimedOrder.metadata?.afa_residence || metadata.afa_residence,
+        placeOfResidence: claimedOrder.afa_residence || claimedOrder.metadata?.afa_residence || metadata.afa_residence,
+        afa_date_of_birth: claimedOrder.afa_date_of_birth || claimedOrder.metadata?.afa_date_of_birth || metadata.afa_date_of_birth,
+        dob: claimedOrder.afa_date_of_birth || claimedOrder.metadata?.afa_date_of_birth || metadata.afa_date_of_birth,
+        dateOfBirth: claimedOrder.afa_date_of_birth || claimedOrder.metadata?.afa_date_of_birth || metadata.afa_date_of_birth,
+        afa_email: claimedOrder.afa_email || claimedOrder.metadata?.afa_email || metadata.afa_email,
+        email: claimedOrder.afa_email || claimedOrder.metadata?.afa_email || metadata.afa_email,
+      };
+
       // Pass override network to standard request body if provided
       if (overrideNetKey) return { ...requestBody, networkKey: overrideNetKey };
       return requestBody;
@@ -1763,17 +1886,19 @@ serve(async (req: any) => {
     for (const provider of activeProviders) {
       lastAttemptedProvider = provider;
       const providerCallStart = Date.now();
-      if (currentOrderType === "afa") {
+      if (currentOrderType === "afa" || network.toUpperCase().includes("AFA") || claimedOrder.afa_ghana_card) {
         result = await callProviderApi(
           supabaseAdmin,
           provider,
           {
-            fullName: metadata.afa_full_name,
-            ghanaCardNumber: metadata.afa_ghana_card,
-            occupation: metadata.afa_occupation,
-            email: metadata.afa_email,
-            placeOfResidence: metadata.afa_residence,
-            dateOfBirth: metadata.afa_date_of_birth,
+            fullName: claimedOrder.afa_full_name || metadata.afa_full_name || metadata.fullName,
+            ghanaCardNumber: claimedOrder.afa_ghana_card || metadata.afa_ghana_card || metadata.ghanaCardNumber,
+            occupation: claimedOrder.afa_occupation || metadata.afa_occupation || metadata.occupation,
+            email: claimedOrder.afa_email || metadata.afa_email || metadata.email,
+            placeOfResidence: claimedOrder.afa_residence || metadata.afa_residence || metadata.residence,
+            location: claimedOrder.afa_residence || metadata.afa_residence || metadata.residence,
+            dateOfBirth: claimedOrder.afa_date_of_birth || metadata.afa_date_of_birth || metadata.dateOfBirth,
+            dob: claimedOrder.afa_date_of_birth || metadata.afa_date_of_birth || metadata.dateOfBirth,
             customer_phone: customerPhone,
             phone: customerPhone,
             recipient,
@@ -1781,8 +1906,15 @@ serve(async (req: any) => {
             reference: targetReference,
             networkKey: "AFA",
             capacity: "BUNDLE",
+            order_type: "afa",
+            afa_full_name: claimedOrder.afa_full_name || metadata.afa_full_name,
+            afa_ghana_card: claimedOrder.afa_ghana_card || metadata.afa_ghana_card,
+            afa_occupation: claimedOrder.afa_occupation || metadata.afa_occupation,
+            afa_residence: claimedOrder.afa_residence || metadata.afa_residence,
+            afa_date_of_birth: claimedOrder.afa_date_of_birth || metadata.afa_date_of_birth,
+            afa_email: claimedOrder.afa_email || metadata.afa_email,
           },
-          "afa-registration"
+          "purchase"
         );
       } else if (currentOrderType === "utility") {
         result = await callProviderApi(
@@ -1995,8 +2127,9 @@ serve(async (req: any) => {
         log(supabaseAdmin, { level: "info", source: "verify-payment", event: "provider.called", message: `Provider accepted order`, order_id: targetReference, provider_id: successfulProviderId, duration_ms: providerDuration, data: { provider_order_id: result.id, network, package_size: packageSize, recipient } });
         break; // success — stop trying
       } else {
+        const isDuplicateErr = isDuplicateOrderError(result.reason);
         // Increment consecutive failures ONLY for technical server outages, NOT for unlisted beneficiary numbers or validation/duplicate errors
-        isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient|duplicate|identical/i.test(String(result.reason || ""));
+        isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || "")) || isDuplicateErr;
         let newFailures = 0;
 
         const isDatamartProvider = (provider.handler_type || "").toLowerCase() === "datamart";
@@ -2011,6 +2144,12 @@ serve(async (req: any) => {
 
         await logProviderError(supabaseAdmin, provider.id, targetReference, result.reason);
         log(supabaseAdmin, { level: "error", source: "verify-payment", event: "provider.rejected", message: `${provider.name} rejected (${newFailures} failures): ${result.reason}`, order_id: targetReference, provider_id: provider.id, duration_ms: providerDuration, data: { provider: provider.name, reason: result.reason, consecutive_failures: newFailures } });
+
+        // Duplicate Safety Guard: If rejection is due to carrier/aggregator deduplication, DO NOT cascade to other providers
+        if (isDuplicateErr) {
+          console.warn(`[verify-payment] Halting provider failover for order ${targetReference}: Duplicate order detected (${result.reason}). Entering 60-min auto-route cooldown.`);
+          break;
+        }
         
         const datamartFailoverEnabled = sysSettings?.auto_failover_non_beneficiary_to_datamart !== false;
         if (!autoApiSwitch && !datamartFailoverEnabled && !isBeneficiaryErr && (provider.handler_type || "") !== "spendless") {
@@ -2045,8 +2184,76 @@ serve(async (req: any) => {
       log(supabaseAdmin, { level: "info", source: "verify-payment", event: "order.processing", message: `Order successfully bought - set as ${targetStatus} — provider_order_id: ${result.id}`, order_id: targetReference, agent_id: claimedOrder.agent_id, provider_id: successfulProviderId, data: { provider_order_id: result.id, network, package_size: packageSize, amount: claimedOrder.amount } });
       return new Response(JSON.stringify({ status: targetStatus, provider_order_id: result.id }), { headers: corsHeaders });
     } else {
-      // Purchase failed - check if it is a transient timeout/network error
-      const reasonStr = String(result.reason || "").toLowerCase();
+      // Purchase failed - check if it is a transient duplicate cooldown error
+      const reasonStr = (result.reason || "").toLowerCase();
+      const isDuplicateError = isDuplicateOrderError(result.reason);
+
+      if (isDuplicateError) {
+        // Stop failing duplicate orders! Keep in processing with duplicate_cooldown to route after 60 mins
+        const delayedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const updatedMetadata = {
+          ...(claimedOrder.metadata || {}),
+          duplicate_delayed: true,
+          delayed_until: delayedUntil,
+          last_duplicate_reason: result.reason || "Duplicate order detected",
+        };
+        await supabaseAdmin.from("orders").update({
+          status: "processing",
+          provider_order_id: "duplicate_cooldown",
+          failure_reason: `Duplicate order detected. Delayed for auto-routing after 60 mins. (${result.reason || 'Duplicate'})`,
+          last_retry_at: new Date().toISOString(),
+          metadata: updatedMetadata
+        }).eq("id", targetReference);
+
+        log(supabaseAdmin, { 
+          level: "warn", 
+          source: "verify-payment", 
+          event: "order.duplicate_cooldown", 
+          message: `Order duplicate detected by provider. Held in processing for 60-minute auto-routing cooldown: ${result.reason}`, 
+          order_id: targetReference, 
+          agent_id: claimedOrder.agent_id, 
+          data: { reason: result.reason, delayed_until: delayedUntil } 
+        });
+
+        return new Response(JSON.stringify({
+          status: "processing",
+          message: "Duplicate order detected. We have queued it to automatically route in 60 minutes.",
+          provider_order_id: "duplicate_cooldown",
+          delayed_until: delayedUntil
+        }), { headers: corsHeaders });
+      }
+
+      // Check if it is a DataMart MashUp account enablement or lane closed error
+      const isMashUpOrder = claimedOrder?.network === "MTN Mash Up" || (claimedOrder?.metadata?.category || "").toLowerCase() === "mashup";
+      if (isMashUpOrder && (reasonStr.includes("mashup_not_enabled") || reasonStr.includes("not enabled") || reasonStr.includes("mashup_unavailable") || reasonStr.includes("lane closed"))) {
+        const failureNote = reasonStr.includes("not enabled")
+          ? `MashUp API not enabled on provider account. Queued for manual fulfillment. (${result.reason})`
+          : `MashUp provider lane closed temporarily. Queued for manual fulfillment. (${result.reason})`;
+
+        await supabaseAdmin.from("orders").update({
+          status: "pending",
+          provider_order_id: null,
+          failure_reason: failureNote,
+          updated_at: new Date().toISOString()
+        }).eq("id", targetReference);
+
+        log(supabaseAdmin, {
+          level: "warn",
+          source: "verify-payment",
+          event: "order.mashup_manual_queue",
+          message: failureNote,
+          order_id: targetReference,
+          agent_id: claimedOrder.agent_id,
+          data: { reason: result.reason }
+        });
+
+        return new Response(JSON.stringify({
+          status: "pending",
+          message: failureNote
+        }), { headers: corsHeaders });
+      }
+
+      // Check if it is a transient timeout/network error
       const isTimeoutOrNetworkError = 
         reasonStr.includes("timeout") || 
         reasonStr.includes("504") || 

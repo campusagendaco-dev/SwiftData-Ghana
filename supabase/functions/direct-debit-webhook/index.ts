@@ -84,15 +84,32 @@ serve(async (req) => {
   }
 
   // Verify HMAC signature to protect from fake callbacks
-  const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
-  if (KORBA_SECRET_KEY && signature) {
-    const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
-    if (!isSignatureValid) {
-      console.error(`[direct-debit-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
-      return json({ error: "Unauthorized: Signature mismatch" }, 401);
-    }
-    console.log("[direct-debit-webhook] Signature verified successfully.");
+  let KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
+  if (!KORBA_SECRET_KEY) {
+    const { data: korbaProvider } = await supabaseAdmin
+      .from("providers")
+      .select("api_secret, settings")
+      .eq("handler_type", "korba")
+      .maybeSingle();
+    KORBA_SECRET_KEY = korbaProvider?.api_secret || korbaProvider?.settings?.secret_key || "";
   }
+
+  if (!KORBA_SECRET_KEY) {
+    console.error("[direct-debit-webhook] KORBA_SECRET_KEY missing in environment or database.");
+    return json({ error: "Server configuration error" }, 500);
+  }
+
+  if (!signature) {
+    console.warn("[direct-debit-webhook] Rejected unsigned callback.");
+    return json({ error: "Unauthorized: Missing signature" }, 401);
+  }
+
+  const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
+  if (!isSignatureValid) {
+    console.error(`[direct-debit-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
+    return json({ error: "Unauthorized: Signature mismatch" }, 401);
+  }
+  console.log("[direct-debit-webhook] Signature verified successfully.");
 
   console.log(`[direct-debit-webhook] Callback received: type=${type}, tx=${transactionId}, status=${status}, msg=${message}, mandate_id=${mandateId}`);
 

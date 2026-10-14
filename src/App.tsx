@@ -82,6 +82,7 @@ const AdminMashUpOrders = lazy(() => import("./pages/AdminMashUpOrders"));
 const AdminUtilityOrders = lazy(() => import("./pages/AdminUtilityOrders"));
 const AdminStandardOrders = lazy(() => import("./pages/AdminStandardOrders"));
 const AdminCheckerOrders = lazy(() => import("./pages/AdminCheckerOrders"));
+const AdminAfaOrders = lazy(() => import("./pages/AdminAfaOrders"));
 const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const AdminWithdrawals = lazy(() => import("./pages/AdminWithdrawals"));
 const AdminNotificationsPage = lazy(() => import("./pages/AdminNotificationsPage"));
@@ -141,6 +142,7 @@ const Privacy = lazy(() => import("./pages/Privacy"));
 const BlogList = lazy(() => import("./pages/BlogList"));
 const BlogPost = lazy(() => import("./pages/BlogPost"));
 const SubmitBeneficiaryNumbers = lazy(() => import("./pages/SubmitBeneficiaryNumbers"));
+const VerifyBeneficiaryNumbers = lazy(() => import("./pages/VerifyBeneficiaryNumbers"));
 
 const queryClient = new QueryClient();
 
@@ -415,6 +417,9 @@ const AppContent = () => {
         <Route path="/utilities" element={<Navigate to="/buy-utility" replace />} />
         <Route path="/submit-numbers" element={<SubmitBeneficiaryNumbers />} />
         <Route path="/submit-beneficiary" element={<Navigate to="/submit-numbers" replace />} />
+        <Route path="/verify-numbers" element={<VerifyBeneficiaryNumbers />} />
+        <Route path="/check-numbers" element={<Navigate to="/verify-numbers" replace />} />
+        <Route path="/beneficiary-check" element={<Navigate to="/verify-numbers" replace />} />
 
         {/* Sub agent routes */}
         <Route path="/store/:slug/sub-agent" element={<SubAgentSignup />} />
@@ -452,6 +457,8 @@ const AppContent = () => {
           <Route path="schedule" element={<DashboardSchedule />} />
           <Route path="submit-numbers" element={<SubmitBeneficiaryNumbers />} />
           <Route path="submit-beneficiary" element={<Navigate to="/dashboard/submit-numbers" replace />} />
+          <Route path="verify-numbers" element={<VerifyBeneficiaryNumbers />} />
+          <Route path="check-numbers" element={<Navigate to="/dashboard/verify-numbers" replace />} />
 
           {/* Paid agent-only pages */}
           <Route path="agent-prices" element={<AgentFeatureGuard><DashboardPricing /></AgentFeatureGuard>} />
@@ -496,6 +503,8 @@ const AppContent = () => {
           <Route path="utility-orders" element={<AdminUtilityOrders />} />
           <Route path="standard-orders" element={<AdminStandardOrders />} />
           <Route path="checker-orders" element={<AdminCheckerOrders />} />
+          <Route path="afa-orders" element={<AdminAfaOrders />} />
+          <Route path="afa" element={<Navigate to="/admin/afa-orders" replace />} />
           <Route path="api-orders" element={<AdminAPIOrders />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="reconciliation" element={<AdminReconciliation />} />

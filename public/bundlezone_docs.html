@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BundleZone REST API Reference - SwiftData Ghana</title>
+  <title>BundleZone REST API Reference &amp; Webhook Integration - SwiftData Ghana</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -53,6 +53,15 @@
       padding-bottom: 2rem;
     }
 
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -66,7 +75,26 @@
       background: rgba(20, 184, 166, 0.15);
       color: var(--primary);
       border: 1px solid rgba(20, 184, 166, 0.3);
-      margin-bottom: 1rem;
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 1rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .download-btn:hover {
+      background: rgba(56, 189, 248, 0.25);
+      transform: translateY(-1px);
     }
 
     h1 {
@@ -76,13 +104,14 @@
       margin-bottom: 0.75rem;
       background: linear-gradient(135deg, #ffffff 40%, var(--primary) 100%);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
     p.lead {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       color: var(--text-muted);
-      max-width: 750px;
+      max-width: 800px;
     }
 
     .meta-bar {
@@ -133,6 +162,16 @@
       border-color: rgba(20, 184, 166, 0.3);
     }
 
+    .card-highlight {
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.05) 0%, rgba(18, 24, 38, 0.7) 100%);
+    }
+
+    .card-highlight .card-title,
+    .card-title-warning {
+      color: #fbbf24;
+    }
+
     .card-title {
       font-size: 1.35rem;
       font-weight: 700;
@@ -178,6 +217,10 @@
       color: var(--primary);
       display: block;
       margin-bottom: 0.25rem;
+    }
+
+    .note-card-warning strong {
+      color: #fbbf24;
     }
 
     pre {
@@ -267,6 +310,51 @@
       margin-top: 1rem;
     }
 
+    /* Tabs */
+    .tab-nav {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+      background: rgba(20, 184, 166, 0.15);
+      color: var(--primary);
+      border-color: rgba(20, 184, 166, 0.3);
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
     footer {
       text-align: center;
       padding: 2rem 0;
@@ -275,15 +363,26 @@
       border-top: 1px solid var(--card-border);
       margin-top: 3rem;
     }
+
+    footer a {
+      color: #38bdf8;
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <div class="badge">REST Provider Integration</div>
+      <div class="header-top">
+        <div class="badge">REST Provider Integration &bull; 2026 Spec</div>
+        <a href="/bundlezone_postman_collection.json" download class="download-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Postman Collection
+        </a>
+      </div>
       <h1>BundleZone API Reference</h1>
       <p class="lead">
-        Comprehensive guide for integrating with <strong>BundleZone</strong> (<code>https://bundlezone.shop</code>) in SwiftData Ghana: bundle listings, MTN/Yello beneficiary verification, order submissions, and webhook callbacks.
+        Comprehensive guide for integrating with <strong>BundleZone</strong> (<code>https://bundlezone.shop</code>) in SwiftData Ghana: bundle listings, MTN/Yello beneficiary verification, anti-duplicate order protection, order submissions, and webhook callbacks.
       </p>
 
       <div class="meta-bar">
@@ -292,31 +391,60 @@
           <span class="meta-val">https://bundlezone.shop</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">Auth Header</span>
-          <span class="meta-val">x-api-key: YOUR_API_KEY</span>
+          <span class="meta-label">API Prefix</span>
+          <span class="meta-val">/api</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">Handler Type</span>
-          <span class="meta-val">bundlezone</span>
+          <span class="meta-label">Auth Header</span>
+          <span class="meta-val">X-API-KEY: YOUR_API_KEY</span>
         </div>
         <div class="meta-item">
           <span class="meta-label">Recipient Format</span>
           <span class="meta-val">0551234567 (10 Digits)</span>
         </div>
+        <div class="meta-item">
+          <span class="meta-label">Support Helpline</span>
+          <span class="meta-val">0256702995</span>
+        </div>
       </div>
     </header>
 
-    <!-- Key Rules -->
+    <!-- ANTI-DUPLICATE ORDERS & IDEMPOTENCY GUARD -->
+    <section class="card card-highlight">
+      <div class="card-title card-title-warning">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        Anti-Duplicate Order Protection &amp; Idempotency
+      </div>
+      <p class="card-desc">
+        To prevent accidental duplicate orders caused by client retries, double-clicking, or network lag, BundleZone enforces strict transaction deduplication:
+      </p>
+      <div class="notes-grid mt-4">
+        <div class="note-card note-card-warning">
+          <strong>1. Merchant Reference Idempotency</strong>
+          Always provide a unique <code>reference</code> (e.g. <code>"API123456789"</code> or UUID) in every single or bulk order payload, and optionally supply the <code>X-Idempotency-Key</code> header.
+        </div>
+        <div class="note-card note-card-warning">
+          <strong>2. Deduplication Cooldown Window</strong>
+          If the same reference or an identical order for the same recipient, network, and package size is submitted within 5–15 minutes, BundleZone blocks duplicate billing and returns the existing order details or code <code>DUPLICATE_ORDER</code>.
+        </div>
+        <div class="note-card note-card-warning">
+          <strong>3. Downstream Safe Handling</strong>
+          When receiving a duplicate response, <strong>never fail or cancel the customer's purchase</strong> and <strong>never cascade to another provider</strong>. Keep the order in <code>processing</code> state and check status via <code>/api/status.php</code> or wait for the webhook callback.
+        </div>
+      </div>
+    </section>
+
+    <!-- General Rules -->
     <section class="card">
       <div class="card-title">Integration &amp; Usage Rules</div>
       <div class="notes-grid">
         <div class="note-card">
-          <strong>Recipient Format</strong>
-          Ghana 10-digit local phone number format (e.g. <code>0551234567</code>).
+          <strong>Networks</strong>
+          <code>YELLO</code> (or <code>MTN</code>) for MTN Ghana, <code>Telecel</code> for Telecel, and <code>AT</code> for AirtelTigo.
         </div>
         <div class="note-card">
           <strong>Capacity Unit</strong>
-          Numeric Gigabytes (GB). E.g. <code>1</code> for 1GB, <code>2</code> for 2GB, <code>0.5</code> for 500MB.
+          Numeric Gigabytes (GB). E.g. <code>1</code> for 1GB, <code>2</code> for 2GB, <code>0.5</code> for 500MB, <code>10</code> for 10GB.
         </div>
         <div class="note-card">
           <strong>Beneficiary Verification</strong>
@@ -336,10 +464,26 @@
         <span class="endpoint-path">/api/bundles.php</span>
       </div>
       <p class="card-desc">
-        Fetch all available data bundles and exact capacity keys before placing orders.
+        Fetch all available data bundles, active pricing, and capacity keys before placing orders.
       </p>
       <pre><code>curl "https://bundlezone.shop/api/bundles.php" \
-  -H "x-api-key: YOUR_API_KEY"</code></pre>
+  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Accept: application/json"</code></pre>
+
+      <div class="code-label-group">
+        <span class="code-label">Sample Response (HTTP 200):</span>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "bundles": [
+      { "id": 101, "network": "YELLO", "capacity": 1, "capacity_label": "1GB", "price": 4.50, "active": true },
+      { "id": 102, "network": "YELLO", "capacity": 2, "capacity_label": "2GB", "price": 9.00, "active": true },
+      { "id": 201, "network": "Telecel", "capacity": 5, "capacity_label": "5GB", "price": 18.00, "active": true },
+      { "id": 301, "network": "AT", "capacity": 10, "capacity_label": "10GB", "price": 35.00, "active": true }
+    ]
+  }
+}</code></pre>
+      </div>
     </section>
 
     <!-- 2. Beneficiary Check Endpoint -->
@@ -353,20 +497,32 @@
       </p>
 
       <div class="code-label-group">
-        <span class="code-label">Request:</span>
+        <span class="code-label">Single Request:</span>
         <pre><code>{
-  "network": "MTN",
+  "network": "YELLO",
   "phone_number": "0551234567"
 }</code></pre>
       </div>
 
       <div class="code-label-group">
-        <span class="code-label">Verified Response:</span>
+        <span class="code-label">Bulk Request (Up to 1,000 Numbers):</span>
+        <pre><code>{
+  "network": "YELLO",
+  "phone_numbers": [
+    "0551234567",
+    "0598458971",
+    "0241234567"
+  ]
+}</code></pre>
+      </div>
+
+      <div class="code-label-group">
+        <span class="code-label">Verified Response (HTTP 200):</span>
         <pre><code>{
   "success": true,
   "data": {
     "request_id": "REQ-ABC123",
-    "network": "MTN",
+    "network": "YELLO",
     "count": 1,
     "results": [
       {
@@ -420,16 +576,17 @@
         <span class="endpoint-subtitle">(Single Order)</span>
       </div>
       <p class="card-desc">
-        Submit a single data bundle order for execution.
+        Submit a single data bundle order for execution with unique merchant reference.
       </p>
 
       <div class="code-label-group">
         <span class="code-label">Payload:</span>
         <pre><code>{
   "mode": "single",
-  "network": "MTN",
+  "network": "YELLO",
   "recipient": "0551234567",
-  "capacity": 1
+  "capacity": 1,
+  "reference": "API123456789"
 }</code></pre>
       </div>
 
@@ -439,33 +596,158 @@
   "success": true,
   "data": {
     "request_id": "REQ-ABC123",
+    "order_id": 12345,
+    "reference": "API123456789",
     "mode": "single",
     "order": {
+      "id": 12345,
+      "order_id": 12345,
+      "reference": "API123456789",
       "success": true,
       "status": "processing",
-      "message": "Order accepted.",
+      "message": "Order accepted and queued for carrier delivery.",
       "estimated_delivery": "30 minutes to 6 hours"
     }
   }
 }</code></pre>
       </div>
+
+      <div class="code-label-group">
+        <span class="code-label">Duplicate Order Response (HTTP 409 or 200):</span>
+        <pre><code>{
+  "success": false,
+  "code": "DUPLICATE_ORDER",
+  "message": "Duplicate order detected. An order with this reference has already been placed or is currently being processed.",
+  "data": {
+    "order_id": 12345,
+    "reference": "API123456789",
+    "status": "processing"
+  }
+}</code></pre>
+      </div>
     </section>
 
-    <!-- 4. Webhooks -->
+    <!-- 4. Bulk Order -->
+    <section class="card">
+      <div class="card-title">
+        <span class="http-pill pill-post">POST</span>
+        <span class="endpoint-path">/api/order.php</span>
+        <span class="endpoint-subtitle">(Bulk Order)</span>
+      </div>
+      <p class="card-desc">
+        Submit up to 1,000 rows in one request. All rows use the network provided at the top level. Provide batch and row references to guarantee idempotency across all recipients.
+      </p>
+
+      <div class="code-label-group">
+        <span class="code-label">Bulk Order Payload:</span>
+        <pre><code>{
+  "mode": "bulk",
+  "network": "YELLO",
+  "reference": "BATCH-20261014-001",
+  "rows": [
+    { "recipient": "0551234567", "capacity": 1, "reference": "BATCH-ROW-001" },
+    { "recipient": "0557654321", "capacity": 2, "reference": "BATCH-ROW-002" }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="code-label-group">
+        <span class="code-label">Bulk Accepted Response (HTTP 200):</span>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "batch_id": "BATCH-20261014-001",
+    "mode": "bulk",
+    "count": 2,
+    "status": "processing",
+    "message": "All 2 rows accepted."
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- 5. Check Balance -->
+    <section class="card">
+      <div class="card-title">
+        <span class="http-pill pill-get">GET</span>
+        <span class="endpoint-path">/api/balance.php</span>
+      </div>
+      <p class="card-desc">
+        Retrieve your current API wallet balance.
+      </p>
+      <pre><code>curl "https://bundlezone.shop/api/balance.php" \
+  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Accept: application/json"</code></pre>
+
+      <div class="code-label-group">
+        <span class="code-label">Response (HTTP 200):</span>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "balance": 1425.50,
+    "currency": "GHS"
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- 6. Check Order Status -->
+    <section class="card">
+      <div class="card-title">
+        <span class="http-pill pill-get">GET</span>
+        <span class="endpoint-path">/api/status.php</span>
+      </div>
+      <p class="card-desc">
+        Check order delivery status using your merchant <code>reference</code> or BundleZone <code>order_id</code>.
+      </p>
+      <pre><code>curl "https://bundlezone.shop/api/status.php?reference=API123456789" \
+  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Accept: application/json"</code></pre>
+
+      <div class="code-label-group">
+        <span class="code-label">Response (HTTP 200):</span>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "order_id": 12345,
+    "reference": "API123456789",
+    "network": "YELLO",
+    "recipient": "0551234567",
+    "capacity": 1,
+    "price": 4.50,
+    "currency": "GHS",
+    "status": "completed",
+    "message": "Order delivered successfully.",
+    "created_at": "2026-08-23 07:50:00",
+    "updated_at": "2026-08-23 08:00:00"
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- 7. Webhooks -->
     <section class="card">
       <div class="card-title">Webhooks &amp; Status Callbacks</div>
       <p class="card-desc">
-        BundleZone notifies your server when an order changes status via HTTP POST to your registered webhook URL.
+        BundleZone notifies your server when an order changes status via HTTP POST to your registered callback URL.
       </p>
 
       <div class="notes-grid mt-4">
         <div class="note-card">
           <strong>Header: Timestamp</strong>
-          <code>X-BundleZone-Timestamp</code>: Unix time in seconds. Rejects requests older than 300 seconds.
+          <code>X-BundleZone-Timestamp</code>: Unix time in seconds. Rejects requests older than 300 seconds to prevent replay attacks.
         </div>
         <div class="note-card">
           <strong>Header: Signature</strong>
-          <code>X-BundleZone-Signature</code>: Format <code>sha256=HMAC_HEX</code>.
+          <code>X-BundleZone-Signature</code>: Format <code>sha256=HMAC_HEX</code>. Computed over timestamp and raw body.
+        </div>
+        <div class="note-card">
+          <strong>Expected Response</strong>
+          Your server must return an HTTP <code>200 OK</code> status code with JSON (e.g. <code>{"success": true}</code>) within 25 seconds.
+        </div>
+        <div class="note-card">
+          <strong>Idempotent Receiver</strong>
+          Check if the order is already marked <code>completed</code> before processing to prevent duplicate customer notifications or credits.
         </div>
       </div>
 
@@ -479,32 +761,153 @@ expected_signature = "sha256=" + HMAC_SHA256_HEX(signed_payload, WEBHOOK_SECRET)
         <span class="code-label">Callback Payload Example:</span>
         <pre><code>{
   "event": "order.status_changed",
-  "timestamp": "2026-08-17T08:15:00+00:00",
+  "timestamp": "2026-08-23T08:00:00+00:00",
   "data": {
-    "order_id": 1842,
-    "reference": "BZ-20260817-ABC123",
-    "network": "MTN",
+    "order_id": 12345,
+    "reference": "API123456789",
+    "network": "YELLO",
     "recipient": "0551234567",
-    "capacity": 5,
-    "capacity_label": "5GB",
-    "price": 19.5,
-    "currency": "GHS",
+    "capacity": 1,
+    "price": 5.00,
     "status": "completed",
     "source": "api",
-    "created_at": "2026-08-17 08:04:31",
-    "updated_at": "2026-08-17 08:15:00"
+    "created_at": "2026-08-23 07:50:00",
+    "updated_at": "2026-08-23 08:00:00"
   },
   "client": {
-    "api_client_id": 26,
-    "client_name": "SwiftData"
+    "api_client_id": 1,
+    "client_name": "My API App"
   }
 }</code></pre>
+      </div>
+
+      <div class="code-label-group mt-4">
+        <span class="code-label">Implementation Verification Code Examples:</span>
+        <div class="tab-nav mt-4">
+          <button class="tab-btn active" onclick="switchTab('tab-node')">Node.js / TypeScript</button>
+          <button class="tab-btn" onclick="switchTab('tab-php')">PHP</button>
+          <button class="tab-btn" onclick="switchTab('tab-python')">Python</button>
+        </div>
+
+        <div id="tab-node" class="tab-pane active">
+          <pre><code>import crypto from "node:crypto";
+
+function verifyBundleZoneWebhook(rawBody, timestampHeader, signatureHeader, secretKey) {
+  if (!signatureHeader || !secretKey) return false;
+
+  // Replay attack prevention (5 minutes)
+  if (timestampHeader) {
+    const ts = parseInt(timestampHeader, 10);
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - ts) > 300) return false;
+  }
+
+  const signedPayload = timestampHeader ? `${timestampHeader}.${rawBody}` : rawBody;
+  const hmac = crypto.createHmac("sha256", secretKey).update(signedPayload).digest("hex");
+  const expectedSignature = `sha256=${hmac}`;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signatureHeader.toLowerCase().trim()),
+    Buffer.from(expectedSignature.toLowerCase())
+  );
+}</code></pre>
+        </div>
+
+        <div id="tab-php" class="tab-pane">
+          <pre><code>&lt;?php
+$rawBody = file_get_contents('php://input');
+$timestamp = $_SERVER['HTTP_X_BUNDLEZONE_TIMESTAMP'] ?? null;
+$signature = $_SERVER['HTTP_X_BUNDLEZONE_SIGNATURE'] ?? '';
+$secretKey = getenv('BUNDLEZONE_WEBHOOK_SECRET');
+
+if (!$signature || !$secretKey) {
+    http_response_code(401);
+    exit(json_encode(['error' => 'Missing signature']));
+}
+
+// Replay attack protection (5 minutes)
+if ($timestamp && abs(time() - (int)$timestamp) > 300) {
+    http_response_code(401);
+    exit(json_encode(['error' => 'Expired timestamp']));
+}
+
+$signedPayload = $timestamp ? "{$timestamp}.{$rawBody}" : $rawBody;
+$expectedSignature = 'sha256=' . hash_hmac('sha256', $signedPayload, $secretKey);
+
+if (!hash_equals($expectedSignature, $signature)) {
+    http_response_code(401);
+    exit(json_encode(['error' => 'Invalid signature']));
+}
+
+// Acknowledge receipt
+http_response_code(200);
+echo json_encode(['success' => true]);
+?&gt;</code></pre>
+        </div>
+
+        <div id="tab-python" class="tab-pane">
+          <pre><code>import hmac
+import hashlib
+import time
+
+def verify_bundlezone_webhook(raw_body: bytes, timestamp: str, signature: str, secret: str) -> bool:
+    if not signature or not secret:
+        return False
+
+    # Check 5-minute replay window
+    if timestamp:
+        try:
+            ts = int(timestamp)
+            if abs(int(time.time()) - ts) > 300:
+                return False
+        except ValueError:
+            return False
+
+    signed_payload = f"{timestamp}.".encode('utf-8') + raw_body if timestamp else raw_body
+    computed = "sha256=" + hmac.new(secret.encode('utf-8'), signed_payload, hashlib.sha256).hexdigest()
+    
+    return hmac.compare_digest(computed.lower(), signature.lower().strip())</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEVELOPER SUPPORT & HELPLINE -->
+    <section class="card">
+      <div class="card-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        Technical Support &amp; Integration Inquiries
+      </div>
+      <p class="card-desc">
+        Need assistance with API key setup, wallet balance top-ups, webhook callback debugging, or urgent order inquiries? Contact the developer support desk:
+      </p>
+
+      <div class="notes-grid">
+        <div class="note-card">
+          <strong>Direct Phone Helpline</strong>
+          Call <a href="tel:+233256702995">0256702995</a> (+233 25 670 2995) for rapid phone assistance and urgent issue escalations.
+        </div>
+        <div class="note-card">
+          <strong>WhatsApp Support Channel</strong>
+          Chat via WhatsApp at <a href="https://wa.me/233256702995" target="_blank" rel="noopener noreferrer">0256702995</a> for real-time messaging, status updates, and transaction lookups.
+        </div>
       </div>
     </section>
 
     <footer>
-      SwiftData Ghana &bull; Integrated Provider Protocol Reference &bull; BundleZone
+      SwiftData Ghana &bull; Integrated Provider Protocol Reference &bull; BundleZone &bull; 2026 &bull; Support: <a href="tel:+233256702995">0256702995</a>
     </footer>
   </div>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      
+      const targetPane = document.getElementById(tabId);
+      if (targetPane) targetPane.classList.add('active');
+      
+      event.target.classList.add('active');
+    }
+  </script>
 </body>
 </html>

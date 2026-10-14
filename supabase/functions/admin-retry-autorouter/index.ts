@@ -53,7 +53,7 @@ serve(async (req: Request) => {
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
         .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
-        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode")
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown")
         .or("retry_count.is.null,retry_count.lt.5")
         .gte("created_at", cutoffDate);
 
@@ -87,7 +87,7 @@ serve(async (req: Request) => {
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
         .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
-        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode")
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown")
         .or("retry_count.is.null,retry_count.lt.5")
         .gte("created_at", effectiveCutoff)
         .order("retry_count", { ascending: true, nullsFirst: true })
@@ -99,6 +99,7 @@ serve(async (req: Request) => {
     }
 
     // Strictly ensure only verified telecom orders are processed
+    const isExplicit = Array.isArray(order_ids) && order_ids.length > 0;
     const eligibleOrders = candidateOrders.filter((o: any) => {
       const isPaid = o.payment_method === "wallet" || 
                      o.payment_method === "credit" || 
@@ -107,7 +108,25 @@ serve(async (req: Request) => {
                      o.status === "processing";
       const isNonTelecom = ["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(o.order_type || "").toLowerCase());
       const isMashUp = String(o.network || "").toLowerCase().includes("mash up");
-      return isPaid && !isNonTelecom && !isMashUp;
+      if (!isPaid || isNonTelecom || isMashUp) return false;
+
+      // Duplicate Order Cooldown Check: If order is in duplicate cooldown, verify 60 minutes have passed (unless explicitly triggered by admin)
+      if (!isExplicit) {
+        const isDuplicateCooldown = 
+          o.provider_order_id === "duplicate_cooldown" || 
+          o.metadata?.duplicate_delayed === true ||
+          /duplicate|identical/i.test(String(o.failure_reason || ""));
+        if (isDuplicateCooldown) {
+          const delayedUntilTime = o.metadata?.delayed_until ? new Date(o.metadata.delayed_until).getTime() : 0;
+          const lastActionTime = new Date(o.last_retry_at || o.updated_at || o.created_at).getTime();
+          const sixtyMinTime = lastActionTime + 60 * 60 * 1000;
+          const effectiveReadyTime = delayedUntilTime > 0 ? delayedUntilTime : sixtyMinTime;
+          if (Date.now() < effectiveReadyTime) {
+            return false;
+          }
+        }
+      }
+      return true;
     });
 
     if (eligibleOrders.length === 0) {
@@ -163,15 +182,20 @@ serve(async (req: Request) => {
         status: "processing"
       });
 
-      if (dispatch.ok) {
+      if (dispatch.ok || dispatch.status === "processing" || dispatch.provider_order_id === "duplicate_cooldown") {
         const targetStatus = dispatch.status === "fulfilled" ? "fulfilled" : "processing";
-        await supabaseAdmin.from("orders").update({
+        const patch: any = {
           status: targetStatus,
           provider_id: dispatch.provider_id || null,
           provider_order_id: dispatch.provider_order_id || null,
-          failure_reason: null,
           updated_at: new Date().toISOString()
-        }).eq("id", order.id);
+        };
+        if (targetStatus === "fulfilled") {
+          patch.failure_reason = null;
+        } else if (dispatch.reason) {
+          patch.failure_reason = dispatch.reason;
+        }
+        await supabaseAdmin.from("orders").update(patch).eq("id", order.id);
 
         if (targetStatus === "fulfilled") {
           summary.fulfilled++;

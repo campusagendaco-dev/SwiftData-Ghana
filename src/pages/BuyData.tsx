@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, Bell, BellRing } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, Bell, BellRing, CheckCircle2, Sparkles } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { cn, getNetworkCardColors } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -82,6 +82,25 @@ const formatPackageDisplay = (size: string) => {
     };
   }
 
+  // Support MashUp formats like "511mb + 176 Mins", "3.4gb only", etc.
+  match = size.match(/^([\d.]+\s*(?:gb|mb))\s*\+\s*(.*)$/i);
+  if (match) {
+    return {
+      main: match[1].trim().toUpperCase(),
+      sub: "+ " + match[2].trim()
+    };
+  }
+
+  match = size.match(/^([\d.]+\s*(?:gb|mb)?)\s*only\s*$/i);
+  if (match) {
+    const rawVal = match[1].trim();
+    const withUnit = /^[0-9.]+$/.test(rawVal) ? `${rawVal}GB` : rawVal.toUpperCase();
+    return {
+      main: withUnit,
+      sub: "Data Only"
+    };
+  }
+
   return {
     main: size,
     sub: ""
@@ -93,6 +112,13 @@ const getPackageDetails = (pkg: any): string => {
   const category = pkg.category || "";
   const rawData = pkg.rawData || {};
   const productId = rawData.product_id || rawData.bundle_id || "";
+
+  if (pkg.validity === "MTN Mash Up" || category === "Mash Up Bundles" || pkg.network === "MTN Mash Up") {
+    if (size.toLowerCase().includes("only")) {
+      return "30 Days • Data Only MashUp";
+    }
+    return "30 Days • Hybrid Voice & Data";
+  }
 
   if (productId.includes("Kokrokoo") || category.toLowerCase().includes("kokrokoo")) {
     return "400MB + 20 Mins Call (5am - 8am)";
@@ -180,6 +206,13 @@ const BuyData = () => {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
+
+  // Beneficiary verification state
+  const [beneficiaryStatus, setBeneficiaryStatus] = useState<"idle" | "checking" | "verified" | "not_verified" | "not_required">("idle");
+  const [beneficiaryMessage, setBeneficiaryMessage] = useState<string>("");
+  const [submittingBeneficiary, setSubmittingBeneficiary] = useState(false);
+  const [submittedBeneficiarySuccess, setSubmittedBeneficiarySuccess] = useState(false);
+  const lastBeneficiaryCheckRef = useRef<string>("");
 
   // Traditional Adinkra symbols cycling state
   const adinkraSymbols = useMemo(() => [
@@ -325,6 +358,112 @@ const BuyData = () => {
     }
   }, [selectedPkg]);
 
+  // Real-time Beneficiary Whitelist Verification
+  useEffect(() => {
+    if (!isPhoneValid) {
+      setBeneficiaryStatus("idle");
+      setBeneficiaryMessage("");
+      setSubmittedBeneficiarySuccess(false);
+      lastBeneficiaryCheckRef.current = "";
+      return;
+    }
+
+    const netUpper = selectedNetwork.toUpperCase();
+    const isMtn = netUpper.includes("MTN") || netUpper.includes("YELLO");
+    const isMashUp = netUpper.includes("MASH") || selectedTypeOrCategory === "mashup";
+    const isAffordableSme = (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme") && !isMashUp;
+
+    if (!isMtn || !isAffordableSme) {
+      setBeneficiaryStatus("not_required");
+      setBeneficiaryMessage(
+        isMashUp
+          ? "MTN Mash Up: Instant delivery • Beneficiary whitelisting not required."
+          : !isMtn
+          ? `No whitelisting required for ${selectedNetwork}. Instant delivery.`
+          : "Beneficiary whitelisting not required for this package."
+      );
+      return;
+    }
+
+    const checkKey = `${selectedNetwork}-${phoneDigits}`;
+    if (lastBeneficiaryCheckRef.current === checkKey) return;
+
+    let isMounted = true;
+    setBeneficiaryStatus("checking");
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await invokePublicFunction("verify-beneficiary", {
+          body: {
+            phone: phoneDigits,
+            network: "MTN",
+            category: "affordable",
+            check_only: true,
+          },
+        });
+
+        if (!isMounted) return;
+        lastBeneficiaryCheckRef.current = checkKey;
+
+        if (error || !data) {
+          setBeneficiaryStatus("idle");
+          return;
+        }
+
+        if (data.verification_status === "VERIFIED" || (data.exists && !data.is_non_beneficiary)) {
+          setBeneficiaryStatus("verified");
+          setBeneficiaryMessage("Whitelisted on MTN beneficiary list • Ready for instant delivery");
+        } else if (data.verification_status === "NOT_REQUIRED" || data.status === "not_required") {
+          setBeneficiaryStatus("not_required");
+          setBeneficiaryMessage("Whitelisting not required.");
+        } else {
+          setBeneficiaryStatus("not_verified");
+          setBeneficiaryMessage(data.message || "Not found on MTN carrier beneficiary whitelist.");
+        }
+      } catch (e) {
+        if (isMounted) setBeneficiaryStatus("idle");
+      }
+    }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [selectedNetwork, isPhoneValid, phoneDigits, selectedTypeOrCategory]);
+
+  const handleQuickSubmitBeneficiary = async () => {
+    if (!isPhoneValid || submittingBeneficiary) return;
+    setSubmittingBeneficiary(true);
+    try {
+      const { data, error } = await invokePublicFunction("verify-beneficiary", {
+        body: {
+          action: "submit_numbers",
+          numbers: phoneDigits,
+        },
+      });
+
+      if (error || !data?.success) {
+        await invokePublicFunction("submit-numbers", {
+          body: { numbers: phoneDigits },
+        });
+      }
+
+      setSubmittedBeneficiarySuccess(true);
+      toast({
+        title: "Whitelisting Request Queued! 🎉",
+        description: `${phoneDigits} has been submitted to MTN for carrier approval (usually 5-15 mins).`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Submission Error",
+        description: "Could not submit automatically. Please use the Whitelist Portal.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingBeneficiary(false);
+    }
+  };
+
   // Auto-resolve recipient name
   useEffect(() => {
     const attemptKey = `${selectedNetwork}-${phoneDigits}`;
@@ -372,7 +511,20 @@ const BuyData = () => {
       });
     });
 
-    const addedSizes = new Set(baseList.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
+    if (dbNetwork === "MTN" && basePackages["MTN Mash Up"]) {
+      basePackages["MTN Mash Up"].forEach(pkg => {
+        list.push({
+          size: pkg.size,
+          price: pkg.price,
+          validity: "MTN Mash Up",
+          popular: pkg.popular,
+          isInstant: false,
+          category: "Mash Up Bundles"
+        });
+      });
+    }
+
+    const addedSizes = new Set(list.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
 
     Object.keys(globalSettings).forEach((key) => {
       const gs = globalSettings[key];
@@ -407,13 +559,13 @@ const BuyData = () => {
 
         if (gs?.is_unavailable) return null;
 
-        let base = gs?.public_price ?? getPublicPrice(pkg.price);
+        let base = gs?.public_price ?? (pkg.validity === "MTN Mash Up" ? pkg.price : getPublicPrice(pkg.price));
         if (profile) {
           const isApprovedAgent = !!(profile.is_agent && profile.agent_approved);
           const isApprovedSubAgent = !!(profile.is_sub_agent && profile.sub_agent_approved);
 
           if (isApprovedAgent) {
-            base = Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : base;
+            base = Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : (pkg.validity === "MTN Mash Up" ? pkg.price : base);
           } else if (isApprovedSubAgent) {
             const custom = customPrices[dbNetwork]?.[normSize];
             if (custom && custom > 0) {
@@ -421,7 +573,7 @@ const BuyData = () => {
             } else {
               base = Number(gs?.sub_agent_price) > 0
                 ? Number(gs!.sub_agent_price)
-                : (Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : base);
+                : (Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : (pkg.validity === "MTN Mash Up" ? pkg.price : base));
             }
           }
         }
@@ -830,7 +982,7 @@ const BuyData = () => {
                   {display.main}
                 </p>
                 <p className="text-xs font-black text-black/75 uppercase tracking-wider">
-                  MTN Bundle {display.sub ? `• ${display.sub}` : ""}
+                  {pkg.validity === "MTN Mash Up" ? (display.sub || "MTN Mash Up") : `MTN Bundle ${display.sub ? `• ${display.sub}` : ""}`}
                 </p>
                 {details && (
                   <p className="text-[10px] font-black text-emerald-950 uppercase tracking-wide pt-1 leading-tight">
@@ -845,7 +997,7 @@ const BuyData = () => {
                   ₵{pkg.price.toFixed(2)}
                 </span>
                 <span className="text-[11px] font-black text-black/75 uppercase tracking-wider font-mono">
-                  {pkg.validity || "No Expiry"}
+                  {pkg.validity === "MTN Mash Up" ? "30 Days" : (pkg.validity || "No Expiry")}
                 </span>
               </div>
             </button>
@@ -1201,6 +1353,87 @@ const BuyData = () => {
                             {resolvedName}
                           </p>
                         </div>
+                      </div>
+                    )}
+
+                    {/* Carrier Beneficiary Pre-Verification Status */}
+                    {isPhoneValid && (
+                      <div className="space-y-1.5 animate-in fade-in duration-200">
+                        {beneficiaryStatus === "checking" && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-semibold">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-amber-500" />
+                            <span>Verifying MTN Beneficiary Whitelist...</span>
+                          </div>
+                        )}
+
+                        {beneficiaryStatus === "verified" && (
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-sm">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                              <span className="truncate">MTN Whitelisted • Ready for Instant Delivery</span>
+                            </div>
+                            <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-2 py-0.5 rounded-full shrink-0">
+                              WHITELISTED
+                            </span>
+                          </div>
+                        )}
+
+                        {beneficiaryStatus === "not_verified" && (
+                          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400 space-y-2">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-bold text-amber-600 dark:text-amber-300">
+                                    Not on MTN Beneficiary Whitelist
+                                  </p>
+                                  <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-500">
+                                    UNAPPROVED
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-amber-600/90 dark:text-amber-400/90 mt-0.5 leading-snug">
+                                  Affordable SME data requires carrier whitelisting. Whitelist your number for free or check status.
+                                </p>
+                              </div>
+                            </div>
+
+                            {submittedBeneficiarySuccess ? (
+                              <div className="flex items-center gap-1.5 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <span>Submitted to MTN! Approval takes ~5-15 mins.</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-500/20">
+                                <button
+                                  type="button"
+                                  onClick={handleQuickSubmitBeneficiary}
+                                  disabled={submittingBeneficiary}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                  {submittingBeneficiary ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="w-3 h-3" />
+                                  )}
+                                  Whitelist My Number (Free)
+                                </button>
+                                <Link
+                                  to="/verify-numbers"
+                                  className="text-[11px] font-semibold text-amber-500 hover:underline inline-flex items-center gap-0.5"
+                                >
+                                  Whitelist Portal <ArrowRight className="w-2.5 h-2.5" />
+                                </Link>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {beneficiaryStatus === "not_required" && (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-500 dark:text-blue-400 text-xs font-medium">
+                            <Zap className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <span className="truncate">Instant Delivery • No whitelisting required for {selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

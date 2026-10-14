@@ -896,7 +896,7 @@ const APIDocumentation = () => {
               <code className="text-white/55 text-sm font-mono bg-white/5 px-3 py-1 rounded-lg border border-white/8">/functions/v1/verify-beneficiary</code>
             </div>
             <p className="text-white/45 text-sm mb-6 ml-11 max-w-xl">
-              Check if a phone number is registered as an approved MTN beneficiary. Under current carrier requirements, MTN numbers must be whitelisted on our backend before receiving MTN data bundles. Non-MTN numbers do not require beneficiary checks.
+              Check if a phone number is registered as an approved MTN beneficiary. Under carrier requirements, this verification is strictly and only required for Affordable MTN SME data bundles. MTN Mash Up bundles, Retail packages, airtime, and non-MTN networks deliver directly and do not require beneficiary checks.
             </p>
 
             <div className="ml-11 space-y-8">

@@ -251,28 +251,37 @@ serve(async (req: Request) => {
   const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || korbaProvider?.api_key || korbaProvider?.settings?.client_key || "";
   const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || korbaProvider?.settings?.client_id || "2419";
 
-  if (KORBA_SECRET_KEY) {
-    if (signature) {
-      const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
-      if (!isSignatureValid) {
-        console.error(`[korba-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
-        return json({ error: "Unauthorized: Signature mismatch" }, 401);
-      }
-      console.log("[korba-webhook] Signature verified successfully.");
-    } else if (KORBA_CLIENT_KEY && cleanedTransactionId && status === "SUCCESS") {
-      // Standard Korba webhooks do not include a signature query/body parameter.
-      // Confirm transaction status via Korba API for security.
-      console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${cleanedTransactionId}`);
-      const isConfirmed = await verifyKorbaStatusViaApi(supabaseAdmin, KORBA_CLIENT_ID, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, cleanedTransactionId);
-      if (isConfirmed) {
-        console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
-      } else {
-        console.error(`[korba-webhook] Unauthorized callback: Korba status API rejected tx ${cleanedTransactionId}`);
-        return json({ error: "Unauthorized: Transaction status check failed" }, 401);
-      }
+  const expectedToken = korbaProvider?.settings?.callback_token;
+  const receivedToken = req.headers.get("x-callback-token") || req.headers.get("X-Callback-Token");
+  const isTokenAuthenticated = !!(expectedToken && receivedToken === expectedToken);
+
+  if (signature) {
+    if (!KORBA_SECRET_KEY) {
+      console.error("[korba-webhook] KORBA_SECRET_KEY missing for signature verification.");
+      return json({ error: "Server configuration error" }, 500);
+    }
+    const isSignatureValid = await verifyKorbaSignature(KORBA_SECRET_KEY, transactionId, status, message, signature);
+    if (!isSignatureValid) {
+      console.error(`[korba-webhook] Unauthorized callback: signature verification failed. Got signature: ${signature}`);
+      return json({ error: "Unauthorized: Signature mismatch" }, 401);
+    }
+    console.log("[korba-webhook] Signature verified successfully.");
+  } else if (isTokenAuthenticated) {
+    console.log("[korba-webhook] Callback authenticated via header callback token.");
+  } else if (KORBA_CLIENT_KEY && KORBA_SECRET_KEY && cleanedTransactionId) {
+    // Standard Korba webhooks do not include a signature query/body parameter.
+    // Confirm transaction status via Korba API for security.
+    console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${cleanedTransactionId}`);
+    const isConfirmed = await verifyKorbaStatusViaApi(supabaseAdmin, KORBA_CLIENT_ID, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, cleanedTransactionId);
+    if (isConfirmed) {
+      console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
+    } else {
+      console.error(`[korba-webhook] Unauthorized callback: Korba status API rejected tx ${cleanedTransactionId}`);
+      return json({ error: "Unauthorized: Transaction status check failed" }, 401);
     }
   } else {
-    console.warn("[korba-webhook] KORBA_SECRET_KEY is not configured in env. Skipping signature verification.");
+    console.warn("[korba-webhook] Blocked unauthenticated callback: missing signature, valid callback token, or API verification keys.");
+    return json({ error: "Unauthorized: Missing authentication" }, 401);
   }
 
   try {

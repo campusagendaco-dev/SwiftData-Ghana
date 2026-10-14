@@ -122,7 +122,7 @@ const Navbar = () => {
     { to: "/", label: "Home", icon: Home },
     { to: "/buy-data", label: "Buy Data", icon: Zap },
     { to: "/buy-airtime", label: "Buy Airtime", icon: Wallet },
-    { to: "/submit-numbers", label: "Submit Numbers", icon: ShieldCheck },
+    { to: "/submit-numbers", label: "Verify & Submit", icon: ShieldCheck },
     { to: "/order-status", label: "Track Order", icon: LayoutDashboard },
     { to: "/blog", label: "Guides", icon: BookOpen },
     ...(!user || !agentApproved ? [{ to: "/agent-program", label: "Agent", icon: TrendingUp }] : []),

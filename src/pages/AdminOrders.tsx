@@ -435,7 +435,11 @@ export default function AdminOrders() {
     }
     // Order Type Filter
     if (orderTypeFilter !== "all") {
-      q = q.eq("order_type", orderTypeFilter);
+      if (orderTypeFilter === "afa") {
+        q = q.or("order_type.eq.afa,network.ilike.%AFA%");
+      } else {
+        q = q.eq("order_type", orderTypeFilter);
+      }
     }
 
     // Date Range Filters
@@ -1150,6 +1154,13 @@ export default function AdminOrders() {
       };
     }
 
+    if (order.provider_order_id === "duplicate_cooldown" || (order.status === "processing" && String(order.failure_reason || "").toLowerCase().includes("duplicate"))) {
+      return {
+        className: "bg-amber-500/20 text-amber-400 border-amber-500/30 font-semibold shadow-sm backdrop-blur-md",
+        label: "duplicate cooldown (60m)",
+      };
+    }
+
     return {
       className: STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border",
       label: order.status === "pending" ? "Awaiting Checkout" : order.status.replace(/_/g, " "),
@@ -1158,6 +1169,9 @@ export default function AdminOrders() {
 
   const getStatusIcon = (order: OrderRow) => {
     if (isBeneficiaryFailure(order)) return Clock;
+    if (order.provider_order_id === "duplicate_cooldown" || (order.status === "processing" && String(order.failure_reason || "").toLowerCase().includes("duplicate"))) {
+      return Clock;
+    }
     switch (order.status) {
       case "fulfilled": return CheckCircle2;
       case "processing": return RefreshCw;
@@ -1182,7 +1196,7 @@ export default function AdminOrders() {
                        Number(o.paystack_verified_amount || 0) > 0 || 
                        o.status === "paid" || 
                        o.status === "processing";
-        const hasNoProvider = !o.provider_id || !o.provider_order_id || ["failed_api_call", "timeout", "manual_fulfillment_mode"].includes(o.provider_order_id);
+        const hasNoProvider = !o.provider_id || !o.provider_order_id || ["failed_api_call", "timeout", "manual_fulfillment_mode", "duplicate_cooldown"].includes(o.provider_order_id);
         const isNonTelecom = ["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(o.order_type || "").toLowerCase());
         const isMashUp = String(o.network || "").toLowerCase().includes("mash up");
         return isPaid && hasNoProvider && !isNonTelecom && !isMashUp;

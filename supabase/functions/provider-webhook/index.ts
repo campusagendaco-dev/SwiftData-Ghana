@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { mapAfaStatus } from "../_shared/providers/afaregistration.ts";
 
 async function verifyHmacSha256(bodyText: string, keyString: string, expectedSignature: string): Promise<boolean> {
   try {
@@ -62,10 +63,41 @@ serve(async (req: Request) => {
   const bundlezoneSignature = req.headers.get("x-bundlezone-signature") || req.headers.get("X-BundleZone-Signature");
   const bundlezoneTimestamp = req.headers.get("x-bundlezone-timestamp") || req.headers.get("X-BundleZone-Timestamp");
   const xWebhookSecret = req.headers.get("x-webhook-secret");
+  const afaSignature = req.headers.get("x-afa-signature");
+  const afaTimestamp = req.headers.get("x-afa-timestamp");
   
   let isAuthorized = false;
+  let isAfaEvent = false;
 
-  if (bundlezoneSignature) {
+  if (afaSignature) {
+    // AFARegistration.com: signature = "sha256=" + HMAC_SHA256(timestamp + "." + raw_body, AFA_WEBHOOK_SECRET)
+    const tsNum = /^\d+$/.test(afaTimestamp || "") ? parseInt(afaTimestamp!, 10) : NaN;
+    if (!Number.isFinite(tsNum) || Math.abs(Math.floor(Date.now() / 1000) - tsNum) > 300) {
+      console.warn("[provider-webhook] AFARegistration webhook rejected: missing or expired timestamp.");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const { data: afaProvider } = await supabaseAdmin
+      .from("providers")
+      .select("settings")
+      .eq("handler_type", "afaregistration")
+      .maybeSingle();
+    const afaSecret = Deno.env.get("AFA_WEBHOOK_SECRET") || afaProvider?.settings?.webhook_secret || "";
+    if (!afaSecret || !(await verifyHmacSha256(`${afaTimestamp}.${body}`, afaSecret, afaSignature))) {
+      console.warn("[provider-webhook] AFARegistration signature verification failed.");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    isAuthorized = true;
+    isAfaEvent = true;
+    console.log("[provider-webhook] AFARegistration signature verified successfully.");
+  } else if (bundlezoneSignature) {
     try {
       if (bundlezoneTimestamp) {
         const tsNum = parseInt(bundlezoneTimestamp, 10);
@@ -83,6 +115,8 @@ serve(async (req: Request) => {
         .from("providers")
         .select("api_key, settings")
         .eq("handler_type", "bundlezone")
+        .order("is_active", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       const secretKey = Deno.env.get("BUNDLEZONE_WEBHOOK_SECRET") || bzProvider?.settings?.webhook_secret || bzProvider?.api_key || "";
@@ -94,8 +128,14 @@ serve(async (req: Request) => {
         });
       }
 
-      const signedPayload = bundlezoneTimestamp ? `${bundlezoneTimestamp}.${body}` : body;
-      const signatureValid = await verifyHmacSha256(signedPayload, secretKey, bundlezoneSignature);
+      let signatureValid = false;
+      if (bundlezoneTimestamp) {
+        signatureValid = await verifyHmacSha256(`${bundlezoneTimestamp}.${body}`, secretKey, bundlezoneSignature);
+      }
+      if (!signatureValid) {
+        signatureValid = await verifyHmacSha256(body, secretKey, bundlezoneSignature);
+      }
+
       if (!signatureValid) {
         console.warn("[provider-webhook] BundleZone signature verification failed: Signature mismatch.");
         return new Response(JSON.stringify({ error: "Unauthorized" }), { 
@@ -156,7 +196,14 @@ serve(async (req: Request) => {
         .eq("handler_type", "spendless")
         .maybeSingle();
 
-      const secretKey = Deno.env.get("SPENDLESS_WEBHOOK_SECRET") || spendlessProvider?.settings?.webhook_secret || spendlessProvider?.api_key || "direct";
+      const secretKey = Deno.env.get("SPENDLESS_WEBHOOK_SECRET") || spendlessProvider?.settings?.webhook_secret || spendlessProvider?.api_key;
+      if (!secretKey) {
+        console.warn("[provider-webhook] Spendless HMAC signature verification failed: Credentials not configured.");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
       const signatureValid = await verifyHmacSha256(body, secretKey, webhookSignature);
 
       if (!signatureValid) {
@@ -198,8 +245,9 @@ serve(async (req: Request) => {
     }
     isAuthorized = true;
   } else {
-    // If no security controls are configured or required, allow the request
-    isAuthorized = true;
+    // Fail closed: Webhook request missing any recognized authentication header or secret
+    console.warn("[provider-webhook] Blocked unauthorized request missing authentication headers.");
+    isAuthorized = false;
   }
 
   if (!isAuthorized) {
@@ -211,32 +259,70 @@ serve(async (req: Request) => {
   }
 
   try {
-    const payload = JSON.parse(body);
-    let reference = payload?.data?.reference || payload?.reference || payload?.data?.request_id || payload?.request_id || payload?.order_id || payload?.id || payload?.data?.id || payload?.data?.order_id || payload?.data?.transactionId || payload?.data?.orderId || payload?.orderId;
-    
+    let payload = JSON.parse(body);
+
+    // Normalize AFARegistration events (registration.updated / airtime.updated) to the generic shape
+    let afaExpectedProviderOrderId: string | null = null;
+    if (isAfaEvent) {
+      const isReg = Boolean(payload?.data?.registration);
+      const rec = payload?.data?.registration || payload?.data?.airtime || {};
+      const mapped = mapAfaStatus(rec.status);
+      afaExpectedProviderOrderId = rec.id !== undefined ? `${isReg ? "reg" : "air"}_${rec.id}` : null;
+      console.log(`[provider-webhook] AFARegistration event ${payload?.type} (${payload?.id}): ${afaExpectedProviderOrderId} -> ${rec.status}`);
+      payload = {
+        reference: rec.external_order_id || afaExpectedProviderOrderId,
+        status: mapped === "fulfilled" ? "completed" : (mapped === "fulfillment_failed" ? "failed" : "processing"),
+        message: rec.failure_reason || rec.reason || `AFARegistration ${isReg ? "registration" : "airtime"} ${rec.status}`,
+      };
+    }
+
+    // Collect all possible candidate references sent by the webhook
+    const candidateRefs: string[] = [];
+    const addCandidate = (val: any) => {
+      if (val !== undefined && val !== null) {
+        const s = String(val).trim();
+        if (s && /^[a-zA-Z0-9\-_]{1,64}$/.test(s) && !candidateRefs.includes(s)) {
+          candidateRefs.push(s);
+        }
+      }
+    };
+
     if (payload?.data?.metadata) {
       try {
         const meta = typeof payload.data.metadata === "string" 
           ? JSON.parse(payload.data.metadata) 
           : payload.data.metadata;
-        if (meta?.ref_no) {
-          reference = meta.ref_no;
-        }
+        if (meta?.ref_no) addCandidate(meta.ref_no);
+        if (meta?.reference) addCandidate(meta.reference);
+        if (meta?.order_id) addCandidate(meta.order_id);
+        if (meta?.client_reference) addCandidate(meta.client_reference);
       } catch (e) {
         console.warn("[provider-webhook] Failed to parse metadata JSON:", e);
       }
     }
 
-    const refStr = String(reference || "").trim();
-    if (!refStr || !/^[a-zA-Z0-9\-_]{1,64}$/.test(refStr)) {
-      console.warn("[provider-webhook] Blocked webhook request with invalid reference format:", refStr);
-      return new Response(JSON.stringify({ error: "Invalid reference format" }), { 
+    addCandidate(payload?.data?.reference);
+    addCandidate(payload?.reference);
+    addCandidate(payload?.data?.order_id);
+    addCandidate(payload?.order_id);
+    addCandidate(payload?.data?.request_id);
+    addCandidate(payload?.request_id);
+    addCandidate(payload?.data?.transactionId);
+    addCandidate(payload?.data?.transaction_id);
+    addCandidate(payload?.data?.orderId);
+    addCandidate(payload?.orderId);
+    addCandidate(payload?.id);
+    addCandidate(payload?.data?.id);
+
+    if (candidateRefs.length === 0) {
+      console.warn("[provider-webhook] Blocked webhook request with missing reference.");
+      return new Response(JSON.stringify({ error: "Missing or invalid reference" }), { 
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
-    reference = refStr;
 
+    const reference = candidateRefs[0];
 
     const rawStatus = (payload?.data?.status || payload?.status || "").toLowerCase();
     
@@ -244,33 +330,51 @@ serve(async (req: Request) => {
     if (["completed", "success", "successful", "delivered", "fulfilled"].includes(rawStatus)) systemStatus = "fulfilled";
     else if (["failed", "rejected", "error", "refunded", "refund", "cancelled", "reversed"].includes(rawStatus)) systemStatus = "fulfillment_failed";
 
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reference);
-    const filter = isUuid 
-      ? `id.eq.${reference},provider_order_id.eq.${reference}`
-      : `provider_order_id.eq.${reference}`;
+    let order: any = null;
+    let fetchError: any = null;
 
-    let { data: order, error: fetchError } = await supabaseAdmin
-      .from("orders")
-      .select("*")
-      .or(filter)
-      .maybeSingle();
+    // 1. Try finding by UUID id
+    const uuidCandidates = candidateRefs.filter(c => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c));
+    if (uuidCandidates.length > 0) {
+      const { data: ordById, error } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .in("id", uuidCandidates)
+        .limit(1)
+        .maybeSingle();
+      if (ordById) order = ordById;
+      fetchError = error;
+    }
 
-    if (!order && (payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || payload?.data?.order_id || payload?.data?.request_id || payload?.request_id)) {
-      const altRef = String(payload?.data?.request_id || payload?.request_id || payload?.data?.order_id || payload?.orderId || payload?.data?.orderId || payload?.reference || payload?.data?.reference || "");
-      if (altRef && altRef !== reference && /^[a-zA-Z0-9\-_]{1,64}$/.test(altRef)) {
-        const altFilter = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(altRef)
-          ? `id.eq.${altRef},provider_order_id.eq.${altRef}`
-          : `provider_order_id.eq.${altRef}`;
-        const { data: altOrder } = await supabaseAdmin
+    // 2. Try finding by provider_order_id
+    if (!order) {
+      const { data: ordByProvId } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .in("provider_order_id", candidateRefs)
+        .limit(1)
+        .maybeSingle();
+      if (ordByProvId) order = ordByProvId;
+    }
+
+    // 3. Try finding by metadata client_reference or reference
+    if (!order) {
+      for (const cand of candidateRefs) {
+        const { data: ordByMeta } = await supabaseAdmin
           .from("orders")
           .select("*")
-          .or(altFilter)
+          .or(`metadata->>client_reference.eq.${cand},metadata->>reference.eq.${cand},metadata->>order_reference.eq.${cand}`)
+          .order("created_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
-        if (altOrder) order = altOrder;
+        if (ordByMeta) {
+          order = ordByMeta;
+          break;
+        }
       }
     }
 
-    // Smart fallback for providers (like BundleZone) that send internal references or recipient
+    // 4. Smart fallback for providers (like BundleZone) that send internal references or recipient
     if (!order && (payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone)) {
       const rawPhone = String(payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone).replace(/\D/g, "");
       let localPhone = rawPhone;
@@ -292,13 +396,41 @@ serve(async (req: Request) => {
     }
 
     if (fetchError || !order) {
-      console.warn("[provider-webhook] Order not found for reference:", reference);
+      console.warn("[provider-webhook] Order not found for references:", candidateRefs);
       return new Response(JSON.stringify({ received: true, warning: "Order not found" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
-    if (order.status === "fulfilled" && systemStatus === "fulfilled") return new Response(JSON.stringify({ message: "Already fulfilled" }));
+
+    // Idempotency: avoid re-processing identical terminal states
+    if (order.status === systemStatus) {
+      console.log(`[provider-webhook] Order ${order.id} is already in state '${systemStatus}'. Acknowledged idempotently.`);
+      return new Response(JSON.stringify({ success: true, message: `Already ${systemStatus}` }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // If order was already fulfilled, never downgrade to failed due to late/stale callbacks
+    if (order.status === "fulfilled") {
+      console.log(`[provider-webhook] Order ${order.id} is already fulfilled. Ignoring callback '${systemStatus}'.`);
+      return new Response(JSON.stringify({ received: true, ignored: true, reason: "Order already fulfilled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // AFARegistration: ignore stale/duplicate events for orders that have since moved to another provider
+    if (
+      isAfaEvent && afaExpectedProviderOrderId &&
+      order.provider_order_id &&
+      !["failed_api_call", "timeout", "manual_fulfillment_mode"].includes(String(order.provider_order_id)) &&
+      order.provider_order_id !== afaExpectedProviderOrderId
+    ) {
+      console.warn(`[provider-webhook] Ignoring AFARegistration event ${afaExpectedProviderOrderId} for order ${order.id} (current provider_order_id: ${order.provider_order_id}).`);
+      return new Response(JSON.stringify({ received: true, ignored: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
     // If provider reported failure, attempt automatic failover to the next active provider (e.g. SKPlug)
     if (systemStatus === "fulfillment_failed" && order.status !== "fulfilled") {

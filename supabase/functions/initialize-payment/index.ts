@@ -106,7 +106,7 @@ function hasValidAgentId(agentId: unknown): agentId is string {
 
 async function checkBeneficiaryBackend(supabaseClient: any, phone: string, network: string): Promise<{ ok: boolean; reason?: string }> {
   const net = String(network || "").toUpperCase();
-  if (!net.includes("MTN") && !net.includes("YELLO")) {
+  if ((!net.includes("MTN") && !net.includes("YELLO")) || net.includes("MASH")) {
     return { ok: true };
   }
 
@@ -687,11 +687,12 @@ serve(async (req: Request) => {
     }
 
     // --- Secure MTN Beneficiary Whitelist & Failover Routing ---
-    // Beneficiary verification is ONLY for Affordable SME packages, NEVER for Korba packages or standard retail
+    // Beneficiary verification is ONLY for Affordable SME packages, NEVER for Korba, Mashup, or standard retail
     const isExplicitKorba = isKorba || metadata.category === "korba" || metadata.package_category === "korba" || metadata.is_korba === true || metadata.is_korba === "true" || metadata.provider_type === "korba";
-    const isAffordableSme = !isExplicitKorba && (metadata.category === "affordable" || metadata.category === "sme" || !metadata.category);
+    const isMashUp = String(metadata.network || "").toUpperCase().includes("MASH") || metadata.category === "mashup";
+    const isAffordableSme = !isExplicitKorba && !isMashUp && (metadata.category === "affordable" || metadata.category === "sme" || !metadata.category);
 
-    if (orderType === "data" && isAffordableSme && !isExplicitKorba && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
+    if (orderType === "data" && isAffordableSme && !isExplicitKorba && !isMashUp && settings?.beneficiary_verification_enabled !== false && metadata.bypass_beneficiary !== true && metadata.bypass_beneficiary !== "true") {
       const customerPhone = (metadata.customer_phone || "").trim();
       const networkName = (metadata.network || "").trim();
       if (customerPhone && networkName) {

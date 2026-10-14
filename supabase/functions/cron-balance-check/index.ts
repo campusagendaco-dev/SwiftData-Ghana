@@ -57,9 +57,11 @@ serve(async (_req: Request) => {
         continue;
       }
 
-      // Update balance in DB
+      // Update balance and auto-heal provider failure counter in DB
       await supabase.from("providers").update({
         balance,
+        consecutive_failures: 0,
+        disabled_reason: null,
         balance_checked_at: new Date().toISOString(),
       }).eq("id", provider.id);
 

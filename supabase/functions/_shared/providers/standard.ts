@@ -23,6 +23,25 @@ export class StandardAdapter implements ProviderAdapter {
         const ref = String(data.transaction_id || data.reference || data.order_id || "");
         return [`${clean}/order-status/${ref}`, `${clean}/status/${ref}`];
       }
+      const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
+      const pkgUpper = String(data.package_size || data.package_name || data.bundle || data.plan || data.capacity || "").toUpperCase();
+      const isMashUp = 
+        rawNet.includes("MASH") || 
+        rawNet.includes("COMBO") || 
+        data.category === "mashup" || 
+        endpoint === "mashup" || 
+        endpoint === "mashup_purchase" ||
+        (data as any).comboCost !== undefined ||
+        (pkgUpper.includes("MINS") && rawNet.includes("MTN"));
+      if (isMashUp) {
+        return [`${clean}/mashup/purchase`];
+      }
+      if (endpoint === "verify-number" || endpoint === "beneficiary") {
+        return [`${clean}/verify-number`];
+      }
+      if (endpoint === "verify-number-bulk" || endpoint === "beneficiary-bulk") {
+        return [`${clean}/verify-number/bulk`];
+      }
       return [`${clean}/purchase`, `${clean}/order`, clean];
     }
     if (handlerType === "skdataplug") {
@@ -150,6 +169,96 @@ export class StandardAdapter implements ProviderAdapter {
     const capacityStr = String(capNum > 0 ? capNum : pkgSize);
 
     if (handlerType === "datamart") {
+      const pkgUpper = String(data.package_size || data.package_name || data.bundle || data.plan || data.capacity || "").toUpperCase();
+      const isMashUp = 
+        rawNet.includes("MASH") || 
+        rawNet.includes("COMBO") || 
+        data.category === "mashup" || 
+        endpoint === "mashup" || 
+        endpoint === "mashup_purchase" ||
+        (data as any).comboCost !== undefined ||
+        (pkgUpper.includes("MINS") && rawNet.includes("MTN"));
+
+      if (isMashUp) {
+        let comboCost = Number((data as any).comboCost || 0);
+
+        const VALID_COMBO_COSTS = new Set([10, 20, 30, 35, 40, 50, 55, 60, 75, 80, 85, 100]);
+
+        // Normalized key map without spaces, hyphens, pluses
+        const cleanPkgKey = pkgSize.toLowerCase().replace(/[\s\-_+]/g, "");
+        const MASHUP_COMBO_MAP: Record<string, number> = {
+          "511mb176mins": 10,
+          "2.6gb1077mins": 20,
+          "4.5gb1800mins": 30,
+          "3.4gbonly": 35,
+          "3.4gb": 35,
+          "6gb700mins": 40,
+          "10gb1800mins": 50,
+          "5.1gbonly": 55,
+          "5.1gb": 55,
+          "6.8gbonly": 60,
+          "6.8gb": 60,
+          "8.5only": 75,
+          "8.5gbonly": 75,
+          "8.5gb": 75,
+          "8.5": 75,
+          "10gbonly": 80,
+          "870mb360mins": 85,
+          "3.5gb14500mins": 100,
+          "3.5gb1450mins": 100,
+        };
+
+        if (!comboCost || !VALID_COMBO_COSTS.has(comboCost)) {
+          if (MASHUP_COMBO_MAP[cleanPkgKey]) {
+            comboCost = MASHUP_COMBO_MAP[cleanPkgKey];
+          }
+        }
+
+        if (!comboCost || !VALID_COMBO_COSTS.has(comboCost)) {
+          const external = String(data.planId || data.plan || data.package_size || (data as any).package || "").trim();
+          const comboExplicit = external.match(/combo(?:cost)?[:_\s]*(\d+)/i) || external.match(/mashup[:_\s]*(\d+)/i);
+          if (comboExplicit && VALID_COMBO_COSTS.has(Number(comboExplicit[1]))) {
+            comboCost = Number(comboExplicit[1]);
+          } else if (VALID_COMBO_COSTS.has(Number(external))) {
+            comboCost = Number(external);
+          }
+        }
+
+        if (!comboCost || !VALID_COMBO_COSTS.has(comboCost)) {
+          try {
+            const { data: pkgMapping } = await supabaseAdmin
+              .from("provider_packages")
+              .select("external_id, raw_data")
+              .eq("provider_id", provider.id)
+              .or("network.ilike.%MASH%,network.eq.MTN_COMBO")
+              .or(`package_name.eq.${pkgSize},package_name.ilike.%${pkgSize.trim()}%`)
+              .maybeSingle();
+
+            const extId = Number(pkgMapping?.external_id);
+            if (VALID_COMBO_COSTS.has(extId)) {
+              comboCost = extId;
+            } else if (VALID_COMBO_COSTS.has(Number(pkgMapping?.raw_data?.comboCost || pkgMapping?.raw_data?.capacity))) {
+              comboCost = Number(pkgMapping.raw_data.comboCost || pkgMapping.raw_data.capacity);
+            }
+          } catch (e) {
+            console.error("[datamart-mashup-resolve] Error:", e);
+          }
+        }
+
+        if (!comboCost || !VALID_COMBO_COSTS.has(comboCost)) {
+          if (cleanPkgKey.includes("10gb") && cleanPkgKey.includes("only")) comboCost = 80;
+          else if (cleanPkgKey.includes("10gb")) comboCost = 50;
+          else comboCost = 10;
+        }
+
+        return {
+          phoneNumber: recipient,
+          comboCost: comboCost,
+          ref: targetRef,
+          network: "MTN_COMBO"
+        };
+      }
+
       const datamartNet = (rawNet.includes("MTN") || rawNet === "YELLO")
         ? "YELLO"
         : ((rawNet.includes("TELECEL") || rawNet.includes("VODA")) ? "TELECEL" : "AT_PREMIUM");
@@ -344,19 +453,28 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "bundlezone") {
-      let bzNetwork = "MTN";
+      let bzNetwork = "YELLO";
       if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
         bzNetwork = "Telecel";
       } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO")) {
         bzNetwork = "AT";
       } else {
-        bzNetwork = "MTN";
+        bzNetwork = "YELLO";
       }
 
       if (endpoint === "beneficiary") {
         return {
           network: bzNetwork,
           phone_number: recipient
+        };
+      }
+
+      if (data.mode === "bulk" && Array.isArray((data as any).rows)) {
+        return {
+          mode: "bulk",
+          network: bzNetwork,
+          reference: targetRef,
+          rows: (data as any).rows,
         };
       }
 
@@ -618,7 +736,7 @@ export class StandardAdapter implements ProviderAdapter {
           "x-api-key": apiKey,
         },
         body: JSON.stringify({
-          network: network || "MTN",
+          network: (network?.toUpperCase() === "MTN" || network?.toUpperCase() === "YELLO") ? "YELLO" : (network || "YELLO"),
           phone_number: localPhone
         }),
         disableFallback: true,
@@ -656,6 +774,51 @@ export class StandardAdapter implements ProviderAdapter {
     return { ok: true };
   }
 
+  async verifyDataMartBeneficiary(
+    supabaseAdmin: any,
+    provider: any,
+    phone: string
+  ): Promise<{ ok: boolean; reason?: string; servable?: boolean; recommendation?: string }> {
+    const localPhone = normalizeRecipient(phone);
+    const apiKey = Deno.env.get("DATAMART_API_KEY") || provider?.api_key || "";
+    const baseUrl = (Deno.env.get("DATAMART_BASE_URL") || provider?.base_url || "https://api.datamartgh.shop/api/developer").trim().replace(/\/+$/, "");
+    const url = `${baseUrl}/verify-number`;
+
+    if (!apiKey) return { ok: true };
+
+    try {
+      console.log(`[DataMart-Verify-Beneficiary] Checking ${localPhone}...`);
+      const res = await fetchViaDb(supabaseAdmin, url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
+        body: JSON.stringify({ phoneNumber: localPhone }),
+        disableFallback: true,
+      }, 10);
+
+      const text = await res.text();
+      let parsed: any = {};
+      try { parsed = JSON.parse(text); } catch { /* ignore */ }
+
+      if (res.ok && parsed.status === "success" && parsed.data) {
+        if (parsed.data.servable === true) {
+          return { ok: true, servable: true, recommendation: "sell_any" };
+        }
+        return {
+          ok: false,
+          servable: false,
+          recommendation: parsed.data.recommendation,
+          reason: parsed.data.message || `MTN number ${localPhone} cannot receive data yet (${parsed.data.recommendation || "activate_first"}).`
+        };
+      }
+    } catch (err: any) {
+      console.error(`[DataMart-Verify-Beneficiary] Check failed for ${localPhone}:`, err);
+    }
+    return { ok: true };
+  }
+
   async purchase(
     supabaseAdmin: any,
     provider: any,
@@ -663,10 +826,11 @@ export class StandardAdapter implements ProviderAdapter {
   ): Promise<ProviderResponse> {
     const handlerType = String(provider.handler_type || "").toLowerCase();
     const network = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
-    const category = String(data.category || "").toLowerCase();
-    const isAffordable = category === "affordable" || category === "affordable sme" || category.includes("sme");
+    const rawCategory = String(data.category || (data as any).package_category || (data as any).metadata?.category || "").toLowerCase();
+    const isMashUp = network.includes("MASH") || rawCategory.includes("mash");
+    const isAffordable = (rawCategory === "affordable" || rawCategory === "affordable sme" || rawCategory.includes("sme")) && !isMashUp;
 
-    if (handlerType === "datahub" && network.includes("MTN") && isAffordable && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
+    if (handlerType === "datahub" && network.includes("MTN") && isAffordable && !isMashUp && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
       const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
       const check = await this.verifyDataHubBeneficiary(supabaseAdmin, provider, recipient);
       if (!check.ok) {
@@ -677,9 +841,9 @@ export class StandardAdapter implements ProviderAdapter {
       }
     }
 
-    if (handlerType === "bundlezone" && (network.includes("MTN") || network === "YELLO") && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
+    if (handlerType === "bundlezone" && (network.includes("MTN") || network === "YELLO") && isAffordable && !isMashUp && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
       const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
-      const check = await this.verifyBundleZoneBeneficiary(supabaseAdmin, provider, recipient, "MTN");
+      const check = await this.verifyBundleZoneBeneficiary(supabaseAdmin, provider, recipient, "YELLO");
       if (!check.ok) {
         return {
           ok: false,
@@ -810,12 +974,13 @@ export class StandardAdapter implements ProviderAdapter {
     const urls = this.buildProviderUrls(baseUrl, endpoint, handlerType, data);
     let lastReason = "Provider communication failed";
 
-    const isGet = (handlerType === "datamart" && endpoint === "status") || 
+    const isGet = (handlerType === "datamart" && (endpoint === "status" || endpoint === "mashup_packages")) || 
                   (handlerType === "superbdatafy" && endpoint === "status") || 
                   (handlerType === "xcel" && endpoint === "status") ||
                   (handlerType === "qhowmenzconsult" && endpoint === "status") ||
                   (handlerType === "skdataplug" && endpoint === "status") ||
-                  (handlerType === "spendless" && endpoint === "status");
+                  (handlerType === "spendless" && endpoint === "status") ||
+                  (handlerType === "bundlezone" && (endpoint === "status" || endpoint === "bundles" || endpoint === "balance"));
 
     const maxAttempts = (endpoint === "status") ? 2 : 1;
 
@@ -882,9 +1047,13 @@ export class StandardAdapter implements ProviderAdapter {
           const isAlreadyPlaced = /already placed/i.test(lastReason) || 
             /currently being processed/i.test(lastReason) || 
             /ORDER_ALREADY_PENDING/i.test(lastReason) ||
-            /already pending/i.test(lastReason);
+            /already pending/i.test(lastReason) ||
+            /duplicate/i.test(lastReason) ||
+            /cooldown/i.test(lastReason) ||
+            /already exist/i.test(lastReason) ||
+            /DUPLICATE_REFERENCE/i.test(lastReason);
           if (isAlreadyPlaced) {
-            return { ok: true, reason: "", status: "processing" };
+            return { ok: true, reason: lastReason, status: "processing" };
           }
 
           if (res.status === 401 || res.status === 403) return { ok: false, reason: lastReason };

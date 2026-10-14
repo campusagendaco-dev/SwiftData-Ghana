@@ -385,6 +385,8 @@ async function callProviderApi(
     handlerType = "qhowmenzconsult";
   } else if (baseUrlToLower.includes("xcel")) {
     handlerType = "xcel";
+  } else if (baseUrlToLower.includes("afaregistration")) {
+    handlerType = "afaregistration";
   }
 
   const { data: matchedProvider } = await supabaseAdmin
@@ -435,26 +437,33 @@ async function callProviderApi(
   };
 }
 
-function buildAfaPayload(metadata: Record<string, unknown>, recipient: string) {
+function buildAfaPayload(metadata: Record<string, unknown>, recipient: string, order?: any) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
   const webhookUrl = supabaseUrl
     ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
     : undefined;
+  const fullName = order?.afa_full_name || metadata.afa_full_name || metadata.fullName;
+  const card = order?.afa_ghana_card || metadata.afa_ghana_card || metadata.ghana_card || metadata.ghanaCardNumber;
+  const location = order?.afa_residence || metadata.afa_residence || metadata.location || metadata.placeOfResidence;
+  const occupation = order?.afa_occupation || metadata.afa_occupation || metadata.occupation;
+  const dob = order?.afa_date_of_birth || metadata.afa_date_of_birth || metadata.dob || metadata.dateOfBirth;
+  const email = order?.afa_email || metadata.afa_email || metadata.email;
+
   return {
-    full_name: metadata.afa_full_name,
-    fullName: metadata.afa_full_name,
+    full_name: fullName,
+    fullName: fullName,
     phone: recipient,
     customer_phone: recipient,
     recipient,
-    ghana_card: metadata.afa_ghana_card,
-    ghanaCardNumber: metadata.afa_ghana_card,
-    location: metadata.afa_residence,
-    placeOfResidence: metadata.afa_residence,
-    occupation: metadata.afa_occupation,
-    email: metadata.afa_email,
-    date_of_birth: metadata.afa_date_of_birth,
-    dateOfBirth: metadata.afa_date_of_birth,
+    ghana_card: card,
+    ghanaCardNumber: card,
+    location: location,
+    placeOfResidence: location,
+    occupation: occupation,
+    email: email,
+    date_of_birth: dob,
+    dateOfBirth: dob,
     networkKey: "AFA",
     capacity: "BUNDLE",
     webhook_url: webhookUrl,
@@ -1136,7 +1145,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const targetStatus = (existingOrder?.network === "MTN Mash Up") ? "pending" : "processing";
+    const targetStatus = "processing";
     const claimableStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment"];
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
@@ -1602,33 +1611,102 @@ serve(async (req: Request) => {
       });
     }
 
-    if (existingOrder?.network === "MTN Mash Up") {
-      console.log(`[Webhook] MTN Mash Up order ${orderId} received. Set status to 'pending' for manual export by admin.`);
-      return new Response(JSON.stringify({ received: true, fulfilled: false, status: "pending", message: "MTN Mash Up order queued for manual processing" }), {
+    if (existingOrder?.network === "MTN Mash Up" || (existingOrder?.metadata?.category || "").toLowerCase() === "mashup") {
+      const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
+      const { data: dmActive } = await supabaseAdmin
+        .from("providers")
+        .select("id, is_active")
+        .or("handler_type.eq.datamart,name.ilike.%datamart%")
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!dmActive && !dmApiKey) {
+        console.log(`[Webhook] MTN Mash Up order ${orderId} received. DataMart not configured. Set status to 'pending' for manual export.`);
+        return new Response(JSON.stringify({ received: true, fulfilled: false, status: "pending", message: "MTN Mash Up order queued for manual processing" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      console.log(`[Webhook] MTN Mash Up order ${orderId} received. Proceeding to automated DataMart fulfillment.`);
+    }
+
+    // AFA orders: AFARegistration.com (primary) -> Spendless (fallback) via provider adapters
+    if (orderType === "afa") {
+      const afaPhone = normalizeRecipient(String(
+        existingOrder?.customer_phone || metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone || ""
+      ));
+      const afaProviders = await resolveProvidersForOrder(supabaseAdmin, { ...existingOrder, order_type: "afa" });
+
+      if (!afaProviders || afaProviders.length === 0) {
+        console.warn(`[Webhook] No active AFA provider for order ${orderId}. Queueing for manual processing.`);
+        await supabaseAdmin.from("orders").update({
+          status: "paid",
+          failure_reason: "Queued for manual fulfillment (No active AFA provider)"
+        }).eq("id", orderId);
+        return new Response(JSON.stringify({ received: true, fulfilled: false, status: "paid" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      let afaResult: any = { ok: false, reason: "No AFA provider available" };
+      let afaProvider: any = null;
+      for (const prov of afaProviders) {
+        afaProvider = prov;
+        try {
+          afaResult = await getProviderAdapter(prov.handler_type).purchase(supabaseAdmin, prov, {
+            ...buildAfaPayload(metadata, afaPhone, existingOrder),
+            reference: orderId,
+            order_id: orderId,
+            order_type: "afa",
+            networkRaw: "AFA",
+            amount: Number(existingOrder?.amount || verifiedAmount),
+            metadata: existingOrder?.metadata || metadata,
+          } as any);
+        } catch (afaErr: any) {
+          afaResult = { ok: false, reason: afaErr?.message || "AFA provider error" };
+        }
+
+        console.log("Webhook AFA fulfillment response:", { orderId, provider: prov.name, status: afaResult.status, reason: afaResult.reason });
+        if (afaResult.ok) break;
+
+        if (prov.id) {
+          await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+            provider_id: prov.id,
+            order_id: orderId,
+            error_message: afaResult.reason || `Rejected by ${prov.name}`,
+          })).catch(() => {});
+        }
+      }
+
+      if (afaResult.ok) {
+        // AFARegistration approves asynchronously (signed webhook confirms); Spendless confirms synchronously
+        const awaitingWebhook = afaProvider?.handler_type === "afaregistration" && afaResult.status !== "delivered";
+        await supabaseAdmin.from("orders").update({
+          status: awaitingWebhook ? "processing" : "fulfilled",
+          provider_id: afaProvider?.id || null,
+          provider_order_id: afaResult.id || null,
+          failure_reason: null,
+        }).eq("id", orderId);
+
+        if (!awaitingWebhook && existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
+          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
+        }
+
+        return new Response(JSON.stringify({ received: true, fulfilled: !awaitingWebhook, status: awaitingWebhook ? "processing" : "fulfilled" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      await supabaseAdmin.from("orders").update({ status: "processing", provider_order_id: "failed_api_call", failure_reason: afaResult.reason }).eq("id", orderId);
+      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: afaResult.reason }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Spendless override for AFA orders
-    let isSpendlessAfaResolved = false;
-    if (orderType === "afa") {
-      const { data: spendless } = await supabaseAdmin
-        .from("providers")
-        .select("*")
-        .eq("handler_type", "spendless")
-        .maybeSingle();
-      if (spendless?.api_key && spendless?.base_url) {
-        DATA_PROVIDER_API_KEY = spendless.api_key;
-        DATA_PROVIDER_BASE_URL = spendless.base_url.replace(/\/+$/, "");
-        isSpendlessAfaResolved = true;
-        console.log(`[Webhook] Routing AFA order ${orderId} exclusively via Spendless API`);
-      } else {
-        console.warn(`[Webhook] Spendless provider not found in DB for AFA. Falling back to active data providers.`);
-      }
-    }
-
-    if (!isSpendlessAfaResolved) {
+    {
       // --- ACTIVE PROVIDER CHECK / PAUSE GATE ---
       // Fetch active providers using unified resolver.
       const activeProviders = await resolveProvidersForOrder(supabaseAdmin, existingOrder);
@@ -1672,51 +1750,6 @@ serve(async (req: Request) => {
     }
 
     const baseUrlToLower = DATA_PROVIDER_BASE_URL.toLowerCase();
-
-    if (orderType === "afa") {
-      const customerPhone = typeof existingOrder?.customer_phone === "string" && existingOrder.customer_phone
-        ? existingOrder.customer_phone
-        : (typeof (metadata?.customer_phone || metadata?.phone || metadata?.payment_phone || metadata?.recipient_phone) === "string" 
-            ? (metadata.customer_phone || metadata.phone || metadata.payment_phone || metadata.recipient_phone) 
-            : "");
-      const recipient = normalizeRecipient(customerPhone);
-
-      const result = await callProviderApi(
-        DATA_PROVIDER_BASE_URL,
-        DATA_PROVIDER_API_KEY,
-        "afa",
-        buildAfaPayload(metadata, recipient),
-      );
-
-      console.log("Webhook AFA fulfillment response:", {
-        orderId,
-        status: result.status,
-        reason: result.reason,
-      });
-
-      if (result.ok) {
-        const patch: Record<string, any> = { status: "fulfilled", failure_reason: null };
-        if (result.id) patch.provider_order_id = result.id;
-        
-        await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
-        
-        // Credit profits
-        if (existingOrder?.agent_id && (existingOrder.profit > 0 || existingOrder.parent_profit > 0)) {
-          await supabaseAdmin.rpc("credit_order_profits", { p_order_id: orderId });
-        }
-        
-        return new Response(JSON.stringify({ received: true, fulfilled: true }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      await supabaseAdmin.from("orders").update({ status: "processing", provider_order_id: "failed_api_call", failure_reason: result.reason }).eq("id", orderId);
-      return new Response(JSON.stringify({ received: true, fulfilled: false, failure_reason: result.reason }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     const network = typeof existingOrder?.network === "string"
       ? existingOrder.network
@@ -1935,21 +1968,60 @@ serve(async (req: Request) => {
       ? "skdataplug"
       : "standard";
 
+    const isMashUpOrder = (network || "").toUpperCase().includes("MASH") || 
+      (network || "").toUpperCase().includes("COMBO") || 
+      existingOrder?.network === "MTN Mash Up" ||
+      (existingOrder?.metadata?.category || "").toLowerCase() === "mashup";
+
     const networkKey = handlerType === "datamart" 
-      ? (network.toUpperCase() === "MTN" ? "YELLO" : (network.toUpperCase() === "TELECEL" ? "TELECEL" : "AT_PREMIUM"))
+      ? (isMashUpOrder ? "MTN_COMBO" : (network.toUpperCase() === "MTN" ? "YELLO" : (network.toUpperCase() === "TELECEL" ? "TELECEL" : "AT_PREMIUM")))
       : mapDataNetworkKey(network);
     
+    let dmComboCost: number | undefined = undefined;
+    if (handlerType === "datamart" && isMashUpOrder) {
+      const cleanKey = String(packageSize || "").toLowerCase().replace(/[\s\-_+]/g, "");
+      const MASHUP_COMBO_MAP: Record<string, number> = {
+        "511mb176mins": 10,
+        "2.6gb1077mins": 20,
+        "4.5gb1800mins": 30,
+        "3.4gbonly": 35,
+        "3.4gb": 35,
+        "6gb700mins": 40,
+        "10gb1800mins": 50,
+        "5.1gbonly": 55,
+        "5.1gb": 55,
+        "6.8gbonly": 60,
+        "6.8gb": 60,
+        "8.5only": 75,
+        "8.5gbonly": 75,
+        "8.5gb": 75,
+        "8.5": 75,
+        "10gbonly": 80,
+        "870mb360mins": 85,
+        "3.5gb14500mins": 100,
+        "3.5gb1450mins": 100,
+      };
+      dmComboCost = MASHUP_COMBO_MAP[cleanKey];
+      if (!dmComboCost) {
+        if (cleanKey.includes("10gb") && cleanKey.includes("only")) dmComboCost = 80;
+        else if (cleanKey.includes("10gb")) dmComboCost = 50;
+        else dmComboCost = 10;
+      }
+    }
+
     const dataPayload = handlerType === "datamart"
       ? {
           phoneNumber: normalizeRecipient(customerPhone),
           network: networkKey,
-          planId: packageSize,
-          plan: packageSize,
-          bundle: packageSize,
+          planId: dmComboCost ? String(dmComboCost) : packageSize,
+          plan: dmComboCost ? String(dmComboCost) : packageSize,
+          bundle: dmComboCost ? String(dmComboCost) : packageSize,
           capacity: String(parseCapacity(packageSize)),
+          comboCost: dmComboCost,
           orderReference: orderId,
           gateway: "wallet",
-          reference: orderId
+          reference: orderId,
+          category: isMashUpOrder ? "mashup" : undefined
         }
       : (handlerType === "datahub" || handlerType === "spendless")
       ? {
@@ -2114,17 +2186,68 @@ serve(async (req: Request) => {
       }
 
       lastResult = result;
+      const isDuplicateErr = /duplicate|identical|already placed|currently being processed/i.test(String(result.reason || ""));
       if (chosenProvider?.id) {
-        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient|duplicate|identical/i.test(String(result.reason || ""));
+        const isBeneficiaryErr = /beneficiary|payee|limit|not_allowed|not allowed|not added|whitelist|recipient/i.test(String(result.reason || "")) || isDuplicateErr;
         if (!isBeneficiaryErr) {
           const { data: prov } = await supabaseAdmin.from("providers").select("consecutive_failures").eq("id", chosenProvider.id).maybeSingle();
           const newFailures = ((prov as any)?.consecutive_failures || 0) + 1;
           await supabaseAdmin.from("providers").update({ consecutive_failures: newFailures }).eq("id", chosenProvider.id);
         }
       }
+
+      // If duplicate order detected, halt cascade to avoid double billing or repetitive rejections
+      if (isDuplicateErr) {
+        console.warn(`[paystack-webhook] Duplicate order detected for ${orderId}: ${result.reason}. Halting cascade for 60-min cooldown.`);
+        break;
+      }
     }
 
     const result = lastResult || { ok: false, reason: "No active provider available" };
+    const reasonStr = String(result.reason || "").toLowerCase();
+    const isDuplicateError = 
+      reasonStr.includes("duplicate") || 
+      reasonStr.includes("identical") || 
+      reasonStr.includes("already placed") || 
+      reasonStr.includes("currently being processed");
+
+    if (isDuplicateError) {
+      const delayedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        provider_order_id: "duplicate_cooldown",
+        failure_reason: `Duplicate order detected. Delayed for auto-routing after 60 mins. (${result.reason || "Duplicate"})`,
+        last_retry_at: new Date().toISOString(),
+        metadata: {
+          ...(existingOrder?.metadata || {}),
+          duplicate_delayed: true,
+          delayed_until: delayedUntil,
+          last_duplicate_reason: result.reason || "Duplicate order detected",
+        }
+      }).eq("id", orderId);
+
+      log(supabaseAdmin, {
+        level: "warn",
+        source: "paystack-webhook",
+        event: "order.duplicate_cooldown",
+        message: `Order duplicate detected. Held in processing for 60-minute auto-routing cooldown: ${result.reason}`,
+        order_id: orderId,
+        agent_id: existingOrder?.agent_id,
+        data: { reason: result.reason, delayed_until: delayedUntil }
+      });
+
+      return new Response(JSON.stringify({
+        received: true,
+        fulfilled: false,
+        status: "processing",
+        message: "Duplicate order detected. Queued for auto-routing after 60 minutes.",
+        provider_order_id: "duplicate_cooldown",
+        delayed_until: delayedUntil
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (isTimeoutOrNetworkError) {
       await supabaseAdmin.from("orders").update({

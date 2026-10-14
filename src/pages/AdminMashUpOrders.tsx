@@ -120,7 +120,7 @@ const AdminMashUpOrders = () => {
     let q = supabase
       .from("orders")
       .select("*", { count: "estimated" })
-      .eq("network", "MTN Mash Up")
+      .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup")
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -321,7 +321,7 @@ const AdminMashUpOrders = () => {
         .from("orders")
         .select("id", { count: "exact", head: true })
         .eq("status", "processing")
-        .eq("network", "MTN Mash Up");
+        .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup");
 
       if (countErr) throw countErr;
       const totalCount = count || 0;
@@ -348,8 +348,7 @@ const AdminMashUpOrders = () => {
           status: "fulfilled", 
           failure_reason: "Forced global Mash Up fulfillment via admin dashboard" 
         })
-        .eq("status", "processing")
-        .eq("network", "MTN Mash Up");
+        .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup");
 
       if (error) throw error;
       
@@ -525,7 +524,7 @@ const AdminMashUpOrders = () => {
       const { data: pendingOrders, error: fetchErr } = await supabase
         .from("orders")
         .select("id, customer_phone, package_size")
-        .eq("network", "MTN Mash Up")
+        .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup")
         .eq("status", "pending")
         .order("created_at", { ascending: false });
 

@@ -139,26 +139,17 @@ serve(async (req: Request) => {
 
     const withdrawalId = result.withdrawal_id;
 
-    // If Flash Eligible, Auto-Fulfill
+    // If Flash Eligible, tag for expedited disbursement rather than prematurely marking fulfilled
     if (isFlashEligible) {
-      console.log(`[Flash Payout] Autonomously fulfilling withdrawal ${withdrawalId} for high-trust agent ${agentId}`);
+      console.log(`[Flash Payout] Priority flag tagged for withdrawal ${withdrawalId} (Agent trust score: ${wallet?.ai_trust_score})`);
       
-      const { error: fulfillError } = await supabaseAdmin
-        .from("withdrawals")
-        .update({ status: 'fulfilled', completed_at: new Date().toISOString() })
-        .eq("id", withdrawalId);
-
-      if (!fulfillError) {
-        // Here you would also call the actual Payout Provider (TheTeller/Paystack)
-        // For now, we mark it as AI-Resolved
-        await supabaseAdmin.from("sentinel_actions").insert({
-          action_type: 'flash_payout',
-          status: 'executed',
-          effectiveness: 1,
-          reasoning: `AI Flash Payout executed for high-trust agent (Score: ${wallet.ai_trust_score})`,
-          metadata: { amount, withdrawal_id: withdrawalId }
-        });
-      }
+      await supabaseAdmin.from("sentinel_actions").insert({
+        action_type: 'flash_payout_queue',
+        status: 'pending_disbursement',
+        effectiveness: 1,
+        reasoning: `High-trust agent withdrawal prioritized for fast disbursement (Score: ${wallet?.ai_trust_score})`,
+        metadata: { amount, withdrawal_id: withdrawalId, agent_id: agentId }
+      });
     }
 
     await sendWithdrawalSms(supabaseAdmin, agentId, amount);
@@ -166,9 +157,9 @@ serve(async (req: Request) => {
     // Trigger Push Notification for Withdrawal
     await triggerPushNotification(supabaseAdmin, {
       user_id: agentId,
-      title: isFlashEligible ? "⚡ Flash Payout Sent!" : "💸 Withdrawal Requested",
+      title: isFlashEligible ? "⚡ Priority Withdrawal Queued" : "💸 Withdrawal Requested",
       body: isFlashEligible 
-        ? `Flash! Your GHS ${Number(amount).toFixed(2)} has been instantly approved and sent by AI.`
+        ? `Flash! Your request for GHS ${Number(amount).toFixed(2)} is approved with high-priority dispatch.`
         : `Your request for GHS ${Number(amount).toFixed(2)} has been received and is being processed.`,
       url: "/dashboard/withdrawals",
       icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"

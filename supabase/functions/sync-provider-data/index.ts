@@ -72,7 +72,8 @@ serve(async (req: Request) => {
       (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) ||
       (handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") : null) ||
       (handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") : null) ||
-      (handlerType === "korba" ? Deno.env.get("KORBA_SECRET_KEY") : null);
+      (handlerType === "korba" ? Deno.env.get("KORBA_SECRET_KEY") : null) ||
+      (handlerType === "afaregistration" ? Deno.env.get("AFA_API_KEY") : null);
 
     const apiKey = envApiKey || provider.api_key || "";
     const envBaseUrl = 
@@ -263,19 +264,40 @@ serve(async (req: Request) => {
               if (netKey === "YELLO") dbNetwork = "MTN";
               else if (netKey === "TELECEL") dbNetwork = "Telecel";
               else if (netKey === "AT_PREMIUM" || netKey === "at" || netKey === "AT") dbNetwork = "AirtelTigo";
+              else if (netKey === "MTN_COMBO" || netKey === "MASHUP") dbNetwork = "MTN Mash Up";
+
+              const MASHUP_NAMES: Record<string, string> = {
+                "10": "511mb + 176 Mins",
+                "20": "2.6gb + 1077 Mins",
+                "30": "4.5gb + 1800 Mins",
+                "35": "3.4gb only",
+                "40": "6gb + 700 Mins",
+                "50": "10gb + 1800 Mins",
+                "55": "5.1gb only ",
+                "60": "6.8gb only",
+                "75": "8.5 only",
+                "80": "10gb only",
+                "85": "870mb + 360 Mins",
+                "100": "3.5gb + 14500 Mins"
+              };
 
               for (const pkg of netPackages) {
                 if (handlerType === "standard" && pkg.network && pkg.network !== netKey) continue;
 
+                const isMashUp = dbNetwork === "MTN Mash Up";
+                const pkgName = isMashUp
+                  ? (MASHUP_NAMES[String(pkg.capacity)] || pkg.title || `MTN MashUp ₵${pkg.capacity}`)
+                  : (pkg.capacity >= 1 ? `${pkg.capacity}GB` : (pkg.package_name || `${pkg.mb || 0}MB`));
+
                 allPackages.push({
                   provider_id: provider.id,
                   network: dbNetwork,
-                  package_name: pkg.capacity >= 1 ? `${pkg.capacity}GB` : (pkg.package_name || `${pkg.mb || 0}MB`),
-                  capacity_gb: pkg.capacity || ((pkg.mb || 0) / 1024),
-                  cost_price: pkg.price || pkg.amount,
-                  external_id: String(pkg.id || pkg.package_id || `${dbNetwork}_${pkg.capacity}`),
+                  package_name: pkgName,
+                  capacity_gb: isMashUp ? (Number(pkg.capacity) || 0) : (pkg.capacity || ((pkg.mb || 0) / 1024)),
+                  cost_price: Number(pkg.price || pkg.amount),
+                  external_id: String(pkg.capacity || pkg.id || pkg.package_id || `${dbNetwork}_${pkg.capacity}`),
                   raw_data: pkg,
-                  is_active: true
+                  is_active: pkg.inStock !== false
                 });
               }
             }
@@ -290,6 +312,49 @@ serve(async (req: Request) => {
           }
         } catch (jsonErr: any) {
           console.warn(`[sync:${handlerType}] Failed to parse package response JSON:`, jsonErr.message);
+        }
+      }
+
+      // 1b. Sync DataMart MashUp Packages
+      if (handlerType === "datamart") {
+        const mashupUrl = `${cleanBase}/mashup/packages`;
+        console.log(`[sync:datamart] Fetching MashUp catalogue at ${mashupUrl}...`);
+        try {
+          const mashupRes = await fetchWithTimeout(mashupUrl, { headers: requestHeaders }, 4000);
+          if (mashupRes.ok) {
+            const mJson = await mashupRes.json();
+            const mashupList = mJson?.data || [];
+            const isLaneOpen = mJson?.open !== false;
+            if (Array.isArray(mashupList) && mashupList.length > 0) {
+              const mashupPkgs = mashupList.map((pkg: any) => ({
+                provider_id: provider.id,
+                network: "MTN Mash Up",
+                package_name: pkg.title || `MTN MashUp ₵${pkg.comboCost || pkg.price}`,
+                capacity_gb: pkg.capacity || (pkg.mb ? Number((pkg.mb / 1024).toFixed(2)) : 0),
+                cost_price: pkg.price,
+                external_id: String(pkg.comboCost),
+                raw_data: {
+                  ...pkg,
+                  lane_open: isLaneOpen,
+                  pricing_tier: mJson.pricingTier,
+                },
+                is_active: isLaneOpen
+              }));
+              const { error: mUpsertErr } = await supabaseAdmin
+                .from("provider_packages")
+                .upsert(mashupPkgs, { onConflict: "provider_id,network,package_name" });
+              if (mUpsertErr) {
+                console.error("[sync:datamart] MashUp package upsert error:", mUpsertErr);
+              } else {
+                packagesSynced += mashupPkgs.length;
+                console.log(`[sync:datamart] Successfully synced ${mashupPkgs.length} MTN MashUp packages.`);
+              }
+            }
+          } else {
+            console.warn(`[sync:datamart] MashUp catalogue response status ${mashupRes.status}`);
+          }
+        } catch (mErr: any) {
+          console.warn("[sync:datamart] Error fetching MashUp packages:", mErr.message);
         }
       }
 
@@ -1070,6 +1135,34 @@ serve(async (req: Request) => {
       balance = voiceBalance > 0 ? voiceBalance : smsBalance;
       packagesSynced = 0;
       console.log(`[sync:mnotify] Balance synced: Voice=${voiceBalance}, SMS=${smsBalance}`);
+    } else if (handlerType === "afaregistration") {
+      console.log(`[sync:afaregistration] Fetching account balance for ${provider.name}...`);
+      const meRes = await fetchWithTimeout(`${baseUrl}/v1/me`, {
+        headers: { "X-API-Key": apiKey, "Accept": "application/json" }
+      }, 8000);
+      const meJson = await meRes.json().catch(() => ({}));
+      if (!meRes.ok || meJson?.success === false) {
+        throw new Error(`AFARegistration sync failed (HTTP ${meRes.status}): ${meJson?.message || "Unknown error"}`);
+      }
+
+      const account = meJson?.data?.account || {};
+      balance = Number(account.wallet_balance ?? 0);
+      packagesSynced = 0;
+
+      // Keep the provider's current AFA unit cost visible in settings for pricing checks
+      await supabaseAdmin
+        .from("providers")
+        .update({
+          settings: {
+            ...(provider.settings || {}),
+            afa_price: account.afa_price ?? null,
+            account_username: account.username ?? null,
+            account_status: account.status ?? null,
+          }
+        })
+        .eq("id", provider.id);
+
+      console.log(`[sync:afaregistration] Balance GHS ${balance}, AFA price GHS ${account.afa_price}, status ${account.status}`);
     } else {
       throw new Error(`Sync not implemented for handler type: ${handlerType}`);
     }

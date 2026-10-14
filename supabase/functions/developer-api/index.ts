@@ -1171,6 +1171,12 @@ serve(async (req: Request) => {
 
       await supabase.from("orders").update({
         order_type: "afa",
+        afa_full_name,
+        afa_ghana_card,
+        afa_occupation: payload.afa_occupation,
+        afa_email: payload.afa_email,
+        afa_residence: payload.afa_residence,
+        afa_date_of_birth: payload.afa_date_of_birth,
         metadata: {
           client_reference: request_id || idemKey,
           afa_full_name,

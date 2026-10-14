@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { fetchViaDb } from "./db_proxy.ts";
 import { getActiveProviders, resolveProvidersForOrder, Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
-import { isNonRetryableTerminalError } from "./providers/utils.ts";
+import { isNonRetryableTerminalError, isDuplicateOrderError } from "./providers/utils.ts";
 
 export interface DispatchResult {
   ok: boolean;
@@ -12,6 +12,8 @@ export interface DispatchResult {
   prepaid_token?: string;
   reason?: string;
   raw?: any;
+  delayed?: boolean;
+  delayed_until?: string;
 }
 
 export function parseCapacity(packageSize: string | null | undefined): number {
@@ -149,7 +151,37 @@ export async function dispatchOrderWithFailover(
         Promise.resolve(supabaseAdmin.from("providers").update({ consecutive_failures: (provider.consecutive_failures || 0) + 1 }).eq("id", provider.id)).catch(() => {});
       }
 
-      // Financial & Duplicate Safety Guard: If rejection is a permanent client/recipient error, HALT CASCADE immediately
+      // Duplicate Order Cooldown Guard: Carrier or Aggregator deduplication window (e.g. BundleZone)
+      // Stop failing duplicate orders immediately. Halt cascade across other providers (to prevent double charges),
+      // and keep the order in processing with duplicate_cooldown to automatically re-route after 60 mins.
+      if (isDuplicateOrderError(lastFailureReason)) {
+        console.warn(`[HybridRouter] Duplicate order detected for order ${order.id} (${lastFailureReason}). Scheduling 60-minute cooldown auto-route.`);
+        const delayedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        if (order?.id) {
+          await supabaseAdmin.from("orders").update({
+            status: "processing",
+            provider_order_id: "duplicate_cooldown",
+            failure_reason: `Duplicate order detected. Delayed for auto-routing after 60 mins. (${lastFailureReason})`,
+            last_retry_at: new Date().toISOString(),
+            metadata: {
+              ...(order.metadata || {}),
+              duplicate_delayed: true,
+              delayed_until: delayedUntil,
+              last_duplicate_reason: lastFailureReason,
+            }
+          }).eq("id", order.id);
+        }
+        return {
+          ok: false,
+          status: "processing",
+          provider_order_id: "duplicate_cooldown",
+          reason: `Duplicate order detected. Delayed for auto-routing after 60 mins. (${lastFailureReason})`,
+          delayed: true,
+          delayed_until: delayedUntil,
+        };
+      }
+
+      // Financial & Terminal Recipient Safety Guard: If rejection is a permanent client/recipient error, HALT CASCADE immediately
       // This prevents multi-provider duplicate charges, vendor bans, and company financial losses
       if (isNonRetryableTerminalError(lastFailureReason)) {
         console.warn(`[HybridRouter] Halting cascade for order ${order.id}: Terminal recipient error (${lastFailureReason}). Prevented duplicate provider debits.`);

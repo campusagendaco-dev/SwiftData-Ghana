@@ -48,6 +48,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Utility Orders", icon: Lightbulb,    path: "/admin/utility-orders", permKey: "orders" },
       { label: "Standard Orders", icon: Package,     path: "/admin/standard-orders", permKey: "orders" },
       { label: "Checker Orders",  icon: GraduationCap, path: "/admin/checker-orders", permKey: "orders" },
+      { label: "AFA Registrations", icon: UserCheck, path: "/admin/afa-orders", permKey: "orders" },
       { label: "Refunded Orders", icon: RotateCcw, path: "/admin/refunded-orders", permKey: "orders" },
       { label: "Non-Beneficiary List", icon: ListCheck, path: "/admin/beneficiary-orders", permKey: "orders" },
       { label: "Submitted Numbers", icon: PhoneCall, path: "/admin/submitted-numbers", permKey: "orders" },

@@ -108,6 +108,25 @@ const formatPackageDisplay = (size: string) => {
     };
   }
 
+  // Pattern 3: MashUp formats like "511mb + 176 Mins", "3.4gb only", etc.
+  match = size.match(/^([\d.]+\s*(?:gb|mb))\s*\+\s*(.*)$/i);
+  if (match) {
+    return {
+      main: match[1].trim().toUpperCase(),
+      sub: "+ " + match[2].trim()
+    };
+  }
+
+  match = size.match(/^([\d.]+\s*(?:gb|mb)?)\s*only\s*$/i);
+  if (match) {
+    const rawVal = match[1].trim();
+    const withUnit = /^[0-9.]+$/.test(rawVal) ? `${rawVal}GB` : rawVal.toUpperCase();
+    return {
+      main: withUnit,
+      sub: "Data Only"
+    };
+  }
+
   return {
     main: size,
     sub: ""
@@ -128,7 +147,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [globalSettings, setGlobalSettings] = useState<GlobalPackageSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [korbaMappings, setKorbaMappings] = useState<{ package_name: string; network: string; raw_data: any }[]>([]);
-  const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>("affordable");
+  const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>(
+    network === "MTN Mash Up" ? "mashup" : "affordable"
+  );
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
   const [activeGateway, setActiveGateway] = useState<string>("paystack");
@@ -241,7 +262,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   useEffect(() => {
     const triggerBeneficiaryCheck = async () => {
       const net = String(network || "").toUpperCase();
-      const isMtn = net.includes("MTN") || net.includes("YELLO");
+      const isMtn = (net.includes("MTN") || net.includes("YELLO")) && !net.includes("MASH");
       if (!isMtn || selectedTypeOrCategory !== "affordable" || !isPhoneValid || !beneficiaryCheckEnabled) {
         setBeneficiaryError(null);
         setIsCheckingBeneficiary(false);
@@ -259,7 +280,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
           body: {
             phone: normalizedPhone,
-            network: network
+            network: "MTN",
+            category: "affordable"
           }
         });
 
@@ -414,12 +436,25 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         validity: pkg.validity,
         popular: pkg.popular,
         isInstant: false,
-        category: "Affordable SME"
+        category: network === "MTN Mash Up" ? "Mash Up Bundles" : "Affordable SME"
       });
     });
 
+    if (network === "MTN" && basePackages["MTN Mash Up"]) {
+      basePackages["MTN Mash Up"].forEach(pkg => {
+        list.push({
+          size: pkg.size,
+          price: pkg.price,
+          validity: "MTN Mash Up",
+          popular: pkg.popular,
+          isInstant: false,
+          category: "Mash Up Bundles"
+        });
+      });
+    }
+
     // 2. Add packages from global settings
-    const addedSizes = new Set(baseList.map(p => normalizePackageSize(p.size)));
+    const addedSizes = new Set(list.map(p => normalizePackageSize(p.size)));
 
     globalSettings.forEach((gs) => {
       // Note: we group 'MTN Mash Up' under MTN's page
@@ -520,6 +555,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
   // Get all available dropdown options for the current network
   const dropdownOptions = useMemo(() => {
+    if (network === "MTN Mash Up") {
+      return [{ value: "mashup", label: "MTN Mash Up" }];
+    }
+
     const options: { value: string; label: string }[] = [
       { value: "affordable", label: "Affordable SME Bundles" }
     ];
@@ -595,6 +634,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     setPromoCode(""); 
     setPromoOpen(false); 
     setResolvedName(null);
+    setSelectedTypeOrCategory(network === "MTN Mash Up" ? "mashup" : "affordable");
   }, [network]);
 
   const lastAttemptRef = useRef<string | null>(null);
@@ -730,7 +770,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       return true;
     }
     const net = String(networkToCheck || "").toUpperCase();
-    const isMtn = net.includes("MTN") || net.includes("YELLO");
+    const isMtn = (net.includes("MTN") || net.includes("YELLO")) && !net.includes("MASH");
     if (!isMtn || selectedTypeOrCategory !== "affordable") {
       return true;
     }
@@ -756,7 +796,8 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
         body: {
           phone: phoneToCheck,
-          network: networkToCheck
+          network: "MTN",
+          category: "affordable"
         }
       });
 
@@ -1484,7 +1525,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                           </span>
                           {display.sub && (
                             <span className={`${cardColors.label} text-[9px] font-bold opacity-75 uppercase tracking-wide`}>
-                              Official: {display.sub}
+                              {display.sub.startsWith("+") || display.sub === "Data Only" ? display.sub : `Official: ${display.sub}`}
                             </span>
                           )}
                         </div>
@@ -1492,7 +1533,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                     })()}
                     <div className="flex items-end justify-between mt-auto pt-1">
                       <span className={`${cardColors.size} text-base font-black`}>₵{item.price.toFixed(2)}</span>
-                      <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>{item.validity || "No Expiry"}</span>
+                      <span className={`${cardColors.label} text-[9px] font-bold uppercase opacity-60`}>{item.validity === "MTN Mash Up" ? "30 Days" : (item.validity || "No Expiry")}</span>
                     </div>
                   </button>
                 );

@@ -50,9 +50,11 @@ export async function verifyAdmin(
   }
 
   try {
-    const claims = getJwtClaims(token);
     const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-    const isServiceRole = claims?.role === "service_role" || !!(serviceRoleKey && token.trim() === serviceRoleKey);
+    // Cryptographic security enforcement:
+    // Only grant service_role bypass if the provided token EXACTLY matches the SUPABASE_SERVICE_ROLE_KEY secret.
+    // NEVER trust unverified claims from arbitrary client-provided tokens!
+    const isServiceRole = !!(serviceRoleKey && token.trim() === serviceRoleKey);
 
     let user;
     if (isServiceRole) {

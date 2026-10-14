@@ -1,7 +1,7 @@
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
-import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
+import { isNonRetryableTerminalError, isDuplicateOrderError } from "../_shared/providers/utils.ts";
 import { log } from "../_shared/logger.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
 
@@ -36,19 +36,17 @@ serve(async (req) => {
       .from("orders")
       .select("*")
       .eq("status", "paid")
-      .neq("network", "MTN Mash Up")
       .not("order_type", "in", excludedTypes)
       .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
       .limit(25);
 
-    // 2. Find stuck undispatched processing orders (no provider_id or no provider_order_id assigned, or marked timeout/failed_api_call)
+    // 2. Find stuck undispatched processing orders (no provider_id or no provider_order_id assigned, or marked timeout/failed_api_call/duplicate_cooldown)
     const { data: undispatchedOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("status", "processing")
-      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call")
-      .neq("network", "MTN Mash Up")
+      .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.timeout,provider_order_id.eq.failed_api_call,provider_order_id.eq.duplicate_cooldown")
       .not("order_type", "in", excludedTypes)
       .lte("created_at", oneMinuteAgo)
       .gte("created_at", twoDaysAgo)
@@ -65,11 +63,24 @@ serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(35);
 
+    // 4. Find duplicate cooldown orders that are ready to be re-routed after 60 mins
+    const { data: duplicateOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .in("status", ["processing", "paid", "fulfillment_failed"])
+      .or("provider_order_id.eq.duplicate_cooldown,failure_reason.ilike.%duplicate%,failure_reason.ilike.%identical%")
+      .neq("network", "MTN Mash Up")
+      .not("order_type", "in", excludedTypes)
+      .gte("created_at", twoDaysAgo)
+      .order("created_at", { ascending: false })
+      .limit(35);
+
     // Deduplicate candidate orders by ID
     const orderMap = new Map<string, any>();
     (stuckPaidOrders || []).forEach(o => orderMap.set(o.id, o));
     (undispatchedOrders || []).forEach(o => orderMap.set(o.id, o));
     (noProviderOrders || []).forEach(o => orderMap.set(o.id, o));
+    (duplicateOrders || []).forEach(o => orderMap.set(o.id, o));
 
     const candidateOrders = Array.from(orderMap.values());
 
@@ -96,21 +107,42 @@ serve(async (req) => {
         continue;
       }
 
+      // Duplicate Order 60-Minute Cooldown Guard:
+      // If order is delayed due to duplicate order detection, ensure 60 minutes have elapsed before auto-routing!
+      const isDuplicateCooldown = 
+        order.provider_order_id === "duplicate_cooldown" || 
+        order.metadata?.duplicate_delayed === true ||
+        isDuplicateOrderError(order.failure_reason);
+
+      if (isDuplicateCooldown) {
+        const delayedUntilTime = order.metadata?.delayed_until ? new Date(order.metadata.delayed_until).getTime() : 0;
+        const lastActionTime = new Date(order.last_retry_at || order.updated_at || order.created_at).getTime();
+        const sixtyMinTime = lastActionTime + 60 * 60 * 1000;
+        const effectiveReadyTime = delayedUntilTime > 0 ? delayedUntilTime : sixtyMinTime;
+
+        if (Date.now() < effectiveReadyTime) {
+          const remainingMins = Math.ceil((effectiveReadyTime - Date.now()) / (60 * 1000));
+          console.log(`[cron-auto-retry] Order ${order.id} is in duplicate cooldown (${remainingMins}m remaining). Skipping until 60min expires.`);
+          continue;
+        }
+        console.log(`[cron-auto-retry] Order ${order.id} duplicate 60-minute cooldown has EXPIRED. Proceeding to auto-route!`);
+      }
+
       // Anti-Loss & Non-Retryable Guard: Never reprocess orders with permanent recipient errors
-      // (e.g. barred number, invalid recipient, payee limit reached, or duplicate order detected)
-      if (isNonRetryableTerminalError(order.failure_reason)) {
+      // (e.g. barred number, invalid recipient, payee limit reached). Note: Duplicate orders are handled by the 60m cooldown check above.
+      if (!isDuplicateCooldown && isNonRetryableTerminalError(order.failure_reason)) {
         console.log(`[cron-auto-retry] Order ${order.id} has permanent non-retryable error (${order.failure_reason}). Skipping to prevent losses.`);
         continue;
       }
 
       // Anti-Duplicate Delivery Shield: If order already has an active upstream provider reference
-      // (e.g. SKP..., API_..., DH_...) that is NOT timeout or failed_api_call, DO NOT re-dispatch to another provider!
-      // This prevents double-fulfillment and paying twice for the same bundle.
+      // (e.g. SKP..., API_..., DH_...) that is NOT timeout, failed_api_call, or duplicate_cooldown, DO NOT re-dispatch!
       const hasActiveProviderRef = Boolean(
         order.provider_order_id &&
         order.provider_order_id !== "failed_api_call" &&
         order.provider_order_id !== "timeout" &&
-        order.provider_order_id !== "routed"
+        order.provider_order_id !== "routed" &&
+        order.provider_order_id !== "duplicate_cooldown"
       );
       if (hasActiveProviderRef && (order.status === "processing" || order.status === "paid")) {
         console.log(`[cron-auto-retry] Order ${order.id} is already in transit with provider (${order.provider_order_id}). Skipping re-dispatch to avoid double fulfillment.`);
@@ -131,7 +163,7 @@ serve(async (req) => {
         .from("orders")
         .update({
           status: "processing",
-          retry_count: currentRetry + 1,
+          retry_count: isDuplicateCooldown ? currentRetry : (currentRetry + 1),
           last_retry_at: new Date().toISOString()
         })
         .eq("id", order.id)
@@ -146,7 +178,10 @@ serve(async (req) => {
 
       console.log(`[cron-auto-retry] Auto-healing claimed order ${order.id} (${order.network} ${order.package_size}, attempt ${currentRetry + 1}/3)...`);
       
-      const dispatch = await dispatchOrderWithFailover(supabaseAdmin, order);
+      const dispatch = await dispatchOrderWithFailover(supabaseAdmin, {
+        ...order,
+        provider_order_id: null,
+      });
 
       if (dispatch.status === "fulfilled") {
         await supabaseAdmin.from("orders").update({

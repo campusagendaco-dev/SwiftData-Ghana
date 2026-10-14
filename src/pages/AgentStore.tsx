@@ -102,6 +102,25 @@ const formatPackageDisplay = (size: string) => {
     };
   }
 
+  // Pattern 3: MashUp formats like "511mb + 176 Mins", "3.4gb only", etc.
+  match = size.match(/^([\d.]+\s*(?:gb|mb))\s*\+\s*(.*)$/i);
+  if (match) {
+    return {
+      main: match[1].trim().toUpperCase(),
+      sub: "+ " + match[2].trim()
+    };
+  }
+
+  match = size.match(/^([\d.]+\s*(?:gb|mb)?)\s*only\s*$/i);
+  if (match) {
+    const rawVal = match[1].trim();
+    const withUnit = /^[0-9.]+$/.test(rawVal) ? `${rawVal}GB` : rawVal.toUpperCase();
+    return {
+      main: withUnit,
+      sub: "Data Only"
+    };
+  }
+
   return {
     main: size,
     sub: ""
@@ -241,7 +260,7 @@ const AgentStore = () => {
   useEffect(() => {
     const triggerBeneficiaryCheck = async () => {
       const net = String(selectedNetwork || "").toUpperCase();
-      const isMtn = net.includes("MTN") || net.includes("YELLO");
+      const isMtn = (net.includes("MTN") || net.includes("YELLO")) && !net.includes("MASH");
       if (!isMtn || selectedTypeOrCategory !== "affordable" || !isPhoneValid || selectedService !== "data" || !beneficiaryCheckEnabled) {
         setBeneficiaryError(null);
         setIsCheckingBeneficiary(false);
@@ -259,7 +278,8 @@ const AgentStore = () => {
         const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
           body: {
             phone: phoneDigits,
-            network: selectedNetwork
+            network: "MTN",
+            category: "affordable"
           }
         });
 
@@ -292,7 +312,7 @@ const AgentStore = () => {
       return true;
     }
     const net = String(networkToCheck || "").toUpperCase();
-    const isMtn = net.includes("MTN") || net.includes("YELLO");
+    const isMtn = (net.includes("MTN") || net.includes("YELLO")) && !net.includes("MASH");
     if (!isMtn || selectedTypeOrCategory !== "affordable") {
       return true;
     }
@@ -318,7 +338,8 @@ const AgentStore = () => {
       const { data, error } = await supabase.functions.invoke("verify-beneficiary", {
         body: {
           phone: phoneToCheck,
-          network: networkToCheck
+          network: "MTN",
+          category: "affordable"
         }
       });
 
@@ -782,7 +803,7 @@ const AgentStore = () => {
       if (Number.isFinite(activePrice) && activePrice > 0) return applyPriceMultiplier(activePrice, multiplier);
     }
     
-    const gs = globalSettings[`${network}-${normSize}`] || globalSettings[`${multiplierKey}-${normSize}`];
+    const gs = globalSettings[`${network}-${normSize}`] || globalSettings[`${multiplierKey}-${normSize}`] || globalSettings[`MTN Mash Up-${normSize}`];
     let gsBase = Number(gs?.agent_price) > 0 ? Number(gs!.agent_price) : Number(gs?.public_price);
     if (agent.is_sub_agent) {
       const gsSub = Number(gs?.sub_agent_price);
@@ -810,13 +831,26 @@ const AgentStore = () => {
       });
     });
 
+    if (selectedNetwork === "MTN" && basePackages["MTN Mash Up"]) {
+      basePackages["MTN Mash Up"].forEach(pkg => {
+        list.push({
+          size: pkg.size,
+          price: pkg.price,
+          validity: "MTN Mash Up",
+          popular: pkg.popular,
+          isInstant: false,
+          category: "Mash Up Bundles"
+        });
+      });
+    }
+
     // 2. Add packages from global settings
-    const addedSizes = new Set(baseList.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
+    const addedSizes = new Set(list.map(p => p.size.replace(/\s+/g, "").toUpperCase()));
 
     Object.keys(globalSettings).forEach((key) => {
       const gs = globalSettings[key];
       // Note: we group 'MTN Mash Up' under MTN's Instant page
-      if (gs && (gs.network === dbNetwork || (dbNetwork === "MTN" && gs.network === "MTN Mash Up"))) {
+      if (gs && (gs.network === dbNetwork || (selectedNetwork === "MTN" && gs.network === "MTN Mash Up"))) {
         const normSize = gs.package_size.replace(/\s+/g, "").toUpperCase();
         if (!addedSizes.has(normSize)) {
           // Check if this package is mapped to Korba
@@ -842,12 +876,13 @@ const AgentStore = () => {
         const normSize = pkg.size.replace(/\s+/g, "").toUpperCase();
         
         let gs = globalSettings[`${dbNetwork}-${normSize}`];
-        if (!gs && dbNetwork === "MTN") {
+        if (!gs && selectedNetwork === "MTN") {
           gs = globalSettings[`MTN Mash Up-${normSize}`];
         }
 
         if (gs?.is_unavailable) return null;
         if (agent?.disabled_packages?.[dbNetwork]?.includes(pkg.size)) return null;
+        if (selectedNetwork === "MTN" && agent?.disabled_packages?.["MTN Mash Up"]?.includes(pkg.size)) return null;
         
         const price = resolveDisplayPrice(dbNetwork, pkg.size, pkg.price);
 

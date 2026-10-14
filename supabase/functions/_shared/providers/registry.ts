@@ -2,10 +2,12 @@ import { ProviderAdapter } from "./types.ts";
 import { KorbaAdapter } from "./korba.ts";
 import { StandardAdapter } from "./standard.ts";
 import { NewAggregatorAdapter } from "./newaggregator.ts";
+import { AfaRegistrationAdapter } from "./afaregistration.ts";
 
 const adapters: Record<string, ProviderAdapter> = {
   korba: new KorbaAdapter(),
   newaggregator: new NewAggregatorAdapter(),
+  afaregistration: new AfaRegistrationAdapter(),
   // Standard and generic reseller platforms share the dynamic StandardAdapter
   standard: new StandardAdapter(),
   skdataplug: new StandardAdapter(),

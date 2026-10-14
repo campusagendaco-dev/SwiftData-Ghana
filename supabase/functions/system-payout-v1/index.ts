@@ -145,7 +145,8 @@ type AdminUserAction =
   | "revoke_admin_role"
   | "verify_paystack_transfer"
   | "get_korba_transactions"
-  | "purge_bot_spam";
+  | "purge_bot_spam"
+  | "test_korba_payload";
 
 async function queryKorbaApi(
   supabaseAdmin: any,

@@ -12,7 +12,7 @@ function normalizeRecipient(phone: string): string {
   return digits;
 }
 
-serve(async (req) => {
+serve(async (req: any) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -101,7 +101,7 @@ serve(async (req) => {
 
     if (recentOrders && recentOrders.length > 0) {
       const activeStatuses = ["paid", "processing", "pending", "awaiting_payment"];
-      const match = recentOrders.find(o => {
+      const match = recentOrders.find((o: any) => {
         if (!activeStatuses.includes(o.status)) return false;
 
         // Compare network case-insensitively
@@ -148,6 +148,7 @@ serve(async (req) => {
       customer_phone: normalizedPhone,
       network: "AFA",
       package_size: "BUNDLE",
+      order_type: "afa",
       amount: price,
       payment_method: "wallet",
       status: "paid",
@@ -159,7 +160,25 @@ serve(async (req) => {
       afa_occupation: occupation,
       afa_email: email || null,
       afa_residence: residence,
-      afa_date_of_birth: dateOfBirth
+      afa_date_of_birth: dateOfBirth,
+      metadata: {
+        order_type: "afa",
+        afa_full_name: fullName,
+        fullName,
+        afa_ghana_card: ghanaCard,
+        ghana_card: ghanaCard,
+        ghanaCardNumber: ghanaCard,
+        afa_occupation: occupation,
+        occupation,
+        afa_email: email || null,
+        email: email || null,
+        afa_residence: residence,
+        location: residence,
+        placeOfResidence: residence,
+        afa_date_of_birth: dateOfBirth,
+        dob: dateOfBirth,
+        dateOfBirth
+      }
     });
 
     if (insertError) {
@@ -177,6 +196,13 @@ serve(async (req) => {
     }, user.id).catch(e => console.error("[SMS-ERROR-AFA]", e));
 
     console.log(`[wallet-pay-afa] Created AFA registration order: ${orderId} for ${normalizedPhone}`);
+
+    // Immediately trigger provider routing in the background
+    fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+      body: JSON.stringify({ reference: orderId })
+    }).catch(e => console.error("[wallet-pay-afa] Immediate background routing trigger failed:", e));
 
     return new Response(JSON.stringify({
       success: true,

@@ -103,7 +103,8 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     (isTelecomNetwork && !isKorbaPackagePattern && !isExplicitKorbaCategory && order?.metadata?.is_korba !== true && order?.metadata?.is_korba !== "true")
   );
 
-  let isExplicitKorba = !isAffordableSmeBundle && korbaProvider && (
+  const isMashUpPattern = uppercaseNet.includes("MASH") || uppercaseNet.includes("COMBO") || orderCategory === "mashup" || order?.network === "MTN Mash Up" || (pkgUpper.includes("MINS") && uppercaseNet.includes("MTN"));
+  let isExplicitKorba = !isMashUpPattern && !isAffordableSmeBundle && korbaProvider && (
     uppercaseNet.startsWith("KORBA") || 
     order?.metadata?.is_korba === true || 
     order?.metadata?.is_korba === "true" ||
@@ -155,19 +156,44 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   // 2. Check if AFA order
   const isAfaOrder = orderType.toLowerCase() === "afa" || uppercaseNet === "AFA" || uppercaseNet.startsWith("AFA");
   if (isAfaOrder) {
-    const { data: spendless } = await supabaseAdmin
+    // AFARegistration.com is the primary AFA provider; Spendless is the fallback
+    const { data: afaProviders } = await supabaseAdmin
       .from("providers")
       .select("*")
-      .eq("handler_type", "spendless")
-      .eq("is_active", true)
-      .maybeSingle();
-    if (spendless) {
-      console.log(`[resolveProvidersForOrder] Resolved Spendless provider for AFA order ${order?.id}`);
-      return [spendless];
-    } else {
-      console.warn(`[resolveProvidersForOrder] Spendless provider not found in DB for AFA.`);
-      return [];
+      .in("handler_type", ["afaregistration", "spendless"])
+      .eq("is_active", true);
+    const afaOrdered = [
+      ...(afaProviders || []).filter((p: any) => p.handler_type === "afaregistration"),
+      ...(afaProviders || []).filter((p: any) => p.handler_type === "spendless"),
+    ];
+    if (afaOrdered.length > 0) {
+      console.log(`[resolveProvidersForOrder] Resolved AFA providers for order ${order?.id}: ${afaOrdered.map((p: any) => p.name).join(" -> ")}`);
+      return afaOrdered;
     }
+    console.warn(`[resolveProvidersForOrder] No active AFA provider (AFARegistration/Spendless) found.`);
+    return [];
+  }
+
+  // 2.5. Check if MTN Mash Up order
+  const isMashUpOrder = 
+    uppercaseNet.includes("MASH") || 
+    uppercaseNet.includes("COMBO") || 
+    orderCategory === "mashup" ||
+    order?.network === "MTN Mash Up" ||
+    (pkgUpper.includes("MINS") && uppercaseNet.includes("MTN"));
+
+  if (isMashUpOrder) {
+    const { data: dmProviders } = await supabaseAdmin
+      .from("providers")
+      .select("*")
+      .or("handler_type.eq.datamart,name.ilike.%datamart%")
+      .eq("is_active", true);
+    if (dmProviders && dmProviders.length > 0) {
+      console.log(`[resolveProvidersForOrder] Resolved DataMart provider for MTN Mash Up order ${order?.id}`);
+      return dmProviders;
+    }
+    console.warn(`[resolveProvidersForOrder] No active DataMart provider found for MTN Mash Up order ${order?.id}`);
+    return [];
   }
 
   // 3. Get all active providers for this category (data, airtime, or utility)
@@ -303,7 +329,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // 8. Handle non-beneficiary / forced fallback (e.g. Spendless or SKPlug for non-beneficiary bypass)
+  // 8. Handle non-beneficiary / forced fallback (e.g. DataMart, Spendless, or SKPlug for non-beneficiary bypass)
   const isForceFallback = order?.metadata?.route_via_datamart === true || order?.metadata?.bypass_beneficiary === true;
   if (isForceFallback) {
     const designated = activeProviders.find((p: any) => p.settings?.is_beneficiary_fallback === true);
@@ -311,8 +337,15 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
       console.log(`[resolveProvidersForOrder] Order ${order?.id} using admin-selected fallback provider ${designated.name}...`);
       return [designated, ...activeProviders.filter((p: any) => p.id !== designated.id)];
     }
-    // If DataHub requires beneficiary whitelist, prioritize Spendless or SKPlug for bypass
-    const nonBeneficiaryProv = activeProviders.find((p: any) => p.handler_type === "spendless" || p.handler_type === "skdataplug");
+    if (order?.metadata?.route_via_datamart === true) {
+      const dmProv = activeProviders.find((p: any) => p.handler_type === "datamart");
+      if (dmProv) {
+        console.log(`[resolveProvidersForOrder] Order ${order?.id} explicitly requested route_via_datamart. Prioritizing ${dmProv.name}...`);
+        return [dmProv, ...activeProviders.filter((p: any) => p.id !== dmProv.id)];
+      }
+    }
+    // If DataHub/BundleZone require beneficiary whitelist, prioritize DataMart, Spendless, or SKPlug for bypass
+    const nonBeneficiaryProv = activeProviders.find((p: any) => p.handler_type === "datamart" || p.handler_type === "spendless" || p.handler_type === "skdataplug");
     if (nonBeneficiaryProv) {
       console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary bypass. Prioritizing ${nonBeneficiaryProv.name}...`);
       return [nonBeneficiaryProv, ...activeProviders.filter((p: any) => p.id !== nonBeneficiaryProv.id)];
