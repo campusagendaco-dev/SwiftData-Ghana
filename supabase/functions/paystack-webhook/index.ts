@@ -1612,22 +1612,7 @@ serve(async (req: Request) => {
     }
 
     if (existingOrder?.network === "MTN Mash Up" || (existingOrder?.metadata?.category || "").toLowerCase() === "mashup") {
-      const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
-      const { data: dmActive } = await supabaseAdmin
-        .from("providers")
-        .select("id, is_active")
-        .or("handler_type.eq.datamart,name.ilike.%datamart%")
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (!dmActive && !dmApiKey) {
-        console.log(`[Webhook] MTN Mash Up order ${orderId} received. DataMart not configured. Set status to 'pending' for manual export.`);
-        return new Response(JSON.stringify({ received: true, fulfilled: false, status: "pending", message: "MTN Mash Up order queued for manual processing" }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      console.log(`[Webhook] MTN Mash Up order ${orderId} received. Proceeding to automated DataMart fulfillment.`);
+      console.log(`[Webhook] MTN Mash Up order ${orderId} received. Proceeding directly to automated DataMart fulfillment.`);
     }
 
     // AFA orders: AFARegistration.com (primary) -> Spendless (fallback) via provider adapters

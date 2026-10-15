@@ -1287,23 +1287,7 @@ serve(async (req: any) => {
       ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing"]
       : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
 
-    const isMashUp = 
-      existingOrder?.network === "MTN Mash Up" || 
-      String(existingOrder?.network || "").toUpperCase().includes("MASH") ||
-      (existingOrder?.metadata?.category || "").toLowerCase() === "mashup";
-    let targetStatus = "processing";
-    if (isMashUp) {
-      const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
-      const { data: dmActive } = await supabaseAdmin
-        .from("providers")
-        .select("id, is_active")
-        .or("handler_type.eq.datamart,name.ilike.%datamart%")
-        .eq("is_active", true)
-        .maybeSingle();
-      if (!dmActive && !dmApiKey) {
-        targetStatus = "pending";
-      }
-    }
+    const targetStatus = "processing";
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({ 
@@ -1410,22 +1394,7 @@ serve(async (req: any) => {
       (claimedOrder?.metadata?.category || "").toLowerCase() === "mashup";
 
     if (isMashUpOrderCheck) {
-      const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
-      const { data: dmActive } = await supabaseAdmin
-        .from("providers")
-        .select("id, is_active")
-        .or("handler_type.eq.datamart,name.ilike.%datamart%")
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (!dmActive && !dmApiKey) {
-        console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. DataMart not configured for automated MashUp. Keeping status as 'pending' for manual export.`);
-        return new Response(JSON.stringify({
-          status: "pending",
-          message: "MTN Mash Up order queued for manual processing"
-        }), { headers: corsHeaders });
-      }
-      console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. Proceeding to automated DataMart fulfillment.`);
+      console.log(`[verify-payment] MTN Mash Up order ${targetReference} verified. Proceeding directly to automated DataMart fulfillment.`);
     }
 
     // --- 4. FULFILLMENT ---
