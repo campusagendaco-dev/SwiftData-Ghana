@@ -126,6 +126,7 @@ type FilterType = "all" | "agents" | "sub_agents";
 type DatePreset = "all" | "today" | "yesterday" | "last_7_days" | "last_30_days" | "this_month" | "custom";
 
 const PAGE_SIZE = 50;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function AdminOrders() {
   const { toast } = useToast();
@@ -382,7 +383,7 @@ export default function AdminOrders() {
     // Search filter
     if (search.trim()) {
       const cleanSearch = sanitizeSearchTerm(search);
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
+      const isUuid = UUID_REGEX.test(cleanSearch);
       const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
 
       if (isUuid) {
@@ -393,7 +394,9 @@ export default function AdminOrders() {
           .select("user_id")
           .or(`full_name.ilike.%${cleanSearch}%,email.ilike.%${cleanSearch}%,phone.ilike.%${cleanSearch}%`);
 
-        const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
+        const matchedUserIds = (matchedProfiles || [])
+          .map((p: any) => p.user_id)
+          .filter((id: any) => id && UUID_REGEX.test(id));
         
         const orParts: string[] = [
           `customer_phone.ilike.%${cleanSearch}%`,
@@ -413,7 +416,9 @@ export default function AdminOrders() {
           });
         }
 
-        q = q.or(orParts.join(","));
+        if (orParts.length > 0) {
+          q = q.or(orParts.join(","));
+        }
       }
     }
 
@@ -466,7 +471,7 @@ export default function AdminOrders() {
     // Resolve profile and wallet info for only valid UUIDs
     const validAgentIds = [...new Set((data || [])
       .map((o: any) => o.agent_id)
-      .filter((id: string) => id && id !== "00000000-0000-0000-0000-000000000000" && id.length > 10))];
+      .filter((id: string) => id && UUID_REGEX.test(id)))];
     
     const currentProfiles: Record<string, AgentProfile> = {};
 

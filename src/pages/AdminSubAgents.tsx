@@ -84,8 +84,9 @@ const AdminSubAgents = () => {
     const rows = ((data as any[]) || []) as SubAgentRow[];
 
     // Fetch extra data: Parent Names, Wallet Balances, Sales Volume
-    const ids = rows.map(r => r.user_id);
-    const parentIds = Array.from(new Set(rows.map(r => r.parent_agent_id).filter(Boolean))) as string[];
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ids = rows.map(r => r.user_id).filter((id: any) => id && UUID_REGEX.test(id));
+    const parentIds = Array.from(new Set(rows.map(r => r.parent_agent_id).filter((id: any) => id && UUID_REGEX.test(id)))) as string[];
 
     if (ids.length > 0) {
       const [walletsRes, salesRes, parentsRes] = await Promise.all([

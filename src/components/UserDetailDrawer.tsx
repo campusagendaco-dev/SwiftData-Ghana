@@ -61,6 +61,8 @@ function isBeneficiaryFailure(order: Pick<Order, "status" | "failure_reason">): 
   return reason.includes("beneficiary") || reason.includes("not added");
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const BENEFICIARY_STATUS_BADGE: Record<string, { label: string; className: string }> = {
   submitted: { label: "in queue", className: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
   whitelisted: { label: "in queue", className: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
@@ -604,7 +606,10 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
   };
 
   useEffect(() => {
-    if (!user) { setData(null); return; }
+    if (!user || !user.user_id || !UUID_REGEX.test(user.user_id)) {
+      setData(null);
+      return;
+    }
     setLoading(true);
     setData(null);
 
@@ -616,7 +621,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         user.last_ip
           ? (supabase.from("profiles") as any).select("user_id, full_name, email").eq("last_ip", user.last_ip).neq("user_id", user.user_id).limit(5)
           : Promise.resolve({ data: [] }),
-        user.referred_by
+        user.referred_by && UUID_REGEX.test(user.referred_by)
           ? supabase.from("profiles").select("full_name").eq("user_id", user.referred_by).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid").eq("user_id", user.user_id).maybeSingle(),

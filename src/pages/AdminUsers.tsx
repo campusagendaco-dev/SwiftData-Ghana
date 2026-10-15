@@ -64,6 +64,7 @@ const AdminUsers = () => {
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const PAGE_SIZE = 50;
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const [actionLoading, setActionLoading] = useState<Record<string, "reset" | "delete" | "approve-sub" | "approve-agent" | "impersonate" | "suspend" | null>>({});
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [roleModalUser, setRoleModalUser] = useState<UserRow | null>(null);
@@ -81,7 +82,7 @@ const AdminUsers = () => {
     let rows: UserRow[] = [];
     let count: number | null = 0;
     const cleanSearch = search ? sanitizeSearchTerm(search) : "";
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
+    const isUuid = UUID_REGEX.test(cleanSearch);
 
     if (!cleanSearch && (sortBy === "wallet_desc" || sortBy === "wallet_asc")) {
       const { data: walletRows, count: walletCount } = await supabase
@@ -91,7 +92,9 @@ const AdminUsers = () => {
         .range(from, to);
 
       count = walletCount;
-      const targetAgentIds = (walletRows || []).map((w: any) => w.agent_id);
+      const targetAgentIds = (walletRows || [])
+        .map((w: any) => w.agent_id)
+        .filter((id: any) => id && UUID_REGEX.test(id));
 
       if (targetAgentIds.length > 0) {
         let profQuery = supabase
@@ -122,7 +125,9 @@ const AdminUsers = () => {
         .range(from, to);
 
       count = walletCount;
-      const targetAgentIds = (walletRows || []).map((w: any) => w.agent_id);
+      const targetAgentIds = (walletRows || [])
+        .map((w: any) => w.agent_id)
+        .filter((id: any) => id && UUID_REGEX.test(id));
 
       if (targetAgentIds.length > 0) {
         let profQuery = supabase
@@ -148,12 +153,14 @@ const AdminUsers = () => {
     } else if (!cleanSearch && sortBy === "sales_desc") {
       const { data: salesRows, count: salesCount } = await supabase
         .from("user_sales_stats")
-        .select("user_id, total_sales_volume", { count: "exact" })
+        .select("user_id, total_sales_volume", { count: "estimated" })
         .order("total_sales_volume", { ascending: false })
         .range(from, to);
 
       count = salesCount;
-      const targetUserIds = (salesRows || []).map((s: any) => s.user_id);
+      const targetUserIds = (salesRows || [])
+        .map((s: any) => s.user_id)
+        .filter((id: any) => id && UUID_REGEX.test(id));
 
       if (targetUserIds.length > 0) {
         let profQuery = supabase
@@ -214,9 +221,16 @@ const AdminUsers = () => {
 
     setTotalCount(count || 0);
 
-    const userIds = rows.map(r => r.user_id);
+    const userIds = rows
+      .map(r => r.user_id)
+      .filter((id: any) => id && UUID_REGEX.test(id));
+
     if (userIds.length > 0) {
-      const parentIds = [...new Set(rows.filter(r => r.parent_agent_id).map(r => r.parent_agent_id as string))];
+      const parentIds = [...new Set(
+        rows
+          .filter(r => r.parent_agent_id && UUID_REGEX.test(r.parent_agent_id))
+          .map(r => r.parent_agent_id as string)
+      )];
       const [parentsRes, salesRes, walletsRes, mfaRes] = await Promise.all([
         parentIds.length > 0 ? supabase.from("profiles").select("user_id, full_name").in("user_id", parentIds) : Promise.resolve({ data: [] }),
         supabase.from("user_sales_stats").select("user_id, total_sales_volume, total_own_profit, total_commissions_paid").in("user_id", userIds),

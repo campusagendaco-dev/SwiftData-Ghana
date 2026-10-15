@@ -53,6 +53,11 @@ export default function OrderJourneyModal({ orderId, onClose }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!orderId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) {
+      setLogs([]);
+      setLoading(false);
+      return;
+    }
     const fetchJourney = async () => {
       setLoading(true);
       const { data } = await (supabase as any)

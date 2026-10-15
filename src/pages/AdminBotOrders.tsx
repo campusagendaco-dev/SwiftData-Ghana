@@ -212,9 +212,23 @@ export default function AdminBotOrders() {
       // Search Filter
       if (search.trim()) {
         const clean = sanitizeSearchTerm(search);
-        q = q.or(
-          `customer_phone.ilike.%${clean}%,network.ilike.%${clean}%,package_size.ilike.%${clean}%,id.ilike.%${clean}%`
-        );
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+        const isHex8 = /^[0-9a-f]{8}$/i.test(clean);
+
+        if (isUuid) {
+          q = q.eq("id", clean);
+        } else {
+          const orParts = [
+            `customer_phone.ilike.%${clean}%`,
+            `network.ilike.%${clean}%`,
+            `package_size.ilike.%${clean}%`
+          ];
+          if (isHex8) {
+            orParts.push(`id.gte.${clean}-0000-0000-0000-000000000000`);
+            orParts.push(`id.lte.${clean}-ffff-ffff-ffff-ffffffffffff`);
+          }
+          q = q.or(orParts.join(","));
+        }
       }
 
       const { data, count, error } = await q;

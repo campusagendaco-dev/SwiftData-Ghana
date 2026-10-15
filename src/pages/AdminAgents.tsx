@@ -114,7 +114,7 @@ const AdminAgents = () => {
     const rows = ((data as any[]) || []) as AgentRow[];
 
     // Fetch wallet balances for this batch only
-    const ids = rows.map(r => r.user_id);
+    const ids = rows.map(r => r.user_id).filter((id: any) => id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
     if (ids.length > 0) {
       const [walletsRes, subCountRes, salesRes, activationsRes] = await Promise.all([
         supabase.from("wallets").select("agent_id, balance, api_balance, credit_limit").in("agent_id", ids),

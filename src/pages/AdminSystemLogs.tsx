@@ -82,6 +82,7 @@ const TIME_RANGES = [
 ];
 
 const PAGE_SIZE = 100;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Tab = "logs" | "health";
 
@@ -130,6 +131,7 @@ export default function AdminSystemLogs() {
   }, [timeRange]);
 
   const fetchLogs = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     let query = (supabase as any)
       .from("system_logs")
@@ -142,15 +144,16 @@ export default function AdminSystemLogs() {
     if (sourceFilter !== "all")   query = query.eq("source", sourceFilter);
     if (resolvedFilter === "unresolved") query = query.eq("resolved", false);
     if (resolvedFilter === "resolved")   query = query.eq("resolved", true);
-    if (orderSearch.trim().length === 36) query = query.eq("order_id", orderSearch.trim());
+    if (orderSearch.trim() && UUID_REGEX.test(orderSearch.trim())) query = query.eq("order_id", orderSearch.trim());
     if (textSearch.trim().length >= 3)   query = query.ilike("message", `%${textSearch.trim()}%`);
 
     const { data, count, error } = await query;
     if (!error) { setLogs((data as SystemLog[]) || []); setTotalCount(count || 0); }
     setLoading(false);
-  }, [levelFilter, sourceFilter, resolvedFilter, orderSearch, textSearch, page, getSince]);
+  }, [user, levelFilter, sourceFilter, resolvedFilter, orderSearch, textSearch, page, getSince]);
 
   const fetchStats = useCallback(async () => {
+    if (!user) return;
     const { data } = await (supabase as any)
       .from("system_logs")
       .select("level, resolved")
@@ -163,14 +166,19 @@ export default function AdminSystemLogs() {
         unresolved: data.filter((l: any) => !l.resolved && (l.level === "error" || l.level === "warn")).length,
       });
     }
-  }, [getSince]);
+  }, [user, getSince]);
 
   useEffect(() => { setPage(0); }, [levelFilter, sourceFilter, resolvedFilter, orderSearch, textSearch, timeRange]);
-  useEffect(() => { fetchLogs(); fetchStats(); }, [fetchLogs, fetchStats]);
+  useEffect(() => { 
+    if (user) {
+      fetchLogs(); 
+      fetchStats(); 
+    }
+  }, [user, fetchLogs, fetchStats]);
 
   // Realtime
   useEffect(() => {
-    if (!liveMode) return;
+    if (!liveMode || !user) return;
     const ch = supabase
       .channel("system_logs_live")
       .on("postgres_changes" as any, { event: "INSERT", schema: "public", table: "system_logs" }, (payload: any) => {

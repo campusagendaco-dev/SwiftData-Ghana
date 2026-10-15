@@ -100,6 +100,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 type DatePreset = "all" | "today" | "yesterday" | "last_7_days" | "last_30_days";
 const PAGE_SIZE = 50;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Normalises Ghana Card numbers to GHA-XXXXXXXXX-X */
 function formatGhanaCard(raw?: string | null): string {
@@ -219,7 +220,7 @@ export default function AdminAfaOrders() {
     // Search filter across phone, names, ghana card, residence, or order/agent ID
     if (search.trim()) {
       const cleanSearch = sanitizeSearchTerm(search);
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanSearch);
+      const isUuid = UUID_REGEX.test(cleanSearch);
 
       if (isUuid) {
         q = q.or(`id.eq.${cleanSearch},agent_id.eq.${cleanSearch}`);
@@ -229,7 +230,9 @@ export default function AdminAfaOrders() {
           .select("user_id")
           .or(`full_name.ilike.%${cleanSearch}%,email.ilike.%${cleanSearch}%,phone.ilike.%${cleanSearch}%`);
 
-        const matchedUserIds = matchedProfiles?.map((p: any) => p.user_id) || [];
+        const matchedUserIds = (matchedProfiles || [])
+          .map((p: any) => p.user_id)
+          .filter((id: any) => id && UUID_REGEX.test(id));
 
         const orParts: string[] = [
           `customer_phone.ilike.%${cleanSearch}%`,
@@ -247,7 +250,9 @@ export default function AdminAfaOrders() {
           });
         }
 
-        q = q.or(orParts.join(","));
+        if (orParts.length > 0) {
+          q = q.or(orParts.join(","));
+        }
       }
     }
 
@@ -274,7 +279,9 @@ export default function AdminAfaOrders() {
 
     setTotalCount(count || 0);
 
-    const agentIds = [...new Set((data || []).map((o: any) => o.agent_id).filter(Boolean))];
+    const agentIds = [...new Set((data || [])
+      .map((o: any) => o.agent_id)
+      .filter((id: string) => id && UUID_REGEX.test(id)))];
     const profileMap: Record<string, AgentProfile> = {};
 
     if (agentIds.length > 0) {

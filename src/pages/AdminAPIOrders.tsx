@@ -64,6 +64,7 @@ const GIG_EMAILS = ["zionkay40@gmail.com", "onegig365@gmail.com"];
 const TOPS_EMAILS = ["mtopupgh@gmail.com", "topazicg@gmail.com"];
 
 const PAGE_SIZE = 50;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function AdminAPIOrders() {
   const { toast } = useToast();
@@ -214,7 +215,7 @@ export default function AdminAPIOrders() {
     // Apply text search
     if (searchQuery.trim()) {
       const term = searchQuery.trim();
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term);
+      const isUuid = UUID_REGEX.test(term);
 
       if (isUuid) {
         q = q.eq("id", term);
@@ -222,7 +223,8 @@ export default function AdminAPIOrders() {
         // Resolve matching user ids to search email/name
         const matchedUserIds = Object.values(profiles)
           .filter(p => p.email.toLowerCase().includes(term.toLowerCase()) || p.full_name.toLowerCase().includes(term.toLowerCase()))
-          .map(p => p.user_id);
+          .map(p => p.user_id)
+          .filter(id => id && UUID_REGEX.test(id));
 
         let orClause = `customer_phone.ilike.%${term}%,network.ilike.%${term}%`;
         if (matchedUserIds.length > 0) {
@@ -243,7 +245,9 @@ export default function AdminAPIOrders() {
     }
 
     // Capture agent IDs that need profile lookup
-    const returnedAgentIds = [...new Set((data || []).map((o: any) => o.agent_id))];
+    const returnedAgentIds = [...new Set((data || [])
+      .map((o: any) => o.agent_id)
+      .filter((id: string) => id && UUID_REGEX.test(id)))];
     const missingAgentIds = returnedAgentIds.filter(id => !profiles[id]);
 
     const updatedProfiles = { ...profiles };
