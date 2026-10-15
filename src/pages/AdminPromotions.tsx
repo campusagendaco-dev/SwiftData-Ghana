@@ -10,8 +10,13 @@ import { Switch } from "@/components/ui/switch";
 import {
   Ticket, Plus, Loader2, Trash2, Zap, AlertTriangle,
   Gift, Wifi, ToggleLeft, ToggleRight, RefreshCw, Users,
-  Download, Copy, CheckCircle, Flame, Sparkles, Clock, Eye, Smartphone, Send
+  Download, Copy, CheckCircle, Flame, Sparkles, Clock, Eye, Smartphone, Send,
+  Search, Check, Phone, Layers, Percent, Tag, ArrowUpRight, ShieldCheck, DollarSign,
+  TrendingDown, Info
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
+} from "@/components/ui/dialog";
 import { logAudit } from "@/utils/auditLogger";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -147,14 +152,22 @@ const AdminPromotions = () => {
   const [loadingDataPromoPopups, setLoadingDataPromoPopups] = useState(false);
   const [creatingDataPromo, setCreatingDataPromo] = useState(false);
 
+  // Global packages & smart picker state
+  const [globalPackages, setGlobalPackages] = useState<any[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+  const [packageSearch, setPackageSearch] = useState("");
+  const [customPackageMode, setCustomPackageMode] = useState(false);
+  const [selectedDiscountPercent, setSelectedDiscountPercent] = useState<number | null>(20);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+
   const [newPromoPopup, setNewPromoPopup] = useState({
-    title: "⚡ Swift Data Traffic Deal!",
-    description: "Get high-speed data at an unbeatable promotional price!",
-    network: "MTN",
-    package_size: "5GB",
-    original_price: "25.00",
-    promo_price: "18.00",
-    badge_text: "🔥 28% OFF",
+    title: "⚡ Flash MTN Mash Up Deal!",
+    description: "Get 4.5gb + 1800 Mins Voice & Data Combo at a huge promotional discount!",
+    network: "MTN Mash Up",
+    package_size: "4.5gb + 1800 Mins",
+    original_price: "35.00",
+    promo_price: "28.00",
+    badge_text: "🔥 20% OFF",
     theme_color: "amber",
     target_audience: "all",
     expires_hours: "24",
@@ -163,6 +176,113 @@ const AdminPromotions = () => {
     send_sms: true,
     sender_id: "swiftupdate",
   });
+
+  const fetchGlobalPackages = useCallback(async () => {
+    setLoadingPackages(true);
+    const { data, error } = await supabase
+      .from("global_package_settings")
+      .select("id, network, package_size, public_price, agent_price, cost_price, is_unavailable")
+      .order("agent_price", { ascending: true });
+
+    if (!error && data) {
+      setGlobalPackages(data);
+    }
+    setLoadingPackages(false);
+  }, []);
+
+  const handleNetworkSelect = (net: string) => {
+    const available = globalPackages.filter(p => p.network === net);
+    const defaultPkg = available.find(p => !p.is_unavailable) || available[0];
+    const origPrice = defaultPkg ? Number(defaultPkg.public_price || defaultPkg.agent_price || 0) : 25;
+    const discount = selectedDiscountPercent || 20;
+    const promo = origPrice > 0 ? Math.max(1, Math.round(origPrice * (1 - discount / 100) * 100) / 100) : 18;
+    const isMashup = net === "MTN Mash Up";
+
+    setNewPromoPopup(prev => ({
+      ...prev,
+      network: net,
+      package_size: defaultPkg ? defaultPkg.package_size : (isMashup ? "4.5gb + 1800 Mins" : "5GB"),
+      original_price: origPrice.toFixed(2),
+      promo_price: promo.toFixed(2),
+      badge_text: `🔥 ${discount}% OFF`,
+      title: isMashup ? "⚡ Flash MTN Mash Up Deal!" : `⚡ Flash ${net} Data Deal!`,
+      description: isMashup
+        ? `Get ${defaultPkg?.package_size || "4.5gb + 1800 Mins"} Voice & Data Combo for only GH₵ ${promo.toFixed(2)}!`
+        : `Get high-speed ${net} ${defaultPkg?.package_size || "5GB"} data for only GH₵ ${promo.toFixed(2)}!`
+    }));
+  };
+
+  const handlePackageSelect = (pkg: any) => {
+    const origPrice = Number(pkg.public_price || pkg.agent_price || 0);
+    const discount = selectedDiscountPercent || 20;
+    const promo = origPrice > 0 ? Math.max(1, Math.round(origPrice * (1 - discount / 100) * 100) / 100) : 18;
+    const isMashup = newPromoPopup.network === "MTN Mash Up";
+
+    setNewPromoPopup(prev => ({
+      ...prev,
+      package_size: pkg.package_size,
+      original_price: origPrice.toFixed(2),
+      promo_price: promo.toFixed(2),
+      badge_text: `🔥 ${discount}% OFF`,
+      title: isMashup ? "⚡ Flash MTN Mash Up Deal!" : `⚡ Flash ${newPromoPopup.network} Data Deal!`,
+      description: isMashup
+        ? `Get ${pkg.package_size} Voice & Data Combo for only GH₵ ${promo.toFixed(2)}!`
+        : `Get ${pkg.package_size} high-speed data for only GH₵ ${promo.toFixed(2)}!`
+    }));
+  };
+
+  const handleDiscountSelect = (pct: number) => {
+    setSelectedDiscountPercent(pct);
+    const orig = parseFloat(newPromoPopup.original_price) || 0;
+    if (orig > 0) {
+      const promo = Math.max(1, Math.round(orig * (1 - pct / 100) * 100) / 100);
+      const isMashup = newPromoPopup.network === "MTN Mash Up";
+      setNewPromoPopup(prev => ({
+        ...prev,
+        promo_price: promo.toFixed(2),
+        badge_text: `🔥 ${pct}% OFF`,
+        description: isMashup
+          ? `Get ${prev.package_size} Voice & Data Combo for only GH₵ ${promo.toFixed(2)}!`
+          : `Get ${prev.package_size} high-speed data for only GH₵ ${promo.toFixed(2)}!`
+      }));
+    }
+  };
+
+  const parsePackageDetails = (name: string, network: string) => {
+    const raw = String(name || "").trim();
+    const isMashup = network === "MTN Mash Up" || raw.toLowerCase().includes("mash") || raw.toLowerCase().includes("mins");
+    
+    if (isMashup) {
+      if (raw.includes("+")) {
+        const parts = raw.split("+");
+        const dataStr = parts[0]?.trim() || "";
+        const minsStr = parts[1]?.replace(/mins/i, "").trim() || "";
+        return {
+          isCombo: true,
+          dataLabel: dataStr.toUpperCase(),
+          minutesLabel: `${minsStr} Mins Voice`,
+          subText: "Voice + Data Combo",
+          badgeColor: "bg-purple-500/20 text-purple-300 border-purple-500/30"
+        };
+      }
+      if (raw.toLowerCase().includes("only")) {
+        return {
+          isCombo: false,
+          dataLabel: raw.replace(/only/i, "").trim().toUpperCase(),
+          minutesLabel: null,
+          subText: "Pure Data",
+          badgeColor: "bg-amber-500/20 text-amber-300 border-amber-500/30"
+        };
+      }
+    }
+    return {
+      isCombo: false,
+      dataLabel: raw,
+      minutesLabel: null,
+      subText: "High-Speed Data",
+      badgeColor: "bg-blue-500/20 text-blue-300 border-blue-500/30"
+    };
+  };
 
   const fetchDataPromoPopups = useCallback(async () => {
     setLoadingDataPromoPopups(true);
@@ -315,7 +435,8 @@ const AdminPromotions = () => {
     fetchPromos();
     fetchFreeDataSettings();
     fetchDataPromoPopups();
-  }, [fetchPromos, fetchFreeDataSettings, fetchDataPromoPopups]);
+    fetchGlobalPackages();
+  }, [fetchPromos, fetchFreeDataSettings, fetchDataPromoPopups, fetchGlobalPackages]);
 
   const handleSaveFreeData = async () => {
     setSavingFreeData(true);
@@ -760,157 +881,473 @@ const AdminPromotions = () => {
       </div>
 
       {/* ── Data Traffic Promo Popups ── */}
-      <div className="rounded-2xl overflow-hidden border border-amber-500/20 bg-gradient-to-b from-amber-500/5 to-transparent">
+      <div className="rounded-2xl overflow-hidden border border-amber-500/20 bg-gradient-to-b from-amber-500/5 via-black/40 to-transparent shadow-2xl">
         {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-transparent border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-              <Flame className="w-5 h-5 text-amber-400 animate-pulse" />
+        <div className="p-6 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent border-b border-white/5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 p-0.5 shadow-lg shadow-amber-500/20">
+              <div className="w-full h-full bg-black/60 rounded-[14px] flex items-center justify-center">
+                <Flame className="w-6 h-6 text-amber-400 animate-pulse" />
+              </div>
             </div>
             <div>
-              <h2 className="font-bold text-white text-lg flex items-center gap-2">
-                Data Traffic Promo Popups <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">NEW</Badge>
-              </h2>
-              <p className="text-xs text-white/50">Create interactive promo pop-up deals where users can purchase data directly inside the modal.</p>
+              <div className="flex items-center gap-2">
+                <h2 className="font-black text-white text-xl tracking-tight">
+                  Data Traffic Promo Studio
+                </h2>
+                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] font-bold px-2 py-0.5">
+                  LIVE PACKAGES SYNCED
+                </Badge>
+              </div>
+              <p className="text-xs text-white/60 mt-0.5">
+                Select real data & voice mashup packages directly from the catalog. Configured deals appear as interactive 1-click buy popups.
+              </p>
             </div>
           </div>
-          <Button size="sm" variant="ghost" onClick={fetchDataPromoPopups} className="text-white/40 hover:text-white">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                fetchGlobalPackages();
+                fetchDataPromoPopups();
+                toast({ title: "Packages & Promo deals refreshed from database" });
+              }}
+              className="border-white/10 text-white/70 hover:text-white bg-white/5 rounded-xl text-xs gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Refresh Packages ({globalPackages.length})
+            </Button>
+          </div>
         </div>
 
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Create Form */}
-            <div className="lg:col-span-2 rounded-2xl bg-white/[0.02] border border-white/5 p-5 space-y-4">
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
-                <Plus className="w-4 h-4 text-amber-400" /> Create New Promo Deal Popup
-              </h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Headline / Title</Label>
-                  <Input
-                    placeholder="e.g. ⚡ Flash Weekend Data Deal!"
-                    value={newPromoPopup.title}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, title: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-sm"
-                  />
+        <div className="p-6 space-y-8">
+          {/* Main 2-Column Studio: Left = Builder, Right = Live Preview */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            {/* Left: Package Picker & Campaign Form (7 Cols on XL) */}
+            <div className="xl:col-span-7 rounded-2xl bg-white/[0.02] border border-white/5 p-6 space-y-6">
+              {/* Step 1: Select Network */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-xs font-bold text-white/80 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px]">1</span>
+                    Select Network / Product
+                  </Label>
+                  <span className="text-[11px] text-white/40">
+                    {globalPackages.filter(p => p.network === newPromoPopup.network).length} packages available
+                  </span>
                 </div>
 
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Subtitle / Description</Label>
-                  <Input
-                    placeholder="e.g. Get 5GB High-Speed MTN Data for only GH₵ 18.00!"
-                    value={newPromoPopup.description}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, description: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Network</Label>
-                  <select
-                    value={newPromoPopup.network}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, network: e.target.value }))}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-10 px-3 text-xs font-bold"
-                  >
-                    <option value="MTN">MTN</option>
-                    <option value="Telecel">Telecel</option>
-                    <option value="AirtelTigo">AirtelTigo</option>
-                    <option value="MTN Mash Up">MTN Mash Up</option>
-                  </select>
-                </div>
-
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Package Size</Label>
-                  <Input
-                    placeholder="e.g. 5GB"
-                    value={newPromoPopup.package_size}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, package_size: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs font-bold"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Regular Price (GH₵)</Label>
-                  <Input
-                    type="number"
-                    placeholder="25.00"
-                    value={newPromoPopup.original_price}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, original_price: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Promo Price (GH₵)</Label>
-                  <Input
-                    type="number"
-                    placeholder="18.00"
-                    value={newPromoPopup.promo_price}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, promo_price: e.target.value }))}
-                    className="bg-white/5 border-white/10 rounded-xl text-xs font-bold text-amber-400"
-                  />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {[
+                    { id: "MTN Mash Up", label: "MTN Mash Up", sub: "Voice + Data", icon: Flame, color: "text-amber-400" },
+                    { id: "MTN", label: "MTN Data", sub: "Pure Data", icon: Zap, color: "text-yellow-400" },
+                    { id: "Telecel", label: "Telecel", sub: "Data Bundle", icon: Smartphone, color: "text-red-400" },
+                    { id: "AirtelTigo", label: "AirtelTigo", sub: "AT Big Time", icon: Wifi, color: "text-blue-400" },
+                  ].map((net) => {
+                    const isSelected = newPromoPopup.network === net.id;
+                    const pkgCount = globalPackages.filter(p => p.network === net.id).length;
+                    const NetIcon = net.icon;
+                    return (
+                      <button
+                        key={net.id}
+                        type="button"
+                        onClick={() => handleNetworkSelect(net.id)}
+                        className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                          isSelected
+                            ? "bg-amber-500/15 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/50"
+                            : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isSelected ? "bg-amber-500/30" : "bg-white/5"}`}>
+                            <NetIcon className={`w-4 h-4 ${isSelected ? "text-amber-300" : net.color}`} />
+                          </div>
+                          {isSelected && (
+                            <Badge className="bg-amber-400 text-black text-[9px] font-black px-1.5 py-0 h-4">
+                              ACTIVE
+                            </Badge>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-bold text-white text-xs leading-tight">{net.label}</p>
+                          <p className="text-[10px] text-white/50 mt-0.5">{pkgCount} packages</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Badge Tag</Label>
-                  <Input
-                    placeholder="e.g. 🔥 28% OFF"
-                    value={newPromoPopup.badge_text}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, badge_text: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
-                  />
+              {/* Step 2: Choose Live Package from Catalog */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-xs font-bold text-white/80 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px]">2</span>
+                    Pick Package from {newPromoPopup.network} Catalog
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCustomPackageMode(!customPackageMode)}
+                      className="text-[11px] text-amber-400/90 hover:text-amber-300 underline font-medium"
+                    >
+                      {customPackageMode ? "← Choose from Catalog" : "Enter Custom Size"}
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Expiry (Hours from now)</Label>
-                  <Input
-                    type="number"
-                    placeholder="24"
-                    value={newPromoPopup.expires_hours}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, expires_hours: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
-                  />
+                {customPackageMode ? (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+                    <p className="text-xs text-white/60">
+                      Specify custom package text manually (e.g. <code className="text-amber-300">4.5gb + 1800 Mins</code> or <code className="text-amber-300">10GB</code>):
+                    </p>
+                    <Input
+                      placeholder="e.g. 4.5gb + 1800 Mins"
+                      value={newPromoPopup.package_size}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, package_size: e.target.value }))}
+                      className="bg-black/40 border-white/10 text-white font-bold rounded-xl"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Search Bar for packages */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Input
+                        placeholder={`Search ${newPromoPopup.network} packages (e.g. 4.5gb, 1800 Mins, 10gb)...`}
+                        value={packageSearch}
+                        onChange={(e) => setPackageSearch(e.target.value)}
+                        className="bg-black/40 border-white/10 pl-9 text-xs text-white rounded-xl placeholder:text-white/30 h-9"
+                      />
+                      {packageSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setPackageSearch("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-white/40 hover:text-white"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Packages Grid */}
+                    {loadingPackages ? (
+                      <div className="flex items-center justify-center py-10 bg-black/20 rounded-xl border border-white/5">
+                        <Loader2 className="w-5 h-5 animate-spin text-amber-400 mr-2" />
+                        <span className="text-xs text-white/60">Loading live packages...</span>
+                      </div>
+                    ) : (
+                      (() => {
+                        const networkPkgs = globalPackages.filter(p => p.network === newPromoPopup.network);
+                        const filtered = networkPkgs.filter(p =>
+                          !packageSearch || p.package_size.toLowerCase().includes(packageSearch.toLowerCase())
+                        );
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="py-8 px-4 text-center rounded-xl bg-white/5 border border-dashed border-white/10">
+                              <p className="text-xs text-white/50 mb-2">No packages match "{packageSearch}".</p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setPackageSearch("")}
+                                className="text-xs border-white/10 text-white/70"
+                              >
+                                View All {networkPkgs.length} Packages
+                              </Button>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
+                            {filtered.map((pkg) => {
+                              const details = parsePackageDetails(pkg.package_size, newPromoPopup.network);
+                              const isSelected = newPromoPopup.package_size === pkg.package_size;
+                              const origPrice = Number(pkg.public_price || pkg.agent_price || 0);
+                              const costPrice = Number(pkg.cost_price || 0);
+
+                              return (
+                                <button
+                                  key={pkg.id}
+                                  type="button"
+                                  onClick={() => handlePackageSelect(pkg)}
+                                  className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between group ${
+                                    isSelected
+                                      ? "bg-gradient-to-br from-amber-500/20 to-orange-500/10 border-amber-400/80 shadow-md shadow-amber-500/10 ring-1 ring-amber-400/60"
+                                      : "bg-white/[0.03] border-white/10 hover:bg-white/[0.08] hover:border-white/20"
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex items-start justify-between gap-1.5 mb-1.5">
+                                      <span className="font-black text-white text-sm tracking-tight group-hover:text-amber-300 transition-colors">
+                                        {details.dataLabel}
+                                      </span>
+                                      {isSelected ? (
+                                        <div className="w-5 h-5 rounded-full bg-amber-400 text-black flex items-center justify-center shrink-0">
+                                          <Check className="w-3 h-3 stroke-[3]" />
+                                        </div>
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10 shrink-0 group-hover:border-white/30" />
+                                      )}
+                                    </div>
+
+                                    {details.minutesLabel ? (
+                                      <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold mb-2">
+                                        <Phone className="w-2.5 h-2.5" />
+                                        <span>{details.minutesLabel}</span>
+                                      </div>
+                                    ) : (
+                                      <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/5 text-white/50 text-[10px] mb-2">
+                                        <span>{details.subText}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                                    <div>
+                                      <span className="text-white/40 block text-[9px] uppercase font-bold">Standard</span>
+                                      <span className="font-black text-white">GH₵ {origPrice.toFixed(2)}</span>
+                                    </div>
+                                    {costPrice > 0 && (
+                                      <div className="text-right">
+                                        <span className="text-white/40 block text-[9px] uppercase font-bold">Cost</span>
+                                        <span className="text-white/60 font-mono">GH₵ {costPrice.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Step 3: Smart Pricing Studio & Discount Presets */}
+              <div className="p-4 rounded-2xl bg-black/30 border border-white/5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-white/80 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px]">3</span>
+                    Pricing & Discount Studio
+                  </Label>
+                  <span className="text-[11px] text-amber-400 font-bold">
+                    Target: {newPromoPopup.package_size}
+                  </span>
                 </div>
 
+                {/* Quick Discount Presets */}
                 <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Max Claims (0 = Unlimited)</Label>
-                  <Input
-                    type="number"
-                    placeholder="100"
-                    value={newPromoPopup.max_claims}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, max_claims: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
-                  />
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] text-white/50">Quick Discount Presets:</span>
+                    {selectedDiscountPercent && (
+                      <span className="text-[11px] text-amber-300 font-bold">
+                        Applied: {selectedDiscountPercent}% OFF
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {[10, 15, 20, 25, 30, 40].map((pct) => {
+                      const isActive = selectedDiscountPercent === pct;
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => handleDiscountSelect(pct)}
+                          className={`py-1.5 px-2 rounded-lg text-xs font-black transition-all ${
+                            isActive
+                              ? "bg-gradient-to-r from-amber-400 to-orange-400 text-black shadow-md shadow-amber-500/20 scale-[1.02]"
+                              : "bg-white/5 hover:bg-white/10 text-white/80 border border-white/10"
+                          }`}
+                        >
+                          {pct}% OFF
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <div>
-                  <Label className="text-xs text-white/60 mb-1.5 block">Target Audience</Label>
-                  <select
-                    value={newPromoPopup.target_audience}
-                    onChange={(e) => setNewPromoPopup(prev => ({ ...prev, target_audience: e.target.value }))}
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-10 px-3 text-xs"
-                  >
-                    <option value="all">All Users</option>
-                    <option value="agents">Reseller Agents Only</option>
-                    <option value="customers">Direct Buyers Only</option>
-                  </select>
+                {/* Price Input Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-[11px] text-white/60 mb-1 block">Regular Catalog Price (GH₵)</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-white/40">GH₵</span>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        placeholder="25.00"
+                        value={newPromoPopup.original_price}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewPromoPopup(prev => ({ ...prev, original_price: val }));
+                          setSelectedDiscountPercent(null);
+                        }}
+                        className="bg-black/40 border-white/10 text-white rounded-xl text-xs pl-11 font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-[11px] text-amber-400 font-bold mb-1 block">Promo Deal Price (GH₵) *</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-amber-400 font-bold">GH₵</span>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        placeholder="18.00"
+                        value={newPromoPopup.promo_price}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewPromoPopup(prev => ({ ...prev, promo_price: val }));
+                          setSelectedDiscountPercent(null);
+                        }}
+                        className="bg-amber-500/10 border-amber-500/40 text-amber-300 rounded-xl text-xs pl-11 font-mono font-black"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-[11px] text-white/60 mb-1 block">Badge Tag Text</Label>
+                    <Input
+                      placeholder="e.g. 🔥 20% OFF"
+                      value={newPromoPopup.badge_text}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, badge_text: e.target.value }))}
+                      className="bg-black/40 border-white/10 text-white rounded-xl text-xs font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Profit Margin & Safety Intelligence Callout */}
+                {(() => {
+                  const selPkg = globalPackages.find(
+                    p => p.network === newPromoPopup.network && p.package_size === newPromoPopup.package_size
+                  );
+                  const cost = selPkg ? Number(selPkg.cost_price || 0) : 0;
+                  const promo = parseFloat(newPromoPopup.promo_price) || 0;
+                  const orig = parseFloat(newPromoPopup.original_price) || 0;
+                  const margin = promo - cost;
+                  const isLoss = cost > 0 && promo < cost;
+                  const discountPct = orig > 0 && promo < orig ? Math.round(((orig - promo) / orig) * 100) : 0;
+
+                  return (
+                    <div className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-3 ${
+                      isLoss
+                        ? "bg-red-500/10 border-red-500/30 text-red-300"
+                        : cost > 0
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                        : "bg-white/5 border-white/10 text-white/60"
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        {isLoss ? (
+                          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                        ) : (
+                          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                        )}
+                        <div>
+                          {isLoss ? (
+                            <span>
+                              <strong>Warning:</strong> Promo price is below provider cost (GH₵ {cost.toFixed(2)}). Loss of <strong>-GH₵ {Math.abs(margin).toFixed(2)}</strong> per order!
+                            </span>
+                          ) : cost > 0 ? (
+                            <span>
+                              <strong>Healthy Margin:</strong> Cost GH₵ {cost.toFixed(2)} &bull; Net Profit: <strong>+GH₵ {margin.toFixed(2)}</strong> per order ({Math.round((margin / (promo || 1)) * 100)}% margin)
+                            </span>
+                          ) : (
+                            <span>Set your promo price to offer a deal that drives conversions while preserving margin.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {discountPct > 0 && (
+                        <Badge className="bg-amber-400/20 text-amber-300 border-amber-400/30 text-[10px] font-bold">
+                          {discountPct}% Customer Discount
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Step 4: Headline, Description & Audience */}
+              <div className="space-y-4">
+                <Label className="text-xs font-bold text-white/80 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px]">4</span>
+                  Promo Copy & Audience Settings
+                </Label>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs text-white/60 mb-1.5 block">Headline / Modal Title</Label>
+                    <Input
+                      placeholder="e.g. ⚡ Flash MTN Mash Up Deal!"
+                      value={newPromoPopup.title}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, title: e.target.value }))}
+                      className="bg-white/5 border-white/10 text-white rounded-xl text-xs font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-xs text-white/60 mb-1.5 block">Subtitle / Promotional Description</Label>
+                    <Input
+                      placeholder="e.g. Get 4.5gb + 1800 Mins Voice & Data Combo at a huge discount!"
+                      value={newPromoPopup.description}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, description: e.target.value }))}
+                      className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-[11px] text-white/60 mb-1 block">Expiry (Hours from now)</Label>
+                    <Input
+                      type="number"
+                      placeholder="24"
+                      value={newPromoPopup.expires_hours}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, expires_hours: e.target.value }))}
+                      className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-[11px] text-white/60 mb-1 block">Max Claims (0 = Unlimited)</Label>
+                    <Input
+                      type="number"
+                      placeholder="100"
+                      value={newPromoPopup.max_claims}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, max_claims: e.target.value }))}
+                      className="bg-white/5 border-white/10 text-white rounded-xl text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <Label className="text-[11px] text-white/60 mb-1 block">Target Audience</Label>
+                    <select
+                      value={newPromoPopup.target_audience}
+                      onChange={(e) => setNewPromoPopup(prev => ({ ...prev, target_audience: e.target.value }))}
+                      className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-10 px-3 text-xs"
+                    >
+                      <option value="all">All Users (Public + Agents)</option>
+                      <option value="agents">Reseller Agents Only</option>
+                      <option value="customers">Direct End Buyers Only</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+              {/* Step 5: SMS Broadcast Switch & Sender ID */}
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                    <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
                       <Send className="w-3.5 h-3.5" /> Trigger SMS Broadcast on Publish
                     </p>
-                    <p className="text-[10px] text-white/50">Sends SMS announcement to target users</p>
+                    <p className="text-[10px] text-white/50 mt-0.5">Sends automated promotional SMS blast via Hubtel gateway</p>
                   </div>
                   <Switch
                     checked={newPromoPopup.send_sms}
@@ -921,135 +1358,422 @@ const AdminPromotions = () => {
 
                 {newPromoPopup.send_sms && (
                   <div>
-                    <Label className="text-[10px] text-white/60 mb-1 block">Sender ID</Label>
+                    <Label className="text-[10px] text-white/60 mb-1 block">Hubtel Sender ID</Label>
                     <Input
                       placeholder="swiftupdate"
                       value={newPromoPopup.sender_id}
                       onChange={(e) => setNewPromoPopup(prev => ({ ...prev, sender_id: e.target.value }))}
-                      className="bg-white/5 border-amber-500/30 text-amber-400 rounded-xl text-xs font-mono font-bold h-9"
+                      className="bg-white/5 border-amber-500/40 text-amber-300 rounded-xl text-xs font-mono font-bold h-9"
                     />
                   </div>
                 )}
               </div>
 
-              <Button
-                onClick={handleCreateDataPromoPopup}
-                disabled={creatingDataPromo}
-                className="w-full bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-black font-black rounded-xl h-11 text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20"
-              >
-                {creatingDataPromo ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Flame className="w-4 h-4 mr-2" />}
-                Launch Promo Popup Deal LIVE & Send SMS
-              </Button>
+              {/* Action Buttons */}
+              <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={handleCreateDataPromoPopup}
+                  disabled={creatingDataPromo}
+                  className="flex-1 bg-gradient-to-r from-amber-400 via-yellow-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-black font-black rounded-xl h-12 text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20"
+                >
+                  {creatingDataPromo ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Flame className="w-4 h-4 mr-2" />}
+                  Launch Promo Deal Live {newPromoPopup.send_sms ? "& Broadcast SMS" : ""}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPreviewModalOpen(true)}
+                  className="border-white/10 bg-white/5 hover:bg-white/10 text-white rounded-xl h-12 text-xs font-bold px-4"
+                >
+                  <Eye className="w-4 h-4 mr-1.5 text-amber-400" />
+                  Preview Modal
+                </Button>
+              </div>
             </div>
 
-            {/* Live Card Preview */}
-            <div className="rounded-2xl bg-black/40 border border-amber-500/30 p-5 relative overflow-hidden flex flex-col justify-between">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs px-2.5 py-0.5">
-                    {newPromoPopup.network}
-                  </Badge>
-                  <span className="text-[10px] text-amber-400 font-mono font-bold flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> {newPromoPopup.expires_hours ? `${newPromoPopup.expires_hours}h left` : "No Expiry"}
-                  </span>
-                </div>
-
-                <h4 className="font-black text-white text-lg leading-tight mb-1">{newPromoPopup.title || "Flash Data Deal"}</h4>
-                <p className="text-xs text-white/60 mb-4">{newPromoPopup.description || "Special package promotion"}</p>
-
-                <div className="bg-white/5 rounded-xl p-3 border border-white/10 flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] text-white/40 uppercase font-black">Deal Bundle</p>
-                    <p className="text-xl font-black text-white">{newPromoPopup.package_size || "5GB"}</p>
-                  </div>
-                  <div className="text-right">
-                    {parseFloat(newPromoPopup.original_price) > parseFloat(newPromoPopup.promo_price) && (
-                      <p className="text-[10px] line-through text-white/40">GH₵ {parseFloat(newPromoPopup.original_price).toFixed(2)}</p>
-                    )}
-                    <p className="text-xl font-black text-amber-400">GH₵ {parseFloat(newPromoPopup.promo_price || "0").toFixed(2)}</p>
-                  </div>
-                </div>
+            {/* Right: Live Interactive Card & Customer View Preview (5 Cols on XL) */}
+            <div className="xl:col-span-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white/60 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Live Deal Preview (What Users See)
+                </span>
+                <Badge className="bg-green-500/20 text-green-300 border-green-500/30 text-[10px]">
+                  INTERACTIVE
+                </Badge>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-white/5 text-center">
-                <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Pop-up Direct 1-Click Purchase Active</p>
-              </div>
+              {/* Styled Preview Card mimicking DataPromoPopupModal */}
+              {(() => {
+                const pkgDetails = parsePackageDetails(newPromoPopup.package_size, newPromoPopup.network);
+                const orig = parseFloat(newPromoPopup.original_price) || 0;
+                const promo = parseFloat(newPromoPopup.promo_price) || 0;
+                const savings = orig > promo ? orig - promo : 0;
+                const isMashup = newPromoPopup.network === "MTN Mash Up";
+
+                return (
+                  <div className="rounded-3xl border border-amber-500/30 bg-gradient-to-b from-stone-950 via-zinc-900 to-black p-6 relative overflow-hidden shadow-2xl flex flex-col justify-between">
+                    {/* Background Glow */}
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                    <div>
+                      {/* Top Bar: Network Tag & Countdown */}
+                      <div className="flex items-center justify-between mb-4 relative z-10">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-gradient-to-r from-amber-400 to-yellow-500 text-black font-black text-xs px-2.5 py-0.5">
+                            {newPromoPopup.network}
+                          </Badge>
+                          {newPromoPopup.badge_text && (
+                            <Badge className="bg-red-500/20 text-red-300 border-red-500/40 text-[10px] font-bold">
+                              {newPromoPopup.badge_text}
+                            </Badge>
+                          )}
+                        </div>
+
+                        <span className="text-[11px] text-amber-300 font-mono font-bold flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                          <Clock className="w-3 h-3" />
+                          {newPromoPopup.expires_hours ? `${newPromoPopup.expires_hours}h 00m left` : "Active Deal"}
+                        </span>
+                      </div>
+
+                      {/* Title & Description */}
+                      <h3 className="font-black text-white text-xl leading-snug mb-1 relative z-10">
+                        {newPromoPopup.title || "Flash Data Promo Deal"}
+                      </h3>
+                      <p className="text-xs text-white/60 mb-5 relative z-10 leading-relaxed">
+                        {newPromoPopup.description || "Grab this limited-time package before it sells out!"}
+                      </p>
+
+                      {/* Package Breakdown Box */}
+                      <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 space-y-3 relative z-10 backdrop-blur-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">
+                            Package Bundle
+                          </span>
+                          {pkgDetails.minutesLabel ? (
+                            <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[10px] font-bold flex items-center gap-1">
+                              <Phone className="w-2.5 h-2.5" /> {pkgDetails.minutesLabel}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-white/10 text-white/70 text-[10px]">
+                              Pure High-Speed Data
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="flex items-baseline justify-between">
+                          <div>
+                            <span className="text-3xl font-black text-white tracking-tight">
+                              {pkgDetails.dataLabel}
+                            </span>
+                            {isMashup && (
+                              <p className="text-[11px] text-amber-300 font-medium mt-0.5">
+                                Official MTN Mash Up Voice & Data
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-right">
+                            {orig > promo && (
+                              <p className="text-xs line-through text-white/40 font-mono">
+                                GH₵ {orig.toFixed(2)}
+                              </p>
+                            )}
+                            <p className="text-2xl font-black text-amber-400 font-mono">
+                              GH₵ {promo.toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {savings > 0 && (
+                          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                            <span className="text-emerald-400 font-bold flex items-center gap-1">
+                              <Sparkles className="w-3 h-3" /> Save GH₵ {savings.toFixed(2)}
+                            </span>
+                            <span className="text-white/40">
+                              Instant direct fulfillment
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Target audience & claim allowance indicator */}
+                      <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-white/50">
+                        <div className="p-2 rounded-xl bg-white/[0.02] border border-white/5">
+                          <span className="text-white/40 block text-[9px] uppercase font-bold">Audience</span>
+                          <span className="text-white font-medium capitalize">{newPromoPopup.target_audience}</span>
+                        </div>
+                        <div className="p-2 rounded-xl bg-white/[0.02] border border-white/5">
+                          <span className="text-white/40 block text-[9px] uppercase font-bold">Max Pool</span>
+                          <span className="text-white font-medium">
+                            {parseInt(newPromoPopup.max_claims) > 0 ? `${newPromoPopup.max_claims} Claims` : "Unlimited"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom CTA Simulator */}
+                    <div className="mt-6 pt-4 border-t border-white/10 space-y-2">
+                      <Button
+                        type="button"
+                        onClick={() => setPreviewModalOpen(true)}
+                        className="w-full bg-gradient-to-r from-amber-400 to-yellow-400 text-black font-black rounded-xl h-11 text-xs uppercase tracking-wider hover:from-amber-300 hover:to-yellow-300 shadow-md shadow-amber-500/20"
+                      >
+                        <Eye className="w-4 h-4 mr-1.5" /> Test Pop-Up In Full Modal
+                      </Button>
+                      <p className="text-[10px] text-white/40 text-center">
+                        Customers can purchase via Wallet or Mobile Money directly on the homepage
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
-          {/* Active Promo Popups List */}
-          <div className="space-y-3">
-            <h3 className="font-bold text-white text-sm flex items-center gap-2">
-              <Eye className="w-4 h-4 text-amber-400" /> Existing Promo Popups ({dataPromoPopups.length})
-            </h3>
+          {/* Active Promo Popups Manager */}
+          <div className="space-y-4 pt-4 border-t border-white/5">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-white text-base flex items-center gap-2">
+                <Eye className="w-4 h-4 text-amber-400" /> Existing Promo Deals ({dataPromoPopups.length})
+              </h3>
+              <span className="text-xs text-white/40">
+                Popups are automatically served to eligible visitors on the storefront
+              </span>
+            </div>
 
             {loadingDataPromoPopups ? (
-              <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-white/30" /></div>
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+              </div>
             ) : dataPromoPopups.length === 0 ? (
-              <p className="text-xs text-white/40 text-center py-6 border border-dashed border-white/10 rounded-xl">No active promo popups created yet.</p>
+              <div className="text-center py-10 border border-dashed border-white/10 rounded-2xl bg-white/[0.01]">
+                <Flame className="w-8 h-8 text-amber-400/40 mx-auto mb-2" />
+                <p className="text-sm font-bold text-white/70">No active promo popups created yet</p>
+                <p className="text-xs text-white/40 mt-1 max-w-sm mx-auto">
+                  Pick a package above, set a discount price, and click Launch Promo Deal to start driving sales.
+                </p>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {dataPromoPopups.map((p) => (
-                  <div key={p.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-white text-sm">{p.title}</span>
-                        <Badge className={p.is_active ? "bg-green-500/20 text-green-400 text-[10px]" : "bg-white/10 text-white/40 text-[10px]"}>
-                          {p.is_active ? "LIVE" : "PAUSED"}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-white/50">
-                        {p.network} {p.package_size} @ <span className="text-amber-400 font-bold">GH₵ {Number(p.promo_price).toFixed(2)}</span>
-                      </p>
-                      <p className="text-[10px] text-white/40 mt-1">
-                        Claims: {p.claimed_count} {p.max_claims > 0 ? `/ ${p.max_claims}` : "(Unlimited)"}
-                      </p>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {dataPromoPopups.map((p) => {
+                  const details = parsePackageDetails(p.package_size, p.network);
+                  const isExpired = p.expires_at && new Date(p.expires_at) < new Date();
+                  const isMashup = p.network === "MTN Mash Up";
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTriggerPromoSMS(p)}
-                        className="text-xs border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-xl h-8 gap-1 font-bold"
-                        title="Send SMS announcement using Sender ID swiftupdate"
-                      >
-                        <Send className="w-3.5 h-3.5" /> SMS (swiftupdate)
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleToggleDataPromoPopup(p.id, p.is_active)}
-                        className="text-xs border-white/10 text-white/60 hover:text-white rounded-xl h-8"
-                      >
-                        {p.is_active ? "Pause" : "Enable"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleResetDataPromoPopupClaims(p.id)}
-                        className="text-amber-400 hover:text-amber-300 h-8"
-                        title="Reset claims counter to 0"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteDataPromoPopup(p.id)}
-                        className="text-red-400 hover:text-red-300 h-8"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                  return (
+                    <div
+                      key={p.id}
+                      className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                        p.is_active && !isExpired
+                          ? "bg-white/[0.03] border-white/10 hover:border-white/20 shadow-lg"
+                          : "bg-black/40 border-white/5 opacity-70"
+                      }`}
+                    >
+                      <div>
+                        {/* Top row */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <Badge className={`${
+                            isMashup
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                              : "bg-white/10 text-white/80 border-white/15"
+                          } text-[10px] font-bold`}>
+                            {p.network}
+                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            {p.badge_text && (
+                              <Badge className="bg-red-500/20 text-red-300 border-red-500/30 text-[9px] font-bold">
+                                {p.badge_text}
+                              </Badge>
+                            )}
+                            <Badge className={
+                              !p.is_active
+                                ? "bg-white/10 text-white/40 text-[9px]"
+                                : isExpired
+                                ? "bg-amber-500/20 text-amber-400 text-[9px]"
+                                : "bg-emerald-500/20 text-emerald-300 text-[9px] font-bold"
+                            }>
+                              {!p.is_active ? "PAUSED" : isExpired ? "EXPIRED" : "LIVE"}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Title & Package */}
+                        <h4 className="font-bold text-white text-sm mb-1 leading-snug">{p.title}</h4>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="font-black text-amber-300 text-sm">{details.dataLabel}</span>
+                          {details.minutesLabel && (
+                            <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[9px]">
+                              {details.minutesLabel}
+                            </Badge>
+                          )}
+                          <span className="text-white/40 text-xs">@</span>
+                          <span className="font-mono font-bold text-white text-xs">
+                            GH₵ {Number(p.promo_price).toFixed(2)}
+                          </span>
+                        </div>
+
+                        {/* Claims progress bar */}
+                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 mb-4">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-white/50">Claims Progress:</span>
+                            <span className="font-bold text-white">
+                              {p.claimed_count || 0} {p.max_claims > 0 ? `/ ${p.max_claims}` : "Claims (Unlimited)"}
+                            </span>
+                          </div>
+                          {p.max_claims > 0 && (
+                            <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className="bg-gradient-to-r from-amber-400 to-orange-400 h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, ((p.claimed_count || 0) / p.max_claims) * 100)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleTriggerPromoSMS(p)}
+                          className="text-[11px] border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 rounded-xl h-8 gap-1 font-bold"
+                          title="Send SMS announcement using Sender ID swiftupdate"
+                        >
+                          <Send className="w-3 h-3" /> SMS (swiftupdate)
+                        </Button>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleToggleDataPromoPopup(p.id, p.is_active)}
+                            className="text-xs text-white/60 hover:text-white h-8 px-2"
+                          >
+                            {p.is_active ? "Pause" : "Enable"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleResetDataPromoPopupClaims(p.id)}
+                            className="text-amber-400 hover:text-amber-300 h-8 px-2"
+                            title="Reset claims counter to 0"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteDataPromoPopup(p.id)}
+                            className="text-red-400 hover:text-red-300 h-8 px-2"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* ── Dialog Preview of Customer Modal ── */}
+      <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
+        <DialogContent className="max-w-md bg-stone-950 border border-amber-500/40 text-white p-0 overflow-hidden rounded-3xl shadow-2xl">
+          <div className="relative">
+            {/* Header Banner */}
+            <div className="p-6 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-black">
+              <div className="flex items-center justify-between mb-2">
+                <Badge className="bg-black text-amber-400 font-black text-xs px-2.5 py-0.5">
+                  {newPromoPopup.network}
+                </Badge>
+                <span className="text-xs font-mono font-bold bg-black/20 px-2 py-0.5 rounded-full">
+                  ⏱️ {newPromoPopup.expires_hours ? `${newPromoPopup.expires_hours} Hours Left` : "Limited Time"}
+                </span>
+              </div>
+              <h3 className="font-black text-xl leading-tight">
+                {newPromoPopup.title || "Special Promo Deal"}
+              </h3>
+              <p className="text-xs font-medium text-black/80 mt-1">
+                {newPromoPopup.description || "Exclusive promotional package deal."}
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Package Details */}
+              {(() => {
+                const details = parsePackageDetails(newPromoPopup.package_size, newPromoPopup.network);
+                const orig = parseFloat(newPromoPopup.original_price) || 0;
+                const promo = parseFloat(newPromoPopup.promo_price) || 0;
+
+                return (
+                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+                    <div>
+                      <span className="text-2xl font-black text-white">{details.dataLabel}</span>
+                      {details.minutesLabel ? (
+                        <div className="flex items-center gap-1 text-xs text-purple-300 font-bold mt-0.5">
+                          <Phone className="w-3 h-3" /> {details.minutesLabel}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-white/50 mt-0.5">Pure High-Speed Data</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      {orig > promo && (
+                        <p className="text-xs line-through text-white/40 font-mono">GH₵ {orig.toFixed(2)}</p>
+                      )}
+                      <p className="text-2xl font-black text-amber-400 font-mono">GH₵ {promo.toFixed(2)}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-2">
+                <Label className="text-xs text-white/60">Customer Phone Number (Simulation)</Label>
+                <Input
+                  disabled
+                  placeholder="024 XXX XXXX"
+                  className="bg-white/5 border-white/10 text-white rounded-xl text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-center font-bold text-amber-300">
+                  ⚡ Mobile Money
+                </div>
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-center text-white/60">
+                  👛 Swift Wallet
+                </div>
+              </div>
+
+              <Button
+                disabled
+                className="w-full bg-gradient-to-r from-amber-400 to-yellow-400 text-black font-black rounded-xl h-11 uppercase"
+              >
+                Buy Now for GH₵ {parseFloat(newPromoPopup.promo_price || "0").toFixed(2)}
+              </Button>
+
+              <div className="text-center pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPreviewModalOpen(false)}
+                  className="text-xs text-white/40 hover:text-white"
+                >
+                  Close Preview
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Promo Codes ── */}
       <div>
