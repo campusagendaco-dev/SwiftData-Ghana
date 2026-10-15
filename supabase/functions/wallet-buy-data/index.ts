@@ -556,7 +556,7 @@ serve(async (req: Request) => {
       metadata: {
         ...(customMetadata || {}),
         is_korba: finalIsKorba,
-        category: dbNet === "MTN Mash Up" ? "mashup" : (finalIsKorba ? (customMetadata?.category || "korba") : (customMetadata?.category || "affordable")),
+        category: (dbNet === "MTN Mash Up" || normalizedNet === "MTN Mash Up" || String(networkRaw || "").toUpperCase().includes("MASH")) ? "mashup" : (finalIsKorba ? (customMetadata?.category || "korba") : (customMetadata?.category || "affordable")),
         bypass_beneficiary: (bypass_beneficiary === true || bypass_beneficiary === "true") ? true : undefined,
       }
     });
@@ -609,7 +609,7 @@ serve(async (req: Request) => {
     if (normalizedNet === "MTN Mash Up" && agentProfile?.phone) {
       getSmsConfig(supabaseAdmin, user.id).then(async (smsConfig) => {
         if (smsConfig.apiKey) {
-          const agentMsg = `Your MTN Mash Up order has been received and processed. Please note that this package might take up to 1 hour or might be instant.`;
+          const agentMsg = `Your MTN Mash Up order has been received and automatically routed for instant delivery via DataMart.`;
           await sendSmsViaTxtConnect(smsConfig.apiKey, smsConfig.senderId, agentProfile.phone, agentMsg, "mashup_agent_alert", user.id);
         }
       }).catch(e => console.error("[MASHUP-AGENT-SMS-ERROR]", e));

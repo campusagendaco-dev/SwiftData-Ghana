@@ -46,16 +46,21 @@ serve(async (req: Request) => {
 
     // ── COUNT ONLY MODE ──────────────────────────────────────────────────────────
     if (req.method === "GET" || body.count_only === true) {
-      const { count: verifiedCount, error: countErr } = await supabaseAdmin
+      let countQuery = supabaseAdmin
         .from("orders")
         .select("id", { count: "exact", head: true })
-        .neq("network", "MTN Mash Up")
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
-        .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
+        .or("status.in.(paid,processing,pending),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
         .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown,provider_order_id.eq.refunded")
         .or("retry_count.is.null,retry_count.lt.5")
         .gte("created_at", cutoffDate);
+
+      if (body.network) {
+        countQuery = countQuery.eq("network", body.network);
+      }
+
+      const { count: verifiedCount, error: countErr } = await countQuery;
 
       if (countErr) throw countErr;
 
@@ -65,7 +70,7 @@ serve(async (req: Request) => {
     }
 
     // ── EXECUTE BATCH RETRY ─────────────────────────────────────────────────────
-    const { order_ids, limit = 25, days = 30 } = body;
+    const { order_ids, limit = 25, days = 30, network } = body;
     let candidateOrders: any[] = [];
     const effectiveCutoff = days ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : cutoffDate;
 
@@ -80,19 +85,24 @@ serve(async (req: Request) => {
       candidateOrders = explicitOrders || [];
     } else {
       console.log(`[admin-retry-autorouter] Fetching up to ${limit} verified orders in Auto-Router queue with no provider...`);
-      const { data: unroutedOrders, error: fetchErr } = await supabaseAdmin
+      let unroutedQuery = supabaseAdmin
         .from("orders")
         .select("*")
-        .neq("network", "MTN Mash Up")
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
-        .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
+        .or("status.in.(paid,processing,pending),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
         .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown,provider_order_id.eq.refunded")
         .or("retry_count.is.null,retry_count.lt.5")
         .gte("created_at", effectiveCutoff)
         .order("retry_count", { ascending: true, nullsFirst: true })
         .order("created_at", { ascending: false })
         .limit(limit);
+
+      if (network) {
+        unroutedQuery = unroutedQuery.eq("network", network);
+      }
+
+      const { data: unroutedOrders, error: fetchErr } = await unroutedQuery;
 
       if (fetchErr) throw fetchErr;
       candidateOrders = unroutedOrders || [];
@@ -105,10 +115,10 @@ serve(async (req: Request) => {
                      o.payment_method === "credit" || 
                      Number(o.paystack_verified_amount || 0) > 0 || 
                      o.status === "paid" || 
-                     o.status === "processing";
+                     o.status === "processing" ||
+                     o.status === "pending";
       const isNonTelecom = ["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(o.order_type || "").toLowerCase());
-      const isMashUp = String(o.network || "").toLowerCase().includes("mash up");
-      if (!isPaid || isNonTelecom || isMashUp) return false;
+      if (!isPaid || isNonTelecom) return false;
 
       // Duplicate Order Cooldown Check: If order is in duplicate cooldown, verify 60 minutes have passed (unless explicitly triggered by admin)
       if (!isExplicit) {

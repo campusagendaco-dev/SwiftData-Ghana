@@ -85,6 +85,7 @@ const AdminMashUpOrders = () => {
   const [retrying, setRetrying] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
   const [retryingAll, setRetryingAll] = useState(false);
+  const [autoRouting, setAutoRouting] = useState(false);
   const [forcingFulfill, setForcingFulfill] = useState(false);
   const [healingProcessing, setHealingProcessing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<FilterType>("all");
@@ -290,35 +291,162 @@ const AdminMashUpOrders = () => {
     }
   };
 
-  const handleRetryAll = async () => {
-    const actionable = allOrders.filter(
-      (o) => o.status === "pending" || o.status === "paid" || o.status === "processing" || o.status === "fulfillment_failed"
-    );
-    if (actionable.length === 0) {
-      toast({ title: "No pending orders", description: "All orders are already fulfilled." });
+  const handleAutoRouteMashUp = async (explicitIds?: string[]) => {
+    const targets = explicitIds && explicitIds.length > 0
+      ? allOrders.filter(o => explicitIds.includes(o.id))
+      : allOrders.filter(o => o.status === "pending" || o.status === "paid" || o.status === "fulfillment_failed");
+
+    if (targets.length === 0) {
+      toast({ 
+        title: "No Orders in Auto-Route Queue ⚡", 
+        description: "All Mash Up orders on this page are already fulfilled or processing." 
+      });
       return;
     }
-    setRetryingAll(true);
-    toast({ title: "Processing…", description: `Retrying ${actionable.length} orders in batches…` });
 
-    let fulfilled = 0;
-    const BATCH = 5;
-    for (let i = 0; i < actionable.length; i += BATCH) {
-      const batch = actionable.slice(i, i + BATCH);
-      const results = await Promise.allSettled(
-        batch.map((o) => invokePublicFunctionAsUser("verify-payment", { body: { reference: o.id } }))
+    setAutoRouting(true);
+    toast({
+      title: "Routing to DataMart API ⚡",
+      description: `Dispatching ${targets.length} MTN Mash Up order(s) directly to DataMart...`
+    });
+
+    let fulfilledCount = 0;
+    let failedCount = 0;
+
+    const datamartProvider = providers.find(p => p.handler_type === "datamart" || p.name?.toLowerCase().includes("datamart"));
+    const apiKey = datamartProvider?.api_key || "";
+
+    const comboMap: Record<string, number> = {
+      "511mb176mins": 10,
+      "2.6gb1077mins": 20,
+      "4.5gb1800mins": 30,
+      "3.4gbonly": 35,
+      "3.4gb": 35,
+      "6gb700mins": 40,
+      "10gb1800mins": 50,
+      "5.1gbonly": 55,
+      "5.1gb": 55,
+      "6.8gbonly": 60,
+      "6.8gb": 60,
+      "8.5only": 75,
+      "8.5gbonly": 75,
+      "8.5gb": 75,
+      "8.5": 75,
+      "10gbonly": 80,
+      "870mb360mins": 85,
+      "3.5gb14500mins": 100,
+      "3.5gb1450mins": 100,
+    };
+
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+      const batch = targets.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(
+        batch.map(async (order) => {
+          try {
+            // First attempt verify-payment edge function
+            const { data: verifyData, error: verifyErr } = await invokePublicFunctionAsUser("verify-payment", {
+              body: { reference: order.id }
+            });
+
+            if (!verifyErr && verifyData?.status === "fulfilled") {
+              fulfilledCount++;
+              return;
+            }
+
+            // Direct DataMart API Dispatch
+            if (apiKey && order.customer_phone) {
+              const cleanPkg = (order.package_size || "").toLowerCase().replace(/[\s\-_+]/g, "");
+              let comboCost = comboMap[cleanPkg];
+              if (!comboCost) {
+                if (cleanPkg.includes("10gb") && cleanPkg.includes("only")) comboCost = 80;
+                else if (cleanPkg.includes("10gb")) comboCost = 50;
+                else if (cleanPkg.includes("2.6gb")) comboCost = 20;
+                else if (cleanPkg.includes("4.5gb")) comboCost = 30;
+                else if (cleanPkg.includes("511mb")) comboCost = 10;
+                else if (cleanPkg.includes("3.4gb")) comboCost = 35;
+                else if (cleanPkg.includes("5.1gb")) comboCost = 55;
+                else if (cleanPkg.includes("6.8gb")) comboCost = 60;
+                else if (cleanPkg.includes("8.5")) comboCost = 75;
+                else if (cleanPkg.includes("870mb")) comboCost = 85;
+                else if (cleanPkg.includes("3.5gb")) comboCost = 100;
+                else comboCost = 10;
+              }
+
+              const res = await fetch("https://api.datamartgh.shop/api/developer/mashup/purchase", {
+                method: "POST",
+                headers: {
+                  "X-API-Key": apiKey,
+                  "Content-Type": "application/json",
+                  "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                  phoneNumber: order.customer_phone,
+                  comboCost,
+                  ref: order.id
+                })
+              });
+
+              const resJson = await res.json().catch(() => ({}));
+              if (res.ok && (resJson.status === "success" || resJson.orderId || resJson.data?.orderId)) {
+                const providerOrderId = resJson.data?.orderId || resJson.orderId || resJson.data?.id || `DM_${Date.now()}`;
+                await supabase
+                  .from("orders")
+                  .update({
+                    status: "fulfilled",
+                    provider_order_id: String(providerOrderId),
+                    provider_id: datamartProvider?.id,
+                    failure_reason: null,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq("id", order.id);
+
+                await Promise.resolve(supabase.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                fulfilledCount++;
+                return;
+              } else {
+                const reason = resJson.message || resJson.error || `HTTP ${res.status}`;
+                await supabase
+                  .from("orders")
+                  .update({
+                    status: "fulfillment_failed",
+                    failure_reason: `DataMart: ${reason}`,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq("id", order.id);
+                failedCount++;
+                return;
+              }
+            }
+
+            failedCount++;
+          } catch (err: any) {
+            console.error(`[MashUpAutoRoute] Error routing ${order.id}:`, err);
+            failedCount++;
+          }
+        })
       );
-      fulfilled += results.filter(
-        (r) => r.status === "fulfilled" && (r as PromiseFulfilledResult<any>).value?.data?.status === "fulfilled"
-      ).length;
     }
 
     if (currentUser) {
-      await logAudit(currentUser.id, "bulk_retry_orders", { attempted: actionable.length, fulfilled });
+      await logAudit(currentUser.id, "mashup_autoroute_datamart", {
+        attempted: targets.length,
+        fulfilled: fulfilledCount,
+        failed: failedCount
+      });
     }
-    toast({ title: "Done", description: `${fulfilled} of ${actionable.length} orders fulfilled.` });
-    setRetryingAll(false);
+
+    toast({
+      title: "DataMart Routing Complete ⚡",
+      description: `${fulfilledCount} order(s) fulfilled successfully!${failedCount > 0 ? ` (${failedCount} failed)` : ""}`
+    });
+
+    setAutoRouting(false);
     await fetchOrders();
+  };
+
+  const handleRetryAll = async () => {
+    return handleAutoRouteMashUp();
   };
 
   const handleForceFulfillAllProcessing = async () => {
@@ -565,30 +693,10 @@ const AdminMashUpOrders = () => {
       link.click();
       document.body.removeChild(link);
 
-      const exportedIds = pendingOrders.map((o: any) => o.id);
-      const { error: updateErr } = await supabase
-        .from("orders")
-        .update({ 
-          status: "processing",
-          updated_at: new Date().toISOString()
-        })
-        .in("id", exportedIds);
-
-      if (updateErr) {
-        console.error("Failed to update exported orders status:", updateErr);
-        toast({ 
-          title: "Export completed with errors", 
-          description: "Orders were exported, but failed to update status to 'processing' in database.", 
-          variant: "destructive" 
-        });
-      } else {
-        toast({ 
-          title: "Export Complete", 
-          description: `Exported ${pendingOrders.length} MTN Mash Up orders to CSV and updated status to processing.` 
-        });
-      }
-
-      await fetchOrders();
+      toast({ 
+        title: "Export Complete 📄", 
+        description: `Exported ${pendingOrders.length} MTN Mash Up orders to CSV backup.` 
+      });
     } catch (e: any) {
       toast({ 
         title: "Export failed", 
@@ -652,30 +760,27 @@ const AdminMashUpOrders = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
-            <Zap className="w-5 h-5" />
+            <Zap className="w-5 h-5 fill-current" />
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold">MTN Mash Up Orders</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Strictly MTN Mash Up transactions — {totalCount.toLocaleString()} total orders
+              Live DataMart API Automated Routing — {totalCount.toLocaleString()} total orders
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
           <Button variant="outline" size="sm" className="gap-2" onClick={fetchOrders}>
             <RefreshCw className="w-4 h-4" /> Refresh
           </Button>
-          <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={handleExportCSV}>
-            <Download className="w-4 h-4" /> Export CSV
-          </Button>
           <Button
             size="sm"
-            className="gap-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20"
-            onClick={handleRetryAll}
-            disabled={retryingAll}
+            className="gap-2 bg-amber-500 hover:bg-amber-600 text-black font-extrabold shadow-md shadow-amber-500/20"
+            onClick={() => handleAutoRouteMashUp()}
+            disabled={autoRouting || (pending + failed) === 0}
           >
-            {retryingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
-            {retryingAll ? "Retrying…" : `Retry All Actionable (${pending + failed + allOrders.filter(o => o.status === "processing").length})`}
+            {autoRouting ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Zap className="w-4 h-4 fill-current text-black" />}
+            {autoRouting ? "Routing to DataMart…" : `⚡ Auto-Route to DataMart (${pending + failed})`}
           </Button>
           <Button
             size="sm"
@@ -684,7 +789,10 @@ const AdminMashUpOrders = () => {
             disabled={healingProcessing || allOrders.filter(o => o.status === "processing").length === 0}
           >
             {healingProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
-            {healingProcessing ? "Polling Provider…" : `Poll Provider Status (${allOrders.filter(o => o.status === "processing").length})`}
+            {healingProcessing ? "Polling Provider…" : `Poll Provider (${allOrders.filter(o => o.status === "processing").length})`}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2 bg-white/5 border-white/10 hover:bg-white/10" onClick={handleExportCSV}>
+            <Download className="w-4 h-4" /> Backup CSV
           </Button>
           <Button
             size="sm"
@@ -694,9 +802,40 @@ const AdminMashUpOrders = () => {
             disabled={forcingFulfill}
           >
             {forcingFulfill ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            {forcingFulfill ? "Analyzing DB…" : "Force Fulfill ALL Mash Up"}
+            {forcingFulfill ? "Analyzing DB…" : "Force Fulfill Processing"}
           </Button>
         </div>
+      </div>
+
+      {/* Direct DataMart Automated Routing Active Status Banner */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/30 gap-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+            <Zap className="w-5 h-5 fill-current animate-pulse text-amber-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold text-foreground">Direct DataMart API Auto-Routing</p>
+              <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px] font-extrabold uppercase tracking-wide">
+                Live & Automated
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              MTN Mash Up orders route directly to the DataMart provider. Manual exporting is eliminated.
+            </p>
+          </div>
+        </div>
+        {(pending + failed) > 0 && (
+          <Button
+            size="sm"
+            onClick={() => handleAutoRouteMashUp()}
+            disabled={autoRouting}
+            className="bg-amber-400 hover:bg-amber-500 text-black font-extrabold text-xs h-9 px-4 gap-2 shadow-lg shadow-amber-500/20 shrink-0"
+          >
+            {autoRouting ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Zap className="w-4 h-4 fill-current text-black" />}
+            {autoRouting ? "Routing to DataMart…" : `Auto-Route Queue (${pending + failed})`}
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -708,7 +847,7 @@ const AdminMashUpOrders = () => {
           { label: "Agent Profits", value: `GH₵${(totalAgentProfits + totalParentProfits).toFixed(2)}`, icon: TrendingUp, color: "text-purple-500" },
           { label: "Platform Costs", value: `GH₵${totalCosts.toFixed(2)}`, icon: TrendingUp, color: "text-orange-500" },
           { label: "Net Admin Profit", value: `GH₵${totalAdminNetProfit.toFixed(2)}`, icon: TrendingUp, color: "text-sky-500 font-black" },
-          { label: "Pending / Processing / Failed", value: `${pending} / ${allOrders.filter(o => o.status === "processing").length} / ${failed}`, icon: failed > 0 ? AlertTriangle : Clock, color: failed > 0 ? "text-red-500" : "text-amber-500" },
+          { label: "Queued / In Transit / Failed", value: `${pending} / ${allOrders.filter(o => o.status === "processing").length} / ${failed}`, icon: failed > 0 ? AlertTriangle : Clock, color: failed > 0 ? "text-red-500" : "text-amber-500" },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label} className="bg-card border-border shadow-sm">
             <CardContent className="p-3 flex items-center gap-2">
@@ -753,7 +892,8 @@ const AdminMashUpOrders = () => {
         >
           <option value="all">All Statuses</option>
           <option value="awaiting_payment">Awaiting Payment</option>
-          <option value="pending">Pending Export</option>
+          <option value="pending">Queued for Auto-Routing</option>
+          <option value="paid">Paid (Awaiting Routing)</option>
           <option value="processing">Processing</option>
           <option value="fulfilled">Fulfilled</option>
           <option value="fulfillment_failed">Failed</option>
@@ -775,7 +915,7 @@ const AdminMashUpOrders = () => {
       </div>
 
       {/* Bulk Status Update Toolbar */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           type="checkbox"
           title="Select all on this page"
@@ -788,6 +928,15 @@ const AdminMashUpOrders = () => {
           }}
         />
         <span className="text-xs text-muted-foreground">{selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all on page"}</span>
+        <Button
+          size="sm"
+          disabled={selectedIds.size === 0 || autoRouting}
+          onClick={() => handleAutoRouteMashUp(Array.from(selectedIds))}
+          className="gap-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-bold"
+        >
+          {autoRouting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 fill-current text-amber-400" />}
+          Auto-Route Selected ({selectedIds.size})
+        </Button>
         <select
           value={bulkStatus}
           onChange={e => setBulkStatus(e.target.value)}
@@ -798,7 +947,7 @@ const AdminMashUpOrders = () => {
           <option value="processing">Processing</option>
           <option value="paid">Paid</option>
           <option value="fulfillment_failed">Failed</option>
-          <option value="pending">Pending</option>
+          <option value="pending">Queued</option>
         </select>
         <Button
           size="sm"
@@ -954,9 +1103,20 @@ const AdminMashUpOrders = () => {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex flex-col items-center gap-1">
-                      <Badge className={`text-[10px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"}`}>
+                      <Badge className={`text-[10px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"} flex items-center gap-1 font-semibold`}>
                         {order.status === "awaiting_payment" ? "Awaiting Payment" : 
-                         order.status === "pending" ? "Pending Export" : 
+                         order.status === "pending" ? (
+                           <>
+                             <Zap className="w-2.5 h-2.5 text-amber-400 fill-current" />
+                             Queued Auto-Route
+                           </>
+                         ) : 
+                         order.status === "paid" ? (
+                           <>
+                             <Clock className="w-2.5 h-2.5 text-blue-400" />
+                             Paid (Routing)
+                           </>
+                         ) :
                          order.status.replace(/_/g, " ")}
                       </Badge>
                       {order.auto_refunded && (
@@ -973,7 +1133,19 @@ const AdminMashUpOrders = () => {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
-                      {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
+                      {(order.status === "pending" || order.status === "paid" || order.status === "fulfillment_failed") && (
+                        <Button
+                          size="sm"
+                          className="text-xs gap-1 h-7 px-2.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 font-bold"
+                          disabled={autoRouting || retrying === order.id}
+                          onClick={() => handleAutoRouteMashUp([order.id])}
+                          title="Immediately dispatch this MTN Mash Up order to DataMart API"
+                        >
+                          {retrying === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3 fill-current text-amber-400" />}
+                          Route DataMart
+                        </Button>
+                      )}
+                      {order.status === "processing" && (
                         <Button
                           size="sm" variant="outline"
                           className="text-xs gap-1 h-7 px-2 border-white/10 hover:border-amber-400/30"
@@ -1012,9 +1184,20 @@ const AdminMashUpOrders = () => {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-bold text-muted-foreground">{new Date(order.created_at).toLocaleDateString()}</span>
-                  <Badge className={`text-[9px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"}`}>
+                  <Badge className={`text-[9px] border ${STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border"} flex items-center gap-1 font-semibold`}>
                     {order.status === "awaiting_payment" ? "Awaiting Payment" : 
-                     order.status === "pending" ? "Pending Export" : 
+                     order.status === "pending" ? (
+                       <>
+                         <Zap className="w-2.5 h-2.5 text-amber-400 fill-current" />
+                         Queued Auto-Route
+                       </>
+                     ) : 
+                     order.status === "paid" ? (
+                       <>
+                         <Clock className="w-2.5 h-2.5 text-blue-400" />
+                         Paid (Routing)
+                       </>
+                     ) :
                      order.status.replace(/_/g, " ")}
                   </Badge>
                 </div>
@@ -1073,7 +1256,18 @@ const AdminMashUpOrders = () => {
               </div>
             </div>
             <div className="flex items-center gap-2 pt-1">
-              {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
+              {(order.status === "pending" || order.status === "paid" || order.status === "fulfillment_failed") && (
+                <Button
+                  size="sm"
+                  className="flex-1 text-xs gap-1.5 h-9 bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 font-bold rounded-xl"
+                  disabled={autoRouting || retrying === order.id}
+                  onClick={() => handleAutoRouteMashUp([order.id])}
+                >
+                  {retrying === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-current text-amber-400" />}
+                  Route to DataMart
+                </Button>
+              )}
+              {order.status === "processing" && (
                 <Button
                   size="sm" variant="outline"
                   className="flex-1 text-xs gap-2 h-9 border-input hover:border-amber-400/30 rounded-xl"

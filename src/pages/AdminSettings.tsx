@@ -1141,64 +1141,47 @@ const AdminSettings = () => {
             </CardContent>
           </Card>
 
-          <Card className="border-emerald-500/20 bg-emerald-500/5">
+          <Card className="border-amber-500/20 bg-amber-500/5">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-emerald-500" />
-                MTN Mash Up Automation
+                <Zap className="w-5 h-5 text-amber-500" />
+                MTN Mash Up Automated Routing (DataMart API)
               </CardTitle>
               <CardDescription>
-                Automatically export and send pending MTN Mash Up orders to a WhatsApp number when a threshold is met.
+                All MTN Mash Up bundles route automatically and immediately to DataMart provider API. Manual exporting is eliminated.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
                 <div className="space-y-0.5">
-                  <Label className="text-sm font-bold flex items-center gap-2">
-                    Enable Auto-Export
+                  <Label className="text-sm font-bold flex items-center gap-2 text-foreground">
+                    Instant DataMart Auto-Routing
                   </Label>
-                  <p className="text-xs text-muted-foreground">Automatically process and send pending Mash Up orders to WhatsApp.</p>
+                  <p className="text-xs text-muted-foreground">Orders execute directly against the DataMart developer API upon payment confirmation without delay.</p>
                 </div>
                 <Switch
                   checked={settings.mashup_automation_enabled}
                   onCheckedChange={(c) => setSettings({ ...settings, mashup_automation_enabled: c })}
-                  className="data-[state=checked]:bg-emerald-500"
+                  className="data-[state=checked]:bg-amber-500"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="mashup-threshold">Export Threshold (Count)</Label>
-                  <Input
-                    id="mashup-threshold"
-                    type="number"
-                    min="1"
-                    value={settings.mashup_export_threshold}
-                    onChange={(e) => setSettings({ ...settings, mashup_export_threshold: e.target.value })}
-                  />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-3 rounded-xl bg-secondary/30 border border-border space-y-1">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fulfillment Provider</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-foreground text-sm">DataMart GH API</span>
+                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">Connected & Active</Badge>
+                  </div>
                   <p className="text-[10px] text-muted-foreground">
-                    Number of pending orders required to trigger auto-export.
+                    Endpoint: api.datamartgh.shop/api/developer/mashup/purchase
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="mashup-delay">Auto-Delivery Delay (Mins)</Label>
-                  <Input
-                    id="mashup-delay"
-                    type="number"
-                    min="1"
-                    value={settings.mashup_delivery_delay_mins}
-                    onChange={(e) => setSettings({ ...settings, mashup_delivery_delay_mins: e.target.value })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Time in minutes before processing status transitions to delivered.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="mashup-whatsapp" className="flex items-center gap-1.5">
+                  <Label htmlFor="mashup-whatsapp" className="flex items-center gap-1.5 text-xs font-semibold">
                     <MessageCircle className="w-4 h-4 text-emerald-500" />
-                    WhatsApp Number
+                    Admin Alert WhatsApp (Optional Backup)
                   </Label>
                   <Input
                     id="mashup-whatsapp"
@@ -1207,7 +1190,7 @@ const AdminSettings = () => {
                     onChange={(e) => setSettings({ ...settings, mashup_whatsapp_number: e.target.value })}
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    Include country code without the '+' sign.
+                    Optional phone number for admin audit alerts.
                   </p>
                 </div>
               </div>

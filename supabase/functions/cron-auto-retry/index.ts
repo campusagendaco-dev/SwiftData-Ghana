@@ -42,6 +42,16 @@ serve(async (req) => {
       .gte("created_at", twoDaysAgo)
       .limit(25);
 
+    // 1b. Find pending or paid MTN Mash Up orders needing auto-routing
+    const { data: stuckMashUpOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup")
+      .in("status", ["pending", "paid"])
+      .not("order_type", "in", excludedTypes)
+      .gte("created_at", twoDaysAgo)
+      .limit(25);
+
     // 2. Find stuck undispatched processing orders (no provider_id or no provider_order_id assigned, or marked timeout/failed_api_call/duplicate_cooldown)
     const { data: undispatchedOrders } = await supabaseAdmin
       .from("orders")
@@ -70,7 +80,6 @@ serve(async (req) => {
       .select("*")
       .in("status", ["processing", "paid", "fulfillment_failed"])
       .or("provider_order_id.eq.duplicate_cooldown,failure_reason.ilike.%duplicate%,failure_reason.ilike.%identical%")
-      .neq("network", "MTN Mash Up")
       .not("order_type", "in", excludedTypes)
       .gte("created_at", twoDaysAgo)
       .order("created_at", { ascending: false })
@@ -79,6 +88,7 @@ serve(async (req) => {
     // Deduplicate candidate orders by ID
     const orderMap = new Map<string, any>();
     (stuckPaidOrders || []).forEach(o => orderMap.set(o.id, o));
+    (stuckMashUpOrders || []).forEach(o => orderMap.set(o.id, o));
     (undispatchedOrders || []).forEach(o => orderMap.set(o.id, o));
     (noProviderOrders || []).forEach(o => orderMap.set(o.id, o));
     (duplicateOrders || []).forEach(o => orderMap.set(o.id, o));
@@ -254,7 +264,7 @@ serve(async (req) => {
           last_retry_at: new Date().toISOString()
         })
         .eq("id", order.id)
-        .in("status", ["paid", "processing", "fulfillment_failed", "failed"])
+        .in("status", ["paid", "processing", "fulfillment_failed", "failed", "pending"])
         .select("id")
         .maybeSingle();
 
