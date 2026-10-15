@@ -172,7 +172,7 @@ export default function AdminAPIOrders() {
 
     let q = supabase
       .from("orders")
-      .select("*", { count: "exact" })
+      .select("*", { count: "estimated" })
       .eq("order_type", "api")
       .order("created_at", { ascending: false })
       .range(from, to);

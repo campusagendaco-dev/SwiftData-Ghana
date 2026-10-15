@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface AgentResult {
   user_id: string;
   full_name: string;
@@ -178,7 +180,7 @@ const AdminWalletTopup = () => {
       if (orderErr) throw orderErr;
 
       // Fetch profiles for these agent_ids separately since there is no public foreign key constraint in the schema cache
-      const agentIds = [...new Set((orderData || []).map((o: any) => o.agent_id).filter(Boolean))];
+      const agentIds = [...new Set((orderData || []).map((o: any) => o.agent_id).filter((id: any): id is string => Boolean(id) && UUID_REGEX.test(id)))];
       const profilesMap: Record<string, { full_name: string; email: string }> = {};
       if (agentIds.length > 0) {
         const { data: profilesData, error: profilesErr } = await supabase

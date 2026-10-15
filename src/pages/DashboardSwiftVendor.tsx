@@ -24,6 +24,8 @@ import { VendorOnboardingWizard } from "@/components/VendorOnboardingWizard";
 import { VendorSecurityApproval } from "@/components/VendorSecurityApproval";
 import { playSuccessSound } from "@/lib/sound";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const GHANA_BANKS = [
   { code: "SCH", name: "Standard Chartered Bank" },
   { code: "ABG", name: "Absa Bank Ghana Limited" },
@@ -568,7 +570,7 @@ const DashboardSwiftVendor = () => {
   };
 
   const fetchBalance = async () => {
-    if (!user) return;
+    if (!user?.id || !UUID_REGEX.test(user.id)) return;
     
     // Check terminal lock state and vendor KYC status
     const { data: profile } = await supabase

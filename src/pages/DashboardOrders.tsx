@@ -20,6 +20,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Link, useNavigate } from "react-router-dom";
 import WhatsAppReceiptModal from "@/components/WhatsAppReceiptModal";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface Order {
   id: string;
   order_type: string;
@@ -215,6 +217,8 @@ const DashboardOrders = () => {
   const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<any | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
+  const pageRef = useRef(page);
+  pageRef.current = page;
   const PAGE_SIZE = 50;
   const retryCountRef = useRef<Record<string, number>>({});
 
@@ -290,25 +294,34 @@ const DashboardOrders = () => {
   };
 
   const fetchOrders = useCallback(async (isLoadMore = false, isSilent = false) => {
-    if (!user) return;
+    if (!user?.id || !UUID_REGEX.test(user.id)) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
     if (!isLoadMore && !isSilent) {
       setLoading(true);
       setPage(0);
     }
 
-    const currentPage = isLoadMore ? page + 1 : (isSilent ? page : 0);
+    const currentPage = isLoadMore ? pageRef.current + 1 : (isSilent ? pageRef.current : 0);
     const from = isSilent ? 0 : currentPage * PAGE_SIZE;
-    const to = isSilent ? (page + 1) * PAGE_SIZE - 1 : from + PAGE_SIZE - 1;
+    const to = isSilent ? (pageRef.current + 1) * PAGE_SIZE - 1 : from + PAGE_SIZE - 1;
 
     const candidateAgentIds = Array.from(new Set([
       user.id,
       profile?.user_id,
-      profile?.id,
-    ].filter(Boolean) as string[]));
+    ].filter((id): id is string => Boolean(id) && UUID_REGEX.test(id))));
+
+    if (candidateAgentIds.length === 0) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
 
     let q = supabase
       .from("orders")
-      .select("*", { count: "exact" })
+      .select("*", { count: "estimated" })
       .in("agent_id", candidateAgentIds)
       .in("status", ["pending", "paid", "processing", "fulfilled", "fulfillment_failed", "awaiting_payment", "refunded"])
       .order("created_at", { ascending: false })
@@ -328,7 +341,7 @@ const DashboardOrders = () => {
 
     if (search.trim()) {
       const term = sanitizeSearchTerm(search);
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term);
+      const isUuid = UUID_REGEX.test(term);
       if (isUuid) {
         q = q.eq("id", term);
       } else {
@@ -336,32 +349,38 @@ const DashboardOrders = () => {
       }
     }
 
-    const { data, count } = await q;
+    const { data, count, error } = await q;
+
+    if (error) {
+      console.warn("[DashboardOrders] Fetch error:", error.message);
+      if (!isSilent) setLoading(false);
+      return;
+    }
 
     if (data) {
       setOrders(prev => {
         if (isSilent) return data;
         return isLoadMore ? [...prev, ...data] : data;
       });
-      setHasMore(count ? ((isSilent ? (page + 1) * PAGE_SIZE : from + data.length) < count) : data.length === PAGE_SIZE);
+      setHasMore(count ? ((isSilent ? (pageRef.current + 1) * PAGE_SIZE : from + data.length) < count) : data.length === PAGE_SIZE);
       if (isLoadMore) setPage(currentPage);
     }
 
     if (!isSilent) {
       setLoading(false);
     }
-  }, [filter, search, page, profile?.id, profile?.user_id, user]);
+  }, [filter, search, profile?.user_id, user?.id]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchOrders(false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [filter, search, user, profile?.id, fetchOrders]);
+  }, [fetchOrders]);
 
   // Live realtime updates filtered specifically to current agent's orders
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id || !UUID_REGEX.test(user.id)) return;
     const channelId = `dash_orders_live_${user.id}_${Math.random().toString(36).substring(7)}`;
     const ch = supabase
       .channel(channelId)

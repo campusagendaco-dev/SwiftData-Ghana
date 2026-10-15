@@ -10,6 +10,8 @@ import { RefreshCw, RotateCcw, Wallet, Search, Check, Copy, ShieldCheck, Users, 
 import { cn } from "@/lib/utils";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface AdminRefundedOrder {
   id: string;
   agent_id: string;
@@ -82,11 +84,13 @@ export default function AdminRefundedOrders() {
       if (error) {
         console.error("Error fetching admin refunded orders:", error);
       } else if (rawOrders && rawOrders.length > 0) {
-        const agentIds = Array.from(new Set(rawOrders.map(o => o.agent_id).filter(Boolean)));
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("user_id, full_name, email, store_name")
-          .in("user_id", agentIds);
+        const agentIds = Array.from(new Set(rawOrders.map(o => o.agent_id).filter((id): id is string => Boolean(id) && UUID_REGEX.test(id))));
+        const { data: profiles } = agentIds.length > 0
+          ? await supabase
+              .from("profiles")
+              .select("user_id, full_name, email, store_name")
+              .in("user_id", agentIds)
+          : { data: [] };
 
         const profileMap = new Map<string, { full_name?: string; email?: string; store_name?: string }>();
         (profiles || []).forEach(p => {

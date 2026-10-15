@@ -26,6 +26,7 @@ import {
 import { networks, basePackages } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALLOWED_ACTION_OPTIONS = ["balance", "plans", "buy", "orders"] as const;
 type AllowedAction = typeof ALLOWED_ACTION_OPTIONS[number];
 
@@ -272,6 +273,7 @@ const AdminAPIUsers = () => {
   }, []);
 
   const fetchUserOrders = async (userId: string) => {
+    if (!userId || !UUID_REGEX.test(userId)) return;
     if (userOrders[userId]) { setExpandedUser(userId); return; }
     setLoadingOrders(userId);
     const { data } = await supabase
