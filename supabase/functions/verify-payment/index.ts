@@ -850,7 +850,7 @@ serve(async (req: any) => {
     const orderAgeSec = (Date.now() - new Date(existingOrder?.created_at || 0).getTime()) / 1000;
     const shouldCheckProvider = !!existingOrder?.provider_order_id;
 
-    if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed") && isProviderOrder && shouldCheckProvider) {
+    if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed" || existingOrder?.status === "processing") && isProviderOrder && shouldCheckProvider) {
       let providersToCheck: any[] = [];
       const currentRef = String(existingOrder?.provider_order_id || "");
 
@@ -871,9 +871,9 @@ serve(async (req: any) => {
       for (const provider of providersToCheck) {
         console.log(`[verify-payment] Pre-check status for ${targetReference} at ${provider.name}`);
         const checkResult = await callProviderApi(supabaseAdmin, provider, { 
-          transaction_id: targetReference,
+          transaction_id: currentRef || targetReference,
           reference: targetReference, 
-          order_id: targetReference 
+          order_id: currentRef || targetReference 
         }, "status");
         
         if (checkResult.ok) {
@@ -890,14 +890,41 @@ serve(async (req: any) => {
           } else if (isFailed) {
             console.log(`[verify-payment] Found failed/refunded order ${targetReference} at ${provider.name} during pre-check (${rawStatus}).`);
             const failReason = checkResult.reason || (rawStatus === "refunded" ? "Provider refunded order" : `Provider reported ${rawStatus}`);
-            await supabaseAdmin.from("orders").update({
-              status: "fulfillment_failed",
+            
+            const failedIds = Array.isArray(existingOrder.metadata?.failed_provider_ids)
+              ? [...existingOrder.metadata.failed_provider_ids]
+              : [];
+            if (!failedIds.includes(provider.id)) failedIds.push(provider.id);
+
+            await logProviderError(supabaseAdmin, {
               provider_id: provider.id,
-              provider_order_id: checkResult.id || existingOrder.provider_order_id || null,
-              failure_reason: failReason,
+              order_id: targetReference,
+              error_type: rawStatus === "refunded" ? "provider_refunded" : "provider_failed",
+              error_message: failReason,
+              status_code: 400,
+            });
+
+            // Unlock and record failure so it can proceed to route to another verified provider
+            await supabaseAdmin.from("orders").update({
+              provider_id: null,
+              provider_order_id: null,
+              failure_reason: `Refunded by ${provider.name}. Re-routing to alternative verified provider.`,
+              metadata: {
+                ...(existingOrder.metadata || {}),
+                failed_provider_ids: failedIds,
+                last_failed_provider: provider.name,
+                refund_detected_at: new Date().toISOString(),
+              },
               updated_at: new Date().toISOString()
             }).eq("id", targetReference);
-            return new Response(JSON.stringify({ status: "fulfillment_failed", reason: failReason }), { headers: corsHeaders });
+
+            existingOrder.metadata = {
+              ...(existingOrder.metadata || {}),
+              failed_provider_ids: failedIds,
+            };
+            existingOrder.provider_order_id = null;
+            existingOrder.provider_id = null;
+            break; // Stop pre-checking with this refunded provider, proceed to fulfillment failover below
           } else if (isProcessing) {
             console.log(`[verify-payment] Found processing/pending order ${targetReference} at ${provider.name} during pre-check.`);
             await supabaseAdmin.from("orders").update({ 
@@ -1251,6 +1278,8 @@ serve(async (req: any) => {
     const isUndispatchedProcessing = existingOrder?.status === "processing" && (
       existingOrder?.provider_order_id === "timeout" || 
       existingOrder?.provider_order_id === "failed_api_call" || 
+      existingOrder?.provider_order_id === "refunded" ||
+      !existingOrder?.provider_order_id ||
       (lockSecondsSinceUpdate > 90 && (!existingOrder?.provider_order_id || existingOrder?.provider_order_id === "dispatching")) ||
       force
     );

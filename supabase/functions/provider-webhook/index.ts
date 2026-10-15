@@ -448,10 +448,21 @@ serve(async (req: Request) => {
           error_message: failReason,
         })).catch(() => {});
 
+        const failedIds = Array.isArray(order.metadata?.failed_provider_ids)
+          ? [...order.metadata.failed_provider_ids]
+          : [];
+        if (order.provider_id && !failedIds.includes(order.provider_id)) {
+          failedIds.push(order.provider_id);
+        }
+
         const failoverDispatch = await dispatchOrderWithFailover(supabaseAdmin, {
           ...order,
           provider_order_id: null, // Clear so resolveProvidersForOrder does not lock to failed provider
           status: "processing",
+          metadata: {
+            ...(order.metadata || {}),
+            failed_provider_ids: failedIds,
+          },
         });
 
         if (failoverDispatch.ok) {

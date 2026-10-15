@@ -53,7 +53,7 @@ serve(async (req: Request) => {
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
         .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
-        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown")
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown,provider_order_id.eq.refunded")
         .or("retry_count.is.null,retry_count.lt.5")
         .gte("created_at", cutoffDate);
 
@@ -87,7 +87,7 @@ serve(async (req: Request) => {
         .not("package_size", "is", null)
         .not("order_type", "in", excludedTypes)
         .or("status.in.(paid,processing),paystack_verified_amount.gt.0,payment_method.in.(wallet,credit)")
-        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown")
+        .or("provider_id.is.null,provider_order_id.is.null,provider_order_id.eq.failed_api_call,provider_order_id.eq.timeout,provider_order_id.eq.manual_fulfillment_mode,provider_order_id.eq.duplicate_cooldown,provider_order_id.eq.refunded")
         .or("retry_count.is.null,retry_count.lt.5")
         .gte("created_at", effectiveCutoff)
         .order("retry_count", { ascending: true, nullsFirst: true })

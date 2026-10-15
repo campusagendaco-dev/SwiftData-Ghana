@@ -1,6 +1,7 @@
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError } from "../_shared/providers/utils.ts";
 import { log } from "../_shared/logger.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
@@ -52,13 +53,13 @@ serve(async (req) => {
       .gte("created_at", twoDaysAgo)
       .limit(25);
 
-    // 3. Find failed orders whose failure_reason indicates No Provider or retryable provider failure (including Spendless rejections)
+    // 3. Find failed or refunded orders whose failure_reason indicates No Provider, refund, or retryable provider failure
     const { data: noProviderOrders } = await supabaseAdmin
       .from("orders")
       .select("*")
-      .in("status", ["fulfillment_failed", "failed"])
+      .in("status", ["fulfillment_failed", "failed", "refunded"])
       .not("order_type", "in", excludedTypes)
-      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%,failure_reason.ilike.%timeout%,failure_reason.ilike.%504%,failure_reason.ilike.%502%,failure_reason.ilike.%Order processing failed%,failure_reason.ilike.%Bundle not available%,failure_reason.ilike.%rejected%,provider_order_id.eq.failed_api_call")
+      .or("failure_reason.ilike.%No provider%,failure_reason.ilike.%No active provider%,failure_reason.ilike.%No active telecom provider%,failure_reason.ilike.%Auto-retry failed%,failure_reason.ilike.%timeout%,failure_reason.ilike.%504%,failure_reason.ilike.%502%,failure_reason.ilike.%Order processing failed%,failure_reason.ilike.%Bundle not available%,failure_reason.ilike.%rejected%,failure_reason.ilike.%refund%,failure_reason.ilike.%refunded%,status.eq.refunded,provider_order_id.eq.failed_api_call,provider_order_id.eq.refunded")
       .gte("created_at", twoDaysAgo)
       .order("created_at", { ascending: false })
       .limit(35);
@@ -81,6 +82,91 @@ serve(async (req) => {
     (undispatchedOrders || []).forEach(o => orderMap.set(o.id, o));
     (noProviderOrders || []).forEach(o => orderMap.set(o.id, o));
     (duplicateOrders || []).forEach(o => orderMap.set(o.id, o));
+
+    // 5. Proactively poll in-transit processing orders with active provider IDs (detect refunded or delivered orders)
+    const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    const { data: inTransitProcessingOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .eq("status", "processing")
+      .not("provider_id", "is", null)
+      .not("provider_order_id", "is", null)
+      .not("provider_order_id", "in", "(failed_api_call,timeout,duplicate_cooldown,manual_fulfillment_mode)")
+      .not("order_type", "in", excludedTypes)
+      .lte("created_at", threeMinutesAgo)
+      .gte("created_at", twoDaysAgo)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (inTransitProcessingOrders && inTransitProcessingOrders.length > 0) {
+      console.log(`[cron-auto-retry] Checking live provider status for ${inTransitProcessingOrders.length} in-transit processing orders...`);
+      for (const pOrder of inTransitProcessingOrders) {
+        try {
+          const { data: prov } = await supabaseAdmin
+            .from("providers")
+            .select("*")
+            .eq("id", pOrder.provider_id)
+            .maybeSingle();
+
+          if (!prov || !prov.is_active) continue;
+
+          const adapter = getProviderAdapter(prov.handler_type || "standard");
+          const activeOrderId = pOrder.provider_order_id || pOrder.id;
+          const statusRes = await adapter.checkStatus(supabaseAdmin, prov, activeOrderId, pOrder.id);
+          const rawStatus = String(statusRes?.status || "").toLowerCase().trim();
+
+          const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
+          const isRefundedOrFailed = rawStatus === "refunded" || rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "reversed" || statusRes?.ok === false;
+
+          if (isDelivered) {
+            console.log(`[cron-auto-retry] In-transit order ${pOrder.id} confirmed FULFILLED by ${prov.name}`);
+            await supabaseAdmin.from("orders").update({
+              status: "fulfilled",
+              failure_reason: null,
+              provider_response: statusRes.raw || statusRes,
+              updated_at: new Date().toISOString()
+            }).eq("id", pOrder.id);
+            await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: pOrder.id })).catch(() => {});
+          } else if (isRefundedOrFailed) {
+            const failReason = statusRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Provider rejected order");
+            console.warn(`[cron-auto-retry] In-transit order ${pOrder.id} REFUNDED/FAILED at ${prov.name} (${rawStatus}). Enqueuing for immediate failover to verified provider...`);
+
+            await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+              provider_id: prov.id,
+              order_id: pOrder.id,
+              error_message: failReason,
+            })).catch(() => {});
+
+            const prevFailed = Array.isArray(pOrder.metadata?.failed_provider_ids) ? pOrder.metadata.failed_provider_ids : [];
+            const updatedFailedIds = Array.from(new Set([...prevFailed, prov.id]));
+
+            pOrder.provider_order_id = null;
+            pOrder.status = "fulfillment_failed";
+            pOrder.failure_reason = failReason;
+            pOrder.metadata = {
+              ...(pOrder.metadata || {}),
+              failed_provider_ids: updatedFailedIds,
+              previous_provider: prov.name,
+              last_refund_reason: failReason,
+              last_refund_at: new Date().toISOString(),
+            };
+
+            await supabaseAdmin.from("orders").update({
+              status: "fulfillment_failed",
+              provider_order_id: null,
+              failure_reason: failReason,
+              metadata: pOrder.metadata,
+              updated_at: new Date().toISOString(),
+            }).eq("id", pOrder.id);
+
+            // Queue for immediate failover dispatch in this cycle
+            orderMap.set(pOrder.id, pOrder);
+          }
+        } catch (err: any) {
+          console.warn(`[cron-auto-retry] Error checking in-transit order ${pOrder.id}:`, err?.message || err);
+        }
+      }
+    }
 
     const candidateOrders = Array.from(orderMap.values());
 
@@ -136,13 +222,14 @@ serve(async (req) => {
       }
 
       // Anti-Duplicate Delivery Shield: If order already has an active upstream provider reference
-      // (e.g. SKP..., API_..., DH_...) that is NOT timeout, failed_api_call, or duplicate_cooldown, DO NOT re-dispatch!
+      // (e.g. SKP..., API_..., DH_...) that is NOT timeout, failed_api_call, duplicate_cooldown, or refunded, DO NOT re-dispatch!
       const hasActiveProviderRef = Boolean(
         order.provider_order_id &&
         order.provider_order_id !== "failed_api_call" &&
         order.provider_order_id !== "timeout" &&
         order.provider_order_id !== "routed" &&
-        order.provider_order_id !== "duplicate_cooldown"
+        order.provider_order_id !== "duplicate_cooldown" &&
+        order.provider_order_id !== "refunded"
       );
       if (hasActiveProviderRef && (order.status === "processing" || order.status === "paid")) {
         console.log(`[cron-auto-retry] Order ${order.id} is already in transit with provider (${order.provider_order_id}). Skipping re-dispatch to avoid double fulfillment.`);
@@ -178,9 +265,21 @@ serve(async (req) => {
 
       console.log(`[cron-auto-retry] Auto-healing claimed order ${order.id} (${order.network} ${order.package_size}, attempt ${currentRetry + 1}/3)...`);
       
+      const failReason = order.failure_reason || "";
+      const isRefunded = /refund/i.test(failReason) || order.status === "refunded";
+      const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
+      const updatedFailedIds = order.provider_id && (isRefunded || order.status === "fulfillment_failed")
+        ? Array.from(new Set([...prevFailed, order.provider_id]))
+        : prevFailed;
+
       const dispatch = await dispatchOrderWithFailover(supabaseAdmin, {
         ...order,
+        provider_id: order.provider_id,
         provider_order_id: null,
+        metadata: {
+          ...(order.metadata || {}),
+          failed_provider_ids: updatedFailedIds,
+        }
       });
 
       if (dispatch.status === "fulfilled") {

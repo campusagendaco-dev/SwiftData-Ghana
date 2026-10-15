@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
+import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { normalizePhone, getSmsConfig, dispatchUnifiedSms } from "../_shared/sms.ts";
 
@@ -197,19 +199,92 @@ serve(async (req: Request) => {
                   console.log(`[check-order-status-bulk] Order ${order.id} marked FULFILLED.`);
                 }
               } else if (isFailed) {
-                currentStatus = "fulfillment_failed";
                 currentFailureReason = pRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Carrier dispatch rejected");
-                failedCount++;
-                wasUpdated = order.status !== "fulfillment_failed";
+                const isPaid = order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0 || order.status === "processing" || order.status === "paid";
+                const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(order.order_type || "data").toLowerCase());
+                const isTerminal = isNonRetryableTerminalError(currentFailureReason);
 
-                if (order.status !== "fulfillment_failed") {
-                  await supabaseAdmin.from("orders").update({
-                    status: "fulfillment_failed",
+                // Auto-route refunded or retryable failed orders to any other verified API providers
+                if (isPaid && isTelecomOrder && (rawStatus === "refunded" || !isTerminal) && (order.retry_count || 0) < 5) {
+                  console.log(`[check-order-status-bulk] Order ${order.id} refunded/failed at ${providerInfo.name} (${rawStatus}). Initiating auto-failover to verified API provider...`);
+                  
+                  await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+                    provider_id: providerInfo.id,
+                    order_id: order.id,
+                    error_message: currentFailureReason,
+                  })).catch(() => {});
+
+                  const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
+                  const updatedFailedIds = Array.from(new Set([...prevFailed, providerInfo.id]));
+
+                  const failoverDispatch = await dispatchOrderWithFailover(supabaseAdmin, {
+                    ...order,
+                    provider_id: providerInfo.id,
+                    provider_order_id: null,
+                    status: "processing",
                     failure_reason: currentFailureReason,
-                    provider_response: pRes.raw || pRes,
-                    updated_at: new Date().toISOString()
-                  }).eq("id", order.id);
-                  console.log(`[check-order-status-bulk] Order ${order.id} marked FAILED (${currentFailureReason}).`);
+                    metadata: {
+                      ...(order.metadata || {}),
+                      failed_provider_ids: updatedFailedIds,
+                      previous_provider: providerInfo.name,
+                      last_refund_reason: currentFailureReason,
+                      last_refund_at: new Date().toISOString(),
+                    }
+                  });
+
+                  if (failoverDispatch.ok) {
+                    currentStatus = failoverDispatch.status;
+                    currentFailureReason = null;
+                    wasUpdated = true;
+                    if (failoverDispatch.status === "fulfilled") fulfilledCount++;
+                    else processingCount++;
+                    await supabaseAdmin.from("orders").update({
+                      status: failoverDispatch.status,
+                      provider_id: failoverDispatch.provider_id,
+                      provider_order_id: failoverDispatch.provider_order_id,
+                      failure_reason: null,
+                      last_retry_at: new Date().toISOString(),
+                      retry_count: (order.retry_count || 0) + 1,
+                      metadata: {
+                        ...(order.metadata || {}),
+                        failed_provider_ids: updatedFailedIds,
+                        auto_routed_from: providerInfo.name,
+                        auto_routed_at: new Date().toISOString(),
+                      },
+                      updated_at: new Date().toISOString(),
+                    }).eq("id", order.id);
+                    if (failoverDispatch.status === "fulfilled") {
+                      await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                    }
+                    console.log(`[check-order-status-bulk] Auto-failover SUCCESS for refunded order ${order.id} -> ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
+                  } else {
+                    currentStatus = "fulfillment_failed";
+                    failedCount++;
+                    wasUpdated = order.status !== "fulfillment_failed";
+                    await supabaseAdmin.from("orders").update({
+                      status: "fulfillment_failed",
+                      failure_reason: `${currentFailureReason} (Auto-failover: ${failoverDispatch.reason || "no other provider available"})`,
+                      provider_response: pRes.raw || pRes,
+                      metadata: {
+                        ...(order.metadata || {}),
+                        failed_provider_ids: updatedFailedIds,
+                      },
+                      updated_at: new Date().toISOString()
+                    }).eq("id", order.id);
+                  }
+                } else {
+                  currentStatus = "fulfillment_failed";
+                  failedCount++;
+                  wasUpdated = order.status !== "fulfillment_failed";
+                  if (order.status !== "fulfillment_failed") {
+                    await supabaseAdmin.from("orders").update({
+                      status: "fulfillment_failed",
+                      failure_reason: currentFailureReason,
+                      provider_response: pRes.raw || pRes,
+                      updated_at: new Date().toISOString()
+                    }).eq("id", order.id);
+                    console.log(`[check-order-status-bulk] Order ${order.id} marked FAILED (${currentFailureReason}).`);
+                  }
                 }
               } else {
                 processingCount++;
@@ -382,19 +457,88 @@ serve(async (req: Request) => {
               console.log(`[check-order-status] Order ${order.id} transitioned to FULFILLED via live provider check.`);
             }
           } else if (isFailed) {
-            currentStatus = "fulfillment_failed";
             currentFailureReason = pRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Carrier dispatch rejected");
             carrierStatusDesc = rawStatus === "refunded" ? "Provider refunded order" : "Carrier rejected dispatch";
 
-            if (order.status !== "fulfillment_failed") {
-              await supabaseAdmin.from("orders").update({
-                status: "fulfillment_failed",
-                failure_reason: currentFailureReason,
-                provider_response: pRes.raw || pRes,
-                updated_at: new Date().toISOString()
-              }).eq("id", order.id);
+            const isPaid = order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0 || order.status === "processing" || order.status === "paid";
+            const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(order.order_type || "data").toLowerCase());
+            const isTerminal = isNonRetryableTerminalError(currentFailureReason);
 
-              console.log(`[check-order-status] Order ${order.id} transitioned to FULFILLMENT_FAILED via live provider check.`);
+            // Auto-route refunded or retryable failed orders to any other verified API providers
+            if (isPaid && isTelecomOrder && (rawStatus === "refunded" || !isTerminal) && (order.retry_count || 0) < 5) {
+              console.log(`[check-order-status] Order ${order.id} refunded/failed at ${providerInfo.name} (${rawStatus}). Initiating auto-failover to verified API provider...`);
+              
+              await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
+                provider_id: providerInfo.id,
+                order_id: order.id,
+                error_message: currentFailureReason,
+              })).catch(() => {});
+
+              const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
+              const updatedFailedIds = Array.from(new Set([...prevFailed, providerInfo.id]));
+
+              const failoverDispatch = await dispatchOrderWithFailover(supabaseAdmin, {
+                ...order,
+                provider_id: providerInfo.id,
+                provider_order_id: null,
+                status: "processing",
+                failure_reason: currentFailureReason,
+                metadata: {
+                  ...(order.metadata || {}),
+                  failed_provider_ids: updatedFailedIds,
+                  previous_provider: providerInfo.name,
+                  last_refund_reason: currentFailureReason,
+                  last_refund_at: new Date().toISOString(),
+                }
+              });
+
+              if (failoverDispatch.ok) {
+                currentStatus = failoverDispatch.status;
+                currentFailureReason = null;
+                carrierStatusDesc = failoverDispatch.status === "fulfilled" ? "Delivered successfully via verified carrier" : "Routed to verified carrier — active in processing";
+                await supabaseAdmin.from("orders").update({
+                  status: failoverDispatch.status,
+                  provider_id: failoverDispatch.provider_id,
+                  provider_order_id: failoverDispatch.provider_order_id,
+                  failure_reason: null,
+                  last_retry_at: new Date().toISOString(),
+                  retry_count: (order.retry_count || 0) + 1,
+                  metadata: {
+                    ...(order.metadata || {}),
+                    failed_provider_ids: updatedFailedIds,
+                    auto_routed_from: providerInfo.name,
+                    auto_routed_at: new Date().toISOString(),
+                  },
+                  updated_at: new Date().toISOString(),
+                }).eq("id", order.id);
+                if (failoverDispatch.status === "fulfilled") {
+                  await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+                }
+                console.log(`[check-order-status] Auto-failover SUCCESS for refunded order ${order.id} -> ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
+              } else {
+                currentStatus = "fulfillment_failed";
+                await supabaseAdmin.from("orders").update({
+                  status: "fulfillment_failed",
+                  failure_reason: `${currentFailureReason} (Auto-failover: ${failoverDispatch.reason || "no other provider available"})`,
+                  provider_response: pRes.raw || pRes,
+                  metadata: {
+                    ...(order.metadata || {}),
+                    failed_provider_ids: updatedFailedIds,
+                  },
+                  updated_at: new Date().toISOString()
+                }).eq("id", order.id);
+              }
+            } else {
+              currentStatus = "fulfillment_failed";
+              if (order.status !== "fulfillment_failed") {
+                await supabaseAdmin.from("orders").update({
+                  status: "fulfillment_failed",
+                  failure_reason: currentFailureReason,
+                  provider_response: pRes.raw || pRes,
+                  updated_at: new Date().toISOString()
+                }).eq("id", order.id);
+                console.log(`[check-order-status] Order ${order.id} transitioned to FULFILLMENT_FAILED via live provider check.`);
+              }
             }
           } else {
             carrierStatusDesc = "Transmitting to carrier network — active in processing";

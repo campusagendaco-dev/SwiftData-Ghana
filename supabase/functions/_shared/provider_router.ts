@@ -76,8 +76,13 @@ export async function dispatchOrderWithFailover(
     };
   }
 
-  // Fetch past provider rejections for this order from provider_errors
+  // Fetch past provider rejections for this order from provider_errors and metadata
   const rejectedProviderIds = new Set<string>();
+  if (Array.isArray(order?.metadata?.failed_provider_ids)) {
+    order.metadata.failed_provider_ids.forEach((pid: any) => {
+      if (pid) rejectedProviderIds.add(String(pid));
+    });
+  }
   if (order?.id) {
     const { data: pastErrors } = await supabaseAdmin
       .from("provider_errors")

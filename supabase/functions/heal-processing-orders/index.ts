@@ -115,12 +115,13 @@ serve(async (req) => {
       .select("id, network, package_size, customer_phone, amount, agent_id, profit, parent_profit, provider_order_id, order_type, created_at")
       .eq("status", "processing")
       .in("order_type", ["data", "airtime"])
-      .lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString())
       .order("created_at", { ascending: true })
       .limit(50);
 
     if (targetIds && targetIds.length > 0) {
       query = query.in("id", targetIds);
+    } else {
+      query = query.lt("created_at", new Date(Date.now() - 5 * 60 * 1000).toISOString());
     }
 
     const { data: stuckOrders, error } = await query;

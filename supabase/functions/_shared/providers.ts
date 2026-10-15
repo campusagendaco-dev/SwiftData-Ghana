@@ -254,14 +254,18 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   // Rule 1: Once an order is accepted by a provider with a valid provider-side ID,
   // lock to assigned provider ONLY. Non-acceptance IDs (failed_api_call, timeout, manual_fulfillment_mode)
   // or failed statuses MUST NOT lock the order so it can cascade/retry to SKPlug or other providers.
+  const isRefundedStatus = order?.status === "refunded" || /refund/i.test(String(order?.failure_reason || ""));
   const validProviderOrderId = Boolean(
     order?.provider_order_id &&
     order.provider_order_id !== "failed_api_call" &&
     order.provider_order_id !== "timeout" &&
-    order.provider_order_id !== "manual_fulfillment_mode"
+    order.provider_order_id !== "manual_fulfillment_mode" &&
+    order.provider_order_id !== "duplicate_cooldown" &&
+    order.provider_order_id !== "refunded" &&
+    !isRefundedStatus
   );
   const isFulfilledOrActive = ["fulfilled", "delivered", "completed"].includes(String(order?.status || "").toLowerCase()) ||
-    (order?.status === "processing" && validProviderOrderId);
+    (order?.status === "processing" && validProviderOrderId && !order?.failure_reason && !isRefundedStatus);
 
   const isAcceptedByProvider = Boolean(order?.provider_id) && validProviderOrderId && isFulfilledOrActive;
 
@@ -290,12 +294,15 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     }
   }
 
-  // If order was previously attempted on a provider and failed (e.g. Spendless failed_api_call or status failed),
-  // move that failed provider to the END of activeProviders so healthy providers (e.g. SKPlug, DataHub) are tried first!
+  // If order was previously attempted on a provider and failed or was refunded,
+  // demote that failed provider to the END of activeProviders so healthy verified providers are tried first!
   const hasFailedOnAssigned = Boolean(order?.provider_id) && (
     order?.provider_order_id === "failed_api_call" ||
+    order?.provider_order_id === "refunded" ||
     order?.status === "fulfillment_failed" ||
     order?.status === "failed" ||
+    order?.status === "refunded" ||
+    isRefundedStatus ||
     Boolean(order?.failure_reason)
   );
 
@@ -304,7 +311,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     if (failedIndex !== -1) {
       const [failedProv] = activeProviders.splice(failedIndex, 1);
       activeProviders.push(failedProv);
-      console.log(`[resolveProvidersForOrder] Order ${order?.id} previously failed on ${failedProv.name}. Demoted ${failedProv.name} to end of list.`);
+      console.log(`[resolveProvidersForOrder] Order ${order?.id} previously failed/refunded on ${failedProv.name}. Demoted ${failedProv.name} to end of list.`);
     }
   } else if (order?.provider_id && !hasFailedOnAssigned) {
     const assignedIndex = activeProviders.findIndex((p: any) => p.id === order.provider_id);
@@ -349,6 +356,15 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     if (nonBeneficiaryProv) {
       console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary bypass. Prioritizing ${nonBeneficiaryProv.name}...`);
       return [nonBeneficiaryProv, ...activeProviders.filter((p: any) => p.id !== nonBeneficiaryProv.id)];
+    }
+  }
+
+  // Exclude previously failed/refunded providers for this order if alternative verified active providers exist
+  if (Array.isArray(order?.metadata?.failed_provider_ids) && order.metadata.failed_provider_ids.length > 0) {
+    const untried = activeProviders.filter((p: any) => !order.metadata.failed_provider_ids.includes(p.id));
+    if (untried.length > 0) {
+      activeProviders = untried;
+      console.log(`[resolveProvidersForOrder] Excluded ${order.metadata.failed_provider_ids.length} failed/refunded provider(s) for order ${order?.id}. Available verified providers: ${activeProviders.map((p: any) => p.name).join(", ")}`);
     }
   }
 
