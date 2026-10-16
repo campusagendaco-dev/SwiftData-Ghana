@@ -513,7 +513,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           // If NOT approved, always use public price
           if (!isPaidAgent) {
             if (Number.isFinite(basePublic) && basePublic > 0) return basePublic;
-            return getPublicPrice(item.price);
+            return item.validity === "MTN Mash Up" ? item.price : getPublicPrice(item.price);
           }
 
           // Approved agent/sub-agent pricing logic
