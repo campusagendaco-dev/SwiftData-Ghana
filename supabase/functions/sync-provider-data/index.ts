@@ -267,18 +267,18 @@ serve(async (req: Request) => {
               else if (netKey === "MTN_COMBO" || netKey === "MASHUP") dbNetwork = "MTN Mash Up";
 
               const MASHUP_NAMES: Record<string, string> = {
-                "10": "511mb + 176 Mins",
-                "20": "2.6gb + 1077 Mins",
-                "30": "4.5gb + 1800 Mins",
-                "35": "3.4gb only",
-                "40": "6gb + 700 Mins",
-                "50": "10gb + 1800 Mins",
-                "55": "5.1gb only ",
-                "60": "6.8gb only",
-                "75": "8.5 only",
-                "80": "10gb only",
-                "85": "870mb + 360 Mins",
-                "100": "3.5gb + 14500 Mins"
+                "10": "511MB + 176 Mins",
+                "20": "1GB + 353 Mins",
+                "30": "2GB + 397 Mins",
+                "35": "3.5GB + 88 Mins",
+                "40": "4GB + 176 Mins",
+                "50": "3.5GB + 529 Mins",
+                "55": "5.5GB + 264 Mins",
+                "60": "6GB + 353 Mins",
+                "75": "7GB + 441 Mins",
+                "80": "6.5GB + 705 Mins",
+                "85": "8GB + 529 Mins",
+                "100": "8GB + 881 Mins"
               };
 
               for (const pkg of netPackages) {
