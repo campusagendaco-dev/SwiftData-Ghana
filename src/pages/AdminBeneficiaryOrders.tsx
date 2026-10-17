@@ -234,7 +234,7 @@ export default function AdminBeneficiaryOrders() {
         body: { phone: ord.customer_phone, network: ord.network || "MTN" }
       });
 
-      if (!vData?.exists) {
+      if (!vData?.exists && vData?.can_order !== true) {
         toast({
           title: "Still Not Whitelisted",
           description: `${ord.customer_phone} is still not added to the carrier beneficiary list. Order remains safely refunded.`,
@@ -356,7 +356,7 @@ export default function AdminBeneficiaryOrders() {
       const { data: vData } = await supabase.functions.invoke("verify-beneficiary", {
         body: { phone, network: network || "MTN" },
       });
-      if (vData?.exists) {
+      if (vData?.exists || vData?.can_order === true) {
         await promoteToInQueue(phone);
         return;
       }

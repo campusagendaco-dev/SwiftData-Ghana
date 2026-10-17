@@ -416,6 +416,9 @@ const BuyData = () => {
         } else if (data.verification_status === "NOT_REQUIRED" || data.status === "not_required") {
           setBeneficiaryStatus("not_required");
           setBeneficiaryMessage("Whitelisting not required.");
+        } else if (data.can_order === true) {
+          setBeneficiaryStatus("verified");
+          setBeneficiaryMessage(data.message || "Eligible for carrier delivery");
         } else {
           setBeneficiaryStatus("not_verified");
           setBeneficiaryMessage(data.message || "Not found on MTN carrier beneficiary whitelist.");

@@ -173,7 +173,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           return;
         }
 
-        if (data.exists === false) {
+        if (data.exists === false && data.can_order !== true) {
           setIsBeneficiaryVerified(false);
         } else {
           setIsBeneficiaryVerified(true);

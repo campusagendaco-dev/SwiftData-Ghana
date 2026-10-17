@@ -263,7 +263,7 @@ serve(async (req: Request) => {
             success: true,
             data: {
               request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
-              network: network || "Telecel",
+              network: net || "Telecel",
               count: normalizedNumbers.length,
               summary: {
                 total: normalizedNumbers.length,
@@ -479,6 +479,16 @@ serve(async (req: Request) => {
       intlFormat = "233" + cleanDigits.slice(1);
     }
 
+    if (localFormat.length !== 10 || !localFormat.startsWith("0")) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid phone number. Must be a valid 10-digit Ghana mobile number (e.g. 024XXXXXXX).",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
+
     const formatsToTest = [...new Set([localFormat, intlFormat])];
 
     // Check if the number has successful order history
@@ -536,21 +546,7 @@ serve(async (req: Request) => {
                 { headers: { ...corsHeaders, "Content-Type": "application/json" } }
               );
             } else if (vStatus === "NOT_VERIFIED" || match.can_order === false) {
-              console.log(`[verify-beneficiary] Number ${localFormat} is NOT_VERIFIED on BundleZone.`);
-              if (body.check_only === true || body.strict === true) {
-                return new Response(
-                  JSON.stringify({
-                    success: true,
-                    exists: false,
-                    status: "not_verified",
-                    verification_status: "NOT_VERIFIED",
-                    can_order: false,
-                    is_non_beneficiary: true,
-                    message: match.message || "The recipient number is not verified on the MTN beneficiary list.",
-                  }),
-                  { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-                );
-              }
+              console.log(`[verify-beneficiary] Number ${localFormat} is NOT_VERIFIED on BundleZone, checking DataHub and DataMart fallback...`);
             }
           }
         }

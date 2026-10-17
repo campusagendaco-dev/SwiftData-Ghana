@@ -122,21 +122,17 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
       return { ok: true };
     }
 
-    const { data: provider, error: pErr } = await supabaseClient
+    const { data: provider } = await supabaseClient
       .from("providers")
       .select("*")
       .eq("handler_type", "datahub")
       .eq("is_active", true)
       .maybeSingle();
 
-    if (pErr || !provider) {
-      console.log("[initialize-payment] No active DataHub provider found, skipping beneficiary check.");
-      return { ok: true };
-    }
-
-    const cleanUrl = (provider.base_url || "").trim().replace(/\/+$/, "");
+    const apiKey = (Deno as any).env.get("DATAHUB_API_KEY") || provider?.api_key || "";
+    const rawBaseUrl = (Deno as any).env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external";
+    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
     const url = `${cleanUrl}/purchases/verify-number`;
-    const apiKey = provider.api_key || "";
 
     const cleanDigits = phone.replace(/\D/g, "");
     let localFormat = cleanDigits;
@@ -170,41 +166,85 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
     let exists = false;
     let text = "";
 
-    for (const testPhone of formatsToTest) {
-      console.log(`[initialize-payment-beneficiary] Testing DataHub variant: ${testPhone}`);
-      try {
-        const res = await fetchViaDb(supabaseClient, url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": apiKey,
-            "Authorization": `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            phone: testPhone,
-            is_ported_number: true
-          }),
-          disableFallback: true,
-        }, 12);
+    if (apiKey) {
+      for (const testPhone of formatsToTest) {
+        console.log(`[initialize-payment-beneficiary] Testing DataHub variant: ${testPhone}`);
+        try {
+          const res = await fetchViaDb(supabaseClient, url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": apiKey,
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              phone: testPhone,
+              is_ported_number: true
+            }),
+            disableFallback: true,
+          }, 12);
 
-        text = await res.text();
-        console.log(`[initialize-payment-beneficiary] Response for ${testPhone} status ${res.status}: ${text}`);
+          text = await res.text();
+          console.log(`[initialize-payment-beneficiary] Response for ${testPhone} status ${res.status}: ${text}`);
 
-        if (res.ok) {
-          let parsed: any = {};
-          try { parsed = JSON.parse(text); } catch { /* ignore */ }
-          if (parsed.success || parsed.data?.exists) {
-            exists = true;
-            break;
+          if (res.ok) {
+            let parsed: any = {};
+            try { parsed = JSON.parse(text); } catch { /* ignore */ }
+            if (parsed.success || parsed.data?.exists) {
+              exists = true;
+              break;
+            }
           }
+        } catch (err) {
+          console.error(`[initialize-payment-beneficiary] Error testing ${testPhone}:`, err);
         }
-      } catch (err) {
-        console.error(`[initialize-payment-beneficiary] Error testing ${testPhone}:`, err);
       }
     }
 
     if (exists) {
       return { ok: true };
+    }
+
+    // Fallback: Check BundleZone Beneficiary Check API
+    const { data: bzProvider } = await supabaseClient
+      .from("providers")
+      .select("*")
+      .eq("handler_type", "bundlezone")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    const bzApiKey = (Deno as any).env.get("BUNDLEZONE_API_KEY") || bzProvider?.api_key || "";
+    const rawBzUrl = (Deno as any).env.get("BUNDLEZONE_BASE_URL") || bzProvider?.base_url || "https://bundlezone.shop";
+    const bzCheckUrl = `${rawBzUrl.trim().replace(/\/+$/, "")}/api/beneficiary-check.php`;
+
+    if (bzApiKey) {
+      try {
+        const bzRes = await fetchViaDb(supabaseClient, bzCheckUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": bzApiKey,
+            "Authorization": `Bearer ${bzApiKey}`,
+          },
+          body: JSON.stringify({
+            network: "YELLO",
+            phone_number: localFormat,
+          }),
+          disableFallback: true,
+        }, 10);
+
+        if (bzRes.ok) {
+          const bzJson = await bzRes.json().catch(() => ({}));
+          const results = bzJson.data?.results || [];
+          const match = results.find((r: any) => r.phone_number === localFormat) || results[0];
+          if (match && (String(match.verification_status || "").toUpperCase() === "VERIFIED" || match.can_order === true)) {
+            console.log(`[initialize-payment-beneficiary] Number ${localFormat} verified via BundleZone.`);
+            return { ok: true };
+          }
+        }
+      } catch (bzErr) {
+        console.warn("[initialize-payment] BundleZone check error:", bzErr);
+      }
     }
 
     let errorMessage = `The recipient number ${phone} has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked. Please check the recipient or try another number.`;

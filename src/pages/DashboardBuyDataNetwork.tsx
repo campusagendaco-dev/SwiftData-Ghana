@@ -290,7 +290,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           return;
         }
 
-        if (data.exists === false) {
+        if (data.exists === false && data.can_order !== true) {
           const errMsg = data.message || "This MTN number is not whitelisted by the network.";
           setBeneficiaryError(errMsg);
           setBeneficiaryModalPhone(normalizedPhone);
@@ -811,7 +811,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         return false; 
       }
 
-      if (data.exists === false) {
+      if (data.exists === false && data.can_order !== true) {
         const errMsg = data.message || "This MTN number is not whitelisted by the network.";
         setBeneficiaryError(errMsg);
         setBeneficiaryModalPhone(phoneToCheck);
