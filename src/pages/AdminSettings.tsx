@@ -216,9 +216,9 @@ const AdminSettings = () => {
     mashup_export_threshold: "10",
     mashup_whatsapp_number: "",
     mashup_delivery_delay_mins: "15",
-    wati_token: "wati_ea74c4f2-6576-4843-83ce-80e77dcdbf36.-GT_zdfVSBt0CfBNqHYobLUcpKiOcCSPMtbL9_anZ2YWg48Xp3WxJno6plOTJT370pLCoiOKKZD_7XFd-TvHtIf7Q1ZUNKPxeiCp7nLRJ8hsCvB04SpGNeQtnh11x3la",
-    wati_endpoint: "https://live-mt-server.wati.io/10263110",
-    meta_whatsapp_access_token: "EAAUiG1CZBGlIBSgZCxTy0PYwDGJwZBOUrN2l2gZCMWkndV3DpNAAMJ0emlP8X9toY8YDCiVeHtgn4YEr13Fxu1w4Yn1qFDCP68Sj4wNgAZB6TWqu2mCZBIdPPSW8JX3Jy4oLfKvFl579qerRfUcDZC1aOjlhgZBuqbqHW7fcftnz8Kofuox3eUKNtm0VkzfsXytzPkvMVISA1V9t021MJfc4SvSM9dbFVuhX0b8qZCAIOSpgU70Je8jDw3ri91Gs7BrVuG1ZAXpZBGNpDIglp5C5IdLnczCPAZDZD",
+    wati_token: "",
+    wati_endpoint: "",
+    meta_whatsapp_access_token: "",
     meta_whatsapp_phone_number_id: "",
   });
 

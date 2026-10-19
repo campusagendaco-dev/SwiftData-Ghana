@@ -101,8 +101,8 @@ export default function AdminBroadcast() {
 
   // WaSender Direct Connect State
   const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [personalToken, setPersonalToken] = useState<string>(() => localStorage.getItem("wasender_token") || "8958|70MbVNGwKgFAZVQ58IlSgdIdX7v9mxg7iThgHSio41d01332");
-  const [sessionId, setSessionId] = useState<string>(() => localStorage.getItem("wasender_session_id") || "82188");
+  const [personalToken, setPersonalToken] = useState<string>(() => localStorage.getItem("wasender_token") || "");
+  const [sessionId, setSessionId] = useState<string>(() => localStorage.getItem("wasender_session_id") || "");
   const [linkMethod, setLinkMethod] = useState<"qr" | "passkey">("qr");
   const [connectingSession, setConnectingSession] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
