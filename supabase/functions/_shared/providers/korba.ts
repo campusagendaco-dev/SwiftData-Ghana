@@ -17,8 +17,8 @@ export class KorbaAdapter implements ProviderAdapter {
     data: PurchaseData
   ): Promise<ProviderResponse> {
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
     if (!KORBA_CLIENT_KEY || !KORBA_SECRET_KEY) {
       return { ok: false, reason: "Korba credentials not configured (check database settings or env)." };
@@ -390,8 +390,8 @@ export class KorbaAdapter implements ProviderAdapter {
     reference: string
   ): Promise<ProviderResponse> {
     const KORBA_CLIENT_ID = Deno.env.get("KORBA_CLIENT_ID") || provider?.settings?.client_id || "2419";
-    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "189eae68808be2089295211d065ecf14d4f34b3c";
-    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
+    const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
+    const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
     let txId = String(providerOrderId || reference || "").trim();
     if (txId && !txId.endsWith("_disb")) {

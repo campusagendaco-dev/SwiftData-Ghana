@@ -2526,8 +2526,8 @@ serve(async (req: Request) => {
 
       case "test_korba_payload": {
         const { targetUrl, payload: testPayload } = body;
-        const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "189eae68808be2089295211d065ecf14d4f34b3c";
-        const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "bba479d442dadc39bd96f27c04cd43b5c5a4287fbfd19b7c82abc00df7660d8a";
+        const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || "";
+        const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || "";
 
         const sortedKeys = Object.keys(testPayload).sort();
         const messageParts = [];

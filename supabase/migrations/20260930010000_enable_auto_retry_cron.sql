@@ -19,8 +19,8 @@ SELECT cron.schedule(
       headers := json_build_object(
         'Content-Type', 'application/json',
         'Authorization', 'Bearer ' || COALESCE(
-          (SELECT current_setting('app.settings.service_role_key', true)),
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzb2NkanBmbGVjZHV1bW9waWpuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTY3OTc0MywiZXhwIjoyMDkxMjU1NzQzfQ.1QNTQHip6aZGlHn8A87S2VVYhu4yQ_BG58C98424MH4'
+          NULLIF(current_setting('app.settings.service_role_key', true), ''),
+          (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'supabase_service_role' LIMIT 1)
         )
       )::jsonb,
       body := '{}'::jsonb
