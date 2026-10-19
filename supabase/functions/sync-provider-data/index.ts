@@ -360,6 +360,7 @@ serve(async (req: Request) => {
 
       // 2. Sync Balance
       const balanceUrlVariations = [
+        `${cleanBase}/api/balance.php`,
         `${cleanBase}/balance`,
         `${cleanBase}/api/balance`
       ];
@@ -370,8 +371,8 @@ serve(async (req: Request) => {
           const balanceRes = await fetchWithTimeout(url, { headers: requestHeaders }, 3500);
           if (balanceRes.ok) {
             const bResult = await balanceRes.json();
-            const rawBal = bResult.data?.rawBalance || bResult.data?.balance || bResult.balance;
-            if (rawBal !== undefined) {
+            const rawBal = bResult.data?.balance?.amount ?? bResult.data?.rawBalance ?? (typeof bResult.data?.balance === "object" ? bResult.data?.balance?.formatted : bResult.data?.balance) ?? bResult.balance;
+            if (rawBal !== undefined && rawBal !== null) {
               balance = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.]/g, "")) : Number(rawBal);
               console.log(`[sync:${handlerType}] Found balance: ${balance}`);
               break;

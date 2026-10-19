@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { User, Mail, Phone, Shield, Camera, Lock, Eye, EyeOff, Fingerprint, Smartphone, Trash2, Key, Loader2, Plus, AlertTriangle, Bell } from "lucide-react";
+import { User, Users, Mail, Phone, Shield, Camera, Lock, Eye, EyeOff, Fingerprint, Smartphone, Trash2, Key, Loader2, Plus, AlertTriangle, Bell } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWebAuthn } from "@/hooks/useWebAuthn";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -17,7 +17,7 @@ import MfaSetupWidget from "@/components/MfaSetupWidget";
 import { getFunctionErrorMessage } from "@/lib/function-errors";
 
 const DashboardAccountSettings = () => {
-  const { user, profile, refreshProfile, isAdmin } = useAuth();
+  const { user, profile, refreshProfile, isAdmin, savedAccounts, openAccountSwitcher } = useAuth();
   const navigate = useNavigate();
   const { toast: uiToast } = useToast();
   const [saving, setSaving] = useState(false);
@@ -747,6 +747,88 @@ const DashboardAccountSettings = () => {
               <p className="text-[10px] text-muted-foreground">
                 Note: For security, changing your PIN will trigger a 24-hour hold on withdrawals.
               </p>
+            </CardContent>
+          </Card>
+
+          {/* ── Saved Accounts & Switcher ── */}
+          <Card className="border-none bg-card shadow-sm mt-8">
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    <Users className="w-5 h-5 text-amber-400" />
+                    Saved Accounts & Multi-Account Switcher
+                  </CardTitle>
+                  <CardDescription>
+                    Switch seamlessly between personal, agent, and administrative accounts on this device.
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={openAccountSwitcher}
+                  className="rounded-xl font-bold gap-2 bg-amber-400 hover:bg-amber-300 text-black shadow-md shadow-amber-400/20 shrink-0"
+                >
+                  <Users className="w-4 h-4" />
+                  Manage Accounts ({savedAccounts.length})
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                {savedAccounts.map((acc) => {
+                  const isActive = acc.userId === user?.id;
+                  return (
+                    <div
+                      key={acc.userId}
+                      onClick={() => openAccountSwitcher()}
+                      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-amber-400/10 border-amber-400/30"
+                          : "bg-secondary/40 border-white/5 hover:border-white/10"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar className="w-9 h-9 border border-white/10">
+                          <AvatarImage src={acc.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${acc.userId}`} />
+                          <AvatarFallback className="text-xs font-bold">{acc.fullName?.charAt(0) || "U"}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold">{acc.fullName || acc.email.split("@")[0]}</p>
+                            {isActive && (
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                Active Now
+                              </span>
+                            )}
+                            {acc.isAdmin && (
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
+                                Admin
+                              </span>
+                            )}
+                            {acc.isAgent && (
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-400">
+                                Agent
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground font-mono">{acc.email}</p>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        variant={isActive ? "outline" : "secondary"}
+                        className="rounded-xl text-xs font-bold"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openAccountSwitcher();
+                        }}
+                      >
+                        {isActive ? "Active Account" : "Switch To"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
 

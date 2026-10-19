@@ -26,6 +26,7 @@ export class ChunkErrorBoundary extends Component<Props, State> {
       msg.includes("postgres_changes") ||
       msg.includes("wallet-balance-header") ||
       msg.includes("subscribe()") ||
+      msg.includes("useauth must be used within authprovider") ||
       error?.name === "ChunkLoadError" ||
       error?.name === "ReferenceError";
 

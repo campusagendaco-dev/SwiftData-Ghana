@@ -235,7 +235,7 @@ export const getSubAdminInfo = (profile: any) => {
 
   // A profile is ONLY a restricted sub-admin if explicitly set to sub-admin with limited permissions and not a master admin
   const isSubAdminFlag = (markupsObj.is_sub_admin === true || profile.is_sub_admin === true) && !isMasterAdminEmail;
-  const isRestrictedByPerms = markupsObj.hasOwnProperty("admin_permissions") && perms.length < 8 && !isMasterAdminEmail;
+  const isRestrictedByPerms = Object.prototype.hasOwnProperty.call(markupsObj, "admin_permissions") && perms.length < 8 && !isMasterAdminEmail;
 
   const isRestrictedSubAdmin = !isExplicitSuperAdmin && (isSubAdminFlag || isRestrictedByPerms);
 
@@ -321,7 +321,7 @@ export const ROUTE_PERM_MAP: Record<string, string> = {
 };
 
 const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
-  const { signOut, profile } = useAuth();
+  const { signOut, profile, openAccountSwitcher, savedAccounts } = useAuth();
   const { isDark, toggleDark } = useAppTheme();
   const location = useLocation();
   const navigate = useNavigate();
@@ -444,6 +444,29 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
         </button>
 
         <button
+          type="button"
+          onClick={() => {
+            onNavigate?.();
+            openAccountSwitcher();
+          }}
+          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-bold border transition-all ${
+            isDark
+              ? "bg-amber-400/10 border-amber-400/20 text-amber-400 hover:bg-amber-400/20"
+              : "bg-amber-500/10 border-amber-500/20 text-amber-700 hover:bg-amber-500/20"
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <Users className="w-4 h-4" />
+            <span>Switch Account</span>
+          </div>
+          {savedAccounts.length > 1 && (
+            <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[9px] font-black flex items-center justify-center">
+              {savedAccounts.length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={handleSignOut}
           className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold text-red-500 border border-red-500/20 bg-red-500/8 hover:bg-red-500/15 transition-all"
         >
@@ -458,7 +481,7 @@ const AdminLayout = () => {
   const [open, setOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const { isDark, toggleDark } = useAppTheme();
-  const { profile } = useAuth();
+  const { profile, openAccountSwitcher, savedAccounts } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -620,6 +643,26 @@ const AdminLayout = () => {
             </div>
 
             <div className="ml-auto flex items-center gap-2.5">
+              {/* Account Switcher Button */}
+              <button
+                type="button"
+                onClick={openAccountSwitcher}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                  isDark
+                    ? "bg-amber-400/10 border-amber-400/20 text-amber-400 hover:bg-amber-400/20"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-700 hover:bg-amber-500/20"
+                }`}
+                title="Switch Account"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Switch</span>
+                {savedAccounts.length > 1 && (
+                  <span className="w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
+                    {savedAccounts.length}
+                  </span>
+                )}
+              </button>
+
               {/* Dark/light toggle */}
               <button
                 onClick={toggleDark}

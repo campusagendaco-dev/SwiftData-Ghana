@@ -86,6 +86,9 @@ export class StandardAdapter implements ProviderAdapter {
       if (endpoint === "bundles") {
         return [`${clean}/api/bundles.php`];
       }
+      if (endpoint === "balance") {
+        return [`${clean}/api/balance.php`];
+      }
       return [`${clean}/api/order.php`];
     }
 
@@ -181,6 +184,7 @@ export class StandardAdapter implements ProviderAdapter {
 
       if (isMashUp) {
         let comboCost = Number((data as any).comboCost || 0);
+        const cleanPkgKey = pkgSize.toLowerCase().replace(/[^a-z0-9.]/g, "");
 
         const VALID_COMBO_COSTS = new Set([10, 20, 30, 35, 40, 50, 55, 60, 75, 80, 85, 100]);
 
@@ -1035,13 +1039,22 @@ export class StandardAdapter implements ProviderAdapter {
           }
 
           if (handlerType === "xcel") {
+            delete headers["X-API-Key"];
             headers["x-api-key"] = apiKey;
             headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
           } else if (handlerType === "bundlezone") {
+            delete headers["X-API-Key"];
             headers["x-api-key"] = apiKey;
             headers["User-Agent"] = "BundleZone-Client/1.0";
-          } else if (handlerType === "skdataplug" || handlerType === "datamart") {
+          } else if (handlerType === "datamart") {
+            // DataMart strictly expects only X-API-Key. Duplicate lowercase x-api-key or Authorization JWT breaks verification
+            headers["X-API-Key"] = apiKey;
+            delete headers["x-api-key"];
+            delete headers["Authorization"];
+            headers["User-Agent"] = "SwiftDataGH/2.0";
+          } else if (handlerType === "skdataplug") {
             headers["Authorization"] = `Bearer ${apiKey}`;
+            delete headers["X-API-Key"];
             headers["x-api-key"] = apiKey;
             headers["User-Agent"] = "SwiftDataGH/2.0";
           } else if (handlerType !== "spendless" && handlerType !== "qhowmenzconsult") {

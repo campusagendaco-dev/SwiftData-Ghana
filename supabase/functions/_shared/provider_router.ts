@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import { fetchViaDb } from "./db_proxy.ts";
 import { getActiveProviders, resolveProvidersForOrder, Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
-import { isNonRetryableTerminalError, isDuplicateOrderError } from "./providers/utils.ts";
+import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure } from "./providers/utils.ts";
+import { autoSubmitBeneficiaryNumber } from "./beneficiary_auto_submit.ts";
 
 export interface DispatchResult {
   ok: boolean;
@@ -186,9 +187,42 @@ export async function dispatchOrderWithFailover(
         };
       }
 
+      // Beneficiary Whitelist Rejection Guard: Auto-submit recipient number to carrier whitelist
+      // and failover immediately to non-beneficiary bypass providers (DataMart, SKDataPlug, Spendless)
+      const isBeneficiaryErr = isBeneficiaryFailure(lastFailureReason);
+      if (isBeneficiaryErr) {
+        console.warn(`[HybridRouter] Order ${order.id} rejected due to beneficiary whitelist at ${provider.name} (${lastFailureReason}). Auto-submitting recipient number to carrier whitelist...`);
+        
+        if (order.customer_phone) {
+          autoSubmitBeneficiaryNumber(supabaseAdmin, order.customer_phone, "provider_rejection_auto_submit", order.id)
+            .then((subRes) => console.log(`[HybridRouter] Beneficiary auto-submission for ${order.customer_phone}:`, subRes.success ? "SUBMITTED" : "FAILED"))
+            .catch((subErr) => console.error(`[HybridRouter] Beneficiary auto-submission error:`, subErr));
+        }
+
+        order.metadata = {
+          ...(order.metadata || {}),
+          bypass_beneficiary: true,
+          route_via_datamart: true,
+          non_beneficiary_auto_submitted: true,
+          last_beneficiary_rejection: lastFailureReason,
+        };
+
+        // If other providers remain, re-order remaining providers so non-beneficiary providers (DataMart, SKPlug, Spendless) are attempted first
+        if (!isLastProvider) {
+          const remaining = activeProviders.slice(i + 1);
+          const nonBenProviders = remaining.filter((p: any) => p.handler_type === "datamart" || p.handler_type === "skdataplug" || p.handler_type === "spendless" || p.settings?.is_beneficiary_fallback === true);
+          const otherRemaining = remaining.filter((p: any) => !nonBenProviders.includes(p));
+          
+          if (nonBenProviders.length > 0) {
+            console.log(`[HybridRouter] Re-ordering cascade: Prioritizing ${nonBenProviders.map((p: any) => p.name).join(", ")} for non-beneficiary delivery bypass.`);
+            activeProviders.splice(i + 1, remaining.length, ...nonBenProviders, ...otherRemaining);
+          }
+        }
+      }
+
       // Financial & Terminal Recipient Safety Guard: If rejection is a permanent client/recipient error, HALT CASCADE immediately
       // This prevents multi-provider duplicate charges, vendor bans, and company financial losses
-      if (isNonRetryableTerminalError(lastFailureReason)) {
+      if (!isBeneficiaryErr && isNonRetryableTerminalError(lastFailureReason)) {
         console.warn(`[HybridRouter] Halting cascade for order ${order.id}: Terminal recipient error (${lastFailureReason}). Prevented duplicate provider debits.`);
         return {
           ok: false,
@@ -212,6 +246,19 @@ export async function dispatchOrderWithFailover(
         })).catch(() => {});
       }
     }
+  }
+
+  const finalIsBeneficiary = isBeneficiaryFailure(lastFailureReason);
+  if (finalIsBeneficiary && order?.id) {
+    Promise.resolve(supabaseAdmin.from("orders").update({
+      metadata: {
+        ...(order.metadata || {}),
+        in_beneficiary_queue: true,
+        non_beneficiary_failed: true,
+        auto_submitted_to_carrier: true,
+      },
+      failure_reason: `MTN Beneficiary Error: Recipient line is not on carrier whitelist. Auto-submitted for carrier approval and queued. (${lastFailureReason})`
+    }).eq("id", order.id)).catch(() => {});
   }
 
   console.warn(`[HybridRouter] Order ${order.id} was REJECTED by ALL ${activeProviders.length} active provider(s). Transitioning to fulfillment_failed.`);

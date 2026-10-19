@@ -17,6 +17,7 @@ import {
   HandCoins,
   Settings,
   Users2,
+  Users,
   SlidersHorizontal,
   FileText,
   GraduationCap,
@@ -94,7 +95,7 @@ interface DashboardSidebarProps {
 const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, user: authUser } = useAuth();
+  const { profile, signOut, user: authUser, openAccountSwitcher, savedAccounts } = useAuth();
   const { theme, isDark } = useAppTheme();
   const { isOnline, quality } = useConnectivity();
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved || profile?.api_access_enabled);
@@ -237,6 +238,25 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
                 <p className={cn("text-sm font-black truncate", isDark ? "text-white" : "text-gray-900")}>{profile?.full_name || "User"}</p>
                 <p className="text-primary text-[10px] font-mono font-bold">{accountId}</p>
               </div>
+              <button
+                type="button"
+                onClick={openAccountSwitcher}
+                title="Switch Account"
+                className={cn(
+                  "px-2.5 py-1 rounded-xl text-[10px] font-black transition-all flex items-center gap-1.5 border shadow-sm shrink-0",
+                  isDark
+                    ? "bg-amber-400/10 hover:bg-amber-400 hover:text-black text-amber-400 border-amber-400/20"
+                    : "bg-amber-500/10 hover:bg-amber-500 hover:text-white text-amber-700 border-amber-500/20"
+                )}
+              >
+                <Users className="w-3 h-3" />
+                <span>Switch</span>
+                {savedAccounts.length > 1 && (
+                  <span className="w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center -ml-0.5">
+                    {savedAccounts.length}
+                  </span>
+                )}
+              </button>
             </div>
             <div className="mt-4 flex items-center justify-between relative z-10">
               <Badge className={cn(
@@ -423,7 +443,20 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         </nav>
 
         {/* ── Premium Footer ── */}
-        <div className={cn("p-4 border-t", isDark ? "border-white/5" : "border-gray-100")}>
+        <div className={cn("p-4 border-t space-y-2", isDark ? "border-white/5" : "border-gray-100")}>
+          <button
+            onClick={openAccountSwitcher}
+            className={cn(
+              "flex items-center justify-center gap-2.5 w-full h-10 rounded-xl text-xs font-bold transition-all duration-200 border",
+              isDark
+                ? "bg-white/[0.03] hover:bg-white/[0.08] text-white/80 border-white/10"
+                : "bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200"
+            )}
+          >
+            <Users className="w-3.5 h-3.5 text-amber-400" />
+            <span>Switch Account ({savedAccounts.length})</span>
+          </button>
+
           <button
             onClick={handleSignOut}
             className={cn(

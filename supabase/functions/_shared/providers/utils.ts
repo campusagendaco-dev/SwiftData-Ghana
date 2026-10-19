@@ -180,14 +180,42 @@ export function parseProviderResponse(body: string, contentType: string | null):
 }
 
 /**
+ * Checks whether an error is due to an MTN SME recipient not being verified on the carrier beneficiary whitelist.
+ * Beneficiary rejections are NOT terminal — the recipient line can be auto-submitted to the carrier whitelist,
+ * and the order can be immediately fulfilled by non-beneficiary bypass providers (DataMart / SKDataPlug).
+ */
+export function isBeneficiaryFailure(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  const r = String(reason).toLowerCase();
+  return (
+    r.includes("beneficiary") ||
+    r.includes("whitelist") ||
+    r.includes("not on") ||
+    r.includes("not whitelisted") ||
+    r.includes("not added") ||
+    r.includes("not verified") ||
+    r.includes("unverified") ||
+    r.includes("carrier approval") ||
+    (r.includes("not allowed") && (r.includes("carrier") || r.includes("network") || r.includes("beneficiary")))
+  );
+}
+
+/**
  * Checks whether an order failure reason represents a permanent, non-retryable recipient/client error.
  * These errors MUST NEVER be cascaded to another provider or automatically reprocessed,
  * as doing so wastes API calls, triggers provider penalties, and risks double-debits.
- * NOTE: Duplicate orders are NOT terminal errors; they are transient carrier/aggregator deduplications
- * and should be held in cooldown for auto-routing after 60 mins.
+ * NOTE: Duplicate orders and Beneficiary Whitelist errors are NOT terminal errors:
+ * - Duplicate orders are held in cooldown for auto-routing after 60 mins.
+ * - Beneficiary errors are submitted for whitelisting and auto-failover to DataMart/SKPlug.
  */
 export function isNonRetryableTerminalError(reason: string | null | undefined): boolean {
   if (!reason) return false;
+  
+  // Guard: Beneficiary errors are NOT terminal — they can be auto-submitted and routed to non-beneficiary providers!
+  if (isBeneficiaryFailure(reason)) {
+    return false;
+  }
+
   const r = String(reason).toLowerCase();
   return (
     r.includes("invalid number") ||
@@ -204,7 +232,7 @@ export function isNonRetryableTerminalError(reason: string | null | undefined): 
     r.includes("daily limit") ||
     r.includes("inactive number") ||
     r.includes("suspended") ||
-    r.includes("unregistered") ||
+    (r.includes("unregistered") && !r.includes("beneficiary")) ||
     r.includes("line not found") ||
     r.includes("subscriber not found")
   );

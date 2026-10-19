@@ -179,6 +179,9 @@ export const BeneficiaryWhitelistChecker: React.FC<BeneficiaryWhitelistCheckerPr
       };
 
       setSingleResult(result);
+      if (data.auto_submitted && !isVerified && !isNotRequired) {
+        setSubmittedSingleSuccess(true);
+      }
     } catch (err: any) {
       toast({
         title: "Check Failed",

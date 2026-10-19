@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
+import { autoSubmitBeneficiaryNumber, autoSubmitBeneficiaryNumbers } from "../_shared/beneficiary_auto_submit.ts";
 
 declare const Deno: any;
 
@@ -319,6 +320,17 @@ serve(async (req: Request) => {
                 not_verified: unverifiedCount,
                 pending: pendingCount,
               };
+
+              const unverifiedNumbers = results
+                .filter((r: any) => String(r.verification_status || "").toUpperCase() !== "VERIFIED" && r.can_order !== true)
+                .map((r: any) => r.phone_number)
+                .filter(Boolean);
+
+              if (unverifiedNumbers.length > 0) {
+                autoSubmitBeneficiaryNumbers(supabaseClient, unverifiedNumbers, "verify_beneficiary_bundlezone_bulk")
+                  .then(subRes => console.log(`[verify-beneficiary] Auto-submitted ${subRes.submittedCount} unverified numbers from BundleZone check.`))
+                  .catch(e => console.error("[verify-beneficiary] Bulk auto-submit error:", e));
+              }
             }
             return new Response(JSON.stringify(bzData), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -375,6 +387,13 @@ serve(async (req: Request) => {
               });
 
               const vCount = dmResults.filter(r => r.can_order).length;
+              const unverifiedNumbers = dmResults.filter(r => !r.can_order).map(r => r.phone_number);
+              if (unverifiedNumbers.length > 0) {
+                autoSubmitBeneficiaryNumbers(supabaseClient, unverifiedNumbers, "verify_beneficiary_datamart_bulk")
+                  .then(subRes => console.log(`[verify-beneficiary] Auto-submitted ${subRes.submittedCount} unverified numbers from DataMart check.`))
+                  .catch(e => console.error("[verify-beneficiary] Bulk auto-submit error:", e));
+              }
+
               return new Response(
                 JSON.stringify({
                   success: true,
@@ -421,6 +440,13 @@ serve(async (req: Request) => {
       });
 
       const vCount = fallbackResults.filter(r => r.can_order).length;
+      const unverifiedNumbers = fallbackResults.filter(r => !r.can_order).map(r => r.phone_number);
+      if (unverifiedNumbers.length > 0) {
+        autoSubmitBeneficiaryNumbers(supabaseClient, unverifiedNumbers, "verify_beneficiary_fallback_bulk")
+          .then(subRes => console.log(`[verify-beneficiary] Auto-submitted ${subRes.submittedCount} unverified numbers from fallback check.`))
+          .catch(e => console.error("[verify-beneficiary] Bulk auto-submit error:", e));
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -696,6 +722,11 @@ serve(async (req: Request) => {
       }
     } catch { /* ignore */ }
 
+    // Proactively submit the unverified number to the carrier whitelist in background
+    autoSubmitBeneficiaryNumber(supabaseClient, localFormat, "verify_beneficiary_single")
+      .then(res => console.log(`[verify-beneficiary] Auto-submitted ${localFormat} to carrier whitelist:`, res.success))
+      .catch(e => console.error("[verify-beneficiary] Background auto-submit error:", e));
+
     // If caller specifically requested check_only or strict check
     if (body.check_only === true || body.strict === true) {
       return new Response(
@@ -706,7 +737,8 @@ serve(async (req: Request) => {
           verification_status: "NOT_VERIFIED",
           can_order: false,
           is_non_beneficiary: true,
-          message: errorMessage || "Recipient is not on the MTN beneficiary list."
+          auto_submitted: true,
+          message: errorMessage || "Recipient is not on the MTN beneficiary list. Automatically submitted for carrier approval."
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -722,7 +754,8 @@ serve(async (req: Request) => {
         can_order: true,
         is_non_beneficiary: true,
         route_via_datamart: true,
-        message: "Number is not on beneficiary list, but eligible for fallback carrier delivery." 
+        auto_submitted: true,
+        message: "Number is not on beneficiary list, but has been automatically submitted for carrier approval and is eligible for fallback carrier delivery." 
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

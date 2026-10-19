@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock, Send } from "lucide-react";
+import { Save, AlertCircle, Phone, MessageSquare, Percent, MessageCircle, Gift, Sparkles, Video, Upload, Trash2, Trash, Loader2, Loader, Globe, Database, Plus, ExternalLink, Activity, Shield, GraduationCap, RefreshCw, Wifi, Users, TrendingUp, Wallet, Trophy, Clock, Send, Zap } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { logAudit } from "@/utils/auditLogger";
@@ -132,6 +132,7 @@ const AdminSettings = () => {
     auto_gateway_switch_by_package: false,
     beneficiary_verification_enabled: true,
     allow_non_beneficiary_continue: true,
+    auto_failover_non_beneficiary_to_datamart: true,
     holiday_mode_enabled: false,
     holiday_message: "",
     disable_ordering: false,
@@ -487,6 +488,7 @@ const AdminSettings = () => {
           auto_gateway_switch_by_package: d.auto_gateway_switch_by_package || false,
           beneficiary_verification_enabled: d.beneficiary_verification_enabled !== false,
           allow_non_beneficiary_continue: d.allow_non_beneficiary_continue !== false,
+          auto_failover_non_beneficiary_to_datamart: d.auto_failover_non_beneficiary_to_datamart === true,
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
           disable_ordering: d.disable_ordering || false,
@@ -568,6 +570,10 @@ const AdminSettings = () => {
           mashup_export_threshold: String(d.mashup_export_threshold || "10"),
           mashup_whatsapp_number: d.mashup_whatsapp_number || "",
           mashup_delivery_delay_mins: String(d.mashup_delivery_delay_mins || "15"),
+          wati_token: String(d.wati_token || ""),
+          wati_endpoint: String(d.wati_endpoint || ""),
+          meta_whatsapp_access_token: String(d.meta_whatsapp_access_token || ""),
+          meta_whatsapp_phone_number_id: String(d.meta_whatsapp_phone_number_id || ""),
           show_scrolling_ad: d.show_scrolling_ad || false,
           scrolling_ad_text: d.scrolling_ad_text || "",
         });
@@ -657,6 +663,10 @@ const AdminSettings = () => {
       wati_endpoint: (settings.wati_endpoint || "").trim(),
       meta_whatsapp_access_token: (settings.meta_whatsapp_access_token || "").trim(),
       meta_whatsapp_phone_number_id: (settings.meta_whatsapp_phone_number_id || "").trim(),
+      auto_failover_non_beneficiary_to_datamart: settings.auto_failover_non_beneficiary_to_datamart === true,
+      beneficiary_verification_enabled: settings.beneficiary_verification_enabled !== false,
+      allow_non_beneficiary_continue: settings.allow_non_beneficiary_continue !== false,
+      auto_gateway_switch_by_package: settings.auto_gateway_switch_by_package || false,
     };
 
     try {

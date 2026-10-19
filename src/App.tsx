@@ -21,6 +21,7 @@ import AudioUnlocker from "@/components/AudioUnlocker";
 import NotificationPopup from "@/components/NotificationPopup";
 import { DataPromoPopupModal } from "@/components/DataPromoPopupModal";
 import { OfflineAlert } from "@/components/OfflineAlert";
+import { AccountSwitcherModal } from "@/components/AccountSwitcherModal";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TraditionalBackground } from "@/components/TraditionalBackground";
@@ -553,6 +554,7 @@ const AppContent = () => {
         <NotificationPopup />
         <AIConcierge />
         <PushNotificationPrompt variant="floating" />
+        <AccountSwitcherModal />
         {!isAgentStore && <WhatsAppButton />}
         {!isAgentStore && <FreeDataButton />}
         {!isAgentStore && <DataPromoPopupModal />}

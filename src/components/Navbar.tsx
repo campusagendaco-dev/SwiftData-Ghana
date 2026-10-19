@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu, X, LogOut, LayoutDashboard, ShieldCheck,
   TrendingUp, Home, HelpCircle, ChevronRight,
-  User, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, Palette, Droplets, BookOpen,
+  User, Users, Settings, Wallet, ClipboardList, RotateCcw, Store, Sun, Moon, Zap, Palette, Droplets, BookOpen,
 } from "lucide-react";
 import { THEMES } from "@/lib/themes";
 import { useState, useEffect, useRef } from "react";
@@ -34,7 +34,7 @@ const Navbar = () => {
   const lastScrollY = useRef(0);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile, isAdmin, signOut } = useAuth();
+  const { user, profile, isAdmin, signOut, openAccountSwitcher, savedAccounts } = useAuth();
    const { isDark, toggleDark, theme, setThemeId } = useAppTheme();
    const drawerRef = useRef<HTMLDivElement>(null);
    const themePickerRef = useRef<HTMLDivElement>(null);
@@ -439,6 +439,28 @@ const Navbar = () => {
                   </Link>
                 )}
 
+                {/* Account Switcher Button */}
+                {(user || savedAccounts.length > 0) && (
+                  <motion.button
+                    type="button"
+                    onClick={openAccountSwitcher}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className={`relative flex items-center gap-1.5 rounded-xl font-medium transition-all duration-150 ${
+                      scrolled ? "px-2 py-[5px] text-xs" : "px-2.5 py-[7px] text-sm"
+                    } ${linkIdle}`}
+                    title="Switch Account"
+                  >
+                    <Users className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden lg:inline text-xs font-bold">Switch</span>
+                    {savedAccounts.length > 1 && (
+                      <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[9px] font-black flex items-center justify-center -ml-0.5">
+                        {savedAccounts.length}
+                      </span>
+                    )}
+                  </motion.button>
+                )}
+
                 {user ? (
                   <button
                     onClick={handleSignOut}
@@ -470,6 +492,22 @@ const Navbar = () => {
               {/* ── Mobile right ── */}
               <div className="md:hidden flex items-center gap-1.5">
                 <NotificationCenter isDark={isDark} />
+                {(user || savedAccounts.length > 0) && (
+                  <motion.button
+                    type="button"
+                    onClick={openAccountSwitcher}
+                    whileTap={{ scale: 0.9 }}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 relative ${linkIdle}`}
+                    title="Switch Account"
+                  >
+                    <Users className="w-3.5 h-3.5 text-amber-400" />
+                    {savedAccounts.length > 1 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
+                        {savedAccounts.length}
+                      </span>
+                    )}
+                  </motion.button>
+                )}
                 <motion.button
                   onClick={toggleDark}
                   whileTap={{ scale: 0.9, rotate: 15 }}
@@ -728,6 +766,35 @@ const Navbar = () => {
                 </div>
 
                 <div className="h-px my-2" style={{ background: drawerDivider }} />
+
+                {(user || savedAccounts.length > 0) && (
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      openAccountSwitcher();
+                    }}
+                    whileHover={{ backgroundColor: "rgba(251,191,36,0.08)" }}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-amber-400/10 text-amber-400">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <p className={isDark ? "text-white font-bold" : "text-gray-900 font-bold"}>
+                          Switch Account
+                        </p>
+                        <p className={`text-[10px] ${isDark ? "text-white/40" : "text-gray-500"}`}>
+                          {savedAccounts.length} saved on device
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-400">
+                      Manage
+                    </span>
+                  </motion.button>
+                )}
 
                 {user ? (
                   <motion.button

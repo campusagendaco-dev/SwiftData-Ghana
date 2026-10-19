@@ -60,6 +60,7 @@ export function getProviderDetails(
     const pmLower = String(paymentMethod || metadata?.payment_method || metadata?.gateway || metadata?.payment_type || "").toLowerCase();
     const isDirect = pmLower === "direct_debit";
     const isWalletTransfer = pmLower === "wallet";
+    const isKorba = pmLower === "korba";
     
     // Explicit Admin deposit detection
     const isExplicitAdmin = 
@@ -78,6 +79,15 @@ export function getProviderDetails(
     );
 
     const ref = providerOrderId || metadata?.paystack_reference || metadata?.reference || metadata?.transaction_id || null;
+
+    if (isKorba) {
+      return {
+        name: "Korba MoMo",
+        badgeClass: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+        refId: ref,
+        isPendingDispatch: false,
+      };
+    }
 
     if (isExplicitAdmin || (!hasPaystackRef && !isDirect && !isWalletTransfer)) {
       return {

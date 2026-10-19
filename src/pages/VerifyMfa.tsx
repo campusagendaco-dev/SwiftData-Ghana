@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 const VerifyMfa = () => {
-  const { user, refreshMfaStatus, isMfaChallenged } = useAuth();
+  const { user, loading: authLoading, refreshMfaStatus, isMfaChallenged } = useAuth();
   const navigate = useNavigate();
   
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -20,6 +20,7 @@ const VerifyMfa = () => {
 
   // Fetch active MFA TOTP factor on load
   useEffect(() => {
+    if (authLoading) return;
     if (!user) {
       navigate("/login");
       return;
@@ -168,6 +169,14 @@ const VerifyMfa = () => {
       handleVerify();
     }
   }, [otp, factorId]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#09090b]">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-[#09090b]">
