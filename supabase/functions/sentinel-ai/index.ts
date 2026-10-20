@@ -13,12 +13,19 @@ serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
-  const authRes = await verifyAdmin(req, supabaseAdmin);
-  if (!authRes.success) {
-    return new Response(JSON.stringify({ error: authRes.error }), {
-      status: authRes.status || 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
+  const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
+  const isCron = Boolean(cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret));
+
+  if (!isCron) {
+    const authRes = await verifyAdmin(req, supabaseAdmin);
+    if (!authRes.success) {
+      return new Response(JSON.stringify({ error: authRes.error }), {
+        status: authRes.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   }
 
   try {

@@ -4,24 +4,28 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push";
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
-// SwiftData Secure VAPID Credentials (Defaults loaded during installation)
+// SwiftData Secure VAPID Credentials
 const DEFAULT_VAPID_PUBLIC = "BBunKshlnxwoqC83k7a01ApJwKgZ0L-QqEySWnz0EuJL1eS7lneeiKemLOQ9Z7DYD82KptTcbYjeQKaDNN1o5gM";
-const DEFAULT_VAPID_PRIVATE = "tlBnrV4TPdLoHwzOlBCG10RMlDdwy9o9PZkXsIUzcgM";
 
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") || DEFAULT_VAPID_PUBLIC;
-const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") || DEFAULT_VAPID_PRIVATE;
+const VAPID_PRIVATE_KEY = (Deno.env.get("VAPID_PRIVATE_KEY") || "").trim();
 
-try {
-  webpush.setVapidDetails(
-    "mailto:admin@swiftdatagh.shop",
-    VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY
-  );
-} catch (vapidErr) {
-  console.error("[Push] Failed to initialize VAPID credentials:", vapidErr);
+if (VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(
+      "mailto:admin@swiftdatagh.shop",
+      VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY
+    );
+  } catch (vapidErr) {
+    console.error("[Push] Failed to initialize VAPID credentials:", vapidErr);
+  }
+} else {
+  console.warn("[Push] VAPID_PRIVATE_KEY environment secret is not configured.");
 }
 
 let supabaseAdminInstance: any = null;
@@ -75,31 +79,33 @@ serve(async (req: Request) => {
     // Security Auth Verification (P1-7)
     const authHeader = req.headers.get("Authorization");
     const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
     const token = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
+    const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
 
     const isServiceRole = Boolean(serviceRoleKey && token === serviceRoleKey);
+    const isCron = Boolean(cronSecret && (token === cronSecret || headerCronSecret === cronSecret));
     let isAdmin = false;
     let authUserId: string | null = null;
 
-    if (!isServiceRole && token) {
-      const { data: authData } = await supabaseAdmin.auth.getUser(token);
-      if (authData?.user) {
-        authUserId = authData.user.id;
-        const { data: roleData } = await supabaseAdmin
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", authUserId)
-          .eq("role", "admin")
-          .limit(1);
-        if (roleData && roleData.length > 0) {
-          isAdmin = true;
+    if (!isServiceRole && !isCron && token) {
+      const adminCheck = await verifyAdmin(req, supabaseAdmin);
+      if (adminCheck.success) {
+        isAdmin = true;
+        authUserId = adminCheck.user?.id || null;
+      } else {
+        const { data: authData } = await supabaseAdmin.auth.getUser(token);
+        if (authData?.user) {
+          authUserId = authData.user.id;
         }
       }
     }
 
-    if (isBroadcast || validUserIds.length > 0) {
-      if (!isServiceRole && !isAdmin) {
-        return new Response(JSON.stringify({ error: "Forbidden: Admin or service role privileges required for broadcast push notifications." }), {
+    const syncWhatsapp = body.sync_whatsapp === true;
+
+    if (isBroadcast || syncWhatsapp || validUserIds.length > 0) {
+      if (!isServiceRole && !isCron && !isAdmin) {
+        return new Response(JSON.stringify({ error: "Forbidden: Admin, cron, or service role privileges required for broadcast or WhatsApp-synced push notifications." }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -107,7 +113,7 @@ serve(async (req: Request) => {
     } else {
       // Single user/endpoint target
       const isSelf = Boolean(authUserId && validUserId && authUserId === validUserId);
-      if (!isServiceRole && !isAdmin && !isSelf) {
+      if (!isServiceRole && !isCron && !isAdmin && !isSelf) {
         // Check if this is an authentic database trigger event with an existing user_notifications row
         let isDbTrigger = false;
         if (id && validUserId) {
@@ -129,6 +135,13 @@ serve(async (req: Request) => {
           });
         }
       }
+    }
+
+    if (!VAPID_PRIVATE_KEY) {
+      return new Response(JSON.stringify({ error: "Server misconfigured: missing VAPID_PRIVATE_KEY secret" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (!hasEndpoint && !validUserId && validUserIds.length === 0 && !isBroadcast) {
@@ -277,12 +290,12 @@ serve(async (req: Request) => {
     if (failedEndpoints.length > 0) {
       console.log(`[Push] Cleaning up ${failedEndpoints.length} expired subscription tokens.`);
       const delChunk = failedEndpoints.slice(0, 100);
-      supabaseAdmin
-        .from("push_subscriptions")
-        .delete()
-        .in("endpoint", delChunk)
-        .then(() => {})
-        .catch((delErr: any) => console.warn("[Push] Cleanup error:", delErr?.message));
+      Promise.resolve(
+        supabaseAdmin
+          .from("push_subscriptions")
+          .delete()
+          .in("endpoint", delChunk)
+      ).catch((delErr: any) => console.warn("[Push] Cleanup error:", delErr?.message));
     }
 
     // 5. Persist audit log

@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import * as XLSX from "xlsx";
 import {
   ShieldCheck,
   Search,
@@ -320,8 +319,9 @@ export const BeneficiaryWhitelistChecker: React.FC<BeneficiaryWhitelistCheckerPr
   // Excel / CSV File Dropzone
   const handleFileUpload = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const XLSX = await import("xlsx");
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
@@ -365,8 +365,9 @@ export const BeneficiaryWhitelistChecker: React.FC<BeneficiaryWhitelistCheckerPr
   };
 
   // Export Results to Excel
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (bulkResults.length === 0) return;
+    const XLSX = await import("xlsx");
     const exportData = bulkResults.map((r, i) => ({
       "#": i + 1,
       "Phone Number": r.phone_number,

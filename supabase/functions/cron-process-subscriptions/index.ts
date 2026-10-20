@@ -1,13 +1,34 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
-serve(async () => {
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
+    const bearerToken = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+    const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
+    const isCron = Boolean(cronSecret && (bearerToken === cronSecret || headerCronSecret === cronSecret));
+
+    if (!isCron) {
+      const authRes = await verifyAdmin(req, supabaseAdmin);
+      if (!authRes.success) {
+        return new Response(JSON.stringify({ error: authRes.error || "Unauthorized" }), {
+          status: authRes.status || 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Fetch Scheduled SMS templates from system settings
     const { data: settings } = await supabaseAdmin

@@ -281,13 +281,31 @@ const DashboardSettings = () => {
     if (!user) return;
     setLoadingCustomers(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("parent_agent_id", user.id)
-        .order("created_at", { ascending: false });
+      const [{ data, error }, walletRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("*")
+          .eq("parent_agent_id", user.id)
+          .eq("is_agent", false)
+          .order("created_at", { ascending: false }),
+        Promise.resolve(
+          (supabase.from("store_wallets" as any))
+            .select("customer_id, balance")
+            .eq("agent_id", user.id)
+        ).catch(() => ({ data: null })),
+      ]);
       if (error) throw error;
-      setCustomers(data || []);
+      const walletMap = new Map<string, number>();
+      if (Array.isArray((walletRes as any)?.data)) {
+        (walletRes as any).data.forEach((w: any) => {
+          if (w?.customer_id) walletMap.set(w.customer_id, Number(w.balance || 0));
+        });
+      }
+      const enriched = (data || []).map((c: any) => ({
+        ...c,
+        balance: walletMap.has(c.user_id) ? walletMap.get(c.user_id) : Number(c.balance || 0),
+      }));
+      setCustomers(enriched);
     } catch (e: any) {
       console.error("Error loading customers:", e);
       toast({ title: "Error loading customers", description: e.message, variant: "destructive" });
@@ -360,16 +378,55 @@ const DashboardSettings = () => {
   };
 
   const handleSaveBalance = async () => {
-    if (!editingCustomer) return;
+    if (!editingCustomer || !user) return;
+    const parsedBalance = Number(newBalance);
+    if (!Number.isFinite(parsedBalance) || parsedBalance < 0) {
+      toast({
+        title: "Invalid balance",
+        description: "Please enter a valid non-negative balance amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (
+      editingCustomer.parent_agent_id !== user.id ||
+      editingCustomer.user_id === user.id ||
+      editingCustomer.is_agent ||
+      editingCustomer.is_super_admin ||
+      editingCustomer.is_sub_admin
+    ) {
+      toast({
+        title: "Unauthorized action",
+        description: "You can only adjust balances for storefront customers registered under your store.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSavingBalance(true);
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ balance: Number(newBalance) })
-        .eq("user_id", editingCustomer.user_id);
-      if (error) throw error;
+      const { error: storeWalletError } = await (supabase.from("store_wallets" as any))
+        .upsert(
+          {
+            customer_id: editingCustomer.user_id,
+            agent_id: user.id,
+            balance: parsedBalance,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "customer_id,agent_id" }
+        );
 
-      toast({ title: "Balance updated!", description: `Set ${editingCustomer.full_name || editingCustomer.email}'s balance to ₵${Number(newBalance).toFixed(2)}`, variant: "default" });
+      if (storeWalletError) {
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ balance: parsedBalance })
+          .eq("user_id", editingCustomer.user_id)
+          .eq("parent_agent_id", user.id)
+          .eq("is_agent", false);
+        if (profileError) throw profileError;
+      }
+
+      toast({ title: "Balance updated!", description: `Set ${editingCustomer.full_name || editingCustomer.email}'s balance to ₵${parsedBalance.toFixed(2)}`, variant: "default" });
       setEditingCustomer(null);
       fetchCustomers();
     } catch (e: any) {

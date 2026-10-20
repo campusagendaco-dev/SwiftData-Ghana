@@ -622,6 +622,7 @@ const OrderStatus = () => {
       href={getWhatsAppUrl()}
       target="_blank"
       rel="noopener noreferrer"
+      aria-label="Chat with WhatsApp Support"
       className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl shadow-emerald-950/80 border border-emerald-400/40 transition-all hover:scale-105 active:scale-95 group backdrop-blur-md"
       title="Need assistance? Chat with WhatsApp Support"
     >
@@ -952,7 +953,7 @@ const OrderStatus = () => {
           </div>
 
           {/* Main Tracking Card */}
-          <div className="relative overflow-hidden rounded-3xl bg-[#0b0c12]/95 border border-slate-800/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] transition-all duration-300">
+          <div aria-live="polite" className="relative overflow-hidden rounded-3xl bg-[#0b0c12]/95 border border-slate-800/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] transition-all duration-300">
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.04] via-transparent to-black/60 pointer-events-none" />
             
             {/* Top Status Header Pill */}
@@ -965,18 +966,20 @@ const OrderStatus = () => {
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 font-mono">{meta.badge} Status</span>
               </div>
 
-              <div 
+              <button 
+                type="button"
                 onClick={() => { navigator.clipboard.writeText(reference); toast.success("Reference copied!"); }}
                 className="cursor-pointer group flex items-center gap-1.5 text-[10px] font-mono text-slate-400 bg-slate-900/90 hover:bg-slate-800 px-2.5 py-1 rounded-full border border-slate-800 transition-colors"
                 title="Click to copy reference"
+                aria-label="Copy order reference"
               >
                 <span>REF: {reference.slice(0, 10).toUpperCase()}</span>
                 <Copy className="w-3 h-3 text-slate-500 group-hover:text-amber-400 transition-colors" />
-              </div>
+              </button>
             </div>
 
             {/* Hero Icon & Delivery Details */}
-            <div className="px-6 pt-6 pb-8 flex flex-col items-center text-center relative z-10">
+            <div aria-live="polite" className="px-6 pt-6 pb-8 flex flex-col items-center text-center relative z-10">
               <div className="relative mb-5">
                 {orderStatus === "fulfilled" ? (
                   <div className="relative w-28 h-28 flex items-center justify-center">
@@ -1336,6 +1339,7 @@ const OrderStatus = () => {
                       }}
                       className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all"
                       title="Copy Token"
+                      aria-label="Copy prepaid meter token"
                     >
                       <Copy className="w-4 h-4" />
                     </button>
@@ -1347,7 +1351,7 @@ const OrderStatus = () => {
 
             {/* Real-time Gateway Terminal Logs */}
             {createdAt && (orderStatus === "paid" || orderStatus === "processing" || orderStatus === "pending" || orderStatus === "fulfilled" || orderStatus === "fulfillment_failed") && (
-              <div className="mx-6 mb-6 p-3.5 rounded-2xl bg-[#07080d] border border-slate-800/90 font-mono text-[10px] space-y-1.5 max-h-[140px] overflow-y-auto shadow-inner">
+              <div aria-live="polite" className="mx-6 mb-6 p-3.5 rounded-2xl bg-[#07080d] border border-slate-800/90 font-mono text-[10px] space-y-1.5 max-h-[140px] overflow-y-auto shadow-inner">
                 <div className="text-slate-400 text-[9px] uppercase font-bold tracking-wider mb-1 flex items-center justify-between border-b border-slate-800/80 pb-1">
                   <span className="flex items-center gap-1 text-slate-300"><Terminal className="w-3 h-3 text-amber-400" /> Telemetry Feed</span>
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1375,6 +1379,7 @@ const OrderStatus = () => {
                 <button 
                   onClick={() => { navigator.clipboard.writeText(reference); toast.success("Reference copied!"); }} 
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all text-xs font-bold active:scale-95"
+                  aria-label="Copy transaction reference"
                 >
                   <Copy className="w-3.5 h-3.5 text-amber-400" />
                   <span>Copy</span>
@@ -1390,6 +1395,7 @@ const OrderStatus = () => {
               disabled={isRefreshing} 
               className="flex-1 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
               title="Check exact live delivery status from carrier"
+              aria-label="Refresh and check live delivery status"
             >
               <Activity className={cn("w-4 h-4 text-cyan-400", isRefreshing && "animate-spin")} />
               <span>{isRefreshing ? "Verifying with Telecom Carrier..." : "Check Live Delivery Status"}</span>
@@ -1407,6 +1413,7 @@ const OrderStatus = () => {
               onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')} 
               className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white shrink-0"
               title="Back to lookup"
+              aria-label="Back to order lookup"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -1425,6 +1432,9 @@ const OrderStatus = () => {
                     className="fixed inset-0 bg-black/95 backdrop-blur-xl" 
                   />
                   <motion.div 
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Digital E-Receipt"
                     initial={{ opacity: 0, scale: 0.95, y: 15 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -1447,6 +1457,7 @@ const OrderStatus = () => {
                         </div>
                         <button 
                           onClick={() => setShowReceipt(false)} 
+                          aria-label="Close digital receipt"
                           className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
                         >
                           <XCircle className="w-4 h-4" />
@@ -1612,9 +1623,10 @@ const OrderStatus = () => {
                 value={searchPhone}
                 onChange={(e) => setSearchPhone(e.target.value)}
                 placeholder="Phone number or order reference..."
+                aria-label="Phone number or order reference"
                 className="w-full py-4 pl-6 pr-14 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-inner font-mono"
               />
-              <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md" style={{ backgroundColor: brandColor }}>
+              <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md" style={{ backgroundColor: brandColor }}>
                 <Search className="w-4 h-4 text-black font-bold" />
               </button>
             </form>
@@ -1682,20 +1694,21 @@ const OrderStatus = () => {
             value={searchPhone}
             onChange={(e) => setSearchPhone(e.target.value)}
             placeholder="Track order by phone number or reference..."
+            aria-label="Track order by phone number or reference"
             className="w-full py-4 pl-6 pr-14 rounded-2xl bg-[#0b0c12]/90 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-2xl font-mono"
           />
-          <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md" style={{ backgroundColor: brandColor }}>
+          <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md" style={{ backgroundColor: brandColor }}>
             <Search className="w-4 h-4 text-black font-bold" />
           </button>
         </form>
 
         {loadingTracker && !trackerData ? (
-          <div className="py-20 flex flex-col items-center gap-4">
+          <div aria-live="polite" className="py-20 flex flex-col items-center gap-4">
              <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 font-mono">Connecting Telemetry Gateway...</p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div aria-live="polite" className="space-y-6">
             {/* Telemetry Scanner Card */}
             <div className="relative rounded-3xl border border-slate-800/90 bg-[#0b0c12]/90 backdrop-blur-2xl overflow-hidden shadow-2xl">
               <div className="p-6 pb-4">

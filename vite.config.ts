@@ -16,6 +16,36 @@ export default defineConfig(({ mode }) => ({
   build: {
     sourcemap: false, // Ensures source code cannot be reconstructed from the bundle
     minify: "esbuild",
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("xlsx")) return "vendor-xlsx";
+          if (id.includes("recharts")) return "vendor-recharts";
+          if (id.includes("d3-") || id.includes("victory-vendor")) return "vendor-d3";
+          if (id.includes("framer-motion") || id.includes("motion-dom") || id.includes("motion-utils")) return "vendor-motion";
+          if (id.includes("@supabase")) return "vendor-supabase";
+          if (id.includes("lucide-react")) return "vendor-icons";
+          if (id.includes("@radix-ui")) return "vendor-radix";
+          if (id.includes("@tanstack")) return "vendor-query";
+          if (id.includes("html2canvas")) return "vendor-canvas";
+          if (id.includes("date-fns")) return "vendor-date";
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("\\react\\") ||
+            id.includes("\\react-dom\\") ||
+            id.includes("react-router") ||
+            id.includes("@remix-run/router") ||
+            id.includes("scheduler")
+          ) {
+            return "vendor-react";
+          }
+          return undefined;
+        },
+      },
+    },
   },
   esbuild: {
     drop: ["console", "debugger"], // Removes all console.logs to prevent leaking sensitive info

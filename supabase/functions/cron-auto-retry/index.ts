@@ -5,24 +5,124 @@ import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError } from "../_shared/providers/utils.ts";
 import { log } from "../_shared/logger.ts";
 import { sendPaymentSms, normalizePhone } from "../_shared/sms.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-user-access-token, x-cron-secret",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
+
+/**
+ * Checks whether an order is an SME data bundle on MTN, TELECEL, or AT/AIRTELTIGO
+ * that must NEVER be routed or failed over to Korba.
+ */
+function isSmeDataBundle(order: any): boolean {
+  const orderType = String(order?.order_type || "data").toLowerCase();
+  const isDataOrder = orderType === "data" || !orderType || orderType === "sme";
+  if (!isDataOrder) return false;
+
+  const uppercaseNet = String(order?.network || "").toUpperCase().trim();
+  const orderCategory = String(order?.metadata?.category || order?.metadata?.package_category || "").toLowerCase().trim();
+  const pkgUpper = String(order?.package_size || "").toUpperCase().trim();
+
+  if (uppercaseNet.startsWith("KORBA") || orderCategory === "korba" || order?.metadata?.provider_type === "korba") {
+    return false;
+  }
+
+  const isKorbaPackagePattern =
+    pkgUpper.startsWith("GHS") ||
+    pkgUpper.includes("RACT_DATA") ||
+    pkgUpper.includes("KOKROKOO") ||
+    pkgUpper.includes("MIDNIGHT") ||
+    pkgUpper.includes("SOCIAL") ||
+    pkgUpper.includes("VIDEO") ||
+    pkgUpper.includes("IDD");
+  if (isKorbaPackagePattern) return false;
+
+  const isSmeNetwork =
+    uppercaseNet.includes("MTN") ||
+    uppercaseNet.includes("TELECEL") ||
+    uppercaseNet.includes("VODA") ||
+    uppercaseNet === "AT" ||
+    uppercaseNet.startsWith("AT ") ||
+    uppercaseNet.endsWith(" AT") ||
+    uppercaseNet.includes("AIRTEL") ||
+    uppercaseNet.includes("TIGO");
+
+  const isStandardSmeSize = /^\d+(\.\d+)?\s*(GB|MB)$/i.test(pkgUpper);
+
+  return (
+    orderCategory === "affordable" ||
+    orderCategory === "sme" ||
+    orderCategory.includes("sme") ||
+    isSmeNetwork ||
+    isStandardSmeSize
+  );
+}
+
+/**
+ * Resolves provider API keys and Paystack/Korba credentials by prioritizing Deno.env.get(...)
+ * before falling back to DB provider.api_key or v_system_settings_with_secrets.
+ */
+function resolveProviderWithEnvSecrets(provider: any, dbSecrets: Record<string, string> = {}): any {
+  if (!provider) return provider;
+  const handlerType = String(provider.handler_type || "standard").toLowerCase();
+  const envApiKey =
+    handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+    handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+    handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+    handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+    handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+    handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+    handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
+    Deno.env.get("DATA_PROVIDER_API_KEY");
+
+  const dbFallbackKey =
+    provider.api_key ||
+    (handlerType === "korba" ? (dbSecrets["korba_secret_key"] || dbSecrets["korba_api_key"]) : "") ||
+    "";
+
+  return {
+    ...provider,
+    api_key: String(envApiKey || dbFallbackKey || "").trim(),
+  };
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const CRON_SECRET = (Deno.env.get("CRON_SECRET") || "").trim();
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return new Response(JSON.stringify({ error: "Missing environment credentials" }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Missing environment credentials" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+
+  // 1. Auth Guard: Require SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, or verified Admin session
+  const authHeader = req.headers.get("Authorization");
+  const userToken = req.headers.get("x-user-access-token");
+  const cronSecretHeader = req.headers.get("x-cron-secret")?.trim();
+  const token = (userToken || authHeader?.replace(/^Bearer\s+/i, "") || "").trim();
+
+  const isServiceRole = Boolean(SUPABASE_SERVICE_ROLE_KEY && token === SUPABASE_SERVICE_ROLE_KEY.trim());
+  const isCronSecret = Boolean(CRON_SECRET && (token === CRON_SECRET || cronSecretHeader === CRON_SECRET));
+
+  if (!isServiceRole && !isCronSecret) {
+    const authResult = await verifyAdmin(req, supabaseAdmin);
+    if (!authResult.success) {
+      return new Response(JSON.stringify({ error: authResult.error || "Unauthorized" }), {
+        status: authResult.status || 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
 
   try {
     console.log("[cron-auto-retry] Running hybrid self-healing background worker...");
@@ -93,6 +193,23 @@ serve(async (req) => {
     (noProviderOrders || []).forEach(o => orderMap.set(o.id, o));
     (duplicateOrders || []).forEach(o => orderMap.set(o.id, o));
 
+    // Fetch Korba provider IDs to strictly prevent SME bundles from ever routing or failing over to Korba
+    const { data: korbaProviders } = await supabaseAdmin
+      .from("providers")
+      .select("id, name, handler_type")
+      .or("handler_type.eq.korba,name.ilike.%korba%");
+    const korbaProviderIds = new Set<string>((korbaProviders || []).map((p: any) => String(p.id)));
+
+    // Fetch system settings secrets as fallback only after Deno.env.get(...)
+    const { data: settingsRows } = await supabaseAdmin
+      .from("v_system_settings_with_secrets")
+      .select("key, value")
+      .in("key", ["paystack_secret_key", "korba_secret_key", "korba_client_key", "korba_api_key"]);
+    const dbSecrets: Record<string, string> = {};
+    (settingsRows || []).forEach((r: any) => {
+      if (r?.key && r?.value) dbSecrets[String(r.key)] = String(r.value);
+    });
+
     // 5. Proactively poll in-transit processing orders with active provider IDs (detect refunded or delivered orders)
     const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
     const { data: inTransitProcessingOrders } = await supabaseAdmin
@@ -120,9 +237,36 @@ serve(async (req) => {
 
           if (!prov || !prov.is_active) continue;
 
-          const adapter = getProviderAdapter(prov.handler_type || "standard");
+          const isKorbaProv = String(prov.handler_type || "").toLowerCase() === "korba" || korbaProviderIds.has(String(prov.id));
+          if (isKorbaProv && isSmeDataBundle(pOrder)) {
+            console.warn(`[cron-auto-retry] Guard: SME bundle ${pOrder.id} (${pOrder.network} ${pOrder.package_size}) cannot be fulfilled by Korba. Re-routing to SME aggregator...`);
+            const prevFailed = Array.isArray(pOrder.metadata?.failed_provider_ids) ? pOrder.metadata.failed_provider_ids : [];
+            const updatedFailedIds = Array.from(new Set([...prevFailed, prov.id, ...Array.from(korbaProviderIds)]));
+            pOrder.provider_id = null;
+            pOrder.provider_order_id = null;
+            pOrder.status = "fulfillment_failed";
+            pOrder.failure_reason = "SME bundle excluded from Korba; re-routing to SME provider";
+            pOrder.metadata = {
+              ...(pOrder.metadata || {}),
+              exclude_korba: true,
+              failed_provider_ids: updatedFailedIds,
+            };
+            await supabaseAdmin.from("orders").update({
+              status: "fulfillment_failed",
+              provider_id: null,
+              provider_order_id: null,
+              failure_reason: pOrder.failure_reason,
+              metadata: pOrder.metadata,
+              updated_at: new Date().toISOString(),
+            }).eq("id", pOrder.id);
+            orderMap.set(pOrder.id, pOrder);
+            continue;
+          }
+
+          const resolvedProv = resolveProviderWithEnvSecrets(prov, dbSecrets);
+          const adapter = getProviderAdapter(resolvedProv.handler_type || "standard");
           const activeOrderId = pOrder.provider_order_id || pOrder.id;
-          const statusRes = await adapter.checkStatus(supabaseAdmin, prov, activeOrderId, pOrder.id);
+          const statusRes = await adapter.checkStatus(supabaseAdmin, resolvedProv, activeOrderId, pOrder.id);
           const rawStatus = String(statusRes?.status || "").toLowerCase().trim();
 
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
@@ -148,13 +292,15 @@ serve(async (req) => {
             })).catch(() => {});
 
             const prevFailed = Array.isArray(pOrder.metadata?.failed_provider_ids) ? pOrder.metadata.failed_provider_ids : [];
-            const updatedFailedIds = Array.from(new Set([...prevFailed, prov.id]));
+            const korbaExclusions = isSmeDataBundle(pOrder) ? Array.from(korbaProviderIds) : [];
+            const updatedFailedIds = Array.from(new Set([...prevFailed, prov.id, ...korbaExclusions]));
 
             pOrder.provider_order_id = null;
             pOrder.status = "fulfillment_failed";
             pOrder.failure_reason = failReason;
             pOrder.metadata = {
               ...(pOrder.metadata || {}),
+              ...(isSmeDataBundle(pOrder) ? { exclude_korba: true } : {}),
               failed_provider_ids: updatedFailedIds,
               previous_provider: prov.name,
               last_refund_reason: failReason,
@@ -277,20 +423,38 @@ serve(async (req) => {
       
       const failReason = order.failure_reason || "";
       const isRefunded = /refund/i.test(failReason) || order.status === "refunded";
+      const smeBundle = isSmeDataBundle(order);
       const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
-      const updatedFailedIds = order.provider_id && (isRefunded || order.status === "fulfillment_failed")
-        ? Array.from(new Set([...prevFailed, order.provider_id]))
-        : prevFailed;
+      const baseFailedIds = order.provider_id && (isRefunded || order.status === "fulfillment_failed")
+        ? [...prevFailed, order.provider_id]
+        : [...prevFailed];
+      if (smeBundle) {
+        korbaProviderIds.forEach((kid) => baseFailedIds.push(kid));
+      }
+      const updatedFailedIds = Array.from(new Set(baseFailedIds));
+      const safeProviderId = smeBundle && order.provider_id && korbaProviderIds.has(String(order.provider_id))
+        ? null
+        : order.provider_id;
 
-      const dispatch = await dispatchOrderWithFailover(supabaseAdmin, {
+      let dispatch = await dispatchOrderWithFailover(supabaseAdmin, {
         ...order,
-        provider_id: order.provider_id,
+        provider_id: safeProviderId,
         provider_order_id: null,
         metadata: {
           ...(order.metadata || {}),
+          ...(smeBundle ? { exclude_korba: true } : {}),
           failed_provider_ids: updatedFailedIds,
         }
       });
+
+      if (smeBundle && dispatch.provider_id && korbaProviderIds.has(String(dispatch.provider_id))) {
+        console.error(`[cron-auto-retry] Guard blocked SME bundle ${order.id} from routing to Korba (${dispatch.provider_id}).`);
+        dispatch = {
+          ok: false,
+          status: "fulfillment_failed",
+          reason: "SME data bundle cannot be routed to Korba.",
+        };
+      }
 
       if (dispatch.status === "fulfilled") {
         await supabaseAdmin.from("orders").update({

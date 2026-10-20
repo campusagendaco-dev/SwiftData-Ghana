@@ -2,6 +2,20 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
+const DEFAULT_MAX_FREE_DATA_GB = 2;
+
+function parsePackageSizeGb(rawSize: string): number | null {
+  const cleaned = String(rawSize || "").trim().toUpperCase();
+  const match = cleaned.match(/(\d+(?:\.\d+)?)\s*(TB|GB|MB)?/i);
+  if (!match) return null;
+  const val = parseFloat(match[1]);
+  if (!Number.isFinite(val) || val <= 0) return null;
+  const unit = (match[2] || "GB").toUpperCase();
+  if (unit === "MB") return val / 1024;
+  if (unit === "TB") return val * 1024;
+  return val;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -51,6 +65,75 @@ serve(async (req) => {
       });
     }
 
+    // Pre-validate promo code and enforce server-side maximum package size cap BEFORE burning the claim
+    const { data: promoRow } = await supabase
+      .from("promo_codes")
+      .select("*")
+      .eq("code", promoCode)
+      .maybeSingle();
+
+    if (!promoRow || promoRow.is_active === false) {
+      return new Response(JSON.stringify({ error: "Invalid or inactive promo code", success: false }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!promoRow.is_free) {
+      return new Response(JSON.stringify({ error: "This code is for discounts, not free data", success: false }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const cleanPkgSizeStr = packageSize.replace(/\s+/g, "").toUpperCase();
+    const requestedGb = parsePackageSizeGb(packageSize);
+
+    // Determine server-side package size limit from promo_codes row or default 2GB cap
+    const explicitPromoPkg = typeof promoRow.package_size === "string" && promoRow.package_size.trim()
+      ? promoRow.package_size.trim()
+      : null;
+    const explicitMaxPkg = promoRow.max_package_size !== undefined && promoRow.max_package_size !== null && String(promoRow.max_package_size).trim() !== ""
+      ? String(promoRow.max_package_size).trim()
+      : null;
+
+    if (explicitPromoPkg) {
+      const normalizedAllowedPkg = explicitPromoPkg.replace(/\s+/g, "").toUpperCase();
+      const allowedGb = parsePackageSizeGb(explicitPromoPkg);
+      const matchesExact = cleanPkgSizeStr === normalizedAllowedPkg;
+      const withinGb = allowedGb !== null && requestedGb !== null && requestedGb <= allowedGb;
+      if (!matchesExact && !withinGb) {
+        return new Response(JSON.stringify({
+          error: `This promo code is only valid for packages up to ${explicitPromoPkg}.`,
+          success: false,
+        }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      const maxAllowedGb = (explicitMaxPkg ? parsePackageSizeGb(explicitMaxPkg) : null) ?? DEFAULT_MAX_FREE_DATA_GB;
+      if (requestedGb === null || requestedGb > maxAllowedGb) {
+        return new Response(JSON.stringify({
+          error: `Free data promo claims cannot exceed ${maxAllowedGb}GB.`,
+          success: false,
+        }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Verify package exists in global_package_settings for the requested network
+    const { data: pkgRows } = await supabase
+      .from("global_package_settings")
+      .select("public_price, agent_price, package_size, is_enabled")
+      .eq("network", network);
+
+    const pkgRow = (pkgRows || []).find((r: any) => String(r.package_size).replace(/\s+/g, "").toUpperCase() === cleanPkgSizeStr);
+    if (!pkgRow || pkgRow.is_enabled === false) {
+      return new Response(JSON.stringify({ error: "Selected package is not available for this network", success: false }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const originalPrice = Number(pkgRow?.public_price) || Number(pkgRow?.agent_price) || 0;
+
     const orderId = crypto.randomUUID();
 
     // Atomically claim the promo code and associate with orderId
@@ -74,23 +157,13 @@ serve(async (req) => {
       });
     }
 
-    // Fetch original price for tracking
-    const cleanPkgSizeStr = packageSize.replace(/\s+/g, "").toUpperCase();
-    const { data: pkgRows } = await supabase
-      .from("global_package_settings")
-      .select("public_price, agent_price, package_size")
-      .eq("network", network);
-
-    const pkgRow = (pkgRows || []).find((r: any) => String(r.package_size).replace(/\s+/g, "").toUpperCase() === cleanPkgSizeStr);
-    const originalPrice = Number(pkgRow?.public_price) || Number(pkgRow?.agent_price) || 0;
-
     // Create order record
     await supabase.from("orders").insert({
       id: orderId,
       order_type: "free_data_claim",
       payment_method: "promo",
       network,
-      package_size: packageSize,
+      package_size: pkgRow.package_size || packageSize,
       customer_phone: cleanPhone,
       amount: 0,
       profit: 0,
@@ -108,7 +181,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY || Deno.env.get("SUPABASE_ANON_KEY")}`,
         },
         body: JSON.stringify({ reference: orderId }),
       });

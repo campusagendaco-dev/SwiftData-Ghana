@@ -210,11 +210,25 @@ const AgentStore = () => {
 
   // Automatically link visiting users with no parent agent to the visited store
   useEffect(() => {
-    if (profile && !profile.parent_agent_id && agent?.user_id && profile.user_id !== agent.user_id) {
+    if (
+      profile &&
+      !profile.parent_agent_id &&
+      !profile.is_agent &&
+      !profile.agent_approved &&
+      !profile.is_sub_agent &&
+      !profile.sub_agent_approved &&
+      !profile.is_super_admin &&
+      !profile.is_sub_admin &&
+      agent?.user_id &&
+      profile.user_id !== agent.user_id
+    ) {
       const linkAccount = async () => {
         await (supabase.from("profiles") as any)
           .update({ parent_agent_id: agent.user_id })
-          .eq("user_id", profile.user_id);
+          .eq("user_id", profile.user_id)
+          .is("parent_agent_id", null)
+          .eq("is_agent", false)
+          .neq("user_id", agent.user_id);
         refreshProfile();
       };
       linkAccount();
