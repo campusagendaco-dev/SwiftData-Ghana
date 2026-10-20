@@ -255,7 +255,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   const isRefundedStatus = order?.status === "refunded" || /refund/i.test(String(order?.failure_reason || ""));
   const validProviderOrderId = Boolean(
     order?.provider_order_id &&
-    order.provider_order_id !== "failed_api_call" &&
+    !order.provider_order_id.startsWith("failed_api_call") &&
     order.provider_order_id !== "timeout" &&
     order.provider_order_id !== "manual_fulfillment_mode" &&
     order.provider_order_id !== "duplicate_cooldown" &&
@@ -295,7 +295,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
   // If order was previously attempted on a provider and failed or was refunded,
   // demote that failed provider to the END of activeProviders so healthy verified providers are tried first!
   const hasFailedOnAssigned = Boolean(order?.provider_id) && (
-    order?.provider_order_id === "failed_api_call" ||
+    order?.provider_order_id?.startsWith("failed_api_call") ||
     order?.provider_order_id === "refunded" ||
     order?.status === "fulfillment_failed" ||
     order?.status === "failed" ||

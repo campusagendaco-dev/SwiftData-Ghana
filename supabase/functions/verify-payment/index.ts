@@ -755,11 +755,15 @@ serve(async (req: any) => {
     const isQueuedError = /queued/i.test(String(existingOrder?.failure_reason || ""));
     const isProviderOrder = !["agent_activation", "sub_agent_activation", "wallet_topup", "free_data_claim"].includes(orderType.toLowerCase());
 
+    const isSentinelOrderId = (id?: string | null) => {
+      const s = String(id || "").toLowerCase();
+      return !s || s === "timeout" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "duplicate_cooldown" || s === "refunded";
+    };
+
     const hasActiveProviderOrder = Boolean(
       existingOrder?.provider_id &&
       existingOrder?.provider_order_id &&
-      existingOrder.provider_order_id !== "timeout" &&
-      existingOrder.provider_order_id !== "failed_api_call"
+      !isSentinelOrderId(existingOrder.provider_order_id)
     );
 
     // --- 1. STATUS CHECK (For orders already being processed by a provider) ---
@@ -812,8 +816,7 @@ serve(async (req: any) => {
     const hasAssignedProvider = Boolean(
       existingOrder?.provider_id &&
       existingOrder?.provider_order_id &&
-      existingOrder.provider_order_id !== "timeout" &&
-      existingOrder.provider_order_id !== "failed_api_call"
+      !isSentinelOrderId(existingOrder.provider_order_id)
     );
 
     const orderUpdatedAt = existingOrder?.updated_at ? new Date(existingOrder.updated_at).getTime() : new Date(existingOrder?.created_at || 0).getTime();
@@ -848,7 +851,7 @@ serve(async (req: any) => {
     // Optimization: Skip checking provider status for freshly paid/pending orders if they haven't been submitted yet (no provider_order_id)
     // AND they are less than 20 seconds old. This avoids slow and redundant API status check calls.
     const orderAgeSec = (Date.now() - new Date(existingOrder?.created_at || 0).getTime()) / 1000;
-    const shouldCheckProvider = !!existingOrder?.provider_order_id;
+    const shouldCheckProvider = !!existingOrder?.provider_order_id && !isSentinelOrderId(existingOrder.provider_order_id);
 
     if ((existingOrder?.status === "pending" || existingOrder?.status === "paid" || existingOrder?.status === "fulfillment_failed" || existingOrder?.status === "processing") && isProviderOrder && shouldCheckProvider) {
       let providersToCheck: any[] = [];
@@ -1299,9 +1302,7 @@ serve(async (req: any) => {
     // 1. It explicitly timed out or failed previously (provider_order_id === "timeout" or "failed_api_call")
     // 2. OR it has been stuck/abandoned for > 90 seconds AND force is true / explicit retry
     const isUndispatchedProcessing = existingOrder?.status === "processing" && (
-      existingOrder?.provider_order_id === "timeout" || 
-      existingOrder?.provider_order_id === "failed_api_call" || 
-      existingOrder?.provider_order_id === "refunded" ||
+      isSentinelOrderId(existingOrder?.provider_order_id) ||
       !existingOrder?.provider_order_id ||
       (lockSecondsSinceUpdate > 90 && (!existingOrder?.provider_order_id || existingOrder?.provider_order_id === "dispatching")) ||
       force

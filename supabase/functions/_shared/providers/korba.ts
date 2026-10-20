@@ -362,21 +362,24 @@ export class KorbaAdapter implements ProviderAdapter {
 
     const cleanRef = String(reference || "").trim().replace(/_disb$/, "");
     const rawProvId = String(providerOrderId || "").trim();
+    const isSentinel = (id: string) => !id || id === "timeout" || id.startsWith("failed_api_call") || id === "manual_fulfillment_mode" || id === "duplicate_cooldown" || id === "refunded";
+    const cleanProvId = isSentinel(rawProvId) ? "" : rawProvId.replace(/_disb$/, "");
+
     const candidateIds = Array.from(new Set([
-      cleanRef ? `${cleanRef}_disb` : "",
-      cleanRef,
-      rawProvId && !rawProvId.endsWith("_disb") ? `${rawProvId}_disb` : rawProvId,
-      rawProvId.replace(/_disb$/, ""),
-    ].filter((id) => id && id !== "timeout" && id !== "failed_api_call")));
+      cleanRef && !isSentinel(cleanRef) ? `${cleanRef}_disb` : "",
+      cleanRef && !isSentinel(cleanRef) ? cleanRef : "",
+      cleanProvId ? `${cleanProvId}_disb` : "",
+      cleanProvId,
+    ].filter(Boolean)));
 
     if (candidateIds.length === 0) {
-      return { ok: false, reason: "Missing transaction ID for status check." };
+      return { ok: false, status: "failed", reason: "Missing valid transaction ID for status check." };
     }
 
     const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
     const targetUrl = `${baseUrl}/transaction_status/`;
 
-    let lastResponse: ProviderResponse = { ok: false, status: "processing", reason: "No definitive status from Korba" };
+    let lastResponse: ProviderResponse = { ok: false, status: "failed", reason: "No definitive status from Korba" };
 
     for (const txId of candidateIds) {
       const payload = {
@@ -424,6 +427,12 @@ export class KorbaAdapter implements ProviderAdapter {
         try { parsed = JSON.parse(resText); } catch { /* ignore text */ }
 
         if (res.ok) {
+          if (parsed.success === false && (parsed.error_code === 421 || String(parsed.results || parsed.message || "").toLowerCase().includes("does not exist"))) {
+            console.log(`[KorbaAdapter] Transaction ${txId} does not exist on Korba.`);
+            lastResponse = { ok: false, status: "failed", reason: "Transaction does not exist on Korba", rawBody: resText };
+            continue;
+          }
+
           const rawStatus = (parsed.status || parsed.status_code || parsed.code || "").toString().toUpperCase();
           const codeStr = String(parsed.code || parsed.status_code || "").toUpperCase();
           const isDelivered = rawStatus === "000" || rawStatus === "0000" || codeStr === "000" || codeStr === "0000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
