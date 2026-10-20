@@ -24,13 +24,14 @@ export const LiveActivityToast = () => {
       }, 6000);
     };
 
-    // Wait 10s initially
-    const initialDelay = setTimeout(triggerPopup, 10000);
+    // Delay on mobile to avoid covering action buttons early
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    const initialDelay = setTimeout(triggerPopup, isMobile ? 35000 : 10000);
 
-    // Repeat every 25 to 40 seconds
+    // Repeat less frequently on mobile
     const interval = setInterval(() => {
       triggerPopup();
-    }, Math.random() * 15000 + 25000);
+    }, isMobile ? 60000 : Math.random() * 15000 + 25000);
 
     return () => {
       clearTimeout(initialDelay);

@@ -8,6 +8,16 @@ interface CardTiltProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function CardTilt({ children, className = "", glowColor = "var(--primary)", ...props }: CardTiltProps) {
+  // On mobile or touch devices, bypass motion springs and mouse tracking completely
+  const isTouch = typeof window !== "undefined" && (window.innerWidth < 768 || window.matchMedia("(hover: none)").matches);
+  if (isTouch) {
+    return (
+      <div className={`relative ${className}`} {...props}>
+        {children}
+      </div>
+    );
+  }
+
   const ref = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
 

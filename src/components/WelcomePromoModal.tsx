@@ -10,6 +10,8 @@ export const WelcomePromoModal = () => {
 
   useEffect(() => {
     const fetchActivePromo = async () => {
+      // On mobile devices, don't interrupt customer checkout with promo modals
+      if (typeof window !== "undefined" && window.innerWidth < 768) return;
       const hasSeen = localStorage.getItem("welcome_promo_seen");
       if (hasSeen) return;
 

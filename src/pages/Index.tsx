@@ -164,8 +164,9 @@ const FAQS = [
 // ─── Scroll-reveal hook ───────────────────────────────────────────────────────
 const useReveal = () => {
   const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   useEffect(() => {
+    if (window.innerWidth < 768) return; // Immediate render on mobile for 60fps scrolling
     const el = ref.current;
     if (!el) return;
     const obs = new IntersectionObserver(
@@ -178,23 +179,35 @@ const useReveal = () => {
   return { ref, visible };
 };
 
-// ─── Animated counter ─────────────────────────────────────────────────────────
+// ─── Animated counter (isolated to prevent re-rendering Index) ───────────────
 const useCountUp = (target: number, duration = 1400) => {
-  const [value, setValue] = useState(0);
+  const [value, setValue] = useState(target);
   useEffect(() => {
     if (target === 0) return;
+    if (duration === 0) {
+      setValue(target);
+      return;
+    }
     const start = Date.now();
+    let frameId: number;
     const tick = () => {
       const elapsed = Date.now() - start;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       setValue(Math.round(eased * target));
-      if (progress < 1) requestAnimationFrame(tick);
+      if (progress < 1) frameId = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
   }, [target, duration]);
   return value;
 };
+
+const CountUpNumber = memo(({ target, duration = 1400 }: { target: number; duration?: number }) => {
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const count = useCountUp(target, isMobile ? 0 : duration);
+  return <>{count.toLocaleString()}</>;
+});
 
 // ─── FAQ Accordion ────────────────────────────────────────────────────────────
 const FaqItem = ({ q, a }: { q: string; a: string }) => {
@@ -333,9 +346,6 @@ const Index = () => {
   const tracker = useReveal();
   const agent = useReveal();
   const faq = useReveal();
-
-  const animatedDelivered = useCountUp(liveStats.totalDelivered);
-  const animatedAgents = useCountUp(liveStats.totalAgents);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#030305] text-gray-900 dark:text-white">
@@ -477,7 +487,7 @@ const Index = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
             <div>
               <p className="font-black text-2xl md:text-3xl text-amber-500 tabular-nums">
-                {animatedDelivered.toLocaleString()}
+                <CountUpNumber target={liveStats.totalDelivered} />
               </p>
               <p className="text-gray-600 dark:text-white/70 text-xs mt-1 font-medium">Bundles delivered</p>
             </div>
@@ -493,7 +503,7 @@ const Index = () => {
             </div>
             <div>
               <p className="font-black text-2xl md:text-3xl text-sky-500 tabular-nums">
-                {animatedAgents.toLocaleString()}
+                <CountUpNumber target={liveStats.totalAgents} />
               </p>
               <p className="text-gray-600 dark:text-white/70 text-xs mt-1 font-medium">Active resellers</p>
             </div>

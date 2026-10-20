@@ -28,6 +28,8 @@ const StoreVisitorPopup = ({
 
   useEffect(() => {
     if (isAgent) return;
+    // On mobile devices, don't interrupt customer's purchase path with reseller popup on homepage
+    if (typeof window !== "undefined" && window.innerWidth < 768 && agentSlug === "home") return;
     const hasDismissedSession = sessionStorage.getItem("store_visitor_popup_dismissed");
     if (hasDismissedSession) return;
 

@@ -18,6 +18,10 @@ const InstallPrompt = () => {
   const [showIosGuide, setShowIosGuide] = useState(false);
 
   useEffect(() => {
+    // Never interrupt critical buy/checkout flows
+    const path = window.location.pathname;
+    if (path.includes("/buy-") || path.includes("/order-") || path.includes("/checkout")) return;
+
     // Check if dismissed previously or in the current session
     const hasDismissedPermanent = localStorage.getItem("pwa-prompt-dismissed");
     const hasDismissedSession = sessionStorage.getItem("pwa-prompt-dismissed");
@@ -26,11 +30,11 @@ const InstallPrompt = () => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      // Non-obtrusive appearance after user has had time to browse (12 seconds)
+      // Non-obtrusive appearance after user has had time to browse (45 seconds)
       const timer = setTimeout(() => {
         const dismissedNow = localStorage.getItem("pwa-prompt-dismissed") || sessionStorage.getItem("pwa-prompt-dismissed");
         if (!dismissedNow) setIsVisible(true);
-      }, 12000);
+      }, 45000);
       return () => clearTimeout(timer);
     };
 
@@ -52,11 +56,11 @@ const InstallPrompt = () => {
     }
 
     if (_isIos && !isStandalone && !hasDismissedPermanent && !hasDismissedSession) {
-      // Delay iOS prompt to avoid blocking initial viewing/purchasing flow (20 seconds)
+      // Delay iOS prompt to avoid blocking initial viewing/purchasing flow (45 seconds)
       const timer = setTimeout(() => {
         const dismissedNow = localStorage.getItem("pwa-prompt-dismissed") || sessionStorage.getItem("pwa-prompt-dismissed");
         if (!dismissedNow) setIsVisible(true);
-      }, 20000);
+      }, 45000);
       return () => {
         clearTimeout(timer);
         window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
@@ -95,12 +99,15 @@ const InstallPrompt = () => {
   return (
     <aside 
       aria-label="Install App"
-      className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:w-[390px] z-[95] bg-card/95 text-card-foreground backdrop-blur-xl rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.25)] border border-border/80 p-3 sm:p-3.5 animate-in slide-in-from-bottom-5 duration-300 fade-in"
+      className="fixed top-3 left-3 right-3 sm:top-auto sm:left-auto sm:right-6 sm:bottom-6 sm:w-[390px] z-[95] bg-card/95 text-card-foreground backdrop-blur-xl rounded-2xl shadow-[0_12px_40px_rgba(0,0,0,0.25)] border border-border/80 p-3 sm:p-3.5 animate-in slide-in-from-top-4 sm:slide-in-from-bottom-5 duration-300 fade-in"
     >
       <div className="flex items-center gap-3">
         {/* App Logo */}
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 to-amber-500 flex items-center justify-center shrink-0 shadow-sm">
-          <img src="/logo.png" alt="SwiftData Ghana" className="w-6 h-6 object-contain" />
+          <picture>
+            <source srcSet="/logo.webp" type="image/webp" />
+            <img src="/logo.png" alt="SwiftData Ghana" width={24} height={24} className="w-6 h-6 object-contain" />
+          </picture>
         </div>
 
         {/* Text info */}
