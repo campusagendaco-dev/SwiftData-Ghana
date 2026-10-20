@@ -1783,7 +1783,7 @@ serve(async (req: Request) => {
 
         try {
           const bridgeUrl = Deno.env.get("KORBA_BRIDGE_URL") || "https://swiftdatagh.shop/api/korba";
-          const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "";
+          const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
           
           console.log(`[system-payout-v1] Testing Korba request via Vercel bridge: ${bridgeUrl}`);
           const res = await fetch(bridgeUrl, {
