@@ -161,7 +161,7 @@ serve(async (req: Request) => {
         .eq("handler_type", "skdataplug")
         .maybeSingle();
 
-      const secretKey = skplugProvider?.settings?.webhook_secret || skplugProvider?.api_key;
+      const secretKey = Deno.env.get("SKDATAPLUG_WEBHOOK_SECRET") || Deno.env.get("SKDATAPLUG_API_KEY") || skplugProvider?.settings?.webhook_secret || skplugProvider?.api_key;
       if (!secretKey) {
         console.warn("[provider-webhook] SKPlug signature verification failed: Credentials/secret not found in database.");
         return new Response(JSON.stringify({ error: "Unauthorized" }), { 
@@ -225,7 +225,7 @@ serve(async (req: Request) => {
     }
   } else if (xWebhookSecret) {
     const expectedSecret = XCEL_WEBHOOK_SECRET || PROVIDER_WEBHOOK_SECRET;
-    if (expectedSecret && xWebhookSecret !== expectedSecret) {
+    if (!expectedSecret || xWebhookSecret !== expectedSecret) {
       console.warn("[provider-webhook] XCEL Unauthorized request blocked - Secret mismatch.");
       return new Response(JSON.stringify({ error: "Unauthorized" }), { 
         status: 401,

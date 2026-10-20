@@ -12,7 +12,7 @@ import { HttpsProxyAgent } from "npm:https-proxy-agent";
 
 declare const Deno: any;
 
-// Initialised once at cold-start — not rebuilt on every request
+// Initialised once at cold-start â€” not rebuilt on every request
 const SUPABASE_URL = (Deno as any).env.get("SUPABASE_URL") as string;
 const SUPABASE_SERVICE_ROLE_KEY = (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY") as string;
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -706,14 +706,14 @@ serve(async (req: Request) => {
       }
 
       case "get_paystack_transactions": {
-        let PAYSTACK_SECRET_KEY = "";
+        let PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
         try {
           const { data: settings } = await supabaseAdmin
             .from("v_system_settings_with_secrets")
             .select("paystack_secret_key")
             .eq("id", 1)
             .maybeSingle();
-          PAYSTACK_SECRET_KEY = settings?.paystack_secret_key || "";
+          PAYSTACK_SECRET_KEY = PAYSTACK_SECRET_KEY || settings?.paystack_secret_key || "";
         } catch (dbErr) {
           console.error("Failed to fetch paystack_secret_key from DB in system-payout:", dbErr);
         }
@@ -950,7 +950,7 @@ serve(async (req: Request) => {
           if (NUMERIC_KEYS.has(key)) {
             const n = Number(val);
             if (!Number.isFinite(n) || n < 0 || n > 100000) {
-              return new Response(JSON.stringify({ error: `Setting '${key}' must be a non-negative number ≤ 100000` }), {
+              return new Response(JSON.stringify({ error: `Setting '${key}' must be a non-negative number â‰¤ 100000` }), {
                 status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
               });
             }
@@ -1052,14 +1052,14 @@ serve(async (req: Request) => {
           });
         }
 
-        let PAYSTACK_SECRET = "";
+        let PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
         try {
           const { data: settings } = await supabaseAdmin
             .from("v_system_settings_with_secrets")
             .select("paystack_secret_key")
             .eq("id", 1)
             .maybeSingle();
-          PAYSTACK_SECRET = settings?.paystack_secret_key || "";
+          PAYSTACK_SECRET = PAYSTACK_SECRET || settings?.paystack_secret_key || "";
         } catch (dbErr) {
           console.error("Failed to fetch paystack_secret_key from DB in system-payout payout:", dbErr);
         }
@@ -1188,7 +1188,7 @@ serve(async (req: Request) => {
               recipient: recipientCode,
               reason: `SwiftData Withdrawal: ${withdrawal_id.slice(0, 8)}`,
               currency: "GHS",
-              reference: withdrawal_id, // Idempotency key — prevents double-crediting on retries
+              reference: withdrawal_id, // Idempotency key â€” prevents double-crediting on retries
             })
           });
 
@@ -1200,7 +1200,7 @@ serve(async (req: Request) => {
           const transferCode = transferData.data?.transfer_code ?? null;
           const transferReference = transferData.data?.reference ?? withdrawal_id;
 
-          // 5. Mark as processing — wallet debit happens only when webhook confirms transfer.success
+          // 5. Mark as processing â€” wallet debit happens only when webhook confirms transfer.success
           const { error: updateErr } = await supabaseAdmin
             .from("withdrawals")
             .update({
@@ -1212,7 +1212,7 @@ serve(async (req: Request) => {
             .eq("id", withdrawal_id);
 
           if (updateErr) {
-            // Transfer is live but DB update failed — log for manual recovery.
+            // Transfer is live but DB update failed â€” log for manual recovery.
             // Worse than a stale status: paystack_transfer_reference never
             // saved means the transfer.success webhook won't find this row
             // by reference later, so it can't auto-finalize at all.
@@ -1226,13 +1226,13 @@ serve(async (req: Request) => {
               level: "error",
               source: "system-payout-v1",
               event: "withdrawal_status_update_failed",
-              message: `Paystack transfer ${transferReference} initiated for withdrawal ${withdrawal_id}, but the DB update failed — the completion webhook won't be able to find this withdrawal by reference`,
+              message: `Paystack transfer ${transferReference} initiated for withdrawal ${withdrawal_id}, but the DB update failed â€” the completion webhook won't be able to find this withdrawal by reference`,
               agent_id: withdrawal.agent_id,
               data: { withdrawal_id, transfer_code: transferCode, transfer_reference: transferReference, amount: netAmount, error: updateErr.message },
             });
             notifyAdmins(supabaseAdmin, {
-              title: "🚨 Withdrawal transfer not recorded",
-              message: `Paystack transfer ${transferReference} was initiated for GHS ${netAmount.toFixed(2)} (withdrawal ${withdrawal_id.slice(0, 8)}), but saving the transfer reference failed — the auto-finalize webhook won't be able to find it. Verify manually.`,
+              title: "ðŸš¨ Withdrawal transfer not recorded",
+              message: `Paystack transfer ${transferReference} was initiated for GHS ${netAmount.toFixed(2)} (withdrawal ${withdrawal_id.slice(0, 8)}), but saving the transfer reference failed â€” the auto-finalize webhook won't be able to find it. Verify manually.`,
               data: { link: "/admin/withdrawals", withdrawal_id, transfer_reference: transferReference },
             });
           }
@@ -1290,14 +1290,14 @@ serve(async (req: Request) => {
           });
         }
 
-        let PAYSTACK_SECRET = "";
+        let PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
         try {
           const { data: settings } = await supabaseAdmin
             .from("v_system_settings_with_secrets")
             .select("paystack_secret_key")
             .eq("id", 1)
             .maybeSingle();
-          PAYSTACK_SECRET = settings?.paystack_secret_key || "";
+          PAYSTACK_SECRET = PAYSTACK_SECRET || settings?.paystack_secret_key || "";
         } catch (dbErr) {
           console.error("Failed to fetch paystack_secret_key from DB in verify:", dbErr);
         }
@@ -1386,7 +1386,7 @@ serve(async (req: Request) => {
               try {
                 await triggerPushNotification(supabaseAdmin, {
                   user_id: withdrawal.agent_id,
-                  title: "✅ Withdrawal Successful",
+                  title: "âœ… Withdrawal Successful",
                   body: `Your withdrawal of GHS ${Number(withdrawal.amount).toFixed(2)} has been sent to your MoMo.`,
                   url: "/dashboard/withdrawals",
                   icon: "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/assets/notification-icon.png"
@@ -1653,7 +1653,15 @@ serve(async (req: Request) => {
         const results = [];
 
         for (const p of activeProviders || []) {
-          const apiKey = p.api_key || "";
+          const envApiKey =
+            p.handler_type === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+            p.handler_type === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+            p.handler_type === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+            p.handler_type === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+            p.handler_type === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+            p.handler_type === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+            Deno.env.get("DATA_PROVIDER_API_KEY");
+          const apiKey = (envApiKey || p.api_key || "").trim();
           const baseUrl = (p.base_url || "").replace(/\/+$/, "");
           if (!apiKey || !baseUrl) continue;
 
@@ -2143,7 +2151,7 @@ serve(async (req: Request) => {
         
         const count = updatedOrders?.length || 0;
         
-        // Credit profits for all updated orders — run in parallel
+        // Credit profits for all updated orders â€” run in parallel
         let profitsFailed = 0;
         if (count > 0) {
           const results = await Promise.allSettled(
@@ -2515,8 +2523,8 @@ serve(async (req: Request) => {
           admin_email: actor.email || "system",
           action: "purge_bot_spam",
           target_email: actor.id,
-          metadata: { count: ids.length, order_ids: ids }
-        }).catch(() => {});
+          metadata: { count: ids.length, order_ids: ids },
+        });
 
         return new Response(JSON.stringify({ success: true, count: ids.length, message: `Successfully purged ${ids.length} unpaid spam order(s).` }), {
           status: 200,

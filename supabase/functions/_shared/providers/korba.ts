@@ -295,7 +295,7 @@ export class KorbaAdapter implements ProviderAdapter {
     let contentType: string | null = null;
     let proxyError = "";
 
-    // Attempt 1: Call via DB Proxy
+    // Strictly route all Korba requests through fetchViaDb (never fall back to direct Deno Edge fetch)
     try {
       console.log(`[KorbaAdapter] Calling via DB Proxy: ${targetUrl}`);
       const res = await fetchViaDb(supabaseAdmin, targetUrl, {
@@ -306,7 +306,7 @@ export class KorbaAdapter implements ProviderAdapter {
           "Authorization": `HMAC ${clientKey}:${signatureHex}`,
         },
         body: JSON.stringify(payload),
-        disableFallback: false,
+        disableFallback: true,
       }, 20);
 
       resText = await res.text();
@@ -319,42 +319,9 @@ export class KorbaAdapter implements ProviderAdapter {
         proxyError = resText || `HTTP ${status}`;
       }
     } catch (e: any) {
-      console.warn(`[KorbaAdapter] DB Proxy exception: ${e.message}`);
+      console.error(`[KorbaAdapter] DB Proxy exception: ${e.message}`);
       proxyError = e.message || "Unknown proxy exception";
-    }
-
-    // Attempt 2: Direct HTTP Fetch Fallback
-    if (!success) {
-      console.log(`[KorbaAdapter] DB Proxy failed (${proxyError}). Falling back to Direct native fetch...`);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        
-        const res = await fetch(targetUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": `HMAC ${clientKey}:${signatureHex}`,
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-        resText = await res.text();
-        status = res.status;
-        contentType = res.headers.get("content-type");
-        
-        if (res.ok) {
-          success = true;
-        } else {
-          proxyError = resText || `HTTP ${status}`;
-        }
-      } catch (e: any) {
-        console.error(`[KorbaAdapter] Direct fallback failed:`, e);
-        return { ok: false, reason: `Proxy failed (${proxyError}). Direct fallback failed: ${e.message || e}` };
-      }
+      return { ok: false, reason: `Korba proxy communication failed: ${proxyError}` };
     }
 
     if (success) {
@@ -393,81 +360,100 @@ export class KorbaAdapter implements ProviderAdapter {
     const KORBA_CLIENT_KEY = Deno.env.get("KORBA_CLIENT_KEY") || provider?.api_key || provider?.settings?.client_key || "";
     const KORBA_SECRET_KEY = Deno.env.get("KORBA_SECRET_KEY") || provider?.api_secret || provider?.settings?.secret_key || "";
 
-    let txId = String(providerOrderId || reference || "").trim();
-    if (txId && !txId.endsWith("_disb")) {
-      txId = `${txId}_disb`;
+    const cleanRef = String(reference || "").trim().replace(/_disb$/, "");
+    const rawProvId = String(providerOrderId || "").trim();
+    const candidateIds = Array.from(new Set([
+      cleanRef ? `${cleanRef}_disb` : "",
+      cleanRef,
+      rawProvId && !rawProvId.endsWith("_disb") ? `${rawProvId}_disb` : rawProvId,
+      rawProvId.replace(/_disb$/, ""),
+    ].filter((id) => id && id !== "timeout" && id !== "failed_api_call")));
+
+    if (candidateIds.length === 0) {
+      return { ok: false, reason: "Missing transaction ID for status check." };
     }
-    if (!txId) return { ok: false, reason: "Missing transaction ID for status check." };
 
     const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
     const targetUrl = `${baseUrl}/transaction_status/`;
 
-    const payload = {
-      client_id: parseInt(KORBA_CLIENT_ID) || 2419,
-      transaction_id: txId,
-    };
+    let lastResponse: ProviderResponse = { ok: false, status: "processing", reason: "No definitive status from Korba" };
 
-    const sortedKeys = Object.keys(payload).sort();
-    const messageParts = [];
-    for (const key of sortedKeys) {
-      if ((payload as any)[key] !== undefined) {
-        messageParts.push(`${key}=${(payload as any)[key]}`);
+    for (const txId of candidateIds) {
+      const payload = {
+        client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+        transaction_id: txId,
+      };
+
+      const sortedKeys = Object.keys(payload).sort();
+      const messageParts = [];
+      for (const key of sortedKeys) {
+        if ((payload as any)[key] !== undefined) {
+          messageParts.push(`${key}=${(payload as any)[key]}`);
+        }
+      }
+      const message = messageParts.join("&");
+      
+      const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+      const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const messageData = new TextEncoder().encode(message);
+      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+      const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      try {
+        console.log(`[KorbaAdapter] Checking status for ${txId} via ${targetUrl}...`);
+        const res = await fetchViaDb(supabaseAdmin, targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const resText = await res.text();
+        let parsed: any = {};
+        try { parsed = JSON.parse(resText); } catch { /* ignore text */ }
+
+        if (res.ok) {
+          const rawStatus = (parsed.status || parsed.status_code || parsed.code || "").toString().toUpperCase();
+          const codeStr = String(parsed.code || parsed.status_code || "").toUpperCase();
+          const isDelivered = rawStatus === "000" || rawStatus === "0000" || codeStr === "000" || codeStr === "0000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
+          const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
+
+          const token: string | null = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || null;
+
+          const currentResult: ProviderResponse = {
+            ok: true,
+            status: isDelivered ? "delivered" : (isFailed ? "failed" : "processing"),
+            id: txId,
+            reason: parsed.message || parsed.description || "",
+            raw: token ? { prepaid_token: token } : undefined,
+            rawBody: resText
+          };
+
+          if (isDelivered || isFailed) {
+            return currentResult;
+          }
+          lastResponse = currentResult;
+        } else {
+          lastResponse = { ok: false, status: "processing", reason: `Korba HTTP ${res.status}` };
+        }
+      } catch (err: any) {
+        console.error(`[KorbaAdapter] Status check exception for ${txId}:`, err);
+        lastResponse = { ok: false, status: "processing", reason: err?.message || String(err) };
       }
     }
-    const message = messageParts.join("&");
-    
-    const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const messageData = new TextEncoder().encode(message);
-    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-    const signatureHex = Array.from(new Uint8Array(signatureBuffer))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
 
-    try {
-      console.log(`[KorbaAdapter] Checking status for ${txId} via ${targetUrl}...`);
-      const res = await fetchViaDb(supabaseAdmin, targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const resText = await res.text();
-      let parsed: any = {};
-      try { parsed = JSON.parse(resText); } catch { /* ignore text */ }
-
-      if (res.ok) {
-        const rawStatus = (parsed.status || parsed.status_code || parsed.code || "").toString().toUpperCase();
-        const isDelivered = rawStatus === "000" || rawStatus === "SUCCESS" || rawStatus === "SUCCESSFUL" || rawStatus === "FULFILLED" || rawStatus === "COMPLETED" || rawStatus === "DELIVERED";
-        const isFailed = rawStatus === "FAILED" || rawStatus === "ERROR" || rawStatus === "REJECTED" || rawStatus === "CANCELLED";
-
-        const token: string | null = parsed.prepaid_token || parsed.prepaidToken || (parsed.data?.prepaid_token) || null;
-
-        return {
-          ok: true,
-          status: isDelivered ? "delivered" : (isFailed ? "failed" : "processing"),
-          id: txId,
-          reason: parsed.message || parsed.description || "",
-          raw: token ? { prepaid_token: token } : undefined,
-          rawBody: resText
-        };
-      } else {
-        return { ok: false, status: "processing", reason: `Korba HTTP ${res.status}` };
-      }
-    } catch (err: any) {
-      console.error("[KorbaAdapter] Status check exception:", err);
-      return { ok: false, status: "processing", reason: err?.message || String(err) };
-    }
+    return lastResponse;
   }
 }
 

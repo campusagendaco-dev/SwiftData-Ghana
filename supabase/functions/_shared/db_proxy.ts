@@ -15,7 +15,7 @@ async function performDirectFetch(url: string, options: any) {
 
   let client: any = undefined;
   if (url.includes("korba365.com")) {
-    const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
+    const proxyUrl = Deno.env.get("KORBA_PROXY_URL")?.trim() || "";
     if (proxyUrl) {
       console.log(`[db_proxy] Routing direct fetch through whitelisted proxy: ${proxyUrl.replace(/:[^:@]+@/, ":***@")}`);
       if (typeof (Deno as any).createHttpClient === "function") {
@@ -48,7 +48,7 @@ async function performDirectFetch(url: string, options: any) {
 
 async function performRenderFallback(url: string, options: any, originalErr: any) {
   const renderUrl = (Deno.env.get("RENDER_BACKEND_URL") || "https://swiftdata-auth-backend.onrender.com").replace(/\/$/, "");
-  const proxySecret = Deno.env.get("PROXY_SECRET") || "swiftdata-proxy-secret-2026";
+  const proxySecret = Deno.env.get("PROXY_SECRET") || "";
   console.warn(`[db_proxy] Attempting backup proxy fetch via Render service (${renderUrl})...`);
   try {
     const renderRes = await fetch(`${renderUrl}/api/proxy-pass`, {
@@ -117,7 +117,7 @@ export async function fetchViaDb(
 }> {
   const configuredBridgeUrl = Deno.env.get("KORBA_BRIDGE_URL")?.trim() || "https://swiftdatagh.shop/api/korba";
   if (configuredBridgeUrl && (url.includes("korba365.com") || url.includes("datahubgh.com") || url.includes("skdataplug.com"))) {
-    const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
+    const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "";
     
     console.log(`[db_proxy] Routing request to Vercel bridge: ${configuredBridgeUrl}`);
     try {
@@ -155,10 +155,49 @@ export async function fetchViaDb(
           headers: responseHeaders
         };
       }
+      if (url.includes("korba365.com")) {
+        console.warn(`[db_proxy] Vercel bridge returned gateway error ${bridgeRes.status} for Korba. Returning directly to preserve IP whitelisting.`);
+        return {
+          ok: false,
+          status: bridgeRes.status,
+          text: async () => resText,
+          json: async () => {
+            try {
+              return JSON.parse(resText);
+            } catch {
+              return { error: resText || `Korba bridge HTTP ${bridgeRes.status}` };
+            }
+          },
+          headers: responseHeaders
+        };
+      }
       console.warn(`[db_proxy] Vercel bridge returned gateway error ${bridgeRes.status}. Falling back...`);
     } catch (bridgeErr: any) {
+      if (url.includes("korba365.com")) {
+        console.error(`[db_proxy] Vercel bridge connection failed for Korba: ${bridgeErr?.message || bridgeErr}. Returning 504 without non-whitelisted DB fallback.`);
+        const errPayload = JSON.stringify({ error: `Korba Bridge Error: ${bridgeErr?.message || bridgeErr}`, proxy_timeout: true });
+        return {
+          ok: false,
+          status: 504,
+          text: async () => errPayload,
+          json: async () => ({ error: `Korba Bridge Error: ${bridgeErr?.message || bridgeErr}`, proxy_timeout: true }),
+          headers: new Headers({ "Content-Type": "application/json" })
+        };
+      }
       console.error(`[db_proxy] Vercel bridge connection failed: ${bridgeErr?.message || bridgeErr}. Falling back...`);
     }
+  }
+
+  // Strict Rule: Korba requests must never fall back to unwhitelisted native fetch, DB RPC, or Render proxy
+  if (url.includes("korba365.com")) {
+    console.error("[db_proxy] Korba request failed to complete via Vercel bridge and cannot use unwhitelisted fallbacks.");
+    return {
+      ok: false,
+      status: 502,
+      text: async () => JSON.stringify({ error: "Korba bridge unavailable; unwhitelisted IP fallback is blocked for Korba." }),
+      json: async () => ({ error: "Korba bridge unavailable; unwhitelisted IP fallback is blocked for Korba." }),
+      headers: new Headers({ "Content-Type": "application/json" }),
+    };
   }
 
   // 1. Try Direct Native Fetch First (fastest response path, ~100-200ms) - Skip for Korba as Deno Edge IPs are not whitelisted

@@ -76,19 +76,17 @@ async function callProviderApi(supabaseAdmin: any, baseUrl: string, apiKey: stri
 }
 
 async function verifyPaystack(supabaseAdmin: any, reference: string) {
-  let paystackKey = "";
-  try {
-    const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("paystack_secret_key")
-      .eq("id", 1)
-      .maybeSingle();
-    paystackKey = settings?.paystack_secret_key || "";
-  } catch (dbErr) {
-    console.error("Failed to fetch paystack_secret_key from DB in verifyPaystack:", dbErr);
-  }
-
+  let paystackKey = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
   if (!paystackKey) {
-    paystackKey = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
+    try {
+      const { data: settings } = await supabaseAdmin
+        .from("v_system_settings_with_secrets").select("paystack_secret_key")
+        .eq("id", 1)
+        .maybeSingle();
+      paystackKey = settings?.paystack_secret_key || "";
+    } catch (dbErr) {
+      console.error("Failed to fetch paystack_secret_key from DB in verifyPaystack:", dbErr);
+    }
   }
 
   if (!paystackKey) return { ok: false, reason: "Missing Paystack Key" };
@@ -194,8 +192,18 @@ serve(async (req: Request) => {
       const verification = await verifyPaystack(supabaseAdmin, order.id);
 
       if (verification.ok) {
+        const verifiedAmt = Number(verification.amount || 0);
+        const expectedAmt = Number(order.amount || 0);
+        if (verifiedAmt + 0.05 < expectedAmt) {
+          console.warn(`[retry-orders] Underpayment detected for ${order.id}: paid GHS ${verifiedAmt}, expected GHS ${expectedAmt}`);
+          await supabaseAdmin.from("orders").update({
+            status: "failed",
+            failure_reason: `Amount mismatch: Paid GHS ${verifiedAmt.toFixed(2)}, expected GHS ${expectedAmt.toFixed(2)}`
+          }).eq("id", order.id).in("status", ["pending", "awaiting_payment"]);
+          continue;
+        }
         console.log(`[retry-orders] Payment confirmed for ${order.id}. Marking as PAID.`);
-        await supabaseAdmin.from("orders").update({ status: "paid", paystack_verified_amount: verification.amount }).eq("id", order.id).in("status", ["pending", "awaiting_payment"]);
+        await supabaseAdmin.from("orders").update({ status: "paid", paystack_verified_amount: verifiedAmt }).eq("id", order.id).in("status", ["pending", "awaiting_payment"]);
         // We'll let Phase 2 pick it up in this same run or next
         order.status = "paid";
       }
@@ -246,17 +254,11 @@ serve(async (req: Request) => {
 
     for (const order of uncreditedOrders || []) {
       if (order.agent_id && order.profit > 0) {
-        console.log(`[retry-orders] Crediting missing profit GHS ${order.profit} for agent ${order.agent_id}...`);
-        const { data: wallet } = await supabaseAdmin
-          .from("wallets")
-          .select("id, balance")
-          .eq("agent_id", order.agent_id)
-          .maybeSingle();
-
-        if (wallet) {
-          const newBal = Number(wallet.balance || 0) + Number(order.profit);
-          await supabaseAdmin.from("wallets").update({ balance: newBal }).eq("id", wallet.id);
-          await supabaseAdmin.from("orders").update({ profit_credited: true }).eq("id", order.id);
+        console.log(`[retry-orders] Crediting missing profit GHS ${order.profit} for order ${order.id} via atomic RPC...`);
+        const { error: profitErr } = await supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id });
+        if (profitErr) {
+          console.error(`[retry-orders] Failed to credit profit for order ${order.id}:`, profitErr.message);
+        } else {
           console.log(`[retry-orders] Successfully credited missing profit for order ${order.id}`);
         }
       }

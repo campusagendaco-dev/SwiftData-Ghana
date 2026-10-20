@@ -2,16 +2,20 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import https from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
-// Read proxy URL from Vercel Environment Variables
-const KORBA_PROXY_URL = process.env.KORBA_PROXY_URL || "https://WCaCqU:PL9knqRP@149-28-121-181.ip.private.ipb.cloud:9443";
-
-// Simple authorization token to secure the bridge endpoint
-const BRIDGE_SECRET = process.env.KORBA_BRIDGE_SECRET || 'swiftdata-korba-bridge-token-2026';
+// Read proxy URL and bridge secret strictly from Vercel Environment Variables
+const KORBA_PROXY_URL = process.env.KORBA_PROXY_URL || "";
+const BRIDGE_SECRET = process.env.KORBA_BRIDGE_SECRET || "";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Allow only POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  // Validate server configuration
+  if (!BRIDGE_SECRET || !KORBA_PROXY_URL) {
+    console.error("[korba-bridge] Missing KORBA_PROXY_URL or KORBA_BRIDGE_SECRET in environment");
+    return res.status(500).json({ error: 'Server misconfigured: missing proxy bridge credentials' });
   }
 
   // Validate the bridge secret for security

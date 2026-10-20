@@ -479,61 +479,12 @@ serve(async (req: Request) => {
     const dbNet = normalizeNetworkForPricing(networkRaw);
     const upperDbNet = dbNet.toUpperCase();
     const reqCategory = String(customMetadata?.category || customMetadata?.package_category || payload?.category || "").toLowerCase();
-    const isExplicitKorbaCategory = reqCategory !== "" && 
-      reqCategory !== "affordable" && 
-      reqCategory !== "sme" && 
-      reqCategory !== "mashup" && 
-      !reqCategory.includes("sme");
+    const isMashUpPkg = dbNet === "MTN Mash Up" || normalizedNet === "MTN Mash Up" || upperDbNet.includes("MASH") || upperDbNet.includes("COMBO") || reqCategory === "mashup";
 
-    const pkgUpper = String(package_size || "").toUpperCase();
-    const isKorbaPackagePattern = pkgUpper.startsWith("GHS") || 
-      pkgUpper.includes("RACT_DATA") || 
-      pkgUpper.includes("KOKROKOO") || 
-      pkgUpper.includes("MIDNIGHT") || 
-      pkgUpper.includes("SOCIAL") || 
-      pkgUpper.includes("VIDEO") || 
-      pkgUpper.includes("IDD");
-
-    const isExplicitKorbaRequest = !upperDbNet.includes("MASH") && reqCategory !== "mashup" && (
-      is_korba === true || 
-      is_korba === "true" || 
-      upperDbNet.startsWith("KORBA") ||
-      customMetadata?.is_korba === true ||
-      customMetadata?.is_korba === "true" ||
-      reqCategory === "korba" ||
-      reqCategory === "standard" ||
-      isExplicitKorbaCategory ||
-      isKorbaPackagePattern
-    );
-
-    let finalIsKorba = isExplicitKorbaRequest;
-    const isAffordableSme = !isExplicitKorbaRequest && (
-      upperDbNet.includes("MTN") || 
-      upperDbNet.includes("YELLO") || 
-      upperDbNet.includes("TELECEL") || 
-      upperDbNet.includes("VODA") || 
-      upperDbNet.includes("AIRTEL") || 
-      upperDbNet.includes("TIGO") || 
-      upperDbNet.includes("AT") ||
-      upperDbNet.includes("SME")
-    );
-
-    if (!finalIsKorba && !isAffordableSme && !upperDbNet.includes("MASH") && reqCategory !== "mashup") {
-      const queryNetwork = dbNet.startsWith("Korba ") ? dbNet : `Korba ${dbNet}`;
-      const { data: mappings } = await supabaseAdmin
-        .from("provider_packages")
-        .select("id, network")
-        .eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
-        .eq("package_name", package_size)
-        .eq("is_active", true);
-      
-      const hasMapping = (mappings || []).some(
-        (m: any) => m.network === dbNet || m.network === queryNetwork
-      );
-      if (hasMapping) {
-        finalIsKorba = true;
-      }
-    }
+    // wallet-buy-data strictly prices against global_package_settings (SME & MashUp).
+    // Never allow client payload/metadata to spoof is_korba=true or category="korba".
+    const finalIsKorba = false;
+    const resolvedCategory = isMashUpPkg ? "mashup" : "affordable";
 
     // 2. INSERT ORDER (FOREGROUND)
     console.log(`[INSERT] Creating order ${orderId}...`);
@@ -556,7 +507,7 @@ serve(async (req: Request) => {
       metadata: {
         ...(customMetadata || {}),
         is_korba: finalIsKorba,
-        category: (dbNet === "MTN Mash Up" || normalizedNet === "MTN Mash Up" || String(networkRaw || "").toUpperCase().includes("MASH")) ? "mashup" : (finalIsKorba ? (customMetadata?.category || "korba") : (customMetadata?.category || "affordable")),
+        category: resolvedCategory,
         bypass_beneficiary: (bypass_beneficiary === true || bypass_beneficiary === "true") ? true : undefined,
       }
     });

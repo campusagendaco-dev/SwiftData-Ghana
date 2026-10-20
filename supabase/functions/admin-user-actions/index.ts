@@ -1667,11 +1667,12 @@ serve(async (req: Request) => {
         
         if (grantErr) throw grantErr;
 
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "grant_admin_role",
           target_email: activeProfile.email,
           metadata: { target_name: activeProfile.full_name, granted_by: actor.id }
+        })).then(() => {
         });
 
         return new Response(JSON.stringify({ success: true }), {
@@ -1700,11 +1701,12 @@ serve(async (req: Request) => {
         
         if (revokeErr) throw revokeErr;
 
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "revoke_admin_role",
           target_email: profile?.email || user_id,
           metadata: { revoked_by: actor.id }
+        })).then(() => {
         });
 
         return new Response(JSON.stringify({ success: true }), {
@@ -1805,11 +1807,12 @@ serve(async (req: Request) => {
         if (updateErr) throw updateErr;
 
         // Log the action to admin audit logs
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "refund_order",
           target_email: order.agent_id,
           metadata: { order_id: orderId, reason, amount: order.amount }
+        })).then(() => {
         });
 
         return new Response(JSON.stringify({ success: true, message: "Order refunded to wallet successfully!" }), {
@@ -1853,11 +1856,12 @@ serve(async (req: Request) => {
         if (updateErr) throw updateErr;
 
         // Log the action to admin audit logs
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "force_fulfill_order",
           target_email: order.agent_id,
           metadata: { order_id: orderId }
+        })).then(() => {
         });
 
         return new Response(JSON.stringify({ success: true, message: "Order force-fulfilled successfully!" }), {
@@ -1875,11 +1879,12 @@ serve(async (req: Request) => {
         }
 
         // Log the action to admin audit logs
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "heal_stuck_orders",
           target_email: actor.id,
           metadata: { result: data }
+        })).then(() => {
         });
 
         return new Response(JSON.stringify(data), {
@@ -1914,11 +1919,12 @@ serve(async (req: Request) => {
         if (updateErr) throw updateErr;
 
         // Log the action to admin audit logs
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "bulk_update_order_status",
           target_email: actor.id,
           metadata: { count: validIds.length, status, order_ids: validIds }
+        })).then(() => {
         });
 
         return new Response(JSON.stringify({ success: true, message: `Successfully updated ${validIds.length} orders to ${status}` }), {
@@ -1952,12 +1958,13 @@ serve(async (req: Request) => {
 
         if (delError) throw delError;
 
-        await supabaseAdmin.from("admin_action_log").insert({
+        await Promise.resolve(supabaseAdmin.from("admin_action_log").insert({
           admin_email: actor.email || "system",
           action: "purge_bot_spam",
           target_email: actor.id,
           metadata: { count: ids.length, order_ids: ids }
-        }).catch(() => {});
+        })).catch(() => {
+        });
 
         return new Response(JSON.stringify({ success: true, count: ids.length, message: `Successfully purged ${ids.length} unpaid spam order(s).` }), {
           status: 200,

@@ -794,28 +794,37 @@ export default function DashboardMyStore() {
           momo_number: form.momo_number.trim(),
           momo_network: form.momo_network.trim(),
           momo_account_name: form.momo_account_name.trim(),
-          store_name: form.store_name.trim(),
+          store_name: form.store_name.trim() || null,
           slug,
-          store_logo_url: form.store_logo_url || null,
+          store_logo_url: form.store_logo_url.trim() || null,
           store_primary_color: form.store_primary_color || "#fbbf24",
+          custom_domain: form.custom_domain.trim() || null,
         })
         .eq("user_id", user.id);
 
       if (profileError) throw profileError;
 
-      // 2. Update reseller store specific options (upserting to guarantee store sync even if selectedStoreId is missing)
-      const { error: storeError } = await supabase
-        .from("reseller_stores")
-        .upsert({
-          user_id: user.id,
-          store_name: form.store_name.trim(),
-          store_logo_url: form.store_logo_url,
-          store_banner_url: form.store_banner_url,
-          store_description: form.store_description.trim() || null,
-          store_primary_color: form.store_primary_color || "#fbbf24",
-          custom_domain: form.custom_domain.trim() || null,
-          slug,
-        }, { onConflict: "slug" });
+      // 2. Update reseller store specific options in-place on selectedStoreId to prevent duplicate stores on rename
+      const storePayload = {
+        user_id: user.id,
+        store_name: form.store_name.trim(),
+        store_logo_url: form.store_logo_url.trim() || null,
+        store_banner_url: form.store_banner_url.trim() || null,
+        store_description: form.store_description.trim() || null,
+        store_primary_color: form.store_primary_color || "#fbbf24",
+        custom_domain: form.custom_domain.trim() || null,
+        slug,
+      };
+
+      const { error: storeError } = selectedStoreId
+        ? await supabase
+            .from("reseller_stores")
+            .update(storePayload)
+            .eq("id", selectedStoreId)
+            .eq("user_id", user.id)
+        : await supabase
+            .from("reseller_stores")
+            .upsert(storePayload, { onConflict: "slug" });
 
       if (storeError) throw storeError;
 

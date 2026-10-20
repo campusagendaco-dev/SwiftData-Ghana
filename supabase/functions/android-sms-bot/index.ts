@@ -50,7 +50,7 @@ serve(async (req: Request) => {
 
   // 1. Verify Secret Authorization
   const url = new URL(req.url);
-  const expectedSecret = Deno.env.get("ANDROID_SMS_SECRET") || "swiftdata-android-sms-secret-2026";
+  const expectedSecret = Deno.env.get("ANDROID_SMS_SECRET") || "";
   const providedSecret = 
     req.headers.get("x-sms-secret") || 
     req.headers.get("x-sms-gateway-secret") || 
@@ -130,9 +130,9 @@ serve(async (req: Request) => {
   }
 
   const activeSecret = providedSecret || bodySecret;
-  if (expectedSecret && activeSecret && activeSecret !== expectedSecret) {
-    console.warn(`[android-sms-bot] Forbidden: secret mismatch. Expected ${expectedSecret}, got ${activeSecret}`);
-    return json({ error: "Forbidden: Secret mismatch" }, 403);
+  if (!expectedSecret || !activeSecret || activeSecret !== expectedSecret) {
+    console.warn("[android-sms-bot] Unauthorized Hardware Node request rejected.");
+    return json({ error: "Unauthorized Hardware Node" }, 401);
   }
 
   const senderPhone = cleanPhone(rawSender);
@@ -141,7 +141,7 @@ serve(async (req: Request) => {
   if (!senderPhone || !userText) {
     return json({ 
       error: "Missing required sender phone ('from') or message text ('message').",
-      example: { from: "0547636024", message: "BAL", secret: "swiftdata-android-sms-secret-2026" }
+      example: { from: "0547636024", message: "BAL" }
     }, 400);
   }
 
@@ -233,34 +233,43 @@ serve(async (req: Request) => {
       }
 
       const recipient = cleanPhone(reqPhone);
-      if (!reqSize || !recipient || recipient.length < 10) {
+      const sizeNum = parseCapacity(reqSize);
+      const normalizedSize = sizeNum > 0 ? `${sizeNum}GB` : reqSize;
+      if (!reqSize || sizeNum <= 0 || !recipient || recipient.length < 10) {
         replyText = "SwiftData Alert: Invalid BUY command format. Use: BUY <size> <recipient_phone>. Example: BUY 1GB 0547636024";
       } else {
         // Resolve package price from database
         const { data: priceRow } = await supabaseAdmin
           .from("global_package_settings")
-          .select("price, cost_price, is_active")
+          .select("agent_price, public_price, cost_price, is_unavailable")
           .eq("network", reqNet)
-          .eq("package_size", reqSize)
+          .eq("package_size", `${sizeNum}GB`)
           .maybeSingle();
 
-        const costPrice = Number(priceRow?.cost_price || 4.0);
-        const price = Number(priceRow?.price || 4.2);
+        const isApprovedAgent = Boolean(profile.is_agent && profile.agent_approved);
+        const price = Number(
+          isApprovedAgent
+            ? (priceRow?.agent_price ?? priceRow?.public_price ?? 0)
+            : (priceRow?.public_price ?? priceRow?.agent_price ?? 0)
+        );
+        const costPrice = Number(priceRow?.cost_price || price);
 
-        if (walletBalance < price) {
-          replyText = `SwiftData Alert: Insufficient balance. Order for ${reqNet} ${reqSize} costs GHS ${price.toFixed(2)}, but your wallet balance is GHS ${walletBalance.toFixed(2)}. Please top up your wallet.`;
+        if (!priceRow || priceRow.is_unavailable || !Number.isFinite(price) || price <= 0) {
+          replyText = `SwiftData Alert: Package ${reqNet} ${normalizedSize} is currently unavailable or not configured.`;
+        } else if (walletBalance < price) {
+          replyText = `SwiftData Alert: Insufficient balance. Order for ${reqNet} ${normalizedSize} costs GHS ${price.toFixed(2)}, but your wallet balance is GHS ${walletBalance.toFixed(2)}. Please top up your wallet.`;
         } else {
-          // Debit Wallet Atomically
-          const newBal = walletBalance - price;
-          const { error: walletErr } = await supabaseAdmin
-            .from("wallets")
-            .update({ balance: newBal, updated_at: new Date().toISOString() })
-            .eq("agent_id", userId);
+          // Debit Wallet Atomically via RPC
+          const { data: debitRes, error: walletErr } = await supabaseAdmin.rpc("debit_wallet", {
+            p_agent_id: profile.user_id,
+            p_amount: price,
+          });
 
-          if (walletErr) {
-            console.error("[android-sms-bot] Wallet debit error:", walletErr);
-            replyText = "SwiftData Alert: Wallet debit failed. Please try again later.";
+          if (walletErr || !debitRes || debitRes.success === false) {
+            console.error("[android-sms-bot] Wallet debit error:", walletErr || debitRes?.error);
+            replyText = `SwiftData Alert: Wallet debit failed (${debitRes?.error || "Insufficient balance"}). Please try again later.`;
           } else {
+            const newBal = Number(debitRes.new_balance ?? (walletBalance - price));
             // Create Order Row
             const orderId = crypto.randomUUID();
             const orderRow = {
@@ -268,7 +277,7 @@ serve(async (req: Request) => {
               agent_id: userId,
               order_type: "data",
               network: reqNet,
-              package_size: reqSize,
+              package_size: `${sizeNum}GB`,
               customer_phone: recipient,
               amount: price,
               cost_price: costPrice,

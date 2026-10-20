@@ -543,11 +543,6 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: "Please wait 60 seconds before initiating another payout." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).single();
-      if (!wallet || wallet.balance < amount!) {
-        return new Response(JSON.stringify({ error: "Insufficient wallet balance" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
       const acctPhone = action === "momo-disbursement" ? phone! : account_number!;
       const netCode = action === "momo-disbursement" ? network! : bank_code!;
       
@@ -556,6 +551,11 @@ serve(async (req) => {
       if (action === "africa-transfer") commType = "africa";
 
       const { billingAmount, agentProfit, companyProfit } = calculateCommissions(amount!, commType);
+
+      const { data: wallet } = await supabase.from("wallets").select("balance").eq("agent_id", user.id).single();
+      if (!wallet || wallet.balance < billingAmount) {
+        return new Response(JSON.stringify({ error: "Insufficient wallet balance" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
 
       let recipientData;
       
@@ -602,27 +602,50 @@ serve(async (req) => {
           }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const transferResp = await fetch("https://api.paystack.co/transfer", {
-          method: "POST", headers,
-          body: JSON.stringify({
-              source: "balance",
-              amount: Math.round(billingAmount * 100),
-              recipient: recipientData.data.recipient_code,
-              reason: description || "Swift Vendor Payout",
-              currency: action === "africa-transfer" ? body.currency : "GHS"
-          })
+      // Debit wallet atomically BEFORE initiating the Paystack transfer
+      const { data: debitRes, error: debitErr } = await supabase.rpc("debit_wallet", {
+        p_agent_id: user.id,
+        p_amount: billingAmount
       });
-      const transferData = await transferResp.json();
 
-      const isSuccess = transferData.status && (transferData.data.status === "success" || transferData.data.status === "approved");
-      const isPending = transferData.status && (transferData.data.status === "pending" || transferData.data.status === "processing");
+      if (debitErr || !debitRes || debitRes.success === false) {
+        return new Response(JSON.stringify({
+          status: "failed",
+          error: debitRes?.error || debitErr?.message || "Insufficient wallet balance"
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      let transferData: any = null;
+      try {
+        const transferResp = await fetch("https://api.paystack.co/transfer", {
+            method: "POST", headers,
+            body: JSON.stringify({
+                source: "balance",
+                amount: Math.round(amount! * 100),
+                recipient: recipientData.data.recipient_code,
+                reason: description || "Swift Vendor Payout",
+                currency: action === "africa-transfer" ? body.currency : "GHS"
+            })
+        });
+        transferData = await transferResp.json();
+      } catch (transferFetchErr: any) {
+        await supabase.rpc("credit_wallet", { p_agent_id: user.id, p_amount: billingAmount });
+        throw transferFetchErr;
+      }
+
+      const isSuccess = Boolean(transferData?.status && (transferData.data?.status === "success" || transferData.data?.status === "approved"));
+      const isPending = Boolean(transferData?.status && (transferData.data?.status === "pending" || transferData.data?.status === "processing"));
+
+      if (!isSuccess && !isPending) {
+        await supabase.rpc("credit_wallet", { p_agent_id: user.id, p_amount: billingAmount });
+      }
 
       result = {
           code: isSuccess ? "000" : (isPending ? "100" : "999"),
           status: isSuccess ? "successful" : (isPending ? "pending" : "failed"),
-          reason: transferData.message || (isSuccess ? "Transfer successful" : (isPending ? "Transfer is pending approval" : "Transfer failed")),
-          transaction_id: transferData.data?.transfer_code || transferData.data?.reference || orderId,
-          reference_id: transferData.data?.reference,
+          reason: transferData?.message || (isSuccess ? "Transfer successful" : (isPending ? "Transfer is pending approval" : "Transfer failed")),
+          transaction_id: transferData?.data?.transfer_code || transferData?.data?.reference || orderId,
+          reference_id: transferData?.data?.reference,
           account_name: verifiedAccountName || body.account_name,
           paystack_raw: transferData
       };
@@ -643,13 +666,10 @@ serve(async (req) => {
               agent_profit: agentProfit,
               company_profit: companyProfit,
               vendor_collection_amount: amount,
-              account_name: result.account_name
+              account_name: result.account_name,
+              wallet_refunded: !isSuccess && !isPending
           }
       });
-      
-      if (isSuccess || isPending) {
-        await supabase.rpc("debit_wallet", { p_agent_id: user.id, p_amount: amount });
-      }
 
     } else if (action === "list-banks") {
       const countryCode = body.country || "nigeria";
@@ -684,6 +704,10 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: "Order not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      if (order.agent_id !== user.id) {
+        return new Response(JSON.stringify({ error: "Forbidden: You do not own this order" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       if (order.status === "fulfilled" || order.status === "failed") {
          return new Response(JSON.stringify({ status: order.status === "fulfilled" ? "successful" : "failed", code: order.status === "fulfilled" ? "000" : "999", order }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -697,39 +721,68 @@ serve(async (req) => {
       const resp = await fetch(endpoint, { method: "GET", headers });
       const paystackData = await resp.json();
 
-      const isSuccess = paystackData.status && (paystackData.data?.status === "success" || paystackData.data?.status === "approved");
-      const isFailed = !isSuccess && paystackData.data?.status !== "pending" && paystackData.data?.status !== "processing";
+      const expectedBillingAmount = Number(order.billing_amount ?? order.metadata?.billing_amount ?? order.amount ?? 0);
+      const verifiedAmountPesewas = Number(paystackData.data?.amount || 0);
+      const isAmountValid = order.order_type === "vendor_pos_collection"
+        ? verifiedAmountPesewas >= Math.round(expectedBillingAmount * 100)
+        : verifiedAmountPesewas >= Math.round(Number(order.amount ?? expectedBillingAmount) * 100);
+
+      const isSuccess = Boolean(paystackData.status && (paystackData.data?.status === "success" || paystackData.data?.status === "approved") && isAmountValid);
+      const isFailed = (!isSuccess && paystackData.data?.status !== "pending" && paystackData.data?.status !== "processing") ||
+        Boolean(paystackData.status && (paystackData.data?.status === "success" || paystackData.data?.status === "approved") && !isAmountValid);
 
       result = {
           code: isSuccess ? "000" : (isFailed ? "999" : "100"),
           status: isSuccess ? "successful" : (isFailed ? "failed" : "pending"),
-          reason: paystackData.message,
+          reason: !isAmountValid && paystackData.status ? "Verified payment amount is less than required billing amount" : paystackData.message,
           transaction_id: paystackRef,
           paystack_raw: paystackData
       };
 
       if (isSuccess) {
-          if (order.order_type === "vendor_pos_collection") {
-              await supabase.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
-          }
-          await supabase.from("orders").update({
-              status: "fulfilled",
-              metadata: { ...order.metadata, paystack_raw: paystackData, fulfilled_at: new Date().toISOString() }
-          }).eq("id", order.id);
-      } else if (isFailed) {
-          if (order.order_type === "vendor_pos_disbursement" || order.order_type === "vendor_pos_bank_transfer") {
-              if (!order.metadata?.wallet_refunded) {
+          // Atomically transition from pending to processing before crediting wallet
+          const { data: claimedOrder } = await supabase
+            .from("orders")
+            .update({ status: "processing" })
+            .eq("id", order.id)
+            .eq("status", "pending")
+            .select("id")
+            .maybeSingle();
+
+          if (claimedOrder) {
+              if (order.order_type === "vendor_pos_collection") {
                   await supabase.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
+              }
+              await supabase.from("orders").update({
+                  status: "fulfilled",
+                  metadata: { ...order.metadata, paystack_raw: paystackData, fulfilled_at: new Date().toISOString() }
+              }).eq("id", order.id);
+          }
+      } else if (isFailed) {
+          const { data: claimedFailOrder } = await supabase
+            .from("orders")
+            .update({ status: "processing" })
+            .eq("id", order.id)
+            .eq("status", "pending")
+            .select("id")
+            .maybeSingle();
+
+          if (claimedFailOrder) {
+              if (order.order_type === "vendor_pos_disbursement" || order.order_type === "vendor_pos_bank_transfer") {
+                  const refundAmount = Number(order.billing_amount ?? order.metadata?.billing_amount ?? order.amount ?? 0);
+                  if (!order.metadata?.wallet_refunded && refundAmount > 0) {
+                      await supabase.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: refundAmount });
+                      await supabase.from("orders").update({
+                          status: "failed", failure_reason: result.reason,
+                          metadata: { ...order.metadata, paystack_raw: paystackData, wallet_refunded: true }
+                      }).eq("id", order.id);
+                  }
+              } else {
                   await supabase.from("orders").update({
                       status: "failed", failure_reason: result.reason,
-                      metadata: { ...order.metadata, paystack_raw: paystackData, wallet_refunded: true }
+                      metadata: { ...order.metadata, paystack_raw: paystackData }
                   }).eq("id", order.id);
               }
-          } else {
-              await supabase.from("orders").update({
-                  status: "failed", failure_reason: result.reason,
-                  metadata: { ...order.metadata, paystack_raw: paystackData }
-              }).eq("id", order.id);
           }
       }
 

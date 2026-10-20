@@ -1039,100 +1039,129 @@ serve(async (req: any) => {
         return new Response(JSON.stringify({ error: "Korba gateway credentials not configured" }), { status: 500, headers: corsHeaders });
       }
 
-      const statusPayload = {
-        transaction_id: targetReference,
-        client_id: parseInt(KORBA_CLIENT_ID) || 2419,
-      };
+      const cleanRef = targetReference.replace(/_disb$/, "");
+      const candidateKorbaIds = targetReference.endsWith("_disb")
+        ? [targetReference, cleanRef]
+        : [cleanRef, `${cleanRef}_disb`];
 
-      // Generate HMAC signature
-      const sortedKeys = Object.keys(statusPayload).sort();
-      const messageParts = [];
-      for (const key of sortedKeys) {
-        messageParts.push(`${key}=${(statusPayload as any)[key]}`);
-      }
-      const message = messageParts.join("&");
-      
-      const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        keyData,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-      const messageData = new TextEncoder().encode(message);
-      const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-      const signatureHex = Array.from(new Uint8Array(signatureBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      console.log(`[verify-payment] Querying Korba status for ${targetReference}`);
+      console.log(`[verify-payment] Querying Korba status for candidates: ${candidateKorbaIds.join(", ")}`);
       try {
-        const statusRes = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/transaction_status/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
-          },
-          body: JSON.stringify(statusPayload),
-          allowMutationFallback: true,
-        });
+        let statusData: any = null;
+        let statusResOk = false;
+        let lastStatusText = "";
+        let isExplicitSuccess = false;
+        let isExplicitPending = false;
+        let isKorbaFailed = false;
+        let rawKorbaStatus = "";
 
-        const statusText = await statusRes.text();
-        console.log(`[verify-payment] Korba status response:`, statusText);
-        let statusData;
-        try {
-          statusData = JSON.parse(statusText);
-        } catch {
+        for (const candidateTxId of candidateKorbaIds) {
+          const statusPayload = {
+            transaction_id: candidateTxId,
+            client_id: parseInt(KORBA_CLIENT_ID) || 2419,
+          };
+
+          const sortedKeys = Object.keys(statusPayload).sort();
+          const messageParts = [];
+          for (const key of sortedKeys) {
+            messageParts.push(`${key}=${(statusPayload as any)[key]}`);
+          }
+          const message = messageParts.join("&");
+
+          const keyData = new TextEncoder().encode(KORBA_SECRET_KEY);
+          const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            keyData,
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign']
+          );
+          const messageData = new TextEncoder().encode(message);
+          const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+          const signatureHex = Array.from(new Uint8Array(signatureBuffer))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+
+          const statusRes = await fetchViaDb(supabaseAdmin, "https://xchange.korba365.com/api/v1.0/transaction_status/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `HMAC ${KORBA_CLIENT_KEY}:${signatureHex}`,
+            },
+            body: JSON.stringify(statusPayload),
+            allowMutationFallback: true,
+          });
+
+          const statusText = await statusRes.text();
+          lastStatusText = statusText;
+          statusResOk = statusRes.ok;
+          console.log(`[verify-payment] Korba status response for ${candidateTxId}:`, statusText);
+          try {
+            statusData = JSON.parse(statusText);
+          } catch {
+            continue;
+          }
+
+          if (!statusRes.ok || statusData?.error) {
+            continue;
+          }
+
+          rawKorbaStatus = String(statusData?.status || statusData?.results || statusData?.delivery_status || statusData?.code || "").toLowerCase();
+          const codeStr = String(statusData?.code || statusData?.status_code || "").toLowerCase();
+
+          isExplicitSuccess =
+            rawKorbaStatus === "success" ||
+            rawKorbaStatus === "successful" ||
+            rawKorbaStatus === "paid" ||
+            rawKorbaStatus === "completed" ||
+            rawKorbaStatus === "fulfilled" ||
+            rawKorbaStatus === "delivered" ||
+            rawKorbaStatus === "000" ||
+            rawKorbaStatus === "0000" ||
+            codeStr === "000" ||
+            codeStr === "0000" ||
+            statusData?.code === 0 ||
+            statusData?.status_code === 0;
+
+          isExplicitPending =
+            rawKorbaStatus === "pending" ||
+            rawKorbaStatus === "initialized" ||
+            rawKorbaStatus === "queued" ||
+            rawKorbaStatus === "processing" ||
+            rawKorbaStatus === "ongoing" ||
+            statusData?.code === "0001" ||
+            statusData?.code === "0002" ||
+            statusData?.code === "100" ||
+            statusData?.status === "PENDING" ||
+            statusData?.status === "INITIALIZED";
+
+          isKorbaFailed =
+            !isExplicitSuccess &&
+            !isExplicitPending &&
+            (statusData?.success === false ||
+             rawKorbaStatus.includes("fail") ||
+             rawKorbaStatus.includes("error") ||
+             rawKorbaStatus.includes("cancel") ||
+             rawKorbaStatus.includes("reject") ||
+             rawKorbaStatus.includes("expire") ||
+             rawKorbaStatus.includes("decline") ||
+             (statusData?.error_code && Number(statusData.error_code) > 0));
+
+          if (isExplicitSuccess || isExplicitPending) {
+            break;
+          }
+        }
+
+        if (!statusData) {
           return new Response(JSON.stringify({ status: "error", error: "Payment gateway returned invalid response" }), { headers: corsHeaders });
         }
 
-        if (!statusRes.ok || statusData.error) {
-          console.error(`[verify-payment] Korba status check failed via DB Proxy:`, statusText);
+        if (!statusResOk || statusData.error) {
+          console.error(`[verify-payment] Korba status check failed via DB Proxy:`, lastStatusText);
           return new Response(JSON.stringify({
             status: "error",
-            error: `Database HTTP Proxy error: ${statusData.error || statusText || "Unknown proxy error"}`
+            error: `Database HTTP Proxy error: ${statusData.error || lastStatusText || "Unknown proxy error"}`
           }), { headers: corsHeaders });
         }
-
-        const rawKorbaStatus = String(statusData?.status || statusData?.results || statusData?.delivery_status || statusData?.code || "").toLowerCase();
-        
-        // Strictly check for explicit payment success from Korba status response.
-        // Do NOT use statusData?.success === true alone because Korba returns success: true for HTTP query success even when status is PENDING!
-        const isExplicitSuccess = 
-          rawKorbaStatus === "success" ||
-          rawKorbaStatus === "successful" ||
-          rawKorbaStatus === "paid" ||
-          rawKorbaStatus === "completed" ||
-          rawKorbaStatus === "fulfilled" ||
-          statusData?.code === "0000" ||
-          statusData?.status_code === "0000" ||
-          statusData?.code === 0 ||
-          statusData?.status_code === 0;
-
-        const isExplicitPending = 
-          rawKorbaStatus === "pending" ||
-          rawKorbaStatus === "initialized" ||
-          rawKorbaStatus === "queued" ||
-          rawKorbaStatus === "processing" ||
-          rawKorbaStatus === "ongoing" ||
-          statusData?.code === "0001" ||
-          statusData?.code === "0002" ||
-          statusData?.code === "100" ||
-          statusData?.status === "PENDING" ||
-          statusData?.status === "INITIALIZED";
-
-        const isKorbaFailed = 
-          !isExplicitSuccess &&
-          !isExplicitPending && 
-          (statusData?.success === false ||
-           rawKorbaStatus.includes("fail") ||
-           rawKorbaStatus.includes("error") ||
-           rawKorbaStatus.includes("cancel") ||
-           rawKorbaStatus.includes("reject") ||
-           rawKorbaStatus.includes("expire") ||
-           rawKorbaStatus.includes("decline") ||
-           (statusData?.error_code && Number(statusData.error_code) > 0));
 
         if (isExplicitSuccess) {
           verifiedAmount = Number(existingOrder?.amount || 0);
@@ -1325,67 +1354,79 @@ serve(async (req: any) => {
     // Reverse any auto-refunds if the order was previously failed and refunded
     if (claimedOrder.auto_refunded === true) {
       console.log(`[verify-payment] Reversing auto-refund for order ${targetReference} to re-charge agent ${claimedOrder.agent_id}`);
-      
-      const { data: wallet, error: walletErr } = await supabaseAdmin
-        .from("wallets")
-        .select("balance, api_balance")
-        .eq("agent_id", claimedOrder.agent_id)
-        .maybeSingle();
+      const reversalAmount = Number(claimedOrder.amount || 0);
+      const isApiOrder = claimedOrder.order_type === "api" || claimedOrder.metadata?.wallet_type === "api" || claimedOrder.metadata?.client_reference;
 
-      if (walletErr) {
-        console.error("[verify-payment] Failed to fetch wallet for reversal:", walletErr);
-      } else {
-        const isApiOrder = claimedOrder.order_type === "api" || claimedOrder.metadata?.wallet_type === "api" || claimedOrder.metadata?.client_reference;
-        if (isApiOrder) {
-          const currentApi = Number(wallet?.api_balance || 0);
-          await supabaseAdmin
-            .from("wallets")
-            .update({
-              api_balance: currentApi - Number(claimedOrder.amount),
-              updated_at: new Date().toISOString()
-            })
-            .eq("agent_id", claimedOrder.agent_id);
+      let debitSuccess = false;
+      let debitErrMsg = "";
+
+      if (isApiOrder) {
+        const { data: apiDebitRes, error: apiDebitErr } = await supabaseAdmin.schema("api").rpc("debit_api_wallet", {
+          p_user_id: claimedOrder.agent_id,
+          p_amount: reversalAmount
+        });
+        if (!apiDebitErr && apiDebitRes?.success !== false) {
+          debitSuccess = true;
         } else {
-          const currentBal = Number(wallet?.balance || 0);
-          await supabaseAdmin
-            .from("wallets")
-            .update({
-              balance: currentBal - Number(claimedOrder.amount),
-              updated_at: new Date().toISOString()
-            })
-            .eq("agent_id", claimedOrder.agent_id);
+          debitErrMsg = apiDebitErr?.message || apiDebitRes?.error || "Insufficient API wallet balance to reverse auto-refund";
         }
+      } else {
+        const { data: debitRes, error: debitErr } = await supabaseAdmin.rpc("debit_wallet", {
+          p_agent_id: claimedOrder.agent_id,
+          p_amount: reversalAmount
+        });
+        if (!debitErr && debitRes?.success) {
+          debitSuccess = true;
+        } else {
+          debitErrMsg = debitErr?.message || debitRes?.error || "Insufficient wallet balance to reverse auto-refund";
+        }
+      }
 
-        // Clear the refund columns in orders table
+      if (!debitSuccess) {
+        console.warn(`[verify-payment] Cannot reverse auto-refund for order ${targetReference}: ${debitErrMsg}`);
         await supabaseAdmin
           .from("orders")
           .update({
-            auto_refunded: false,
-            refund_amount: 0,
-            refunded_at: null,
-            refund_reason: 'Refund reversed: order manually retried by admin.',
+            status: "fulfillment_failed",
+            failure_reason: `Cannot retry auto-refunded order: ${debitErrMsg}`,
             updated_at: new Date().toISOString()
           })
           .eq("id", targetReference);
-
-        // Log the reversal
-        await supabaseAdmin
-          .from("system_logs")
-          .insert({
-            level: "info",
-            source: "system",
-            event: "wallet.deduction_reversal",
-            message: `Manually reversed refund and re-charged GHS ${claimedOrder.amount} for retried order`,
-            order_id: targetReference,
-            agent_id: claimedOrder.agent_id,
-            data: {
-              amount: claimedOrder.amount,
-              network: claimedOrder.network,
-              package_size: claimedOrder.package_size,
-              reason: "manual_retry_reversal"
-            }
-          });
+        return new Response(JSON.stringify({
+          status: "error",
+          error: `Cannot retry auto-refunded order: ${debitErrMsg}`
+        }), { status: 400, headers: corsHeaders });
       }
+
+      // Clear the refund columns in orders table
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          auto_refunded: false,
+          refund_amount: 0,
+          refunded_at: null,
+          refund_reason: 'Refund reversed: order manually retried by admin.',
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", targetReference);
+
+      // Log the reversal
+      await supabaseAdmin
+        .from("system_logs")
+        .insert({
+          level: "info",
+          source: "system",
+          event: "wallet.deduction_reversal",
+          message: `Manually reversed refund and re-charged GHS ${claimedOrder.amount} for retried order`,
+          order_id: targetReference,
+          agent_id: claimedOrder.agent_id,
+          data: {
+            amount: claimedOrder.amount,
+            network: claimedOrder.network,
+            package_size: claimedOrder.package_size,
+            reason: "manual_retry_reversal"
+          }
+        });
     }
 
     const isMashUpOrderCheck = 
@@ -1404,7 +1445,15 @@ serve(async (req: any) => {
         // Use the requested credit amount (order.amount), not the full paid amount (verifiedAmount)
         // This ensures the 3% processing fee is effectively charged.
         const creditAmount = Number(claimedOrder.amount || verifiedAmount);
-        await supabaseAdmin.rpc("credit_wallet", { p_agent_id: agentId, p_amount: creditAmount });
+        const walletType = (claimedOrder.metadata?.wallet_type || metadata?.wallet_type) === "api" ? "api" : "main";
+        if (walletType === "api") {
+          await supabaseAdmin.schema("api").rpc("credit_api_wallet", { p_user_id: agentId, p_amount: creditAmount });
+        } else {
+          const { error: repayErr } = await supabaseAdmin.rpc("repay_credit", { p_agent_id: agentId, p_amount: creditAmount });
+          if (repayErr) {
+            await supabaseAdmin.rpc("credit_wallet", { p_agent_id: agentId, p_amount: creditAmount });
+          }
+        }
         await supabaseAdmin.from("orders").update({ status: "fulfilled" }).eq("id", targetReference);
       }
       return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
@@ -1438,13 +1487,34 @@ serve(async (req: any) => {
     if (currentOrderType === "agent_activation") {
       const agentId = claimedOrder.agent_id || metadata?.agent_id;
       if (agentId) {
-        await supabaseAdmin.from("profiles").update({ 
-          is_agent: true, 
-          agent_approved: true,
-          onboarding_complete: true,
-          is_sub_agent: false,
-          parent_agent_id: null
-        }).eq("user_id", agentId);
+        const { data: agentProfile } = await supabaseAdmin
+          .from("profiles")
+          .update({ 
+            is_agent: true, 
+            agent_approved: true,
+            onboarding_complete: true,
+            is_sub_agent: false,
+            parent_agent_id: null
+          })
+          .eq("user_id", agentId)
+          .select("store_name, slug, whatsapp_number, agent_prices")
+          .maybeSingle();
+
+        if (agentProfile?.store_name || agentProfile?.slug) {
+          const { error: storeSyncErr } = await supabaseAdmin.from("reseller_stores").upsert({
+            user_id: agentId,
+            store_name: agentProfile.store_name || "SwiftData Store",
+            slug: agentProfile.slug || `store-${agentId.slice(0, 8)}`,
+            whatsapp_number: agentProfile.whatsapp_number || null,
+            custom_prices: agentProfile.agent_prices || {},
+            is_active: true,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "user_id" });
+          if (storeSyncErr) {
+            console.warn("[verify-payment] Non-fatal reseller_stores sync warning:", storeSyncErr.message);
+          }
+        }
+
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", targetReference);
         console.log("Agent activated via verify-payment:", agentId);
       }
@@ -1469,15 +1539,35 @@ serve(async (req: any) => {
           .maybeSingle();
         const subAgentPrices = parentProfile?.sub_agent_prices || {};
 
-        await supabaseAdmin.from("profiles").update({
-          is_agent: true,
-          agent_approved: true,
-          sub_agent_approved: true,
-          onboarding_complete: true,
-          is_sub_agent: true,
-          parent_agent_id: parentAgentId || null,
-          agent_prices: subAgentPrices,
-        }).eq("user_id", subAgentId);
+        const { data: subProfile } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            is_agent: true,
+            agent_approved: true,
+            sub_agent_approved: true,
+            onboarding_complete: true,
+            is_sub_agent: true,
+            parent_agent_id: parentAgentId || null,
+            agent_prices: subAgentPrices,
+          })
+          .eq("user_id", subAgentId)
+          .select("store_name, slug, whatsapp_number")
+          .maybeSingle();
+
+        if (subProfile?.store_name || subProfile?.slug) {
+          const { error: storeSyncErr } = await supabaseAdmin.from("reseller_stores").upsert({
+            user_id: subAgentId,
+            store_name: subProfile.store_name || "SwiftData Store",
+            slug: subProfile.slug || `store-${subAgentId.slice(0, 8)}`,
+            whatsapp_number: subProfile.whatsapp_number || null,
+            custom_prices: subAgentPrices,
+            is_active: true,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "user_id" });
+          if (storeSyncErr) {
+            console.warn("[verify-payment] Non-fatal sub-agent reseller_stores sync warning:", storeSyncErr.message);
+          }
+        }
 
         await supabaseAdmin
           .from("orders")
@@ -1496,41 +1586,6 @@ serve(async (req: any) => {
         console.log("Sub agent activated via verify-payment:", subAgentId, "parent:", parentAgentId);
       }
       return new Response(JSON.stringify({ status: "fulfilled" }), { headers: corsHeaders });
-    }
-
-    if (currentOrderType === "voucher") {
-      const vType = claimedOrder.network || metadata?.voucher_type || "WASSCE";
-      const qty = parseInt(metadata?.quantity || 1, 10);
-      const recipientPhone = claimedOrder.customer_phone || metadata?.customer_phone;
-      
-      const generatedVouchers: { serial: string; pin: string }[] = [];
-      for (let i = 0; i < qty; i++) {
-        const serial = `W${vType.charAt(0)}${Math.floor(100000000 + Math.random() * 900000000)}`;
-        const pin = `${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
-        generatedVouchers.push({ serial, pin });
-      }
-
-      await supabaseAdmin.from("orders").update({
-        status: "fulfilled",
-        failure_reason: null,
-        metadata: {
-          ...metadata,
-          vouchers: generatedVouchers,
-          fulfilled_at: new Date().toISOString(),
-        }
-      }).eq("id", targetReference);
-
-      if (recipientPhone) {
-        const voucherText = generatedVouchers.map((v, idx) => `Voucher ${idx + 1}: Serial: ${v.serial} | PIN: ${v.pin}`).join("\n");
-        const msg = `Your ${vType} Result Checker:\n${voucherText}\nCheck result at: https://ghana.waecdirect.org`;
-        sendPaymentSms(supabaseAdmin, recipientPhone, "custom", { message: msg }).catch(console.error);
-      }
-
-      return new Response(JSON.stringify({ 
-        status: "fulfilled", 
-        vouchers: generatedVouchers,
-        message: "Voucher fulfilled successfully"
-      }), { headers: corsHeaders });
     }
 
 
@@ -1647,8 +1702,8 @@ serve(async (req: any) => {
                   failure_reason: `Completed via duplicate sibling order ${sibling.id}`
                 }).eq("id", targetReference);
 
-                await supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id }).catch(() => {});
-                await supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference }).catch(() => {});
+                await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: sibling.id })).catch(() => {});
+                await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: targetReference })).catch(() => {});
                 
                 return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: checkResult.id || sibling.provider_order_id }), { headers: corsHeaders });
               }

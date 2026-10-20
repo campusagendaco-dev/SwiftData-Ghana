@@ -45,7 +45,15 @@ async function pollProviderStatus(provider: any, orderId: string, providerOrderI
   });
 
   try {
-    const apiKey = (handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) : provider.api_key) || "";
+    const envApiKey =
+      handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+      handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+      handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+      handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+      handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+      handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+      Deno.env.get("DATA_PROVIDER_API_KEY");
+    const apiKey = (envApiKey || provider.api_key || "").trim();
 
     const res = await fetch(finalUrl, {
       method: isGet ? "GET" : "POST",

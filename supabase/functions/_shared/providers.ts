@@ -100,14 +100,12 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     orderCategory === "sme" || 
     orderCategory.includes("sme") ||
     (isStandardSmeSize && !isKorbaPackagePattern) ||
-    (isTelecomNetwork && !isKorbaPackagePattern && !isExplicitKorbaCategory && order?.metadata?.is_korba !== true && order?.metadata?.is_korba !== "true")
+    (isTelecomNetwork && !isKorbaPackagePattern && !isExplicitKorbaCategory)
   );
 
   const isMashUpPattern = uppercaseNet.includes("MASH") || uppercaseNet.includes("COMBO") || orderCategory === "mashup" || order?.network === "MTN Mash Up" || (pkgUpper.includes("MINS") && uppercaseNet.includes("MTN"));
   let isExplicitKorba = !isMashUpPattern && !isAffordableSmeBundle && korbaProvider && (
     uppercaseNet.startsWith("KORBA") || 
-    order?.metadata?.is_korba === true || 
-    order?.metadata?.is_korba === "true" ||
     orderCategory === "korba" ||
     isExplicitKorbaCategory ||
     isKorbaPackagePattern ||

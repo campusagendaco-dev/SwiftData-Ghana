@@ -26,7 +26,7 @@ serve(async (req) => {
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: orders, error: fetchError } = await supabaseAdmin
     .from("orders")
-    .select("id, status, order_type")
+    .select("id, status, order_type, payment_method, paystack_verified_amount")
     .in("status", ["pending", "paid", "processing", "fulfillment_failed"])
     .gte("created_at", cutoff)
     .order("created_at", { ascending: true });
@@ -47,7 +47,7 @@ serve(async (req) => {
   for (const order of orders) {
     try {
       // Verify payment with Paystack ONLY if not already marked as paid/processing or is an API order
-      const isInternal = order.order_type === "api" || order.status === "paid" || order.status === "processing";
+      const isInternal = order.order_type === "api" || order.status === "paid" || order.status === "processing" || order.status === "fulfillment_failed" || order.payment_method === "wallet" || order.payment_method === "korba" || Number(order.paystack_verified_amount || 0) > 0;
       
       if (!isInternal) {
         const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${order.id}`, {

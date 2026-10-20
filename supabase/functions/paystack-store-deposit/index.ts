@@ -120,17 +120,44 @@ serve(async (req) => {
       const isFailed = !isSuccess && result.data?.status === "failed";
 
       if (isSuccess) {
-        await supabase.rpc("fulfill_store_wallet_topup", {
-          p_order_id: order.id,
-          p_customer_id: order.metadata.customer_id,
-          p_agent_id: order.agent_id,
-          p_amount: order.amount
-        });
-        
-        await supabase.from("orders").update({
-          status: "fulfilled",
-          metadata: { ...order.metadata, paystack_raw: result, fulfilled_at: new Date().toISOString() }
-        }).eq("id", order.id);
+        const verifiedAmount = Number(result.data?.amount || 0) / 100;
+        if (verifiedAmount + 0.05 < Number(order.amount)) {
+          console.error(`[paystack-store-deposit] Amount mismatch: Paid GHS ${verifiedAmount}, expected GHS ${order.amount}`);
+          await supabase.from("orders").update({
+            status: "failed",
+            failure_reason: `Amount mismatch: Paid GHS ${verifiedAmount.toFixed(2)}, expected GHS ${Number(order.amount).toFixed(2)}`,
+            metadata: { ...order.metadata, paystack_raw: result }
+          }).eq("id", order.id);
+          return new Response(JSON.stringify({
+            status: "failed",
+            reason: "Amount mismatch",
+            order_id: order.id
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        // Atomically claim order before crediting store wallet
+        const { data: claimedOrder } = await supabase
+          .from("orders")
+          .update({ status: "processing" })
+          .eq("id", order.id)
+          .in("status", ["pending", "awaiting_payment"])
+          .select("id")
+          .maybeSingle();
+
+        if (claimedOrder) {
+          await supabase.rpc("fulfill_store_wallet_topup", {
+            p_order_id: order.id,
+            p_customer_id: order.metadata.customer_id,
+            p_agent_id: order.agent_id,
+            p_amount: order.amount
+          });
+          
+          await supabase.from("orders").update({
+            status: "fulfilled",
+            paystack_verified_amount: verifiedAmount,
+            metadata: { ...order.metadata, paystack_raw: result, fulfilled_at: new Date().toISOString() }
+          }).eq("id", order.id);
+        }
       } else if (isFailed) {
         await supabase.from("orders").update({
           status: "failed",

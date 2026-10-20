@@ -16,6 +16,11 @@ const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 let cachedPaystackKey = "";
 async function getPaystackSecretKey(supabase: any): Promise<string> {
   if (cachedPaystackKey) return cachedPaystackKey;
+  const envKey = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim() || "";
+  if (envKey) {
+    cachedPaystackKey = envKey;
+    return cachedPaystackKey;
+  }
   try {
     const { data: settings } = await supabase
       .from("v_system_settings_with_secrets").select("paystack_secret_key")
@@ -28,7 +33,6 @@ async function getPaystackSecretKey(supabase: any): Promise<string> {
   } catch (err) {
     console.error("Failed to fetch paystack_secret_key from DB in whatsapp-webhook:", err);
   }
-  cachedPaystackKey = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
   return cachedPaystackKey;
 }
 
@@ -695,7 +699,7 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
   if (cleanRef) {
     const { data: order } = await supabase
       .from("orders")
-      .select("id, status, amount, network, package_size, customer_phone, agent_id, failure_reason, created_at, metadata")
+      .select("id, status, amount, network, package_size, customer_phone, agent_id, failure_reason, created_at, metadata, auto_refunded, payment_method, paystack_verified_amount")
       .or(`id.ilike.${cleanRef}%,metadata->>client_reference.eq.${cleanRef}`)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -711,7 +715,7 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
     }
 
     const st = String(order.status || "").toLowerCase();
-    if (st === "refunded" || order.metadata?.is_refunded) {
+    if (st === "refunded" || order.auto_refunded || order.metadata?.is_refunded) {
       return `ℹ️ *Already Refunded*\n\nOrder #${order.id.slice(0, 8)} (${order.network || ""} ${order.package_size || ""}) was already refunded to your wallet balance.`;
     }
 
@@ -723,9 +727,35 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
       return `⏳ *Order Processing*\n\nOrder #${order.id.slice(0, 8)} is currently processing with carrier servers. If delivery cannot be completed, it will become eligible for an instant refund shortly.`;
     }
 
+    const hasVerifiedGatewayPayment = Number(order.paystack_verified_amount || 0) > 0;
+    const hasProofOfPayment = ["failed", "cancelled", "rejected"].includes(st)
+      ? hasVerifiedGatewayPayment
+      : (order.payment_method === "wallet" || hasVerifiedGatewayPayment || st === "fulfillment_failed");
+
+    if (!hasProofOfPayment) {
+      return `❌ *Refund Not Eligible*\n\nOrder #${order.id.slice(0, 8)} does not have a verified payment record eligible for a self-service refund.`;
+    }
+
     const refundAmt = Number(order.amount || 0);
     if (!userId) {
       return `⚠️ *Account Required*\n\nTo receive an instant wallet refund for Order #${order.id.slice(0, 8)} (GH₵ ${refundAmt.toFixed(2)}), please reply *REGISTER* to activate your free account!`;
+    }
+
+    const { data: claimedOrder, error: claimErr } = await supabase
+      .from("orders")
+      .update({
+        status: "refunded",
+        auto_refunded: true,
+        failure_reason: "Refunded via WhatsApp self-service portal"
+      })
+      .eq("id", order.id)
+      .in("status", ["fulfillment_failed", "unfulfilled", "failed", "cancelled", "rejected"])
+      .is("auto_refunded", false)
+      .select("id")
+      .maybeSingle();
+
+    if (claimErr || !claimedOrder) {
+      return `ℹ️ *Already Refunded*\n\nOrder #${order.id.slice(0, 8)} (${order.network || ""} ${order.package_size || ""}) was already refunded to your wallet balance.`;
     }
 
     const { data: credRes, error: credErr } = await supabase.rpc("credit_wallet", {
@@ -737,11 +767,6 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
       console.error("[WA Refund] credit_wallet error:", credErr);
       return `⚠️ *Refund Processing Error*\n\nCould not process refund right now: ${credErr.message || "Database error"}. Please contact support (0598170947).`;
     }
-
-    await supabase.from("orders").update({
-      status: "refunded",
-      failure_reason: "Refunded via WhatsApp self-service portal"
-    }).eq("id", order.id);
 
     const newBal = Number(credRes?.new_balance || 0);
     const shortId = order.id.slice(0, 8);
@@ -866,12 +891,12 @@ async function handleUserRegistrationStep(supabase: any, fromPhone: string, curr
       }).or(`phone.eq.${normPhone},phone.ilike.%${shortPhone}%`);
     }
 
-    await supabase.from("wallets").insert({
+    await Promise.resolve(supabase.from("wallets").insert({
       agent_id: newUserId,
       balance: 0,
       loyalty_balance: 0,
       updated_at: new Date().toISOString()
-    }).catch(console.error);
+    })).catch(console.error);
 
     return {
       reply: [
@@ -972,13 +997,13 @@ async function handleAgentRegistrationStep(supabase: any, fromPhone: string, cur
         return { reply: "⚠️ Profile not found. Reply REGISTER to create your account first.", nextStep: "MENU", updatedData: {} };
       }
 
-      const { error: debitErr } = await supabase.from("wallets").update({
-        balance: (userMeta?.walletBalance || 0) - actFee,
-        updated_at: new Date().toISOString()
-      }).eq("agent_id", userId);
+      const { data: debitRes, error: debitErr } = await supabase.rpc("debit_wallet", {
+        p_agent_id: userId,
+        p_amount: actFee
+      });
 
-      if (debitErr) {
-        return { reply: `⚠️ Wallet debit failed: ${debitErr.message}`, nextStep: "MENU", updatedData: {} };
+      if (debitErr || !debitRes || debitRes.success === false) {
+        return { reply: `⚠️ Wallet debit failed: ${debitErr?.message || debitRes?.error || "Insufficient wallet balance"}`, nextStep: "MENU", updatedData: {} };
       }
 
       await supabase.from("profiles").update({
@@ -989,12 +1014,12 @@ async function handleAgentRegistrationStep(supabase: any, fromPhone: string, cur
         referral_code: refCode
       }).eq("user_id", userId);
 
-      await supabase.from("reseller_stores").upsert({
+      await Promise.resolve(supabase.from("reseller_stores").upsert({
         user_id: userId,
         store_name: storeName,
         slug: slug,
         is_active: true
-      }, { onConflict: "user_id" }).catch(console.error);
+      }, { onConflict: "user_id" })).catch(console.error);
 
       return {
         reply: [
@@ -2493,7 +2518,7 @@ Return ONLY a valid JSON object matching these keys.`;
 
       const { data: orderToRetry } = await supabase
         .from("orders")
-        .select("id, status, network, package_size, amount, customer_phone, failure_reason, retry_count, provider_order_id")
+        .select("id, status, network, package_size, amount, customer_phone, failure_reason, retry_count, provider_order_id, payment_method, paystack_verified_amount")
         .eq("id", targetOrderId)
         .maybeSingle();
 
@@ -2571,15 +2596,31 @@ Return ONLY a valid JSON object matching these keys.`;
       ].join("\n"));
 
       try {
-        await supabase
-          .from("orders")
-          .update({ 
-            status: "paid",
-            retry_count: (Number(orderToRetry?.retry_count || 0) + 1),
-            last_retry_at: new Date().toISOString()
-          })
-          .eq("id", targetOrderId)
-          .in("status", ["pending", "fulfillment_failed", "failed"]);
+        const hasVerifiedRetryPayment =
+          orderToRetry?.status === "fulfillment_failed" ||
+          orderToRetry?.payment_method === "wallet" ||
+          Number(orderToRetry?.paystack_verified_amount || 0) > 0;
+
+        if (hasVerifiedRetryPayment) {
+          await supabase
+            .from("orders")
+            .update({ 
+              status: "paid",
+              retry_count: (Number(orderToRetry?.retry_count || 0) + 1),
+              last_retry_at: new Date().toISOString()
+            })
+            .eq("id", targetOrderId)
+            .in("status", ["fulfillment_failed", "failed", "pending"]);
+        } else {
+          await supabase
+            .from("orders")
+            .update({ 
+              retry_count: (Number(orderToRetry?.retry_count || 0) + 1),
+              last_retry_at: new Date().toISOString()
+            })
+            .eq("id", targetOrderId)
+            .in("status", ["pending", "failed"]);
+        }
 
         const vRes = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
           method: "POST",
@@ -2682,32 +2723,12 @@ Return ONLY a valid JSON object matching these keys.`;
               `_Reply 0 for Main Menu._`
             ].join("\n"));
           } else if (data.topupAmount) {
-            const topupUserId = data.topupAgentId || data.authProfile?.user_id || vJson.data?.metadata?.agent_id;
-            const creditAmt = Number(data.topupAmount || vJson.data?.metadata?.wallet_credit || 0);
-
-            let newBalanceMsg = "";
-            if (topupUserId && creditAmt > 0) {
-              const { data: credRes, error: credErr } = await supabase.rpc("credit_wallet", {
-                p_agent_id: topupUserId,
-                p_amount: creditAmt
-              });
-              console.log("[WA Bot] credit_wallet executed:", credRes, credErr);
-              await supabase.from("orders").update({
-                status: "fulfilled",
-                paystack_verified_amount: vJson.data?.amount ? vJson.data.amount / 100 : creditAmt
-              }).eq("id", data.lastOrderId);
-
-              if (credRes?.new_balance !== undefined) {
-                newBalanceMsg = `\n• *New Wallet Balance:* *GH₵ ${Number(credRes.new_balance).toFixed(2)}*`;
-              }
-            }
-
             await sendWhatsAppMessage(from, [
               `💰 *Wallet Top-Up Confirmed & Credited!*`,
               `━━━━━━━━━━━━━━━━━━━━`,
               `• *Amount Credited:* GH₵ ${Number(data.topupAmount).toFixed(2)}`,
               `• *Payment Status:* ✅ Successful (Paystack Verified)`,
-              `• *Reference:* \`${data.lastOrderId}\`${newBalanceMsg}`,
+              `• *Reference:* \`${data.lastOrderId}\``,
               `━━━━━━━━━━━━━━━━━━━━`,
               `Your SwiftData wallet has been credited successfully and is ready to use! 🚀`,
               ``,

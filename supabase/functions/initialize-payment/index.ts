@@ -293,7 +293,7 @@ serve(async (req: Request) => {
     const isCardPayment = payload?.network_code === "CRD" || payload?.payment_method === "card" || metadata?.payment_method === "card";
 
     const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("allow_duplicate_purchases, holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled, auto_failover_non_beneficiary_to_datamart")
+      .from("v_system_settings_with_secrets").select("allow_duplicate_purchases, holiday_mode_enabled, holiday_message, disable_ordering, mtn_markup_percentage, telecel_markup_percentage, at_markup_percentage, agent_activation_fee, wassce_price, bece_price, wassce_cost_price, bece_cost_price, paystack_deposit_fee_percent, paystack_secret_key, active_payment_gateway, auto_gateway_switch_by_package, beneficiary_verification_enabled, auto_failover_non_beneficiary_to_datamart")
       .eq("id", 1)
       .maybeSingle();
 
@@ -989,14 +989,27 @@ serve(async (req: Request) => {
         if (email) {
           const { data: purchaserProfile } = await supabaseAdmin
             .from("profiles")
-            .select("is_agent, agent_approved, is_sub_agent, sub_agent_approved, parent_agent_id")
+            .select("user_id, email, is_agent, agent_approved, is_sub_agent, sub_agent_approved, parent_agent_id")
             .eq("email", email)
             .maybeSingle();
 
-          const isResellerAgent = !!(purchaserProfile?.is_agent && purchaserProfile?.agent_approved);
-          isResellerSubAgent = !!(purchaserProfile?.is_sub_agent && purchaserProfile?.sub_agent_approved);
+          const authHeader = req.headers.get("Authorization");
+          const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+          let jwtUser: { id: string; email?: string } | null = null;
+          if (token && token !== SUPABASE_SERVICE_ROLE_KEY) {
+            const { data: authData } = await supabaseAdmin.auth.getUser(token);
+            jwtUser = authData?.user ?? null;
+          }
+          const isVerifiedCallerForProfile = Boolean(
+            jwtUser &&
+            purchaserProfile &&
+            (jwtUser.id === purchaserProfile.user_id ||
+              (jwtUser.email && purchaserProfile.email && jwtUser.email.toLowerCase() === purchaserProfile.email.toLowerCase()))
+          );
+          const isApprovedAgent = isVerifiedCallerForProfile && !!(purchaserProfile?.is_agent && purchaserProfile?.agent_approved);
+          isResellerSubAgent = isVerifiedCallerForProfile && !!(purchaserProfile?.is_sub_agent && purchaserProfile?.sub_agent_approved);
 
-          if (isResellerAgent) {
+          if (isApprovedAgent) {
             publicBase = Number(globalRow?.agent_price) > 0 ? Number(globalRow!.agent_price) : 0;
           } else if (isResellerSubAgent && purchaserProfile?.parent_agent_id) {
             resolvedParentAgentId = purchaserProfile.parent_agent_id;
@@ -1089,6 +1102,7 @@ serve(async (req: Request) => {
         const adjustedBase = Number((baseAfa * priceMultiplier).toFixed(2));
         resolvedPaystackFee = parseFloat(calculatePaystackFee(adjustedBase).toFixed(2));
         const expectedTotal = parseFloat((adjustedBase + resolvedPaystackFee).toFixed(2));
+        resolvedAmount = expectedTotal;
         if (!amountMatches(expectedTotal, amount)) {
           return new Response(JSON.stringify({
             error: `Invalid AFA amount. Expected GHS ${expectedTotal.toFixed(2)}.`,
@@ -1098,6 +1112,52 @@ serve(async (req: Request) => {
           });
         }
       }
+    }
+
+    // ── Voucher price validation + Agent activation: enforce fixed fee ────────
+    if (orderType === "voucher") {
+      const voucherTypeRaw = String(metadata.voucher_type || metadata.exam_type || metadata.network || "WASSCE").toUpperCase();
+      const isBece = voucherTypeRaw.includes("BECE");
+      const unitPrice = Number(isBece ? (settings?.bece_price ?? 20) : (settings?.wassce_price ?? 25));
+      const unitCost = Number(isBece ? (settings?.bece_cost_price ?? unitPrice) : (settings?.wassce_cost_price ?? unitPrice));
+      const quantity = Math.floor(Number(metadata.quantity ?? payload?.quantity ?? 1));
+
+      if (!Number.isFinite(quantity) || quantity < 1 || quantity > 50) {
+        return new Response(JSON.stringify({
+          error: "Invalid voucher quantity. Must be between 1 and 50.",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        return new Response(JSON.stringify({
+          error: "Voucher price is not configured.",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const baseVoucherTotal = parseFloat((unitPrice * quantity).toFixed(2));
+      const feeWithPaystack = parseFloat(calculatePaystackFee(baseVoucherTotal).toFixed(2));
+      const totalWithFee = parseFloat((baseVoucherTotal + feeWithPaystack).toFixed(2));
+      const matchesWithFee = amountMatches(totalWithFee, amount);
+      const matchesBase = amountMatches(baseVoucherTotal, amount);
+
+      if (!Number.isFinite(amount) || amount < baseVoucherTotal - 0.01 || (!matchesWithFee && !matchesBase)) {
+        return new Response(JSON.stringify({
+          error: `Invalid voucher amount. Expected GHS ${totalWithFee.toFixed(2)}.`,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      resolvedPaystackFee = matchesWithFee ? feeWithPaystack : 0;
+      const expectedTotal = matchesWithFee ? totalWithFee : baseVoucherTotal;
+      resolvedAmount = expectedTotal;
+      resolvedCostPrice = Number.isFinite(unitCost) && unitCost > 0 ? parseFloat((unitCost * quantity).toFixed(2)) : baseVoucherTotal;
+      enrichedMetadata = {
+        ...enrichedMetadata,
+        voucher_type: isBece ? "BECE" : "WASSCE",
+        quantity,
+        unit_price: unitPrice,
+        base_price: baseVoucherTotal,
+        profit: 0,
+      };
     }
 
     // ── Agent activation: enforce fixed fee + bind agent_id to JWT user ────────
@@ -1453,15 +1513,19 @@ serve(async (req: Request) => {
       if (metadata.customer_name) patch.customer_name = metadata.customer_name;
 
       if (orderType === "data") {
+        const serverProfit = Number.isFinite(resolvedProfit) && resolvedProfit > 0 ? parseFloat(resolvedProfit.toFixed(2)) : 0;
         patch.amount = resolvedAmount;
+        patch.profit = serverProfit;
         patch.paystack_fee = resolvedPaystackFee > 0 ? resolvedPaystackFee : undefined;
-        patch.profit = Number.isFinite(resolvedProfit) ? parseFloat(resolvedProfit.toFixed(2)) : 0;
+        // profit already set to serverProfit above
         patch.parent_profit = Number.isFinite(resolvedParentProfit) ? parseFloat(resolvedParentProfit.toFixed(2)) : 0;
         patch.parent_agent_id = resolvedParentAgentId;
       } else {
-        const metadataProfit = Number(metadata.profit);
+        patch.amount = resolvedWalletCredit !== null ? resolvedWalletCredit : resolvedAmount;
+        patch.profit = 0;
+        const metadataProfit = 0;
         if (Number.isFinite(metadataProfit) && metadataProfit > 0) {
-          patch.profit = parseFloat(metadataProfit.toFixed(2));
+        // never accept metadata.profit from the client payload
         }
       }
 
@@ -1639,7 +1703,7 @@ serve(async (req: Request) => {
 
   // Helper: Initialize via Paystack
   async function tryInitializePaystack(): Promise<{ success: boolean; response?: Response; error?: string }> {
-    let currentPaystackSecret = settings?.paystack_secret_key || "";
+    let currentPaystackSecret = (Deno as any).env.get("PAYSTACK_SECRET_KEY")?.trim() || settings?.paystack_secret_key || "";
     if (!currentPaystackSecret) {
       currentPaystackSecret = (Deno as any).env.get("PAYSTACK_SECRET_KEY") || "";
     }

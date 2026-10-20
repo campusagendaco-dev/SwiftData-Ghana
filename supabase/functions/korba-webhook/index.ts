@@ -87,13 +87,13 @@ async function verifyKorbaStatusViaApi(
   clientId: string,
   clientKey: string,
   secretKey: string,
-  transactionId: string
+  transactionId: string,
+  isDisbursementCallback = false,
+  paymentMethod?: string | null
 ): Promise<boolean> {
   try {
-    const candidateIds = [
-      transactionId.endsWith("_disb") ? transactionId : `${transactionId}_disb`,
-      transactionId.replace(/_disb$/, "")
-    ];
+    const isDisb = isDisbursementCallback || transactionId.endsWith("_disb");
+    const candidateIds = isDisb ? [`${cleanId}_disb`] : [cleanId];
 
     for (const txId of candidateIds) {
       const statusPayload = {
@@ -135,6 +135,7 @@ async function verifyKorbaStatusViaApi(
       if (response.ok) {
         const resData = await response.json();
         const rawStatus = String(resData?.status || resData?.results || resData?.delivery_status || resData?.code || "").toLowerCase();
+        const codeStr = String(resData?.code || resData?.status_code || "").toLowerCase();
         
         const isExplicitSuccess = 
           rawStatus === "success" || 
@@ -142,8 +143,11 @@ async function verifyKorbaStatusViaApi(
           rawStatus === "paid" || 
           rawStatus === "completed" || 
           rawStatus === "fulfilled" ||
-          resData?.code === "0000" ||
-          resData?.status_code === "0000";
+          rawStatus === "delivered" ||
+          rawStatus === "000" ||
+          rawStatus === "0000" ||
+          codeStr === "000" ||
+          codeStr === "0000";
 
         if (isExplicitSuccess) {
           console.log(`[korba-webhook] Confirmed Korba status as SUCCESS via status API for txId: ${txId}`);
@@ -255,6 +259,13 @@ serve(async (req: Request) => {
   const receivedToken = req.headers.get("x-callback-token") || req.headers.get("X-Callback-Token");
   const isTokenAuthenticated = !!(expectedToken && receivedToken === expectedToken);
 
+  // Pre-fetch order so we know payment_method for status API disambiguation
+  const { data: preFetchedOrder } = await supabaseAdmin
+    .from("orders")
+    .select("id, payment_method")
+    .eq("id", cleanedTransactionId)
+    .maybeSingle();
+
   if (signature) {
     if (!KORBA_SECRET_KEY) {
       console.error("[korba-webhook] KORBA_SECRET_KEY missing for signature verification.");
@@ -271,12 +282,20 @@ serve(async (req: Request) => {
   } else if (KORBA_CLIENT_KEY && KORBA_SECRET_KEY && cleanedTransactionId) {
     // Standard Korba webhooks do not include a signature query/body parameter.
     // Confirm transaction status via Korba API for security.
-    console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${cleanedTransactionId}`);
-    const isConfirmed = await verifyKorbaStatusViaApi(supabaseAdmin, KORBA_CLIENT_ID, KORBA_CLIENT_KEY, KORBA_SECRET_KEY, cleanedTransactionId);
+    console.log(`[korba-webhook] Standard Korba callback without signature. Verifying status via Korba API for tx: ${transactionId}`);
+    const isConfirmed = await verifyKorbaStatusViaApi(
+      supabaseAdmin,
+      KORBA_CLIENT_ID,
+      KORBA_CLIENT_KEY,
+      KORBA_SECRET_KEY,
+      transactionId,
+      isDisbursementCallback,
+      preFetchedOrder?.payment_method
+    );
     if (isConfirmed) {
       console.log(`[korba-webhook] Korba transaction status confirmed as SUCCESS via status API.`);
     } else {
-      console.error(`[korba-webhook] Unauthorized callback: Korba status API rejected tx ${cleanedTransactionId}`);
+      console.error(`[korba-webhook] Unauthorized callback: Korba status API rejected tx ${transactionId}`);
       return json({ error: "Unauthorized: Transaction status check failed" }, 401);
     }
   } else {
@@ -288,7 +307,7 @@ serve(async (req: Request) => {
     // 1. Fetch order
     const { data: existingOrder } = await supabaseAdmin
       .from("orders")
-      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, metadata, customer_id")
+      .select("id, order_type, agent_id, parent_agent_id, network, package_size, customer_phone, amount, status, profit, parent_profit, metadata, customer_id, payment_method")
       .eq("id", cleanedTransactionId)
       .maybeSingle();
 
@@ -400,12 +419,30 @@ serve(async (req: Request) => {
     const orderType = existingOrder.order_type || "data";
     const verifiedAmount = Number(existingOrder.amount);
     
-    // Save payment method and verified amount
-    await supabaseAdmin.from("orders").update({
-      payment_method: "korba",
-      paystack_verified_amount: verifiedAmount,
-      failure_reason: null
-    }).eq("id", cleanedTransactionId);
+    // Atomically claim the order before crediting wallets or dispatching fulfillment
+    const isWalletFunding = orderType === "wallet_topup" || orderType === "store_wallet_topup";
+    const allowedStatuses = isWalletFunding
+      ? ["pending", "awaiting_payment"]
+      : ["pending", "awaiting_payment", "paid", "fulfillment_failed", "failed"];
+
+    const { data: claimedOrder, error: claimErr } = await supabaseAdmin
+      .from("orders")
+      .update({
+        status: "processing",
+        payment_method: "korba",
+        paystack_verified_amount: verifiedAmount,
+        failure_reason: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", existingOrder.id)
+      .in("status", allowedStatuses)
+      .select("*")
+      .maybeSingle();
+
+    if (claimErr || !claimedOrder) {
+      console.log(`[korba-webhook] Order ${existingOrder.id} already claimed or processed by another worker. Skipping.`);
+      return json({ received: true, already_processed: true });
+    }
 
     // 2. Fulfill based on order type
     if (orderType === "wallet_topup") {
@@ -488,13 +525,33 @@ serve(async (req: Request) => {
     if (orderType === "agent_activation") {
       const agentId = existingOrder.agent_id;
       if (agentId) {
-        await supabaseAdmin.from("profiles").update({ 
-          is_agent: true, 
-          agent_approved: true,
-          onboarding_complete: true,
-          is_sub_agent: false,
-          parent_agent_id: null
-        }).eq("user_id", agentId);
+        const { data: agentProfile } = await supabaseAdmin
+          .from("profiles")
+          .update({ 
+            is_agent: true, 
+            agent_approved: true,
+            onboarding_complete: true,
+            is_sub_agent: false,
+            parent_agent_id: null
+          })
+          .eq("user_id", agentId)
+          .select("store_name, slug, whatsapp_number, agent_prices")
+          .maybeSingle();
+
+        if (agentProfile?.store_name || agentProfile?.slug) {
+          const { error: storeSyncErr } = await supabaseAdmin.from("reseller_stores").upsert({
+            user_id: agentId,
+            store_name: agentProfile.store_name || "SwiftData Store",
+            slug: agentProfile.slug || `store-${agentId.slice(0, 8)}`,
+            whatsapp_number: agentProfile.whatsapp_number || null,
+            custom_prices: agentProfile.agent_prices || {},
+            is_active: true,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "user_id" });
+          if (storeSyncErr) {
+            console.warn("[korba-webhook] Non-fatal reseller_stores sync warning:", storeSyncErr.message);
+          }
+        }
         
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null }).eq("id", cleanedTransactionId);
         console.log("Agent activated via Korba webhook:", agentId);
@@ -523,15 +580,35 @@ serve(async (req: Request) => {
           .maybeSingle();
         const subAgentPrices = parentProfile?.sub_agent_prices || {};
 
-        await supabaseAdmin.from("profiles").update({
-          is_agent: true,
-          agent_approved: true,
-          sub_agent_approved: true,
-          onboarding_complete: true,
-          is_sub_agent: true,
-          parent_agent_id: parentAgentId || null,
-          agent_prices: subAgentPrices,
-        }).eq("user_id", subAgentId);
+        const { data: subProfile } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            is_agent: true,
+            agent_approved: true,
+            sub_agent_approved: true,
+            onboarding_complete: true,
+            is_sub_agent: true,
+            parent_agent_id: parentAgentId || null,
+            agent_prices: subAgentPrices,
+          })
+          .eq("user_id", subAgentId)
+          .select("store_name, slug, whatsapp_number")
+          .maybeSingle();
+
+        if (subProfile?.store_name || subProfile?.slug) {
+          const { error: storeSyncErr } = await supabaseAdmin.from("reseller_stores").upsert({
+            user_id: subAgentId,
+            store_name: subProfile.store_name || "SwiftData Store",
+            slug: subProfile.slug || `store-${subAgentId.slice(0, 8)}`,
+            whatsapp_number: subProfile.whatsapp_number || null,
+            custom_prices: subAgentPrices,
+            is_active: true,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "user_id" });
+          if (storeSyncErr) {
+            console.warn("[korba-webhook] Non-fatal sub-agent reseller_stores sync warning:", storeSyncErr.message);
+          }
+        }
 
         await supabaseAdmin
           .from("orders")
@@ -553,7 +630,7 @@ serve(async (req: Request) => {
     }
 
     // For standard orders: data, airtime, utility, afa
-    // Mark the order as paid in the database
+    // Mark the order as paid in the database so verify-payment can claim and fulfill it
     await supabaseAdmin
       .from("orders")
       .update({

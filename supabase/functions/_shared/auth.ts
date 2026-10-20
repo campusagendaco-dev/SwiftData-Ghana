@@ -81,6 +81,7 @@ export async function verifyAdmin(
       }
 
       const roleObj = roles[0];
+      const claims = getJwtClaims(token);
 
       // 5. Enforce MFA (AAL2)
       if (checkMfa) {

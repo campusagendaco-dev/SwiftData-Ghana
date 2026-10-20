@@ -964,7 +964,7 @@ serve(async (req: Request) => {
          resolvedCostPrice = Number(metadata?.cost_price || 0);
       }
 
-      const recreatedOrder = {
+      const recreatedOrder: Record<string, any> = {
         id: orderId,
         agent_id: verifiedAgentId,
         parent_agent_id: verifiedParentAgentId,
@@ -993,7 +993,57 @@ serve(async (req: Request) => {
         customer_name: typeof metadata?.customer_name === "string" ? metadata.customer_name : null,
       };
 
-      const { error: recreateError } = await supabaseAdmin.from("orders").insert(recreatedOrder);
+      const { error: recreateError } = await (async () => {
+        if (orderType === "data") {
+          const netCheck = typeof metadata?.network === "string" ? metadata.network : "";
+          const pkgCheck = typeof metadata?.package_size === "string" ? metadata.package_size : "";
+          const isKorbaMeta = metadata?.is_korba === true || metadata?.is_korba === "true" || String(metadata?.category || "").toLowerCase() === "korba";
+          let minServerPrice = 0;
+          if (netCheck && pkgCheck) {
+            if (isKorbaMeta) {
+              const { data: kPkg } = await supabaseAdmin
+                .from("provider_packages")
+                .select("cost_price")
+                .eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
+                .eq("package_name", pkgCheck)
+                .eq("is_active", true)
+                .limit(1)
+                .maybeSingle();
+              if (kPkg && Number(kPkg.cost_price) > 0) {
+                minServerPrice = Number(kPkg.cost_price);
+                resolvedCostPrice = minServerPrice;
+              }
+            } else {
+              const { data: gPkg } = await supabaseAdmin
+                .from("global_package_settings")
+                .select("agent_price, public_price, cost_price")
+                .eq("network", netCheck)
+                .eq("package_size", pkgCheck)
+                .maybeSingle();
+              if (gPkg) {
+                const adminPrice = Number(gPkg.agent_price || 0);
+                const pubPrice = Number(gPkg.public_price || adminPrice);
+                resolvedCostPrice = Number(gPkg.cost_price || adminPrice);
+                minServerPrice = verifiedAgentId !== "00000000-0000-0000-0000-000000000000" ? adminPrice : pubPrice;
+              }
+            }
+          }
+          if (resolvedCostPrice > 0) recreatedOrder.cost_price = resolvedCostPrice;
+          if (!netCheck || !pkgCheck || minServerPrice <= 0 || verifiedAmount + 0.10 < minServerPrice) {
+            recreatedOrder.status = "failed";
+            recreatedOrder.profit = 0;
+            recreatedOrder.parent_profit = 0;
+            recreatedOrder.failure_reason = minServerPrice > 0
+              ? `Underpayment on uninitialized order: Paid GHS ${verifiedAmount.toFixed(2)}, minimum required GHS ${minServerPrice.toFixed(2)}`
+              : `Unverified package in uninitialized order (${netCheck || "unknown"} ${pkgCheck || "unknown"})`;
+          }
+        }
+        return await supabaseAdmin.from("orders").insert(recreatedOrder);
+      })();
+      if (!recreateError && recreatedOrder.status === "failed") {
+        console.warn(`[Webhook Security] Blocked fulfillment of underpaid/unverified recreated order ${orderId}: ${recreatedOrder.failure_reason}`);
+        return new Response(JSON.stringify({ received: true, error: recreatedOrder.failure_reason }), { status: 200, headers: corsHeaders });
+      }
       if (recreateError) {
         console.error("Webhook failed to recreate missing order:", recreateError);
       } else {
@@ -1302,7 +1352,7 @@ serve(async (req: Request) => {
 
         // Auto-sync reseller_stores table
         if (rawSlug) {
-          await supabaseAdmin.from("reseller_stores").upsert({
+          await Promise.resolve(supabaseAdmin.from("reseller_stores").upsert({
             user_id: agentId,
             slug: rawSlug,
             store_name: storeName,
@@ -1310,18 +1360,18 @@ serve(async (req: Request) => {
             approved: true,
             agent_approved: true,
             updated_at: new Date().toISOString()
-          }, { onConflict: "user_id" }).catch(console.error);
+          }, { onConflict: "user_id" })).catch(console.error);
         }
 
         // Ensure wallet exists
         const { data: existingWallet } = await supabaseAdmin.from("wallets").select("id").eq("agent_id", agentId).maybeSingle();
         if (!existingWallet) {
-          await supabaseAdmin.from("wallets").insert({
+          await Promise.resolve(supabaseAdmin.from("wallets").insert({
             agent_id: agentId,
             balance: 0.00,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          }).catch(console.error);
+          })).catch(console.error);
         }
 
         await supabaseAdmin.from("orders").update({ status: "fulfilled", failure_reason: null, agent_id: agentId }).eq("id", orderId);
@@ -1364,7 +1414,7 @@ serve(async (req: Request) => {
             `_Reply 0 for Main Menu._`
           ].join("\n")).catch(console.error);
 
-          await supabaseAdmin.from("whatsapp_sessions").delete().eq("phone_number", waFrom).catch(console.error);
+          await Promise.resolve(supabaseAdmin.from("whatsapp_sessions").delete().eq("phone_number", waFrom)).catch(console.error);
         }
 
         // Send Welcome SMS
@@ -1716,7 +1766,16 @@ serve(async (req: Request) => {
 
       // Dynamic Resolution: Override default credentials with the selected active provider's live configs
       const primaryProvider = activeProviders[0];
-      if (primaryProvider.api_key) DATA_PROVIDER_API_KEY = primaryProvider.api_key;
+      const htPrimary = String(primaryProvider?.handler_type || "").toLowerCase();
+      const envPrimaryKey = (
+        htPrimary === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+        htPrimary === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+        htPrimary === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+        htPrimary === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+        htPrimary === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+        Deno.env.get("DATA_PROVIDER_API_KEY")
+      ) || "";
+      DATA_PROVIDER_API_KEY = envPrimaryKey || primaryProvider.api_key || DATA_PROVIDER_API_KEY;
       if (primaryProvider.base_url) DATA_PROVIDER_BASE_URL = primaryProvider.base_url.replace(/\/+$/, "");
     }
 
@@ -2103,7 +2162,7 @@ serve(async (req: Request) => {
       console.error("Failed to resolve provider for logging:", e);
     }
 
-    if (candidateProviders.length === 0 && (DATA_PROVIDER_BASE_URL || DATA_PROVIDER_API_KEY)) {
+    if (candidateProviders.length === 0 && (DATA_PROVIDER_BASE_URL || DATA_PROVIDER_API_KEY) && !String(DATA_PROVIDER_BASE_URL || "").toLowerCase().includes("korba")) {
       candidateProviders.push({
         id: null,
         name: "Default Env Provider",
@@ -2129,7 +2188,16 @@ serve(async (req: Request) => {
 
       const providerCallStart = Date.now();
       const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
-      const targetApiKey = chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
+      const htChosen = String(chosenProvider?.handler_type || "").toLowerCase();
+      const envChosenKey = (
+        htChosen === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+        htChosen === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+        htChosen === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+        htChosen === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+        htChosen === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+        Deno.env.get("DATA_PROVIDER_API_KEY")
+      ) || "";
+      const targetApiKey = envChosenKey || chosenProvider?.api_key || DATA_PROVIDER_API_KEY;
 
       const ht = chosenProvider?.handler_type || (
         (chosenProvider?.base_url || "").toLowerCase().includes("datamart") ? "datamart" : "standard"

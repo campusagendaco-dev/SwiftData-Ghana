@@ -615,6 +615,8 @@ const DashboardSettings = () => {
 
     setSaving(true);
     try {
+      const slug = form.store_name.trim() ? generateSlug(form.store_name) : null;
+
       // 1. Update Profile (Central Details)
       const { error: profileError } = await supabase.from("profiles").update({
         full_name: form.full_name.trim(),
@@ -628,27 +630,65 @@ const DashboardSettings = () => {
         momo_account_name: form.momo_account_name.trim(),
         sms_sender_id: form.sms_sender_id.trim() || null,
         sms_sender_status: form.sms_sender_id.trim() ? (form.sms_sender_status === 'none' || form.sms_sender_status === 'rejected' ? 'pending' : form.sms_sender_status) : 'none',
+        store_name: form.store_name.trim() || null,
+        slug,
+        store_logo_url: form.store_logo_url.trim() || null,
+        store_primary_color: form.store_primary_color || "#fbbf24",
+        custom_domain: form.custom_domain.trim() || null,
       }).eq("user_id", user.id);
 
       if (profileError) throw profileError;
 
-      // 2. Update selected store details (upserting to guarantee reseller_stores sync)
-      if (form.store_name?.trim()) {
-        const slug = generateSlug(form.store_name);
-        const { error: storeError } = await supabase
-          .from("reseller_stores")
-          .upsert({
-            user_id: user.id,
-            store_name: form.store_name.trim(),
-            store_logo_url: form.store_logo_url,
-            store_banner_url: form.store_banner_url,
-            store_description: form.store_description.trim() || null,
-            store_primary_color: form.store_primary_color || "#fbbf24",
-            custom_domain: form.custom_domain.trim() || null,
-            slug,
-          }, { onConflict: "slug" });
+      // 2. Update selected store details in-place to avoid duplicate orphaned stores on rename
+      if (form.store_name?.trim() && slug) {
+        const storePayload = {
+          user_id: user.id,
+          store_name: form.store_name.trim(),
+          store_logo_url: form.store_logo_url.trim() || null,
+          store_banner_url: form.store_banner_url.trim() || null,
+          store_description: form.store_description.trim() || null,
+          store_primary_color: form.store_primary_color || "#fbbf24",
+          custom_domain: form.custom_domain.trim() || null,
+          slug,
+        };
 
-        if (storeError) throw storeError;
+        if (selectedStoreId && selectedStoreId !== "new") {
+          const { error: storeError } = await supabase
+            .from("reseller_stores")
+            .update(storePayload)
+            .eq("id", selectedStoreId)
+            .eq("user_id", user.id);
+
+          if (storeError) throw storeError;
+        } else {
+          const { data: existingStore } = await supabase
+            .from("reseller_stores")
+            .select("id")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (existingStore?.id) {
+            const { error: storeError } = await supabase
+              .from("reseller_stores")
+              .update(storePayload)
+              .eq("id", existingStore.id)
+              .eq("user_id", user.id);
+
+            if (storeError) throw storeError;
+            setSelectedStoreId(existingStore.id);
+          } else {
+            const { data: createdStore, error: storeError } = await supabase
+              .from("reseller_stores")
+              .insert(storePayload)
+              .select("id")
+              .single();
+
+            if (storeError) throw storeError;
+            if (createdStore?.id) setSelectedStoreId(createdStore.id);
+          }
+        }
       }
 
       await refreshProfile();

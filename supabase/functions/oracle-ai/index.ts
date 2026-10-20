@@ -161,6 +161,23 @@ serve(async (req: Request) => {
     const userMessage: string = body?.context?.userMessage || body?.message || "";
     const history: { role: string; content: string }[] = body?.history || [];
     const context = body?.context || {};
+
+    const authHeader = req.headers.get("Authorization");
+    const bearerToken = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
+    let authUser: any = null;
+    let dbProfile: any = null;
+    if (bearerToken && bearerToken !== SUPABASE_SERVICE_ROLE_KEY) {
+      const { data: authData } = await supabaseAdmin.auth.getUser(bearerToken);
+      authUser = authData?.user ?? null;
+      if (authUser?.id) {
+        const { data: profData } = await supabaseAdmin
+          .from("profiles")
+          .select("*")
+          .eq("user_id", authUser.id)
+          .maybeSingle();
+        dbProfile = profData;
+      }
+    }
     
     // ━━━ NEW: Event-Driven Triggers (AI Judge) ━━━
     if (event === 'new_dispute') {
@@ -307,22 +324,29 @@ serve(async (req: Request) => {
           }
         }
         else if (name === "get_loyalty_status") {
-          const { data: profile } = await supabase.from("profiles").select("loyalty_points").eq("id", context.profile?.id).maybeSingle();
-          toolResult = `User has ${profile?.loyalty_points || 0} loyalty points. 100 points = 1 GHS.`;
+          if (!authUser || !dbProfile) {
+            toolResult = "Unauthorized: Please log in to check loyalty points.";
+          } else {
+            toolResult = `User has ${dbProfile?.loyalty_points || 0} loyalty points. 100 points = 1 GHS.`;
+          }
         } 
         else if (name === "redeem_points") {
-          const pointsToRedeem = Math.max(100, Math.floor(context.profile?.loyalty_points || 0));
-          if (pointsToRedeem < 100) {
-            toolResult = "Redemption failed: User needs at least 100 points.";
+          if (!authUser || !dbProfile) {
+            toolResult = "Redemption failed: Valid authentication token required.";
           } else {
-            const amountGHS = pointsToRedeem / 100;
-            // Atomic transaction: Deduct points, add balance
-            const { error: rpcError } = await supabase.rpc("redeem_loyalty_points_to_wallet", {
-              user_id: context.profile?.id,
-              points_amount: pointsToRedeem,
-              credit_amount: amountGHS
-            });
-            toolResult = rpcError ? `Error: ${rpcError.message}` : `Success! Redeemed ${pointsToRedeem} points for ${amountGHS} GHS added to wallet.`;
+            const pointsToRedeem = Math.floor(Number(dbProfile.loyalty_points || 0));
+            if (pointsToRedeem < 100) {
+              toolResult = "Redemption failed: User needs at least 100 points.";
+            } else {
+              const amountGHS = pointsToRedeem / 100;
+              // Atomic transaction: Deduct points, add balance
+              const { error: rpcError } = await supabase.rpc("redeem_loyalty_points_to_wallet", {
+                user_id: authUser.id,
+                points_amount: pointsToRedeem,
+                credit_amount: amountGHS
+              });
+              toolResult = rpcError ? `Error: ${rpcError.message}` : `Success! Redeemed ${pointsToRedeem} points for ${amountGHS} GHS added to wallet.`;
+            }
           }
         }
         else if (name === "get_system_health") {
@@ -343,7 +367,7 @@ serve(async (req: Request) => {
           }
         }
         else if (name === "get_business_performance") {
-          if (!context.profile?.is_agent) {
+          if (!authUser || !dbProfile?.is_agent) {
             toolResult = "Unauthorized: Only Agents can access business performance metrics.";
           } else {
             const today = new Date();
@@ -352,7 +376,7 @@ serve(async (req: Request) => {
             const { data: sales } = await supabase
               .from("orders")
               .select("amount")
-              .eq("agent_id", context.profile.id)
+              .eq("agent_id", authUser.id)
               .eq("status", "fulfilled")
               .gt("created_at", today.toISOString());
             
@@ -362,18 +386,18 @@ serve(async (req: Request) => {
           }
         }
         else if (name === "get_agent_network_summary") {
-          if (!context.profile?.is_agent) {
+          if (!authUser || !dbProfile?.is_agent) {
             toolResult = "Unauthorized: Only Master Agents can access network summaries.";
           } else {
             const { data: subAgents } = await supabase
               .from("profiles")
-              .select("id, full_name")
-              .eq("referrer_id", context.profile.id);
+              .select("user_id, full_name")
+              .eq("parent_agent_id", authUser.id);
             
             const count = subAgents?.length || 0;
             let totalNetworkBalance = 0;
             if (count > 0) {
-              const subAgentIds = subAgents.map((a: any) => a.id);
+              const subAgentIds = subAgents.map((a: any) => a.user_id);
               const { data: wallets } = await supabase
                 .from("wallets")
                 .select("balance")
@@ -385,7 +409,7 @@ serve(async (req: Request) => {
         }
         else if (name === "purchase_data_bundle") {
           const { network, phone_number, package_size } = input;
-          if (!context.profile) {
+          if (!authUser || !dbProfile) {
             toolResult = "Purchase failed: User must be logged in to purchase data.";
           } else {
             try {
@@ -399,7 +423,7 @@ serve(async (req: Request) => {
               if (!pkg) {
                 toolResult = `Purchase failed: Could not find a package matching "${package_size}" for ${network}.`;
               } else {
-                const amount = context.profile.is_agent ? (pkg.agent_price || pkg.public_price) : pkg.public_price;
+                const amount = dbProfile.is_agent ? (pkg.agent_price || pkg.public_price) : pkg.public_price;
                 
                 // Call wallet-buy-data internally
                 const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/wallet-buy-data`, {
@@ -431,11 +455,11 @@ serve(async (req: Request) => {
         }
         else if (name === "investigate_dispute") {
           const { order_id, phone_number } = input;
-          if (!context.profile?.id) {
+          if (!authUser || !dbProfile) {
             toolResult = "Investigation failed: User not authenticated.";
           } else {
             try {
-               let query = supabaseAdmin.from("orders").select("*").eq("agent_id", context.profile.id);
+               let query = supabaseAdmin.from("orders").select("*").eq("agent_id", authUser.id);
                if (order_id) query = query.eq("id", order_id);
                else if (phone_number) query = query.eq("customer_phone", phone_number).order("created_at", { ascending: false }).limit(1);
                else throw new Error("Need an order ID or phone number to investigate.");
@@ -443,22 +467,42 @@ serve(async (req: Request) => {
                const { data: orders } = await query;
                const order = orders?.[0];
                
-               if (!order) {
+               if (!order || order.agent_id !== authUser.id) {
                  toolResult = "Could not find any recent order matching those details in your account.";
                } else {
+                 const hasProofOfPayment =
+                   order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0;
+
                  if (order.status === "fulfilled") {
                    toolResult = `Order ${order.id.slice(0,8)} for ${order.network} ${order.package_size} shows as successfully fulfilled by the provider. No refund can be issued automatically. Please contact support if the customer insists they didn't receive it.`;
-                 } else if (order.status === "failed" || order.status === "fulfillment_failed") {
-                   // Ensure it's refunded
-                   const { data: refundRes, error: refundErr } = await supabaseAdmin.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
-                   if (!refundErr) {
-                     await supabaseAdmin.from("orders").update({ status: "refunded" }).eq("id", order.id);
-                     toolResult = `Confirmed! Order ${order.id.slice(0,8)} failed. I have automatically refunded ${order.amount} GHS to your wallet.`;
-                   } else {
-                     toolResult = `Order ${order.id.slice(0,8)} failed, but I couldn't process the refund automatically. An admin has been notified.`;
-                   }
-                 } else if (order.status === "refunded") {
+                 } else if (order.status === "refunded" || order.auto_refunded) {
                    toolResult = `Order ${order.id.slice(0,8)} has already been refunded to your wallet.`;
+                 } else if (order.status === "failed" || order.status === "fulfillment_failed") {
+                   if (!hasProofOfPayment) {
+                     toolResult = `Order ${order.id.slice(0,8)} failed before payment was completed, so no refund is applicable.`;
+                   } else {
+                     // Atomically claim the order as refunded BEFORE crediting wallet
+                     const { data: claimedOrder, error: claimErr } = await supabaseAdmin
+                       .from("orders")
+                       .update({ status: "refunded", auto_refunded: true })
+                       .eq("id", order.id)
+                       .eq("agent_id", authUser.id)
+                       .in("status", ["failed", "fulfillment_failed"])
+                       .is("auto_refunded", false)
+                       .select("id")
+                       .maybeSingle();
+
+                     if (claimErr || !claimedOrder) {
+                       toolResult = `Order ${order.id.slice(0,8)} has already been refunded to your wallet.`;
+                     } else {
+                       const { error: refundErr } = await supabaseAdmin.rpc("credit_wallet", { p_agent_id: authUser.id, p_amount: order.amount });
+                       if (!refundErr) {
+                         toolResult = `Confirmed! Order ${order.id.slice(0,8)} failed. I have automatically refunded ${order.amount} GHS to your wallet.`;
+                       } else {
+                         toolResult = `Order ${order.id.slice(0,8)} failed, but I couldn't process the refund automatically. An admin has been notified.`;
+                       }
+                     }
+                   }
                  } else {
                    // Call verify-payment to sync status
                    const verifyRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/verify-payment`, {
@@ -469,10 +513,8 @@ serve(async (req: Request) => {
                    
                    if (verifyData.status === "fulfilled") {
                      toolResult = `I checked the live provider logs. Order ${order.id.slice(0,8)} was actually successful! The status has been updated.`;
-                   } else if (verifyData.status === "failed" || verifyData.status === "fulfillment_failed") {
-                     await supabaseAdmin.rpc("credit_wallet", { p_agent_id: order.agent_id, p_amount: order.amount });
-                     await supabaseAdmin.from("orders").update({ status: "refunded" }).eq("id", order.id);
-                     toolResult = `I checked the live provider logs and the order failed. I have automatically refunded ${order.amount} GHS to your wallet.`;
+                   } else if (verifyData.status === "failed" || verifyData.status === "fulfillment_failed" || verifyData.status === "refunded") {
+                     toolResult = `I checked the live provider logs and the order failed. Any eligible refund is processed automatically by the payment verifier.`;
                    } else {
                      toolResult = `Order ${order.id.slice(0,8)} is still marked as '${verifyData.status || order.status}'. The provider is still processing it. Please check back in a few minutes.`;
                    }

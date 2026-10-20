@@ -50,7 +50,10 @@ serve(async (req) => {
     if (!chosenProvider) {
       // Check for a provider marked in settings as is_beneficiary_fallback
       const { data: allProv } = await supabaseAdmin.from("providers").select("*");
-      const designated = (allProv || []).find((p: any) => p.settings?.is_beneficiary_fallback === true);
+      const nonKorbaProvs = (allProv || []).filter(
+        (p: any) => p.handler_type !== "korba" && !String(p.name || "").toLowerCase().includes("korba")
+      );
+      const designated = nonKorbaProvs.find((p: any) => p.settings?.is_beneficiary_fallback === true);
       if (designated) {
         chosenProvider = designated;
       } else {
@@ -59,7 +62,7 @@ serve(async (req) => {
           .select("*")
           .eq("handler_type", "datamart")
           .maybeSingle();
-        chosenProvider = dm || (allProv || []).find((p: any) => p.is_active && p.provider_type === "data");
+        chosenProvider = dm || nonKorbaProvs.find((p: any) => p.is_active && p.provider_type === "data");
       }
     }
 
@@ -68,6 +71,13 @@ serve(async (req) => {
         success: false,
         error: "No telecom provider found to route non-beneficiary orders to."
       }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (chosenProvider.handler_type === "korba" || String(chosenProvider.name || "").toLowerCase().includes("korba")) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Cannot route SME data bundles to Korba."
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // 2. Query target orders to route
