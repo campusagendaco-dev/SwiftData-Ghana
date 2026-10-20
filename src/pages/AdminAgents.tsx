@@ -76,6 +76,7 @@ const AdminAgents = () => {
   const [pendingSenderIds, setPendingSenderIds] = useState<any[]>([]);
   const [updatingSenderId, setUpdatingSenderId] = useState<string | null>(null);
   const [togglingApi, setTogglingApi] = useState<string | null>(null);
+  const [agentCounts, setAgentCounts] = useState({ total: 0, approved: 0, pending: 0 });
   const PAGE_SIZE = 50;
   const { toast } = useToast();
   const { user: currentUser, session } = useAuth();
@@ -113,14 +114,41 @@ const AdminAgents = () => {
       .range(from, to);
     const rows = ((data as any[]) || []) as AgentRow[];
 
+    if (!isLoadMore) {
+      const [totalCountRes, approvedCountRes, pendingCountRes] = await Promise.all([
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).eq("agent_approved", true),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).or("agent_approved.is.null,agent_approved.eq.false"),
+      ]);
+      setAgentCounts({
+        total: totalCountRes.count ?? 0,
+        approved: approvedCountRes.count ?? 0,
+        pending: pendingCountRes.count ?? 0,
+      });
+    }
+
     // Fetch wallet balances for this batch only
     const ids = rows.map(r => r.user_id).filter((id: any) => id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
     if (ids.length > 0) {
-      const [walletsRes, subCountRes, salesRes, activationsRes] = await Promise.all([
-        supabase.from("wallets").select("agent_id, balance, api_balance, credit_limit").in("agent_id", ids),
-        supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent" as any, true).in("parent_agent_id" as any, ids),
-        supabase.from("user_sales_stats").select("user_id, total_sales_volume, total_own_profit, total_commissions_paid").in("user_id", ids),
-        supabase.from("orders").select("agent_id, amount, paystack_fee, payment_method").in("agent_id", ids).in("order_type", ["agent_activation", "sub_agent_activation"]).in("status", ["paid", "fulfilled"]),
+      const idChunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += 50) {
+        idChunks.push(ids.slice(i, i + 50));
+      }
+      const [walletChunks, subCountChunks, salesChunks, activationChunks] = await Promise.all([
+        Promise.all(idChunks.map(chunk => supabase.from("wallets").select("agent_id, balance, api_balance, credit_limit").in("agent_id", chunk))),
+        Promise.all(idChunks.map(chunk => supabase.from("profiles").select("user_id, parent_agent_id").eq("is_sub_agent" as any, true).in("parent_agent_id" as any, chunk))),
+        Promise.all(idChunks.map(chunk => supabase.from("user_sales_stats").select("user_id, total_sales_volume, total_own_profit, total_commissions_paid").in("user_id", chunk))),
+        Promise.all(idChunks.map(chunk => supabase.from("orders").select("agent_id, amount, paystack_fee, payment_method").in("agent_id", chunk).in("order_type", ["agent_activation", "sub_agent_activation"]).in("status", ["paid", "fulfilled"]))),
+      ]);
+      const walletsRes = { data: walletChunks.flatMap(r => r.data || []) };
+      const subCountRes = { data: subCountChunks.flatMap(r => r.data || []) };
+      const salesRes = { data: salesChunks.flatMap(r => r.data || []) };
+      const activationsRes = { data: activationChunks.flatMap(r => r.data || []) };
+      void ([
+
+
+
+
       ]);
 
       const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.agent_id, { balance: w.balance, api_balance: w.api_balance, limit: w.credit_limit }]));
@@ -164,7 +192,8 @@ const AdminAgents = () => {
       .select("id, agent_id, created_at, amount, paystack_fee, payment_method")
       .in('status', ['paid', 'pending', 'processing', 'fulfillment_failed'])
       .in('order_type', ['agent_activation', 'sub_agent_activation'])
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
 
     if (activationOrders && activationOrders.length > 0) {
       const isValidUuid = (id: unknown): id is string =>
@@ -487,9 +516,9 @@ const AdminAgents = () => {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Total Agents", value: agents.length, color: "text-foreground" },
-          { label: "Approved", value: approvedCount, color: "text-emerald-500" },
-          { label: "Pending", value: pendingCount, color: "text-amber-500" },
+          { label: "Total Agents", value: agentCounts.total || agents.length, color: "text-foreground" },
+          { label: "Approved", value: agentCounts.approved, color: "text-emerald-500" },
+          { label: "Pending", value: agentCounts.pending, color: "text-amber-500" },
         ].map(s => (
           <div key={s.label} className="rounded-2xl bg-card border border-border shadow-sm p-4 text-center">
             <p className={`font-display text-2xl font-black ${s.color}`}>{s.value}</p>

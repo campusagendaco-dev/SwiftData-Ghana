@@ -170,6 +170,31 @@ async function callProviderApi(
   supabaseAdmin: any = null
 ): Promise<{ ok: boolean; reason: string; id?: string; body: string; status?: string }> {
   const handlerType = provider.handler_type || "standard";
+  const handlerUpper = String(handlerType || provider.name || "").toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const resolvedApiKey =
+    (handlerType === "datahub" && getEnv("DATAHUB_API_KEY")) ||
+    (handlerType === "datamart" && getEnv("DATAMART_API_KEY", "DATAMARTGH_API_KEY")) ||
+    (handlerType === "skdataplug" && getEnv("SKDATAPLUG_API_KEY", "SKPLUG_API_KEY")) ||
+    (handlerType === "spendless" && getEnv("SPENDLESS_API_KEY")) ||
+    (handlerType === "bundlezone" && getEnv("BUNDLEZONE_API_KEY")) ||
+    (handlerType === "superbdatafy" && getEnv("SUPERBDATAFY_API_KEY")) ||
+    (handlerType === "qhowmenzconsult" && getEnv("QHOWMENZCONSULT_API_KEY")) ||
+    (handlerType === "bossu" && getEnv("BOSSU_API_KEY")) ||
+    getEnv(`${handlerUpper}_API_KEY`) ||
+    provider.api_key ||
+    "";
+  const resolvedBaseUrl =
+    (handlerType === "datahub" && getEnv("DATAHUB_BASE_URL")) ||
+    (handlerType === "datamart" && getEnv("DATAMART_BASE_URL", "DATAMARTGH_BASE_URL")) ||
+    (handlerType === "skdataplug" && getEnv("SKDATAPLUG_BASE_URL", "SKPLUG_BASE_URL")) ||
+    (handlerType === "spendless" && getEnv("SPENDLESS_BASE_URL")) ||
+    (handlerType === "bundlezone" && getEnv("BUNDLEZONE_BASE_URL")) ||
+    (handlerType === "superbdatafy" && getEnv("SUPERBDATAFY_BASE_URL")) ||
+    (handlerType === "qhowmenzconsult" && getEnv("QHOWMENZCONSULT_BASE_URL")) ||
+    (handlerType === "bossu" && getEnv("BOSSU_BASE_URL")) ||
+    getEnv(`${handlerUpper}_BASE_URL`) ||
+    provider.base_url ||
+    "";
   let payload = { ...data };
   if (handlerType === "skdataplug" && endpoint === "purchase") {
     let providerNetwork = "MTN";
@@ -248,8 +273,8 @@ async function callProviderApi(
       const phone = String(data.recipient || data.phoneNumber || data.recipient_phone || "");
 
       try {
-        const bundleRes = await fetch(`${provider.base_url}/bundles?network=${sbNetwork}`, {
-          headers: { "Authorization": `Bearer ${provider.api_key}`, "Accept": "application/json" }
+        const bundleRes = await fetch(`${resolvedBaseUrl}/bundles?network=${sbNetwork}`, {
+          headers: { "Authorization": `Bearer ${resolvedApiKey}`, "Accept": "application/json" }
         });
         if (bundleRes.ok) {
            const bData = await bundleRes.json();
@@ -308,7 +333,7 @@ async function callProviderApi(
     };
   }
 
-  const urls = buildProviderUrls(provider.base_url, endpoint, handlerType);
+  const urls = buildProviderUrls(resolvedBaseUrl, endpoint, handlerType);
   let lastBody = "";
   let lastReason = "Provider error";
 
@@ -322,8 +347,8 @@ async function callProviderApi(
       const tid = setTimeout(() => ctrl.abort(), 25000);
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
-        headers["X-API-Key"] = provider.api_key;
-        if (handlerType !== "datamart" && handlerType !== "qhowmenzconsult") headers["Authorization"] = `Bearer ${provider.api_key}`;
+        headers["X-API-Key"] = resolvedApiKey;
+        if (handlerType !== "datamart" && handlerType !== "qhowmenzconsult") headers["Authorization"] = `Bearer ${resolvedApiKey}`;
         headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
         headers["User-Agent"] = "SwiftDataGH/2.0";
 
@@ -474,6 +499,45 @@ function json(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function isKorbaDataPackagePattern(network: string | null | undefined, packageSize: string | null | undefined): boolean {
+  const netUpper = String(network || "").trim().toUpperCase();
+  const pkgUpper = String(packageSize || "").trim().toUpperCase();
+  if (netUpper.includes("KORBA")) return true;
+  if (
+    pkgUpper.startsWith("GHS") ||
+    pkgUpper.includes("RACT_DATA") ||
+    pkgUpper.includes("KOKROKOO") ||
+    pkgUpper.includes("MIDNIGHT") ||
+    pkgUpper.includes("SOCIAL") ||
+    pkgUpper.includes("VIDEO") ||
+    pkgUpper.includes("IDD")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+async function getKorbaPackageSet(supabase: any): Promise<Set<string>> {
+  const defaultKorbaId = "1177b72a-a2d7-462d-9366-9dde6e83ccd7";
+  const { data: korbaProviders } = await supabase
+    .from("providers")
+    .select("id")
+    .or(`id.eq.${defaultKorbaId},handler_type.eq.korba`);
+  const providerIds = Array.from(
+    new Set([defaultKorbaId, ...(korbaProviders ?? []).map((p: any) => p.id).filter(Boolean)])
+  );
+  const { data: korbaMappings, error: mappingsErr } = await supabase
+    .from("provider_packages")
+    .select("package_name, network")
+    .in("provider_id", providerIds);
+  if (mappingsErr) console.error("Error fetching Korba package mappings:", mappingsErr);
+  return new Set(
+    (korbaMappings ?? []).map(
+      (m: any) => `${String(m.network || "").toLowerCase()}-${String(m.package_name || "").replace(/\s+/g, "").toLowerCase()}`
+    )
+  );
 }
 
 serve(async (req: Request) => {
@@ -903,7 +967,7 @@ serve(async (req: Request) => {
       const filteredPlans = (plans ?? []).filter((p: any) => {
         const net = p.network.toLowerCase();
         const sizeKey = `${net}-${String(p.package_size).replace(/\s+/g, "").toLowerCase()}`;
-        return !korbaSet.has(sizeKey);
+        return !korbaSet.has(sizeKey) && !isKorbaDataPackagePattern(p.network, p.package_size);
       });
 
       const plansWithId = filteredPlans.map((p: any) => {
@@ -1021,6 +1085,58 @@ serve(async (req: Request) => {
       if (!network || !phone || (!amount && !package_size))
         return json({ success: false, error: "Missing required fields." }, 400);
 
+      // Enforce SME Korba Exclusion & Strict Server-Side Pricing for Data Bundles
+      const isAirtimeOrder =
+        p.endsWith("/payment/airtime") ||
+        (!package_id && (!package_size || String(package_size).trim().toUpperCase() === "AIRTIME"));
+
+      let serverValidatedAmount = Number(amount || 0);
+
+      if (!isAirtimeOrder) {
+        if (
+          isKorbaDataPackagePattern(network, package_size) ||
+          String(payload?.provider_type || "").toLowerCase() === "korba" ||
+          String(payload?.category || "").toLowerCase() === "korba"
+        ) {
+          return json({ success: false, error: "SME data bundles cannot be routed to Korba." }, 400);
+        }
+
+        const korbaSet = await getKorbaPackageSet(supabase);
+        const normalizedKey = `${String(network).toLowerCase()}-${String(package_size).replace(/\s+/g, "").toLowerCase()}`;
+        if (korbaSet.has(normalizedKey)) {
+          return json({ success: false, error: "Selected package is excluded from SME developer API." }, 400);
+        }
+
+        const { data: matchedPlans } = await supabase
+          .from("global_package_settings")
+          .select("*")
+          .eq("is_unavailable", false)
+          .ilike("network", String(network).trim());
+
+        const cleanTargetSize = String(package_size).replace(/\s+/g, "").toLowerCase();
+        const matchedPlan = (matchedPlans ?? []).find(
+          (pl: any) => String(pl.package_size || "").replace(/\s+/g, "").toLowerCase() === cleanTargetSize
+        );
+
+        if (!matchedPlan) {
+          return json({ success: false, error: "Invalid or unavailable data bundle." }, 400);
+        }
+
+        network = matchedPlan.network;
+        package_size = matchedPlan.package_size;
+        serverValidatedAmount = Number(
+          matchedPlan.agent_price || matchedPlan.api_price || matchedPlan.public_price || matchedPlan.price || 0
+        );
+
+        if (!Number.isFinite(serverValidatedAmount) || serverValidatedAmount <= 0) {
+          return json({ success: false, error: "Server-side bundle pricing unavailable for selected plan." }, 400);
+        }
+      } else {
+        if (!Number.isFinite(serverValidatedAmount) || serverValidatedAmount <= 0) {
+          return json({ success: false, error: "Valid positive airtime amount is required." }, 400);
+        }
+      }
+
       // Anti-Duplicate Protection (Smart Idempotency & 2-Minute Window)
       const { data: sysSettings } = await supabase
         .from("system_settings")
@@ -1031,7 +1147,7 @@ serve(async (req: Request) => {
       const allowDuplicate = payload?.allow_duplicate === true || 
                              payload?.bypass_duplicate_check === true || 
                              req.headers.get("X-Bypass-Duplicate-Check") === "true" ||
-                             sysSettings?.allow_duplicate_purchases === true;
+                             (getEnv("ALLOW_DUPLICATE_PURCHASES") !== "" ? getEnv("ALLOW_DUPLICATE_PURCHASES").toLowerCase() === "true" : sysSettings?.allow_duplicate_purchases === true);
       const normalizedPhone = normalizeRecipient(phone);
       const clientRef = request_id || payload?.client_reference || req.headers.get("X-Idempotency-Key");
 
@@ -1049,6 +1165,16 @@ serve(async (req: Request) => {
              .limit(100);
              
            duplicateOrder = data?.find((o: any) => o.metadata?.client_reference === clientRef);
+           if (!duplicateOrder) {
+             const { data: exactClientRefOrder } = await supabase
+               .from("orders")
+               .select("id, status, metadata")
+               .eq("agent_id", currentUserId ?? "")
+               .eq("metadata->>client_reference", String(clientRef).trim())
+               .limit(1)
+               .maybeSingle();
+             if (exactClientRefOrder) duplicateOrder = exactClientRefOrder;
+           }
         }
 
         // 2. Fallback Time-Window Check (Only block if identical package size is CURRENTLY IN PROGRESS)
@@ -1077,7 +1203,7 @@ serve(async (req: Request) => {
                 const p2 = String(package_size || "").replace(/\s+/g, "").toUpperCase();
                 if (p1 !== p2) return false;
               } else {
-                if (Math.abs(Number(o.amount) - Number(amount)) > 0.01) return false;
+                if (Math.abs(Number(o.amount) - Number(serverValidatedAmount)) > 0.01) return false;
               }
 
               return true;
@@ -1104,8 +1230,8 @@ serve(async (req: Request) => {
         p_network: network,
         p_package_size: package_size || "AIRTIME",
         p_phone: normalizeRecipient(phone),
-        p_amount: amount || 0,
-        p_request_id: request_id || idemKey,
+        p_amount: serverValidatedAmount,
+        p_request_id: String(payload?.client_reference || request_id || idemKey).trim(),
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
       });
@@ -1118,7 +1244,19 @@ serve(async (req: Request) => {
       // Sync custom request ID to order metadata for webhook tracking
       const finalClientRef = request_id || payload?.client_reference || idemKey;
       await supabase.from("orders").update({
-        metadata: { client_reference: finalClientRef }
+        metadata: {
+          client_reference: finalClientRef,
+          idempotency_key: String(clientRef || idemKey).trim(),
+          server_priced: true,
+          wallet_debit_mode: "debit_api_wallet_or_debit_wallet_atomic",
+          ...(!isAirtimeOrder
+            ? {
+                category: String(network || "").toLowerCase().includes("mash") ? "mashup" : "sme",
+                package_category: String(network || "").toLowerCase().includes("mash") ? "mashup" : "sme",
+                exclude_korba: true,
+              }
+            : {}),
+        }
       }).eq("id", orderId);
       
       // ── 9. Fulfillment Logic (SKIP IF TEST MODE) ──────────────────────────
@@ -1159,7 +1297,7 @@ serve(async (req: Request) => {
         p_package_size: "BUNDLE",
         p_phone: normalizeRecipient(customer_phone),
         p_amount: amount,
-        p_request_id: request_id || idemKey,
+        p_request_id: String(payload?.client_reference || request_id || idemKey).trim(),
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
       });
@@ -1218,7 +1356,7 @@ serve(async (req: Request) => {
         p_package_size: String(quantity),
         p_phone: normalizeRecipient(customer_phone || "0000000000"),
         p_amount: amount,
-        p_request_id: request_id || idemKey,
+        p_request_id: String(payload?.client_reference || request_id || idemKey).trim(),
         p_idem_key: idemKey,
         p_test_mode: profile.test_mode
       });

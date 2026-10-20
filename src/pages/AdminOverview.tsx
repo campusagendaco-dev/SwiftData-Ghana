@@ -160,6 +160,7 @@ const AdminOverview = () => {
 
     startDate.setHours(0, 0, 0, 0);
     const todayStr = now.toISOString().slice(0, 10);
+    const todayIso = `${todayStr}T00:00:00.000Z`;
 
     const DEPOSIT_TYPES = new Set(["wallet_topup", "agent_activation", "sub_agent_activation"]);
     const SALE_TYPES    = new Set(["data", "airtime", "utility", "afa", "api"]);
@@ -169,7 +170,7 @@ const AdminOverview = () => {
 
     const settled = await Promise.allSettled([
       supabase.from("orders").select("id, amount, status, order_type, profit, parent_profit, cost_price, paystack_fee, paystack_verified_amount, package_size"),
-      supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at"),
+      supabase.from("profiles").select("user_id, is_agent, is_sub_agent, agent_approved, sub_agent_approved, onboarding_complete, created_at").order("created_at", { ascending: false }).limit(5000),
       supabase.functions.invoke("maintenance-mode", { body: { action: "get" } }),
       supabase.from("orders").select("id, network, package_size, customer_phone, amount, status, created_at").order("created_at", { ascending: false }).limit(8),
       supabase.from("orders").select("id, amount, agent_id, created_at, status, order_type, paystack_verified_amount, paystack_fee, profit, parent_profit, cost_price, package_size").gte("created_at", startDate.toISOString()).order("created_at", { ascending: false }).limit(4000),
@@ -185,10 +186,13 @@ const AdminOverview = () => {
       supabase.from("user_sales_stats").select("total_sales_volume, total_own_profit, total_commissions_paid"),
       (supabase.rpc as any)("get_admin_sales_stats_v2", { p_start_date: startDate.toISOString() }),
       supabase.from("ai_recommendations").select("*").is("user_id", null).eq("is_acted_upon", false).order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).eq("agent_approved", false),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", todayIso),
     ]);
 
     const unwrap = (r: PromiseSettledResult<any>) => r.status === "fulfilled" ? r.value : { data: null, error: null };
-    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes, aiRes] = settled.map(unwrap);
+    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes, aiRes, totalUsersCountRes, pendingAgentsCountRes, todayUsersCountRes] = settled.map(unwrap);
 
     if (aiRes && aiRes.data) {
       setAiRecommendations(aiRes.data);
@@ -307,7 +311,9 @@ const AdminOverview = () => {
     const todaySuccess = todayOrders.filter((o: any) => o.status === "fulfilled").length;
     const todayFailed = todayOrders.filter((o: any) => o.status === "fulfillment_failed").length;
     const todayPending = todayOrders.filter((o: any) => o.status === "pending").length;
-    const todayUsers = profiles.filter((p: any) => (p.created_at as string)?.slice(0, 10) === todayStr).length;
+    const totalUsersCount = totalUsersCountRes?.count ?? profiles.length;
+    const pendingAgentsCount = pendingAgentsCountRes?.count ?? profiles.filter((p: any) => p.is_agent && !p.agent_approved && p.onboarding_complete).length;
+    const todayUsersCount = todayUsersCountRes?.count ?? profiles.filter((p: any) => (p.created_at as string)?.slice(0, 10) === todayStr).length;
 
     const inflowOrders = orders.filter((o: any) => o.status === "fulfilled" && ["wallet_topup", "agent_activation", "sub_agent_activation"].includes(o.order_type) && Number(o.amount || 0) > 0);
     const purchaseOrders = orders.filter((o: any) => o.status === "fulfilled" && ["data", "airtime", "utility", "afa", "api"].includes(o.order_type));
@@ -337,7 +343,7 @@ const AdminOverview = () => {
       successCount: todaySuccess,
       failedCount: todayFailed,
       pendingCount: todayPending,
-      newUsers: todayUsers,
+      newUsers: todayUsersCount,
       gb: todayFulfilledPurchases.reduce((s, o) => s + parseCapacity(o.package_size), 0),
       count: todayFulfilledPurchases.length,
     });
@@ -357,15 +363,15 @@ const AdminOverview = () => {
       totalOrders: orders.length,
       totalRevenue: totalRevenue,
       totalPurchases: totalPurchases,
-      totalUsers: profiles.length,
-      pendingAgents: profiles.filter((p: any) => p.is_agent && !p.agent_approved && p.onboarding_complete).length,
+      totalUsers: totalUsersCount,
+      pendingAgents: pendingAgentsCount,
       swiftDataSubAgentShare: totalVolumeAllTime - totalAgentProfitsAllTime,
       totalAgentProfit: totalAgentProfitsAllTime,
       totalSubAgentProfit: totalSubAgentProfitsAllTime,
       pendingWithdrawals: pendingWithdrawalsCount + processingWithdrawalsCount,
       unreadTickets: ticketsRes.count || 0,
       totalSystemBalance,
-      todaySignups: todayOrders.filter((p: any) => (p.created_at as string)?.slice(0, 10) === todayStr).length,
+      todaySignups: todayUsersCount,
       totalRangePurchase: rangePurchases,
       rangeInflow: rangeOrders.filter((o: any) => o.status === "fulfilled" && DEPOSIT_TYPES.has(o.order_type)).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0),
       rangeVerifiedInflow: rangeOrders.filter((o: any) => o.status === "fulfilled" && DEPOSIT_TYPES.has(o.order_type)).reduce((s: number, o: any) => s + (Number(o.paystack_verified_amount) || Number(o.amount) || 0), 0),
