@@ -165,7 +165,6 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
               <img 
                 src={customBgUrl} 
                 alt="" 
-                {...{ fetchpriority: "high" }} 
                 decoding="async" 
                 className="w-full h-full object-cover object-center pointer-events-none select-none" 
               />
