@@ -728,9 +728,8 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
     }
 
     const hasVerifiedGatewayPayment = Number(order.paystack_verified_amount || 0) > 0;
-    const hasProofOfPayment = ["failed", "cancelled", "rejected"].includes(st)
-      ? hasVerifiedGatewayPayment
-      : (order.payment_method === "wallet" || hasVerifiedGatewayPayment || st === "fulfillment_failed");
+    const isWalletPayment = order.payment_method === "wallet" || order.payment_method === "credit";
+    const hasProofOfPayment = isWalletPayment || hasVerifiedGatewayPayment;
 
     if (!hasProofOfPayment) {
       return `❌ *Refund Not Eligible*\n\nOrder #${order.id.slice(0, 8)} does not have a verified payment record eligible for a self-service refund.`;
@@ -786,13 +785,14 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
     ].join("\n");
   }
 
-  // 2. Query recent unrefunded failed orders
+  // 2. Query recent unrefunded failed orders with verified proof of payment
   let query = supabase
     .from("orders")
-    .select("id, status, amount, network, package_size, customer_phone, created_at")
+    .select("id, status, amount, network, package_size, customer_phone, created_at, payment_method, paystack_verified_amount, auto_refunded, metadata")
     .in("status", ["failed", "cancelled", "unfulfilled", "fulfillment_failed"])
+    .is("auto_refunded", false)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(10);
 
   if (userId) {
     query = query.or(`agent_id.eq.${userId},customer_phone.ilike.%${shortPhone}%`);
@@ -800,12 +800,19 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
     query = query.ilike("customer_phone", `%${shortPhone}%`);
   }
 
-  const { data: failedOrders } = await query;
+  const { data: rawFailedOrders } = await query;
+  const failedOrders = (rawFailedOrders || []).filter((o: any) => {
+    const isWallet = o.payment_method === "wallet" || o.payment_method === "credit";
+    const hasGateway = Number(o.paystack_verified_amount || 0) > 0;
+    const notRefunded = !o.auto_refunded && !o.metadata?.is_refunded;
+    return (isWallet || hasGateway) && notRefunded;
+  });
+
   if (!failedOrders || failedOrders.length === 0) {
     return [
       `ℹ️ *No Unrefunded Failed Orders Found*`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      `We couldn't find any recent failed or unrefunded orders linked to phone number \`${normPhone}\`.`,
+      `We couldn't find any recent paid failed orders eligible for refund linked to phone number \`${normPhone}\`.`,
       ``,
       `If you have a specific order ID or reference number, please reply:`,
       `👉 *REFUND <order_id>* (e.g. \`REFUND 622b3328\`)`,
@@ -814,7 +821,7 @@ async function processWhatsAppSelfServiceRefund(supabase: any, fromPhone: string
     ].join("\n");
   }
 
-  const orderLines = failedOrders.map((o: any) => {
+  const orderLines = failedOrders.slice(0, 5).map((o: any) => {
     const sId = o.id.slice(0, 8);
     const pkg = `${o.network || ""} ${o.package_size || "Data"}`.trim();
     const amt = Number(o.amount || 0).toFixed(2);

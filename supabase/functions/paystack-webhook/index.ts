@@ -997,7 +997,8 @@ serve(async (req: Request) => {
         if (orderType === "data") {
           const netCheck = typeof metadata?.network === "string" ? metadata.network : "";
           const pkgCheck = typeof metadata?.package_size === "string" ? metadata.package_size : "";
-          const isKorbaMeta = metadata?.is_korba === true || metadata?.is_korba === "true" || String(metadata?.category || "").toLowerCase() === "korba";
+          const isSme = Boolean(netCheck && !netCheck.toUpperCase().startsWith("KORBA") && !String(metadata?.category || "").toLowerCase().includes("retail"));
+          const isKorbaMeta = !isSme && (metadata?.is_korba === true || metadata?.is_korba === "true" || String(metadata?.category || "").toLowerCase() === "korba");
           let minServerPrice = 0;
           if (netCheck && pkgCheck) {
             if (isKorbaMeta) {

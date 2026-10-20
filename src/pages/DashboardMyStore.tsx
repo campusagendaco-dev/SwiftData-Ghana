@@ -816,15 +816,41 @@ export default function DashboardMyStore() {
         slug,
       };
 
-      const { error: storeError } = selectedStoreId
-        ? await supabase
+      let storeError: any = null;
+      if (selectedStoreId) {
+        const { error } = await supabase
+          .from("reseller_stores")
+          .update(storePayload)
+          .eq("id", selectedStoreId)
+          .eq("user_id", user.id);
+        storeError = error;
+      } else {
+        const { data: existingStore } = await supabase
+          .from("reseller_stores")
+          .select("id")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingStore?.id) {
+          const { error } = await supabase
             .from("reseller_stores")
             .update(storePayload)
-            .eq("id", selectedStoreId)
-            .eq("user_id", user.id)
-        : await supabase
+            .eq("id", existingStore.id)
+            .eq("user_id", user.id);
+          storeError = error;
+          setSelectedStoreId(existingStore.id);
+        } else {
+          const { data: createdStore, error } = await supabase
             .from("reseller_stores")
-            .upsert(storePayload, { onConflict: "slug" });
+            .insert(storePayload)
+            .select("id")
+            .single();
+          storeError = error;
+          if (createdStore?.id) setSelectedStoreId(createdStore.id);
+        }
+      }
 
       if (storeError) throw storeError;
 

@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 type SupabaseClient = ReturnType<typeof createClient>;
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
@@ -43,6 +44,14 @@ serve(async (req: Request) => {
   }
 
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  const authRes = await verifyAdmin(req, supabaseAdmin);
+  if (!authRes.success) {
+    return new Response(JSON.stringify({ error: authRes.error }), {
+      status: authRes.status || 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     // Fetch system settings to check for DB-configured secrets

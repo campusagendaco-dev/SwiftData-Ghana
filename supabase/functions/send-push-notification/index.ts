@@ -72,6 +72,65 @@ serve(async (req: Request) => {
     const requestedLimit = typeof body.limit === "number" && !isNaN(body.limit) ? Math.floor(body.limit) : 50;
     const batchLimit = Math.min(100, Math.max(1, requestedLimit));
 
+    // Security Auth Verification (P1-7)
+    const authHeader = req.headers.get("Authorization");
+    const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    const token = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
+
+    const isServiceRole = Boolean(serviceRoleKey && token === serviceRoleKey);
+    let isAdmin = false;
+    let authUserId: string | null = null;
+
+    if (!isServiceRole && token) {
+      const { data: authData } = await supabaseAdmin.auth.getUser(token);
+      if (authData?.user) {
+        authUserId = authData.user.id;
+        const { data: roleData } = await supabaseAdmin
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", authUserId)
+          .eq("role", "admin")
+          .limit(1);
+        if (roleData && roleData.length > 0) {
+          isAdmin = true;
+        }
+      }
+    }
+
+    if (isBroadcast || validUserIds.length > 0) {
+      if (!isServiceRole && !isAdmin) {
+        return new Response(JSON.stringify({ error: "Forbidden: Admin or service role privileges required for broadcast push notifications." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      // Single user/endpoint target
+      const isSelf = Boolean(authUserId && validUserId && authUserId === validUserId);
+      if (!isServiceRole && !isAdmin && !isSelf) {
+        // Check if this is an authentic database trigger event with an existing user_notifications row
+        let isDbTrigger = false;
+        if (id && validUserId) {
+          const { data: notifRow } = await supabaseAdmin
+            .from("user_notifications")
+            .select("id")
+            .eq("id", id)
+            .eq("user_id", validUserId)
+            .maybeSingle();
+          if (notifRow?.id) {
+            isDbTrigger = true;
+          }
+        }
+
+        if (!isDbTrigger) {
+          return new Response(JSON.stringify({ error: "Unauthorized: Valid authentication required to send push notifications." }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
+
     if (!hasEndpoint && !validUserId && validUserIds.length === 0 && !isBroadcast) {
       if (user_id) {
         console.warn(`[Push] Non-UUID user_id provided: "${user_id}". Handled gracefully.`);

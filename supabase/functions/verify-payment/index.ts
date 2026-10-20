@@ -2110,17 +2110,7 @@ serve(async (req: any) => {
           }
 
           if (vouchersList.length === 0) {
-            // Instant reliable generation if live provider is pending or mock mode
-            for (let i = 0; i < vQty; i++) {
-              const randomSerial = "WEC-" + Array.from({ length: 8 }, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[Math.floor(Math.random() * 36)]).join("");
-              const randomPin = Array.from({ length: 10 }, () => Math.floor(Math.random() * 10)).join("");
-              vouchersList.push({
-                serial: randomSerial,
-                pin: randomPin,
-                type: `${vType} Results Checker`,
-                purchasedAt: new Date().toISOString()
-              });
-            }
+            throw new Error("Unable to obtain voucher PINs from voucher providers. Please contact support or retry.");
           }
 
           await supabaseAdmin.from("orders").update({

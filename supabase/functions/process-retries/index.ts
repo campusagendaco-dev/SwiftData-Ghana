@@ -4,6 +4,7 @@ import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
 
 declare const Deno: any;
 
@@ -172,6 +173,21 @@ serve(async (req: Request) => {
   const SUPABASE_SERVICE_ROLE_KEY = (Deno as any).env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+  // Security: Require Bearer Service Role Key or Admin Authorization
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const isServiceRole = Boolean(token && token === SUPABASE_SERVICE_ROLE_KEY);
+
+  if (!isServiceRole) {
+    const adminCheck = await verifyAdmin(req, supabaseAdmin);
+    if (!adminCheck.success) {
+      return new Response(JSON.stringify({ error: "Unauthorized: Admin or Service Role required" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   try {
     console.log("[retry-orders] Starting maintenance cycle...");
     const results: any[] = [];
@@ -189,6 +205,37 @@ serve(async (req: Request) => {
 
     for (const order of pendingOrders || []) {
       console.log(`[retry-orders] Verifying pending order: ${order.id}`);
+
+      // Handle Korba payment verification
+      if (order.payment_method === "korba") {
+        console.log(`[retry-orders] Forwarding Korba order to verify-payment: ${order.id}`);
+        try {
+          const kRes = await fetch(`${SUPABASE_URL}/functions/v1/verify-payment`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ reference: order.id }),
+          });
+          const kData = await kRes.json().catch(() => ({}));
+          if (kData.status === "paid" || kData.status === "fulfilled") {
+            order.status = kData.status;
+          }
+        } catch (kErr) {
+          console.error(`[retry-orders] Korba verify trigger error for ${order.id}:`, kErr);
+        }
+        continue;
+      }
+
+      // Check if order was already recorded as paid via gateway or wallet
+      if (Number(order.paystack_verified_amount || 0) >= Number(order.amount || 0) && Number(order.amount || 0) > 0) {
+        console.log(`[retry-orders] Order ${order.id} already verified as paid. Marking as PAID.`);
+        await supabaseAdmin.from("orders").update({ status: "paid" }).eq("id", order.id).in("status", ["pending", "awaiting_payment"]);
+        order.status = "paid";
+        continue;
+      }
+
       const verification = await verifyPaystack(supabaseAdmin, order.id);
 
       if (verification.ok) {

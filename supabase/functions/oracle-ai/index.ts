@@ -181,6 +181,11 @@ serve(async (req: Request) => {
     
     // ━━━ NEW: Event-Driven Triggers (AI Judge) ━━━
     if (event === 'new_dispute') {
+      if (!bearerToken || bearerToken !== SUPABASE_SERVICE_ROLE_KEY) {
+        return new Response(JSON.stringify({ error: "Unauthorized: Service role key required for dispute judge" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { order_id, reason } = body;
       console.log(`[Oracle AI] New Dispute Triggered: Order ${order_id}`);
       
@@ -230,7 +235,9 @@ serve(async (req: Request) => {
       });
 
       const data = await response.json();
-      // Handle tool usage in the background loop...
+      return new Response(JSON.stringify({ status: "dispute_investigated", result: data }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     }
 
     if (!userMessage && !event) {
@@ -242,33 +249,37 @@ serve(async (req: Request) => {
     const ghanaTime = new Date().toLocaleString("en-GB", { timeZone: "Africa/Accra", dateStyle: "full", timeStyle: "short" });
     let superContext = `\nSYSTEM AWARENESS: The current local time in Ghana is ${ghanaTime}.`;
     
-    if (context.profile) {
-      const p = context.profile;
-      let liveBalance = p.wallet_balance;
+    if (dbProfile && authUser) {
+      let liveBalance = dbProfile.wallet_balance;
       
-      // Self-healing database fallback to native wallets table if profiles column is missing
-      if (p.user_id) {
-        const { data: walletData } = await supabaseAdmin
-          .from("wallets")
-          .select("balance")
-          .eq("agent_id", p.user_id)
-          .maybeSingle();
-        if (walletData) {
-          liveBalance = walletData.balance;
-        }
+      // Load verified wallet balance from wallets table
+      const { data: walletData } = await supabaseAdmin
+        .from("wallets")
+        .select("balance")
+        .eq("agent_id", authUser.id)
+        .maybeSingle();
+      if (walletData) {
+        liveBalance = walletData.balance;
       }
       
-      superContext += `\nUSER PROFILE: Name: ${p.full_name || 'Customer'}, Balance: ${liveBalance ?? '0.00'} GHS, Role: ${p.is_agent ? 'Agent' : 'Customer'}.`;
-    }
-    if (context.recentOrders && context.recentOrders.length > 0) {
-      superContext += "\nRECENT TRANSACTIONS:";
-      context.recentOrders.forEach((o: any) => {
-        superContext += `\n- ${o.type} of ${o.amount} GHS for ${o.phone_number || 'N/A'}. Status: ${o.status}. Created: ${o.created_at}`;
-      });
-    }
-    if (context.failedOrder) {
-      const f = context.failedOrder;
-      superContext += `\nCRITICAL: A transaction just failed! Type: ${f.type}, Amount: ${f.amount}, Provider: ${f.provider || 'Unknown'}, Error Log: ${f.error_message || 'No details'}. PROMPT: Proactively explain this to the user with empathy and suggest a fix.`;
+      superContext += `\nAUTHENTICATED USER PROFILE: Name: ${dbProfile.full_name || 'Customer'}, Balance: ${liveBalance ?? '0.00'} GHS, Role: ${dbProfile.is_agent ? 'Agent' : 'Customer'}, Loyalty Points: ${dbProfile.loyalty_points ?? 0}.`;
+
+      // Fetch authentic recent transactions from DB
+      const { data: recentOrders } = await supabaseAdmin
+        .from("orders")
+        .select("id, amount, status, customer_phone, network, package_size, created_at")
+        .eq("agent_id", authUser.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (recentOrders && recentOrders.length > 0) {
+        superContext += "\nRECENT TRANSACTIONS:";
+        recentOrders.forEach((o: any) => {
+          superContext += `\n- ${o.network || ''} ${o.package_size || ''} of ${o.amount} GHS for ${o.customer_phone || 'N/A'}. Status: ${o.status}. Created: ${o.created_at}`;
+        });
+      }
+    } else {
+      superContext += `\nUSER PROFILE: Guest / Unauthenticated Visitor. No wallet or order history available.`;
     }
 
     const messages = [

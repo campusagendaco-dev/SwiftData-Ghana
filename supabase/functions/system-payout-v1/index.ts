@@ -1297,12 +1297,14 @@ serve(async (req: Request) => {
             .select("paystack_secret_key")
             .eq("id", 1)
             .maybeSingle();
-          PAYSTACK_SECRET = PAYSTACK_SECRET || settings?.paystack_secret_key || "";
+          if (!PAYSTACK_SECRET) {
+            PAYSTACK_SECRET = settings?.paystack_secret_key || "";
+          }
         } catch (dbErr) {
           console.error("Failed to fetch paystack_secret_key from DB in verify:", dbErr);
         }
         if (!PAYSTACK_SECRET) {
-          PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
+          // Priority given to Deno.env above
         }
         if (!PAYSTACK_SECRET) {
           return new Response(JSON.stringify({ error: "Paystack Secret Key not configured in Edge Functions" }), {
@@ -1781,7 +1783,7 @@ serve(async (req: Request) => {
 
         try {
           const bridgeUrl = Deno.env.get("KORBA_BRIDGE_URL") || "https://swiftdatagh.shop/api/korba";
-          const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "swiftdata-korba-bridge-token-2026";
+          const bridgeSecret = Deno.env.get("KORBA_BRIDGE_SECRET") || "";
           
           console.log(`[system-payout-v1] Testing Korba request via Vercel bridge: ${bridgeUrl}`);
           const res = await fetch(bridgeUrl, {
