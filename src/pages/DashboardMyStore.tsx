@@ -309,6 +309,7 @@ export default function DashboardMyStore() {
       fetchAgentWallet();
       fetchGlobalPackageSettings();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, profile]);
 
   // Sync profile central data to form
@@ -323,7 +324,19 @@ export default function DashboardMyStore() {
         momo_network: profile.momo_network || "",
         momo_account_name: profile.momo_account_name || "",
       }));
-      setCustomPrices((profile.agent_prices || {}) as Record<string, Record<string, number>>);
+      const parsedPrices: Record<string, Record<string, number>> = {};
+      if (profile.agent_prices && typeof profile.agent_prices === "object") {
+        Object.entries(profile.agent_prices).forEach(([net, pkgs]) => {
+          parsedPrices[net] = {};
+          if (pkgs && typeof pkgs === "object") {
+            Object.entries(pkgs).forEach(([size, val]) => {
+              const num = Number(val);
+              if (Number.isFinite(num)) parsedPrices[net][size] = num;
+            });
+          }
+        });
+      }
+      setCustomPrices(parsedPrices);
     }
   }, [profile]);
 
@@ -359,6 +372,7 @@ export default function DashboardMyStore() {
       fetchDeposits();
       fetchAgentWallet();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user]);
 
   const fetchWithdrawalData = useCallback(async () => {

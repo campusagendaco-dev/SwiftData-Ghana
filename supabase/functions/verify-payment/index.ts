@@ -896,13 +896,7 @@ serve(async (req: any) => {
               : [];
             if (!failedIds.includes(provider.id)) failedIds.push(provider.id);
 
-            await logProviderError(supabaseAdmin, {
-              provider_id: provider.id,
-              order_id: targetReference,
-              error_type: rawStatus === "refunded" ? "provider_refunded" : "provider_failed",
-              error_message: failReason,
-              status_code: 400,
-            });
+            await logProviderError(supabaseAdmin, provider.id, targetReference, failReason);
 
             // Unlock and record failure so it can proceed to route to another verified provider
             await supabaseAdmin.from("orders").update({

@@ -42,6 +42,16 @@ export interface Profile {
   api_access_enabled?: boolean;
   is_super_admin?: boolean;
   is_sub_admin?: boolean;
+  store_primary_color?: string | null;
+  store_logo_url?: string | null;
+  store_banner_url?: string | null;
+  store_description?: string | null;
+  custom_domain?: string | null;
+  last_security_update?: string | null;
+  wallet_balance?: number;
+  loyalty_points?: number;
+  sms_sender_id?: string | null;
+  sms_sender_status?: string | null;
 }
 
 export interface SavedAccount {
