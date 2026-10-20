@@ -242,7 +242,7 @@ const FreeDataButton = () => {
       {isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl overflow-hidden border border-white/10 relative shadow-2xl animate-in zoom-in-95 duration-200" style={{ background: "#11111a" }}>
-            <button onClick={() => setIsOpen(false)} title="Close" className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+            <button onClick={() => setIsOpen(false)} title="Close" aria-label="Close free data modal" className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
               <X className="w-4 h-4" />
             </button>
             

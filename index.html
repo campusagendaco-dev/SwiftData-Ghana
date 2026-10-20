@@ -192,10 +192,21 @@
     <link rel="alternate" hreflang="en" href="https://swiftdatagh.com/" />
     <link rel="alternate" hreflang="x-default" href="https://swiftdatagh.com/" />
 
-    <!-- DNS Prefetch for performance SEO -->
-    <link rel="dns-prefetch" href="//lsocdjpflecduumopijn.supabase.co" />
-    <link rel="dns-prefetch" href="//js.paystack.co" />
-    <link rel="dns-prefetch" href="//fonts.googleapis.com" />
+    <!-- High-Priority Preconnects & DNS Prefetches for Core Web Vitals -->
+    <link rel="preconnect" href="https://lsocdjpflecduumopijn.supabase.co" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="//user.datahubgh.com" />
+
+    <!-- Preload LCP background candidate -->
+    <link rel="preload" as="image" href="/assets/backgrounds/bg_ghana_warm_earth.webp" type="image/webp" fetchpriority="high" />
+
+    <!-- Non-blocking Google Fonts with display=swap -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    </noscript>
 
 
     <!-- ═══════════════════════════════════════════════
@@ -880,9 +891,6 @@
 
   <body>
     <div id="root"></div>
-    <!-- Preconnect for performance -->
-    <link rel="preconnect" href="https://api.paystack.co" />
-    <link rel="preconnect" href="https://js.paystack.co" />
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

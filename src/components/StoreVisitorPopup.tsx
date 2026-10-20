@@ -28,6 +28,8 @@ const StoreVisitorPopup = ({
 
   useEffect(() => {
     if (isAgent) return;
+    const hasDismissedSession = sessionStorage.getItem("store_visitor_popup_dismissed");
+    if (hasDismissedSession) return;
 
     supabase
       .from("public_system_settings")
@@ -37,13 +39,22 @@ const StoreVisitorPopup = ({
       .then(({ data }) => {
         const isEnabled = Boolean((data as any)?.store_visitor_popup_enabled);
         if (!isEnabled) return;
-        const t = setTimeout(() => setVisible(true), 2800);
+        // On home page, wait 15 seconds to avoid interrupting user's data package selection
+        const delay = agentSlug === "home" ? 15000 : 5000;
+        const t = setTimeout(() => {
+          if (!sessionStorage.getItem("store_visitor_popup_dismissed")) {
+            setVisible(true);
+          }
+        }, delay);
         return () => clearTimeout(t);
       });
-  }, [isAgent]);
+  }, [isAgent, agentSlug]);
 
-  // Dismiss only hides for this page view
-  const dismiss = () => setVisible(false);
+  // Dismiss hides for this session
+  const dismiss = () => {
+    setVisible(false);
+    sessionStorage.setItem("store_visitor_popup_dismissed", "true");
+  };
 
   const ctaHref = showSubAgentLink && agentSlug ? `/store/${agentSlug}/sub-agent` : "/agent-program";
   const hostname = window.location.hostname;
@@ -113,12 +124,13 @@ const StoreVisitorPopup = ({
 
               {/* ── Close ── */}
               <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={dismiss}
-                className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-white/8 hover:bg-white/15 flex items-center justify-center text-white/40 hover:text-white transition-all border border-white/5"
+                className="absolute top-4 right-4 z-20 w-10 h-10 min-w-[40px] min-h-[40px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-all border border-white/10"
+                aria-label="Close dialog"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </motion.button>
 
               {/* ── Hero ── */}
@@ -231,7 +243,7 @@ const StoreVisitorPopup = ({
                       style={{ backgroundColor: `${primaryColor}4d` }}
                     />
                   </div>
-                  <p className="text-white/40 text-sm font-medium">instant digital delivery</p>
+                  <p className="text-white/75 text-sm font-medium">instant digital delivery</p>
                 </div>
               </motion.div>
 
@@ -272,7 +284,7 @@ const StoreVisitorPopup = ({
                     style={{ borderColor: `${primaryColor}1a` }}
                   >
                     <Icon className="w-3.5 h-3.5" style={{ color: primaryColor }} />
-                    <span className="text-[10px] font-bold text-white/35 text-center leading-tight">{text}</span>
+                    <span className="text-[10px] font-bold text-white/80 text-center leading-tight">{text}</span>
                   </motion.div>
                 ))}
               </motion.div>
@@ -303,11 +315,12 @@ const StoreVisitorPopup = ({
                   </motion.div>
                 </Link>
                 <motion.button
-                  whileHover={{ opacity: 0.8 }}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={dismiss}
-                  className="w-full text-white/25 text-xs font-medium hover:text-white/50 transition-colors py-1"
+                  className="w-full min-h-[42px] flex items-center justify-center rounded-2xl border border-white/15 bg-white/5 hover:bg-white/10 text-white/85 hover:text-white text-xs font-bold transition-all py-2.5"
                 >
-                  Close & Browse Store
+                  Close &amp; Browse Store
                 </motion.button>
               </motion.div>
 
@@ -320,7 +333,7 @@ const StoreVisitorPopup = ({
                     className="w-1.5 h-1.5 rounded-full bg-emerald-400" 
                   />
                 </div>
-                <span className="text-white/20 text-[10px] font-medium tracking-wide">{hostname}</span>
+                <span className="text-white/70 text-[10px] font-semibold tracking-wide">{hostname}</span>
               </motion.div>
             </div>
           </motion.div>

@@ -39,13 +39,13 @@ const Footer = () => {
               </div>
               <div>
                 <p className="text-white font-black text-xl tracking-tight leading-none">SwiftData <span className="text-amber-400">GH</span></p>
-                <p className="text-white/50 text-xs font-medium uppercase tracking-widest mt-1">Premium Data Platform</p>
+                <p className="text-white/75 text-xs font-semibold uppercase tracking-widest mt-1">Premium Data Platform</p>
               </div>
             </div>
-            <p className="text-sm text-white/60 leading-relaxed mb-6">
+            <p className="text-sm text-white/80 leading-relaxed mb-6">
               Ghana's fastest and most reliable data reselling platform. Experience instant delivery, unexpiring bundles, and secure transactions across all major networks.
             </p>
-            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-white/40">
+            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-white/75">
               <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-green-400" /> Paystack Secured</span>
               <span className="flex items-center gap-1.5"><Zap className="w-4 h-4 text-amber-400" /> Instant Delivery</span>
             </div>
@@ -53,11 +53,11 @@ const Footer = () => {
           
           {/* Quick Links */}
           <div className="md:col-span-2 md:col-start-6">
-            <h4 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Quick Links</h4>
+            <h3 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Quick Links</h3>
             <div className="space-y-4">
               {[{ to: "/login", label: "Sign In" }, { to: "/agent-program", label: "Become an Agent" }, { to: "/developers", label: "Developers" }, { to: "/blog", label: "Guides & Tutorials" }, { to: "/dashboard", label: "Dashboard" }].map((l) =>
-                <Link key={l.to} to={l.to} className="group flex items-center gap-2 text-sm text-white/60 hover:text-amber-400 transition-colors">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white/20 group-hover:bg-amber-400 transition-colors" />
+                <Link key={l.to} to={l.to} className="group flex items-center gap-2 text-sm text-white/80 hover:text-amber-400 transition-colors">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/30 group-hover:bg-amber-400 transition-colors" />
                   {l.label}
                 </Link>
               )}
@@ -66,8 +66,8 @@ const Footer = () => {
           
           {/* Networks */}
           <div className="md:col-span-2">
-            <h4 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Networks</h4>
-            <div className="space-y-4 text-sm text-white/60">
+            <h3 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Networks</h3>
+            <div className="space-y-4 text-sm text-white/80">
               <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-400" /> MTN Ghana</p>
               <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500" /> Telecel Ghana</p>
               <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500" /> AirtelTigo</p>
@@ -76,14 +76,13 @@ const Footer = () => {
           
           {/* Contact */}
           <div className="md:col-span-3">
-            <h4 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Contact Us</h4>
-            <div className="space-y-4 text-sm text-white/60">
+            <h3 className="font-bold text-sm mb-6 text-white uppercase tracking-wider">Contact Us</h3>
+            <div className="space-y-4 text-sm text-white/80">
               <a href="mailto:support@swiftdatagh.shop" className="flex items-center gap-3 hover:text-white transition-colors">
                 <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10 shrink-0">
                   <Mail className="w-4 h-4" />
                 </div>
                 support@swiftdatagh.shop
-
               </a>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10 shrink-0">
@@ -107,7 +106,7 @@ const Footer = () => {
             >
               <div className="flex flex-col py-1">
                 <span className="text-xs text-[#25D366] font-bold uppercase tracking-wide">Join 50K+ followers</span>
-                <span className="text-[10px] text-white/60">On our WhatsApp Channel</span>
+                <span className="text-[10px] text-white/80">On our WhatsApp Channel</span>
               </div>
               <div className="w-8 h-8 rounded-full bg-[#25D366] flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg">
                 <ArrowRight className="w-4 h-4 text-white" />
@@ -117,14 +116,14 @@ const Footer = () => {
         </div>
         
         {/* Bottom Bar */}
-        <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/40">
+        <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-white/75">
           <p>&copy; {new Date().getFullYear()} SwiftData Ghana. All rights reserved.</p>
           <div className="flex items-center gap-4">
             <Link to="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
             <Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
           </div>
           <p className="flex items-center gap-1">
-            Developed by <span className="font-semibold text-white/60 hover:text-white transition-colors cursor-pointer">Scqeel Technologies</span>
+            Developed by <span className="font-semibold text-white/90 hover:text-white transition-colors cursor-pointer">Scqeel Technologies</span>
           </p>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, Bell, BellRing, CheckCircle2, Sparkles } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { cn, getNetworkCardColors } from "@/lib/utils";
@@ -177,7 +177,30 @@ const BuyData = () => {
   const { supported: pushSupported, permissionState: pushPermission, subscribeUser } = usePushNotifications();
   const [customPrices, setCustomPrices] = useState<Record<string, Record<string, number>>>({});
   const { theme, isDark } = useAppTheme();
-  const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>("MTN");
+  const [searchParams] = useSearchParams();
+  const getNetworkFromParam = useCallback((param: string | null): NetworkName | null => {
+    if (!param) return null;
+    const lower = param.toLowerCase().trim();
+    if (lower === "telecel" || lower === "vodafone") return "Telecel";
+    if (lower === "airteltigo" || lower === "at" || lower === "tigo" || lower === "airtel") return "AirtelTigo";
+    if (lower === "mtn mash up" || lower === "mashup" || lower === "mash up") return "MTN Mash Up";
+    if (lower === "mtn") return "MTN";
+    return null;
+  }, []);
+
+  const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>(() => {
+    const fromUrl = getNetworkFromParam(new URLSearchParams(window.location.search).get("network"));
+    return fromUrl || "MTN";
+  });
+
+  useEffect(() => {
+    const fromParam = getNetworkFromParam(searchParams.get("network"));
+    if (fromParam && fromParam !== selectedNetwork) {
+      setSelectedNetwork(fromParam);
+      setSelectedPkg(null);
+    }
+  }, [searchParams, getNetworkFromParam]);
+
   const [selectedPkg, setSelectedPkg] = useState<{ size: string; price: number } | null>(null);
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);

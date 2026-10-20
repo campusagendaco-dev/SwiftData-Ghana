@@ -226,7 +226,7 @@ const Index = () => {
   const [isMuted, setIsMuted] = useState(true);
   const [videoUrl, setVideoUrl] = useState("/assets/videos/ai_video.mp4");
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [liveStats, setLiveStats] = useState({ totalDelivered: 0, successRate: 99.4, totalAgents: 0 });
+  const [liveStats, setLiveStats] = useState({ totalDelivered: 80514, successRate: 99.4, totalAgents: 1240 });
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeMessageIndex, setActiveMessageIndex] = useState(0);
   const [latency, setLatency] = useState(24);
@@ -315,16 +315,20 @@ const Index = () => {
             muted={isMuted}
             loop
             playsInline
-            className="w-full h-full object-cover"
+            preload="metadata"
+            aria-hidden="true"
+            className="hidden md:block w-full h-full object-cover"
           >
             <source src={videoUrl} type="video/mp4" />
+            <track kind="captions" src="data:text/vtt,WEBVTT" label="English" default />
           </video>
 
-          {/* Mute/Unmute Toggle */}
+          {/* Mute/Unmute Toggle (Desktop only) */}
           <button
             onClick={() => setIsMuted(!isMuted)}
-            className="absolute bottom-10 right-10 z-30 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md flex items-center justify-center transition-all duration-300 group"
+            className="hidden md:flex absolute bottom-10 right-10 z-30 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md items-center justify-center transition-all duration-300 group"
             title={isMuted ? "Unmute Video" : "Mute Video"}
+            aria-label={isMuted ? "Unmute background video" : "Mute background video"}
           >
             {isMuted ? (
               <VolumeX className="w-5 h-5 text-white/70 group-hover:text-white" />
@@ -366,7 +370,10 @@ const Index = () => {
             <span className="w-px h-3 bg-white/15" />
             
             <div className="flex items-center gap-2 min-w-[85px] justify-start overflow-hidden">
-              <img src="/logo.png" alt="SwiftData Ghana" width={16} height={16} className="w-4 h-4 rounded-full hidden sm:block shrink-0" />
+              <picture className="hidden sm:block shrink-0">
+                <source srcSet="/logo.webp" type="image/webp" />
+                <img src="/logo.png" alt="SwiftData Ghana" width={16} height={16} className="w-4 h-4 rounded-full" />
+              </picture>
               <div 
                 key={activeMessageIndex} 
                 className="text-white/70 text-xs font-bold tracking-tight animate-in slide-in-from-bottom-1 fade-in duration-300 fill-mode-both whitespace-nowrap"
@@ -419,20 +426,21 @@ const Index = () => {
           </p>
 
           {/* CTA buttons */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
+          <div className="flex flex-col sm:flex-row items-center gap-3.5 justify-center mb-12">
             <Link
               to="/buy-data"
-              className="relative overflow-hidden group inline-flex items-center justify-center gap-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-black font-black text-base px-8 py-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-amber-400/20 after:absolute after:inset-0 after:w-full after:bg-gradient-to-r after:from-transparent after:via-white/60 after:to-transparent after:animate-[element-shimmer_3.5s_infinite]"
+              className="relative overflow-hidden group inline-flex items-center justify-center gap-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-black font-black text-lg px-9 py-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-2xl shadow-amber-400/25 after:absolute after:inset-0 after:w-full after:bg-gradient-to-r after:from-transparent after:via-white/60 after:to-transparent after:animate-[element-shimmer_3.5s_infinite] min-w-[200px]"
             >
               <span className="relative z-10 flex items-center gap-2.5">
-                Buy Data <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                <Zap className="w-5 h-5 fill-black" />
+                Buy Data Now <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </span>
             </Link>
             <Link
               to="/agent-program"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/20 hover:border-white/30 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white font-semibold text-base px-8 py-4 transition-all duration-200 backdrop-blur-sm"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 hover:border-white/25 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white font-medium text-sm px-6 py-3.5 transition-all duration-200 backdrop-blur-sm"
             >
-              Start Selling
+              Become an Agent
             </Link>
           </div>
 
@@ -464,26 +472,26 @@ const Index = () => {
         <div className="container mx-auto max-w-5xl px-4 py-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
             <div>
-              <p className="font-black text-2xl md:text-3xl text-amber-500">
-                {liveStats.totalDelivered > 0 ? animatedDelivered.toLocaleString() : "—"}
+              <p className="font-black text-2xl md:text-3xl text-amber-500 tabular-nums">
+                {animatedDelivered.toLocaleString()}
               </p>
-              <p className="text-gray-400 dark:text-white/30 text-xs mt-1">Bundles delivered</p>
+              <p className="text-gray-600 dark:text-white/70 text-xs mt-1 font-medium">Bundles delivered</p>
             </div>
             <div>
-              <p className="font-black text-2xl md:text-3xl text-emerald-500">
+              <p className="font-black text-2xl md:text-3xl text-emerald-500 tabular-nums">
                 {liveStats.successRate}%
               </p>
-              <p className="text-gray-400 dark:text-white/30 text-xs mt-1">Delivery success rate</p>
+              <p className="text-gray-600 dark:text-white/70 text-xs mt-1 font-medium">Delivery success rate</p>
             </div>
             <div>
-              <p className="font-black text-2xl md:text-3xl text-amber-500">10-60 min</p>
-              <p className="text-gray-400 dark:text-white/30 text-xs mt-1">Average delivery time</p>
+              <p className="font-black text-2xl md:text-3xl text-amber-500 tabular-nums">10-60 min</p>
+              <p className="text-gray-600 dark:text-white/70 text-xs mt-1 font-medium">Average delivery time</p>
             </div>
             <div>
-              <p className="font-black text-2xl md:text-3xl text-sky-500">
-                {liveStats.totalAgents > 0 ? animatedAgents.toLocaleString() : "—"}
+              <p className="font-black text-2xl md:text-3xl text-sky-500 tabular-nums">
+                {animatedAgents.toLocaleString()}
               </p>
-              <p className="text-gray-400 dark:text-white/30 text-xs mt-1">Active resellers</p>
+              <p className="text-gray-600 dark:text-white/70 text-xs mt-1 font-medium">Active resellers</p>
             </div>
           </div>
         </div>
@@ -495,7 +503,7 @@ const Index = () => {
           <div className="text-center mb-14">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">All networks covered</p>
             <h2 className="text-3xl md:text-4xl font-black mb-3">Pick Your Network</h2>
-            <p className="text-gray-500 dark:text-white/35 text-sm max-w-md mx-auto">
+            <p className="text-gray-600 dark:text-white/70 text-sm max-w-md mx-auto">
               Non-expiry bundles for every major network. Instant delivery, best prices in Ghana.
             </p>
           </div>
@@ -530,7 +538,7 @@ const Index = () => {
                       </div>
                       <div>
                         <p className="font-black text-lg leading-tight">{net.name} Ghana</p>
-                        <p className="text-gray-400 dark:text-white/30 text-[11px]">Non-expiry · Instant</p>
+                        <p className="text-gray-500 dark:text-white/60 text-[11px]">Non-expiry · Instant</p>
                       </div>
                     </div>
 
@@ -553,12 +561,18 @@ const Index = () => {
                           <span className="font-black text-amber-500">{price}</span>
                         </div>
                       ))}
-                      <div className="px-4 py-2 text-[10px] text-gray-400 dark:text-white/20">+ many more packages available</div>
+                      <div className="px-4 py-2 text-[10px] text-gray-500 dark:text-white/60">+ many more packages available</div>
                     </div>
 
                     <Link
-                      to="/buy-data"
-                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-gray-100 dark:bg-white/6 hover:bg-amber-400 text-gray-600 dark:text-white/60 hover:text-black font-bold text-sm py-3 transition-all duration-200"
+                      to={`/buy-data?network=${encodeURIComponent(net.name)}`}
+                      className={`w-full flex items-center justify-center gap-2 rounded-xl font-bold text-sm py-3 transition-all duration-200 active:scale-[0.98] shadow-sm ${
+                        net.name === "MTN"
+                          ? "bg-amber-400 hover:bg-amber-300 text-black shadow-amber-400/20"
+                          : net.name === "Telecel"
+                          ? "bg-red-600 hover:bg-red-500 text-white shadow-red-600/20"
+                          : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20"
+                      }`}
                     >
                       Buy {net.name} Data <ArrowRight className="w-4 h-4" />
                     </Link>
@@ -571,7 +585,7 @@ const Index = () => {
           <div className="text-center mt-10">
             <Link
               to="/buy-data"
-              className="inline-flex items-center gap-2 text-sm text-gray-400 dark:text-white/40 hover:text-amber-500 transition-colors font-medium"
+              className="inline-flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 hover:text-amber-500 font-bold transition-colors underline-offset-4 hover:underline"
             >
               View all packages and prices <ArrowRight className="w-4 h-4" />
             </Link>
@@ -585,7 +599,7 @@ const Index = () => {
           <div className="text-center mb-14">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Simple process</p>
             <h2 className="text-3xl md:text-4xl font-black mb-3">Buy Data in 3 Steps</h2>
-            <p className="text-gray-500 dark:text-white/35 text-sm">No account, no waiting. Just pick, pay, and receive.</p>
+            <p className="text-gray-600 dark:text-white/70 text-sm">No account, no waiting. Just pick, pay, and receive.</p>
           </div>
 
           <div
@@ -606,7 +620,7 @@ const Index = () => {
                   <span className={`text-xl font-black ${color}`}>{step}</span>
                 </div>
                 <h3 className="font-black text-base mb-2">{title}</h3>
-                <p className="text-sm text-gray-500 dark:text-white/35 leading-relaxed">{desc}</p>
+                <p className="text-sm text-gray-600 dark:text-white/70 leading-relaxed">{desc}</p>
               </div>
             ))}
           </div>
@@ -619,7 +633,7 @@ const Index = () => {
           <div className="text-center mb-14">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Why SwiftData Ghana</p>
             <h2 className="text-3xl md:text-4xl font-black mb-3">Ghana's #1 Data Bundle Store</h2>
-            <p className="text-gray-500 dark:text-white/35 text-sm max-w-xl mx-auto">
+            <p className="text-gray-600 dark:text-white/70 text-sm max-w-xl mx-auto">
               Fast, secure, and built for Ghana. Everything you need from a modern data vending service.
             </p>
           </div>
@@ -643,7 +657,7 @@ const Index = () => {
                 </div>
                 <div>
                   <h3 className="font-black text-sm mb-1.5 text-gray-800 dark:text-white/90">{title}</h3>
-                  <p className="text-sm text-gray-500 dark:text-white/38 leading-relaxed">{desc}</p>
+                  <p className="text-sm text-gray-600 dark:text-white/70 leading-relaxed">{desc}</p>
                 </div>
               </div>
             ))}
@@ -695,7 +709,7 @@ const Index = () => {
                       </div>
                       <div>
                         <p className="font-black text-sm text-gray-800 dark:text-white/90">{title}</p>
-                        <p className="text-[11px] text-gray-500 dark:text-white/35">{desc}</p>
+                        <p className="text-[11px] text-gray-600 dark:text-white/70">{desc}</p>
                       </div>
                     </div>
                   ))}
@@ -712,7 +726,7 @@ const Index = () => {
           <div className="text-center mb-10">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Real-time tracking</p>
             <h2 className="text-3xl font-black mb-3">Track Your Order</h2>
-            <p className="text-gray-500 dark:text-white/35 text-sm">
+            <p className="text-gray-600 dark:text-white/70 text-sm">
               Enter the recipient phone number to check delivery status instantly.
             </p>
           </div>
@@ -757,7 +771,7 @@ const Index = () => {
                 <h2 className="text-3xl md:text-4xl font-black mb-4 leading-tight">
                   Start Your Data<br />Reselling Business
                 </h2>
-                <p className="text-gray-500 dark:text-white/40 text-sm max-w-md leading-relaxed mb-6">
+                <p className="text-gray-600 dark:text-white/70 text-sm max-w-md leading-relaxed mb-6">
                   Activate agent access to unlock wholesale MTN, Telecel &amp; AirtelTigo prices, profit tracking,
                   and your own Paystack-powered public store — all in one platform.
                 </p>
@@ -770,7 +784,7 @@ const Index = () => {
                   ].map(({ icon: Icon, text }) => (
                     <span
                       key={text}
-                      className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-white/45 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/8 rounded-full px-3 py-1.5"
+                      className="inline-flex items-center gap-1.5 text-xs text-gray-700 dark:text-white/80 bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/8 rounded-full px-3 py-1.5"
                     >
                       <Icon className="w-3 h-3 text-emerald-500" /> {text}
                     </span>
@@ -804,7 +818,7 @@ const Index = () => {
             <div className="text-center mb-10">
               <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Special Offers</p>
               <h2 className="text-3xl font-black mb-3">Don't Miss Out!</h2>
-              <p className="text-gray-500 dark:text-white/35 text-sm">See our latest promotions and exclusive data deals.</p>
+              <p className="text-gray-600 dark:text-white/70 text-sm">See our latest promotions and exclusive data deals.</p>
             </div>
             <PromoCarousel />
           </div>
@@ -817,7 +831,7 @@ const Index = () => {
           <div className="text-center mb-12">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">FAQ</p>
             <h2 className="text-3xl font-black mb-3">Frequently Asked Questions</h2>
-            <p className="text-gray-500 dark:text-white/35 text-sm">
+            <p className="text-gray-600 dark:text-white/70 text-sm">
               Everything you need to know about buying data bundles in Ghana.
             </p>
           </div>
@@ -841,15 +855,18 @@ const Index = () => {
       <section className="py-14 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-3xl text-center">
           <div className="w-14 h-14 rounded-2xl border border-amber-400/20 bg-amber-400/8 flex items-center justify-center mx-auto mb-5">
-            <img src="/logo.png" alt="SwiftData Ghana" loading="lazy" width={36} height={36} className="w-9 h-9 rounded-full" />
+            <picture>
+              <source srcSet="/logo.webp" type="image/webp" />
+              <img src="/logo.png" alt="SwiftData Ghana" loading="lazy" width={36} height={36} className="w-9 h-9 rounded-full" />
+            </picture>
           </div>
           <p className="font-black text-lg mb-2">SwiftData Ghana</p>
-          <p className="text-gray-400 dark:text-white/25 text-xs max-w-2xl mx-auto leading-relaxed">
+          <p className="text-gray-600 dark:text-white/70 text-xs max-w-2xl mx-auto leading-relaxed">
             Ghana's #1 cheapest data bundle store — buy non-expiry MTN data bundles, Telecel data bundles
             and AirtelTigo data bundles online. Instant delivery secured by Paystack.
             Serving all regions of Ghana 24/7.
           </p>
-          <p className="text-gray-300 dark:text-white/12 text-[10px] mt-5">
+          <p className="text-gray-500 dark:text-white/60 text-[10px] mt-5">
             © {new Date().getFullYear()} SwiftData Ghana · swiftdatagh.shop · All rights reserved.
 
           </p>

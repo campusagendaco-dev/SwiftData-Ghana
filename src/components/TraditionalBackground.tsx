@@ -185,10 +185,18 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
             );
           })
         ) : (
-          <div 
-            className="absolute inset-0 bg-cover bg-center bg-no-repeat w-full h-full"
-            style={{ backgroundImage: `url(${customBgUrl})` }} 
-          />
+          <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none">
+            <picture className="w-full h-full pointer-events-none">
+              <source srcSet={customBgUrl.replace(/\.png$/i, ".webp")} type="image/webp" />
+              <img 
+                src={customBgUrl} 
+                alt="" 
+                fetchPriority="high" 
+                decoding="async" 
+                className="w-full h-full object-cover object-center pointer-events-none select-none" 
+              />
+            </picture>
+          </div>
         )}
 
         {/* Blue Tint Overlay */}
@@ -232,7 +240,7 @@ export const TraditionalBackground = memo(({ className = "fixed inset-0 z-20 opa
       <div 
         className="absolute inset-0 opacity-[0.02] dark:opacity-[0.035] pointer-events-none mix-blend-overlay"
         style={{ 
-          backgroundImage: "url('/assets/adinkra_pattern.png')",
+          backgroundImage: "url('/assets/adinkra_pattern.webp')",
           backgroundSize: "160px"
         }}
       />

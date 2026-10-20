@@ -36,7 +36,7 @@ import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Route-level code splitting — each page chunk loads only when first visited
-const Index = lazy(() => import("./pages/Index"));
+import Index from "./pages/Index";
 const AgentProgram = lazy(() => import("./pages/AgentProgram"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const DashboardPricing = lazy(() => import("./pages/DashboardPricing"));
@@ -280,7 +280,7 @@ const AppContent = () => {
   const [ipBlocked, setIpBlocked] = useState(false);
   const [maintenanceLoading, setMaintenanceLoading] = useState(false);
   // Short splash transition
-  const [splashReady, setSplashReady] = useState(false);
+  const [splashReady, setSplashReady] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setSplashReady(true), 150);
     return () => clearTimeout(t);
@@ -368,7 +368,7 @@ const AppContent = () => {
         {!isDashboard && !isAgentStore && !isAdmin && <Navbar />}
         <ChunkErrorBoundary>
         <Suspense fallback={<LoadingScreen />}>
-      <main className="contents">
+      <main className="flex-1 w-full flex flex-col min-h-[calc(100vh-4rem)]">
       <Routes>
         {/* Public pages */}
         <Route path="/" element={isAdminSubdomain ? <Navigate to="/admin" replace /> : (activeDomain ? <AgentStore /> : <Index />)} />

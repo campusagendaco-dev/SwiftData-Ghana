@@ -167,7 +167,7 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
   if (variant === "pill") {
     return (
       <div 
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-400/10 dark:bg-amber-400/5 border border-amber-400/25 dark:border-amber-400/15 text-amber-500 dark:text-amber-400 text-xs font-medium backdrop-blur-md transition-all hover:scale-[1.01] hover:border-amber-400/45 group ${className}`}
+        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-400/10 dark:bg-amber-400/5 border border-amber-400/25 dark:border-amber-400/15 text-amber-500 dark:text-amber-400 text-xs font-medium backdrop-blur-md transition-transform duration-200 hover:scale-[1.01] hover:border-amber-400/45 group ${className}`}
         title="Live MTN delivery speed validation"
       >
         <span className="relative flex h-2 w-2">
@@ -181,7 +181,7 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
         <button 
           onClick={() => fetchStatus(true)}
           disabled={refreshing}
-          className="p-0.5 rounded-full hover:bg-amber-400/20 text-amber-500/70 hover:text-amber-500 transition-all active:rotate-180 shrink-0"
+          className="p-0.5 rounded-full hover:bg-amber-400/20 text-amber-500/70 hover:text-amber-500 transition-colors active:scale-90 shrink-0"
           aria-label="Refresh status"
         >
           <RefreshCw className={`w-2.5 h-2.5 ${refreshing ? "animate-spin" : ""}`} />
@@ -215,9 +215,10 @@ export default function LastMtnOrderWidget({ variant = "pill", className }: Last
         <button 
           onClick={() => fetchStatus(true)}
           disabled={refreshing}
-          className="flex items-center gap-1 text-[10px] text-amber-500/70 hover:text-amber-500 transition-colors bg-amber-500/5 px-2 py-1 rounded-md border border-amber-500/15 hover:border-amber-500/30"
+          className="flex items-center gap-1.5 text-[10px] text-amber-500/80 hover:text-amber-500 transition-colors bg-amber-500/5 hover:bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/15 hover:border-amber-500/30"
+          aria-label="Refresh status"
         >
-          <RefreshCw className={`w-2.5 h-2.5 ${refreshing ? "animate-spin" : ""}`} />
+          <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Updating..." : "Refresh"}
         </button>
       </div>

@@ -41,10 +41,13 @@ export const LiveActivityToast = () => {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-5 left-4 right-4 sm:right-auto sm:left-6 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-500 ease-out fill-mode-both">
-      <div className="bg-[#0d140d]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-2xl max-w-xs sm:max-w-sm">
-        <div className="w-10 h-10 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shrink-0 relative">
-          <Zap className="w-5 h-5 text-amber-400" />
+    <aside 
+      aria-label="Live activity notification"
+      className="fixed bottom-3 left-3 right-3 sm:right-auto sm:left-6 sm:bottom-6 z-[80] pointer-events-none animate-in slide-in-from-bottom-4 fade-in duration-300 ease-out fill-mode-both"
+    >
+      <div className="bg-[#0d140d]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-3 sm:p-3.5 flex items-center gap-3 shadow-2xl max-w-xs sm:max-w-sm pointer-events-auto">
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shrink-0 relative">
+          <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
           <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center border-2 border-[#0d140d]">
             <CheckCircle2 className="w-2.5 h-2.5 text-white" />
           </div>
@@ -55,11 +58,11 @@ export const LiveActivityToast = () => {
             <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Live Delivery</span>
             <span className="text-[9px] text-emerald-400 font-bold">{currentData.time}</span>
           </div>
-          <p className="text-xs text-white font-medium leading-snug">
-            <span className="text-white font-bold">{currentData.name}</span> just received <span className="text-amber-400 font-black">{currentData.pkg} Bundle</span>!
+          <p className="text-xs text-white font-medium leading-snug truncate">
+            <span className="text-white font-bold">{currentData.name}</span> received <span className="text-amber-400 font-black">{currentData.pkg}</span>
           </p>
         </div>
       </div>
-    </div>
+    </aside>
   );
 };

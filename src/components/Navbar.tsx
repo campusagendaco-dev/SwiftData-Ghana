@@ -261,12 +261,16 @@ const Navbar = () => {
                     className="absolute inset-0 rounded-full transition-all duration-300 group-hover:scale-125"
                     style={{ background: "rgba(251,191,36,0.28)", filter: "blur(10px)", transform: "scale(1.35)" }}
                   />
-                  <img
-                    src="/logo.png"
-                    alt="SwiftData Ghana"
-                    className="w-8 h-8 rounded-full shrink-0 ring-1 ring-amber-400/35 relative z-10"
-                    width={32} height={32}
-                  />
+                  <picture className="relative z-10">
+                    <source srcSet="/logo.webp" type="image/webp" />
+                    <img
+                      src="/logo.png"
+                      alt="SwiftData Ghana"
+                      className="w-8 h-8 rounded-full shrink-0 ring-1 ring-amber-400/35 relative z-10"
+                      width={32}
+                      height={32}
+                    />
+                  </picture>
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -336,10 +340,11 @@ const Navbar = () => {
 
                 <motion.button
                   onClick={toggleDark}
-                  whileHover={{ scale: 1.1, rotate: 12 }}
-                  whileTap={{ scale: 0.9 }}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
+                  whileHover={{ scale: 1.08, rotate: 12 }}
+                  whileTap={{ scale: 0.92 }}
+                  className={`w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
                   title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                  aria-label="Toggle dark mode"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div
@@ -359,10 +364,11 @@ const Navbar = () => {
                   <motion.button
                     type="button"
                     onClick={() => setThemePickerOpen(v => !v)}
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    className={`w-9 h-9 min-w-[36px] min-h-[36px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
                     title="Change Theme"
+                    aria-label="Change theme colors"
                   >
                     <Palette className="w-3.5 h-3.5" style={{ color: theme.dot }} />
                   </motion.button>
@@ -471,21 +477,29 @@ const Navbar = () => {
                     <LogOut className="w-4 h-4" /> Sign Out
                   </button>
                 ) : (
-                  <Link to="/login">
-                    <motion.div
-                      className={`ml-1 flex items-center gap-1.5 text-black font-bold cursor-pointer rounded-xl ${
-                        scrolled ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
-                      }`}
-                      whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(251,191,36,0.55)" }}
-                      whileTap={{ scale: 0.96 }}
-                      style={{
-                        background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
-                        boxShadow: "0 0 22px rgba(251,191,36,0.45), 0 2px 8px rgba(245,158,11,0.30), inset 0 1px 0 rgba(255,255,255,0.35)",
-                      }}
+                  <div className="flex items-center gap-1.5 ml-1">
+                    <Link to="/buy-data">
+                      <motion.div
+                        className={`flex items-center gap-1.5 text-black font-black cursor-pointer rounded-xl ${
+                          scrolled ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
+                        }`}
+                        whileHover={{ scale: 1.05, boxShadow: "0 0 30px rgba(251,191,36,0.55)" }}
+                        whileTap={{ scale: 0.96 }}
+                        style={{
+                          background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
+                          boxShadow: "0 0 22px rgba(251,191,36,0.45), 0 2px 8px rgba(245,158,11,0.30), inset 0 1px 0 rgba(255,255,255,0.35)",
+                        }}
+                      >
+                        <Zap className="w-3.5 h-3.5 fill-black" /> Buy Data
+                      </motion.div>
+                    </Link>
+                    <Link
+                      to="/login"
+                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${linkIdle}`}
                     >
-                      <Zap className="w-3.5 h-3.5" /> Get Started
-                    </motion.div>
-                  </Link>
+                      Sign In
+                    </Link>
+                  </div>
                 )}
               </motion.div>
 
@@ -497,12 +511,13 @@ const Navbar = () => {
                     type="button"
                     onClick={openAccountSwitcher}
                     whileTap={{ scale: 0.9 }}
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 relative ${linkIdle}`}
+                    className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-all duration-200 relative ${linkIdle}`}
                     title="Switch Account"
+                    aria-label="Switch account"
                   >
-                    <Users className="w-3.5 h-3.5 text-amber-400" />
+                    <Users className="w-4 h-4 text-amber-400" />
                     {savedAccounts.length > 1 && (
-                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
+                      <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
                         {savedAccounts.length}
                       </span>
                     )}
@@ -511,7 +526,8 @@ const Navbar = () => {
                 <motion.button
                   onClick={toggleDark}
                   whileTap={{ scale: 0.9, rotate: 15 }}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
+                  className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-all duration-200 ${linkIdle}`}
+                  aria-label="Toggle dark mode"
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div
@@ -520,30 +536,30 @@ const Navbar = () => {
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.5 }}
                     >
-                      {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5" />}
+                      {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
                     </motion.div>
                   </AnimatePresence>
                 </motion.button>
                 {!user && (
-                  <Link to="/login">
+                  <Link to="/buy-data">
                     <motion.div
                       whileTap={{ scale: 0.95 }}
-                      className="flex items-center gap-1 text-black text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer"
+                      className="flex items-center gap-1 text-black text-xs font-black px-3.5 py-2 rounded-xl cursor-pointer min-h-[38px] shadow-md shadow-amber-400/20"
                       style={{
                         background: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
-                        boxShadow: "0 0 12px rgba(251,191,36,0.40)",
                       }}
                     >
-                      Sign In
+                      <Zap className="w-3.5 h-3.5 fill-black" />
+                      Buy Data
                     </motion.div>
                   </Link>
                 )}
                 <motion.button
                   onClick={(e) => { setMenuOpen(true); (e.currentTarget as HTMLButtonElement).blur(); }}
                   whileTap={{ scale: 0.9 }}
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+                  className={`w-10 h-10 min-w-[40px] min-h-[40px] rounded-xl flex items-center justify-center transition-colors ${
                     isDark
-                      ? "text-white/65 hover:text-white hover:bg-white/[0.08]"
+                      ? "text-white/75 hover:text-white hover:bg-white/[0.08]"
                       : "text-gray-700 hover:text-gray-900 hover:bg-black/[0.05]"
                   }`}
                   aria-label="Open menu"

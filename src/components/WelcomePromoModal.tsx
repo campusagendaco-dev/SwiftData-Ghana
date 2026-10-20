@@ -69,10 +69,11 @@ export const WelcomePromoModal = () => {
         
         <button 
           onClick={close}
-          className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors text-white/50 hover:text-white"
+          className="absolute top-4 right-4 w-10 h-10 min-w-[40px] min-h-[40px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white/70 hover:text-white border border-white/10"
           title="Close"
+          aria-label="Close dialog"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5" />
         </button>
 
         <div className="text-center pt-4 relative z-10">
