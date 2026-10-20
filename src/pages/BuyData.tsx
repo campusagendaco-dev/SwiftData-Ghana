@@ -1058,7 +1058,7 @@ const BuyData = () => {
         <div 
           className="absolute inset-0 opacity-[0.015] dark:opacity-[0.025] mix-blend-overlay"
           style={{ 
-            backgroundImage: "url('/assets/adinkra_pattern.png')",
+            backgroundImage: "url('/assets/adinkra_pattern.webp')",
             backgroundSize: "140px"
           }}
         />
@@ -1280,7 +1280,7 @@ const BuyData = () => {
                   <div 
                     className="absolute inset-0 opacity-[0.05] dark:opacity-[0.1] pointer-events-none mix-blend-overlay"
                     style={{ 
-                      backgroundImage: "url('/assets/adinkra_pattern.png')",
+                      backgroundImage: "url('/assets/adinkra_pattern.webp')",
                       backgroundSize: "120px"
                     }}
                   />

@@ -10,18 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { invokePublicFunction } from "@/lib/public-function-client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import DashboardLayout from "@/components/DashboardLayout";
-import AdminLayout from "@/components/AdminLayout";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import WhatsAppButton from "@/components/WhatsAppButton";
-import FreeDataButton from "@/components/FreeDataButton";
-import TutorialModal from "@/components/TutorialModal";
 import InstallPrompt from "@/components/InstallPrompt";
-import AudioUnlocker from "@/components/AudioUnlocker";
-import NotificationPopup from "@/components/NotificationPopup";
-import { DataPromoPopupModal } from "@/components/DataPromoPopupModal";
 import { OfflineAlert } from "@/components/OfflineAlert";
-import { AccountSwitcherModal } from "@/components/AccountSwitcherModal";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import LoadingScreen from "@/components/LoadingScreen";
 import { TraditionalBackground } from "@/components/TraditionalBackground";
@@ -30,10 +22,20 @@ import Maintenance from "./pages/Maintenance";
 import { SecurityGuard } from "@/components/SecurityGuard";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
-import AIConcierge from "@/components/AIConcierge";
-import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { getActiveStoreDomain } from "@/lib/app-base-url";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+
+// Code-split heavy dashboard/admin shells and non-critical modals
+const DashboardLayout = lazy(() => import("@/components/DashboardLayout"));
+const AdminLayout = lazy(() => import("@/components/AdminLayout"));
+const TutorialModal = lazy(() => import("@/components/TutorialModal"));
+const DataPromoPopupModal = lazy(() => import("@/components/DataPromoPopupModal").then(m => ({ default: m.DataPromoPopupModal })));
+const AccountSwitcherModal = lazy(() => import("@/components/AccountSwitcherModal").then(m => ({ default: m.AccountSwitcherModal })));
+const AIConcierge = lazy(() => import("@/components/AIConcierge"));
+const AudioUnlocker = lazy(() => import("@/components/AudioUnlocker"));
+const FreeDataButton = lazy(() => import("@/components/FreeDataButton"));
+const NotificationPopup = lazy(() => import("@/components/NotificationPopup"));
+const PushNotificationPrompt = lazy(() => import("@/components/PushNotificationPrompt").then(m => ({ default: m.PushNotificationPrompt })));
 
 // Route-level code splitting — each page chunk loads only when first visited
 import Index from "./pages/Index";
@@ -549,15 +551,17 @@ const AppContent = () => {
       </Suspense>
         </ChunkErrorBoundary>
       {!isDashboard && !isAgentStore && !isAdmin && <Footer />}
-        {!isDashboard && !isAdmin && <TutorialModal />}
-        <AudioUnlocker />
-        <NotificationPopup />
-        <AIConcierge />
-        <PushNotificationPrompt variant="floating" />
-        <AccountSwitcherModal />
+        <Suspense fallback={null}>
+          {!isDashboard && !isAdmin && <TutorialModal />}
+          <AudioUnlocker />
+          <NotificationPopup />
+          <AIConcierge />
+          <PushNotificationPrompt variant="floating" />
+          <AccountSwitcherModal />
+          {!isAgentStore && <FreeDataButton />}
+          {!isAgentStore && <DataPromoPopupModal />}
+        </Suspense>
         {!isAgentStore && <WhatsAppButton />}
-        {!isAgentStore && <FreeDataButton />}
-        {!isAgentStore && <DataPromoPopupModal />}
       </div>
     </>
   );

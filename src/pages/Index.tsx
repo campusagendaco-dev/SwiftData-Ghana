@@ -4,7 +4,7 @@ import {
   RefreshCw, BadgeCheck, Timer,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
@@ -220,6 +220,75 @@ const FaqItem = ({ q, a }: { q: string; a: string }) => {
   );
 };
 
+const HeroLiveBadge = memo(() => {
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [activeMessageIndex, setActiveMessageIndex] = useState(0);
+  const [latency, setLatency] = useState(24);
+
+  useEffect(() => {
+    const tick = setInterval(() => setCurrentTime(new Date()), 1000);
+    const messageCycle = setInterval(() => {
+      setActiveMessageIndex((prev) => (prev + 1) % 4);
+    }, 4000);
+    const latencyCycle = setInterval(() => {
+      setLatency(Math.floor(Math.random() * 9) + 18);
+    }, 3000);
+
+    return () => {
+      clearInterval(tick);
+      clearInterval(messageCycle);
+      clearInterval(latencyCycle);
+    };
+  }, []);
+
+  return (
+    <div
+      className="inline-flex items-center gap-2.5 bg-white/10 dark:bg-white/5 border border-white/20 dark:border-white/10 rounded-full px-4 py-2 mb-10 shadow-sm backdrop-blur-md"
+      style={{ animation: "fade-in 0.5s cubic-bezier(0.22,1,0.36,1) both" }}
+    >
+      <span className="flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-emerald-400 text-xs font-bold tracking-wide">Live</span>
+      </span>
+      
+      <span className="w-px h-3 bg-white/15" />
+      
+      <span className="flex items-center gap-1.5 text-white/60 text-[10px] sm:text-xs font-mono font-medium">
+        <Clock className="w-3 h-3 text-amber-400/80" />
+        {format(currentTime, "hh:mm:ss a")}
+        <span className="text-[9px] text-emerald-500/80 ml-1 hidden sm:inline font-bold">
+          {latency}ms
+        </span>
+      </span>
+
+      <span className="w-px h-3 bg-white/15" />
+      
+      <div className="flex items-center gap-2 min-w-[85px] justify-start overflow-hidden">
+        <picture className="hidden sm:block shrink-0">
+          <source srcSet="/logo.webp" type="image/webp" />
+          <img src="/logo.png" alt="SwiftData Ghana" width={16} height={16} className="w-4 h-4 rounded-full" />
+        </picture>
+        <div 
+          key={activeMessageIndex} 
+          className="text-white/70 text-xs font-bold tracking-tight animate-in slide-in-from-bottom-1 fade-in duration-300 fill-mode-both whitespace-nowrap"
+        >
+          {[
+            "#1 Bundle Store",
+            "Instant Delivery",
+            "Paystack Secured",
+            <div className="flex items-center gap-1.5" key="networks">
+              <span className="text-[9px] text-white/50 uppercase tracking-widest mr-0.5 font-black">APIs</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.5)]" title="MTN Online" />
+              <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.5)]" title="Telecel Online" />
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_4px_rgba(59,130,246,0.5)]" title="AirtelTigo Online" />
+            </div>
+          ][activeMessageIndex]}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 const Index = () => {
   const { user } = useAuth();
@@ -227,28 +296,6 @@ const Index = () => {
   const [videoUrl, setVideoUrl] = useState("/assets/videos/ai_video.mp4");
   const videoRef = useRef<HTMLVideoElement>(null);
   const [liveStats, setLiveStats] = useState({ totalDelivered: 80514, successRate: 99.4, totalAgents: 1240 });
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [activeMessageIndex, setActiveMessageIndex] = useState(0);
-  const [latency, setLatency] = useState(24);
-
-  useEffect(() => {
-    const tick = setInterval(() => setCurrentTime(new Date()), 1000);
-    
-    const messageCycle = setInterval(() => {
-      setActiveMessageIndex((prev) => (prev + 1) % 4);
-    }, 4000);
-    
-    // Simulate micro-variations in network latency for ultra-realism
-    const latencyCycle = setInterval(() => {
-      setLatency(Math.floor(Math.random() * 9) + 18);
-    }, 3000);
-    
-    return () => {
-      clearInterval(tick);
-      clearInterval(messageCycle);
-      clearInterval(latencyCycle);
-    };
-  }, []);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -315,7 +362,7 @@ const Index = () => {
             muted={isMuted}
             loop
             playsInline
-            preload="metadata"
+            preload="none"
             aria-hidden="true"
             className="hidden md:block w-full h-full object-cover"
           >
@@ -347,54 +394,11 @@ const Index = () => {
         </div>
 
         <div className="relative container mx-auto max-w-5xl text-center z-20">
-          {/* Status badge */}
-          <div
-            className="inline-flex items-center gap-2.5 bg-white/10 dark:bg-white/5 border border-white/20 dark:border-white/10 rounded-full px-4 py-2 mb-10 shadow-sm backdrop-blur-md"
-            style={{ animation: "fade-in 0.5s cubic-bezier(0.22,1,0.36,1) both" }}
-          >
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-emerald-400 text-xs font-bold tracking-wide">Live</span>
-            </span>
-            
-            <span className="w-px h-3 bg-white/15" />
-            
-            <span className="flex items-center gap-1.5 text-white/60 text-[10px] sm:text-xs font-mono font-medium">
-              <Clock className="w-3 h-3 text-amber-400/80" />
-              {format(currentTime, "hh:mm:ss a")}
-              <span className="text-[9px] text-emerald-500/80 ml-1 hidden sm:inline font-bold">
-                {latency}ms
-              </span>
-            </span>
+          {/* Isolated Live Status Badge (prevents full-page re-renders) */}
+          <HeroLiveBadge />
 
-            <span className="w-px h-3 bg-white/15" />
-            
-            <div className="flex items-center gap-2 min-w-[85px] justify-start overflow-hidden">
-              <picture className="hidden sm:block shrink-0">
-                <source srcSet="/logo.webp" type="image/webp" />
-                <img src="/logo.png" alt="SwiftData Ghana" width={16} height={16} className="w-4 h-4 rounded-full" />
-              </picture>
-              <div 
-                key={activeMessageIndex} 
-                className="text-white/70 text-xs font-bold tracking-tight animate-in slide-in-from-bottom-1 fade-in duration-300 fill-mode-both whitespace-nowrap"
-              >
-                {[
-                  "#1 Bundle Store",
-                  "Instant Delivery",
-                  "Paystack Secured",
-                  <div className="flex items-center gap-1.5" key="networks">
-                    <span className="text-[9px] text-white/50 uppercase tracking-widest mr-0.5 font-black">APIs</span>
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.5)]" title="MTN Online" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.5)]" title="Telecel Online" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_4px_rgba(59,130,246,0.5)]" title="AirtelTigo Online" />
-                  </div>
-                ][activeMessageIndex]}
-              </div>
-            </div>
-          </div>
-
-          {/* MTN Live Delivery Status Widget */}
-          <div className="mb-8 block" style={{ animation: "fade-in 0.6s cubic-bezier(0.22,1,0.36,1) 0.1s both" }}>
+          {/* MTN Live Delivery Status Widget (reserved min-height eliminates CLS) */}
+          <div className="mb-8 min-h-[34px] flex items-center justify-center" style={{ animation: "fade-in 0.6s cubic-bezier(0.22,1,0.36,1) 0.1s both" }}>
             <LastMtnOrderWidget variant="pill" />
           </div>
 

@@ -35,7 +35,10 @@ const Footer = () => {
           <div className="md:col-span-4">
             <div className="flex items-center gap-3 mb-6">
               <div className="bg-white/5 p-2 rounded-xl border border-white/10 shadow-xl backdrop-blur-sm">
-                <img src="/logo.png" alt="SwiftData Ghana" className="w-10 h-10 shrink-0" />
+                <picture>
+                  <source srcSet="/logo.webp" type="image/webp" />
+                  <img src="/logo.png" alt="SwiftData Ghana" width={40} height={40} loading="lazy" className="w-10 h-10 shrink-0" />
+                </picture>
               </div>
               <div>
                 <p className="text-white font-black text-xl tracking-tight leading-none">SwiftData <span className="text-amber-400">GH</span></p>

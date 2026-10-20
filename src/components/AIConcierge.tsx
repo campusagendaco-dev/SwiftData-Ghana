@@ -325,7 +325,7 @@ function ChatHeader({ isMobile, isSpeaking, onToggleSpeak, onClose }: HeaderProp
             className="w-11 h-11 rounded-2xl overflow-hidden"
             style={{ background: "linear-gradient(135deg,#92400e 0%,#b45309 25%,#7c3aed 65%,#4f46e5 100%)" }}
           >
-            <img src="/assets/ama_avatar.png" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
+            <img src="/assets/ama_avatar.webp" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
           </motion.div>
           <motion.span
             animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
@@ -398,7 +398,7 @@ function MessageList({ messages, typing, bottomRef }: MessageListProps) {
               className="w-7 h-7 rounded-xl shrink-0 overflow-hidden mb-4"
               style={{ background: "linear-gradient(135deg,#92400e,#7c3aed)" }}
             >
-              <img src="/assets/ama_avatar.png" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
+              <img src="/assets/ama_avatar.webp" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
             </div>
           )}
           <div className={cn("flex flex-col gap-1 max-w-[80%]", m.role === "user" ? "items-end" : "items-start")}>
@@ -432,7 +432,7 @@ function MessageList({ messages, typing, bottomRef }: MessageListProps) {
             className="flex items-end gap-2"
           >
             <div className="w-7 h-7 rounded-xl shrink-0 overflow-hidden" style={{ background: "linear-gradient(135deg,#92400e,#7c3aed)" }}>
-              <img src="/assets/ama_avatar.png" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
+              <img src="/assets/ama_avatar.webp" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
             </div>
             <div
               className="px-4 py-3.5 rounded-2xl rounded-bl-sm flex gap-1.5 items-center"
@@ -621,7 +621,7 @@ function TriggerButton({ open, unread, onToggle }: { open: boolean; unread: numb
             transition={{ duration: 0.2 }}
             className="w-full h-full"
           >
-            <img src="/assets/ama_avatar.png" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
+            <img src="/assets/ama_avatar.webp" alt="Ama" className="w-full h-full object-cover object-top scale-[1.6]" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -892,7 +892,7 @@ export default function AIConcierge() {
                 {/* Adinkra watermark */}
                 <div
                   className="absolute inset-0 opacity-[0.03] pointer-events-none"
-                  style={{ backgroundImage: "url('/assets/adinkra_pattern.png')", backgroundSize: "200px" }}
+                  style={{ backgroundImage: "url('/assets/adinkra_pattern.webp')", backgroundSize: "200px" }}
                 />
                 {sharedPanel}
               </motion.div>
@@ -924,7 +924,7 @@ export default function AIConcierge() {
               >
                 <div
                   className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay"
-                  style={{ backgroundImage: "url('/assets/adinkra_pattern.png')", backgroundSize: "200px" }}
+                  style={{ backgroundImage: "url('/assets/adinkra_pattern.webp')", backgroundSize: "200px" }}
                 />
                 {sharedPanel}
               </motion.div>

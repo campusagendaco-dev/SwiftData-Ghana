@@ -632,9 +632,12 @@ const Navbar = () => {
                   <div className="relative">
                     <div className="absolute inset-0 rounded-full blur-md"
                       style={{ background: "rgba(251,191,36,0.38)", transform: "scale(1.45)" }} />
-                    <img src="/logo.png" alt="SwiftData Ghana"
-                      className="w-8 h-8 rounded-full ring-1 ring-amber-400/40 relative z-10"
-                      width={32} height={32} />
+                    <picture className="relative z-10">
+                      <source srcSet="/logo.webp" type="image/webp" />
+                      <img src="/logo.png" alt="SwiftData Ghana"
+                        className="w-8 h-8 rounded-full ring-1 ring-amber-400/40 relative z-10"
+                        width={32} height={32} />
+                    </picture>
                   </div>
                   <div>
                     <span className={`${logoText} font-black text-sm tracking-tight block leading-tight`}>SwiftData Ghana</span>

@@ -768,7 +768,7 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
           <div 
             className="absolute inset-0 opacity-[0.16] pointer-events-none mix-blend-overlay"
             style={{ 
-              backgroundImage: "url('/assets/adinkra_pattern.png')",
+              backgroundImage: "url('/assets/adinkra_pattern.webp')",
               backgroundSize: "120px"
             }}
           />
