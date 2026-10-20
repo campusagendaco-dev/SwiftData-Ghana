@@ -111,8 +111,24 @@ export default defineConfig(({ mode }) => ({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        maximumFileSizeToCacheInBytes: 10000000,
-        globPatterns: ["**/*.{ico,png,svg,html}"],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        globPatterns: [
+          "**/*.{js,css,html}",
+          "favicon.png",
+          "logo.png",
+          "logo.webp",
+          "placeholder.svg"
+        ],
+        globIgnores: [
+          "**/node_modules/**/*",
+          "sw.js",
+          "workbox-*.js",
+          "**/assets/Admin*",
+          "**/assets/Dashboard*",
+          "**/assets/vendor-xlsx*",
+          "**/assets/vendor-recharts*",
+          "**/assets/vendor-canvas*"
+        ],
         // Never serve cached HTML for JS/CSS asset requests — prevents stale chunk errors
         navigateFallback: "index.html",
         navigateFallbackDenylist: [
@@ -132,6 +148,20 @@ export default defineConfig(({ mode }) => ({
               expiration: {
                 maxEntries: 10,
                 maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /\.(?:png|jpg|jpeg|svg|webp|ico)$/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "images-cache",
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
               },
               cacheableResponse: {
                 statuses: [0, 200],

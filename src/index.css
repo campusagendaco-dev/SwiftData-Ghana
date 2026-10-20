@@ -80,10 +80,25 @@
     border-color: hsl(var(--border));
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: 'Poppins', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+  }
+
+  /* Instant tap responsiveness on iOS & Android - eliminates 300ms click delay */
+  a, button, input, select, textarea, [role="button"] {
+    touch-action: manipulation;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -93,6 +108,12 @@
 }
 
 @layer utilities {
+  /* Offscreen rendering optimization - skips layout/paint until near viewport */
+  .content-visibility-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: 1px 500px;
+  }
+
   .text-gradient {
     -webkit-background-clip: text;
     background-clip: text;

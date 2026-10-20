@@ -395,8 +395,8 @@ const Index = () => {
           </button>
         </div>
 
-        {/* Background glow mesh — visible in dark mode, subtle in light */}
-        <div className="absolute inset-0 pointer-events-none select-none z-[1]">
+        {/* Background glow mesh — visible on desktop, hidden on mobile to eliminate GPU rasterization bottlenecks */}
+        <div className="hidden md:block absolute inset-0 pointer-events-none select-none z-[1]">
           {/* Navbar-area glows — these sit directly behind the fixed nav and feed the glass blur */}
           <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-[900px] h-[200px] bg-amber-400/10 dark:bg-amber-400/18 rounded-full blur-[80px]" />
           <div className="absolute -top-4 left-1/4 w-[400px] h-[160px] bg-violet-600/8 dark:bg-violet-600/14 rounded-full blur-[70px]" />
@@ -608,7 +608,7 @@ const Index = () => {
       </section>
 
       {/* ── How it works ───────────────────────────────────────────────────── */}
-      <section className="py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-4xl">
           <div className="text-center mb-14">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Simple process</p>
@@ -642,7 +642,7 @@ const Index = () => {
       </section>
 
       {/* ── Features ───────────────────────────────────────────────────────── */}
-      <section className="py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-5xl">
           <div className="text-center mb-14">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Why SwiftData Ghana</p>
@@ -680,7 +680,7 @@ const Index = () => {
       </section>
 
       {/* ── Delivery Guarantee ─────────────────────────────────────────────── */}
-      <section className="py-20 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-20 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-5xl">
           <div
             ref={guarantee.ref}
@@ -735,7 +735,7 @@ const Index = () => {
       </section>
 
       {/* ── Order tracker ──────────────────────────────────────────────────── */}
-      <section className="py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-3xl">
           <div className="text-center mb-10">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Real-time tracking</p>
@@ -761,7 +761,7 @@ const Index = () => {
       </section>
 
       {/* ── Agent CTA ──────────────────────────────────────────────────────── */}
-      <section className="py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-12 md:py-24 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-5xl">
           <div
             ref={agent.ref}
@@ -827,7 +827,7 @@ const Index = () => {
 
       {/* ── Guest Promo (Strategic Placement) ────────────────────────────────── */}
       {!user && (
-        <section className="py-12 md:py-24 px-4 bg-white dark:bg-white/[0.01]">
+        <section className="content-visibility-auto py-12 md:py-24 px-4 bg-white dark:bg-white/[0.01]">
           <div className="container mx-auto max-w-5xl">
             <div className="text-center mb-10">
               <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">Special Offers</p>
@@ -840,7 +840,7 @@ const Index = () => {
       )}
 
       {/* ── FAQ ────────────────────────────────────────────────────────────── */}
-      <section className="py-24 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-24 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-3xl">
           <div className="text-center mb-12">
             <p className="text-amber-500 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">FAQ</p>
@@ -866,7 +866,7 @@ const Index = () => {
       </section>
 
       {/* ── SEO footer text ────────────────────────────────────────────────── */}
-      <section className="py-14 px-4 border-t border-gray-200 dark:border-white/6">
+      <section className="content-visibility-auto py-14 px-4 border-t border-gray-200 dark:border-white/6">
         <div className="container mx-auto max-w-3xl text-center">
           <div className="w-14 h-14 rounded-2xl border border-amber-400/20 bg-amber-400/8 flex items-center justify-center mx-auto mb-5">
             <picture>

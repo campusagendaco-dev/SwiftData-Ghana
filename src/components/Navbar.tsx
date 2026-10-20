@@ -40,11 +40,12 @@ const Navbar = () => {
    const themePickerRef = useRef<HTMLDivElement>(null);
    const [themePickerOpen, setThemePickerOpen] = useState(false);
    const [menuBanners, setMenuBanners] = useState<any[]>([]);
-   const [bannersLoading, setBannersLoading] = useState(true);
+   const [bannersLoading, setBannersLoading] = useState(false);
    const [api, setApi] = useState<CarouselApi>();
    const [current, setCurrent] = useState(0);
 
    useEffect(() => {
+     if (!menuOpen || menuBanners.length > 0) return;
      const fetchMenuBanners = async () => {
        setBannersLoading(true);
        const { data, error } = await supabase
@@ -58,7 +59,7 @@ const Navbar = () => {
        setBannersLoading(false);
      };
      fetchMenuBanners();
-   }, []);
+   }, [menuOpen, menuBanners.length]);
 
    useEffect(() => {
      if (!api) return;
