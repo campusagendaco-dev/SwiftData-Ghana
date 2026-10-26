@@ -71,6 +71,13 @@ try {
 
     Write-Host "`nAll $($Functions.Count) Edge Function(s) passed esbuild verification!" -ForegroundColor Green
 
+    Write-Host "`nScanning for undefined identifier errors across Edge Functions..." -ForegroundColor Cyan
+    node scripts/scan-undefined.mjs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[FAILED] Undefined identifier scan found missing references!" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+
     if ($VerifyOnly) {
         Write-Host "VerifyOnly switch is set. Skipping deployment." -ForegroundColor Yellow
         exit 0

@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   CheckCircle2, PlayCircle, UserCheck, Download,
   Coins, ShieldAlert, Zap, Check, X,
-  DollarSign, Sparkles, AlertCircle, Copy, Activity,
+  DollarSign, Sparkles, AlertCircle, AlertTriangle, Copy, Activity,
   Calendar, FileSpreadsheet, Edit3, FileText, Smartphone
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -427,8 +427,11 @@ export default function AdminOrders() {
     }
 
     // Status Filter
-    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue") {
+    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue" && statusFilter !== "parked") {
       q = q.eq("status", statusFilter);
+    } else if (statusFilter === "parked") {
+      const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      q = q.eq("status", "processing").lte("created_at", thirtyMinsAgo);
     } else if (statusFilter === "auto_router_queue") {
       const excludedTypes = "(wallet_topup,store_wallet_topup,agent_activation,sub_agent_activation,vendor_activation,free_data_claim)";
       q = q
@@ -1195,6 +1198,15 @@ export default function AdminOrders() {
       };
     }
 
+    const ageMinutes = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (60 * 1000));
+    if (order.status === "processing" && ageMinutes >= 30) {
+      const ageLabel = ageMinutes >= 60 ? `${Math.floor(ageMinutes / 60)}h ${ageMinutes % 60}m` : `${ageMinutes}m`;
+      return {
+        className: "bg-orange-500/20 text-orange-400 border-orange-500/30 font-bold shadow-sm backdrop-blur-md animate-pulse",
+        label: `parked (${ageLabel})`,
+      };
+    }
+
     return {
       className: STATUS_COLORS[order.status] || "bg-muted text-muted-foreground border-border",
       label: order.status === "pending" ? "Awaiting Checkout" : order.status.replace(/_/g, " "),
@@ -1206,6 +1218,9 @@ export default function AdminOrders() {
     if (order.provider_order_id === "duplicate_cooldown" || (order.status === "processing" && String(order.failure_reason || "").toLowerCase().includes("duplicate"))) {
       return Clock;
     }
+    const ageMinutes = Math.floor((Date.now() - new Date(order.created_at).getTime()) / (60 * 1000));
+    if (order.status === "processing" && ageMinutes >= 30) return AlertTriangle;
+
     switch (order.status) {
       case "fulfilled": return CheckCircle2;
       case "processing": return RefreshCw;
@@ -1223,6 +1238,10 @@ export default function AdminOrders() {
       if (typeFilter === "sub_agents" && !o.is_sub_agent) return false;
       if (statusFilter === "in_queue") {
         return isBeneficiaryFailure(o) || (o.customer_phone && beneficiaryStatus[o.customer_phone]);
+      }
+      if (statusFilter === "parked") {
+        const ageMinutes = Math.floor((Date.now() - new Date(o.created_at).getTime()) / (60 * 1000));
+        return o.status === "processing" && ageMinutes >= 30;
       }
       if (statusFilter === "auto_router_queue") {
         const isPaid = o.payment_method === "wallet" || 
@@ -1264,6 +1283,7 @@ export default function AdminOrders() {
   }, 0);
   
   const inQueueCount = allOrders.filter(o => isBeneficiaryFailure(o) || (o.customer_phone && beneficiaryStatus[o.customer_phone])).length;
+  const parkedCount = allOrders.filter(o => o.status === "processing" && Math.floor((Date.now() - new Date(o.created_at).getTime()) / (60 * 1000)) >= 30).length;
   const failed = allOrders.filter((o) => o.status === "fulfillment_failed" && !isBeneficiaryFailure(o)).length;
   const pending = allOrders.filter((o) => o.status === "pending" || o.status === "paid").length;
   const verifiedCount = allOrders.filter((o) => o.paystack_verified_amount != null).length;
@@ -1625,6 +1645,7 @@ export default function AdminOrders() {
           >
             <option value="all">All Statuses</option>
             <option value="auto_router_queue">⚡ Auto-Router Queue ({autoRouterQueueCount})</option>
+            <option value="parked">⚠️ Parked / Stalled (&gt;30m) {parkedCount > 0 ? `(${parkedCount})` : ""}</option>
             <option value="in_queue">In Queue (Beneficiary Approval)</option>
             <option value="fulfilled">Fulfilled (Successful)</option>
             <option value="processing">Processing</option>

@@ -296,10 +296,46 @@ const BuyData = () => {
   const [submittedBeneficiarySuccess, setSubmittedBeneficiarySuccess] = useState(false);
   const lastBeneficiaryCheckRef = useRef<string>("");
 
+  // Recent recipient numbers
+  const [recentNumbers, setRecentNumbers] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("swiftdata_recent_recipients");
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
 
+  const saveRecentNumber = useCallback((num: string) => {
+    if (!num || num.length < 9) return;
+    setRecentNumbers(prev => {
+      const next = [num, ...prev.filter(n => n !== num)].slice(0, 4);
+      try {
+        localStorage.setItem("swiftdata_recent_recipients", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
 
   const phoneDigits = phone.replace(/\D+/g, "");
   const isPhoneValid = phoneDigits.length === 10 || phoneDigits.length === 12 || phoneDigits.length === 9;
+
+  // Smart Carrier Detection from Ghanaian phone prefixes
+  const detectedNetwork = useMemo((): NetworkName | null => {
+    const local = phoneDigits.startsWith("233") ? "0" + phoneDigits.slice(3) : phoneDigits;
+    if (local.length < 3) return null;
+    const pfx = local.slice(0, 3);
+    if (["024", "025", "053", "054", "055", "059"].includes(pfx)) return "MTN";
+    if (["020", "050"].includes(pfx)) return "Telecel";
+    if (["027", "057", "026", "056"].includes(pfx)) return "AirtelTigo";
+    return null;
+  }, [phoneDigits]);
+
+  const networkMismatch = useMemo(() => {
+    if (!detectedNetwork) return false;
+    if (selectedNetwork === "MTN Mash Up" && detectedNetwork === "MTN") return false;
+    return detectedNetwork !== selectedNetwork;
+  }, [detectedNetwork, selectedNetwork]);
 
   useEffect(() => {
     const load = async () => {
@@ -769,6 +805,7 @@ const BuyData = () => {
       return;
     }
     if (data.success) {
+      saveRecentNumber(phoneDigits);
       toast({ title: "Free data sent!", description: `Your ${selectedPkg.size} ${selectedNetwork} bundle is on its way!` });
       setSelectedPkg(null); setPhone(""); setPromoCode(""); setPromoResult(null); setPromoOpen(false);
     } else {
@@ -784,6 +821,7 @@ const BuyData = () => {
       phoneInputRef.current?.focus();
       return;
     }
+    saveRecentNumber(phoneDigits);
     if (orderingDisabled) {
       toast({ title: "Ordering disabled", description: holidayMessage, variant: "destructive" });
       return;
@@ -1375,6 +1413,40 @@ const BuyData = () => {
                         )}
                       </div>
                     </div>
+
+                    {/* Recent Numbers Quick Fill */}
+                    {recentNumbers.length > 0 && !phone && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5 animate-in fade-in duration-200">
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase font-mono tracking-wider">Recent:</span>
+                        {recentNumbers.map((num) => (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => setPhone(num)}
+                            className="px-2.5 py-1 rounded-lg bg-muted border border-border hover:border-amber-500/40 text-[11px] font-mono font-bold text-foreground transition-all hover:scale-105 active:scale-95"
+                          >
+                            {num}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Carrier Prefix Mismatch Warning with 1-Click Switch */}
+                    {networkMismatch && detectedNetwork && (
+                      <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400 text-xs animate-in fade-in">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span className="truncate text-[11px]">Looks like a <strong>{detectedNetwork}</strong> number</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedNetwork(detectedNetwork)}
+                          className="shrink-0 px-2 py-0.5 rounded-lg bg-amber-500 text-black text-[10px] font-bold uppercase tracking-wider hover:bg-amber-400 transition-all shadow-sm active:scale-95"
+                        >
+                          Switch to {detectedNetwork}
+                        </button>
+                      </div>
+                    )}
 
                     {/* Auto Resolved Name Badge */}
                     {resolvedName && (

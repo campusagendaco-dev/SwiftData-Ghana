@@ -13,6 +13,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "scan:undefined": "node scripts/scan-undefined.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
