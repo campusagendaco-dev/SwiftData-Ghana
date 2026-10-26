@@ -698,7 +698,7 @@ serve(async (req: Request) => {
     if (p.endsWith("/balance")) finalAction = "balance";
     else if (p.endsWith("/account")) finalAction = "account";
     else if (p.endsWith("/plans")) finalAction = "plans";
-    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/order") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
+    else if (p.endsWith("/buy") || p.endsWith("/purchase") || p.endsWith("/order") || p.endsWith("/buy-data") || p.includes("/buy-data") || p.endsWith("/payment/airtime") || p.endsWith("/payment/data")) finalAction = "buy";
     else if (p.endsWith("/sms") || p.endsWith("/api/sms")) finalAction = "sms";
     else if (p.includes("/orders-summary") || p.includes("/orders_summary")) finalAction = "orders_summary";
     else if (p.endsWith("/orders")) finalAction = "orders";
@@ -1017,6 +1017,12 @@ serve(async (req: Request) => {
       // Map parameters from Agent API docs compatibility
       if (payload.package && !package_size && !package_id) {
         package_size = payload.package;
+      }
+      if (payload.size_gb != null && !package_size && !package_id) {
+        package_size = String(payload.size_gb) + "GB";
+      }
+      if (payload.capacity != null && !package_size && !package_id) {
+        package_size = String(payload.capacity).toUpperCase().includes("GB") ? String(payload.capacity) : (String(payload.capacity) + "GB");
       }
       if (payload.reference && !request_id) {
         request_id = payload.reference;

@@ -766,8 +766,8 @@ const AdminStandardOrders = () => {
                             {o.status.replace("_", " ")}
                           </Badge>
                           {o.failure_reason && (
-                            <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate leading-normal" title={o.failure_reason}>
-                              Reason: {o.failure_reason}
+                            <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate leading-normal" title={o.failure_reason.replace(/^Route not found/i, "Order not found on provider")}>
+                              Reason: {o.failure_reason.replace(/^Route not found/i, "Order not found on provider")}
                             </p>
                           )}
                         </div>

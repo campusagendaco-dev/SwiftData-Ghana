@@ -100,32 +100,33 @@ export async function handleGuestBeneficiaryFailure(
                   order.metadata?.provider_type === "korba";
 
   if (!isMtn || !isData || isKorba || isMashUp || isNonSme) {
-    console.log(`[guest-refund] Order ${orderId} is non-MTN, non-SME, Mashup, or Korba (${order.network || 'unknown'}, ${orderType}). Skipping MTN whitelist logic.`);
+    console.log(`[guest-refund] Order ${orderId} is non-MTN, non-SME, Mashup, or Korba (${order.network || 'unknown'}, ${orderType}). Retaining in processing queue.`);
     await supabaseAdmin.from("orders").update({
-      status: "fulfillment_failed",
+      status: "processing",
       provider_order_id: "failed_api_call",
-      failure_reason: failureReason || "Carrier declined transaction for this recipient number.",
+      failure_reason: failureReason || "Carrier queued transaction for this recipient number.",
       updated_at: nowIso,
     }).eq("id", orderId);
     return { success: true, carrierSubmitted: false };
   }
 
-  console.log(`[guest-refund] Handling guest non-beneficiary failure for order ${orderId} (${customerPhone}). Setting up tracking resolution...`);
+  console.log(`[guest-refund] Handling guest non-beneficiary order ${orderId} (${customerPhone}). Retaining in processing queue & submitting for carrier approval...`);
 
-  // 1. Update order status and metadata
+  // 1. Update order status and metadata (retaining processing state)
   const existingMetadata = order.metadata || {};
   const updatedMetadata = {
     ...existingMetadata,
     is_guest_order: true,
-    non_beneficiary_failed: true,
-    guest_refund_eligible: true,
+    non_beneficiary_failed: false,
+    guest_refund_eligible: false,
     in_beneficiary_queue: true,
     carrier_submission_queued_at: nowIso,
   };
 
   await supabaseAdmin.from("orders").update({
-    status: "fulfillment_failed",
-    failure_reason: "MTN Beneficiary Error: Recipient line is not registered on carrier whitelist.",
+    status: "processing",
+    provider_order_id: "failed_api_call",
+    failure_reason: "MTN Beneficiary Queue: Recipient line submitted for carrier whitelist approval.",
     metadata: updatedMetadata,
     updated_at: nowIso,
   }).eq("id", orderId);
@@ -188,8 +189,8 @@ export async function handleGuestBeneficiaryFailure(
   if (customerPhone) {
     try {
       const trackingUrl = `https://swiftdatagh.shop/order-status?id=${orderId}`;
-      const smsMessage = `SwiftData Notice: Your order for ${customerPhone} could not deliver because this recipient number has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.\n\n` +
-        `Track order or request refund:\n` +
+      const smsMessage = `SwiftData Alert: Your order for ${customerPhone} has been received and queued for carrier delivery. Delivery is processing shortly.\n\n` +
+        `Track order:\n` +
         `${trackingUrl}`;
 
       await sendPaymentSms(
@@ -198,7 +199,7 @@ export async function handleGuestBeneficiaryFailure(
         "custom",
         {
           message: smsMessage,
-          reason: "Reached daily limit / unsupported plan / promo blocked",
+          reason: "Order queued for carrier delivery",
           order_id: orderId,
           reference: order.reference || orderId,
           network: "MTN",

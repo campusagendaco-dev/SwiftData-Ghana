@@ -40,6 +40,7 @@ const SubAgentSignup = () => {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [phone, setPhone] = useState("");
   const [storeName, setStoreName] = useState("");
@@ -340,6 +341,27 @@ const SubAgentSignup = () => {
                       {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                </div>
+
+                {/* Confirm Password */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] ml-1">Confirm Password</label>
+                  <div className="relative group">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-amber-400 transition-colors">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showPwd ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter password"
+                      className={`w-full bg-white/[0.03] border rounded-2xl pl-11 pr-4 py-3.5 text-white placeholder-white/20 text-sm focus:outline-none transition-all ${confirmPassword && confirmPassword !== password ? "border-rose-500/60 focus:border-rose-500" : "border-white/10 focus:border-white/30"}`}
+                      required
+                    />
+                  </div>
+                  {confirmPassword && confirmPassword !== password && (
+                    <p className="text-[11px] text-rose-400 ml-1">Passwords do not match</p>
+                  )}
                 </div>
 
                 {/* Phone */}

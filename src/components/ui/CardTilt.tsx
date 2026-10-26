@@ -7,17 +7,7 @@ interface CardTiltProps extends React.HTMLAttributes<HTMLDivElement> {
   glowColor?: string; // Optional custom HSL glow color override (e.g. "48 96% 53%")
 }
 
-export function CardTilt({ children, className = "", glowColor = "var(--primary)", ...props }: CardTiltProps) {
-  // On mobile or touch devices, bypass motion springs and mouse tracking completely
-  const isTouch = typeof window !== "undefined" && (window.innerWidth < 768 || window.matchMedia("(hover: none)").matches);
-  if (isTouch) {
-    return (
-      <div className={`relative ${className}`} {...props}>
-        {children}
-      </div>
-    );
-  }
-
+function DesktopCardTilt({ children, className = "", glowColor = "var(--primary)", ...props }: CardTiltProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
 
@@ -102,4 +92,23 @@ export function CardTilt({ children, className = "", glowColor = "var(--primary)
       </motion.div>
     </div>
   );
+}
+
+export function CardTilt(props: CardTiltProps) {
+  const [isTouch, setIsTouch] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsTouch(window.innerWidth < 768 || window.matchMedia("(hover: none)").matches);
+  }, []);
+
+  if (isTouch) {
+    const { children, className = "", glowColor, ...rest } = props;
+    return (
+      <div className={`relative ${className}`} {...rest}>
+        {children}
+      </div>
+    );
+  }
+
+  return <DesktopCardTilt {...props} />;
 }

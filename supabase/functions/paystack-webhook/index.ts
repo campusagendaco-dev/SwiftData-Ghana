@@ -439,9 +439,9 @@ async function callProviderApi(
 
 function buildAfaPayload(metadata: Record<string, unknown>, recipient: string, order?: any) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
+
   const webhookUrl = supabaseUrl
-    ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+    ? `${supabaseUrl}/functions/v1/provider-webhook`
     : undefined;
   const fullName = order?.afa_full_name || metadata.afa_full_name || metadata.fullName;
   const card = order?.afa_ghana_card || metadata.afa_ghana_card || metadata.ghana_card || metadata.ghanaCardNumber;
@@ -1101,13 +1101,13 @@ serve(async (req: Request) => {
         patch.customer_name = metadata.customer_name;
       }
 
-      if (existingOrder.status === "pending" || existingOrder.status === "awaiting_payment" || existingOrder.status === "fulfillment_failed") {
+      if (existingOrder.status === "pending" || existingOrder.status === "awaiting_payment" || existingOrder.status === "fulfillment_failed" || existingOrder.status === "cancelled") {
         patch.status = "paid";
       }
 
       let updateQuery = supabaseAdmin.from("orders").update(patch).eq("id", orderId);
       if (patch.status) {
-        updateQuery = updateQuery.in("status", ["pending", "awaiting_payment", "fulfillment_failed"]);
+        updateQuery = updateQuery.in("status", ["pending", "awaiting_payment", "fulfillment_failed", "cancelled"]);
       }
       const { error: updateErr } = await updateQuery;
       if (updateErr) {
@@ -1197,7 +1197,7 @@ serve(async (req: Request) => {
     }
 
     const targetStatus = "processing";
-    const claimableStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment"];
+    const claimableStatuses = ["pending", "paid", "fulfillment_failed", "awaiting_payment", "cancelled"];
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
       .from("orders")
       .update({
@@ -2103,6 +2103,7 @@ serve(async (req: Request) => {
           orderReference: orderId,
           gateway: "wallet",
           reference: orderId,
+          ref: orderId,
           category: isMashUpOrder ? "mashup" : undefined
         }
       : (handlerType === "datahub" || handlerType === "spendless")

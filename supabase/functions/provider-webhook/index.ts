@@ -6,6 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
 import { mapAfaStatus } from "../_shared/providers/afaregistration.ts";
+import { isNonRetryableTerminalError } from "../_shared/providers/utils.ts";
 
 async function verifyHmacSha256(bodyText: string, keyString: string, expectedSignature: string): Promise<boolean> {
   try {
@@ -436,12 +437,13 @@ serve(async (req: Request) => {
     if (systemStatus === "fulfillment_failed" && order.status !== "fulfilled") {
       const isPaid = order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0 || order.status === "processing";
       const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation"].includes(String(order.order_type || "data").toLowerCase());
+      const failReason = payload?.message || payload?.error || payload?.data?.reason || `Provider reported status: ${rawStatus}`;
+      const isTerminal = isNonRetryableTerminalError(failReason);
 
-      if (isPaid && isTelecomOrder) {
+      if (isPaid && isTelecomOrder && !isTerminal && (order.retry_count || 0) < 5) {
         console.log(`[provider-webhook] Order ${order.id} failed at provider ${order.provider_id}. Attempting automatic failover to next provider (SKPlug)...`);
         
         // Record failure in provider_errors
-        const failReason = payload?.message || payload?.error || payload?.data?.reason || `Provider reported status: ${rawStatus}`;
         await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
           provider_id: order.provider_id,
           order_id: order.id,

@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { invokePublicFunctionAsUser } from "@/lib/public-function-client";
+import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +92,9 @@ function translateFailureReason(reason?: string | null, network?: string, orderT
   }
   if (r.includes("CUSTOMER ABANDONED TRANSACTION") || r.includes("CUSTOMER ABANDONED")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
+  }
+  if (r.includes("ROUTE NOT FOUND") || r.includes("ORDER NOT FOUND ON PROVIDER")) {
+    return "Delivery could not be confirmed with the carrier gateway. Please retry or contact support.";
   }
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
     return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
@@ -241,31 +245,22 @@ const DashboardOrders = () => {
       let isRefunded = false;
       let statusMessage = "";
 
-      try {
-        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
-          body: { order_id: order.id }
-        });
-        if (!edgeErr && edgeData?.success) {
-          isRefunded = true;
-          statusMessage = edgeData.message || `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`;
-        } else if (!edgeErr && edgeData?.error) {
-          toast({ title: "Refund Blocked by Server", description: edgeData.error, variant: "destructive" });
-          setRefundingId(null);
-          return;
-        }
-      } catch (e) {
-        console.warn("[Refund] Edge function invoke error, falling back to direct server RPC...", e);
-      }
-
-      if (!isRefunded) {
-        const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("refund_failed_order", { p_order_id: order.id });
-        if (rpcErr || !rpcData) {
-          toast({ title: "Refund Blocked", description: rpcErr?.message || "Order is ineligible for refund.", variant: "destructive" });
-          setRefundingId(null);
-          return;
-        }
+      // Refunds ALWAYS go through verify-and-refund, which checks the provider before paying out.
+      // (A direct refund_failed_order fallback used to run whenever the server rejected the refund,
+      // which refunded orders the provider had already received.)
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
+        body: { order_id: order.id }
+      });
+      if (!edgeErr && edgeData?.success) {
         isRefunded = true;
-        statusMessage = `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`;
+        statusMessage = edgeData.message || `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`;
+      } else {
+        const description = edgeErr
+          ? await getFunctionErrorMessage(edgeErr, "Refund could not be verified. Please try again or contact support.")
+          : (edgeData?.error || "Order is ineligible for refund.");
+        toast({ title: "Refund Blocked by Server", description, variant: "destructive" });
+        setRefundingId(null);
+        return;
       }
 
       if (isRefunded) {
@@ -918,9 +913,24 @@ const DashboardOrders = () => {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1 font-mono">
-                        {order.customer_phone || "—"} &nbsp;·&nbsp; {date} at {time}
-                      </p>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1 font-mono">
+                        <span>{order.customer_phone || "—"}</span>
+                        {order.customer_phone && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(order.customer_phone || "");
+                              toast({ title: "Copied", description: `Copied ${order.customer_phone}` });
+                            }}
+                            className="p-1 hover:text-foreground text-slate-400 hover:bg-white/10 rounded transition-colors"
+                            title="Copy recipient phone"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        )}
+                        <span>&nbsp;·&nbsp; {date} at {time}</span>
+                      </div>
                     </div>
 
                     {/* Pricing & Profit */}

@@ -27,7 +27,11 @@ export class KorbaAdapter implements ProviderAdapter {
     const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
     const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || ""));
     const rawRef = String(data.reference || data.orderReference || data.order_id || data.id || "").trim();
-    const transactionId = rawRef ? (rawRef.endsWith("_disb") ? rawRef : `${rawRef}_disb`) : `ord_${crypto.randomUUID()}_disb`;
+    const retrySuffix = (data as any).retry_suffix ? `_${(data as any).retry_suffix}` : "";
+    const cleanRefNoDisb = rawRef.replace(/_disb$/, "");
+    const transactionId = rawRef 
+      ? (retrySuffix ? `${cleanRefNoDisb}${retrySuffix}_disb` : (rawRef.endsWith("_disb") ? rawRef : `${rawRef}_disb`))
+      : `ord_${crypto.randomUUID()}_disb`;
     const callbackUrl = String(data.callback_url || `${Deno.env.get("SUPABASE_URL")}/functions/v1/korba-webhook`);
     const baseUrl = (provider?.base_url || Deno.env.get("KORBA_BASE_URL") || "https://xchange.korba365.com/api/v1.0").replace(/\/+$/, "");
 
@@ -35,7 +39,8 @@ export class KorbaAdapter implements ProviderAdapter {
     let korbaPayload: Record<string, any> = {};
 
     const orderType = String(data.order_type || "data").toLowerCase();
-    if (orderType === "airtime") {
+    const isAirtime = orderType === "airtime" || (!data.package_size && !data.plan && Number(data.amount) > 0 && !data.utility_provider);
+    if (isAirtime) {
       targetUrl = `${baseUrl}/topup/`;
       korbaPayload = {
         customer_number: recipient,
@@ -199,8 +204,8 @@ export class KorbaAdapter implements ProviderAdapter {
           if (!matchedPackage && reqCapGb > 0) {
             matchedPackage = searchPool.find((p: any) => Math.abs(Number(p.capacity_gb || 0) - reqCapGb) < 0.05);
           }
-          // 5. Substring match in package_name or raw_data.name
-          if (!matchedPackage) {
+          // 5. Substring match in package_name or raw_data.name (only if cleanReqSize is not empty)
+          if (!matchedPackage && cleanReqSize && cleanReqSize.length > 0) {
             matchedPackage = searchPool.find((p: any) => {
               const pName = String(p.package_name || "").replace(/\s+/g, "").toUpperCase();
               const rawName = String(p.raw_data?.name || "").replace(/\s+/g, "").toUpperCase();

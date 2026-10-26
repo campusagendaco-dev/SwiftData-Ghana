@@ -207,7 +207,7 @@ const AdminAgents = () => {
         )
       );
 
-      let unapprovedProfiles: any[] = [];
+      const unapprovedProfiles: any[] = [];
       if (paidAgentIds.length > 0) {
         // Chunk paidAgentIds in batches of 40 to prevent PostgREST URL length overflow (HTTP 400 Bad Request)
         const CHUNK_SIZE = 40;

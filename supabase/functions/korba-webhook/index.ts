@@ -93,7 +93,9 @@ async function verifyKorbaStatusViaApi(
 ): Promise<boolean> {
   try {
     const isDisb = isDisbursementCallback || transactionId.endsWith("_disb");
-    const candidateIds = isDisb ? [`${cleanId}_disb`] : [cleanId];
+    const cleanId = String(transactionId || "").trim().replace(/_disb$/, "");
+    // Korba stores data/topup transactions with `_disb` appended — always try both forms.
+    const candidateIds = isDisb ? [`${cleanId}_disb`, cleanId] : [cleanId, `${cleanId}_disb`];
 
     for (const txId of candidateIds) {
       const statusPayload = {
@@ -422,8 +424,8 @@ serve(async (req: Request) => {
     // Atomically claim the order before crediting wallets or dispatching fulfillment
     const isWalletFunding = orderType === "wallet_topup" || orderType === "store_wallet_topup";
     const allowedStatuses = isWalletFunding
-      ? ["pending", "awaiting_payment"]
-      : ["pending", "awaiting_payment", "paid", "fulfillment_failed", "failed"];
+      ? ["pending", "awaiting_payment", "cancelled"]
+      : ["pending", "awaiting_payment", "paid", "fulfillment_failed", "failed", "cancelled"];
 
     const { data: claimedOrder, error: claimErr } = await supabaseAdmin
       .from("orders")

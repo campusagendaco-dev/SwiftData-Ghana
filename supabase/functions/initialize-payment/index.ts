@@ -678,18 +678,19 @@ serve(async (req: Request) => {
       return await executeTarpitSinkhole("Blacklisted Scammer Phone Intercept", { phone: rawTargetPhone });
     }
 
-    // Auto-cancel stale uncompleted pending orders for this phone so new checkout proceeds smoothly
+    // Auto-cancel genuinely stale uncompleted pending orders (>30 mins) for retail checkouts (never wallet deposits)
     if (cleanPhone9.length >= 9) {
-      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      const { data: recentPendingOrders } = await supabaseAdmin
+      const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: stalePendingOrders } = await supabaseAdmin
         .from("orders")
         .select("id")
         .or(`customer_phone.ilike.%${cleanPhone9},metadata->>payment_phone.ilike.%${cleanPhone9}`)
         .in("status", ["pending", "awaiting_payment"])
-        .gte("created_at", fiveMinsAgo);
+        .not("order_type", "in", '("wallet_topup","store_wallet_topup")')
+        .lte("created_at", thirtyMinsAgo);
 
-      if (recentPendingOrders && recentPendingOrders.length > 0) {
-        const pendingIds = recentPendingOrders.map((o: any) => o.id);
+      if (stalePendingOrders && stalePendingOrders.length > 0) {
+        const pendingIds = stalePendingOrders.map((o: any) => o.id);
         await supabaseAdmin.from("orders").update({ status: "cancelled" }).in("id", pendingIds);
         console.log(`[AUTO_CANCEL] Cancelled ${pendingIds.length} stale pending orders for ${rawTargetPhone}`);
       }

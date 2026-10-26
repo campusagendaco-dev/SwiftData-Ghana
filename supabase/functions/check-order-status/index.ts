@@ -131,7 +131,7 @@ serve(async (req: Request) => {
 
       // Preload active providers
       const { data: provList } = await supabaseAdmin.from("providers").select("*");
-      const providerMap = new Map((provList || []).map((p: any) => [p.id, p]));
+      const providerMap = new Map<string, any>((provList || []).map((p: any) => [String(p.id), p]));
 
       let fulfilledCount = 0;
       let failedCount = 0;
@@ -146,7 +146,7 @@ serve(async (req: Request) => {
         await Promise.all(batch.map(async (order: any) => {
           let currentStatus = order.status;
           let currentFailureReason = order.failure_reason;
-          let providerInfo = order.provider_id ? providerMap.get(order.provider_id) : null;
+          let providerInfo: any = order.provider_id ? providerMap.get(String(order.provider_id)) : null;
           let liveProviderResult: any = null;
           let rawStatus = "";
           let wasUpdated = false;
@@ -179,7 +179,19 @@ serve(async (req: Request) => {
               rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
               const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
-              const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "refunded" || rawStatus === "reversed" || rawStatus === "declined" || pRes?.ok === false;
+              const isRefunded = rawStatus === "refunded" || rawStatus === "reversed" || /refund/i.test(String(pRes?.reason || ""));
+              // Only explicit conclusive provider failures count as isFailed.
+              // Inconclusive checks (404, not_found, or pRes?.ok === false) must remain in 'processing' without triggering duplicate auto-failover!
+              const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded;
+
+              const hasActiveProviderRef = Boolean(
+                order.provider_order_id &&
+                order.provider_order_id !== "failed_api_call" &&
+                order.provider_order_id !== "timeout" &&
+                order.provider_order_id !== "routed" &&
+                order.provider_order_id !== "duplicate_cooldown" &&
+                order.provider_order_id !== "refunded"
+              );
 
               if (isDelivered) {
                 currentStatus = "fulfilled";
@@ -199,13 +211,19 @@ serve(async (req: Request) => {
                   console.log(`[check-order-status-bulk] Order ${order.id} marked FULFILLED.`);
                 }
               } else if (isFailed) {
-                currentFailureReason = pRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Carrier dispatch rejected");
+                currentFailureReason = pRes.reason || (isRefunded ? "Provider refunded order" : "Carrier dispatch rejected");
                 const isPaid = order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0 || order.status === "processing" || order.status === "paid";
                 const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(order.order_type || "data").toLowerCase());
                 const isTerminal = isNonRetryableTerminalError(currentFailureReason);
 
-                // Auto-route refunded or retryable failed orders to any other verified API providers
-                if (isPaid && isTelecomOrder && (rawStatus === "refunded" || !isTerminal) && (order.retry_count || 0) < 5) {
+                // Anti-Double-Fulfillment Guard:
+                // If order already has an active provider order reference from an accepted dispatch,
+                // NEVER failover to another provider UNLESS the current provider EXPLICITLY confirmed the order was refunded!
+                const canAutoFailover = isPaid && isTelecomOrder && (order.retry_count || 0) < 5 && !isTerminal && (
+                  !hasActiveProviderRef || isRefunded
+                );
+
+                if (canAutoFailover) {
                   console.log(`[check-order-status-bulk] Order ${order.id} refunded/failed at ${providerInfo.name} (${rawStatus}). Initiating auto-failover to verified API provider...`);
                   
                   await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
@@ -260,10 +278,10 @@ serve(async (req: Request) => {
                   } else {
                     currentStatus = "fulfillment_failed";
                     failedCount++;
-                    wasUpdated = order.status !== "fulfillment_failed";
+                    const normalizedFailureReason = String(currentFailureReason || "Order fulfillment failed").replace(/^Route not found/i, "Order not found on provider");
                     await supabaseAdmin.from("orders").update({
                       status: "fulfillment_failed",
-                      failure_reason: `${currentFailureReason} (Auto-failover: ${failoverDispatch.reason || "no other provider available"})`,
+                      failure_reason: `${normalizedFailureReason} (Auto-failover: ${failoverDispatch.reason || "no other provider available"})`,
                       provider_response: pRes.raw || pRes,
                       metadata: {
                         ...(order.metadata || {}),
@@ -436,7 +454,19 @@ serve(async (req: Request) => {
           const rawStatus = String(pRes?.status || "").toLowerCase().trim();
 
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
-          const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "refunded" || rawStatus === "reversed" || rawStatus === "declined" || pRes?.ok === false;
+          const isRefunded = rawStatus === "refunded" || rawStatus === "reversed" || /refund/i.test(String(pRes?.reason || ""));
+          // Only explicit conclusive provider failures count as isFailed.
+          // Inconclusive checks (404, not_found, or pRes?.ok === false) must remain in 'processing' without triggering duplicate auto-failover!
+          const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || isRefunded;
+
+          const hasActiveProviderRef = Boolean(
+            order.provider_order_id &&
+            order.provider_order_id !== "failed_api_call" &&
+            order.provider_order_id !== "timeout" &&
+            order.provider_order_id !== "routed" &&
+            order.provider_order_id !== "duplicate_cooldown" &&
+            order.provider_order_id !== "refunded"
+          );
 
           if (isDelivered) {
             currentStatus = "fulfilled";
@@ -457,15 +487,21 @@ serve(async (req: Request) => {
               console.log(`[check-order-status] Order ${order.id} transitioned to FULFILLED via live provider check.`);
             }
           } else if (isFailed) {
-            currentFailureReason = pRes.reason || (rawStatus === "refunded" ? "Provider refunded order" : "Carrier dispatch rejected");
-            carrierStatusDesc = rawStatus === "refunded" ? "Provider refunded order" : "Carrier rejected dispatch";
+            currentFailureReason = pRes.reason || (isRefunded ? "Provider refunded order" : "Carrier dispatch rejected");
+            carrierStatusDesc = isRefunded ? "Provider refunded order" : "Carrier rejected dispatch";
 
             const isPaid = order.payment_method === "wallet" || Number(order.paystack_verified_amount || 0) > 0 || order.status === "processing" || order.status === "paid";
             const isTelecomOrder = !["wallet_topup", "store_wallet_topup", "agent_activation", "sub_agent_activation", "vendor_activation", "free_data_claim"].includes(String(order.order_type || "data").toLowerCase());
             const isTerminal = isNonRetryableTerminalError(currentFailureReason);
 
-            // Auto-route refunded or retryable failed orders to any other verified API providers
-            if (isPaid && isTelecomOrder && (rawStatus === "refunded" || !isTerminal) && (order.retry_count || 0) < 5) {
+            // Anti-Double-Fulfillment Guard:
+            // If order already has an active provider order reference from an accepted dispatch,
+            // NEVER failover to another provider UNLESS the current provider EXPLICITLY confirmed the order was refunded!
+            const canAutoFailover = isPaid && isTelecomOrder && (order.retry_count || 0) < 5 && !isTerminal && (
+              !hasActiveProviderRef || isRefunded
+            );
+
+            if (canAutoFailover) {
               console.log(`[check-order-status] Order ${order.id} refunded/failed at ${providerInfo.name} (${rawStatus}). Initiating auto-failover to verified API provider...`);
               
               await Promise.resolve(supabaseAdmin.from("provider_errors").insert({
@@ -517,9 +553,10 @@ serve(async (req: Request) => {
                 console.log(`[check-order-status] Auto-failover SUCCESS for refunded order ${order.id} -> ${failoverDispatch.provider_id} (${failoverDispatch.status})`);
               } else {
                 currentStatus = "fulfillment_failed";
+                const normalizedFailureReason = String(currentFailureReason || "Order fulfillment failed").replace(/^Route not found/i, "Order not found on provider");
                 await supabaseAdmin.from("orders").update({
                   status: "fulfillment_failed",
-                  failure_reason: `${currentFailureReason} (Auto-failover: ${failoverDispatch.reason || "no other provider available"})`,
+                  failure_reason: `${normalizedFailureReason} (Auto-failover: ${failoverDispatch.reason || "no other provider available"})`,
                   provider_response: pRes.raw || pRes,
                   metadata: {
                     ...(order.metadata || {}),

@@ -100,11 +100,16 @@ export function parseProviderResponse(body: string, contentType: string | null):
       return { ok: false, reason: parsed.error };
     }
     
+    // NOTE: Real order identifiers must be checked BEFORE `request_id`.
+    // Some providers (e.g. BundleZone) return a per-HTTP-request trace ID
+    // (`data.request_id = "REQ-..."`) alongside the real `data.order_id`.
+    // Storing the trace ID made every later status lookup return "Order not found".
     const orderId = String(
       data?.orderId ??
-      data?.request_id ??
+      data?.order_id ??
       data?.order?.order_id ??
       data?.order?.id ??
+      data?.request_id ??
       data?.order?.request_id ??
       parsed?.results?.operatorRequestID ?? 
       parsed?.results?.operatorRequestId ?? 

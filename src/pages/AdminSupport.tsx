@@ -106,10 +106,11 @@ const AdminSupport = () => {
 
   /** Save a Q&A pair to the AI knowledge base so the bot can learn from admin replies */
   const saveKnowledge = async (question: string, answer: string) => {
-    await (supabase as any)
-      .from("ai_support_knowledge")
-      .insert({ question, answer })
-      .catch(() => {/* non-critical */});
+    await Promise.resolve(
+      (supabase as any)
+        .from("ai_support_knowledge")
+        .insert({ question, answer })
+    ).catch(() => {/* non-critical */});
   };
 
   const handleSend = async (e: React.FormEvent) => {

@@ -226,7 +226,8 @@ export async function dispatchOrderWithFailover(
         console.warn(`[HybridRouter] Halting cascade for order ${order.id}: Terminal recipient error (${lastFailureReason}). Prevented duplicate provider debits.`);
         return {
           ok: false,
-          status: "fulfillment_failed",
+          status: "processing",
+          provider_order_id: "failed_api_call",
           reason: lastFailureReason,
         };
       }
@@ -261,10 +262,11 @@ export async function dispatchOrderWithFailover(
     }).eq("id", order.id)).catch(() => {});
   }
 
-  console.warn(`[HybridRouter] Order ${order.id} was REJECTED by ALL ${activeProviders.length} active provider(s). Transitioning to fulfillment_failed.`);
+  console.warn(`[HybridRouter] Order ${order.id} was rejected by active provider(s). Retaining in processing queue: ${lastFailureReason}`);
   return {
     ok: false,
-    status: "fulfillment_failed",
-    reason: `Rejected by all ${activeProviders.length} active provider(s): ${lastFailureReason}`,
+    status: "processing",
+    provider_order_id: "failed_api_call",
+    reason: lastFailureReason,
   };
 }

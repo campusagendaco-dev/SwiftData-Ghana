@@ -262,13 +262,23 @@ serve(async (req) => {
           }
         }
 
+        const hasAssignedProvider = Boolean(
+          order.provider_order_id &&
+          order.provider_order_id !== "failed_api_call" &&
+          order.provider_order_id !== "timeout" &&
+          order.provider_order_id !== "dispatching" &&
+          order.provider_order_id !== "routed" &&
+          order.provider_order_id !== "duplicate_cooldown" &&
+          order.provider_order_id !== "refunded"
+        );
+
         const verifyRes = await fetch(verifyPaymentUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
           },
-          body: JSON.stringify({ orderId: order.id, force: true }),
+          body: JSON.stringify({ orderId: order.id, force: !hasAssignedProvider }),
         });
 
         if (verifyRes.ok) {

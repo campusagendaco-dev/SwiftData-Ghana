@@ -5,7 +5,8 @@ import {
   parseProviderResponse, 
   parseCapacity, 
   mapDataNetworkKey, 
-  isHtmlResponse 
+  isHtmlResponse,
+  isDuplicateOrderError
 } from "./utils.ts";
 
 export class StandardAdapter implements ProviderAdapter {
@@ -20,8 +21,12 @@ export class StandardAdapter implements ProviderAdapter {
 
     if (handlerType === "datamart") {
       if (endpoint === "status") {
-        const ref = String(data.transaction_id || data.reference || data.order_id || "");
-        return [`${clean}/order-status/${ref}`, `${clean}/status/${ref}`];
+        const candidates = Array.from(new Set([
+          String(data.transaction_id || "").trim(),
+          String(data.reference || "").trim(),
+          String(data.order_id || "").trim()
+        ].filter(Boolean)));
+        return candidates.map(cand => `${clean}/order-status/${cand}`);
       }
       const rawNet = String(data.networkKey || data.networkRaw || data.network || "").toUpperCase();
       const pkgUpper = String(data.package_size || data.package_name || data.bundle || data.plan || data.capacity || "").toUpperCase();
@@ -333,6 +338,7 @@ export class StandardAdapter implements ProviderAdapter {
         capacity: capacityStr,
         orderReference: targetRef,
         reference: targetRef,
+        ref: targetRef,
         gateway: "wallet",
         bypass_beneficiary: true
       };
@@ -340,9 +346,8 @@ export class StandardAdapter implements ProviderAdapter {
 
     if (handlerType === "spendless") {
       const supabaseUrl = Deno.env.get("SUPABASE_URL");
-      const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
       const webhookUrl = supabaseUrl
-        ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+        ? `${supabaseUrl}/functions/v1/provider-webhook`
         : undefined;
 
       if (endpoint === "afa" || endpoint === "afa-registration" || (data as any).order_type === "afa" || rawNet === "AFA") {
@@ -1075,13 +1080,45 @@ export class StandardAdapter implements ProviderAdapter {
           const contentType = res.headers.get("content-type");
           const text = await res.text();
 
+          // Same-Order Duplicate Guard (applies to HTTP 200 AND 409 replies):
+          // If the provider says "duplicate" AND echoes back OUR OWN reference for this order,
+          // this exact order was already accepted on an earlier attempt. Treat it as accepted and keep
+          // the provider's real order ID. Failing it would put it into duplicate_cooldown and re-route it
+          // to another provider after 60 mins => double data delivery.
+          // Duplicates that echo a DIFFERENT reference (genuine repeat purchase for the same number) are
+          // left to the existing cooldown flow so that second purchase still gets delivered.
+          if (endpoint !== "status") {
+            try {
+              const dup = JSON.parse(text);
+              const ourRef = String(payload?.reference || data?.reference || data?.orderReference || data?.order_id || data?.id || "").trim();
+              const echoedRef = String(dup?.data?.reference ?? dup?.data?.order?.reference ?? "").trim();
+              const dupText = [dup?.code, dup?.error_code, dup?.message, dup?.error]
+                .filter((v: unknown) => typeof v === "string")
+                .join(" ");
+              if (ourRef && echoedRef && echoedRef === ourRef && isDuplicateOrderError(dupText)) {
+                const existingId = String(dup?.data?.order_id ?? dup?.data?.order?.order_id ?? dup?.data?.order?.id ?? ourRef);
+                console.warn(`[StandardAdapter] ${handlerType} reports order ${ourRef} already placed (provider id ${existingId}). Treating as accepted - NOT re-routing.`);
+                return { ok: true, reason: `Already accepted by provider (${dupText})`, id: existingId, status: "processing" };
+              }
+            } catch { /* non-JSON body - fall through to normal handling */ }
+          }
+
           if (res.ok) {
             const semantic = parseProviderResponse(text, contentType);
             if (semantic.ok) {
               const returnedId = semantic.id || String(data.reference || data.orderReference || data.order_id || "");
               return { ok: true, reason: "", id: returnedId, status: semantic.status };
             }
-            return { ok: false, reason: semantic.reason || "Provider rejected this order." };
+            // For status checks, only surface a failure status when the provider EXPLICITLY reported one.
+            // Anything else (e.g. success:false "order not found") stays inconclusive so callers never
+            // fail + re-route an order that may already be delivering (double data).
+            const explicitFail = ["failed", "refunded", "reversed", "rejected", "cancelled", "declined"];
+            const semStatus = String(semantic.status || "").toLowerCase();
+            return {
+              ok: false,
+              reason: semantic.reason || "Provider rejected this order.",
+              status: endpoint === "status" ? (explicitFail.includes(semStatus) ? semStatus : "error") : undefined,
+            };
           }
 
           let parsedMsg = "";
@@ -1092,6 +1129,9 @@ export class StandardAdapter implements ProviderAdapter {
             parsedMsg = code && msg ? `${code}: ${msg}` : (msg || code || "");
           } catch { /* ignore */ }
           lastReason = parsedMsg || `Provider returned ${res.status}`;
+          if (res.status === 404 && (/route not found|cannot (get|post)/i.test(lastReason))) {
+            lastReason = "Order not found on provider";
+          }
 
           const isAlreadyPlaced = /already placed/i.test(lastReason) || 
             /currently being processed/i.test(lastReason) || 
@@ -1121,6 +1161,9 @@ export class StandardAdapter implements ProviderAdapter {
       }
     }
 
-    return { ok: false, reason: lastReason };
+    const isNotFound = /not found|cannot (get|post)/i.test(lastReason);
+    // Transport/auth errors during a STATUS check are inconclusive ("error"), never "failed":
+    // a timeout or 500 tells us nothing about whether the carrier delivered the order.
+    return { ok: false, status: endpoint === "status" ? (isNotFound ? "not_found" : "error") : undefined, reason: lastReason };
   }
 }

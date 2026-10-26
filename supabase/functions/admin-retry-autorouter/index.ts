@@ -236,7 +236,7 @@ serve(async (req: Request) => {
         summary.failed++;
         const failReason = dispatch.reason || "All active providers rejected this order";
         await supabaseAdmin.from("orders").update({
-          status: "fulfillment_failed",
+          status: "processing",
           provider_order_id: "failed_api_call",
           failure_reason: failReason,
           updated_at: new Date().toISOString()
@@ -244,7 +244,7 @@ serve(async (req: Request) => {
 
         results.push({
           id: order.id,
-          status: "fulfillment_failed",
+          status: "processing",
           reason: failReason,
           network: order.network,
           package_size: order.package_size,

@@ -12,6 +12,8 @@ import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { executeGuestBeneficiaryRefund, handleGuestBeneficiaryFailure, isGuestOrder } from "../_shared/guest-refund.ts";
 import { sendWhatsAppOrderReceipt, checkAndTriggerDeliveryOnFire } from "../_shared/whatsapp.ts";
 import { isDuplicateOrderError } from "../_shared/providers/utils.ts";
+import { verifyAdmin } from "../_shared/auth.ts";
+import { autoSubmitBeneficiaryNumber } from "../_shared/beneficiary_auto_submit.ts";
 
 // --- Utilities ---
 
@@ -407,8 +409,38 @@ serve(async (req: any) => {
     }
 
     const { reference, orderId, phone, force: forceInput, action } = body;
-    const force = forceInput || action === "retry_order";
+    const force = Boolean(forceInput || action === "retry_order");
     const resolvedReference = reference || orderId;
+
+    // ─── 🛡️ DOS & BRUTE-FORCE RATE LIMITING ─────────────────────────────────
+    const rawIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
+    const clientIp = (rawIp || "unknown-ip").replace(/[^a-zA-Z0-9.:_-]/g, "");
+    const authHeader = req.headers.get("authorization") || req.headers.get("x-user-access-token") || "";
+
+    // Security: Only true verified service role credentials get elevated rate limits
+    const isServiceRole = Boolean(
+      SUPABASE_SERVICE_ROLE_KEY &&
+      authHeader &&
+      (authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` || authHeader.trim() === SUPABASE_SERVICE_ROLE_KEY)
+    );
+
+    // Limit IP-based requests (1200/min for service-role/admin retries, 600/min for public)
+    const ipRateLimit = isServiceRole ? 1200 : 600;
+    const rateKey = (clientIp === "unknown-ip" && authHeader)
+      ? `ip_verify_auth_${authHeader.slice(-16).replace(/[^a-zA-Z0-9]/g, "")}`
+      : `ip_verify_${clientIp}`;
+
+    const { data: ipAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
+      p_key: rateKey,
+      p_rate_limit: ipRateLimit
+    });
+    
+    if (!ipAllowed) {
+      console.warn(`[SECURITY] Blocked rate-limited key on verify-payment: ${rateKey}`);
+      return new Response(JSON.stringify({ error: "Too many requests. Please slow down." }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "guest_refund") {
       const targetOrderId = resolvedReference || body.order_id;
@@ -418,17 +450,36 @@ serve(async (req: any) => {
         });
       }
 
+      // Guest refund specific rate limit (max 10 refund requests per minute per IP to prevent refund abuse)
+      const { data: refundAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
+        p_key: `guest_refund_${clientIp}`,
+        p_rate_limit: 10
+      });
+      if (!refundAllowed) {
+        return new Response(JSON.stringify({ error: "Too many refund attempts. Please try again in a few minutes." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Sanitize target reference strictly to prevent PostgREST query injection
+      const cleanTargetId = String(targetOrderId).trim().replace(/[^a-zA-Z0-9_.-]/g, "");
+      if (!cleanTargetId) {
+        return new Response(JSON.stringify({ success: false, refunded: false, error: "Invalid order identifier format" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
       let ord: any = null;
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetOrderId);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanTargetId);
       if (isUuid) {
-        const { data: ordById } = await supabaseAdmin.from("orders").select("*").eq("id", targetOrderId).maybeSingle();
+        const { data: ordById } = await supabaseAdmin.from("orders").select("*").eq("id", cleanTargetId).maybeSingle();
         ord = ordById;
       }
       if (!ord) {
         const { data: ordByClientRef } = await supabaseAdmin
           .from("orders")
           .select("*")
-          .eq("metadata->>client_reference", targetOrderId)
+          .eq("metadata->>client_reference", cleanTargetId)
           .maybeSingle();
         ord = ordByClientRef;
       }
@@ -436,7 +487,7 @@ serve(async (req: any) => {
         const { data: ordByMetaRef } = await supabaseAdmin
           .from("orders")
           .select("*")
-          .or(`metadata->>reference.eq.${targetOrderId},metadata->>payment_reference.eq.${targetOrderId},metadata->>paystack_reference.eq.${targetOrderId},metadata->>trxref.eq.${targetOrderId}`)
+          .or(`metadata->>reference.eq.${cleanTargetId},metadata->>payment_reference.eq.${cleanTargetId},metadata->>paystack_reference.eq.${cleanTargetId},metadata->>trxref.eq.${cleanTargetId}`)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -498,31 +549,6 @@ serve(async (req: any) => {
       const refundRes = await executeGuestBeneficiaryRefund(supabaseAdmin, ord, body.reason || "Customer requested guest refund");
       return new Response(JSON.stringify(refundRes), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
-    // ─── 🛡️ DOS & BRUTE-FORCE RATE LIMITING ─────────────────────────────────
-    const rawIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
-    const clientIp = rawIp || "unknown-ip";
-    const authHeader = req.headers.get("authorization") || req.headers.get("x-user-access-token") || "";
-    const isAuthedOrForce = force || (authHeader.length > 20);
-
-    // Differentiate rate key if IP is unknown/shared
-    const rateKey = (clientIp === "unknown-ip" && authHeader)
-      ? `ip_verify_auth_${authHeader.slice(-16)}`
-      : `ip_verify_${clientIp}`;
-
-    // Limit IP-based requests (1200/min for authed/admin retries, 600/min for public)
-    const ipRateLimit = isAuthedOrForce ? 1200 : 600;
-    const { data: ipAllowed } = await supabaseAdmin.rpc("check_generic_rate_limit", {
-      p_key: rateKey,
-      p_rate_limit: ipRateLimit
-    });
-    
-    if (!ipAllowed) {
-      console.warn(`[SECURITY] Blocked rate-limited key on verify-payment: ${rateKey}`);
-      return new Response(JSON.stringify({ error: "Too many requests. Please slow down." }), {
-        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -601,16 +627,19 @@ serve(async (req: any) => {
       }
 
       if (!targetReference) {
-        // 3. Try paystack / checkout reference in metadata
-        const { data: orderByMetaRef } = await supabaseAdmin
-          .from("orders")
-          .select("id")
-          .or(`metadata->>reference.eq.${resolvedReference},metadata->>payment_reference.eq.${resolvedReference},metadata->>paystack_reference.eq.${resolvedReference},metadata->>trxref.eq.${resolvedReference}`)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (orderByMetaRef) {
-          targetReference = orderByMetaRef.id;
+        // 3. Try paystack / checkout reference in metadata (strictly sanitized against PostgREST filter injection)
+        const cleanMetaRef = String(resolvedReference).trim().replace(/[^a-zA-Z0-9_.-]/g, "");
+        if (cleanMetaRef) {
+          const { data: orderByMetaRef } = await supabaseAdmin
+            .from("orders")
+            .select("id")
+            .or(`metadata->>reference.eq.${cleanMetaRef},metadata->>payment_reference.eq.${cleanMetaRef},metadata->>paystack_reference.eq.${cleanMetaRef},metadata->>trxref.eq.${cleanMetaRef}`)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (orderByMetaRef) {
+            targetReference = orderByMetaRef.id;
+          }
         }
       }
 
@@ -686,8 +715,6 @@ serve(async (req: any) => {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const isServiceRole = authHeader.includes(SUPABASE_SERVICE_ROLE_KEY || "nevermatch_placeholder");
 
     // Client restriction: Allow client-side verification fallback or instant verification when force is requested
     const orderAgeMs = Date.now() - new Date(existingOrder?.created_at || Date.now()).getTime();
@@ -822,10 +849,10 @@ serve(async (req: any) => {
     const orderUpdatedAt = existingOrder?.updated_at ? new Date(existingOrder.updated_at).getTime() : new Date(existingOrder?.created_at || 0).getTime();
     const secondsSinceUpdate = (Date.now() - orderUpdatedAt) / 1000;
 
-    if (existingOrder && existingOrder.status === "processing" && !force) {
+    if (existingOrder && existingOrder.status === "processing") {
       // If already assigned to an external provider order ID (and not just our dispatching lock)
       if (hasAssignedProvider && existingOrder.provider_order_id !== "dispatching") {
-        console.log(`[verify-payment] Order ${targetReference} is currently in processing state with provider ${existingOrder.provider_id}. Awaiting provider status update.`);
+        console.log(`[verify-payment] Order ${targetReference} is currently in processing state with provider ${existingOrder.provider_id} (${existingOrder.provider_order_id}). Awaiting provider status update.`);
         return new Response(JSON.stringify({ 
           status: "processing", 
           provider_order_id: existingOrder.provider_order_id,
@@ -834,7 +861,7 @@ serve(async (req: any) => {
       }
 
       // If actively in-flight/dispatching within the last 60 seconds, block duplicate concurrent dispatch
-      if (secondsSinceUpdate < 60 && existingOrder.provider_order_id !== "timeout" && existingOrder.provider_order_id !== "failed_api_call") {
+      if (secondsSinceUpdate < 60 && existingOrder.provider_order_id !== "timeout" && existingOrder.provider_order_id !== "failed_api_call" && !force) {
         console.log(`[verify-payment] Order ${targetReference} is currently actively in-flight/dispatching (${secondsSinceUpdate.toFixed(1)}s ago). Blocking duplicate concurrent dispatch.`);
         return new Response(JSON.stringify({ 
           status: "processing", 
@@ -934,6 +961,41 @@ serve(async (req: any) => {
           }
         }
       }
+    }
+
+    // --- 1.6. ANTI-DOUBLE-PURCHASE GUARD ---
+    // If the order STILL holds a real provider order ID here, the pre-check above could not confirm
+    // delivered / processing / failed (e.g. "Order not found", timeout, provider disabled).
+    // An explicit provider failure clears provider_order_id above, so it would not reach this point.
+    // Re-dispatching now could buy the same bundle twice (double data). Block it unless a verified
+    // admin explicitly confirms. NOTE: `force` is NOT accepted as an override because customer pages
+    // and checkout polling send force:true routinely.
+    const unconfirmedProviderRef = String(existingOrder?.provider_order_id || "");
+    if (
+      isProviderOrder &&
+      shouldCheckProvider &&
+      unconfirmedProviderRef &&
+      !isSentinelOrderId(unconfirmedProviderRef) &&
+      unconfirmedProviderRef !== "dispatching"
+    ) {
+      let adminOverride = false;
+      if (body?.confirm_redispatch === true) {
+        const adminCheck = await verifyAdmin(req, supabaseAdmin).catch(() => ({ success: false }));
+        adminOverride = Boolean(adminCheck?.success);
+      }
+
+      if (!adminOverride) {
+        console.warn(`[verify-payment] Order ${targetReference} still holds provider ref ${unconfirmedProviderRef} and the provider could not confirm its status. Blocking re-dispatch to prevent double delivery.`);
+        log(supabaseAdmin, { level: "warn", source: "verify-payment", event: "redispatch.blocked", message: `Re-dispatch blocked: provider could not confirm order (ref ${unconfirmedProviderRef})`, order_id: targetReference, provider_id: existingOrder?.provider_id, data: { provider_order_id: unconfirmedProviderRef, status: existingOrder?.status } });
+        return new Response(JSON.stringify({
+          status: "awaiting_provider_confirmation",
+          provider_order_id: unconfirmedProviderRef,
+          failure_reason: "The provider already has this order (ref " + unconfirmedProviderRef + ") but could not confirm whether it was delivered. Not re-sent, to avoid double delivery. Check with the provider first; an admin can confirm a re-send if it truly failed.",
+        }), { headers: corsHeaders });
+      }
+
+      console.warn(`[verify-payment] Admin confirmed re-dispatch of order ${targetReference} despite unconfirmed provider ref ${unconfirmedProviderRef}.`);
+      log(supabaseAdmin, { level: "warn", source: "verify-payment", event: "redispatch.admin_override", message: `Admin override: re-dispatching order with unconfirmed provider ref ${unconfirmedProviderRef}`, order_id: targetReference, provider_id: existingOrder?.provider_id, data: { provider_order_id: unconfirmedProviderRef } });
     }
 
     // --- 2. PAYMENT VERIFICATION ---
@@ -1304,12 +1366,11 @@ serve(async (req: any) => {
     const isUndispatchedProcessing = existingOrder?.status === "processing" && (
       isSentinelOrderId(existingOrder?.provider_order_id) ||
       !existingOrder?.provider_order_id ||
-      (lockSecondsSinceUpdate > 90 && (!existingOrder?.provider_order_id || existingOrder?.provider_order_id === "dispatching")) ||
-      force
+      (lockSecondsSinceUpdate > 90 && (!existingOrder?.provider_order_id || existingOrder?.provider_order_id === "dispatching"))
     );
     const allowedStatuses = isUndispatchedProcessing 
-      ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing"]
-      : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed"];
+      ? ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "processing", "cancelled"]
+      : ["pending", "paid", "fulfillment_failed", "awaiting_payment", "failed", "cancelled"];
 
     const targetStatus = "processing";
     const { data: claimedOrder, error: claimError } = await supabaseAdmin
@@ -1879,6 +1940,7 @@ serve(async (req: any) => {
           comboCost: comboCost,
           orderReference: targetReference, 
           reference: targetReference,
+          ref: targetReference,
           gateway: "wallet", 
           bypass_beneficiary: true, 
           category: isMashUp ? "mashup" : claimedOrder.metadata?.category 
@@ -1889,9 +1951,8 @@ serve(async (req: any) => {
       if (ht === "datahub") return { networkKey: netKey, recipient, capacity: String(safeCap), reference: targetReference, bypass_beneficiary: claimedOrder.metadata?.bypass_beneficiary, category: claimedOrder.metadata?.category };
       if (ht === "spendless") {
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const webhookSecret = Deno.env.get("PROVIDER_WEBHOOK_SECRET");
         const webhookUrl = supabaseUrl
-          ? `${supabaseUrl}/functions/v1/provider-webhook${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+          ? `${supabaseUrl}/functions/v1/provider-webhook`
           : undefined;
         const payload: any = {
           networkKey: netKey,
@@ -1941,6 +2002,7 @@ serve(async (req: any) => {
         package_size: packageSize,
         amount: deliveryAmount,
         price: deliveryAmount,
+        order_type: currentOrderType || effectiveOrderType || "data",
         reference: targetReference,
         order_id: targetReference,
         metadata: claimedOrder.metadata,
@@ -2123,6 +2185,26 @@ serve(async (req: any) => {
           console.error("[verify-payment] Voucher fulfillment error:", vErr);
           result = { ok: false, reason: vErr?.message || "Voucher provider error" };
         }
+      } else if (currentOrderType === "airtime") {
+        result = await callProviderApi(
+          supabaseAdmin,
+          provider,
+          {
+            order_type: "airtime",
+            recipient,
+            customer_phone: recipient,
+            phone: recipient,
+            network,
+            networkRaw: network,
+            amount: deliveryAmount,
+            price: deliveryAmount,
+            reference: targetReference,
+            order_id: targetReference,
+            retry_suffix: `r${Date.now().toString().slice(-6)}`,
+            metadata: claimedOrder.metadata,
+          },
+          "purchase"
+        );
       } else {
         result = await callProviderApi(supabaseAdmin, provider, await buildDataPayload(provider), "purchase");
       }
@@ -2370,9 +2452,10 @@ serve(async (req: any) => {
         }), { headers: corsHeaders });
       }
 
-      // Otherwise, it's a definitive failure/rejection (e.g. Insufficient Balance, Invalid Number, etc.)
+      // Otherwise, initial provider dispatch did not complete immediately (e.g. carrier queue, whitelist, provider balance, or temporary downtime).
+      // Keep order in "processing" ("Pending Delivery") in the Auto-Router queue so customer payment is protected and NO unwanted automatic refund fires.
       const isWalletOrApiPayment = ["wallet", "credit", "api"].includes(paymentMethod.toLowerCase());
-      const targetStatus = "fulfillment_failed";
+      const targetStatus = "processing";
       const targetProviderOrderId = "failed_api_call";
       const isMtnData = (!network || network.toUpperCase().includes("MTN") || network.toUpperCase() === "YELLO") &&
                         (!currentOrderType || currentOrderType === "data" || currentOrderType === "sme") &&
@@ -2389,18 +2472,24 @@ serve(async (req: any) => {
       ) || result.reason || "Provider rejected the request";
 
       isBeneficiaryErr = isMtnData && /beneficiary|payee|daily.*limit|not_allowed|not allowed|not added|whitelist|jessco|eligibility/i.test(String(result.reason || ""));
-
-      let guestRefundResult = null;
-      if (isBeneficiaryErr && isGuestOrder(claimedOrder)) {
-        console.log(`[verify-payment] Non-beneficiary failure on MTN guest order ${targetReference}. Queuing carrier whitelist submission & sending tracking SMS...`);
-        guestRefundResult = await handleGuestBeneficiaryFailure(supabaseAdmin, claimedOrder, targetFailureReason);
-      } else {
-        await supabaseAdmin.from("orders").update({
-          status: targetStatus,
-          provider_order_id: targetProviderOrderId,
-          failure_reason: targetFailureReason
-        }).eq("id", targetReference);
+      if (isBeneficiaryErr) {
+        console.log(`[verify-payment] Non-beneficiary status on MTN order ${targetReference}. Queuing recipient number for carrier whitelist...`);
+        const phoneToSubmit = claimedOrder.customer_phone || customerPhone || claimedOrder.recipient;
+        if (phoneToSubmit) {
+          autoSubmitBeneficiaryNumber(supabaseAdmin, phoneToSubmit, "verify_payment_rejection", targetReference).catch(() => {});
+        }
       }
+
+      await supabaseAdmin.from("orders").update({
+        status: targetStatus,
+        provider_order_id: targetProviderOrderId,
+        failure_reason: targetFailureReason,
+        metadata: {
+          ...(claimedOrder.metadata || {}),
+          in_beneficiary_queue: isBeneficiaryErr ? true : Boolean(claimedOrder.metadata?.in_beneficiary_queue),
+          pending_delivery: true,
+        }
+      }).eq("id", targetReference);
 
       const isApiOrder = (claimedOrder?.order_type || "").toLowerCase() === "api";
 

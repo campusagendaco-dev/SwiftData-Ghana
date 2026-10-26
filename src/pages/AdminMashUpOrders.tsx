@@ -253,11 +253,16 @@ const AdminMashUpOrders = () => {
           await logAudit(currentUser.id, "manual_order_retry", { order_id: orderId, status: "fulfilled" });
         }
         toast({ title: "Order fulfilled successfully!" });
+      } else if (data?.status === "processing") {
+        if (currentUser) {
+          await logAudit(currentUser.id, "manual_order_retry", { order_id: orderId, status: "processing" });
+        }
+        toast({ title: "Order In Processing ⏳", description: "Order dispatched to provider and is currently processing.", variant: "default" });
       } else {
         toast({
-          title: "Retry completed",
+          title: "Retry status",
           description: data?.failure_reason || `Status: ${data?.status}`,
-          variant: data?.status === "fulfilled" ? "default" : "destructive",
+          variant: "destructive",
         });
       }
       await fetchOrders();
@@ -386,7 +391,7 @@ const AdminMashUpOrders = () => {
               body: { reference: order.id }
             });
 
-            if (!verifyErr && verifyData?.status === "fulfilled") {
+            if (!verifyErr && (verifyData?.status === "fulfilled" || verifyData?.status === "processing")) {
               fulfilledCount++;
               return;
             }

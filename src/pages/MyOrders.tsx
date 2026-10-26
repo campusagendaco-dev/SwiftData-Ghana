@@ -57,6 +57,9 @@ function translateFailureReason(reason?: string, network?: string, orderType?: s
   if (r.includes("CUSTOMER ABANDONED TRANSACTION")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
   }
+  if (r.includes("ROUTE NOT FOUND") || r.includes("ORDER NOT FOUND ON PROVIDER")) {
+    return "Delivery could not be confirmed with the carrier gateway. Please retry or contact support.";
+  }
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
     return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
   }

@@ -107,6 +107,10 @@ function formatOrderFailureReason(order: Pick<OrderRow, "failure_reason"> & { ne
   const isData = !order.order_type || order.order_type === "data" || order.order_type === "sme";
   const rUpper = order.failure_reason.toUpperCase();
 
+  if (rUpper.startsWith("ROUTE NOT FOUND")) {
+    return order.failure_reason.replace(/^Route not found/i, "Order not found on provider");
+  }
+
   // If a non-MTN, non-SME, or Korba order somehow has the generic MTN error message saved, clean it up for display
   if ((!isMtn || !isData) && (rUpper.includes("MTN DATA TRANSFER LIMIT") || rUpper.includes("MTN BENEFICIARY ERROR") || rUpper.includes("UNSUPPORTED PLAN (E.G. CORPORATE SIM)"))) {
     return order.order_type === "airtime"
@@ -639,25 +643,50 @@ export default function AdminOrders() {
     await handleRetryAutoRouterQueue();
   };
 
-  const handleRetry = async (orderId: string) => {
+  const handleRetry = async (orderId: string, confirmRedispatch = false) => {
     setRetrying(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
-        body: { reference: orderId },
+        body: confirmRedispatch ? { reference: orderId, confirm_redispatch: true } : { reference: orderId },
       });
       if (error) {
         const description = await getFunctionErrorMessage(error, "Could not retry this order.");
         toast({ title: "Retry failed", description, variant: "destructive" });
+      } else if (data?.status === "awaiting_provider_confirmation") {
+        // Backend blocked the re-send: the provider already holds this order but could not confirm it.
+        setRetrying(null);
+        const proceed = confirm(
+          `⚠️ DOUBLE DELIVERY RISK\n\n${data?.failure_reason || "The provider already has this order."}\n\n` +
+          `Only continue if you have CONFIRMED with the provider that this order failed.\n\nRe-send anyway?`
+        );
+        if (proceed) {
+          if (currentUser) {
+            await logAudit(currentUser.id, "manual_order_redispatch_override", { order_id: orderId, provider_order_id: data?.provider_order_id });
+          }
+          await handleRetry(orderId, true);
+        } else {
+          toast({ title: "Not re-sent", description: "Order left as-is to avoid double delivery." });
+        }
+        return;
       } else if (data?.status === "fulfilled") {
         if (currentUser) {
           await logAudit(currentUser.id, "manual_order_retry", { order_id: orderId, status: "fulfilled" });
         }
-        toast({ title: "Order fulfilled successfully! 🎉" });
+        toast({ title: "Order Fulfilled! 🎉", description: "Data bundle successfully delivered." });
+      } else if (data?.status === "processing") {
+        if (currentUser) {
+          await logAudit(currentUser.id, "manual_order_retry", { order_id: orderId, status: "processing" });
+        }
+        toast({ 
+          title: "Order Dispatched 🚀", 
+          description: data?.message || "Order sent to network provider and is currently processing.",
+          variant: "default" 
+        });
       } else {
         toast({
-          title: "Retry completed",
+          title: "Retry status",
           description: data?.failure_reason || `Status: ${data?.status}`,
-          variant: data?.status === "fulfilled" ? "default" : "destructive",
+          variant: "destructive",
         });
       }
       await fetchOrders();

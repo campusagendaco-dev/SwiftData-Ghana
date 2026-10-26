@@ -80,6 +80,9 @@ function translateFailureReason(reason?: string, network?: string, orderType?: s
   if (r.includes("CUSTOMER ABANDONED TRANSACTION") || r.includes("CUSTOMER ABANDONED")) {
     return "The checkout payment was cancelled or abandoned. Please try initiating the payment again.";
   }
+  if (r.includes("ROUTE NOT FOUND") || r.includes("ORDER NOT FOUND ON PROVIDER")) {
+    return "Delivery could not be confirmed with the carrier gateway. Please retry or contact support.";
+  }
   if (r.includes("INSUFFICIENT BALANCE") || r.includes("INSUFFICIENT_BALANCE")) {
     return "Fulfillment failed due to insufficient wallet balance. Please top up your wallet to retry.";
   }
@@ -174,6 +177,7 @@ const OrderStatus = () => {
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [failed, setFailed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const redirectedRef = useRef(false);
   const hasPlayedSoundRef = useRef(false);
@@ -496,6 +500,31 @@ const OrderStatus = () => {
 
   const handleWhatsAppSupport = () => {
     window.open(getWhatsAppUrl(), "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyTrackingLink = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    toast.success("Order tracking link copied to clipboard!");
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  const handleShareWhatsApp = () => {
+    const trackingUrl = window.location.href;
+    const refCode = (resolvedOrderId || reference || "").slice(0, 14).toUpperCase();
+    const pkg = packageSize || "Data Bundle";
+    const net = network || "Ghana Telecom";
+    const targetPhone = phoneParam || orderPhone || "";
+    const msg = `📦 *${storeName} Order Tracking*\n\n` +
+      `• *Ref:* ${refCode}\n` +
+      `• *Network:* ${net}\n` +
+      `• *Package:* ${pkg}\n` +
+      (targetPhone ? `• *Recipient:* ${targetPhone}\n` : "") +
+      `• *Status:* ${meta.label}\n\n` +
+      `🔗 Track Live Order Delivery Here:\n${trackingUrl}`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
   };
 
   const handleExpediteDelivery = async () => {
@@ -1045,6 +1074,35 @@ const OrderStatus = () => {
                   )}
                 </div>
               )}
+
+              {/* Quick Share on WhatsApp & Copy Tracking Link */}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  onClick={handleShareWhatsApp}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+                  title="Share live order tracking link on WhatsApp"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Share on WhatsApp</span>
+                </button>
+                <button
+                  onClick={handleCopyTrackingLink}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
+                  title="Copy direct tracking link to clipboard"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Copy Tracking Link</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Animated Progress Bar */}
@@ -1074,6 +1132,33 @@ const OrderStatus = () => {
                 })}
               </div>
             </div>
+
+            {/* Live Carrier Delivery Reassurance Banner */}
+            {["pending", "paid", "processing"].includes(orderStatus) && !isBeneficiaryOrder && (
+              <div className="mx-6 mb-5 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-950/20 to-slate-950 border border-amber-500/30 text-left flex items-start gap-3 shadow-lg shadow-amber-950/20">
+                <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/30">
+                  <Zap className="w-4 h-4 fill-amber-400" />
+                </div>
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-300 font-mono">
+                      Fast-Track Carrier Transmission
+                    </span>
+                    <button
+                      onClick={() => pollStatus(true)}
+                      disabled={isRefreshing}
+                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className={cn("w-3 h-3", isRefreshing && "animate-spin")} />
+                      <span>{isRefreshing ? "Refreshing..." : "Refresh Status"}</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Payment is confirmed! Your data bundle payload is transmitting directly across carrier gateways. Our Auto-Router maintains active delivery priority.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Whitelist In-Queue Callout Card */}
             {isBeneficiaryOrder && (

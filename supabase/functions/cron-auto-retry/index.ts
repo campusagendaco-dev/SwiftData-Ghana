@@ -270,7 +270,14 @@ serve(async (req) => {
           const rawStatus = String(statusRes?.status || "").toLowerCase().trim();
 
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
-          const isRefundedOrFailed = rawStatus === "refunded" || rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "reversed" || statusRes?.ok === false;
+          // ANTI-DOUBLE-DATA: only an EXPLICIT provider failure/refund may trigger failover.
+          // Previously `statusRes?.ok === false` also matched "Order not found", timeouts and auth errors,
+          // which wiped the provider ref and re-bought orders the first provider was already delivering.
+          // ("fulfillment_failed" is what the BundleZone adapter returns for an explicit failed/refunded order.)
+          const isRefundedOrFailed = rawStatus === "refunded" || rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || rawStatus === "reversed" || rawStatus === "fulfillment_failed";
+          if (!isDelivered && !isRefundedOrFailed) {
+            console.log(`[cron-auto-retry] In-transit order ${pOrder.id} status inconclusive at ${prov.name} (${rawStatus || "unknown"}: ${statusRes?.reason || ""}). Leaving in processing - NOT re-routing.`);
+          }
 
           if (isDelivered) {
             console.log(`[cron-auto-retry] In-transit order ${pOrder.id} confirmed FULFILLED by ${prov.name}`);
@@ -377,8 +384,12 @@ serve(async (req) => {
         continue;
       }
 
+      const failReason = order.failure_reason || "";
+      const isRefunded = /refund/i.test(failReason) || order.status === "refunded";
+
       // Anti-Duplicate Delivery Shield: If order already has an active upstream provider reference
-      // (e.g. SKP..., API_..., DH_...) that is NOT timeout, failed_api_call, duplicate_cooldown, or refunded, DO NOT re-dispatch!
+      // (e.g. SKP..., API_..., DH_..., 6adb...) that is NOT timeout, failed_api_call, duplicate_cooldown, or refunded,
+      // and the provider has NOT issued an explicit refund, DO NOT re-dispatch! Doing so causes double fulfillment and financial loss!
       const hasActiveProviderRef = Boolean(
         order.provider_order_id &&
         order.provider_order_id !== "failed_api_call" &&
@@ -387,8 +398,8 @@ serve(async (req) => {
         order.provider_order_id !== "duplicate_cooldown" &&
         order.provider_order_id !== "refunded"
       );
-      if (hasActiveProviderRef && (order.status === "processing" || order.status === "paid")) {
-        console.log(`[cron-auto-retry] Order ${order.id} is already in transit with provider (${order.provider_order_id}). Skipping re-dispatch to avoid double fulfillment.`);
+      if (hasActiveProviderRef && !isRefunded) {
+        console.log(`[cron-auto-retry] Order ${order.id} is already in transit or completed with provider (${order.provider_order_id}) and was not refunded. Skipping re-dispatch to avoid double fulfillment.`);
         continue;
       }
 
@@ -421,8 +432,6 @@ serve(async (req) => {
 
       console.log(`[cron-auto-retry] Auto-healing claimed order ${order.id} (${order.network} ${order.package_size}, attempt ${currentRetry + 1}/3)...`);
       
-      const failReason = order.failure_reason || "";
-      const isRefunded = /refund/i.test(failReason) || order.status === "refunded";
       const smeBundle = isSmeDataBundle(order);
       const prevFailed = Array.isArray(order.metadata?.failed_provider_ids) ? order.metadata.failed_provider_ids : [];
       const baseFailedIds = order.provider_id && (isRefunded || order.status === "fulfillment_failed")
@@ -498,11 +507,12 @@ serve(async (req) => {
       } else {
         const isTerminal = currentRetry + 1 >= 3;
         const failReason = isTerminal
-          ? `Max retries (3) reached: ${dispatch.reason || "Unable to fulfill across providers"}`
+          ? `Max retries reached: ${dispatch.reason || "Unable to fulfill across providers"}`
           : (dispatch.reason || "Auto-retry failed across available providers");
 
         await supabaseAdmin.from("orders").update({
-          status: "fulfillment_failed",
+          status: "processing",
+          provider_order_id: "failed_api_call",
           failure_reason: failReason,
           updated_at: new Date().toISOString()
         }).eq("id", order.id);

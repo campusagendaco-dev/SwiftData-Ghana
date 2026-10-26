@@ -382,12 +382,14 @@ export default function AdminAfaOrders() {
     setBulkUpdating(true);
     try {
       const ids = Array.from(selectedIds);
+      // Never flip refunded orders to fulfilled (customer already got the money back; fulfilment pays profit)
       const { error } = await (supabase.from("orders") as any)
         .update({
           status: "fulfilled",
           updated_at: new Date().toISOString()
         })
-        .in("id", ids);
+        .in("id", ids)
+        .not("status", "in", "(refunded,fulfilled)");
 
       if (error) throw error;
 
@@ -539,21 +541,39 @@ export default function AdminAfaOrders() {
   };
 
   // Provider verification & retry
-  const handleRetryOrder = async (orderId: string) => {
+  const handleRetryOrder = async (orderId: string, confirmRedispatch = false) => {
     setRetryingId(orderId);
     try {
       const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
-        body: { reference: orderId },
+        body: confirmRedispatch ? { reference: orderId, confirm_redispatch: true } : { reference: orderId },
       });
 
       if (error) {
         const description = await getFunctionErrorMessage(error, "Could not retry this AFA registration.");
         toast({ title: "Retry Failed", description, variant: "destructive" });
+      } else if (data?.status === "awaiting_provider_confirmation") {
+        // Backend blocked the re-send: the provider already holds this registration but could not confirm it.
+        setRetryingId(null);
+        const proceed = confirm(
+          `⚠️ DOUBLE SUBMISSION RISK\n\n${data?.failure_reason || "The provider already has this registration."}\n\n` +
+          `Only continue if you have CONFIRMED with the provider that this registration failed.\n\nRe-send anyway?`
+        );
+        if (proceed) {
+          if (currentUser) {
+            await logAudit(currentUser.id, "manual_afa_redispatch_override", { order_id: orderId, provider_order_id: data?.provider_order_id });
+          }
+          await handleRetryOrder(orderId, true);
+        } else {
+          toast({ title: "Not re-sent", description: "Registration left as-is to avoid a double submission." });
+        }
+        return;
       } else if (data?.status === "fulfilled") {
         if (currentUser) {
           await logAudit(currentUser.id, "afa_order_retry_fulfilled", { order_id: orderId });
         }
         toast({ title: "AFA Order Fulfilled! 🎉", description: "Registration successfully activated." });
+      } else if (data?.status === "processing") {
+        toast({ title: "Registration Processing ⏳", description: "AFA registration is queued and actively processing with the provider." });
       } else {
         toast({
           title: "Retry Completed",
@@ -1267,7 +1287,7 @@ export default function AdminAfaOrders() {
 
                               <DropdownMenuItem
                                 onClick={() => handleRefund(order.id, order.amount)}
-                                disabled={refundingId === order.id || order.status === "refunded"}
+                                disabled={refundingId === order.id || order.status === "refunded" || order.status === "fulfilled"}
                                 className="rounded-xl text-xs font-semibold gap-2 py-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                               >
                                 {refundingId === order.id ? (
