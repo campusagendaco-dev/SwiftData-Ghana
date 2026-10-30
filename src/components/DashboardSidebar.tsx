@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -229,7 +230,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
             <div className="flex items-center gap-3 relative z-10">
               <div className="relative">
                 <Avatar className="w-11 h-11 border-2 border-primary/20 p-0.5">
-                  <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${authUser?.id}`} />
+                  <AvatarImage src={getSafeAvatarUrl(profile?.avatar_url, authUser?.id || authUser?.email)} />
                   <AvatarFallback className="bg-primary/10 text-xs">{profile?.full_name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
                 <div className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2", isDark ? "border-[#0a0a0f]" : "border-white")}></div>

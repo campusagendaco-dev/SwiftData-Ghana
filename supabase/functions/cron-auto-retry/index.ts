@@ -271,12 +271,18 @@ serve(async (req) => {
 
           const isDelivered = rawStatus === "delivered" || rawStatus === "successful" || rawStatus === "completed" || rawStatus === "fulfilled" || rawStatus === "000";
           // ANTI-DOUBLE-DATA: only an EXPLICIT provider failure/refund may trigger failover.
-          // Previously `statusRes?.ok === false` also matched "Order not found", timeouts and auth errors,
-          // which wiped the provider ref and re-bought orders the first provider was already delivering.
-          // ("fulfillment_failed" is what the BundleZone adapter returns for an explicit failed/refunded order.)
-          const isRefundedOrFailed = rawStatus === "refunded" || rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined" || rawStatus === "reversed" || rawStatus === "fulfillment_failed";
+          // For MTN Express / BundleZone: `submission_unknown` and `failed_pending_refund` (where `refunded: false`)
+          // MUST remain in processing until `refunded: true` is confirmed.
+          const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
+          const isBundleZoneProv = String(resolvedProv.handler_type || "").toLowerCase() === "bundlezone";
+          const isRefundedOrFailed = !isPendingRefund && (
+            rawStatus === "refunded" ||
+            rawStatus === "reversed" ||
+            rawStatus === "fulfillment_failed" ||
+            (!isBundleZoneProv && (rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "declined"))
+          );
           if (!isDelivered && !isRefundedOrFailed) {
-            console.log(`[cron-auto-retry] In-transit order ${pOrder.id} status inconclusive at ${prov.name} (${rawStatus || "unknown"}: ${statusRes?.reason || ""}). Leaving in processing - NOT re-routing.`);
+            console.log(`[cron-auto-retry] In-transit order ${pOrder.id} status inconclusive/pending settlement at ${prov.name} (${rawStatus || "unknown"}: ${statusRes?.reason || ""}). Leaving in processing - NOT re-routing.`);
           }
 
           if (isDelivered) {
@@ -385,11 +391,15 @@ serve(async (req) => {
       }
 
       const failReason = order.failure_reason || "";
-      const isRefunded = /refund/i.test(failReason) || order.status === "refunded";
+      const isExplicitProviderRejection =
+        (order.status === "fulfillment_failed" || order.status === "failed") &&
+        Boolean(order.provider_id) &&
+        /provider rejected|carrier dispatch rejected|provider refunded|order failed|delivery failed/i.test(failReason);
+      const isRefunded = /refund/i.test(failReason) || order.status === "refunded" || isExplicitProviderRejection;
 
       // Anti-Duplicate Delivery Shield: If order already has an active upstream provider reference
       // (e.g. SKP..., API_..., DH_..., 6adb...) that is NOT timeout, failed_api_call, duplicate_cooldown, or refunded,
-      // and the provider has NOT issued an explicit refund, DO NOT re-dispatch! Doing so causes double fulfillment and financial loss!
+      // and the provider has NOT issued an explicit refund or rejection, DO NOT re-dispatch! Doing so causes double fulfillment and financial loss!
       const hasActiveProviderRef = Boolean(
         order.provider_order_id &&
         order.provider_order_id !== "failed_api_call" &&
@@ -399,14 +409,14 @@ serve(async (req) => {
         order.provider_order_id !== "refunded"
       );
       if (hasActiveProviderRef && !isRefunded) {
-        console.log(`[cron-auto-retry] Order ${order.id} is already in transit or completed with provider (${order.provider_order_id}) and was not refunded. Skipping re-dispatch to avoid double fulfillment.`);
+        console.log(`[cron-auto-retry] Order ${order.id} is already in transit or completed with provider (${order.provider_order_id}) and was not refunded/rejected. Skipping re-dispatch to avoid double fulfillment.`);
         continue;
       }
 
       // Security guard: Never auto-fulfill orders that lack verified payment proof
       const isWalletOrder = order.payment_method === "wallet";
       const isGatewayPaid = Number(order.paystack_verified_amount || 0) > 0;
-      const isPaidStatus = order.status === "paid" || order.status === "processing";
+      const isPaidStatus = order.status === "paid" || order.status === "processing" || isExplicitProviderRejection;
       if (!isWalletOrder && !isGatewayPaid && !isPaidStatus) {
         console.warn(`[cron-auto-retry] Security guard: Order ${order.id} lacks verified payment proof (method: ${order.payment_method}, verified_amount: ${order.paystack_verified_amount}). Skipping.`);
         continue;

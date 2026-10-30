@@ -1,3 +1,4 @@
+/// <reference path="../deno-env.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -76,8 +77,8 @@ serve(async (req: Request) => {
       const targetUrl = cleanUrl.endsWith("/purchases/submit-numbers")
         ? cleanUrl
         : cleanUrl.includes("/purchases")
-        ? `${cleanUrl}/submit-numbers`
-        : `${cleanUrl}/purchases/submit-numbers`;
+          ? `${cleanUrl}/submit-numbers`
+          : `${cleanUrl}/purchases/submit-numbers`;
 
       try {
         const dhRes = await fetchViaDb(supabaseClient, targetUrl, {
@@ -227,6 +228,8 @@ serve(async (req: Request) => {
       .eq("is_active", true)
       .maybeSingle();
 
+    const bzExpressEnabled = bzProvider?.settings?.express_mode_enabled !== false;
+    const bzTargetNet = bzExpressEnabled ? "MTN_EXPRESS" : "YELLO";
     const bzApiKey = Deno.env.get("BUNDLEZONE_API_KEY") || bzProvider?.api_key || "";
     const rawBzBaseUrl = Deno.env.get("BUNDLEZONE_BASE_URL") || bzProvider?.base_url || "https://bundlezone.shop";
     const bzCheckUrl = `${rawBzBaseUrl.trim().replace(/\/+$/, "")}/api/beneficiary-check.php`;
@@ -291,12 +294,13 @@ serve(async (req: Request) => {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "X-API-KEY": bzApiKey,
               "x-api-key": bzApiKey,
               "Authorization": `Bearer ${bzApiKey}`,
             },
             body: JSON.stringify({
-              network: "YELLO",
-              phone_numbers: normalizedNumbers,
+              network: bzTargetNet,
+              phone_numbers: bzExpressEnabled ? normalizedNumbers.slice(0, 100) : normalizedNumbers,
             }),
             disableFallback: true,
           }, 20);
@@ -309,9 +313,15 @@ serve(async (req: Request) => {
             let pendingCount = 0;
             for (const r of results) {
               const vs = String(r.verification_status || "").toUpperCase();
-              if (vs === "VERIFIED" || r.can_order === true) verifiedCount++;
-              else if (vs === "PENDING") pendingCount++;
-              else unverifiedCount++;
+              const st = String(r.status || "").toLowerCase();
+              if (vs === "VERIFIED" || vs === "NOT_REQUIRED" || st === "not_required" || r.verification_required === false || r.can_order === true) {
+                r.can_order = true;
+                verifiedCount++;
+              } else if (vs === "PENDING") {
+                pendingCount++;
+              } else {
+                unverifiedCount++;
+              }
             }
             if (bzData.data) {
               bzData.data.summary = {
@@ -322,7 +332,11 @@ serve(async (req: Request) => {
               };
 
               const unverifiedNumbers = results
-                .filter((r: any) => String(r.verification_status || "").toUpperCase() !== "VERIFIED" && r.can_order !== true)
+                .filter((r: any) => {
+                  const vs = String(r.verification_status || "").toUpperCase();
+                  const st = String(r.status || "").toLowerCase();
+                  return vs !== "VERIFIED" && vs !== "NOT_REQUIRED" && st !== "not_required" && r.verification_required !== false && r.can_order !== true;
+                })
                 .map((r: any) => r.phone_number)
                 .filter(Boolean);
 
@@ -542,11 +556,12 @@ serve(async (req: Request) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "X-API-KEY": bzApiKey,
             "x-api-key": bzApiKey,
             "Authorization": `Bearer ${bzApiKey}`,
           },
           body: JSON.stringify({
-            network: "YELLO",
+            network: bzTargetNet,
             phone_number: localFormat,
           }),
           disableFallback: true,
@@ -555,19 +570,27 @@ serve(async (req: Request) => {
         if (bzRes.ok) {
           const bzJson = await bzRes.json();
           const results = bzJson.data?.results || [];
-          const match = results.find((r: any) => r.phone_number === localFormat) || results[0];
+          const match = results.find((r: any) => r.phone_number === localFormat) || results[0] || bzJson.data;
           if (match) {
             const vStatus = String(match.verification_status || "").toUpperCase();
-            if (vStatus === "VERIFIED" || match.can_order === true) {
-              console.log(`[verify-beneficiary] Number ${localFormat} verified via BundleZone.`);
+            const mStatus = String(match.status || "").toLowerCase();
+            if (
+              vStatus === "VERIFIED" ||
+              vStatus === "NOT_REQUIRED" ||
+              mStatus === "not_required" ||
+              match.verification_required === false ||
+              match.can_order === true
+            ) {
+              console.log(`[verify-beneficiary] Number ${localFormat} ready via BundleZone (${vStatus || mStatus}).`);
               return new Response(
                 JSON.stringify({
                   success: true,
                   exists: true,
-                  status: "verified",
-                  verification_status: "VERIFIED",
+                  status: mStatus === "not_required" || vStatus === "NOT_REQUIRED" ? "not_required" : "verified",
+                  verification_status: vStatus === "NOT_REQUIRED" ? "NOT_REQUIRED" : "VERIFIED",
+                  verification_required: match.verification_required === false ? false : undefined,
                   can_order: true,
-                  message: match.message || "Number verified and ready for ordering.",
+                  message: match.message || "Number format validated and ready for MTN Express ordering.",
                 }),
                 { headers: { ...corsHeaders, "Content-Type": "application/json" } }
               );
@@ -746,8 +769,8 @@ serve(async (req: Request) => {
 
     // Datamart API failover handles non-beneficiary numbers natively
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         exists: false,
         status: "not_verified",
         verification_status: "NOT_VERIFIED",
@@ -755,18 +778,18 @@ serve(async (req: Request) => {
         is_non_beneficiary: true,
         route_via_datamart: true,
         auto_submitted: true,
-        message: "Number is not on beneficiary list, but has been automatically submitted for carrier approval and is eligible for fallback carrier delivery." 
+        message: "Number is not on beneficiary list, but has been automatically submitted for carrier approval and is eligible for fallback carrier delivery."
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
     console.error("[verify-beneficiary] Verification error:", err);
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        exists: false, 
-        error: "Verification service unavailable", 
-        message: "MTN beneficiary verification is currently offline. Please try again shortly." 
+      JSON.stringify({
+        success: false,
+        exists: false,
+        error: "Verification service unavailable",
+        message: "MTN beneficiary verification is currently offline. Please try again shortly."
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

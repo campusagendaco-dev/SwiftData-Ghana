@@ -175,7 +175,16 @@ const DashboardBulk = () => {
     });
   }, [parsedEntries, selectedPackage, packages]);
 
-  const validEntries = resolvedEntries.filter(e => !!e.pkg);
+  const validEntries = useMemo(() => {
+    const seen = new Set<string>();
+    return resolvedEntries.filter(e => {
+      if (!e.pkg) return false;
+      const key = `${e.phone}:${e.pkg.size}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [resolvedEntries]);
   const totalCost    = validEntries.reduce((sum, e) => sum + (e.pkg?.price || 0), 0);
   const canSend      = validEntries.length > 0 && !isProcessing;
 
@@ -230,7 +239,7 @@ const DashboardBulk = () => {
 
       // Success processing
       const batchResults: { phone: string; size?: string; status: "success" | "failed"; error?: string }[] = [];
-      const errorMap = new Map((data.errors || []).map((e: any) => [e.phone, e.error]));
+      const errorMap = new Map<string, string>((data.errors || []).map((e: any) => [String(e.phone), String(e.error)]));
 
       validEntries.forEach(e => {
         if (errorMap.has(e.phone)) {
@@ -601,6 +610,18 @@ const DashboardBulk = () => {
                 </div>
               ))}
             </div>
+
+            {selectedNetwork === "MTN" && (
+              <div className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-3.5 text-xs text-white/80 leading-relaxed space-y-1.5">
+                <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  MTN Express Delivery &amp; End-of-Day Refunds
+                </p>
+                <p>
+                  MTN Express orders are sent without a number-verification check. Submission does not guarantee delivery. Failed orders are reviewed and refunded to your wallet at the end of the day (or earlier on confirmed rejection). Check recipients carefully and avoid reordering while processing.
+                </p>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <button

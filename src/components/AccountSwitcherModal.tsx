@@ -9,6 +9,7 @@ import {
 import { useAuth, SavedAccount } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Users,
@@ -245,7 +246,7 @@ export const AccountSwitcherModal = () => {
               <div className="relative">
                 <Avatar className="w-11 h-11 border-2 border-emerald-500/40 p-0.5">
                   <AvatarImage
-                    src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`}
+                    src={getSafeAvatarUrl(profile?.avatar_url, user?.id || user?.email)}
                   />
                   <AvatarFallback className="bg-emerald-500/10 text-xs font-bold text-emerald-500">
                     {profile?.full_name?.charAt(0) || user?.email?.charAt(0) || "U"}
@@ -341,7 +342,7 @@ export const AccountSwitcherModal = () => {
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <Avatar className="w-9 h-9 border border-white/10 shrink-0">
                         <AvatarImage
-                          src={account.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${account.userId}`}
+                          src={getSafeAvatarUrl(account.avatarUrl, account.userId || account.email)}
                         />
                         <AvatarFallback className="bg-white/10 text-xs font-bold">
                           {account.fullName?.charAt(0) || account.email.charAt(0) || "U"}

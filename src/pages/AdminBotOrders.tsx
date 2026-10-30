@@ -214,9 +214,15 @@ export default function AdminBotOrders() {
         const clean = sanitizeSearchTerm(search);
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
         const isHex8 = /^[0-9a-f]{8}$/i.test(clean);
+        const digitsOnly = clean.replace(/\D/g, "");
+        const isPhoneQuery = /^(\+?233|0)\d{8,9}$/.test(clean.replace(/\s+/g, "")) && digitsOnly.length >= 9;
 
         if (isUuid) {
           q = q.eq("id", clean);
+        } else if (isPhoneQuery) {
+          const core9 = digitsOnly.slice(-9);
+          const phoneVariants = Array.from(new Set([clean, `0${core9}`, `233${core9}`, `+233${core9}`, core9]));
+          q = q.in("customer_phone", phoneVariants);
         } else {
           const orParts = [
             `customer_phone.ilike.%${clean}%`,

@@ -22,8 +22,8 @@ export class StandardAdapter implements ProviderAdapter {
     if (handlerType === "datamart") {
       if (endpoint === "status") {
         const candidates = Array.from(new Set([
-          String(data.transaction_id || "").trim(),
           String(data.reference || "").trim(),
+          String(data.transaction_id || "").trim(),
           String(data.order_id || "").trim()
         ].filter(Boolean)));
         return candidates.map(cand => `${clean}/order-status/${cand}`);
@@ -81,15 +81,18 @@ export class StandardAdapter implements ProviderAdapter {
       if (endpoint === "status") {
         const ref = String(data.transaction_id || data.reference || data.order_id || "");
         return [
-          `${clean}/api/status.php?reference=${ref}`,
-          `${clean}/api/status.php?order_id=${ref}`
+          `${clean}/api/status.php?reference=${encodeURIComponent(ref)}`,
+          `${clean}/api/status.php?order_id=${encodeURIComponent(ref)}`
         ];
       }
       if (endpoint === "beneficiary") {
         return [`${clean}/api/beneficiary-check.php`];
       }
       if (endpoint === "bundles") {
-        return [`${clean}/api/bundles.php`];
+        return [
+          `${clean}/api/bundles.php?network=MTN_EXPRESS&active=0`,
+          `${clean}/api/bundles.php?active=0`
+        ];
       }
       if (endpoint === "balance") {
         return [`${clean}/api/balance.php`];
@@ -103,7 +106,14 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "datahub") {
-      const alias = endpoint === "purchase" ? "data-purchase" : (endpoint === "status" ? "order-status" : endpoint);
+      const alias =
+        endpoint === "purchase"
+          ? "data-purchase"
+          : endpoint === "status"
+          ? "order-status"
+          : endpoint === "refund" || endpoint === "order-refund"
+          ? "order-refund"
+          : endpoint;
       return [`${clean}/${alias}`];
     }
     if (handlerType === "spendless") {
@@ -498,13 +508,14 @@ export class StandardAdapter implements ProviderAdapter {
     }
 
     if (handlerType === "bundlezone") {
-      let bzNetwork = "YELLO";
+      const isExpressMode = provider?.settings?.express_mode_enabled !== false;
+      let bzNetwork = isExpressMode ? "MTN_EXPRESS" : "YELLO";
       if (rawNet.includes("VOD") || rawNet.includes("TELECEL")) {
         bzNetwork = "Telecel";
       } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO")) {
         bzNetwork = "AT";
       } else {
-        bzNetwork = "YELLO";
+        bzNetwork = isExpressMode ? "MTN_EXPRESS" : "YELLO";
       }
 
       if (endpoint === "beneficiary") {
@@ -514,12 +525,43 @@ export class StandardAdapter implements ProviderAdapter {
         };
       }
 
+      // MTN Express client_reference requirement:
+      // 8–100 letters, digits, dots, underscores, colons or hyphens.
+      const rawClientRef = String(
+        (data as any).client_reference ||
+        (data as any).metadata?.client_reference ||
+        targetRef ||
+        `swiftdata-${Date.now()}`
+      ).trim();
+      let cleanClientRef = rawClientRef.replace(/[^A-Za-z0-9._:-]/g, "-");
+      if (cleanClientRef.length < 8) {
+        cleanClientRef = `swiftdata-${cleanClientRef}`;
+      }
+      if (cleanClientRef.length > 100) {
+        cleanClientRef = cleanClientRef.slice(0, 100);
+      }
+
       if (data.mode === "bulk" && Array.isArray((data as any).rows)) {
+        // Remove duplicate recipient/bundle pairs and enforce 1–20 row limit per BundleZone MTN_EXPRESS spec
+        const seenPairs = new Set<string>();
+        const dedupedRows: Array<{ recipient: string; capacity: number }> = [];
+        for (const r of (data as any).rows) {
+          const rPhone = normalizeRecipient(String(r?.recipient || r?.phone || r?.phone_number || ""));
+          const rCap = Number(r?.capacity || parseCapacity(String(r?.package_size || r?.capacity || "")) || 1);
+          if (!rPhone || rCap <= 0) continue;
+          const pairKey = `${rPhone}:${rCap}`;
+          if (seenPairs.has(pairKey)) continue;
+          seenPairs.add(pairKey);
+          dedupedRows.push({ recipient: rPhone, capacity: rCap });
+          if (dedupedRows.length >= 20) break;
+        }
+
         return {
           mode: "bulk",
           network: bzNetwork,
-          reference: targetRef,
-          rows: (data as any).rows,
+          client_reference: cleanClientRef,
+          reference: cleanClientRef,
+          rows: dedupedRows,
         };
       }
 
@@ -530,7 +572,8 @@ export class StandardAdapter implements ProviderAdapter {
         network: bzNetwork,
         recipient: recipient,
         capacity: bzCapacity,
-        reference: targetRef,
+        client_reference: cleanClientRef,
+        reference: cleanClientRef,
       };
     }
 
@@ -774,14 +817,20 @@ export class StandardAdapter implements ProviderAdapter {
 
     try {
       console.log(`[BundleZone-Verify-Beneficiary] Checking beneficiary status for ${localPhone}...`);
+      const isExpressMode = provider?.settings?.express_mode_enabled !== false;
+      const netUpper = String(network || "").toUpperCase();
+      const bzNet = (netUpper === "MTN" || netUpper === "YELLO" || netUpper.includes("MTN") || !netUpper)
+        ? (isExpressMode ? "MTN_EXPRESS" : "YELLO")
+        : network;
       const res = await fetchViaDb(supabaseAdmin, url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-API-KEY": apiKey,
           "x-api-key": apiKey,
         },
         body: JSON.stringify({
-          network: (network?.toUpperCase() === "MTN" || network?.toUpperCase() === "YELLO") ? "YELLO" : (network || "YELLO"),
+          network: bzNet,
           phone_number: localPhone
         }),
         disableFallback: true,
@@ -794,11 +843,25 @@ export class StandardAdapter implements ProviderAdapter {
       try { parsed = JSON.parse(text); } catch { /* ignore */ }
 
       if (res.ok && parsed.success) {
+        if (
+          parsed.data?.verification_required === false ||
+          String(parsed.data?.status || "").toLowerCase() === "not_required" ||
+          String(parsed.data?.verification_status || "").toUpperCase() === "NOT_REQUIRED"
+        ) {
+          return { ok: true };
+        }
         const results = parsed.data?.results || [];
         const match = results.find((r: any) => r.phone_number === localPhone) || results[0];
         if (match) {
           const vStatus = String(match.verification_status || "").toUpperCase();
-          if (vStatus === "VERIFIED" || match.can_order === true) {
+          const mStatus = String(match.status || "").toLowerCase();
+          if (
+            vStatus === "VERIFIED" ||
+            vStatus === "NOT_REQUIRED" ||
+            mStatus === "not_required" ||
+            match.verification_required === false ||
+            match.can_order === true
+          ) {
             return { ok: true };
           }
           return {
@@ -864,6 +927,166 @@ export class StandardAdapter implements ProviderAdapter {
     return { ok: true };
   }
 
+  async refundDataHubOrder(
+    supabaseAdmin: any,
+    provider: any,
+    params: { reference?: string; orderNumber?: string | number; method?: "GET" | "POST" }
+  ): Promise<ProviderResponse> {
+    const rawBaseUrl = Deno.env.get("DATAHUB_BASE_URL") || provider?.base_url || "https://user.datahubgh.com/api/external";
+    const cleanUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+    const apiKey = Deno.env.get("DATAHUB_API_KEY") || provider?.api_key || "";
+    const method = params.method === "GET" ? "GET" : "POST";
+
+    const cleanRef = String(params.reference ?? "").trim();
+    const rawOrderNum = params.orderNumber !== undefined && params.orderNumber !== null ? String(params.orderNumber).trim() : "";
+    const cleanOrderNum = rawOrderNum && rawOrderNum !== "failed_api_call" && rawOrderNum !== "timeout" && rawOrderNum !== "manual_fulfillment_mode"
+      ? rawOrderNum
+      : "";
+
+    if (!cleanRef && !cleanOrderNum) {
+      return {
+        ok: false,
+        status: "bad_request",
+        reason: "Either 'reference' or 'orderNumber' is required",
+      };
+    }
+
+    const attempts: Array<{ type: "reference" | "orderNumber"; value: string | number }> = [];
+    if (cleanRef) {
+      attempts.push({ type: "reference", value: cleanRef });
+    }
+    if (cleanOrderNum && cleanOrderNum !== cleanRef) {
+      const numVal = /^\d+$/.test(cleanOrderNum) ? Number(cleanOrderNum) : cleanOrderNum;
+      attempts.push({ type: "orderNumber", value: numVal });
+    }
+
+    let lastStatus = "not_eligible";
+    let lastReason = "Order is not eligible for refund";
+    let lastRaw: any = null;
+
+    for (const attempt of attempts) {
+      try {
+        const isGet = method === "GET";
+        const targetUrl = isGet
+          ? `${cleanUrl}/order-refund?${attempt.type}=${encodeURIComponent(String(attempt.value))}`
+          : `${cleanUrl}/order-refund`;
+
+        const headers: Record<string, string> = {
+          "Accept": "application/json",
+          "X-API-Key": apiKey,
+        };
+        if (!isGet) {
+          headers["Content-Type"] = "application/json";
+        }
+
+        const bodyObj = attempt.type === "orderNumber"
+          ? { orderNumber: attempt.value }
+          : { reference: String(attempt.value) };
+
+        console.log(`[DataHub-Order-Refund] Calling ${method} ${targetUrl} with ${attempt.type}=${attempt.value}`);
+        const res = await fetchViaDb(
+          supabaseAdmin,
+          targetUrl,
+          {
+            method,
+            headers,
+            body: isGet ? undefined : JSON.stringify(bodyObj),
+            disableFallback: false,
+            allowMutationFallback: true,
+          },
+          20
+        );
+
+        const text = await res.text();
+        let parsed: any = {};
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = { rawText: text };
+        }
+        lastRaw = parsed;
+
+        if (res.ok && (parsed.success === true || String(parsed?.data?.status || "").toUpperCase() === "REFUNDED")) {
+          const dataObj = parsed.data || {};
+          const newBal = Number(dataObj.newBalance);
+          if (Number.isFinite(newBal) && provider?.id && supabaseAdmin) {
+            await Promise.resolve(
+              supabaseAdmin
+                .from("providers")
+                .update({
+                  balance: newBal,
+                  last_synced_at: new Date().toISOString(),
+                })
+                .eq("id", provider.id)
+            ).catch((e: any) => console.warn("[DataHub-Order-Refund] Balance sync warning:", e?.message));
+          }
+
+          return {
+            ok: true,
+            status: String(dataObj.status || "REFUNDED").toLowerCase(),
+            id: String(dataObj.orderNumber || dataObj.reference || attempt.value),
+            reason: parsed.message || "Refund credited to your wallet",
+            rawBody: text,
+            raw: dataObj,
+          };
+        }
+
+        const errMessage =
+          parsed?.error ||
+          parsed?.["Not eligible"]?.error ||
+          parsed?.["Missing identifier"]?.error ||
+          parsed?.message ||
+          (res.status === 404 ? "Order not found" : res.status === 401 ? "Unauthorized" : "Order is not eligible for refund");
+
+        lastReason = String(errMessage);
+        if (res.status === 404) {
+          lastStatus = "not_found";
+          // Try next candidate (e.g. orderNumber if reference returned 404)
+          continue;
+        }
+        if (res.status === 401) {
+          return {
+            ok: false,
+            status: "unauthorized",
+            reason: lastReason,
+            rawBody: text,
+            raw: parsed,
+          };
+        }
+
+        lastStatus = "not_eligible";
+        break;
+      } catch (err: any) {
+        console.error(`[DataHub-Order-Refund] Error for ${attempt.type}=${attempt.value}:`, err?.message || err);
+        lastReason = err?.message || "Failed to communicate with DataHub refund endpoint";
+        lastStatus = "error";
+      }
+    }
+
+    return {
+      ok: false,
+      status: lastStatus,
+      reason: lastReason,
+      raw: lastRaw,
+    };
+  }
+
+  async refundOrder(
+    supabaseAdmin: any,
+    provider: any,
+    params: { reference?: string; orderNumber?: string | number; method?: "GET" | "POST" }
+  ): Promise<ProviderResponse> {
+    const handlerType = String(provider?.handler_type || "").toLowerCase();
+    if (handlerType === "datahub") {
+      return this.refundDataHubOrder(supabaseAdmin, provider, params);
+    }
+    return {
+      ok: false,
+      status: "not_eligible",
+      reason: "Order is not eligible for refund",
+    };
+  }
+
   async purchase(
     supabaseAdmin: any,
     provider: any,
@@ -886,13 +1109,15 @@ export class StandardAdapter implements ProviderAdapter {
       }
     }
 
-    if (handlerType === "bundlezone" && (network.includes("MTN") || network === "YELLO") && isAffordable && !isMashUp && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
+    // BundleZone: When Express Mode is enabled (default), MTN_EXPRESS orders skip number verification.
+    // When Express Mode is explicitly disabled by admin, verify MTN beneficiary against YELLO.
+    if (handlerType === "bundlezone" && provider?.settings?.express_mode_enabled === false && (network.includes("MTN") || network.includes("YELLO")) && !isMashUp && data.bypass_beneficiary !== true && data.bypass_beneficiary !== "true") {
       const recipient = normalizeRecipient(String(data.recipient || data.phoneNumber || data.phone || data.customer_phone || data.phone_number || (data as any).metadata?.payment_phone || (data as any).metadata?.customer_phone || (data as any).metadata?.phone || (data as any).metadata?.recipient_phone || ""));
       const check = await this.verifyBundleZoneBeneficiary(supabaseAdmin, provider, recipient, "YELLO");
       if (!check.ok) {
         return {
           ok: false,
-          reason: check.reason || `MTN recipient ${recipient} is not verified. No order was created.`
+          reason: check.reason || `MTN recipient ${recipient} is not verified on the BundleZone beneficiary list.`
         };
       }
     }
@@ -912,25 +1137,85 @@ export class StandardAdapter implements ProviderAdapter {
       try {
         const apiKey = Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key || "";
         const baseUrl = (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop").replace(/\/+$/, "");
-        const candidates = [reference, providerOrderId].filter(Boolean);
+        const candidates = Array.from(new Set([providerOrderId, reference].filter(Boolean)));
         
         for (const cand of candidates) {
           for (const param of ["reference", "order_id"]) {
-            const res = await fetch(`${baseUrl}/api/status.php?${param}=${cand}`, {
-              headers: { "X-API-Key": apiKey, "Accept": "application/json" }
+            const res = await fetch(`${baseUrl}/api/status.php?${param}=${encodeURIComponent(cand)}`, {
+              headers: {
+                "X-API-KEY": apiKey,
+                "x-api-key": apiKey,
+                "Accept": "application/json"
+              }
             });
             if (res.ok) {
               const json = await res.json().catch(() => ({}));
-              if (json.success && json.data) {
-                const s = String(json.data.status || "").toLowerCase();
-                const isDelivered = ["completed", "delivered", "fulfilled", "success", "successful"].includes(s);
-                const isFailed = ["failed", "rejected", "cancelled", "reversed", "refunded"].includes(s);
+              const orderObj = json.data?.order || json.data;
+              if (json.success && orderObj && (orderObj.status || json.data?.status)) {
+                const s = String(orderObj.status || json.data?.status || "").toLowerCase().trim();
+                const isDelivered = ["completed", "delivered", "fulfilled"].includes(s);
+                const isPendingOrUnknown = ["processing", "pending", "queued", "submission_unknown"].includes(s);
+                const isExplicitlyRefunded = s === "refunded" || s === "reversed" || orderObj.refunded === true;
+                const isCharged = orderObj.charged !== false;
+                const isFailedState = ["failed", "rejected", "cancelled"].includes(s);
+
+                const resolvedId = String(orderObj.reference || orderObj.order_id || orderObj.id || json.data?.order_id || cand);
+
+                if (isDelivered) {
+                  return {
+                    ok: true,
+                    status: "fulfilled",
+                    id: resolvedId,
+                    raw: orderObj
+                  };
+                }
+
+                if (isPendingOrUnknown) {
+                  return {
+                    ok: true,
+                    status: "processing",
+                    reason: s === "submission_unknown" ? "Order submission confirmation pending reconciliation" : undefined,
+                    id: resolvedId,
+                    raw: orderObj
+                  };
+                }
+
+                if (isExplicitlyRefunded || (isFailedState && !isCharged)) {
+                  return {
+                    ok: false,
+                    status: "refunded",
+                    reason: orderObj.message || json.data?.message || json.message || "Provider refunded order",
+                    id: resolvedId,
+                    raw: orderObj
+                  };
+                }
+
+                if (isFailedState) {
+                  // MTN Express: Do not mark an order refunded until `refunded: true`.
+                  // BundleZone reviews failed orders and refunds their charges at the end of the day (or earlier on confirmed rejection).
+                  if (!isExplicitlyRefunded && isCharged) {
+                    return {
+                      ok: false,
+                      status: "failed_pending_refund",
+                      reason: orderObj.message || json.data?.message || json.message || "Carrier delivery failed; awaiting end-of-day settlement",
+                      id: resolvedId,
+                      raw: orderObj
+                    };
+                  }
+                  return {
+                    ok: false,
+                    status: "fulfillment_failed",
+                    reason: orderObj.message || json.data?.message || json.message || `Order ${s}`,
+                    id: resolvedId,
+                    raw: orderObj
+                  };
+                }
+
                 return {
-                  ok: !isFailed,
-                  status: isDelivered ? "fulfilled" : (isFailed ? "fulfillment_failed" : "processing"),
-                  reason: json.data.message || json.message || (isFailed ? `BundleZone order ${s}` : undefined),
-                  id: String(json.data.order_id || cand),
-                  raw: json.data
+                  ok: true,
+                  status: "processing",
+                  id: resolvedId,
+                  raw: orderObj
                 };
               }
             }
@@ -1048,8 +1333,13 @@ export class StandardAdapter implements ProviderAdapter {
             headers["x-api-key"] = apiKey;
             headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
           } else if (handlerType === "bundlezone") {
-            delete headers["X-API-Key"];
+            const bzIdempKey = String(payload?.client_reference || payload?.reference || idempotencyKey || "").trim();
+            headers["X-API-KEY"] = apiKey;
             headers["x-api-key"] = apiKey;
+            if (bzIdempKey) {
+              headers["Idempotency-Key"] = bzIdempKey;
+              headers["X-Idempotency-Key"] = bzIdempKey;
+            }
             headers["User-Agent"] = "BundleZone-Client/1.0";
           } else if (handlerType === "datamart") {
             // DataMart strictly expects only X-API-Key. Duplicate lowercase x-api-key or Authorization JWT breaks verification
@@ -1090,13 +1380,25 @@ export class StandardAdapter implements ProviderAdapter {
           if (endpoint !== "status") {
             try {
               const dup = JSON.parse(text);
-              const ourRef = String(payload?.reference || data?.reference || data?.orderReference || data?.order_id || data?.id || "").trim();
-              const echoedRef = String(dup?.data?.reference ?? dup?.data?.order?.reference ?? "").trim();
+              const ourRef = String(payload?.client_reference || payload?.reference || data?.reference || data?.orderReference || data?.order_id || data?.id || "").trim();
+              const echoedRef = String(
+                dup?.data?.client_reference ??
+                dup?.data?.order?.client_reference ??
+                dup?.data?.reference ??
+                dup?.data?.order?.reference ??
+                ""
+              ).trim();
               const dupText = [dup?.code, dup?.error_code, dup?.message, dup?.error]
                 .filter((v: unknown) => typeof v === "string")
                 .join(" ");
               if (ourRef && echoedRef && echoedRef === ourRef && isDuplicateOrderError(dupText)) {
-                const existingId = String(dup?.data?.order_id ?? dup?.data?.order?.order_id ?? dup?.data?.order?.id ?? ourRef);
+                const existingId = String(
+                  dup?.data?.order?.reference ??
+                  dup?.data?.order_id ??
+                  dup?.data?.order?.order_id ??
+                  dup?.data?.order?.id ??
+                  ourRef
+                );
                 console.warn(`[StandardAdapter] ${handlerType} reports order ${ourRef} already placed (provider id ${existingId}). Treating as accepted - NOT re-routing.`);
                 return { ok: true, reason: `Already accepted by provider (${dupText})`, id: existingId, status: "processing" };
               }
@@ -1106,26 +1408,45 @@ export class StandardAdapter implements ProviderAdapter {
           if (res.ok) {
             const semantic = parseProviderResponse(text, contentType);
             if (semantic.ok) {
-              const returnedId = semantic.id || String(data.reference || data.orderReference || data.order_id || "");
+              const returnedId = semantic.id || String(payload?.client_reference || data.reference || data.orderReference || data.order_id || "");
               return { ok: true, reason: "", id: returnedId, status: semantic.status };
             }
             // For status checks, only surface a failure status when the provider EXPLICITLY reported one.
             // Anything else (e.g. success:false "order not found") stays inconclusive so callers never
             // fail + re-route an order that may already be delivering (double data).
-            const explicitFail = ["failed", "refunded", "reversed", "rejected", "cancelled", "declined"];
+            const explicitFail = ["failed", "refunded", "reversed", "rejected", "cancelled", "declined", "failed_pending_refund"];
             const semStatus = String(semantic.status || "").toLowerCase();
             return {
               ok: false,
               reason: semantic.reason || "Provider rejected this order.",
-              status: endpoint === "status" ? (explicitFail.includes(semStatus) ? semStatus : "error") : undefined,
+              status: endpoint === "status" ? (explicitFail.includes(semStatus) ? semStatus : "error") : semStatus || undefined,
             };
           }
 
           let parsedMsg = "";
           try { 
             const p = JSON.parse(text);
-            const code = p?.code || p?.error_code;
-            const msg = p?.message || p?.error;
+            const firstErr = Array.isArray(p?.errors) ? p.errors[0] : (p?.errors && typeof p.errors === "object" ? p.errors : null);
+            const errStatus = String(firstErr?.status || p?.data?.order?.status || p?.data?.status || "").toLowerCase();
+            if (errStatus === "submission_unknown" && endpoint !== "status") {
+              const pendingId = String(
+                firstErr?.reference ??
+                p?.data?.order?.reference ??
+                p?.data?.order?.order_id ??
+                payload?.client_reference ??
+                data?.reference ??
+                data?.order_id ??
+                ""
+              );
+              return {
+                ok: true,
+                id: pendingId,
+                status: "processing",
+                reason: firstErr?.message || p?.message || "Order status is submission_unknown; awaiting reconciliation."
+              };
+            }
+            const code = firstErr?.code || p?.code || p?.error_code;
+            const msg = firstErr?.message || p?.message || p?.error;
             parsedMsg = code && msg ? `${code}: ${msg}` : (msg || code || "");
           } catch { /* ignore */ }
           lastReason = parsedMsg || `Provider returned ${res.status}`;

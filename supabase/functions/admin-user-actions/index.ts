@@ -120,6 +120,7 @@ type AdminUserAction =
   | "send_reset_link"
   | "revoke_sessions"
   | "get_user_audit_logs"
+  | "update_sub_admin_permissions"
   | "delete_provider";
 
 
@@ -1433,7 +1434,7 @@ serve(async (req: Request) => {
           }
         }
 
-        await logAdminAudit(supabaseAdmin, actor.id, "DELETE_PROVIDER", { provider_id: providerId }).catch(() => {});
+        await logAdminAudit(supabaseAdmin, { adminId: actor.id, action: "DELETE_PROVIDER", details: { provider_id: providerId } }).catch(() => {});
 
         return new Response(JSON.stringify({
           success: true,

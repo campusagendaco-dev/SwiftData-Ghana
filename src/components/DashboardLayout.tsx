@@ -9,6 +9,7 @@ import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useNavigate } from "react-router-dom";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -209,7 +210,7 @@ const DashboardLayout = () => {
               )}
             >
               <Avatar className={cn("w-9 h-9 border-2 transition-all", isDark ? "border-white/10 group-hover:border-primary/50" : "border-gray-200 group-hover:border-primary/50")}>
-                <AvatarImage src={(profile as any)?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} />
+                <AvatarImage src={getSafeAvatarUrl((profile as any)?.avatar_url, user?.id || user?.email)} />
                 <AvatarFallback className="bg-primary/10 text-xs">{firstName.charAt(0)}</AvatarFallback>
               </Avatar>
               <div className="hidden sm:flex flex-col items-start text-left leading-tight">

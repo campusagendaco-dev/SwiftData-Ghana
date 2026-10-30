@@ -411,7 +411,7 @@ export async function executeGuestBeneficiaryRefund(
 
     try {
       console.log(`[guest-refund] Submitting Paystack refund for transaction '${targetTx}' (Amount: ${amountInPesewas} pesewas)`);
-      let response: Response;
+      let response: any;
       try {
         response = await fetch("https://api.paystack.co/refund", {
           method: "POST",

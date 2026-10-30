@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Check, X, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
+import { generateLocalAvatarDataUri } from "@/lib/avatar";
 
 interface AvatarPickerProps {
   isOpen: boolean;
@@ -52,7 +53,7 @@ export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: Av
   const [seed, setSeed]   = useState(ALL_SEEDS[0]);
   const [saving, setSaving] = useState(false);
 
-  const previewUrl = `https://api.dicebear.com/7.x/${style.id}/svg?seed=${seed}`;
+  const previewUrl = generateLocalAvatarDataUri(seed, style.id);
 
   // lock body scroll while open
   useEffect(() => {
@@ -193,7 +194,7 @@ export const AvatarPicker = ({ isOpen, onClose, onSelect, currentAvatarUrl }: Av
               <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-2">Variation</p>
               <div className="grid grid-cols-4 gap-2.5">
                 {ALL_SEEDS.map((s) => {
-                  const url  = `https://api.dicebear.com/7.x/${style.id}/svg?seed=${s}`;
+                  const url  = generateLocalAvatarDataUri(s, style.id);
                   const active = seed === s;
                   return (
                     <button

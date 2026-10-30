@@ -27,6 +27,7 @@ interface SystemSettings {
   beneficiary_verification_enabled?: boolean;
   allow_non_beneficiary_continue?: boolean;
   auto_failover_non_beneficiary_to_datamart?: boolean;
+  mtn_express_mode_enabled?: boolean;
   holiday_mode_enabled: boolean;
   holiday_message: string;
   disable_ordering: boolean;
@@ -133,6 +134,7 @@ const AdminSettings = () => {
     beneficiary_verification_enabled: true,
     allow_non_beneficiary_continue: true,
     auto_failover_non_beneficiary_to_datamart: true,
+    mtn_express_mode_enabled: false,
     holiday_mode_enabled: false,
     holiday_message: "",
     disable_ordering: false,
@@ -489,6 +491,7 @@ const AdminSettings = () => {
           beneficiary_verification_enabled: d.beneficiary_verification_enabled !== false,
           allow_non_beneficiary_continue: d.allow_non_beneficiary_continue !== false,
           auto_failover_non_beneficiary_to_datamart: d.auto_failover_non_beneficiary_to_datamart === true,
+          mtn_express_mode_enabled: d.mtn_express_mode_enabled === true,
           holiday_mode_enabled: d.holiday_mode_enabled || false,
           holiday_message: d.holiday_message || "",
           disable_ordering: d.disable_ordering || false,
@@ -537,7 +540,7 @@ const AdminSettings = () => {
           free_data_package_size: d.free_data_package_size || "1GB",
           free_data_max_claims: String(d.free_data_max_claims || "100"),
           whatsapp_bot_prompt: d.whatsapp_bot_prompt || "",
-          home_page_video_url: d.home_page_video_url || "/assets/videos/ai_video.mp4",
+          home_page_video_url: d.home_page_video_url || "https://lsocdjpflecduumopijn.supabase.co/storage/v1/object/public/site-assets/home-bg-1793265383509.mp4",
           home_page_video_muted: d.home_page_video_muted !== false,
           agent_activation_fee: String(d.agent_activation_fee || "50.00"),
           wassce_price: String(d.wassce_price || "18.00"),
@@ -664,6 +667,7 @@ const AdminSettings = () => {
       meta_whatsapp_access_token: (settings.meta_whatsapp_access_token || "").trim(),
       meta_whatsapp_phone_number_id: (settings.meta_whatsapp_phone_number_id || "").trim(),
       auto_failover_non_beneficiary_to_datamart: settings.auto_failover_non_beneficiary_to_datamart === true,
+      mtn_express_mode_enabled: settings.mtn_express_mode_enabled === true,
       beneficiary_verification_enabled: settings.beneficiary_verification_enabled !== false,
       allow_non_beneficiary_continue: settings.allow_non_beneficiary_continue !== false,
       auto_gateway_switch_by_package: settings.auto_gateway_switch_by_package || false,
@@ -1067,6 +1071,66 @@ const AdminSettings = () => {
                     </select>
                   </div>
                 )}
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-white/5 pt-4">
+                <div className="flex items-start justify-between p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                  <div className="space-y-0.5 pr-4">
+                    <Label className="text-amber-400 font-bold flex items-center gap-1.5">
+                      <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                      Express Mode (Route Orders to BundleZone API)
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {(providers.some(p => p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true) || settings.mtn_express_mode_enabled === true)
+                        ? "Active: Data orders route directly to active BundleZone API providers using MTN_EXPRESS without number-verification checks."
+                        : "Disabled: Orders follow standard provider priority and beneficiary verification rules."}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={providers.some(p => p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true) || settings.mtn_express_mode_enabled === true}
+                    onCheckedChange={async (checked) => {
+                      setSettings(prev => ({ ...prev, mtn_express_mode_enabled: checked }));
+                      const updated = providers.map(p => {
+                        if (p.handler_type === "bundlezone") {
+                          return {
+                            ...p,
+                            is_active: checked ? true : p.is_active,
+                            settings: {
+                              ...(p.settings || {}),
+                              express_mode_enabled: checked,
+                            },
+                          };
+                        }
+                        return p;
+                      });
+                      setProviders(updated);
+                      try {
+                        for (const p of updated.filter(pr => pr.handler_type === "bundlezone" && !String(pr.id).startsWith("new-"))) {
+                          await supabase
+                            .from("providers")
+                            .update({
+                              is_active: p.is_active,
+                              settings: p.settings,
+                            })
+                            .eq("id", p.id);
+                        }
+                        try { localStorage.removeItem("swift_system_settings"); } catch {}
+                        toast({
+                          title: checked ? "⚡ Express Mode Activated" : "Express Mode Disabled",
+                          description: checked
+                            ? "Orders will now route directly to BundleZone API providers via MTN_EXPRESS."
+                            : "Standard provider priority routing restored.",
+                        });
+                      } catch (err: any) {
+                        toast({
+                          title: "Failed to toggle Express Mode",
+                          description: err.message || "Could not update BundleZone provider settings.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="flex items-start justify-between p-3 bg-primary/5 border border-primary/20 rounded-xl">
@@ -2884,6 +2948,46 @@ const AdminSettings = () => {
                             className="h-8 bg-background border-border text-xs"
                           />
                         </div>
+                        {provider.handler_type === "bundlezone" && (
+                          <div className="col-span-2 flex items-center justify-between p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25">
+                            <div className="space-y-0.5 pr-3">
+                              <Label className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                                <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                                Express Mode (MTN_EXPRESS Direct Routing)
+                              </Label>
+                              <p className="text-[10px] text-muted-foreground">
+                                When enabled, orders route directly to this BundleZone provider using MTN_EXPRESS (no number verification required).
+                              </p>
+                            </div>
+                            <Switch
+                              checked={provider.settings?.express_mode_enabled === true}
+                              onCheckedChange={async (checked) => {
+                                const nextSettings = { ...(provider.settings || {}), express_mode_enabled: checked };
+                                handleUpdateProvider(provider.id, {
+                                  is_active: checked ? true : provider.is_active,
+                                  settings: nextSettings,
+                                });
+                                setSettings(prev => ({ ...prev, mtn_express_mode_enabled: checked }));
+                                if (provider.id && !String(provider.id).startsWith("new-")) {
+                                  await supabase
+                                    .from("providers")
+                                    .update({
+                                      is_active: checked ? true : provider.is_active,
+                                      settings: nextSettings,
+                                    })
+                                    .eq("id", provider.id);
+                                  try { localStorage.removeItem("swift_system_settings"); } catch {}
+                                  toast({
+                                    title: checked ? "⚡ BundleZone Express Mode Enabled" : "BundleZone Express Mode Disabled",
+                                    description: checked
+                                      ? `${provider.name} will now receive orders directly via MTN_EXPRESS.`
+                                      : `${provider.name} switched to standard routing mode.`,
+                                  });
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
                         {provider.handler_type === "xcel" && (
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground">Merchant ID</Label>

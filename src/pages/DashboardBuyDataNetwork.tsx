@@ -21,6 +21,7 @@ import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { MtnExpressConfirmModal } from "@/components/MtnExpressConfirmModal";
 
 type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -180,6 +181,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const [pendingAction, setPendingAction] = useState<"wallet" | "paystack" | null>(null);
   const [beneficiaryCheckEnabled, setBeneficiaryCheckEnabled] = useState(true);
   const [allowNonBeneficiaryContinue, setAllowNonBeneficiaryContinue] = useState(true);
+  const [showMtnExpressModal, setShowMtnExpressModal] = useState(false);
+  const [mtnExpressModeEnabled, setMtnExpressModeEnabled] = useState(true);
+  const [mtnExpressPendingMethod, setMtnExpressPendingMethod] = useState<{ method: "wallet" | "paystack"; bypass: boolean } | null>(null);
 
   const isPaidAgent = Boolean(profile?.agent_approved || profile?.sub_agent_approved);
 
@@ -403,6 +407,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           const allowContinue = data.allow_non_beneficiary_continue !== false;
 
           setActivationFee(fee);
+          supabase.functions.invoke("system-settings", { body: { action: "get" } }).then(({ data: sysData }) => {
+            if (sysData && typeof sysData.mtn_express_mode_enabled === "boolean") {
+              setMtnExpressModeEnabled(sysData.mtn_express_mode_enabled);
+            }
+          }).catch(() => {});
           setActiveGateway(gateway);
           setBeneficiaryCheckEnabled(benEnabled);
           setAllowNonBeneficiaryContinue(allowContinue);
@@ -831,7 +840,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     }
   };
 
-  const handleWalletBuy = async (bypassBeneficiary = false) => {
+  const handleWalletBuy = async (bypassBeneficiary = false, mtnExpressConfirmed = false) => {
+    if (!validate()) return;
+    const isMtnAffordable = network === "MTN" && (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme");
+    if (isMtnAffordable && mtnExpressModeEnabled && !mtnExpressConfirmed) {
+      setMtnExpressPendingMethod({ method: "wallet", bypass: bypassBeneficiary });
+      setShowMtnExpressModal(true);
+      return;
+    }
     if (!validate()) return;
     setBuying(true);
 
@@ -930,7 +946,14 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     }
   };
 
-  const handlePaystackBuy = async (bypassBeneficiary = false) => {
+  const handlePaystackBuy = async (bypassBeneficiary = false, mtnExpressConfirmed = false) => {
+    if (!validate()) return;
+    const isMtnAffordable = network === "MTN" && (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme");
+    if (isMtnAffordable && mtnExpressModeEnabled && !mtnExpressConfirmed) {
+      setMtnExpressPendingMethod({ method: "paystack", bypass: bypassBeneficiary });
+      setShowMtnExpressModal(true);
+      return;
+    }
     if (!validate()) return;
 
     if (!bypassBeneficiary) {
@@ -1709,6 +1732,27 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
             )}
           </div>
         </DialogContent>
+
+      <MtnExpressConfirmModal
+        open={showMtnExpressModal}
+        recipientPhone={normalizedPhone || phone}
+        packageSize={selectedPackage ? `MTN ${selectedPackage.size}` : undefined}
+        amount={selectedPackage?.price}
+        onCancel={() => {
+          setShowMtnExpressModal(false);
+          setMtnExpressPendingMethod(null);
+        }}
+        onConfirm={() => {
+          const pending = mtnExpressPendingMethod;
+          setShowMtnExpressModal(false);
+          setMtnExpressPendingMethod(null);
+          if (pending?.method === "wallet") {
+            void handleWalletBuy(pending.bypass, true);
+          } else if (pending?.method === "paystack") {
+            void handlePaystackBuy(pending.bypass, true);
+          }
+        }}
+      />
       </Dialog>
     </div>
   );

@@ -282,7 +282,7 @@ serve(async (req: Request) => {
     const addCandidate = (val: any) => {
       if (val !== undefined && val !== null) {
         const s = String(val).trim();
-        if (s && /^[a-zA-Z0-9\-_]{1,64}$/.test(s) && !candidateRefs.includes(s)) {
+        if (s && /^[a-zA-Z0-9._:\-]{1,100}$/.test(s) && !candidateRefs.includes(s)) {
           candidateRefs.push(s);
         }
       }
@@ -302,6 +302,12 @@ serve(async (req: Request) => {
       }
     }
 
+    addCandidate(payload?.data?.order?.client_reference);
+    addCandidate(payload?.data?.order?.reference);
+    addCandidate(payload?.data?.order?.order_id);
+    addCandidate(payload?.data?.order?.id);
+    addCandidate(payload?.data?.client_reference);
+    addCandidate(payload?.client_reference);
     addCandidate(payload?.data?.reference);
     addCandidate(payload?.reference);
     addCandidate(payload?.data?.order_id);
@@ -324,12 +330,28 @@ serve(async (req: Request) => {
     }
 
     const reference = candidateRefs[0];
+    const orderNode = payload?.data?.order || payload?.data || payload || {};
+    const webhookEventId = String(
+      payload?.event_id ||
+      payload?.data?.event_id ||
+      orderNode?.event_id ||
+      req.headers.get("X-BundleZone-Event-Id") ||
+      req.headers.get("x-bundlezone-event-id") ||
+      ""
+    ).trim();
 
-    const rawStatus = (payload?.data?.status || payload?.status || "").toLowerCase();
-    
+    const rawStatus = String(orderNode?.status || payload?.data?.status || payload?.status || "").toLowerCase().trim();
+    const isExplicitlyRefunded = rawStatus === "refunded" || rawStatus === "reversed" || orderNode?.refunded === true;
+    const isCharged = orderNode?.charged !== false;
+
     let systemStatus = "processing";
-    if (["completed", "success", "successful", "delivered", "fulfilled"].includes(rawStatus)) systemStatus = "fulfilled";
-    else if (["failed", "rejected", "error", "refunded", "refund", "cancelled", "reversed"].includes(rawStatus)) systemStatus = "fulfillment_failed";
+    if (["completed", "success", "successful", "delivered", "fulfilled"].includes(rawStatus)) {
+      systemStatus = "fulfilled";
+    } else if (rawStatus === "submission_unknown" || rawStatus === "processing" || rawStatus === "pending") {
+      systemStatus = "processing";
+    } else if (["failed", "rejected", "error", "refunded", "refund", "cancelled", "reversed"].includes(rawStatus)) {
+      systemStatus = "fulfillment_failed";
+    }
 
     let order: any = null;
     let fetchError: any = null;
@@ -361,10 +383,12 @@ serve(async (req: Request) => {
     // 3. Try finding by metadata client_reference or reference
     if (!order) {
       for (const cand of candidateRefs) {
+        const safeCand = cand.replace(/[^A-Za-z0-9._:\-]/g, "");
+        if (!safeCand) continue;
         const { data: ordByMeta } = await supabaseAdmin
           .from("orders")
           .select("*")
-          .or(`metadata->>client_reference.eq.${cand},metadata->>reference.eq.${cand},metadata->>order_reference.eq.${cand}`)
+          .or(`metadata->>client_reference.eq."${safeCand}",metadata->>reference.eq."${safeCand}",metadata->>order_reference.eq."${safeCand}"`)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -376,8 +400,9 @@ serve(async (req: Request) => {
     }
 
     // 4. Smart fallback for providers (like BundleZone) that send internal references or recipient
-    if (!order && (payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone)) {
-      const rawPhone = String(payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone).replace(/\D/g, "");
+    const fallbackRecipient = orderNode?.recipient || payload?.data?.recipient || payload?.recipient || payload?.data?.phone || payload?.phone;
+    if (!order && fallbackRecipient) {
+      const rawPhone = String(fallbackRecipient).replace(/\D/g, "");
       let localPhone = rawPhone;
       if (rawPhone.startsWith("233") && rawPhone.length === 12) localPhone = "0" + rawPhone.slice(3);
       else if (rawPhone.length === 9) localPhone = "0" + rawPhone;
@@ -404,8 +429,63 @@ serve(async (req: Request) => {
       });
     }
 
+    // BundleZone / Webhook event_id deduplication: ignore duplicate callback events
+    const processedEventIds: string[] = Array.isArray(order.metadata?.processed_webhook_event_ids)
+      ? order.metadata.processed_webhook_event_ids
+      : [];
+    if (webhookEventId && processedEventIds.includes(webhookEventId)) {
+      console.log(`[provider-webhook] Duplicate event_id '${webhookEventId}' for order ${order.id}. Ignoring duplicate callback.`);
+      return new Response(JSON.stringify({ received: true, duplicate_event: true, event_id: webhookEventId }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+    const nextEventIds = webhookEventId
+      ? Array.from(new Set([...processedEventIds.slice(-49), webhookEventId]))
+      : processedEventIds;
+
+    // BundleZone MTN Express: A `failed` status alone does NOT confirm a refund until `refunded: true`.
+    // Keep the order in `processing` with its original reference until BundleZone confirms `refunded: true` (or `charged === false`).
+    const isBundleZoneCallback = Boolean(bundlezoneSignature) || orderNode?.refunded !== undefined || orderNode?.charged !== undefined;
+    if (
+      isBundleZoneCallback &&
+      ["failed", "rejected", "cancelled"].includes(rawStatus) &&
+      !isExplicitlyRefunded &&
+      isCharged
+    ) {
+      console.log(`[provider-webhook] BundleZone order ${order.id} reported '${rawStatus}' with refunded=false, charged=true. Holding for end-of-day refund confirmation.`);
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        metadata: {
+          ...(order.metadata || {}),
+          bundlezone_status: "failed_pending_refund",
+          bundlezone_charged: true,
+          bundlezone_refunded: false,
+          processed_webhook_event_ids: nextEventIds,
+        },
+        updated_at: new Date().toISOString()
+      }).eq("id", order.id);
+
+      return new Response(JSON.stringify({
+        received: true,
+        status: "failed_pending_refund",
+        message: "Order failed on carrier; awaiting refunded=true confirmation before settlement."
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
     // Idempotency: avoid re-processing identical terminal states
-    if (order.status === systemStatus) {
+    if (order.status === systemStatus && (systemStatus === "fulfilled" || systemStatus === "processing")) {
+      if (webhookEventId) {
+        await supabaseAdmin.from("orders").update({
+          metadata: {
+            ...(order.metadata || {}),
+            processed_webhook_event_ids: nextEventIds,
+          }
+        }).eq("id", order.id);
+      }
       console.log(`[provider-webhook] Order ${order.id} is already in state '${systemStatus}'. Acknowledged idempotently.`);
       return new Response(JSON.stringify({ success: true, message: `Already ${systemStatus}` }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -464,6 +544,7 @@ serve(async (req: Request) => {
           metadata: {
             ...(order.metadata || {}),
             failed_provider_ids: failedIds,
+            processed_webhook_event_ids: nextEventIds,
           },
         });
 
@@ -474,6 +555,11 @@ serve(async (req: Request) => {
             provider_id: failoverDispatch.provider_id || null,
             provider_order_id: failoverDispatch.provider_order_id || null,
             failure_reason: null,
+            metadata: {
+              ...(order.metadata || {}),
+              failed_provider_ids: failedIds,
+              processed_webhook_event_ids: nextEventIds,
+            },
             updated_at: new Date().toISOString()
           }).eq("id", order.id);
 
@@ -494,11 +580,22 @@ serve(async (req: Request) => {
 
     await supabaseAdmin.from("orders").update({ 
       status: systemStatus,
+      metadata: {
+        ...(order.metadata || {}),
+        ...(isBundleZoneCallback ? {
+          bundlezone_status: rawStatus,
+          bundlezone_charged: isCharged,
+          bundlezone_refunded: isExplicitlyRefunded,
+        } : {}),
+        processed_webhook_event_ids: nextEventIds,
+      },
       updated_at: new Date().toISOString()
     }).eq("id", order.id);
 
     if (systemStatus === "fulfilled") {
       await Promise.resolve(supabaseAdmin.rpc("credit_order_profits", { p_order_id: order.id })).catch(() => {});
+    } else if (systemStatus === "fulfillment_failed" && isExplicitlyRefunded && order.payment_method === "wallet") {
+      await Promise.resolve(supabaseAdmin.rpc("refund_failed_order", { p_order_id: order.id })).catch(() => {});
     }
 
     // ── Notify API Client ─────────────────────────────────────────────────────

@@ -41,6 +41,8 @@ interface OrderRow {
   metadata?: any;
   provider_id?: string | null;
   provider_order_id?: string | null;
+  payment_method?: string;
+  cost_price?: number | null;
 }
 
 interface DeveloperProfile {

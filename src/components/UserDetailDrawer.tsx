@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useToast } from "@/hooks/use-toast";
@@ -715,7 +716,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
           <div className="flex items-start gap-4">
             <div className="relative shrink-0">
               <Avatar className="w-16 h-16 rounded-2xl border-2 border-white/15 shadow-xl">
-                <AvatarImage src={user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.user_id}`} />
+                <AvatarImage src={getSafeAvatarUrl(user.avatar_url, user.user_id || user.email)} />
                 <AvatarFallback className={`${avatarColor(user.full_name)} text-white font-black text-xl`}>
                   {initials}
                 </AvatarFallback>

@@ -1,7 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { supabase } from "@/integrations/supabase/client";
+import { safeRemoveChannel } from "@/lib/safe-realtime";
+import { toast } from "sonner";
 import AdminNotifications from "@/components/AdminNotifications";
 import {
   LayoutDashboard, Users, ShieldCheck, ShoppingCart, LogOut, Menu,
@@ -9,7 +12,7 @@ import {
   BarChart3, Ticket, LifeBuoy, FileSearch, Key, TrendingUp, Sun, Moon,
   Sparkles, Image as ImageIcon, Users2, ScrollText,
   Megaphone, Flag, MessageSquare, Banknote, UserCheck, LineChart, Brain,
-  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot
+  ShieldAlert, Search, Command, Zap, Phone, Lightbulb, RotateCcw, ListCheck, Send, PhoneCall, GraduationCap, Bot, RefreshCw, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -320,7 +323,15 @@ export const ROUTE_PERM_MAP: Record<string, string> = {
   "/admin/settings": "system",
 };
 
-const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
+const SidebarContent = ({
+  onNavigate,
+  activeQueueCount = 0,
+  pendingWithdrawalsCount = 0,
+}: {
+  onNavigate?: () => void;
+  activeQueueCount?: number;
+  pendingWithdrawalsCount?: number;
+}) => {
   const { signOut, profile, openAccountSwitcher, savedAccounts } = useAuth();
   const { isDark, toggleDark } = useAppTheme();
   const location = useLocation();
@@ -412,7 +423,7 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
                           : "text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-transparent"
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <item.icon className={`w-4 h-4 shrink-0 transition-colors ${
                         active
                           ? "text-amber-500"
@@ -422,7 +433,19 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
                       }`} />
                       <span className="truncate">{item.label}</span>
                     </div>
-                    {active && <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-amber-400/40" : "text-amber-500/50"}`} />}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {item.path === "/admin/orders" && activeQueueCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                          {activeQueueCount}
+                        </span>
+                      )}
+                      {item.path === "/admin/withdrawals" && pendingWithdrawalsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                          {pendingWithdrawalsCount}
+                        </span>
+                      )}
+                      {active && <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${isDark ? "text-amber-400/40" : "text-amber-500/50"}`} />}
+                    </div>
                   </Link>
                 );
               })}
@@ -480,10 +503,137 @@ const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => {
 const AdminLayout = () => {
   const [open, setOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [activeQueueCount, setActiveQueueCount] = useState(0);
+  const [pendingWithdrawalsCount, setPendingWithdrawalsCount] = useState(0);
+  const [expressMode, setExpressMode] = useState(false);
+  const [togglingExpress, setTogglingExpress] = useState(false);
+  const [syncingNow, setSyncingNow] = useState(false);
+  const [lastHeartbeat, setLastHeartbeat] = useState<Date>(new Date());
   const { isDark, toggleDark } = useAppTheme();
   const { profile, openAccountSwitcher, savedAccounts } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const fetchLiveHeaderTelemetry = useCallback(async () => {
+    try {
+      const [ordersCountRes, withdrawalsCountRes, bzProviderRes] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["processing", "pending"]),
+        supabase
+          .from("withdrawals")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending"),
+        supabase
+          .from("providers")
+          .select("id, settings, is_active")
+          .eq("handler_type", "bundlezone")
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      if (typeof ordersCountRes.count === "number") {
+        setActiveQueueCount(ordersCountRes.count);
+      }
+      if (typeof withdrawalsCountRes.count === "number") {
+        setPendingWithdrawalsCount(withdrawalsCountRes.count);
+      }
+      if (bzProviderRes.data) {
+        const bzSettings = (bzProviderRes.data as any).settings || {};
+        setExpressMode(Boolean(bzSettings.express_mode_enabled));
+      }
+      setLastHeartbeat(new Date());
+    } catch {
+      // Non-blocking header telemetry
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveHeaderTelemetry();
+    const interval = setInterval(fetchLiveHeaderTelemetry, 45000);
+    const channel = supabase
+      .channel("admin_header_telemetry")
+      .on("postgres_changes", { event: "*", schema: "public", table: "system_settings" }, () => {
+        fetchLiveHeaderTelemetry();
+      })
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      safeRemoveChannel(channel);
+    };
+  }, [fetchLiveHeaderTelemetry]);
+
+  const handleToggleExpressMode = async () => {
+    if (togglingExpress) return;
+    setTogglingExpress(true);
+    const nextVal = !expressMode;
+    try {
+      const { data: bzProv, error: fetchErr } = await supabase
+        .from("providers")
+        .select("id, settings, is_active")
+        .eq("handler_type", "bundlezone")
+        .limit(1)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!bzProv) throw new Error("BundleZone provider not found");
+
+      const nextSettings = {
+        ...((bzProv as any).settings || {}),
+        express_mode_enabled: nextVal,
+      };
+      const { error } = await supabase
+        .from("providers")
+        .update({
+          is_active: nextVal ? true : (bzProv as any).is_active,
+          settings: nextSettings,
+        } as any)
+        .eq("id", bzProv.id);
+      if (error) throw error;
+      setExpressMode(nextVal);
+      toast.success(
+        nextVal
+          ? "MTN Express Mode ENABLED — MTN orders now route via BundleZone Express"
+          : "MTN Express Mode DISABLED — Standard provider priority active"
+      );
+      window.dispatchEvent(new CustomEvent("swiftdata:admin-refresh"));
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to toggle Express Mode");
+    } finally {
+      setTogglingExpress(false);
+    }
+  };
+
+  const handleQuickReconcileAndSync = async () => {
+    if (syncingNow) return;
+    setSyncingNow(true);
+    const toastId = toast.loading("Reconciling orders & syncing live provider telemetry...");
+    try {
+      const [retryRes, bulkCheckRes] = await Promise.allSettled([
+        supabase.functions.invoke("cron-auto-retry", { body: {} }),
+        supabase.functions.invoke("check-order-status", { body: { auto_bulk: true } }),
+        supabase.functions.invoke("system-payout-v1", { body: { action: "get_provider_balance" } }),
+      ]);
+
+      await fetchLiveHeaderTelemetry();
+      window.dispatchEvent(new CustomEvent("swiftdata:admin-refresh"));
+
+      const retried =
+        retryRes.status === "fulfilled" ? Number(retryRes.value.data?.dispatched ?? retryRes.value.data?.retried ?? 0) : 0;
+      const fulfilled =
+        bulkCheckRes.status === "fulfilled" ? Number(bulkCheckRes.value.data?.fulfilled ?? 0) : 0;
+
+      toast.success(
+        `Live Sync Complete${fulfilled > 0 ? ` • ${fulfilled} order(s) fulfilled` : ""}${retried > 0 ? ` • ${retried} queued dispatched` : ""}`,
+        { id: toastId }
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Live sync encountered an error", { id: toastId });
+    } finally {
+      setSyncingNow(false);
+    }
+  };
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -564,7 +714,10 @@ const AdminLayout = () => {
         <div className={`flex-1 rounded-[24px] overflow-hidden border backdrop-blur-3xl shadow-2xl flex flex-col ${
           isDark ? "bg-[#0a0a0f]/60 border-white/10" : "bg-white/80 border-gray-200"
         }`}>
-          <SidebarContent />
+          <SidebarContent
+            activeQueueCount={activeQueueCount}
+            pendingWithdrawalsCount={pendingWithdrawalsCount}
+          />
         </div>
       </aside>
 
@@ -601,7 +754,11 @@ const AdminLayout = () => {
                 <SheetDescription className="sr-only">
                   Access administrative navigation links and tools.
                 </SheetDescription>
-                <SidebarContent onNavigate={() => setOpen(false)} />
+                <SidebarContent
+                  onNavigate={() => setOpen(false)}
+                  activeQueueCount={activeQueueCount}
+                  pendingWithdrawalsCount={pendingWithdrawalsCount}
+                />
               </SheetContent>
             </Sheet>
 
@@ -642,7 +799,54 @@ const AdminLayout = () => {
               </button>
             </div>
 
-            <div className="ml-auto flex items-center gap-2.5">
+            <div className="ml-auto flex items-center gap-2">
+              {!isRestrictedSubAdmin && (
+                <>
+                  {/* MTN Express Mode Quick Toggle */}
+                  <button
+                    type="button"
+                    onClick={handleToggleExpressMode}
+                    disabled={togglingExpress}
+                    title={expressMode ? "MTN Express Mode is ON (BundleZone Express). Click to disable." : "Click to enable MTN Express Mode (BundleZone Express)."}
+                    className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${
+                      expressMode
+                        ? "bg-amber-400/15 border-amber-400/40 text-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.18)]"
+                        : isDark
+                          ? "bg-white/[0.03] border-white/10 text-white/45 hover:text-white/80 hover:border-white/20"
+                          : "bg-gray-100 border-gray-200 text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    {togglingExpress ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                    ) : (
+                      <Zap className={`w-3.5 h-3.5 ${expressMode ? "text-amber-400 fill-amber-400" : ""}`} />
+                    )}
+                    <span>Express {expressMode ? "ON" : "OFF"}</span>
+                  </button>
+
+                  {/* 1-Click Live Sync & Order Reconcile */}
+                  <button
+                    type="button"
+                    onClick={handleQuickReconcileAndSync}
+                    disabled={syncingNow}
+                    title={`Reconcile processing orders & sync providers (Last synced: ${lastHeartbeat.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })})`}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                      isDark
+                        ? "bg-cyan-500/10 border-cyan-500/25 text-cyan-400 hover:bg-cyan-500/20"
+                        : "bg-cyan-50 border-cyan-200 text-cyan-700 hover:bg-cyan-100"
+                    }`}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncingNow ? "animate-spin" : ""}`} />
+                    <span className="hidden xl:inline">{syncingNow ? "Syncing..." : "Sync & Check"}</span>
+                    {activeQueueCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-cyan-500/25 text-[10px] font-black">
+                        {activeQueueCount}
+                      </span>
+                    )}
+                  </button>
+                </>
+              )}
+
               {/* Account Switcher Button */}
               <button
                 type="button"

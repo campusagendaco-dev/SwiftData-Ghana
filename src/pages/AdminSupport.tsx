@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { toast } from "sonner";
 
 // Matches the fixed bot sender ID in the support-bot edge function
@@ -226,7 +227,7 @@ const AdminSupport = () => {
                 )}
               >
                 <Avatar className="w-10 h-10 border border-border">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.user_id}`} />
+                  <AvatarImage src={getSafeAvatarUrl(undefined, c.user_id)} />
                   <AvatarFallback>{c.profiles?.full_name?.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
@@ -255,7 +256,7 @@ const AdminSupport = () => {
             <div className="h-20 px-6 border-b border-border flex items-center justify-between bg-muted/30 shrink-0">
               <div className="flex items-center gap-4">
                 <Avatar className="w-10 h-10 border border-border">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedConv.user_id}`} />
+                  <AvatarImage src={getSafeAvatarUrl(undefined, selectedConv.user_id)} />
                   <AvatarFallback>{selectedConv.profiles?.full_name?.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div>

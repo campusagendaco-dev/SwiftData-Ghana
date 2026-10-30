@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -211,7 +212,7 @@ const AdminEngagement = () => {
                    <div key={claim.user_id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
                       <div className="flex items-center gap-3">
                          <Avatar className="w-10 h-10 border border-white/10">
-                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${claim.user_id}`} />
+                            <AvatarImage src={getSafeAvatarUrl(undefined, claim.user_id || claim.full_name)} />
                             <AvatarFallback>{claim.full_name?.charAt(0)}</AvatarFallback>
                          </Avatar>
                          <div>

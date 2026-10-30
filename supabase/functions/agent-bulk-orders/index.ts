@@ -66,6 +66,7 @@ serve(async (req) => {
     let totalCost = 0;
     const validOrdersToInsert = [];
     const errors = [];
+    const seenPairs = new Set<string>();
 
     for (let i = 0; i < orders.length; i++) {
       const o = orders[i];
@@ -89,6 +90,13 @@ serve(async (req) => {
         errors.push({ row: i + 1, phone: o.customer_phone, error: "Invalid phone number format" });
         continue;
       }
+
+      const pairKey = `${normPhone}:${normNet}:${size}`;
+      if (seenPairs.has(pairKey)) {
+        errors.push({ row: i + 1, phone: o.customer_phone, error: `Duplicate recipient/bundle pair (${normPhone} - ${normNet} ${o.package_size}) skipped.` });
+        continue;
+      }
+      seenPairs.add(pairKey);
 
       // Strict Server-Side Pricing Enforcement
       const requestedAmount = Number(o.amount);

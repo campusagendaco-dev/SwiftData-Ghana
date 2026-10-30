@@ -175,7 +175,7 @@ serve(async (req: Request) => {
 
     console.log(`[submit-numbers] Proxying ${validNumbers.length} number(s) to DataHub: ${targetUrl}`);
 
-    let dhResponse: Response;
+    let dhResponse: any;
     try {
       dhResponse = await fetchViaDb(
         supabaseClient,

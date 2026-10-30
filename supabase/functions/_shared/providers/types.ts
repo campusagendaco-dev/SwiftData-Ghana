@@ -31,6 +31,12 @@ export interface ProviderAdapter {
     providerOrderId: string,
     reference: string
   ): Promise<ProviderResponse>;
+
+  refundOrder?(
+    supabaseAdmin: any,
+    provider: any,
+    params: { reference?: string; orderNumber?: string | number; method?: "GET" | "POST" }
+  ): Promise<ProviderResponse>;
   
   mapNetwork(rawNetwork: string): string;
 }

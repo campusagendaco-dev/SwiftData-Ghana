@@ -121,6 +121,14 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
       console.log("[initialize-payment] Beneficiary verification disabled or non-beneficiary allowed in system settings.");
       return { ok: true };
     }
+    const { data: expressBz } = await supabaseClient.from("providers").select("is_active, settings").eq("handler_type", "bundlezone").eq("is_active", true).maybeSingle();
+    if (expressBz?.settings?.express_mode_enabled === true) {
+      console.log("[initialize-payment] BundleZone Express Mode is enabled; skipping beneficiary verification gate.");
+      return { ok: true };
+    }
+    if (false) {
+      return { ok: true };
+    }
 
     const { data: provider } = await supabaseClient
       .from("providers")
@@ -227,7 +235,7 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
             "Authorization": `Bearer ${bzApiKey}`,
           },
           body: JSON.stringify({
-            network: "YELLO",
+            network: bzProvider?.settings?.express_mode_enabled === false ? "YELLO" : "MTN_EXPRESS",
             phone_number: localFormat,
           }),
           disableFallback: true,
@@ -237,7 +245,7 @@ async function checkBeneficiaryBackend(supabaseClient: any, phone: string, netwo
           const bzJson = await bzRes.json().catch(() => ({}));
           const results = bzJson.data?.results || [];
           const match = results.find((r: any) => r.phone_number === localFormat) || results[0];
-          if (match && (String(match.verification_status || "").toUpperCase() === "VERIFIED" || match.can_order === true)) {
+          if (match && (["VERIFIED", "NOT_REQUIRED"].includes(String(match.verification_status || "").toUpperCase()) || String(match.status || "").toLowerCase() === "not_required" || match.verification_required === false || match.can_order === true)) {
             console.log(`[initialize-payment-beneficiary] Number ${localFormat} verified via BundleZone.`);
             return { ok: true };
           }

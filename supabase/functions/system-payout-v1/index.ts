@@ -6,8 +6,8 @@ import { verifyAdmin } from "../_shared/auth.ts";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { resolveProvidersForOrder } from "../_shared/providers.ts";
-import https from "node:https";
-import { HttpsProxyAgent } from "npm:https-proxy-agent";
+
+
 
 
 declare const Deno: any;
@@ -227,7 +227,7 @@ async function queryKorbaApi(
 
   // Attempt 2: Direct HTTP Fetch Fallback (if DB Proxy failed or timed out)
   // Fallback is strictly disabled for money payouts to prevent double-charging cashout requests.
-  const isFallbackEnabled = true;
+  const isFallbackEnabled = false;
   if ((!success || !responseData) && isFallbackEnabled) {
     console.log(`[Korba API Direct] Proxy failed/timed out (${proxyError}). Falling back to Direct edge fetch...`);
     let fallbackError = "";
@@ -927,7 +927,13 @@ serve(async (req: Request) => {
         const validKeys = existing ? Object.keys(existing) : [];
 
         // Define expected types for known sensitive settings
-        const BOOLEAN_KEYS = new Set(["allow_duplicate_purchases", "disable_ordering", "maintenance_mode", "auto_failover_enabled", "holiday_mode_enabled", "show_scrolling_ad", "home_page_video_muted", "mashup_automation_enabled", "auto_refund_enabled", "beneficiary_verification_enabled", "allow_non_beneficiary_continue", "auto_failover_non_beneficiary_to_datamart", "auto_gateway_switch_by_package"]);
+        const BOOLEAN_KEYS = new Set(["allow_duplicate_purchases", "disable_ordering", "maintenance_mode", "auto_failover_enabled", "holiday_mode_enabled", "show_scrolling_ad", "home_page_video_muted", "mashup_automation_enabled", "auto_refund_enabled", "beneficiary_verification_enabled", "allow_non_beneficiary_continue", "auto_failover_non_beneficiary_to_datamart", "auto_gateway_switch_by_package", "mtn_express_mode_enabled"]);
+        if (typeof settings.mtn_express_mode_enabled === "boolean") {
+          const { data: bzProvs } = await supabaseAdmin.from("providers").select("id, settings").eq("handler_type", "bundlezone");
+          for (const bp of (bzProvs || [])) {
+            await supabaseAdmin.from("providers").update({ settings: { ...(bp.settings || {}), express_mode_enabled: settings.mtn_express_mode_enabled } }).eq("id", bp.id);
+          }
+        }
         const NUMERIC_KEYS = new Set(["min_order_amount", "max_order_amount", "agent_activation_fee", "sub_agent_activation_fee", "wassce_price", "bece_price", "wassce_cost_price", "bece_cost_price", "vendor_min_transaction", "background_brightness", "background_contrast", "background_blueness", "mashup_export_threshold", "mashup_delivery_delay_mins"]);
         const STRING_KEYS = new Set(["holiday_message", "data_provider_base_url", "secondary_data_provider_base_url", "whatsapp_bot_prompt", "site_name", "scrolling_ad_text", "home_page_video_url", "mashup_whatsapp_number", "active_payment_gateway", "active_sms_gateway"]);
 
@@ -1640,100 +1646,208 @@ serve(async (req: Request) => {
       }
 
       case "get_provider_balance": {
-        const { data: activeProviders, error: providersError } = await supabaseAdmin
-          .from("providers")
-          .select("*")
-          .eq("is_active", true);
+        try {
+          const { data: activeProviders, error: providersError } = await supabaseAdmin
+            .from("providers")
+            .select("*")
+            .eq("is_active", true)
+            .order("priority", { ascending: true });
 
-        if (providersError) {
-          return new Response(JSON.stringify({ error: providersError.message }), {
-            status: 500,
+          if (providersError) {
+            return new Response(JSON.stringify({ success: false, balance: 0, results: [], error: providersError.message }), {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          const checkSingleProviderBalance = async (p: any) => {
+            const handlerType = String(p.handler_type || "standard").toLowerCase().trim();
+            const baseUrl = String(p.base_url || "").replace(/\/+$/, "");
+            const cachedBal = typeof p.balance === "number" ? p.balance : (Number(p.balance ?? p.config?.wallet_balance ?? 0) || 0);
+            const unit = handlerType === "mnotify" ? "SMS" : "GHS";
+
+            // Korba must never be hit directly from Deno Edge IPs without proxy;
+            // DataMart updates `providers.balance` on every purchase response (`remainingBalance`) and has no GET /balance route
+            if (handlerType === "korba" || baseUrl.includes("korba365.com") || handlerType === "datamart" || baseUrl.includes("datamart")) {
+              return {
+                id: p.id,
+                name: p.name,
+                handler_type: handlerType,
+                balance: Number(cachedBal.toFixed(2)),
+                unit,
+                status: handlerType === "datamart" ? "synced" : "cached",
+                is_active: p.is_active,
+                is_default: p.is_default,
+                consecutive_failures: p.consecutive_failures || 0,
+                last_synced_at: p.last_synced_at || p.updated_at,
+              };
+            }
+
+            // Always prioritize Environment Secrets per AGENTS.md rules
+            const envApiKey =
+              handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+              handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+              handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+              handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+              handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+              handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") :
+              handlerType === "afaregistration" ? Deno.env.get("AFA_API_KEY") :
+              handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+              Deno.env.get("DATA_PROVIDER_API_KEY");
+
+            const apiKey = String(envApiKey || p.api_key || "").trim();
+            if (!apiKey || (!baseUrl && handlerType !== "mnotify")) {
+              return {
+                id: p.id,
+                name: p.name,
+                handler_type: handlerType,
+                balance: cachedBal,
+                unit,
+                status: "cached",
+                reason: "Missing API key or base URL",
+                is_active: p.is_active,
+                is_default: p.is_default,
+                consecutive_failures: p.consecutive_failures || 0,
+                last_synced_at: p.last_synced_at || p.updated_at,
+              };
+            }
+
+            let balanceUrls: string[] = [];
+            if (handlerType === "bundlezone" || baseUrl.includes("bundlezone")) {
+              balanceUrls = [`${baseUrl}/api/balance.php`, `${baseUrl}/api/user.php`];
+            } else if (handlerType === "datamart" || baseUrl.includes("datamart")) {
+              balanceUrls = [`${baseUrl}/balance`, `${baseUrl}/api/balance`];
+            } else if (handlerType === "datahub" || baseUrl.includes("datahub")) {
+              balanceUrls = ["https://user.datahubgh.com/api/wallet/balance", `${baseUrl}/wallet/balance`, `${baseUrl}/balance`];
+            } else if (handlerType === "skdataplug" || baseUrl.includes("skdataplug")) {
+              balanceUrls = [`${baseUrl}/account/`, `${baseUrl}/balance`];
+            } else if (handlerType === "mnotify" || baseUrl.includes("mnotify")) {
+              const mBase = baseUrl || "https://api.mnotify.com/api";
+              balanceUrls = [`${mBase}/balance/sms?key=${encodeURIComponent(apiKey)}`];
+            } else if (handlerType === "afaregistration") {
+              balanceUrls = [`${baseUrl}/v1/me`];
+            } else {
+              balanceUrls = [`${baseUrl}/balance`, `${baseUrl}/api/balance`];
+            }
+
+            let fetchedBalance: number | null = null;
+            let lastError = "";
+
+            for (const url of balanceUrls) {
+              try {
+                const res = await fetch(url, {
+                  method: "GET",
+                  headers: {
+                    "X-API-Key": apiKey,
+                    "x-api-key": apiKey,
+                    "Authorization": apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`,
+                    "Accept": "application/json",
+                    "User-Agent": handlerType === "bundlezone" ? "BundleZone-Client/1.0" : "SwiftDataGH/2.0",
+                  },
+                  signal: AbortSignal.timeout(4000),
+                });
+
+                const text = await res.text();
+                if (res.ok) {
+                  const parsed = JSON.parse(text);
+                  const balObj = parsed.data?.balance;
+                  const rawBal =
+                    (typeof balObj === "object" && balObj !== null ? (balObj.amount ?? balObj.formatted) : balObj) ??
+                    parsed.data?.rawBalance ??
+                    parsed.data?.account?.wallet_balance ??
+                    parsed.data?.wallet_balance ??
+                    parsed.balance ??
+                    parsed.sms_balance ??
+                    parsed.user?.balance ??
+                    parsed.account?.balance ??
+                    parsed.wallet_balance ??
+                    parsed.walletBalance;
+
+                  if (rawBal !== undefined && rawBal !== null) {
+                    const numBal = typeof rawBal === "string" ? parseFloat(rawBal.replace(/[^\d.-]/g, "")) : Number(rawBal);
+                    if (!Number.isNaN(numBal)) {
+                      fetchedBalance = numBal;
+                      break;
+                    }
+                  }
+                } else {
+                  lastError = `HTTP ${res.status}: ${text.slice(0, 80)}`;
+                }
+              } catch (err: any) {
+                lastError = err?.message || "Timeout / Network error";
+              }
+            }
+
+            const nowIso = new Date().toISOString();
+            if (fetchedBalance !== null) {
+              await supabaseAdmin
+                .from("providers")
+                .update({ balance: fetchedBalance, last_synced_at: nowIso })
+                .eq("id", p.id);
+
+              return {
+                id: p.id,
+                name: p.name,
+                handler_type: handlerType,
+                balance: fetchedBalance,
+                unit,
+                status: "synced",
+                is_active: p.is_active,
+                is_default: p.is_default,
+                consecutive_failures: p.consecutive_failures || 0,
+                last_synced_at: nowIso,
+              };
+            }
+
+            return {
+              id: p.id,
+              name: p.name,
+              handler_type: handlerType,
+              balance: cachedBal,
+              unit,
+              status: "cached",
+              reason: lastError,
+              is_active: p.is_active,
+              is_default: p.is_default,
+              consecutive_failures: p.consecutive_failures || 0,
+              last_synced_at: p.last_synced_at || p.updated_at,
+            };
+          };
+
+          const results = await Promise.all((activeProviders || []).map(checkSingleProviderBalance));
+
+          const primaryProvider =
+            results.find((r) => r.is_default && r.unit === "GHS" && r.balance > 0) ??
+            results.find((r) => r.handler_type === "datamart" && r.balance > 0) ??
+            results.find((r) => r.handler_type === "bundlezone" && r.balance > 0) ??
+            results.find((r) => r.handler_type === "datahub" && r.balance > 0) ??
+            results.find((r) => r.unit === "GHS" && r.balance > 0) ??
+            results[0];
+
+          const primaryBalance = Number(primaryProvider?.balance ?? 0);
+
+          return new Response(JSON.stringify({
+            success: true,
+            balance: primaryBalance,
+            primary_provider: primaryProvider?.name || "Primary Provider",
+            results,
+            balances: results,
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } catch (err: any) {
+          console.error("[get_provider_balance] Unexpected error:", err);
+          return new Response(JSON.stringify({
+            success: false,
+            balance: 0,
+            results: [],
+            error: err?.message || String(err),
+          }), {
+            status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-
-        const results = [];
-
-        for (const p of activeProviders || []) {
-          const envApiKey =
-            p.handler_type === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
-            p.handler_type === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
-            p.handler_type === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
-            p.handler_type === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
-            p.handler_type === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
-            p.handler_type === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
-            Deno.env.get("DATA_PROVIDER_API_KEY");
-          const apiKey = (envApiKey || p.api_key || "").trim();
-          const baseUrl = (p.base_url || "").replace(/\/+$/, "");
-          if (!apiKey || !baseUrl) continue;
-
-          let balanceUrls = [
-            `${baseUrl}/balance`,
-            `${baseUrl}/api/balance`,
-            `${baseUrl}/user/balance`,
-          ];
-
-          // Specific overrides for known providers
-          if (baseUrl.includes("spendless.top")) {
-            balanceUrls = [`${baseUrl}/balance`].concat(balanceUrls);
-          }
-
-          let fetchedBalance: number | null = null;
-          let lastError = "";
-
-          for (const url of balanceUrls) {
-            try {
-              const res = await fetch(url, {
-                method: "GET",
-                headers: {
-                  "X-API-Key": apiKey,
-                  "Authorization": `Bearer ${apiKey}`,
-                  "Accept": "application/json",
-                  "User-Agent": "SwiftDataGH/2.0",
-                },
-              });
-
-              const text = await res.text();
-              if (res.ok) {
-                const parsed = JSON.parse(text);
-                const bal = parsed.balance ?? parsed.data?.balance ?? parsed.wallet_balance ?? parsed.walletBalance;
-                if (bal !== undefined) {
-                  fetchedBalance = Number(bal);
-                  break;
-                }
-              } else {
-                lastError = `HTTP ${res.status}: ${text.slice(0, 100)}`;
-              }
-            } catch (err: any) {
-              lastError = err.message || "Network error";
-            }
-          }
-
-          if (fetchedBalance !== null) {
-            // Persist the synced balance in the database
-            await supabaseAdmin
-              .from("providers")
-              .update({ balance: fetchedBalance, last_balance_check: new Date().toISOString() })
-              .eq("id", p.id);
-
-            results.push({ id: p.id, name: p.name, balance: fetchedBalance, status: "synced" });
-          } else {
-            results.push({ id: p.id, name: p.name, status: "failed_to_sync", reason: lastError });
-          }
-        }
-
-        const primaryBalance = results.find(r => r.status === "synced" && r.name.toLowerCase().includes("datahub"))?.balance 
-          ?? results.find(r => r.status === "synced")?.balance 
-          ?? 0;
-
-        return new Response(JSON.stringify({
-          success: true,
-          balance: Number(primaryBalance),
-          results,
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
       }
 
       case "get_edge_ip": {

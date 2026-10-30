@@ -66,7 +66,9 @@ BEGIN
   LIMIT 1;
 
   -- 5. Calculate Pricing
-  IF v_pkg_row IS NOT NULL THEN
+  -- Note: In PL/pgSQL, `RECORD IS NOT NULL` is only true when EVERY column in the record is non-null.
+  -- Check `v_pkg_row.id IS NOT NULL` so nullable columns (e.g. cost_price/api_price) never cause a false negative.
+  IF v_pkg_row.id IS NOT NULL THEN
     IF v_pkg_row.is_unavailable THEN
       RAISE EXCEPTION 'Package is currently unavailable';
     END IF;

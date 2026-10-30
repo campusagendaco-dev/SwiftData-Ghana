@@ -130,9 +130,15 @@ const AdminStandardOrders = () => {
       const cleanSearch = sanitizeSearchTerm(search);
       const isUuid = UUID_REGEX.test(cleanSearch);
       const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
+      const digitsOnly = cleanSearch.replace(/\D/g, "");
+      const isPhoneQuery = /^(\+?233|0)\d{8,9}$/.test(cleanSearch.replace(/\s+/g, "")) && digitsOnly.length >= 9;
 
       if (isUuid) {
         q = q.or(`id.eq.${cleanSearch},agent_id.eq.${cleanSearch}`);
+      } else if (isPhoneQuery) {
+        const core9 = digitsOnly.slice(-9);
+        const phoneVariants = Array.from(new Set([cleanSearch, `0${core9}`, `233${core9}`, `+233${core9}`, core9]));
+        q = q.in("customer_phone", phoneVariants);
       } else {
         const { data: matchedProfiles } = await supabase
           .from("profiles")
@@ -765,7 +771,7 @@ const AdminStandardOrders = () => {
                           <Badge variant="outline" className={`font-black uppercase tracking-wider text-[8px] px-1.5 py-0.5 ${STATUS_COLORS[o.status] || "bg-secondary text-secondary-foreground"}`}>
                             {o.status.replace("_", " ")}
                           </Badge>
-                          {o.failure_reason && (
+                          {o.failure_reason && o.status !== "fulfilled" && o.status !== "processing" && (
                             <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate leading-normal" title={o.failure_reason.replace(/^Route not found/i, "Order not found on provider")}>
                               Reason: {o.failure_reason.replace(/^Route not found/i, "Order not found on provider")}
                             </p>

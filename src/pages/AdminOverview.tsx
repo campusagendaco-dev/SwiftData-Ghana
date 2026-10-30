@@ -135,6 +135,8 @@ const AdminOverview = () => {
   const [dailySales, setDailySales] = useState<DailySalesPoint[]>([]);
   const [todaySales, setTodaySales] = useState<TodaySales & { gb: number; count: number }>({ total: 0, customers: 0, agents: 0, subAgents: 0, successCount: 0, failedCount: 0, pendingCount: 0, newUsers: 0, gb: 0, count: 0 });
   const [providerBalance, setProviderBalance] = useState<number | null>(null);
+  const [providerBalancesList, setProviderBalancesList] = useState<any[]>([]);
+  const [syncingProviders, setSyncingProviders] = useState(false);
   const [providerDiagnostics, setProviderDiagnostics] = useState<any>(null);
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "1y" | "all">("7d");
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
@@ -189,10 +191,11 @@ const AdminOverview = () => {
       supabase.from("profiles").select("id", { count: "exact", head: true }),
       supabase.from("profiles").select("id", { count: "exact", head: true }).eq("is_agent", true).eq("is_sub_agent" as any, false).eq("agent_approved", false),
       supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", todayIso),
+      supabase.from("providers").select("id, name, handler_type, balance, is_active, consecutive_failures, last_synced_at, priority").eq("is_active", true).order("priority", { ascending: true }),
     ]);
 
     const unwrap = (r: PromiseSettledResult<any>) => r.status === "fulfilled" ? r.value : { data: null, error: null };
-    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes, aiRes, totalUsersCountRes, pendingAgentsCountRes, todayUsersCountRes] = settled.map(unwrap);
+    const [ordersRes, profilesRes, maintenanceRes, recentRes, rangeOrdersRes, providerRes, withdrawalsRes, ticketsRes, topupsRes, auditRes, walletsRes, salesStatsRes, rpcStatsRes, aiRes, totalUsersCountRes, pendingAgentsCountRes, todayUsersCountRes, dbProvidersRes] = settled.map(unwrap);
 
     if (aiRes && aiRes.data) {
       setAiRecommendations(aiRes.data);
@@ -388,10 +391,27 @@ const AdminOverview = () => {
     setAuditLogs(auditRes.data || []);
     
     if (providerRes.data?.success) {
-      setProviderBalance(providerRes.data.balance);
+      setProviderBalance(Number(providerRes.data.balance ?? 0));
+      if (Array.isArray(providerRes.data.results) && providerRes.data.results.length > 0) {
+        setProviderBalancesList(providerRes.data.results);
+      } else if (Array.isArray(dbProvidersRes?.data)) {
+        setProviderBalancesList(dbProvidersRes.data);
+      }
       setProviderDiagnostics(providerRes.data.diagnostics);
-    } else if (providerRes.data?.diagnostics) {
-      setProviderDiagnostics(providerRes.data.diagnostics);
+    } else {
+      if (Array.isArray(dbProvidersRes?.data) && dbProvidersRes.data.length > 0) {
+        setProviderBalancesList(dbProvidersRes.data);
+        const fallbackPrimary =
+          dbProvidersRes.data.find((p: any) => p.priority === 1 && Number(p.balance) > 0) ??
+          dbProvidersRes.data.find((p: any) => Number(p.balance) > 0) ??
+          dbProvidersRes.data[0];
+        if (fallbackPrimary) {
+          setProviderBalance(Number(fallbackPrimary.balance || 0));
+        }
+      }
+      if (providerRes.data?.diagnostics) {
+        setProviderDiagnostics(providerRes.data.diagnostics);
+      }
     }
 
     if (maintenanceError) {
@@ -500,18 +520,24 @@ const AdminOverview = () => {
 
     const profilesChannel = supabase
       .channel(`admin_live_profiles_${rand}`)
-      .on("postgres_changes", { event: "*", table: "profiles", schema: "public" }, () => {
+      .on("postgres_changes", { event: "INSERT", table: "profiles", schema: "public" }, () => {
         safeFetchData();
         setUpdatedKeys(new Set(["Pending Agents", "Active Users"]));
         setTimeout(() => setUpdatedKeys(new Set()), 1500);
       })
       .subscribe();
 
+    const handleGlobalAdminRefresh = () => {
+      safeFetchData();
+    };
+    window.addEventListener("swiftdata:admin-refresh", handleGlobalAdminRefresh);
+
     const interval = setInterval(safeFetchData, 60_000);
 
     return () => {
       supabase.removeChannel(ordersChannel);
       supabase.removeChannel(profilesChannel);
+      window.removeEventListener("swiftdata:admin-refresh", handleGlobalAdminRefresh);
       clearInterval(interval);
     };
   }, [timeRange, safeFetchData, refreshChart, toast]);
@@ -709,6 +735,105 @@ const AdminOverview = () => {
           );
         })}
       </div>
+
+      {/* ── LIVE MULTI-PROVIDER TELEMETRY & WALLETS STRIP ── */}
+      {providerBalancesList.length > 0 && (
+        <div className="glass-card-neo p-5 rounded-3xl border border-white/10 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center">
+                <Server className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div>
+                <h2 className="text-sm sm:text-base font-black text-foreground tracking-tight flex items-center gap-2">
+                  Live Provider Wallets & Gateway Health
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-mono uppercase">
+                    {providerBalancesList.length} Active
+                  </span>
+                </h2>
+                <p className="text-[11px] text-muted-foreground">
+                  Real-time balances across BundleZone (MTN Express), DataMart, DataHub, SKPlug, mNotify &amp; Korba
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={syncingProviders}
+              onClick={async () => {
+                setSyncingProviders(true);
+                try {
+                  const { data: sessionData } = await supabase.auth.getSession();
+                  const token = sessionData?.session?.access_token || "";
+                  const res = await supabase.functions.invoke("system-payout-v1", {
+                    body: { action: "get_provider_balance" },
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                  });
+                  if (res.data?.success && Array.isArray(res.data.results)) {
+                    setProviderBalancesList(res.data.results);
+                    setProviderBalance(Number(res.data.balance ?? 0));
+                    toast({ title: "Provider balances synced", description: "All active provider wallets refreshed." });
+                  }
+                } catch (err: any) {
+                  toast({ title: "Provider sync failed", description: err?.message || "Error", variant: "destructive" });
+                } finally {
+                  setSyncingProviders(false);
+                }
+              }}
+              className="h-8 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider gap-1.5 border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", syncingProviders && "animate-spin")} />
+              {syncingProviders ? "Refreshing..." : "Refresh Balances"}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {providerBalancesList.map((prov: any) => {
+              const bal = Number(prov.balance ?? 0);
+              const isSms = prov.unit === "SMS" || String(prov.handler_type || "").toLowerCase() === "mnotify";
+              const isDegraded = Number(prov.consecutive_failures || 0) >= 3;
+              const isExpress = String(prov.handler_type || "").toLowerCase() === "bundlezone";
+              return (
+                <div
+                  key={prov.id || prov.name}
+                  className={cn(
+                    "p-3 rounded-2xl border transition-all flex flex-col justify-between gap-2",
+                    isDegraded
+                      ? "bg-amber-500/10 border-amber-500/30"
+                      : isExpress
+                        ? "bg-amber-400/5 border-amber-400/25"
+                        : "bg-background/40 border-white/10"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs font-black truncate text-foreground">{prov.name}</span>
+                    <span
+                      className={cn(
+                        "w-2 h-2 rounded-full shrink-0",
+                        isDegraded ? "bg-amber-400 animate-pulse" : "bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]"
+                      )}
+                      title={isDegraded ? `${prov.consecutive_failures} recent failures` : "Healthy"}
+                    />
+                  </div>
+                  <div>
+                    <p className={cn("text-base sm:text-lg font-black font-mono tracking-tight", isSms ? "text-amber-400" : bal > 50 ? "text-emerald-400" : "text-cyan-400")}>
+                      {isSms ? `${bal.toLocaleString()} SMS` : `GH₵ ${bal.toFixed(2)}`}
+                    </p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
+                        {isExpress ? "MTN EXPRESS" : prov.is_default ? "PRIMARY" : String(prov.handler_type || "API").toUpperCase()}
+                      </span>
+                      {prov.status === "synced" && (
+                        <span className="text-[9px] font-mono text-emerald-400/80">LIVE</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── GLOBAL CONTROL HUB & MAINTENANCE ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

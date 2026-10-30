@@ -6,6 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, sendSmsViaTxtConnect, getSmsConfig } from "../_shared/sms.ts";
 import { getActiveProviders, logProviderError } from "../_shared/providers.ts";
 import { notifyWalletCredit } from "../_shared/webhooks.ts";
+import { StandardAdapter } from "../_shared/providers/standard.ts";
 
 function getEnv(...keys: string[]): string {
   for (const k of keys) { const v = (Deno as any).env.get(k)?.trim(); if (v) return v; }
@@ -120,7 +121,7 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
 
   if (handlerType === "datahub") {
     // DataHub has a fixed URL structure — always just append the alias directly
-    const alias = endpoint === "purchase" ? "data-purchase" : (endpoint === "status" ? "order-status" : endpoint);
+    const alias = endpoint === "purchase" ? "data-purchase" : (endpoint === "status" ? "order-status" : (endpoint === "refund" || endpoint === "order-refund" ? "order-refund" : endpoint));
     return [`${clean}/${alias}`];
   }
 
@@ -713,11 +714,12 @@ serve(async (req: Request) => {
     else if (p.endsWith("/payment/ecg/lookup")) finalAction = "ecg_lookup";
     else if (p.endsWith("/payment/ecg")) finalAction = "ecg_pay";
     else if (p.endsWith("/purchases/submit-numbers") || p.endsWith("/submit-numbers")) finalAction = "submit_numbers";
+    else if (p.endsWith("/order-refund") || p.endsWith("/order_refund") || action === "order-refund") finalAction = "order_refund";
     else if (p.endsWith("/service-status")) finalAction = "service_status";
     else if (p === "" || p === "/" || p.endsWith("/developer-api")) finalAction = action || "index";
 
-    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "orders_summary", "status", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
-    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "orders_summary", "status", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
+    const allowedActions: string[] = profile.allowed_actions || ["balance", "plans", "account", "buy", "orders", "orders_summary", "status", "order_refund", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"];
+    if (!allowedActions.includes(finalAction) && !["index", "account", "balance", "plans", "buy", "orders", "orders_summary", "status", "order_refund", "callback", "wallets", "wallet_transfer", "afa_registration", "results_checker", "validate_bill", "pay_bill", "ecg_lookup", "ecg_pay", "service_status", "submit_numbers"].includes(finalAction)) {
       return json({ success: false, error: `Action '${finalAction}' not permitted.` }, 403);
     }
 
@@ -1790,6 +1792,169 @@ serve(async (req: Request) => {
           statusDescription
         }
       });
+    }
+
+    if (finalAction === "order_refund") {
+      if (req.method !== "GET" && req.method !== "POST") {
+        return json({ success: false, error: "Method not allowed. Use GET or POST." }, 405);
+      }
+
+      let refParam = (url.searchParams.get("reference") || "").trim();
+      let orderNumberParam = (url.searchParams.get("orderNumber") || "").trim();
+
+      if (req.method === "POST") {
+        const body = await req.json().catch(() => null);
+        if (body && typeof body === "object") {
+          requestPayload = body;
+          if (body.reference !== undefined && body.reference !== null && String(body.reference).trim() !== "") {
+            refParam = String(body.reference).trim();
+          }
+          if (body.orderNumber !== undefined && body.orderNumber !== null && String(body.orderNumber).trim() !== "") {
+            orderNumberParam = String(body.orderNumber).trim();
+          }
+        }
+      }
+
+      const targetIdentifier = refParam || orderNumberParam;
+      if (!targetIdentifier) {
+        return json({
+          success: false,
+          error: "Either 'reference' or 'orderNumber' is required"
+        }, 400);
+      }
+
+      let orderQuery = supabase
+        .from("orders")
+        .select("*")
+        .eq("agent_id", currentUserId);
+
+      if (UUID_RE.test(targetIdentifier)) {
+        orderQuery = orderQuery.or(`id.eq.${targetIdentifier},provider_order_id.eq.${targetIdentifier},metadata->>client_reference.eq.${targetIdentifier}`);
+      } else {
+        orderQuery = orderQuery.or(`provider_order_id.eq.${targetIdentifier},metadata->>client_reference.eq.${targetIdentifier}`);
+      }
+
+      const { data: order, error: ordErr } = await orderQuery.limit(1).maybeSingle();
+      if (ordErr || !order) {
+        return json({
+          success: false,
+          error: "Order not found"
+        }, 404);
+      }
+
+      // Only orders owned by the account that are both manual and PROCESSING can be refunded.
+      // Completed, API-provider (unless upstream DataHub confirms self-refund), pending, and already-refunded orders are rejected.
+      if (order.status !== "processing" || order.auto_refunded === true) {
+        return json({
+          success: false,
+          error: "Order is not eligible for refund"
+        }, 400);
+      }
+
+      const hasProviderRef = Boolean(
+        order.provider_order_id &&
+        order.provider_order_id !== "" &&
+        order.provider_order_id !== "failed_api_call" &&
+        order.provider_order_id !== "timeout" &&
+        order.provider_order_id !== "manual_fulfillment_mode" &&
+        order.provider_order_id !== "refunded"
+      );
+
+      let upstreamRefundData: any = null;
+      if (order.provider_id || hasProviderRef) {
+        let assignedProvider: any = null;
+        if (order.provider_id) {
+          const { data: provRow } = await supabase
+            .from("providers")
+            .select("*")
+            .eq("id", order.provider_id)
+            .maybeSingle();
+          assignedProvider = provRow;
+        }
+        const handlerType = String(assignedProvider?.handler_type || "").toLowerCase();
+        const isDataHub = handlerType === "datahub" || String(assignedProvider?.name || "").toLowerCase().includes("datahub");
+
+        if (!isDataHub || !assignedProvider) {
+          return json({
+            success: false,
+            error: "Order is not eligible for refund"
+          }, 400);
+        }
+
+        const standardAdapter = new StandardAdapter();
+        const dhRefund = await standardAdapter.refundDataHubOrder(supabase, assignedProvider, {
+          reference: order.id,
+          orderNumber: orderNumberParam || order.provider_order_id,
+          method: req.method === "GET" ? "GET" : "POST",
+        });
+
+        if (!dhRefund.ok) {
+          const status = dhRefund.status === "not_found" ? 404 : dhRefund.status === "unauthorized" ? 401 : 400;
+          return json({
+            success: false,
+            error: dhRefund.reason || "Order is not eligible for refund"
+          }, status);
+        }
+
+        upstreamRefundData = dhRefund.raw || null;
+      }
+
+      await supabase
+        .from("orders")
+        .update({
+          provider_order_id: "refunded",
+          failure_reason: "Self-refunded via /order-refund",
+          metadata: {
+            ...(order.metadata || {}),
+            self_refunded_at: new Date().toISOString(),
+            ...(upstreamRefundData ? { datahub_refund_data: upstreamRefundData } : {}),
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      const { data: refundSuccess, error: rpcErr } = await supabase.rpc("refund_failed_order", {
+        p_order_id: order.id,
+      });
+
+      if (rpcErr || !refundSuccess) {
+        return json({
+          success: false,
+          error: "Order is not eligible for refund"
+        }, 400);
+      }
+
+      const { data: walletRow } = await supabase
+        .from("wallets")
+        .select("balance, api_balance")
+        .eq("agent_id", currentUserId)
+        .maybeSingle();
+
+      const updatedAtIso = new Date().toISOString();
+      const paidAmt = Number(order.amount || 0);
+      const clientReference = String(order.metadata?.client_reference || order.id);
+      const resolvedOrderNum = upstreamRefundData?.orderNumber
+        ?? (/^\d+$/.test(String(order.provider_order_id || "")) ? Number(order.provider_order_id) : order.id);
+      const newBalanceVal = Number(walletRow?.balance ?? walletRow?.api_balance ?? 0);
+
+      return json({
+        success: true,
+        message: "Refund credited to your wallet",
+        data: {
+          orderNumber: resolvedOrderNum,
+          reference: clientReference,
+          status: "REFUNDED",
+          network: String(order.network || "").toUpperCase(),
+          recipient: String(order.customer_phone || ""),
+          dataAmount: String(order.package_size || ""),
+          amountPaid: paidAmt,
+          orderDate: order.created_at,
+          updatedAt: updatedAtIso,
+          completedAt: null,
+          refundedAmount: paidAmt,
+          newBalance: newBalanceVal
+        }
+      }, 200);
     }
 
     if (finalAction === "index") {

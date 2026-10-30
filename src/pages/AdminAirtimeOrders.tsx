@@ -824,7 +824,7 @@ const AdminAirtimeOrders = () => {
                           <Badge variant="outline" className={`font-black uppercase tracking-wider text-[8px] px-1.5 py-0.5 ${STATUS_COLORS[o.status] || "bg-secondary text-secondary-foreground"}`}>
                             {o.status.replace("_", " ")}
                           </Badge>
-                          {o.failure_reason && (
+                          {o.failure_reason && o.status !== "fulfilled" && o.status !== "processing" && (
                             <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate leading-normal" title={o.failure_reason}>
                               Reason: {o.failure_reason}
                             </p>

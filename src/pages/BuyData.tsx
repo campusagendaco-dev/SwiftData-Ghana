@@ -19,6 +19,7 @@ import SEO from "@/components/SEO";
 import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
+import { MtnExpressConfirmModal } from "@/components/MtnExpressConfirmModal";
 
 const NETWORK_ACCENT: Record<string, { dot: string; text: string; soft: string; hex: string }> = {
   MTN: {
@@ -288,6 +289,8 @@ const BuyData = () => {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
+  const [showMtnExpressModal, setShowMtnExpressModal] = useState(false);
+  const [mtnExpressModeEnabled, setMtnExpressModeEnabled] = useState(true);
 
   // Beneficiary verification state
   const [beneficiaryStatus, setBeneficiaryStatus] = useState<"idle" | "checking" | "verified" | "not_verified" | "not_required">("idle");
@@ -366,6 +369,9 @@ const BuyData = () => {
         setOrderingDisabled(Boolean(sys.disable_ordering));
         if (sys.active_payment_gateway) {
           setActiveGateway(sys.active_payment_gateway);
+        }
+        if (typeof sys.mtn_express_mode_enabled === "boolean") {
+          setMtnExpressModeEnabled(sys.mtn_express_mode_enabled);
         }
       }
       setPriceMultipliers(pricingCtx.multipliers);
@@ -814,11 +820,16 @@ const BuyData = () => {
     }
   };
 
-  const handlePay = async () => {
+  const handlePay = async (mtnExpressConfirmed = false) => {
     if (!selectedPkg) return;
     if (!isPhoneValid) {
       toast({ title: "Enter a valid phone number first", variant: "destructive" });
       phoneInputRef.current?.focus();
+      return;
+    }
+    const isMtnAffordable = selectedNetwork === "MTN" && (selectedTypeOrCategory === "affordable" || selectedTypeOrCategory === "sme");
+    if (isMtnAffordable && mtnExpressModeEnabled && mtnExpressConfirmed !== true) {
+      setShowMtnExpressModal(true);
       return;
     }
     saveRecentNumber(phoneDigits);
@@ -1648,7 +1659,7 @@ const BuyData = () => {
                       </button>
                     ) : (
                       <button
-                        onClick={handlePay}
+                        onClick={() => void handlePay(false)}
                         disabled={buying || !isPhoneValid}
                         className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-black font-black uppercase text-xs tracking-wider shadow-sm flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-105 disabled:opacity-30"
                       >
@@ -1691,6 +1702,18 @@ const BuyData = () => {
         metadata={checkoutMetadata}
         onSuccess={handleCheckoutSuccess}
         onFailure={handleCheckoutFailure}
+      />
+
+      <MtnExpressConfirmModal
+        open={showMtnExpressModal}
+        recipientPhone={phoneDigits || phone}
+        packageSize={selectedPkg ? `MTN ${selectedPkg.size}` : undefined}
+        amount={total}
+        onCancel={() => setShowMtnExpressModal(false)}
+        onConfirm={() => {
+          setShowMtnExpressModal(false);
+          void handlePay(true);
+        }}
       />
     </div>
   );

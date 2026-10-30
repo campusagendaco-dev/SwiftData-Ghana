@@ -11,6 +11,7 @@ import {
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -123,7 +124,7 @@ const DashboardProfile = () => {
                 <div className="relative group">
                   <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full blur opacity-40 group-hover:opacity-75 transition duration-500"></div>
                   <Avatar className="w-24 h-24 sm:w-32 sm:h-32 border-4 border-card relative">
-                    <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} />
+                    <AvatarImage src={getSafeAvatarUrl(profile?.avatar_url, user?.id || user?.email)} />
                     <AvatarFallback className="text-2xl bg-primary/10">
                       {profile?.full_name?.charAt(0) || "U"}
                     </AvatarFallback>

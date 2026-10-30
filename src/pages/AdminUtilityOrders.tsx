@@ -43,6 +43,7 @@ interface OrderRow {
   agent_phone?: string;
   is_sub_agent?: boolean;
   metadata?: any;
+  payment_method?: string;
 }
 
 interface AgentProfile {
@@ -636,7 +637,7 @@ const AdminUtilityOrders = () => {
                               Token: {o.metadata.token}
                             </div>
                           )}
-                          {o.failure_reason && !o.metadata?.token && (
+                          {o.failure_reason && o.status !== "fulfilled" && o.status !== "processing" && !o.metadata?.token && (
                             <p className="text-[9px] text-red-500 font-medium max-w-[150px] truncate leading-normal" title={o.failure_reason}>
                               Reason: {o.failure_reason}
                             </p>

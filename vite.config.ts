@@ -111,7 +111,7 @@ export default defineConfig(({ mode }) => ({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        maximumFileSizeToCacheInBytes: 10000000,
+        maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
         globPatterns: ["**/*.{ico,png,svg,html}"],
         // Never serve cached HTML for JS/CSS asset requests — prevents stale chunk errors
         navigateFallback: "index.html",
@@ -144,6 +144,21 @@ export default defineConfig(({ mode }) => ({
             options: {
               cacheName: "audio-cache",
               rangeRequests: true,
+              cacheableResponse: {
+                statuses: [0, 200, 206],
+              },
+            },
+          },
+          {
+            urlPattern: /\.(?:mp4|webm|mov)(?:\?.*)?$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "swiftdata-hero-video-sw-cache",
+              rangeRequests: true,
+              expiration: {
+                maxEntries: 5,
+                maxAgeSeconds: 60 * 60 * 24 * 60, // 60 days
+              },
               cacheableResponse: {
                 statuses: [0, 200, 206],
               },

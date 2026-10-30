@@ -31,13 +31,22 @@ serve(async (req: Request) => {
     const { page = 1, limit = 50, auto_fix = true } = await req.json().catch(() => ({}));
     
     // 1. Get DataMart Credentials
-    const { data: settings } = await supabaseAdmin
-      .from("v_system_settings_with_secrets").select("data_provider_api_key, data_provider_base_url")
-      .eq("id", 1)
-      .maybeSingle();
+    const [{ data: settings }, { data: dmProvider }] = await Promise.all([
+      supabaseAdmin
+        .from("v_system_settings_with_secrets")
+        .select("data_provider_api_key, data_provider_base_url")
+        .eq("id", 1)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("providers")
+        .select("api_key, base_url")
+        .eq("handler_type", "datamart")
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
-    const apiKey = Deno.env.get("DATAMART_API_KEY") || settings?.data_provider_api_key;
-    const baseUrl = (Deno.env.get("DATAMART_BASE_URL") || settings?.data_provider_base_url || "").replace(/\/+$/, "");
+    const apiKey = Deno.env.get("DATAMART_API_KEY") || dmProvider?.api_key || settings?.data_provider_api_key || "";
+    const baseUrl = (Deno.env.get("DATAMART_BASE_URL") || dmProvider?.base_url || settings?.data_provider_base_url || "https://api.datamartgh.shop/api/developer").replace(/\/+$/, "");
 
     if (!apiKey) throw new Error("DataMart API Key not configured");
 

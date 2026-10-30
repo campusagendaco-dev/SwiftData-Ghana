@@ -806,31 +806,49 @@ serve(async (req: any) => {
           reference: targetReference,
         }, "status");
 
-        if (checkResult.ok) {
+        const rawCheckStatus = String(checkResult.status || "").toLowerCase();
+        const isExplicitFailCheck = ["failed", "rejected", "cancelled", "declined", "refunded", "reversed"].includes(rawCheckStatus);
+
+        if (checkResult.ok || isExplicitFailCheck || rawCheckStatus === "failed_pending_refund" || rawCheckStatus === "submission_unknown") {
           foundOnProvider = true;
-          const isDelivered = checkResult.status === "delivered" || checkResult.status === "success" || checkResult.status === "successful" || checkResult.status === "fulfilled" || checkResult.status === "completed" || checkResult.status === "sent";
-          const isFailed = checkResult.status === "failed" || checkResult.status === "error" || checkResult.status === "refunded";
+          const isDelivered = rawCheckStatus === "delivered" || rawCheckStatus === "success" || rawCheckStatus === "successful" || rawCheckStatus === "fulfilled" || rawCheckStatus === "completed" || rawCheckStatus === "sent";
+          const isPendingRefund = rawCheckStatus === "failed_pending_refund" || rawCheckStatus === "submission_unknown";
+          const isFailed = !isPendingRefund && isExplicitFailCheck;
           if (isDelivered) {
             const token = (checkResult as any).raw?.prepaid_token;
             await fulfillOrder(supabaseAdmin, targetReference, provider.id, existingOrder.provider_order_id, token || null);
             return new Response(JSON.stringify({ status: "fulfilled", provider_order_id: existingOrder.provider_order_id, message: token ? `Token: ${token}` : null }), { headers: corsHeaders });
           } else if (isFailed) {
-            const targetStatus = "fulfillment_failed";
-            const resolvedReason = translateFailureReason(
-              checkResult.reason || "Provider reported failure during status check",
-              existingOrder?.network,
-              existingOrder?.order_type,
-              provider?.handler_type
-            );
-            await supabaseAdmin.from("orders").update({ 
-              status: targetStatus, 
-              failure_reason: resolvedReason 
+            const failReason = checkResult.reason || (rawCheckStatus === "refunded" ? "Provider refunded order" : `Provider reported ${rawCheckStatus}`);
+            console.log(`[verify-payment] Order ${targetReference} rejected/failed at ${provider.name} during status check (${rawCheckStatus}: ${failReason}). Unlocking for automatic failover to next available provider...`);
+
+            const failedIds = Array.isArray(existingOrder.metadata?.failed_provider_ids)
+              ? [...existingOrder.metadata.failed_provider_ids]
+              : [];
+            if (!failedIds.includes(provider.id)) failedIds.push(provider.id);
+
+            await logProviderError(supabaseAdmin, provider.id, targetReference, failReason);
+
+            await supabaseAdmin.from("orders").update({
+              provider_id: null,
+              provider_order_id: "failed_api_call",
+              failure_reason: `Rejected by ${provider.name}. Re-routing to alternative verified provider.`,
+              metadata: {
+                ...(existingOrder.metadata || {}),
+                failed_provider_ids: failedIds,
+                last_failed_provider: provider.name,
+                refund_detected_at: new Date().toISOString(),
+              },
+              updated_at: new Date().toISOString()
             }).eq("id", targetReference);
-            return new Response(JSON.stringify({ 
-              status: targetStatus, 
-              provider_order_id: existingOrder.provider_order_id,
-              reason: resolvedReason
-            }), { headers: corsHeaders });
+
+            existingOrder.metadata = {
+              ...(existingOrder.metadata || {}),
+              failed_provider_ids: failedIds,
+            };
+            existingOrder.provider_order_id = "failed_api_call";
+            existingOrder.provider_id = null;
+            break; // Fall through to Section 3 & 4 to dispatch to next available provider
           } else {
             console.log(`[verify-payment] Order ${targetReference} is still processing at provider. Status: ${checkResult.status}`);
             return new Response(JSON.stringify({ status: "processing", provider_order_id: existingOrder.provider_order_id }), { headers: corsHeaders });
@@ -906,11 +924,14 @@ serve(async (req: any) => {
           order_id: currentRef || targetReference 
         }, "status");
         
-        if (checkResult.ok) {
-          const rawStatus = String(checkResult.status || "").toLowerCase();
+        const rawStatus = String(checkResult.status || "").toLowerCase();
+        const isExplicitFailStatus = ["failed", "rejected", "cancelled", "declined", "refunded", "reversed"].includes(rawStatus);
+
+        if (checkResult.ok || isExplicitFailStatus || rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown") {
           const isDelivered = rawStatus === "delivered" || rawStatus === "success" || rawStatus === "successful" || rawStatus === "fulfilled" || rawStatus === "completed" || rawStatus === "sent";
-          const isFailed = rawStatus === "failed" || rawStatus === "rejected" || rawStatus === "cancelled" || rawStatus === "refunded" || rawStatus === "reversed";
-          const isProcessing = !isFailed && (rawStatus === "processing" || rawStatus === "pending" || rawStatus === "queued" || rawStatus === "ongoing");
+          const isPendingRefund = rawStatus === "failed_pending_refund" || rawStatus === "submission_unknown";
+          const isFailed = !isPendingRefund && isExplicitFailStatus;
+          const isProcessing = isPendingRefund || (!isFailed && (rawStatus === "processing" || rawStatus === "pending" || rawStatus === "queued" || rawStatus === "ongoing"));
           
           if (isDelivered) {
             console.log(`[verify-payment] Found fulfilled order ${targetReference} at ${provider.name} during pre-check.`);
@@ -1019,7 +1040,8 @@ serve(async (req: any) => {
     const isInternalPayment = 
       ["wallet", "promo", "balance", "api"].includes(paymentMethod) || 
       status === "paid" ||
-      (status === "processing" && !isQueuedError);
+      (status === "processing" && !isQueuedError) ||
+      (Number(existingOrder?.paystack_verified_amount || 0) > 0 && !existingOrder?.auto_refunded);
 
     // Special validation for free data claims to prevent spamming
     if (orderType.toLowerCase() === "free_data_claim") {
@@ -2126,7 +2148,17 @@ serve(async (req: any) => {
           }
 
           // Fallback to DataMart Checker API if DataHub didn't return vouchers
-          const dmApiKey = Deno.env.get("DATAMART_API_KEY") || "";
+          let dmProviderApiKey = "";
+          if (vouchersList.length === 0) {
+            const { data: dmProv } = await supabaseAdmin
+              .from("providers")
+              .select("api_key")
+              .eq("handler_type", "datamart")
+              .limit(1)
+              .maybeSingle();
+            dmProviderApiKey = dmProv?.api_key || "";
+          }
+          const dmApiKey = Deno.env.get("DATAMART_API_KEY") || dmProviderApiKey || "";
           if (vouchersList.length === 0 && dmApiKey) {
             try {
               const checkerType = vType.includes("BECE") ? "BECE" : "WAEC";

@@ -16,7 +16,7 @@ interface RealtimeOptions {
 }
 
 /** Poll interval (ms) — safety net for mobile where WebSocket dies in background */
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 45_000;
 
 /**
  * Subscribes to one or more Supabase tables and calls onRefresh
@@ -99,18 +99,23 @@ export function useRealtimeRefresh({
       }
     }, POLL_INTERVAL_MS);
 
-    // ── Re-fetch immediately when tab regains focus ──
+    // ── Re-fetch immediately when tab regains focus or global admin sync triggers ──
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         trigger(true);
       }
     };
+    const onGlobalAdminRefresh = () => {
+      onRefreshRef.current(true);
+    };
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("swiftdata:admin-refresh", onGlobalAdminRefresh);
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (pollRef.current) clearInterval(pollRef.current);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("swiftdata:admin-refresh", onGlobalAdminRefresh);
       channels.forEach((ch) => safeRemoveChannel(ch));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

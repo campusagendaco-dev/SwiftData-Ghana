@@ -4,29 +4,50 @@
 **API Prefix**: `/api`  
 **Latest Spec Revision**: October 2026
 
-The BundleZone REST API enables automated telecom data fulfillment, MTN/Yello beneficiary verification, order placement (single & bulk), wallet balance queries, real-time status lookups, and asynchronous webhook callbacks.
+The BundleZone REST API enables automated telecom data fulfillment (`MTN_EXPRESS`, `Telecel`, `AT`), beneficiary verification, order placement (single & bulk), wallet balance queries, real-time status lookups, and asynchronous webhook callbacks.
+
+---
+
+## Network Guide: MTN Express (`MTN_EXPRESS`)
+
+### Delivery & End-of-Day Refunds
+- **No Beneficiary Verification Required**: `MTN_EXPRESS` orders are sent without a number-verification check. Valid orders are submitted directly for delivery after normal wallet and package checks.
+- **Submission Does Not Guarantee Delivery**: BundleZone reviews failed orders and refunds their charges to the originating BundleZone wallet at the end of the day (a confirmed rejection may be refunded earlier).
+- **Customer Confirmation Notice Requirement**: Before accepting an order, your website must show this notice and ask the customer to confirm. The customer should check the recipient carefully and avoid reordering while an order is processing. Resellers must pass any refund on to their own customer.
+- **Reference & Reconciliation**:
+  - Keep the original `client_reference` (8–100 characters: letters, digits, dots, underscores, colons, or hyphens).
+  - Use the status endpoint (`/api/status.php`) or signed callbacks to distinguish `processing`, `completed`, `failed`, `submission_unknown`, and `refunded`.
+  - **Do not treat HTTP 200 or `success: true` as delivery confirmation** (`processing` means delivery is pending; `completed` confirms fulfillment).
+  - **Do not mark an order refunded until `refunded: true`**; a pending or `submission_unknown` order needs reconciliation, not a duplicate purchase.
+
+| Requirement | `MTN_EXPRESS` Behaviour |
+| :--- | :--- |
+| **Catalogue** | `GET /api/bundles.php?network=MTN_EXPRESS&active=0` (`active=0` includes unavailable sizes so your site can show their prices; read `available` for each size — unavailable bundles cannot be purchased). Refresh availability before checkout; stock can change. |
+| **Single / Bulk** | One recipient (`mode: "single"`) or a batch of 1–20 rows (`mode: "bulk"`). Remove duplicate recipient/bundle pairs. Every row must pass checks before funds are reserved. |
+| **Order Reference** | Required: `client_reference` or `Idempotency-Key` (`X-Idempotency-Key`). Both must match if supplied together (8–100 chars `[A-Za-z0-9._:-]`). |
+| **Retries** | Reuse the same `client_reference` and identical details. Changed details return HTTP `409 Conflict`. A no-order failure (`422` invalid details or `503` stock/pricing unavailability before reservation) can be retried with its original reference after the issue is resolved. |
+| **Prechecks** | Accept up to 100 numbers and validate phone format only (`status: "not_required"`, `verification_status: "NOT_REQUIRED"`, `verification_required: false`). Do not require `VERIFIED` before submitting `MTN_EXPRESS`. |
+| **Callbacks** | Use existing HTTPS callback settings, include a stable `event_id`, and retry failed delivery up to 8 times. Ignore duplicate events. The status endpoint remains the current source of truth. |
 
 ---
 
 ## Important Usage Notes & Deduplication Rules
 
-- **Phone Number Format**: Ghana local 10-digit format starting with `0` (e.g. `0551234567`). Digits with country code (e.g. `233551234567`) are automatically normalized.
+- **Phone Number Format**: Ghana local 10-digit format starting with `0` (e.g. `0241234567`, `0551234567`). Digits with country code (e.g. `233551234567`) are automatically normalized.
 - **Networks**:
-  - `YELLO` or `MTN`: MTN Ghana Data Bundles.
+  - `MTN_EXPRESS`: MTN Ghana Express Data Bundles (no beneficiary check required).
+  - `YELLO` or `MTN`: Legacy MTN SME network code (routed as `MTN_EXPRESS`).
   - `Telecel`: Telecel Ghana Data Bundles (formerly Vodafone).
   - `AT`: AirtelTigo Data Bundles.
-- **Capacity**: Specified in Gigabytes (GB) as a number (e.g. `1` for 1GB, `2` for 2GB, `0.5` for 500MB, `10` for 10GB).
+- **Capacity**: Specified in Gigabytes (GB) as a number (e.g. `1` for 1GB, `2` for 2GB, `10` for 10GB). Do not send a selling price; the server uses the price for your account.
 - **Anti-Duplicate Order Prevention (Idempotency)**:
-  - **Always Provide a Unique Merchant `reference`**: In every order submission, include a unique `reference` (e.g. `"reference": "ORD_20261014_998822"`).
-  - Alternatively, pass the `X-Idempotency-Key` header with your unique transaction ID.
-  - **Deduplication Cooldown Window**: If an order with the same `reference` or an identical order for the same recipient, network, and capacity is submitted within the deduplication window (5–15 minutes), the server prevents double charges. It returns either the existing in-progress order details or HTTP `409 Conflict` with error code `DUPLICATE_ORDER`.
-  - **Client Deduplication Handling**: If a duplicate response is returned, **DO NOT fail or cancel the customer's purchase** and **DO NOT cascade the order to another fulfillment provider**. Keep the order in `processing` state and query `/api/status.php` or await the webhook callback.
-- **Beneficiary Verification Gate**:
-  - Mandatory for **MTN / Yello** orders.
-  - `AT` and `Telecel` skip beneficiary verification automatically (`not_required`).
-  - Only an exact `VERIFIED` decision (`verification_status: "VERIFIED"`) is permitted to proceed to order creation.
-  - Even if a precheck is performed via `/api/beneficiary-check.php`, beneficiary validation is re-checked automatically on the server when `/api/order.php` is called.
-- **Wallet Debit**: The wallet balance is debited only after an order is verified and accepted into the processing queue.
+  - **Always Provide a Unique `client_reference`**: In every order submission, include a unique `client_reference` of 8–100 characters (`[A-Za-z0-9._:-]`, e.g. `"client_reference": "myshop-order-10001"`).
+  - If supplying `Idempotency-Key` / `X-Idempotency-Key` headers alongside `client_reference`, both values must match exactly.
+  - **Deduplication Cooldown Window**: If an order with the same `client_reference` or an identical order is submitted within the deduplication window, the server prevents double charges. Changed details with the same reference return HTTP `409 Conflict`.
+  - **Client Deduplication & `submission_unknown` Handling**: For `submission_unknown` or duplicate responses, **keep the same reference and poll status**. **DO NOT create a new request or cascade to force another purchase**.
+- **Payment & Refund State (`charged` and `refunded`)**:
+  - Read `charged` and `refunded` on status and callback payloads to determine payment state.
+  - A `failed` status alone does **not** confirm a refund until `refunded: true` (or `charged: false`).
 - **Security**: Never expose API keys or webhook secrets in client-side applications.
 
 ---
@@ -47,16 +68,16 @@ Accept: application/json
 
 ## Endpoints
 
-### 1. Fetch Available Bundles
+### 1. Check Available Sizes and Prices
 
 - **Method**: `GET`
-- **Path**: `/api/bundles.php`
-- **Description**: Retrieve active data bundles, capacity keys, and pricing for each network.
+- **Path**: `/api/bundles.php?network=MTN_EXPRESS&active=0` (or `/api/bundles.php?active=0` for all networks)
+- **Description**: Retrieve data bundles, capacity keys, pricing, and live availability (`available`). Passing `active=0` includes unavailable sizes so your site can display their prices while preventing checkout of unavailable bundles.
 
 #### Bundles Request Example
 
 ```bash
-curl "https://bundlezone.shop/api/bundles.php" \
+curl "https://bundlezone.shop/api/bundles.php?network=MTN_EXPRESS&active=0" \
   -H "X-API-KEY: YOUR_API_KEY" \
   -H "Accept: application/json"
 ```
@@ -70,19 +91,21 @@ curl "https://bundlezone.shop/api/bundles.php" \
     "bundles": [
       {
         "id": 101,
-        "network": "YELLO",
+        "network": "MTN_EXPRESS",
         "capacity": 1,
         "capacity_label": "1GB",
         "price": 4.50,
+        "available": true,
         "active": true
       },
       {
         "id": 102,
-        "network": "YELLO",
-        "capacity": 2,
-        "capacity_label": "2GB",
-        "price": 9.00,
-        "active": true
+        "network": "MTN_EXPRESS",
+        "capacity": 10,
+        "capacity_label": "10GB",
+        "price": 42.00,
+        "available": false,
+        "active": false
       },
       {
         "id": 201,
@@ -90,6 +113,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
         "capacity": 5,
         "capacity_label": "5GB",
         "price": 18.00,
+        "available": true,
         "active": true
       },
       {
@@ -98,6 +122,7 @@ curl "https://bundlezone.shop/api/bundles.php" \
         "capacity": 10,
         "capacity_label": "10GB",
         "price": 35.00,
+        "available": true,
         "active": true
       }
     ]
@@ -111,73 +136,47 @@ curl "https://bundlezone.shop/api/bundles.php" \
 
 - **Method**: `POST`
 - **Path**: `/api/beneficiary-check.php`
-- **Description**: Precheck whether an MTN recipient number is verified and ready to receive SME data bundles. AT and Telecel numbers do not require verification and return `not_required`. This check does not debit the wallet or create an order.
+- **Description**: Express prechecks (`MTN_EXPRESS`) accept up to 100 numbers and validate phone format only. They return `status: "not_required"`, `verification_status: "NOT_REQUIRED"`, and `verification_required: false`. Do not require `VERIFIED` before submitting `MTN_EXPRESS`. `AT` and `Telecel` numbers also return `not_required`.
 
 #### A. Single Recipient Request
 
 ```json
 {
-  "network": "YELLO",
-  "phone_number": "0551234567"
+  "network": "MTN_EXPRESS",
+  "phone_number": "0241234567"
 }
 ```
 
-#### B. Bulk Recipients Request (Up to 1,000 Numbers)
+#### B. Bulk Recipients Request (Up to 100 Numbers for Express Precheck)
 
 ```json
 {
-  "network": "YELLO",
+  "network": "MTN_EXPRESS",
   "phone_numbers": [
+    "0241234567",
     "0551234567",
-    "0598458971",
-    "0241234567"
+    "0598458971"
   ]
 }
 ```
 
-#### Verified Response (HTTP 200)
+#### Express Precheck Response (HTTP 200)
 
 ```json
 {
   "success": true,
   "data": {
     "request_id": "REQ-CHK-99120",
-    "network": "YELLO",
+    "network": "MTN_EXPRESS",
     "count": 1,
     "results": [
       {
-        "phone_number": "0551234567",
-        "status": "verified",
-        "verification_status": "VERIFIED",
-        "verification_request_id": "8fd7a5f4-05ef-4aa8-a44e-8da58f50ef11",
+        "phone_number": "0241234567",
+        "status": "not_required",
+        "verification_status": "NOT_REQUIRED",
+        "verification_required": false,
         "can_order": true,
-        "retryable": false,
-        "estimated_delivery": "30 minutes to 6 hours",
-        "message": "The number is verified and ready for ordering."
-      }
-    ]
-  }
-}
-```
-
-#### Unverified Beneficiary Response (HTTP 200)
-
-```json
-{
-  "success": true,
-  "data": {
-    "request_id": "REQ-CHK-99120",
-    "network": "YELLO",
-    "count": 1,
-    "results": [
-      {
-        "phone_number": "0551234567",
-        "status": "unverified",
-        "verification_status": "NOT_VERIFIED",
-        "verification_request_id": "8fd7a5f4-05ef-4aa8-a44e-8da58f50ef11",
-        "can_order": false,
-        "retryable": false,
-        "message": "This number is not verified on the carrier beneficiary list."
+        "message": "Number verification is not required for MTN Express."
       }
     ]
   }
@@ -190,13 +189,14 @@ curl "https://bundlezone.shop/api/bundles.php" \
 
 - **Method**: `POST`
 - **Path**: `/api/order.php`
-- **Description**: Place a single data bundle order. Always supply your merchant `reference` to guarantee duplicate protection.
+- **Description**: Place a single data bundle order. Use a `client_reference` of 8–100 letters, digits, dots, underscores, colons, or hyphens. Capacity is in GB; do not send a selling price.
 
 #### Request Headers
 
 ```http
 X-API-KEY: YOUR_API_KEY
-X-Idempotency-Key: API123456789
+Idempotency-Key: myshop-order-10001
+X-Idempotency-Key: myshop-order-10001
 Content-Type: application/json
 Accept: application/json
 ```
@@ -206,14 +206,16 @@ Accept: application/json
 ```json
 {
   "mode": "single",
-  "network": "YELLO",
-  "recipient": "0551234567",
-  "capacity": 1,
-  "reference": "API123456789"
+  "network": "MTN_EXPRESS",
+  "recipient": "0241234567",
+  "capacity": 10,
+  "client_reference": "myshop-order-10001"
 }
 ```
 
 #### Order Accepted Response (HTTP 200)
+
+Single-order results are returned under `data.order`. Remember: HTTP 200 or `success: true` means the order was accepted for processing, **not** that carrier delivery is complete.
 
 ```json
 {
@@ -221,24 +223,27 @@ Accept: application/json
   "data": {
     "request_id": "REQ-ABC123",
     "order_id": 12345,
-    "reference": "API123456789",
+    "reference": "BZ-ORD-12345",
+    "client_reference": "myshop-order-10001",
     "mode": "single",
     "order": {
       "id": 12345,
       "order_id": 12345,
-      "reference": "API123456789",
+      "reference": "BZ-ORD-12345",
+      "client_reference": "myshop-order-10001",
       "success": true,
       "status": "processing",
-      "message": "Order accepted and queued for carrier delivery.",
-      "estimated_delivery": "30 minutes to 6 hours"
+      "charged": true,
+      "refunded": false,
+      "message": "Order accepted and queued for carrier delivery."
     }
   }
 }
 ```
 
-#### Duplicate Order Rejection Response (HTTP 409 or HTTP 200)
+#### Duplicate / Conflict Response (HTTP 409)
 
-When an identical order or duplicate reference is submitted during an active order cycle:
+When retrying, reuse the same `client_reference` and identical details. Changed details return `409`.
 
 ```json
 {
@@ -247,30 +252,9 @@ When an identical order or duplicate reference is submitted during an active ord
   "message": "Duplicate order detected. An order with this reference has already been placed or is currently being processed.",
   "data": {
     "order_id": 12345,
-    "reference": "API123456789",
+    "reference": "BZ-ORD-12345",
+    "client_reference": "myshop-order-10001",
     "status": "processing"
-  }
-}
-```
-
-#### Beneficiary Not Verified Response (HTTP 422 or HTTP 200)
-
-```json
-{
-  "success": false,
-  "code": "BENEFICIARY_NOT_VERIFIED",
-  "message": "This MTN/Yello number is not verified. No order was created and the wallet was not charged.",
-  "data": {
-    "request_id": "REQ-ABC123",
-    "mode": "single",
-    "order": {
-      "success": false,
-      "code": "BENEFICIARY_NOT_VERIFIED",
-      "verification_status": "NOT_VERIFIED",
-      "order_created": false,
-      "charged": false,
-      "retryable": false
-    }
   }
 }
 ```
@@ -281,26 +265,23 @@ When an identical order or duplicate reference is submitted during an active ord
 
 - **Method**: `POST`
 - **Path**: `/api/order.php`
-- **Description**: Submit a batch of data orders in one HTTP request (up to 1,000 rows).
-- **All-or-Nothing Rule**: For MTN/Yello batches, every recipient must be `VERIFIED`. If any recipient fails verification, the complete batch is held (`BULK_VERIFICATION_HELD`), no rows are dispatched, and no funds are charged.
+- **Description**: Submit a batch of 1–20 recipients in one HTTP request for `MTN_EXPRESS`. Remove duplicate recipient/bundle pairs before submission. The batch is checked before funds are reserved, and results under `data.result` identify each BundleZone order separately.
 
-#### Bulk Order Request Body
+#### Bulk Order Request Body (1–20 Recipients)
 
 ```json
 {
   "mode": "bulk",
-  "network": "YELLO",
-  "reference": "BATCH-20261014-001",
+  "network": "MTN_EXPRESS",
+  "client_reference": "myshop-batch-10001",
   "rows": [
     {
-      "recipient": "0551234567",
-      "capacity": 1,
-      "reference": "BATCH-ROW-001"
+      "recipient": "0241234567",
+      "capacity": 1
     },
     {
-      "recipient": "0557654321",
-      "capacity": 2,
-      "reference": "BATCH-ROW-002"
+      "recipient": "0551234567",
+      "capacity": 2
     }
   ]
 }
@@ -312,11 +293,27 @@ When an identical order or duplicate reference is submitted during an active ord
 {
   "success": true,
   "data": {
-    "batch_id": "BATCH-20261014-001",
+    "batch_id": "myshop-batch-10001",
+    "client_reference": "myshop-batch-10001",
     "mode": "bulk",
     "count": 2,
     "status": "processing",
-    "message": "All 2 rows accepted."
+    "result": [
+      {
+        "order_id": 12345,
+        "reference": "BZ-ORD-12345",
+        "recipient": "0241234567",
+        "capacity": 1,
+        "status": "processing"
+      },
+      {
+        "order_id": 12346,
+        "reference": "BZ-ORD-12346",
+        "recipient": "0551234567",
+        "capacity": 2,
+        "status": "processing"
+      }
+    ]
   }
 }
 ```
@@ -356,43 +353,60 @@ curl "https://bundlezone.shop/api/balance.php" \
 - **Method**: `GET`
 - **Path**: `/api/status.php`
 - **Query Parameters**:
-  - `reference`: Your merchant reference (e.g. `?reference=API123456789`)
-  - `order_id`: The BundleZone numeric order ID (e.g. `?order_id=12345`)
+  - `reference`: The BundleZone reference returned by the order endpoint (or `client_reference`).
+  - `order_id`: Alternatively supply the numeric BundleZone `order_id`.
 
 #### Status Query Request
 
 ```bash
-curl "https://bundlezone.shop/api/status.php?reference=API123456789" \
+curl "https://bundlezone.shop/api/status.php?reference=YOUR_ORDER_REFERENCE" \
   -H "X-API-KEY: YOUR_API_KEY" \
   -H "Accept: application/json"
 ```
 
 #### Status Query Response (HTTP 200)
 
+The response is under `data.order` and contains `status`, `network`, `recipient`, `capacity`, and `price`. For `MTN_EXPRESS`, the response also includes `client_reference`, `charged`, and `refunded`.
+
 ```json
 {
   "success": true,
   "data": {
-    "order_id": 12345,
-    "reference": "API123456789",
-    "network": "YELLO",
-    "recipient": "0551234567",
-    "capacity": 1,
-    "price": 4.50,
-    "currency": "GHS",
-    "status": "completed",
-    "source": "api",
-    "created_at": "2026-08-23 07:50:00",
-    "updated_at": "2026-08-23 08:00:00"
+    "order": {
+      "order_id": 12345,
+      "reference": "BZ-ORD-12345",
+      "client_reference": "myshop-order-10001",
+      "network": "MTN_EXPRESS",
+      "recipient": "0241234567",
+      "capacity": 10,
+      "price": 42.00,
+      "currency": "GHS",
+      "status": "completed",
+      "charged": true,
+      "refunded": false,
+      "source": "api",
+      "created_at": "2026-10-28 07:50:00",
+      "updated_at": "2026-10-28 08:00:00"
+    }
   }
 }
 ```
+
+#### Status Interpretation Table
+
+| `status` | `charged` | `refunded` | Required Action |
+| :--- | :--- | :--- | :--- |
+| `processing` | `true` | `false` | Delivery is pending. Keep polling or wait for callback. |
+| `submission_unknown` | `true` / `null` | `false` | Keep the same reference and poll status. **Do not create a new request to force another purchase.** |
+| `completed` | `true` | `false` | Fulfillment confirmed. Mark order as `fulfilled`. |
+| `failed` | `true` | `false` | Delivery failed; awaiting end-of-day (or earlier rejection) wallet refund from BundleZone. **Do not mark refunded until `refunded: true`.** |
+| `failed` / `refunded` | `true` / `false` | `true` | Refund confirmed on BundleZone wallet. Safe to refund customer/agent wallet. |
 
 ---
 
 ## Webhooks & Status Callbacks
 
-When an order reaches a terminal state (`completed`, `failed`), BundleZone sends an asynchronous HTTP POST callback to your registered webhook URL.
+Express callbacks use your existing HTTPS callback settings, include a stable `event_id`, and retry failed delivery up to **8 times**. Ignore duplicate events (`event_id`). The `/api/status.php` endpoint remains the current source of truth.
 
 ### Delivery Specifications
 
@@ -402,9 +416,10 @@ When an order reaches a terminal state (`completed`, `failed`), BundleZone sends
 | **Content-Type** | `application/json` |
 | **User-Agent** | `BundleZone-Webhook/1.0` |
 | **Event Name** | `order.status_changed` |
+| **Deduplication Key** | `event_id` (stable across all 8 retry attempts) |
 | **Expected Response** | HTTP `200 OK` with JSON `{"success": true}` or `{"received": true}` |
 | **Timeout** | 25 seconds |
-| **Retries** | Exponential backoff (retries at 1m, 5m, 15m if receiver returns 5xx or times out) |
+| **Retries** | Up to 8 times if receiver returns non-2xx or times out |
 
 ### Callback Request Headers
 
@@ -440,33 +455,34 @@ To verify that the webhook genuinely originated from BundleZone and has not been
 
 ```json
 {
+  "event_id": "evt_9988776655443322",
   "event": "order.status_changed",
-  "timestamp": "2026-08-23T08:00:00+00:00",
+  "timestamp": "2026-10-28T08:00:00+00:00",
   "data": {
-    "order_id": 12345,
-    "reference": "API123456789",
-    "network": "YELLO",
-    "recipient": "0551234567",
-    "capacity": 1,
-    "price": 5.00,
-    "status": "completed",
-    "source": "api",
-    "created_at": "2026-08-23 07:50:00",
-    "updated_at": "2026-08-23 08:00:00"
-  },
-  "client": {
-    "api_client_id": 1,
-    "client_name": "My API App"
+    "order": {
+      "order_id": 12345,
+      "reference": "BZ-ORD-12345",
+      "client_reference": "myshop-order-10001",
+      "network": "MTN_EXPRESS",
+      "recipient": "0241234567",
+      "capacity": 10,
+      "price": 42.00,
+      "status": "completed",
+      "charged": true,
+      "refunded": false,
+      "source": "api",
+      "created_at": "2026-10-28 07:50:00",
+      "updated_at": "2026-10-28 08:00:00"
+    }
   }
 }
 ```
 
 ### Webhook Idempotency Best Practice
 
-Because webhooks may be redelivered if a network hiccup delays your HTTP 200 response:
-
-- Inspect your database before processing.
+- Record `event_id` in your order metadata and ignore duplicate `event_id` deliveries.
 - If the order is already marked as `fulfilled` or `completed`, immediately acknowledge with `HTTP 200` without triggering secondary wallet credits, commissions, or customer SMS.
+- For `MTN_EXPRESS`, do not refund the customer on a `failed` webhook unless `refunded: true` (or `charged: false`) is present.
 
 ---
 
@@ -507,76 +523,9 @@ function verifyBundleZoneWebhook(
 }
 ```
 
-### PHP
-
-```php
-<?php
-$rawBody = file_get_contents('php://input');
-$timestamp = $_SERVER['HTTP_X_BUNDLEZONE_TIMESTAMP'] ?? null;
-$signature = $_SERVER['HTTP_X_BUNDLEZONE_SIGNATURE'] ?? '';
-$secretKey = getenv('BUNDLEZONE_WEBHOOK_SECRET');
-
-if (!$signature || !$secretKey) {
-    http_response_code(401);
-    exit(json_encode(['error' => 'Missing signature']));
-}
-
-// Replay protection (5 minutes)
-if ($timestamp && abs(time() - (int)$timestamp) > 300) {
-    http_response_code(401);
-    exit(json_encode(['error' => 'Expired timestamp']));
-}
-
-$signedPayload = $timestamp ? "{$timestamp}.{$rawBody}" : $rawBody;
-$expectedSignature = 'sha256=' . hash_hmac('sha256', $signedPayload, $secretKey);
-
-if (!hash_equals($expectedSignature, $signature)) {
-    http_response_code(401);
-    exit(json_encode(['error' => 'Invalid signature']));
-}
-
-// Idempotent processing
-$payload = json_decode($rawBody, true);
-$reference = $payload['data']['reference'] ?? $payload['data']['order_id'];
-$status = strtolower($payload['data']['status'] ?? '');
-
-// Update order status in your database...
-
-http_response_code(200);
-echo json_encode(['success' => true]);
-?>
-```
-
-### Python (FastAPI / Flask)
-
-```python
-import hmac
-import hashlib
-import time
-
-def verify_bundlezone_webhook(raw_body: bytes, timestamp: str, signature: str, secret: str) -> bool:
-    if not signature or not secret:
-        return False
-
-    # Check 5-minute replay window
-    if timestamp:
-        try:
-            ts = int(timestamp)
-            if abs(int(time.time()) - ts) > 300:
-                return False
-        except ValueError:
-            return False
-
-    signed_payload = f"{timestamp}.".encode('utf-8') + raw_body if timestamp else raw_body
-    computed = "sha256=" + hmac.new(secret.encode('utf-8'), signed_payload, hashlib.sha256).hexdigest()
-    
-    return hmac.compare_digest(computed.lower(), signature.lower().strip())
-```
-
 ## Developer Support & Inquiries
 
 For technical assistance, API key provisioning, balance adjustments, or order query escalations:
 - **Phone / Support Helpline**: [`0256702995`](tel:+233256702995) (`+233 25 670 2995`)
 - **WhatsApp Support**: [`0256702995`](https://wa.me/233256702995)
 - **Support Desk Hours**: Daily 7:00 AM – 10:00 PM GMT
-

@@ -100,8 +100,22 @@ function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason">
   return reason.includes("beneficiary") || reason.includes("not added");
 }
 
-function formatOrderFailureReason(order: Pick<OrderRow, "failure_reason"> & { network?: string; order_type?: string }): string {
+function formatOrderFailureReason(
+  order: Pick<OrderRow, "failure_reason"> & {
+    network?: string | null;
+    order_type?: string;
+    status?: string;
+    provider_order_id?: string | null;
+  }
+): string {
   if (!order.failure_reason) return "";
+  if (order.status === "fulfilled") return "";
+  const provRef = String(order.provider_order_id || "").trim();
+  const hasActiveProviderRef =
+    provRef.length > 0 && !["failed_api_call", "timeout", "dispatching"].includes(provRef);
+  if (order.status === "processing" && hasActiveProviderRef) {
+    return "";
+  }
   const net = String(order.network || "").toUpperCase();
   const isMtn = net.includes("MTN") || net.includes("YELLO");
   const isData = !order.order_type || order.order_type === "data" || order.order_type === "sme";
@@ -389,9 +403,26 @@ export default function AdminOrders() {
       const cleanSearch = sanitizeSearchTerm(search);
       const isUuid = UUID_REGEX.test(cleanSearch);
       const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
+      const digitsOnly = cleanSearch.replace(/\D/g, "");
+      const isPhoneQuery = /^(\+?233|0)\d{8,9}$/.test(cleanSearch.replace(/\s+/g, "")) && digitsOnly.length >= 9;
 
       if (isUuid) {
         q = q.or(`id.eq.${cleanSearch},agent_id.eq.${cleanSearch}`);
+      } else if (isPhoneQuery) {
+        const core9 = digitsOnly.slice(-9);
+        const phoneVariants = Array.from(new Set([cleanSearch, `0${core9}`, `233${core9}`, `+233${core9}`, core9]));
+        const { data: matchedProfiles } = await supabase
+          .from("profiles")
+          .select("user_id")
+          .in("phone", phoneVariants);
+        const matchedUserIds = (matchedProfiles || [])
+          .map((p: any) => p.user_id)
+          .filter((id: any) => id && UUID_REGEX.test(id));
+        if (matchedUserIds.length > 0) {
+          q = q.or(`customer_phone.in.(${phoneVariants.join(",")}),agent_id.in.(${matchedUserIds.join(",")})`);
+        } else {
+          q = q.in("customer_phone", phoneVariants);
+        }
       } else {
         const { data: matchedProfiles } = await supabase
           .from("profiles")
@@ -699,13 +730,51 @@ export default function AdminOrders() {
     setRetrying(null);
   };
 
-  const handleRefund = async (orderId: string, amount: number) => {
+  const handleRefund = async (orderId: string, amount: number, mode: "refund" | "refund_and_reroute" = "refund") => {
     const targetOrder = allOrders.find((o) => o.id === orderId);
-    if (!confirm(`Are you sure you want to manually refund GH₵ ${amount.toFixed(2)} for order ${orderId}?`)) {
+    const promptMsg = mode === "refund_and_reroute"
+      ? `Self-refund order ${orderId.slice(0, 8)} from DataHub and immediately re-route to the next available API provider?`
+      : `Are you sure you want to refund GH₵ ${amount.toFixed(2)} for order ${orderId.slice(0, 8)}?`;
+    if (!confirm(promptMsg)) {
       return;
     }
     setRefunding(orderId);
     try {
+      if (targetOrder?.status === "processing" || mode === "refund_and_reroute") {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
+          body: { order_id: orderId, reference: orderId, mode },
+        });
+        if (edgeErr || !edgeData?.success) {
+          const errMsg = edgeData?.error || (edgeErr ? await getFunctionErrorMessage(edgeErr, "Order is not eligible for self-refund.") : "Order is not eligible for self-refund.");
+          toast({ title: "Self-Refund Rejected", description: errMsg, variant: "destructive" });
+          setRefunding(null);
+          await fetchOrders();
+          return;
+        }
+        if (currentUser) {
+          await logAudit(currentUser.id, mode === "refund_and_reroute" ? "provider_self_refund_and_reroute" : "manual_order_refund", {
+            order_id: orderId,
+            amount,
+            mode,
+            result: edgeData,
+          });
+        }
+        if (edgeData.rerouted) {
+          toast({
+            title: "Self-Refunded & Re-routed! 🚀",
+            description: edgeData.message || "Reclaimed funds from DataHub and dispatched to next available API provider.",
+          });
+        } else {
+          const newBalText = edgeData.data?.newBalance !== undefined ? ` (New Wallet Balance: GH₵ ${Number(edgeData.data.newBalance).toFixed(2)})` : "";
+          toast({
+            title: "Order Self-Refunded! 💰",
+            description: `${edgeData.message || "Refund credited to wallet."}${newBalText}`,
+          });
+        }
+        await fetchOrders();
+        return;
+      }
+
       const { data, error } = await (supabase.rpc as any)("refund_failed_order", { p_order_id: orderId });
       if (error) throw error;
       if (data) {
@@ -988,15 +1057,15 @@ export default function AdminOrders() {
     setBulkUpdating(false);
   };
 
-  const handleBulkCheckStatus = async (targetOrderIds?: string[]) => {
+  const handleBulkCheckStatus = useCallback(async (targetOrderIds?: string[], isSilent = false) => {
     const isExplicit = Array.isArray(targetOrderIds) && targetOrderIds.length > 0;
     const ids = isExplicit
       ? targetOrderIds
-      : (selectedIds.size > 0 
+      : (selectedIds.size > 0 && !isSilent
           ? Array.from(selectedIds) 
           : allOrders.filter(o => o.status === "processing" || o.status === "paid" || o.status === "in_queue").map(o => o.id));
 
-    if (ids.length === 0) {
+    if (!isSilent && ids.length === 0) {
       toast({
         title: "No Orders to Check 📡",
         description: "Select orders using the checkboxes, or ensure there are active processing orders on the page.",
@@ -1005,14 +1074,18 @@ export default function AdminOrders() {
     }
 
     setBulkCheckingStatus(true);
-    toast({
-      title: "Checking Live Provider Status 📡",
-      description: `Querying carrier APIs for ${ids.length} order(s)...`,
-    });
+    if (!isSilent) {
+      toast({
+        title: "Checking Live Provider Status 📡",
+        description: `Querying carrier APIs for ${ids.length} order(s)...`,
+      });
+    }
 
     try {
       const { data, error } = await supabase.functions.invoke("check-order-status", {
-        body: { order_ids: ids },
+        body: isSilent && ids.length === 0
+          ? { auto_bulk: true, limit: 50 }
+          : { order_ids: ids },
       });
 
       if (error) throw error;
@@ -1038,29 +1111,45 @@ export default function AdminOrders() {
         }));
       }
 
-      toast({
-        title: `Bulk Status Check Complete! 📡`,
-        description: `Checked ${ids.length} orders: ${summary.fulfilled || 0} Fulfilled ✅, ${summary.failed || 0} Failed ❌, ${summary.processing || 0} In Processing ⏳${updatedCount > 0 ? ` (${updatedCount} updated)` : ""}`,
-      });
+      if (!isSilent || updatedCount > 0) {
+        toast({
+          title: isSilent ? `Auto Status Check (3m) 📡` : `Bulk Status Check Complete! 📡`,
+          description: `Checked ${summary.total ?? ids.length} orders: ${summary.fulfilled || 0} Fulfilled ✅, ${summary.failed || 0} Failed ❌, ${summary.processing || 0} In Processing ⏳${updatedCount > 0 ? ` (${updatedCount} updated)` : ""}`,
+        });
+      }
 
-      if (currentUser) {
-        await logAudit(currentUser.id, "bulk_check_order_status", {
-          total: ids.length,
+      if (currentUser && (!isSilent || updatedCount > 0)) {
+        await logAudit(currentUser.id, isSilent ? "auto_bulk_check_order_status" : "bulk_check_order_status", {
+          total: summary.total ?? ids.length,
           summary
         });
       }
 
-      await fetchOrders(true);
+      if (!isSilent || updatedCount > 0) {
+        await fetchOrders(true);
+      }
     } catch (err: any) {
-      toast({
-        title: "Bulk Status Check Error",
-        description: err.message || "Failed to verify statuses with upstream providers",
-        variant: "destructive",
-      });
+      if (!isSilent) {
+        toast({
+          title: "Bulk Status Check Error",
+          description: err.message || "Failed to verify statuses with upstream providers",
+          variant: "destructive",
+        });
+      }
     } finally {
       setBulkCheckingStatus(false);
     }
-  };
+  }, [allOrders, currentUser, fetchOrders, selectedIds, toast]);
+
+  // Automated Bulk Status Check every 3 minutes (180,000 ms)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!bulkCheckingStatus) {
+        handleBulkCheckStatus(undefined, true);
+      }
+    }, 3 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [bulkCheckingStatus, handleBulkCheckStatus]);
 
   // Full CSV / Excel Export
   const handleExportCSV = () => {
@@ -1432,10 +1521,10 @@ export default function AdminOrders() {
               className="gap-2 h-10 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 text-xs font-bold transition-all active:scale-95"
               onClick={() => handleBulkCheckStatus(allOrders.filter(o => o.status === "processing").map(o => o.id))}
               disabled={bulkCheckingStatus || allOrders.filter(o => o.status === "processing").length === 0}
-              title="Query upstream carrier/provider API live for all processing orders on this page"
+              title="Query upstream carrier/provider API live for all processing orders on this page (Auto-checks every 3 mins)"
             >
               {bulkCheckingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              {bulkCheckingStatus ? "Checking Status..." : `Bulk Check Status (${allOrders.filter(o => o.status === "processing").length})`}
+              {bulkCheckingStatus ? "Checking Status..." : `Bulk Check Status (${allOrders.filter(o => o.status === "processing").length}) • 3m Auto`}
             </Button>
 
             <Button
@@ -2063,7 +2152,7 @@ export default function AdminOrders() {
                           </Badge>
                         )}
                       </div>
-                      {order.failure_reason && !isBeneficiaryFailure(order) && (
+                      {formatOrderFailureReason(order) && !isBeneficiaryFailure(order) && (
                         <p className="text-[9px] text-rose-400 mt-1 max-w-[130px] truncate mx-auto" title={formatOrderFailureReason(order)}>
                           {formatOrderFailureReason(order)}
                         </p>
@@ -2130,16 +2219,30 @@ export default function AdminOrders() {
                                 Retry
                               </Button>
                             )}
-                            {order.status === "fulfillment_failed" && !order.auto_refunded && (
+                            {(order.status === "fulfillment_failed" || order.status === "processing") && !order.auto_refunded && (
                               <Button
                                 size="sm"
                                 variant="destructive"
                                 className="text-[10px] gap-1 h-7 px-2 border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg font-bold"
                                 disabled={refunding === order.id}
-                                onClick={() => handleRefund(order.id, order.amount)}
+                                onClick={() => handleRefund(order.id, order.amount, "refund")}
+                                title={order.status === "processing" ? "Self-refund manual PROCESSING order (/order-refund)" : "Refund failed order to wallet"}
                               >
                                 {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
                                 Refund
+                              </Button>
+                            )}
+                            {order.status === "processing" && !order.auto_refunded && order.provider_id && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-[10px] gap-1 h-7 px-2 border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 rounded-lg font-bold"
+                                disabled={refunding === order.id}
+                                onClick={() => handleRefund(order.id, order.amount, "refund_and_reroute")}
+                                title="Self-refund from DataHub (/order-refund) and re-route to next available API provider"
+                              >
+                                {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                Refund &amp; Reroute
                               </Button>
                             )}
                             <button
@@ -2254,7 +2357,7 @@ export default function AdminOrders() {
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                {order.failure_reason && (
+                {formatOrderFailureReason(order) && (
                   <p className="text-[10px] text-rose-400 italic truncate max-w-[160px]" title={formatOrderFailureReason(order)}>
                     {formatOrderFailureReason(order)}
                   </p>
@@ -2304,16 +2407,28 @@ export default function AdminOrders() {
                       Retry
                     </Button>
                   )}
-                  {order.status === "fulfillment_failed" && !order.auto_refunded && (
+                  {(order.status === "fulfillment_failed" || order.status === "processing") && !order.auto_refunded && (
                     <Button
                       size="sm"
                       variant="destructive"
                       className="text-xs gap-1 h-8 rounded-lg bg-rose-500/15 border-rose-500/30 text-rose-300"
                       disabled={refunding === order.id}
-                      onClick={() => handleRefund(order.id, order.amount)}
+                      onClick={() => handleRefund(order.id, order.amount, "refund")}
                     >
                       {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />}
                       Refund
+                    </Button>
+                  )}
+                  {order.status === "processing" && !order.auto_refunded && order.provider_id && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs gap-1 h-8 rounded-lg bg-amber-500/15 border-amber-500/30 text-amber-300"
+                      disabled={refunding === order.id}
+                      onClick={() => handleRefund(order.id, order.amount, "refund_and_reroute")}
+                    >
+                      {refunding === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                      Refund &amp; Reroute
                     </Button>
                   )}
                   <Button

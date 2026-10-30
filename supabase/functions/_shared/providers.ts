@@ -9,6 +9,11 @@ export interface Provider {
   priority: number;
   is_active: boolean;
   handler_type?: string;
+  settings?: Record<string, any>;
+  consecutive_failures?: number;
+  balance?: number;
+  disabled_reason?: string | null;
+  last_synced_at?: string | null;
 }
 
 export async function getActiveProviders(supabaseAdmin: any, type: string): Promise<Provider[]> {
@@ -222,8 +227,19 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     activeProviders = activeProviders.filter((p: any) => p.handler_type !== "korba" && p.name !== "Korba");
   }
 
-  // Round-robin load balancing for providers sharing top priority (e.g. DataHub & BundleZone both at Priority 1)
-  if (activeProviders.length > 1) {
+  // 5.5. BundleZone Express Mode: When admin toggles Express Mode ON for BundleZone,
+  // route data orders directly to the Express-enabled BundleZone API provider(s) first.
+  const expressBzProviders = activeProviders.filter(
+    (p: any) => p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true
+  );
+  if (isDataOrder && expressBzProviders.length > 0) {
+    const nonExpressProviders = activeProviders.filter(
+      (p: any) => !(p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true)
+    );
+    activeProviders = [...expressBzProviders, ...nonExpressProviders];
+    console.log(`[resolveProvidersForOrder] Express Mode active: Routing order ${order?.id} to BundleZone provider(s) [${expressBzProviders.map((p: any) => p.name).join(", ")}] first.`);
+  } else if (activeProviders.length > 1) {
+    // Round-robin load balancing for providers sharing top priority (e.g. DataHub & BundleZone both at Priority 1)
     const topPriority = activeProviders[0]?.priority ?? 1;
     const topTier = activeProviders.filter((p: any) => p.priority === topPriority && (p.consecutive_failures || 0) < 3);
     if (topTier.length > 1) {
@@ -340,20 +356,20 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     const designated = activeProviders.find((p: any) => p.settings?.is_beneficiary_fallback === true);
     if (designated) {
       console.log(`[resolveProvidersForOrder] Order ${order?.id} using admin-selected fallback provider ${designated.name}...`);
-      return [designated, ...activeProviders.filter((p: any) => p.id !== designated.id)];
-    }
-    if (order?.metadata?.route_via_datamart === true) {
+      activeProviders = [designated, ...activeProviders.filter((p: any) => p.id !== designated.id)];
+    } else if (order?.metadata?.route_via_datamart === true) {
       const dmProv = activeProviders.find((p: any) => p.handler_type === "datamart");
       if (dmProv) {
         console.log(`[resolveProvidersForOrder] Order ${order?.id} explicitly requested route_via_datamart. Prioritizing ${dmProv.name}...`);
-        return [dmProv, ...activeProviders.filter((p: any) => p.id !== dmProv.id)];
+        activeProviders = [dmProv, ...activeProviders.filter((p: any) => p.id !== dmProv.id)];
       }
-    }
-    // If DataHub/BundleZone require beneficiary whitelist, prioritize DataMart, Spendless, or SKPlug for bypass
-    const nonBeneficiaryProv = activeProviders.find((p: any) => p.handler_type === "datamart" || p.handler_type === "spendless" || p.handler_type === "skdataplug");
-    if (nonBeneficiaryProv) {
-      console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary bypass. Prioritizing ${nonBeneficiaryProv.name}...`);
-      return [nonBeneficiaryProv, ...activeProviders.filter((p: any) => p.id !== nonBeneficiaryProv.id)];
+    } else {
+      // If DataHub/BundleZone require beneficiary whitelist, prioritize Express-enabled BundleZone, DataMart, Spendless, or SKPlug for bypass
+      const nonBeneficiaryProv = activeProviders.find((p: any) => (p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true) || p.handler_type === "datamart" || p.handler_type === "spendless" || p.handler_type === "skdataplug");
+      if (nonBeneficiaryProv) {
+        console.log(`[resolveProvidersForOrder] Order ${order?.id} marked for non-beneficiary bypass. Prioritizing ${nonBeneficiaryProv.name}...`);
+        activeProviders = [nonBeneficiaryProv, ...activeProviders.filter((p: any) => p.id !== nonBeneficiaryProv.id)];
+      }
     }
   }
 

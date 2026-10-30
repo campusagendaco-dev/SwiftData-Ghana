@@ -1,3 +1,4 @@
+/// <reference path="../deno-env.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -196,6 +197,13 @@ serve(async (req) => {
       auto_gateway_switch_by_package: Boolean(data?.auto_gateway_switch_by_package),
       beneficiary_verification_enabled: data?.beneficiary_verification_enabled !== false,
       allow_non_beneficiary_continue: data?.allow_non_beneficiary_continue !== false,
+      mtn_express_mode_enabled: await (async () => {
+        const { data: bzProvs } = await supabaseAdmin.from("providers").select("is_active, settings").eq("handler_type", "bundlezone");
+        const fromProv = (bzProvs || []).some((p: any) => p.is_active && p.settings?.express_mode_enabled === true);
+        if (fromProv) return true;
+        if ((bzProvs || []).some((p: any) => p.settings?.express_mode_enabled === false)) return false;
+        return Boolean((data as any)?.mtn_express_mode_enabled);
+      })(),
       table_ready: true,
       warning: null,
     };

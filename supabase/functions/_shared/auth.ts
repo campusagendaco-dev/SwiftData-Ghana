@@ -51,10 +51,27 @@ export async function verifyAdmin(
 
   try {
     const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    const claims = getJwtClaims(token);
+
     // Cryptographic security enforcement:
-    // Only grant service_role bypass if the provided token EXACTLY matches the SUPABASE_SERVICE_ROLE_KEY secret.
-    // NEVER trust unverified claims from arbitrary client-provided tokens!
-    const isServiceRole = !!(serviceRoleKey && token.trim() === serviceRoleKey);
+    // 1. Direct match against SUPABASE_SERVICE_ROLE_KEY env var (e.g. sb_secret_... or JWT)
+    // 2. Or if token is a JWT with role === "service_role", verify it cryptographically against Supabase PostgREST
+    //    (which validates the HMAC-SHA256 JWT signature against the project JWT secret).
+    let isServiceRole = !!(serviceRoleKey && token.trim() === serviceRoleKey);
+    if (!isServiceRole && claims?.role === "service_role") {
+      const supabaseUrl = (Deno.env.get("SUPABASE_URL") || "").replace(/\/+$/, "");
+      if (supabaseUrl) {
+        const verifyRes = await fetch(`${supabaseUrl}/rest/v1/system_secrets?limit=1`, {
+          headers: {
+            apikey: token.trim(),
+            Authorization: `Bearer ${token.trim()}`,
+          },
+        });
+        if (verifyRes.ok) {
+          isServiceRole = true;
+        }
+      }
+    }
 
     let user;
     if (isServiceRole) {
@@ -81,7 +98,6 @@ export async function verifyAdmin(
       }
 
       const roleObj = roles[0];
-      const claims = getJwtClaims(token);
 
       // 5. Enforce MFA (AAL2)
       if (checkMfa) {

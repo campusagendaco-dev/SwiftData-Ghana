@@ -99,8 +99,9 @@ serve(async (req: Request) => {
         "Accept": "application/json"
       };
 
-      // 1. Sync Packages
+      // 1. Sync Packages (including MTN_EXPRESS active=0 catalogue)
       const packageUrlVariations = [
+        `${cleanBase}/api/bundles.php?active=0`,
         `${cleanBase}/api/bundles.php`,
         `${cleanBase}/api/bundles`
       ];
@@ -119,17 +120,28 @@ serve(async (req: Request) => {
         }
       }
 
-      if (res) {
+      // Also fetch explicit MTN_EXPRESS catalogue (?network=MTN_EXPRESS&active=0)
+      let mtnExpressRes: Response | undefined;
+      try {
+        const expUrl = `${cleanBase}/api/bundles.php?network=MTN_EXPRESS&active=0`;
+        const expResponse = await fetchWithTimeout(expUrl, { headers: requestHeaders }, 3500);
+        if (expResponse.ok) {
+          mtnExpressRes = expResponse;
+        }
+      } catch (err: any) {
+        console.warn(`[sync:bundlezone] Error fetching MTN_EXPRESS packages:`, err.message);
+      }
+
+      if (res || mtnExpressRes) {
         try {
-          const result = await res.json();
-          const rawData = result.data || result.packages || result.bundles || result;
-          if (rawData && typeof rawData === "object") {
-            const allPackages = [];
+          const allPackagesMap = new Map<string, any>();
+          const ingestBundleZonePayload = (rawData: any) => {
+            if (!rawData || typeof rawData !== "object") return;
             const bundleList = Array.isArray(rawData) ? rawData : (Array.isArray(rawData.bundles) ? rawData.bundles : null);
 
             if (bundleList) {
               for (const pkg of bundleList) {
-                const rawNet = String(pkg.network || "").toUpperCase();
+                const rawNet = String(pkg.network || "MTN_EXPRESS").toUpperCase();
                 let dbNetwork = "MTN";
                 if (rawNet.includes("YELLO") || rawNet.includes("MTN")) dbNetwork = "MTN";
                 else if (rawNet.includes("TELECEL") || rawNet.includes("VOD")) dbNetwork = "Telecel";
@@ -137,8 +149,9 @@ serve(async (req: Request) => {
 
                 const name = pkg.name || pkg.package_name || pkg.capacity_label || (pkg.capacity >= 1 ? `${pkg.capacity}GB` : `${pkg.mb || 0}MB`);
                 const capGb = pkg.capacity || (pkg.mb ? pkg.mb / 1024 : 0);
+                const isAvailable = pkg.available !== false && pkg.active !== false;
 
-                allPackages.push({
+                allPackagesMap.set(`${dbNetwork}:${name}`, {
                   provider_id: provider.id,
                   network: dbNetwork,
                   package_name: name,
@@ -146,7 +159,7 @@ serve(async (req: Request) => {
                   cost_price: pkg.price || pkg.amount || pkg.cost_price || 0,
                   external_id: String(pkg.id || pkg.package_id || pkg.bundle_id || `${dbNetwork}_${capGb}`),
                   raw_data: pkg,
-                  is_active: pkg.active !== false
+                  is_active: isAvailable
                 });
               }
             } else {
@@ -156,13 +169,17 @@ serve(async (req: Request) => {
                 if (!Array.isArray(netPackages)) continue;
 
                 let dbNetwork = netKey;
-                if (netKey === "YELLO") dbNetwork = "MTN";
+                const upperKey = netKey.toUpperCase();
+                if (upperKey === "YELLO" || upperKey === "MTN_EXPRESS" || upperKey.includes("MTN")) dbNetwork = "MTN";
+                else if (upperKey.includes("TELECEL") || upperKey.includes("VOD")) dbNetwork = "Telecel";
+                else if (upperKey.includes("AT") || upperKey.includes("AIRTEL") || upperKey.includes("TIGO")) dbNetwork = "AirtelTigo";
 
                 for (const pkg of netPackages) {
                   const name = pkg.name || pkg.package_name || (pkg.capacity >= 1 ? `${pkg.capacity}GB` : `${pkg.mb || 0}MB`);
                   const capGb = pkg.capacity || (pkg.mb ? pkg.mb / 1024 : 0);
+                  const isAvailable = pkg.available !== false && pkg.active !== false;
 
-                  allPackages.push({
+                  allPackagesMap.set(`${dbNetwork}:${name}`, {
                     provider_id: provider.id,
                     network: dbNetwork,
                     package_name: name,
@@ -170,19 +187,29 @@ serve(async (req: Request) => {
                     cost_price: pkg.price || pkg.amount || pkg.cost_price || 0,
                     external_id: String(pkg.id || pkg.package_id || pkg.bundle_id || `${dbNetwork}_${capGb}`),
                     raw_data: pkg,
-                    is_active: true
+                    is_active: isAvailable
                   });
                 }
               }
             }
+          };
 
-            if (allPackages.length > 0) {
-              const { error: upsertError } = await supabaseAdmin
-                .from("provider_packages")
-                .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
-              if (upsertError) console.error("Package upsert error:", upsertError);
-              packagesSynced = allPackages.length;
-            }
+          if (res) {
+            const result = await res.json();
+            ingestBundleZonePayload(result.data || result.packages || result.bundles || result);
+          }
+          if (mtnExpressRes) {
+            const expResult = await mtnExpressRes.json();
+            ingestBundleZonePayload(expResult.data || expResult.packages || expResult.bundles || expResult);
+          }
+
+          const allPackages = Array.from(allPackagesMap.values());
+          if (allPackages.length > 0) {
+            const { error: upsertError } = await supabaseAdmin
+              .from("provider_packages")
+              .upsert(allPackages, { onConflict: "provider_id,network,package_name" });
+            if (upsertError) console.error("Package upsert error:", upsertError);
+            packagesSynced = allPackages.length;
           }
         } catch (jsonErr: any) {
           console.warn(`[sync:bundlezone] Failed to parse package response JSON:`, jsonErr.message);

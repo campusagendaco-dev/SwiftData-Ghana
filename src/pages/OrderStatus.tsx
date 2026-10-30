@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2, XCircle, Loader2, ShieldCheck, Zap,
   Activity, Copy, Check, RefreshCw, ArrowLeft,
-  Search, Info, Database, SignalHigh, Server,
-  Clock, ArrowRight, Package, ReceiptText, Store,
+  Search, SignalHigh, Server,
+  Clock, Package, ReceiptText, Store,
   Share2, Sparkles, Cpu, Terminal, RotateCcw,
-  MessageCircle, Headphones
+  MessageCircle, Headphones, ChevronDown, ChevronUp, Radio
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
@@ -25,9 +25,9 @@ import { translateFailureReason, isBeneficiaryFailure } from "@/lib/failure-reas
 type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid" | "refunded";
 
 const STEPS = [
-  { key: "Payment", label: "Confirmed", icon: ShieldCheck, color: "#10B981" },
-  { key: "Dispatch", label: "Broadcasting", icon: Zap, color: "#F59E0B" },
-  { key: "Complete", label: "Delivered", icon: CheckCircle2, color: "#6366F1" },
+  { key: "Payment", label: "Confirmed", sub: "Verified", icon: ShieldCheck, color: "#10B981" },
+  { key: "Dispatch", label: "Broadcasting", sub: "Carrier Uplink", icon: Zap, color: "#F59E0B" },
+  { key: "Complete", label: "Delivered", sub: "SIM Credited", icon: CheckCircle2, color: "#10B981" },
 ];
 
 interface TrackerData {
@@ -48,7 +48,15 @@ interface TrackerData {
 function getStatusMeta(status: OrderStatusType, failed: boolean, network?: string, message?: string, isBeneficiary?: boolean, orderType?: string) {
   // Fulfilled orders take absolute highest precedence — bundle has delivered
   if (status === "fulfilled") {
-    return { color: "#10B981", glow: "rgba(16,185,129,0.22)", label: "Purchase Successful", sub: "Data bundle delivered successfully to recipient line!", badge: "Delivered" };
+    return {
+      color: "#10B981",
+      glow: "rgba(16,185,129,0.24)",
+      label: "Bundle Delivered",
+      sub: "Data allocation confirmed and credited to recipient SIM.",
+      badge: "Delivered",
+      accentBorder: "border-emerald-500/35",
+      accentBg: "from-emerald-500/15 via-emerald-950/20 to-transparent"
+    };
   }
   // Refunded orders take second precedence — funds returned
   if (status === "refunded") {
@@ -58,39 +66,99 @@ function getStatusMeta(status: OrderStatusType, failed: boolean, network?: strin
       glow: "rgba(168,85,247,0.25)",
       label: isMomo ? "Refunded to Mobile Money 💰" : "Order Refunded 💰",
       sub: message || "Your order was refunded. Funds have been returned safely.",
-      badge: "Refunded 💰"
+      badge: "Refunded",
+      accentBorder: "border-purple-500/35",
+      accentBg: "from-purple-500/15 via-purple-950/20 to-transparent"
     };
   }
   // Actively processing orders
   if (status === "processing") {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Transmitting Data Bundle", sub: translateFailureReason(message, network, orderType) || "Payment confirmed. Transmitting data bundle payload to carrier network.", badge: "Processing" };
+    return {
+      color: "#F59E0B",
+      glow: "rgba(245,158,11,0.22)",
+      label: "Transmitting Data Bundle",
+      sub: translateFailureReason(message, network, orderType) || "Direct carrier uplink active — dispatching bundle payload to SIM.",
+      badge: "Processing",
+      accentBorder: "border-amber-500/30",
+      accentBg: "from-amber-500/12 via-amber-950/15 to-transparent"
+    };
   }
   // Beneficiary queue ONLY applies when order has failed delivery or is explicitly in beneficiary state
   if ((isBeneficiary || isBeneficiaryFailure(status, message, network, orderType)) && (failed || status === "fulfillment_failed")) {
     return { 
       color: "#F59E0B", 
       glow: "rgba(245,158,11,0.25)", 
-      label: "In Queue for Whitelist Verification ⏳", 
-      sub: "Your recipient line is queued for carrier whitelist verification. Delivery will automatically proceed once approved.", 
-      badge: "In Queue ⏳" 
+      label: "Queued for Whitelist Approval ⏳", 
+      sub: "Recipient line is queued for carrier whitelist verification. Delivery proceeds automatically once approved.", 
+      badge: "In Queue",
+      accentBorder: "border-amber-500/35",
+      accentBg: "from-amber-500/15 via-amber-950/20 to-transparent"
     };
   }
   if (failed || status === "fulfillment_failed") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.25)", label: "Delivery Failed", sub: translateFailureReason(message, network, orderType) || "Something went wrong with your order", badge: "Failed" };
+    return {
+      color: "#EF4444",
+      glow: "rgba(239,68,68,0.25)",
+      label: "Delivery Interrupted",
+      sub: translateFailureReason(message, network, orderType) || "Carrier gateway reported an issue. Use an action below to re-dispatch or resolve.",
+      badge: "Attention",
+      accentBorder: "border-red-500/35",
+      accentBg: "from-red-500/15 via-red-950/20 to-transparent"
+    };
   }
   if (status === "paid") {
-    return { color: "#F59E0B", glow: "rgba(245,158,11,0.22)", label: "Payment Confirmed", sub: "Payment received. Queuing order for carrier fulfillment.", badge: "Queued" };
+    return {
+      color: "#10B981",
+      glow: "rgba(16,185,129,0.22)",
+      label: "Payment Confirmed",
+      sub: "Payment verified. Assigning priority carrier fulfillment slot.",
+      badge: "Confirmed",
+      accentBorder: "border-emerald-500/30",
+      accentBg: "from-emerald-500/12 via-emerald-950/15 to-transparent"
+    };
   }
   if (status === "not_paid") {
-    return { color: "#FBBF24", glow: "rgba(251,191,36,0.20)", label: "Payment Not Found", sub: translateFailureReason(message, network, orderType) || "We couldn't find a successful transaction for this reference.", badge: "Awaiting" };
+    return {
+      color: "#FBBF24",
+      glow: "rgba(251,191,36,0.20)",
+      label: "Payment Not Confirmed",
+      sub: translateFailureReason(message, network, orderType) || "We couldn't find a completed payment for this reference yet.",
+      badge: "Awaiting",
+      accentBorder: "border-amber-500/30",
+      accentBg: "from-amber-500/10 via-slate-950 to-transparent"
+    };
   }
   if (status === "error") {
-    return { color: "#EF4444", glow: "rgba(239,68,68,0.20)", label: "Payment Failed", sub: translateFailureReason(message, network, orderType) || "There was a problem verifying your payment.", badge: "Error" };
+    return {
+      color: "#EF4444",
+      glow: "rgba(239,68,68,0.20)",
+      label: "Verification Error",
+      sub: translateFailureReason(message, network, orderType) || "There was a problem verifying your payment.",
+      badge: "Error",
+      accentBorder: "border-red-500/30",
+      accentBg: "from-red-500/12 via-red-950/15 to-transparent"
+    };
   }
   if (status === "pending" && (network === "MTN Mash Up" || network?.toLowerCase()?.includes("mash"))) {
-    return { color: "#8B5CF6", glow: "rgba(139,92,246,0.22)", label: "Paid & Processing", sub: translateFailureReason(message, network, orderType) || "Your payment is confirmed. MTN Mash Up bundle is queued for manual processing.", badge: "Queued" };
+    return {
+      color: "#8B5CF6",
+      glow: "rgba(139,92,246,0.22)",
+      label: "Paid & Queued",
+      sub: translateFailureReason(message, network, orderType) || "Your payment is confirmed. MTN Mash Up bundle is queued for fulfillment.",
+      badge: "Queued",
+      accentBorder: "border-purple-500/30",
+      accentBg: "from-purple-500/12 via-purple-950/15 to-transparent"
+    };
   }
-  return { color: "#D97706", glow: "rgba(217,119,6,0.20)", label: "Awaiting Payment", sub: translateFailureReason(message, network, orderType) || "We are waiting for your checkout authorization on Paystack.", badge: "Pending" };
+  return {
+    color: "#F59E0B",
+    glow: "rgba(245,158,11,0.20)",
+    label: "Awaiting Payment",
+    sub: translateFailureReason(message, network, orderType) || "Waiting for Mobile Money or checkout authorization.",
+    badge: "Pending",
+    accentBorder: "border-amber-500/30",
+    accentBg: "from-amber-500/10 via-slate-950 to-transparent"
+  };
 }
 
 const OrderStatus = () => {
@@ -112,8 +180,10 @@ const OrderStatus = () => {
   const [orderStatus, setOrderStatus] = useState<OrderStatusType>("pending");
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [failed, setFailed] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showTelemetry, setShowTelemetry] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const redirectedRef = useRef(false);
   const hasPlayedSoundRef = useRef(false);
@@ -438,6 +508,22 @@ const OrderStatus = () => {
     window.open(getWhatsAppUrl(), "_blank", "noopener,noreferrer");
   };
 
+  const handleCopyRef = () => {
+    navigator.clipboard.writeText(reference);
+    setCopiedRef(true);
+    toast.success("Order reference copied!");
+    setTimeout(() => setCopiedRef(false), 2000);
+  };
+
+  const handleCopyPhone = () => {
+    const targetPhone = phoneParam || orderPhone || orderData?.customer_phone;
+    if (!targetPhone) return;
+    navigator.clipboard.writeText(targetPhone);
+    setCopiedPhone(true);
+    toast.success("Recipient number copied!");
+    setTimeout(() => setCopiedPhone(false), 2000);
+  };
+
   const handleCopyTrackingLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
@@ -473,7 +559,7 @@ const OrderStatus = () => {
     }
 
     setIsExpediting(true);
-    toast.info("⚡ Fast-tracking delivery with carrier gateway...");
+    toast.info("⚡ Syncing live status & priority carrier dispatch...");
 
     try {
       const { data, error } = await supabase.functions.invoke("verify-payment", {
@@ -496,13 +582,13 @@ const OrderStatus = () => {
           playSuccessSound();
         }
       } else {
-        toast.success("⚡ Order dispatched to carrier! Delivery in progress.");
+        toast.success("⚡ Carrier priority sync complete! Delivery is actively transmitting.");
         if (data?.status) handleStatusUpdate(data.status, data.message || data.reason);
       }
       await pollStatus(true);
     } catch (e: any) {
       console.error("Expedite delivery error:", e);
-      toast.error("Gateway busy. Click 'Chat with Support' for instant live help.");
+      toast.error("Gateway busy. Click 'WhatsApp Support' for instant live help.");
     } finally {
       setIsExpediting(false);
     }
@@ -512,11 +598,6 @@ const OrderStatus = () => {
     const targetId = orderData?.id || resolvedOrderId || reference;
     if (!targetId) return;
 
-    if (hasEnteredProvider) {
-      toast.info("This order has already entered the carrier network provider gateway. Delivery is 100% guaranteed, so it cannot be refunded.");
-      return;
-    }
-
     const currentDbStatus = String((orderData as any)?.status || orderStatus);
     if (currentDbStatus === "fulfilled" || currentDbStatus === "completed") {
       toast.error("Order has already been delivered. It cannot be refunded.");
@@ -524,6 +605,36 @@ const OrderStatus = () => {
     }
     if (currentDbStatus === "refunded") {
       toast.error("Order has already been refunded.");
+      return;
+    }
+
+    // If order is in processing, check if eligible via /order-refund (verify-and-refund) first
+    if (hasEnteredProvider && currentDbStatus === "processing") {
+      setIsClaimingRefund(true);
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          const { data: refundRes, error: refundErr } = await supabase.functions.invoke("verify-and-refund", {
+            body: { reference: targetId, mode: "refund_only" }
+          });
+          if (!refundErr && refundRes?.success) {
+            toast.success(refundRes.message || "Refund credited to your wallet!");
+            setOrderStatus("refunded");
+            await pollStatus(true);
+            return;
+          }
+        }
+        toast.info("This order has entered the carrier network gateway. Delivery is 100% guaranteed once in provider transmission.");
+      } catch {
+        toast.info("This order has entered the carrier network gateway. Delivery is 100% guaranteed.");
+      } finally {
+        setIsClaimingRefund(false);
+      }
+      return;
+    }
+
+    if (hasEnteredProvider) {
+      toast.info("This order has already entered the carrier network provider gateway. Delivery is 100% guaranteed, so it cannot be refunded.");
       return;
     }
 
@@ -588,12 +699,12 @@ const OrderStatus = () => {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat with WhatsApp Support"
-      className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl shadow-emerald-950/80 border border-emerald-400/40 transition-all hover:scale-105 active:scale-95 group backdrop-blur-md"
+      className="fixed bottom-3.5 right-3.5 sm:bottom-5 sm:right-5 z-40 flex items-center gap-2 p-3 sm:px-4 sm:py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_8px_24px_rgba(5,150,105,0.45)] border border-emerald-400/40 transition-all hover:scale-105 active:scale-95 group backdrop-blur-md"
       title="Need assistance? Chat with WhatsApp Support"
     >
       <div className="relative">
-        <MessageCircle className="w-5 h-5 text-white fill-white/20" />
-        <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 border-2 border-emerald-600 absolute -top-1 -right-1 animate-pulse" />
+        <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5 text-white fill-white/20" />
+        <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-300 border-2 border-emerald-600 absolute -top-0.5 -right-0.5 sm:-top-1 sm:-right-1 animate-pulse" />
       </div>
       <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">
         Live Support
@@ -679,7 +790,7 @@ const OrderStatus = () => {
     const safeEstMins = Math.min(Math.max(Number(estMinutes) || 4, 2), 15);
     const totalSecs = safeEstMins * 60;
     const elapsed = Math.min(totalSecs - 2, elapsedSeconds);
-    return Math.max(18, Math.round((elapsed / totalSecs) * 95));
+    return Math.max(22, Math.round((elapsed / totalSecs) * 94));
   };
 
   const getTerminalLogs = () => {
@@ -693,30 +804,24 @@ const OrderStatus = () => {
 
     const logs: Array<{ time: string; text: string; status: "success" | "info" | "warn" }> = [];
     
-    // 0s Offset
     logs.push({ time: formatTime(0), text: "📡 Connecting to secure carrier gateway...", status: "info" });
 
-    // 5s Offset
     if (elapsedSeconds >= 5) {
       logs.push({ time: formatTime(5), text: "🔑 Authenticating API credentials...", status: "info" });
     }
 
-    // 12s Offset
     if (elapsedSeconds >= 12) {
       logs.push({ time: formatTime(12), text: `🔍 Validating recipient SIM status on ${network || "MTN"} HLR...`, status: "info" });
     }
 
-    // 25s Offset
     if (elapsedSeconds >= 25) {
       logs.push({ time: formatTime(25), text: `⚡ Broadcasting ${packageSize || "data"} allocation payload...`, status: "info" });
     }
 
-    // 45s Offset
     if (elapsedSeconds >= 45) {
       logs.push({ time: formatTime(45), text: "⏳ Awaiting carrier network callback...", status: "warn" });
     }
 
-    // Success or failure status
     if (orderStatus === "fulfilled") {
       const dTimeStr = new Date().toLocaleTimeString("en-GH", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
       logs.push({ time: dTimeStr, text: "🟢 Network callback verified. Data delivered successfully!", status: "success" });
@@ -729,7 +834,7 @@ const OrderStatus = () => {
       if (isBen) {
         logs.push({ time: dTimeStr, text: "⏳ Number queued for MTN Whitelist Verification. Bundle will deliver automatically after approval!", status: "warn" });
       } else {
-        logs.push({ time: dTimeStr, text: `🔴 Delivery failed: ${statusMessage || "Rejected by carrier"}`, status: "warn" });
+        logs.push({ time: dTimeStr, text: `🔴 Delivery interrupted: ${statusMessage || "Carrier gateway response pending"}`, status: "warn" });
       }
     }
 
@@ -830,10 +935,8 @@ const OrderStatus = () => {
     const pollDelay = isPending ? 3500 : 8000;
     const interval = setInterval(() => pollStatus(isPending), pollDelay);
 
-    // Instant verification when user returns to browser tab after approving MoMo
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible" && ["pending", "awaiting_payment", "not_paid"].includes(orderStatus)) {
-        console.log("[OrderStatus] Tab focused, triggering instant force payment verification.");
         pollStatus(true);
       }
     };
@@ -882,8 +985,26 @@ const OrderStatus = () => {
 
   // --- RENDER SPECIFIC ORDER ---
   if (reference) {
+    const activeStep =
+      orderStatus === "fulfilled"
+        ? 3
+        : isBeneficiaryOrder
+        ? 2
+        : orderStatus === "processing"
+        ? 2
+        : ["paid", "pending"].includes(orderStatus)
+        ? 1
+        : 0;
+
+    const terminalLogs = getTerminalLogs();
+    const latestLog = terminalLogs.length > 0 ? terminalLogs[terminalLogs.length - 1] : null;
+    const displayNetwork = network || orderData?.network || "MTN";
+    const displayPackage = packageSize || orderData?.package_size || "Bundle";
+    const displayPhone = phoneParam || orderPhone || orderData?.customer_phone || "—";
+    const displayAmount = orderData?.amount ? `GH₵${Number(orderData.amount).toFixed(2)}` : null;
+
     return (
-      <div className="min-h-screen bg-[#05060a] text-slate-100 flex flex-col items-center justify-center p-3 sm:p-6 font-sans antialiased selection:bg-amber-500/30 pt-16 sm:pt-24 pb-16 relative overflow-hidden">
+      <div className="min-h-screen bg-[#040509] text-slate-100 flex flex-col items-center justify-center p-2.5 sm:p-6 font-sans antialiased selection:bg-amber-500/30 pt-11 sm:pt-20 pb-16 sm:pb-20 relative overflow-hidden">
         <SEO 
           title={`Track Order Status — ${storeName}`}
           description={`Track the real-time delivery status of your data bundle purchase on ${storeName}.`}
@@ -891,82 +1012,118 @@ const OrderStatus = () => {
           canonical={`https://${brandDomain}/order-status?reference=${reference}`}
         />
 
-        {/* Dynamic Glow Background Orbs */}
+        {/* Ambient Mesh & Grid Backdrop */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
           <div 
-            className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[160px] opacity-25 transition-all duration-1000"
+            className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] sm:w-[540px] h-[380px] sm:h-[540px] rounded-full blur-[140px] sm:blur-[170px] opacity-20 transition-all duration-1000"
             style={{ backgroundColor: meta.color }} 
           />
-          <div className="absolute top-[-10%] right-[-10%] w-[350px] h-[350px] bg-amber-500/10 rounded-full blur-[140px]" />
-          <div className="absolute bottom-[-10%] left-[-10%] w-[350px] h-[350px] bg-blue-500/10 rounded-full blur-[140px]" />
+          <div className="absolute top-[-10%] right-[-10%] w-[260px] sm:w-[360px] h-[260px] sm:h-[360px] bg-amber-500/8 rounded-full blur-[130px]" />
+          <div className="absolute bottom-[-10%] left-[-10%] w-[260px] sm:w-[360px] h-[260px] sm:h-[360px] bg-indigo-500/8 rounded-full blur-[130px]" />
         </div>
 
-        <div className="w-full max-w-md relative z-10 space-y-4">
-          {/* Top Brand Header Bar */}
-          <div className="flex items-center justify-between px-2">
+        <div className="w-full max-w-[420px] sm:max-w-[450px] relative z-10 space-y-2.5 sm:space-y-3.5">
+          {/* Top Navigation Bar */}
+          <div className="flex items-center justify-between px-1">
             <button
               onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}` : '/')}
-              className="inline-flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-white transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] sm:text-xs font-bold text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>{storeName}</span>
+              <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+              <span className="truncate max-w-[135px] sm:max-w-[160px]">{storeName}</span>
             </button>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/90 border border-slate-800 text-[10px] font-bold font-mono text-slate-400">
-              <Cpu className="w-3 h-3 text-amber-400 animate-pulse" />
-              <span>NODE-01</span>
+
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                onClick={() => setShowReceipt(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/30 text-[10px] sm:text-[11px] font-extrabold text-amber-300 transition-all active:scale-95 cursor-pointer"
+                title="View Digital E-Receipt"
+              >
+                <ReceiptText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+                <span>Receipt</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 px-2.5 py-1 sm:py-1.5 rounded-full bg-slate-900/90 border border-slate-800/90 text-[9px] sm:text-[10px] font-bold font-mono text-slate-400">
+                <Radio className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 animate-pulse" />
+                <span className="hidden xs:inline">UPLINK-01</span>
+                <span className="xs:hidden">LIVE</span>
+              </div>
             </div>
           </div>
 
-          {/* Main Tracking Card */}
-          <div aria-live="polite" className="relative overflow-hidden rounded-3xl bg-[#0b0c12]/95 border border-slate-800/80 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] transition-all duration-300">
-            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.04] via-transparent to-black/60 pointer-events-none" />
-            
-            {/* Top Status Header Pill */}
-            <div className="px-6 pt-6 flex items-center justify-between relative z-10">
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2.5 w-2.5">
+          {/* Primary Command Card */}
+          <div
+            aria-live="polite"
+            className={cn(
+              "relative overflow-hidden rounded-[24px] sm:rounded-[28px] bg-[#0a0b12]/95 border backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.85)] transition-all duration-500",
+              meta.accentBorder || "border-slate-800/80"
+            )}
+          >
+            {/* Subtle Top Ambient Wash */}
+            <div className={cn("absolute inset-x-0 top-0 h-36 sm:h-44 bg-gradient-to-b pointer-events-none", meta.accentBg)} />
+
+            {/* Top Status & Reference Header */}
+            <div className="px-3.5 pt-3.5 sm:px-5 sm:pt-5 flex items-center justify-between relative z-10">
+              <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 py-1 rounded-full bg-black/50 border border-white/[0.07]">
+                <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: meta.color }} />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: meta.color }} />
+                  <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: meta.color }} />
                 </span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300 font-mono">{meta.badge} Status</span>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.14em] text-slate-200 font-mono">
+                  {meta.badge} STATUS
+                </span>
               </div>
 
               <button 
                 type="button"
-                onClick={() => { navigator.clipboard.writeText(reference); toast.success("Reference copied!"); }}
-                className="cursor-pointer group flex items-center gap-1.5 text-[10px] font-mono text-slate-400 bg-slate-900/90 hover:bg-slate-800 px-2.5 py-1 rounded-full border border-slate-800 transition-colors"
-                title="Click to copy reference"
+                onClick={handleCopyRef}
+                className="cursor-pointer group flex items-center gap-1.5 text-[9px] sm:text-[10px] font-mono text-slate-300 bg-black/50 hover:bg-slate-800/90 px-2.5 py-1 rounded-full border border-white/[0.08] transition-all active:scale-95"
+                title="Click to copy order reference"
                 aria-label="Copy order reference"
               >
                 <span>REF: {reference.slice(0, 10).toUpperCase()}</span>
-                <Copy className="w-3 h-3 text-slate-500 group-hover:text-amber-400 transition-colors" />
+                {copiedRef ? (
+                  <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400" />
+                ) : (
+                  <Copy className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-500 group-hover:text-amber-400 transition-colors" />
+                )}
               </button>
             </div>
 
-            {/* Hero Icon & Delivery Details */}
-            <div aria-live="polite" className="px-6 pt-6 pb-8 flex flex-col items-center text-center relative z-10">
-              <div className="relative mb-5">
+            {/* Orbital Status Hero */}
+            <div className="px-4 pt-3.5 pb-3 sm:px-5 sm:pt-5 sm:pb-4 flex flex-col items-center text-center relative z-10">
+              <div className="relative mb-2.5 sm:mb-3.5 flex items-center justify-center">
                 {orderStatus === "fulfilled" ? (
-                  <div className="relative w-28 h-28 flex items-center justify-center">
-                    <div className="absolute inset-0 bg-emerald-500 rounded-full blur-2xl opacity-30 animate-pulse" />
-                    <div className="relative z-10 w-24 h-24 rounded-3xl bg-gradient-to-b from-emerald-500/25 via-emerald-950/60 to-black border border-emerald-500/40 flex items-center justify-center shadow-2xl shadow-emerald-950/80">
-                      <CheckCircle2 className="w-12 h-12 text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
+                  <motion.div
+                    initial={{ scale: 0.85, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="relative w-16 h-16 sm:w-22 sm:h-22 flex items-center justify-center"
+                  >
+                    <div className="absolute inset-0 bg-emerald-500 rounded-full blur-xl opacity-30 animate-pulse" />
+                    <div className="absolute inset-0.5 rounded-full border border-emerald-400/30 animate-ping opacity-20" />
+                    <div className="relative z-10 w-14 h-14 sm:w-18 sm:h-18 rounded-[18px] sm:rounded-[22px] bg-gradient-to-b from-emerald-500/25 via-emerald-950/70 to-[#07080d] border border-emerald-400/45 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+                      <CheckCircle2 className="w-7 h-7 sm:w-9 sm:h-9 text-emerald-400 drop-shadow-[0_0_12px_rgba(16,185,129,0.6)]" />
                     </div>
-                  </div>
+                  </motion.div>
                 ) : (
-                  <div className="relative w-26 h-26 flex items-center justify-center">
-                    <div className="absolute inset-0 blur-2xl opacity-25 animate-pulse" style={{ backgroundColor: meta.color }} />
-                    <div className="relative z-10 w-22 h-22 rounded-3xl bg-[#090a10] border border-slate-800/90 flex items-center justify-center shadow-2xl">
+                  <div className="relative w-16 h-16 sm:w-22 sm:h-22 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full blur-xl opacity-25 animate-pulse" style={{ backgroundColor: meta.color }} />
+                    {/* Outer Orbital Ring */}
+                    <div
+                      className="absolute inset-0 rounded-full border border-dashed opacity-35 animate-spin"
+                      style={{ borderColor: meta.color, animationDuration: "10s" }}
+                    />
+                    <div className="relative z-10 w-14 h-14 sm:w-18 sm:h-18 rounded-[18px] sm:rounded-[22px] bg-gradient-to-b from-white/[0.07] to-[#07080d] border border-white/[0.12] flex items-center justify-center shadow-2xl">
                       {isBeneficiaryOrder ? (
-                        <div className="relative flex items-center justify-center">
-                          <Clock className="w-10 h-10 text-amber-400 animate-pulse drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]" />
-                        </div>
+                        <Clock className="w-7 h-7 sm:w-8 sm:h-8 text-amber-400 animate-pulse drop-shadow-[0_0_12px_rgba(245,158,11,0.5)]" />
+                      ) : orderStatus === "refunded" ? (
+                        <RotateCcw className="w-7 h-7 sm:w-8 sm:h-8 text-purple-400 drop-shadow-[0_0_12px_rgba(168,85,247,0.5)]" />
                       ) : failed ? (
-                        <XCircle className="w-10 h-10 text-red-400 drop-shadow-md" />
+                        <XCircle className="w-7 h-7 sm:w-8 sm:h-8 text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.4)]" />
                       ) : (
                         <div className="relative flex items-center justify-center">
-                          <Loader2 className="w-10 h-10 animate-spin text-amber-400" />
-                          <Activity className="w-4 h-4 text-amber-300 absolute" />
+                          <Loader2 className="w-8 h-8 sm:w-9 sm:h-9 animate-spin text-amber-400/90" />
+                          <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 absolute" />
                         </div>
                       )}
                     </div>
@@ -974,369 +1131,255 @@ const OrderStatus = () => {
                 )}
               </div>
 
-              <h2 className="text-xl font-black text-white tracking-tight mb-1">{meta.label}</h2>
-              <p className="text-xs text-slate-300 font-medium max-w-xs leading-relaxed">{meta.sub}</p>
+              <h1 className="text-[17px] sm:text-[21px] font-black text-white tracking-tight leading-snug">
+                {meta.label}
+              </h1>
+              <p className="mt-0.5 text-[11px] sm:text-xs text-slate-300/90 font-medium max-w-[290px] sm:max-w-[330px] leading-relaxed">
+                {meta.sub}
+              </p>
 
-              {/* Delivery Speed Badge */}
+              {/* Live ETA & Instant Sync Pill */}
               {createdAt && ["pending", "paid", "processing"].includes(orderStatus) && (
-                <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono shadow-inner">
-                  <Clock className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                  <span>{getRemainingTimeStr().includes("Arriving") ? getRemainingTimeStr() : `Est. delivery: ~${getRemainingTimeStr()}`}</span>
-                </div>
-              )}
-
-              {/* Carrier & Order Specs Pills */}
-              {(network || phoneParam) && (
-                <div className="mt-5 flex flex-wrap items-center justify-center gap-2 px-3 py-2 rounded-2xl bg-slate-950/80 border border-slate-800/80 shadow-inner">
-                  {network && (
-                    <Badge variant="outline" className={cn(
-                      "text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 border rounded-lg",
-                      network.includes("MTN") && "border-amber-500/40 text-amber-300 bg-amber-500/15",
-                      network.includes("Telecel") && "border-red-500/40 text-red-300 bg-red-500/15",
-                      network.includes("Airtel") && "border-blue-500/40 text-blue-300 bg-blue-500/15"
-                    )}>
-                      {network}
-                    </Badge>
-                  )}
-                  {packageSize && (
-                    <Badge variant="outline" className="text-[10px] font-mono font-extrabold border-slate-700 text-slate-200 bg-slate-900">
-                      {packageSize}
-                    </Badge>
-                  )}
-                  {phoneParam && (
-                    <span className="text-xs font-mono font-black text-emerald-400 tracking-wider px-1">
-                      {phoneParam}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Quick Share on WhatsApp & Copy Tracking Link */}
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                <button
-                  onClick={handleShareWhatsApp}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-                  title="Share live order tracking link on WhatsApp"
-                >
-                  <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Share on WhatsApp</span>
-                </button>
-                <button
-                  onClick={handleCopyTrackingLink}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 text-xs font-bold transition-all active:scale-95 shadow-sm cursor-pointer"
-                  title="Copy direct tracking link to clipboard"
-                >
-                  {copiedLink ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-400">Link Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Copy Tracking Link</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Animated Progress Bar */}
-            <div className="px-6 pb-6 space-y-2 relative z-10">
-              <div className="relative h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800/90 shadow-inner">
-                <div 
-                  className={cn(
-                    "absolute inset-y-0 left-0 transition-all duration-1000 ease-out shadow-md",
-                    isBeneficiaryOrder
-                      ? "bg-gradient-to-r from-amber-500 to-amber-400"
-                      : "bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500"
-                  )}
-                  style={{ width: `${getProgressPercentage()}%` }} 
-                />
-              </div>
-              <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 pt-1">
-                {STEPS.map((s, i) => {
-                  const activeStep = orderStatus === "fulfilled" ? 3 : isBeneficiaryOrder ? 2 : (orderStatus === "processing" ? 2 : (["paid", "pending"].includes(orderStatus) ? 1 : 0));
-                  const isActive = activeStep >= i + 1;
-                  const stepLabel = (i === 2 && isBeneficiaryOrder) ? "In Queue ⏳" : s.label;
-                  return (
-                    <div key={s.key} className={cn("flex items-center gap-1 transition-all", isActive ? (isBeneficiaryOrder && i === 2 ? "text-amber-400 font-black" : "text-emerald-400 font-black") : "text-slate-600")}>
-                      <span className={cn("w-1.5 h-1.5 rounded-full", isActive ? (isBeneficiaryOrder && i === 2 ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-slate-700")} />
-                      <span>{stepLabel}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Live Carrier Delivery Reassurance Banner */}
-            {["pending", "paid", "processing"].includes(orderStatus) && !isBeneficiaryOrder && (
-              <div className="mx-6 mb-5 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-950/20 to-slate-950 border border-amber-500/30 text-left flex items-start gap-3 shadow-lg shadow-amber-950/20">
-                <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/30">
-                  <Zap className="w-4 h-4 fill-amber-400" />
-                </div>
-                <div className="space-y-1 flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-300 font-mono">
-                      Fast-Track Carrier Transmission
-                    </span>
-                    <button
-                      onClick={() => pollStatus(true)}
-                      disabled={isRefreshing}
-                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <RefreshCw className={cn("w-3 h-3", isRefreshing && "animate-spin")} />
-                      <span>{isRefreshing ? "Refreshing..." : "Refresh Status"}</span>
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    Payment is confirmed! Your data bundle payload is transmitting directly across carrier gateways. Our Auto-Router maintains active delivery priority.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Whitelist In-Queue Callout Card */}
-            {isBeneficiaryOrder && (
-              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center justify-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                    MTN Carrier Whitelist Queue
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> is in queue for carrier beneficiary verification. The data bundle will deliver automatically once verified.
-                </p>
-                <div className="pt-1 flex flex-col gap-2">
-                  <button
-                    onClick={() => navigate(`/submit-numbers?phone=${encodeURIComponent(phoneParam || orderPhone || "")}`)}
-                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <Zap className="w-4 h-4 fill-slate-950" />
-                    Expedite / Verify Number Now 🚀
-                  </button>
-
-                  {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" ? (
-                    <a
-                      href={getWhatsAppUrl(`Hello SwiftData support, my refund request for order ${resolvedOrderId || reference} is pending manual payout. Please assist me.`)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2.5 px-4 rounded-xl bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/40 text-amber-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                    >
-                      <MessageCircle className="w-4 h-4 text-amber-400 fill-amber-400/20" />
-                      Refund Under Review (Chat Support) ⏳
-                    </a>
-                  ) : (
-                    <button
-                      onClick={handleInstantRefund}
-                      disabled={isClaimingRefund}
-                      className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                    >
-                      {isClaimingRefund ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-purple-400" />}
-                      Request Refund to Mobile Money 💰
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* 1. Verified Completed Paystack Mobile Money Refund */}
-            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway === "paystack" && (orderData as any)?.metadata?.guest_refund_status === "completed" && (
-              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-purple-500/15 via-purple-950/20 to-black border border-purple-500/40 text-center space-y-3 shadow-lg shadow-purple-950/40 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center justify-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs font-black uppercase tracking-wider text-purple-300 font-mono">
-                    Refund Sent to Mobile Money 💰
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  {((!orderData?.network || String(orderData?.network).toUpperCase().includes("MTN")) && (!orderData?.order_type || orderData?.order_type === "data")) ? (
-                    <>
-                      Your recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span> has reached its daily MTN data transfer limit, belongs to an unsupported plan (e.g. corporate SIM), or has promotional messages blocked.
-                    </>
-                  ) : (
-                    <>
-                      Delivery could not be completed by carrier network for recipient line <span className="text-amber-300 font-bold font-mono">{phoneParam || orderPhone}</span>.
-                    </>
-                  )}
-                  {" "}Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been verified and successfully refunded to your Mobile Money account via Paystack!
-                </p>
-                {(orderData as any)?.metadata?.guest_refund_id && (
-                  <div className="text-[11px] text-purple-300/80 font-mono bg-purple-500/10 py-1 px-3 rounded-lg border border-purple-500/20 inline-block">
-                    Paystack Refund ID: <span className="font-bold text-purple-200">{(orderData as any)?.metadata?.guest_refund_id}</span>
-                  </div>
-                )}
-                {((!orderData?.network || String(orderData?.network).toUpperCase().includes("MTN")) && (!orderData?.order_type || orderData?.order_type === "data")) && (
-                  <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-200 font-semibold flex items-center justify-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    Carrier Whitelist: <span className="text-emerald-400 font-bold">Auto-Submitted for Approval ✅</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 2. Refund Under Manual Review (Queued for Support Payout) */}
-            {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" && orderStatus !== "refunded" && (
-              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-3 shadow-lg shadow-amber-950/40 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center justify-center gap-2">
-                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
-                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                    Refund Request Under Review ⏳
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  Your refund request for <strong className="text-amber-300 font-bold">GH₵ {Number((orderData as any)?.amount || 0).toFixed(2)}</strong> has been received and queued for manual Mobile Money payout by our support team.
-                </p>
-                <div className="pt-1">
-                  <a
-                    href={getWhatsAppUrl(`Hello SwiftData support, my order ${resolvedOrderId || reference} is pending manual refund payout. Please assist me.`)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle className="w-4 h-4 fill-white" />
-                    Chat Support on WhatsApp for Instant Payout 🚀
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {/* 3. Refunded to Agent Wallet Balance */}
-            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway !== "paystack" && (
-              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-blue-500/15 via-blue-950/20 to-black border border-blue-500/40 text-center space-y-3 shadow-lg shadow-blue-950/40 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center justify-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs font-black uppercase tracking-wider text-blue-300 font-mono">
-                    Refunded to Wallet Balance 💳
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  The amount of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been returned to your agent wallet balance.
-                </p>
-              </div>
-            )}
-
-            {/* Urgent Customer Care & Resolution Command Center */}
-            {orderStatus !== "fulfilled" && orderStatus !== "refunded" && (
-              <div className="mx-6 mb-6 p-4 rounded-2xl bg-gradient-to-b from-slate-900/90 via-[#0d0e17] to-black border border-amber-500/30 text-left space-y-3 shadow-xl shadow-amber-950/20 relative overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-                
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Headphones className="w-4 h-4 text-amber-400 animate-pulse" />
-                    <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
-                      Urgent Resolution Hub
-                    </span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    Agents Online
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
-                  Need this delivered immediately, or have questions about this order? Choose an instant self-service action:
-                </p>
-
-                <div className="space-y-2 pt-0.5">
-                  {/* 1. Fast-Track / Expedite Delivery Button */}
-                  <button
-                    onClick={handleExpediteDelivery}
-                    disabled={isExpediting}
-                    className="w-full py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isExpediting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                        <span>Connecting Carrier Gateway...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4 fill-slate-950 text-slate-950" />
-                        <span>Expedite Delivery / Force Dispatch</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* 2. Direct 1-Tap WhatsApp Support Button */}
-                  <button
-                    onClick={handleWhatsAppSupport}
-                    className="w-full py-2.5 px-3.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-black text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle className="w-4 h-4 text-emerald-400" />
-                    <span>Chat with Support on WhatsApp 💬</span>
-                  </button>
-
-                  {/* 3. Refund (Only if not yet entered a provider) or Carrier Guaranteed Badge */}
-                  {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" ? (
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-2.5 shadow-sm">
-                      <Clock className="w-4 h-4 text-amber-400 shrink-0" />
-                      <div className="leading-tight text-left">
-                        <span className="font-bold block text-amber-200">Refund Under Review:</span>
-                        <span>Queued for manual payout by support team.</span>
-                      </div>
-                    </div>
-                  ) : !hasEnteredProvider ? (
-                    <button
-                      onClick={handleInstantRefund}
-                      disabled={isClaimingRefund}
-                      className="w-full py-2.5 px-3.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {isClaimingRefund ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
-                          <span>Processing Instant Refund...</span>
-                        </>
-                      ) : (
-                        <>
-                          <RotateCcw className="w-4 h-4 text-purple-400" />
-                          <span>Claim Instant Refund to Mobile Money 💰</span>
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2.5 shadow-sm">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <div className="leading-tight text-left">
-                        <span className="font-bold text-white text-[11px] block">🔒 Entered Provider Gateway</span>
-                        <span className="text-[10px] text-emerald-300/80 font-medium">Delivery is 100% guaranteed. Refunds are locked once entered a provider.</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 100% Guarantee Reassurance Note */}
-                <div className="flex items-start gap-2 text-[10px] text-slate-400 border-t border-slate-800/80 pt-2.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="mt-2.5 sm:mt-3 inline-flex items-center gap-1.5 sm:gap-2 pl-3 pr-1.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] sm:text-[11px] font-bold font-mono shadow-inner">
+                  <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 animate-spin" style={{ animationDuration: "4s" }} />
                   <span>
-                    {hasEnteredProvider ? (
-                      <>
-                        <strong className="text-emerald-400">Live Carrier Broadcast:</strong> Direct telemetry handshake active with telecom switch. Hand delivery is guaranteed to recipient.
-                      </>
-                    ) : (
-                      <>
-                        <strong className="text-slate-200">100% Delivery or Instant Refund Guarantee:</strong> Order has not yet entered a provider gateway. You can expedite dispatch or claim an immediate full refund to Mobile Money.
-                      </>
-                    )}
+                    {getRemainingTimeStr().includes("Arriving")
+                      ? getRemainingTimeStr()
+                      : `Est. delivery: ~${getRemainingTimeStr()}`}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => pollStatus(true)}
+                    disabled={isRefreshing}
+                    className="ml-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/30 text-[9px] sm:text-[10px] font-black text-amber-200 transition-all cursor-pointer disabled:opacity-50"
+                    title="Refresh live carrier status"
+                  >
+                    <RefreshCw className={cn("w-2.5 h-2.5", isRefreshing && "animate-spin")} />
+                    <span>{isRefreshing ? "Syncing" : "Sync"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 3-Node Visual Pipeline Stepper (Segmented Bridge Architecture — Zero Bleed) */}
+            <div className="px-3.5 pb-3 sm:px-5 sm:pb-4 relative z-10">
+              {(() => {
+                const rawPct = getProgressPercentage();
+                const seg1Pct =
+                  orderStatus === "fulfilled" || activeStep >= 2
+                    ? 100
+                    : activeStep === 1
+                    ? Math.min(85, Math.max(30, rawPct))
+                    : 0;
+                const seg2Pct =
+                  orderStatus === "fulfilled"
+                    ? 100
+                    : activeStep >= 2
+                    ? Math.min(92, Math.max(24, Math.round(((rawPct - 18) / 77) * 100)))
+                    : 0;
+
+                return (
+                  <div className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-b from-[#080a12] to-[#05060b] border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] space-y-2.5 sm:space-y-3">
+                    {/* Pipeline Top Meta Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full animate-pulse"
+                          style={{ backgroundColor: meta.color }}
+                        />
+                        <span className="text-[8.5px] sm:text-[9px] font-black uppercase tracking-[0.16em] text-slate-400 font-mono">
+                          Delivery Pipeline
+                        </span>
+                      </div>
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 rounded-md text-[8.5px] sm:text-[9px] font-mono font-black uppercase tracking-wider border",
+                          orderStatus === "fulfilled"
+                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                            : "bg-amber-500/10 text-amber-300 border-amber-500/25"
+                        )}
+                      >
+                        {orderStatus === "fulfilled"
+                          ? "100% • Delivered"
+                          : `Stage ${Math.max(1, activeStep)}/3 • ${rawPct}%`}
+                      </span>
+                    </div>
+
+                    {/* Connected Nodes & Segmented Bridges */}
+                    <div className="px-1.5 sm:px-2 pt-0.5">
+                      <div className="flex items-center">
+                        {STEPS.map((s, i) => {
+                          const stepNum = i + 1;
+                          const isCompleted = activeStep > stepNum || orderStatus === "fulfilled";
+                          const isCurrent = activeStep === stepNum && orderStatus !== "fulfilled";
+                          const StepIcon = s.icon;
+
+                          return (
+                            <div key={s.key} className="contents">
+                              {/* Step Icon Node (Solid Dark Core so no track ever bleeds through) */}
+                              <div className="relative flex items-center justify-center shrink-0">
+                                {isCurrent && (
+                                  <span className="absolute -inset-1 rounded-xl sm:rounded-2xl bg-amber-500/20 blur-md animate-pulse pointer-events-none" />
+                                )}
+                                {isCompleted && (
+                                  <span className="absolute -inset-1 rounded-xl sm:rounded-2xl bg-emerald-500/15 blur-sm pointer-events-none" />
+                                )}
+                                <div
+                                  className={cn(
+                                    "relative z-10 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border transition-all duration-500",
+                                    isCompleted
+                                      ? "bg-[#071914] border-emerald-400/60 text-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.28)]"
+                                      : isCurrent
+                                      ? "bg-[#191307] border-amber-400 text-amber-300 ring-3 sm:ring-4 ring-amber-500/15 shadow-[0_0_18px_rgba(245,158,11,0.3)]"
+                                      : "bg-[#0b0d16] border-slate-800/90 text-slate-600"
+                                  )}
+                                >
+                                  <StepIcon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isCurrent && "animate-pulse")} />
+                                  {isCompleted && (
+                                    <span className="absolute -top-1 -right-1 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full bg-emerald-500 border-2 border-[#06070c] flex items-center justify-center shadow-sm">
+                                      <Check className="w-1.5 h-1.5 sm:w-2 sm:h-2 text-slate-950 stroke-[3.5]" />
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Segmented Connector Bridge strictly between nodes */}
+                              {i < STEPS.length - 1 && (
+                                <div className="flex-1 mx-2 sm:mx-2.5 h-1 sm:h-1.5 rounded-full bg-slate-900 border border-white/[0.05] overflow-hidden relative shadow-inner">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all duration-1000 ease-out relative",
+                                      i === 0
+                                        ? seg1Pct >= 100
+                                          ? "bg-gradient-to-r from-emerald-500 via-emerald-400 to-amber-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                                          : "bg-gradient-to-r from-emerald-500 to-amber-400"
+                                        : orderStatus === "fulfilled"
+                                        ? "bg-gradient-to-r from-emerald-400 to-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                                        : "bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 shadow-[0_0_10px_rgba(245,158,11,0.45)]"
+                                    )}
+                                    style={{ width: `${i === 0 ? seg1Pct : seg2Pct}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Step Labels Aligned Under Each Node */}
+                      <div className="grid grid-cols-3 gap-1 mt-2">
+                        {STEPS.map((s, i) => {
+                          const stepNum = i + 1;
+                          const isCompleted = activeStep > stepNum || orderStatus === "fulfilled";
+                          const isCurrent = activeStep === stepNum && orderStatus !== "fulfilled";
+                          const stepLabel = i === 2 && isBeneficiaryOrder ? "In Queue" : s.label;
+
+                          return (
+                            <div
+                              key={s.key}
+                              className={cn(
+                                "flex flex-col",
+                                i === 0 ? "items-start text-left" : i === 1 ? "items-center text-center" : "items-end text-right"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "text-[9px] sm:text-[10px] font-black uppercase tracking-wider font-mono leading-tight",
+                                  isCompleted
+                                    ? "text-emerald-400"
+                                    : isCurrent
+                                    ? "text-amber-300"
+                                    : "text-slate-500"
+                                )}
+                              >
+                                {stepLabel}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-[8px] sm:text-[9px] font-medium mt-0.5 leading-tight",
+                                  isCompleted
+                                    ? "text-emerald-400/70"
+                                    : isCurrent
+                                    ? "text-amber-200/75"
+                                    : "text-slate-600"
+                                )}
+                              >
+                                {s.sub}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 3-Tile Bento Order Spec Grid */}
+            <div className="px-3.5 pb-3 sm:px-5 sm:pb-4 relative z-10">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                {/* Tile 1: Carrier & Plan */}
+                <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/[0.025] border border-white/[0.07] flex flex-col justify-between min-w-0">
+                  <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate">
+                    Plan & Net
+                  </span>
+                  <div className="mt-1 sm:mt-1.5 flex items-center gap-1 flex-wrap">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider px-1.5 py-0 border rounded-md leading-4",
+                        displayNetwork.toUpperCase().includes("MTN") && "border-amber-500/40 text-amber-300 bg-amber-500/15",
+                        displayNetwork.toUpperCase().includes("TELECEL") && "border-red-500/40 text-red-300 bg-red-500/15",
+                        (displayNetwork.toUpperCase().includes("AIRTEL") || displayNetwork.toUpperCase().includes("AT")) && "border-blue-500/40 text-blue-300 bg-blue-500/15"
+                      )}
+                    >
+                      {displayNetwork.replace(" Bundle", "")}
+                    </Badge>
+                    <span className="text-[11px] sm:text-xs font-black text-white font-mono truncate">
+                      {displayPackage}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tile 2: Recipient Phone */}
+                <button
+                  type="button"
+                  onClick={handleCopyPhone}
+                  className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/[0.025] hover:bg-white/[0.05] border border-white/[0.07] flex flex-col justify-between text-left transition-colors group cursor-pointer min-w-0"
+                  title="Click to copy recipient number"
+                >
+                  <div className="flex items-center justify-between w-full gap-1">
+                    <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate">
+                      Recipient
+                    </span>
+                    {copiedPhone ? (
+                      <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400 shrink-0" />
+                    ) : (
+                      <Copy className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+                    )}
+                  </div>
+                  <span className="mt-1 sm:mt-1.5 text-[11px] sm:text-xs font-mono font-black text-emerald-400 tracking-tight sm:tracking-wide truncate block w-full">
+                    {displayPhone}
+                  </span>
+                </button>
+
+                {/* Tile 3: Verified Amount / Route */}
+                <div className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/[0.025] border border-white/[0.07] flex flex-col justify-between min-w-0">
+                  <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate">
+                    {displayAmount ? "Verified Paid" : "Gateway"}
+                  </span>
+                  <div className="mt-1 sm:mt-1.5 flex items-center justify-between gap-1">
+                    <span className="text-[11px] sm:text-xs font-black text-white font-mono truncate">
+                      {displayAmount || "Auto-Router"}
+                    </span>
+                    <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 shrink-0" />
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Instant Lock-Screen Delivery Alert Prompt */}
-            {orderStatus !== "fulfilled" && orderStatus !== "fulfillment_failed" && (
-              <div className="mx-6 mb-6">
-                <PushNotificationPrompt 
-                  variant="inline"
-                  title="Get Lock-Screen Delivery Alerts 🔔"
-                  description="Don't keep refreshing this page. Get notified on your lock screen the exact second your bundle delivers."
-                  buttonText="Alert Me When Delivered"
-                />
-              </div>
-            )}
-
-            {/* Prepaid Token Display */}
+            {/* Prepaid Meter Token Callout (For ECG / Utility Orders) */}
             {orderStatus === "fulfilled" && (
               (statusMessage && (statusMessage.includes("Token") || statusMessage.includes("token"))) || 
               Boolean((orderData as any)?.metadata?.prepaid_token)
@@ -1344,13 +1387,13 @@ const OrderStatus = () => {
               const rawToken = (orderData as any)?.metadata?.prepaid_token || statusMessage?.replace(/^.*(?:Token|token):?/i, "").trim();
               if (!rawToken) return null;
               return (
-                <div className="mx-6 mb-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2 animate-in zoom-in-95 duration-200">
+                <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2 animate-in zoom-in-95 duration-200 relative z-10">
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400 flex items-center justify-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                     Prepaid Meter Token Code
                   </p>
                   <div className="flex items-center justify-center gap-2">
-                    <span className="text-xl font-black tracking-wider text-white font-mono bg-black/60 px-3 py-1 rounded-xl border border-emerald-500/40">
+                    <span className="text-base sm:text-lg font-black tracking-wider text-white font-mono bg-black/60 px-3 py-1 rounded-xl border border-emerald-500/40">
                       {rawToken}
                     </span>
                     <button 
@@ -1358,7 +1401,7 @@ const OrderStatus = () => {
                         navigator.clipboard.writeText(rawToken);
                         toast.success("Token copied to clipboard!");
                       }}
-                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all"
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all cursor-pointer"
                       title="Copy Token"
                       aria-label="Copy prepaid meter token"
                     >
@@ -1370,77 +1413,317 @@ const OrderStatus = () => {
               );
             })()}
 
-            {/* Real-time Gateway Terminal Logs */}
-            {createdAt && (orderStatus === "paid" || orderStatus === "processing" || orderStatus === "pending" || orderStatus === "fulfilled" || orderStatus === "fulfillment_failed") && (
-              <div aria-live="polite" className="mx-6 mb-6 p-3.5 rounded-2xl bg-[#07080d] border border-slate-800/90 font-mono text-[10px] space-y-1.5 max-h-[140px] overflow-y-auto shadow-inner">
-                <div className="text-slate-400 text-[9px] uppercase font-bold tracking-wider mb-1 flex items-center justify-between border-b border-slate-800/80 pb-1">
-                  <span className="flex items-center gap-1 text-slate-300"><Terminal className="w-3 h-3 text-amber-400" /> Telemetry Feed</span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            {/* Whitelist In-Queue Callout Card */}
+            {isBeneficiaryOrder && (
+              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-2.5 shadow-lg shadow-amber-950/40 relative z-10">
+                <div className="flex items-center justify-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
+                    MTN Carrier Whitelist Queue
+                  </span>
                 </div>
-                {getTerminalLogs().map((log, i) => (
-                  <div key={i} className="flex gap-2 leading-relaxed">
-                    <span className="text-slate-500">{log.time}</span>
-                    <span className={cn(
-                      log.status === "success" && "text-emerald-400 font-semibold",
-                      log.status === "warn" && "text-amber-400 font-semibold",
-                      log.status === "info" && "text-slate-300"
-                    )}>{log.text}</span>
-                  </div>
-                ))}
+                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
+                  Recipient line <span className="text-amber-300 font-bold font-mono">{displayPhone}</span> is queued for carrier beneficiary verification. The bundle will deliver automatically once approved.
+                </p>
+                <div className="pt-1 flex flex-col gap-2">
+                  <button
+                    onClick={() => navigate(`/submit-numbers?phone=${encodeURIComponent(phoneParam || orderPhone || "")}`)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Zap className="w-4 h-4 fill-slate-950" />
+                    Expedite / Verify Number Now 🚀
+                  </button>
+
+                  {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" ? (
+                    <a
+                      href={getWhatsAppUrl(`Hello SwiftData support, my refund request for order ${resolvedOrderId || reference} is pending manual payout. Please assist me.`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 px-4 rounded-xl bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/40 text-amber-200 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      <MessageCircle className="w-4 h-4 text-amber-400 fill-amber-400/20" />
+                      Refund Under Review (Chat Support) ⏳
+                    </a>
+                  ) : (
+                    <button
+                      onClick={handleInstantRefund}
+                      disabled={isClaimingRefund}
+                      className="w-full py-2.5 px-4 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 border border-purple-500/40 text-purple-200 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {isClaimingRefund ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-purple-400" />}
+                      Request Refund to Mobile Money 💰
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Reference Footer */}
-            {reference && (
-              <div className="bg-slate-950/90 px-6 py-3 flex items-center justify-between gap-3 border-t border-slate-800/80">
-                <div className="min-w-0">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Transaction Ref</p>
-                  <code className="text-xs font-mono text-slate-200 font-bold truncate block">{reference}</code>
+            {/* 1. Verified Completed Paystack Mobile Money Refund */}
+            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway === "paystack" && (orderData as any)?.metadata?.guest_refund_status === "completed" && (
+              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-purple-500/15 via-purple-950/20 to-black border border-purple-500/40 text-center space-y-2 shadow-lg shadow-purple-950/40 relative z-10">
+                <div className="flex items-center justify-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs font-black uppercase tracking-wider text-purple-300 font-mono">
+                    Refund Sent to Mobile Money 💰
+                  </span>
                 </div>
-                <button 
-                  onClick={() => { navigator.clipboard.writeText(reference); toast.success("Reference copied!"); }} 
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all text-xs font-bold active:scale-95"
-                  aria-label="Copy transaction reference"
+                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
+                  Your payment of <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> for <span className="text-amber-300 font-bold font-mono">{displayPhone}</span> has been refunded to your Mobile Money account via Paystack.
+                </p>
+                {(orderData as any)?.metadata?.guest_refund_id && (
+                  <div className="text-[10px] text-purple-300/80 font-mono bg-purple-500/10 py-1 px-3 rounded-lg border border-purple-500/20 inline-block">
+                    Paystack Refund ID: <span className="font-bold text-purple-200">{(orderData as any)?.metadata?.guest_refund_id}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 2. Refund Under Manual Review */}
+            {(orderData as any)?.metadata?.guest_refund_status === "needs_manual_payout" && orderStatus !== "refunded" && (
+              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-amber-950/20 to-black border border-amber-500/40 text-center space-y-2 shadow-lg shadow-amber-950/40 relative z-10">
+                <div className="flex items-center justify-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-300 font-mono">
+                    Refund Request Under Review ⏳
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
+                  Your refund request for <strong className="text-amber-300 font-bold">GH₵ {Number((orderData as any)?.amount || 0).toFixed(2)}</strong> is queued for manual Mobile Money payout by our support team.
+                </p>
+                <a
+                  href={getWhatsAppUrl(`Hello SwiftData support, my order ${resolvedOrderId || reference} is pending manual refund payout. Please assist me.`)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <Copy className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Copy</span>
+                  <MessageCircle className="w-4 h-4 fill-white" />
+                  Chat Support for Instant Payout 🚀
+                </a>
+              </div>
+            )}
+
+            {/* 3. Refunded to Agent Wallet Balance */}
+            {orderStatus === "refunded" && (orderData as any)?.metadata?.guest_refund_gateway !== "paystack" && (
+              <div className="mx-3.5 sm:mx-5 mb-3 sm:mb-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-b from-blue-500/15 via-blue-950/20 to-black border border-blue-500/40 text-center space-y-2 shadow-lg shadow-blue-950/40 relative z-10">
+                <div className="flex items-center justify-center gap-2">
+                  <RotateCcw className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs font-black uppercase tracking-wider text-blue-300 font-mono">
+                    Refunded to Wallet Balance 💳
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-slate-300 font-medium leading-relaxed">
+                  <strong className="text-emerald-400 font-black">GH₵ {Number((orderData as any)?.refund_amount || (orderData as any)?.amount || 0).toFixed(2)}</strong> has been credited back to your wallet balance.
+                </p>
+              </div>
+            )}
+
+            {/* Unified Smart Action & Resolution Dock */}
+            <div className="mx-3.5 mb-3 p-3 sm:mx-5 sm:mb-4 sm:p-4 rounded-2xl bg-gradient-to-b from-white/[0.04] to-[#06070c] border border-white/[0.08] space-y-2.5 sm:space-y-3 relative z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <Headphones className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-200 font-mono">
+                    {orderStatus === "fulfilled" ? "Order Actions & Receipt" : "Smart Resolution Dock"}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  Agents Online
+                </span>
+              </div>
+
+              {/* Primary CTA when order is active / not yet delivered */}
+              {orderStatus !== "fulfilled" && orderStatus !== "refunded" && (
+                <button
+                  onClick={handleExpediteDelivery}
+                  disabled={isExpediting}
+                  className="w-full py-2.5 sm:py-3 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:brightness-110 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider transition-all shadow-[0_8px_25px_rgba(245,158,11,0.28)] active:scale-[0.98] flex items-center justify-center gap-1.5 sm:gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isExpediting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-slate-950" />
+                      <span>Syncing Carrier Gateway...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-slate-950 text-slate-950" />
+                      <span>Expedite Delivery / Force Dispatch</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* 2x2 Quick Action Grid */}
+              <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+                <button
+                  onClick={() => setShowReceipt(true)}
+                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-200 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <ReceiptText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Digital Receipt</span>
+                </button>
+
+                <button
+                  onClick={handleWhatsAppSupport}
+                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>WhatsApp Help</span>
+                </button>
+
+                <button
+                  onClick={handleShareWhatsApp}
+                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Share Status</span>
+                </button>
+
+                <button
+                  onClick={handleCopyTrackingLink}
+                  className="py-2 sm:py-2.5 px-2.5 sm:px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-bold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="text-emerald-400">Link Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>Copy Link</span>
+                    </>
+                  )}
                 </button>
               </div>
+
+              {/* Refund or Carrier Gateway Guarantee Strip */}
+              {orderStatus !== "fulfilled" && orderStatus !== "refunded" && !isBeneficiaryOrder && (
+                <div className="pt-0.5">
+                  {!hasEnteredProvider ? (
+                    <button
+                      onClick={handleInstantRefund}
+                      disabled={isClaimingRefund}
+                      className="w-full py-2 sm:py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-200 font-bold text-[11px] sm:text-xs uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-1.5 sm:gap-2 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isClaimingRefund ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-300" />
+                          <span>Processing Instant Refund...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Claim Instant Refund to MoMo 💰</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-emerald-500/[0.08] border border-emerald-500/25 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="text-[9.5px] sm:text-[10px] text-slate-300 font-medium truncate">
+                          <strong className="text-emerald-300">Carrier Gateway Locked:</strong> 100% Guaranteed
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => pollStatus(true)}
+                        disabled={isRefreshing}
+                        className="text-[9.5px] sm:text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 shrink-0 underline cursor-pointer"
+                      >
+                        {isRefreshing ? "Checking..." : "Verify"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Lock-Screen Delivery Alert Prompt */}
+            {orderStatus !== "fulfilled" && orderStatus !== "fulfillment_failed" && (
+              <div className="mx-3.5 mb-3 sm:mx-5 sm:mb-4 relative z-10">
+                <PushNotificationPrompt 
+                  variant="inline"
+                  title="Get Lock-Screen Delivery Alerts 🔔"
+                  description="Get notified on your lock screen the exact second your bundle delivers."
+                  buttonText="Alert Me When Delivered"
+                />
+              </div>
             )}
+
+            {/* Collapsible Live Carrier Telemetry Drawer */}
+            {createdAt && terminalLogs.length > 0 && (
+              <div className="mx-3.5 mb-3.5 sm:mx-5 sm:mb-4 rounded-xl sm:rounded-2xl bg-[#05060a] border border-white/[0.07] overflow-hidden relative z-10">
+                <button
+                  type="button"
+                  onClick={() => setShowTelemetry((prev) => !prev)}
+                  className="w-full px-3 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-2 text-left hover:bg-white/[0.02] transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                    <Terminal className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 shrink-0">
+                      Telemetry
+                    </span>
+                    <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-300 truncate">
+                      {latestLog?.text}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    {showTelemetry ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                  </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {showTelemetry && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-slate-800/80 px-3 py-2 sm:px-3.5 sm:py-2.5 font-mono text-[9.5px] sm:text-[10px] space-y-1.5 max-h-[140px] overflow-y-auto"
+                    >
+                      {terminalLogs.map((log, i) => (
+                        <div key={i} className="flex gap-2 leading-relaxed">
+                          <span className="text-slate-500 shrink-0">{log.time}</span>
+                          <span
+                            className={cn(
+                              log.status === "success" && "text-emerald-400 font-semibold",
+                              log.status === "warn" && "text-amber-400 font-semibold",
+                              log.status === "info" && "text-slate-300"
+                            )}
+                          >
+                            {log.text}
+                          </span>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Subtle Bottom Security Footer */}
+            <div className="bg-black/60 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center justify-between border-t border-white/[0.06] relative z-10">
+              <div className="flex items-center gap-1.5 text-[9.5px] sm:text-[10px] font-mono text-slate-400">
+                <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">256-Bit Encrypted Uplink</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')}
+                className="text-[9.5px] sm:text-[10px] font-mono font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer shrink-0"
+              >
+                Lookup Another →
+              </button>
+            </div>
           </div>
 
-          {/* Action Toolbar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <button 
-              onClick={() => pollStatus(true)} 
-              disabled={isRefreshing} 
-              className="flex-1 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 font-black text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-              title="Check exact live delivery status from carrier"
-              aria-label="Refresh and check live delivery status"
-            >
-              <Activity className={cn("w-4 h-4 text-cyan-400", isRefreshing && "animate-spin")} />
-              <span>{isRefreshing ? "Verifying with Telecom Carrier..." : "Check Live Delivery Status"}</span>
-            </button>
-
-            <button 
-              onClick={() => setShowReceipt(true)} 
-              className="flex-1 h-12 rounded-2xl text-slate-950 font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 hover:brightness-110"
-              style={{ backgroundColor: brandColor }}
-            >
-              <ReceiptText className="w-4 h-4" /> View Digital Receipt
-            </button>
-
-            <button 
-              onClick={() => navigate(isStoreRoute && storeInfo?.slug ? `/store/${storeInfo.slug}/order-status` : '/order-status')} 
-              className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center transition-all active:scale-95 text-slate-300 hover:text-white shrink-0"
-              title="Back to lookup"
-              aria-label="Back to order lookup"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Receipt Modal (Portal to document.body for top z-index stacking above all page elements & footer) */}
+          {/* Receipt Modal (Portal to document.body) */}
           {createPortal(
             <AnimatePresence>
               {showReceipt && (
@@ -1450,7 +1733,7 @@ const OrderStatus = () => {
                     animate={{ opacity: 1 }} 
                     exit={{ opacity: 0 }}
                     onClick={() => setShowReceipt(false)}
-                    className="fixed inset-0 bg-black/95 backdrop-blur-xl" 
+                    className="fixed inset-0 bg-black/90 backdrop-blur-xl" 
                   />
                   <motion.div 
                     role="dialog"
@@ -1459,27 +1742,25 @@ const OrderStatus = () => {
                     initial={{ opacity: 0, scale: 0.95, y: 15 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                    className="relative w-full max-w-sm bg-[#090a0f] border border-amber-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] z-10"
+                    className="relative w-full max-w-sm bg-[#090a10] border border-amber-500/30 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] z-10"
                   >
-                    {/* Top Bar Accent */}
-                    <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
+                    <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500" />
 
                     <div className="p-5 sm:p-6 space-y-5">
-                      {/* Header */}
                       <div className="flex justify-between items-center pb-1">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-500/20 border border-amber-500/40">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-500/15 border border-amber-500/35">
                             <ReceiptText className="w-4 h-4 text-amber-400" />
                           </div>
                           <div>
                             <span className="text-xs font-black uppercase tracking-widest text-white block">Digital E-Receipt</span>
-                            <span className="text-[9px] text-slate-400 font-mono">Verified Order</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Official Transaction Record</span>
                           </div>
                         </div>
                         <button 
                           onClick={() => setShowReceipt(false)} 
                           aria-label="Close digital receipt"
-                          className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                          className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
                         >
                           <XCircle className="w-4 h-4" />
                         </button>
@@ -1487,7 +1768,6 @@ const OrderStatus = () => {
 
                       {/* Receipt Canvas Box (Captured by html2canvas) */}
                       <div ref={receiptRef} className="bg-[#0e0f17] border border-slate-800 rounded-2xl p-5 space-y-4 font-mono shadow-inner text-slate-100">
-                        {/* Store Header */}
                         <div className="text-center pb-3.5 border-b border-dashed border-slate-700/80 space-y-1">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-5 h-5 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
@@ -1498,11 +1778,10 @@ const OrderStatus = () => {
                           <p className="text-[10px] text-slate-400 font-mono">{new Date().toLocaleString()}</p>
                         </div>
                         
-                        {/* Key-Value Details */}
                         <div className="space-y-2.5 text-[11px]">
                           <div className="flex justify-between items-center">
                             <span className="text-slate-400 uppercase text-[10px] tracking-wider">Reference</span>
-                            <span className="text-amber-400 font-bold font-mono text-[10px] bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 max-w-[150px] truncate">
+                            <span className="text-amber-400 font-bold font-mono text-[10px] bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 max-w-[165px] truncate">
                               {reference.toUpperCase()}
                             </span>
                           </div>
@@ -1516,23 +1795,30 @@ const OrderStatus = () => {
                             <span className="text-slate-400 uppercase text-[10px] tracking-wider">Network</span>
                             <span className={cn(
                               "font-black text-[10px] px-2 py-0.5 rounded uppercase",
-                              (network || "").includes("MTN") && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
-                              (network || "").includes("Telecel") && "bg-red-500/20 text-red-300 border border-red-500/30",
-                              (network || "").includes("Airtel") && "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                              displayNetwork.includes("MTN") && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+                              displayNetwork.includes("Telecel") && "bg-red-500/20 text-red-300 border border-red-500/30",
+                              displayNetwork.includes("Airtel") && "bg-blue-500/20 text-blue-300 border border-blue-500/30"
                             )}>
-                              {network || "MTN"}
+                              {displayNetwork}
                             </span>
                           </div>
 
                           <div className="flex justify-between items-center">
                             <span className="text-slate-400 uppercase text-[10px] tracking-wider">Plan / Size</span>
-                            <span className="text-white font-bold">{packageSize || "—"}</span>
+                            <span className="text-white font-bold">{displayPackage}</span>
                           </div>
 
                           <div className="flex justify-between items-center">
                             <span className="text-slate-400 uppercase text-[10px] tracking-wider">Recipient</span>
-                            <span className="text-white font-mono font-bold tracking-wider">{phoneParam || "—"}</span>
+                            <span className="text-emerald-400 font-mono font-bold tracking-wider">{displayPhone}</span>
                           </div>
+
+                          {displayAmount && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400 uppercase text-[10px] tracking-wider">Amount</span>
+                              <span className="text-white font-black">{displayAmount}</span>
+                            </div>
+                          )}
 
                           {statusMessage && statusMessage.startsWith("Token:") && (
                             <div className="flex justify-between items-center pt-2 border-t border-slate-800">
@@ -1544,14 +1830,14 @@ const OrderStatus = () => {
                           )}
                         </div>
 
-                        {/* Status Badge */}
                         <div className="pt-3 border-t border-dashed border-slate-700/80 flex justify-between items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Status</span>
                           <div className={cn(
-                            "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs",
+                            "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
                             (String(orderStatus) === "fulfilled" || String(orderStatus) === "processing" || String(orderStatus) === "paid") && "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30",
                             (String(orderStatus) === "pending" || String(orderStatus) === "awaiting_payment" || String(orderStatus) === "not_paid") && "bg-amber-500/15 text-amber-400 border border-amber-500/30",
-                            (String(orderStatus) === "failed" || String(orderStatus) === "fulfillment_failed" || String(orderStatus) === "error") && "bg-red-500/15 text-red-400 border border-red-500/30"
+                            (String(orderStatus) === "failed" || String(orderStatus) === "fulfillment_failed" || String(orderStatus) === "error") && "bg-red-500/15 text-red-400 border border-red-500/30",
+                            String(orderStatus) === "refunded" && "bg-purple-500/15 text-purple-300 border border-purple-500/30"
                           )}>
                             <ShieldCheck className="w-3.5 h-3.5" />
                             {orderStatus}
@@ -1559,11 +1845,10 @@ const OrderStatus = () => {
                         </div>
                       </div>
 
-                      {/* Action Buttons */}
                       <div className="grid grid-cols-2 gap-3 pt-1">
                         <button 
                           onClick={copyReceipt}
-                          className="h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+                          className="h-11 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
                         >
                           <Copy className="w-3.5 h-3.5" />
                           Copy Text
@@ -1571,7 +1856,7 @@ const OrderStatus = () => {
                         <button 
                           onClick={downloadReceipt}
                           disabled={isDownloading}
-                          className="h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+                          className="h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/35 hover:bg-emerald-500/25 text-emerald-300 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                         >
                           {isDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Package className="w-3.5 h-3.5" />}
                           Save Image
@@ -1579,7 +1864,6 @@ const OrderStatus = () => {
                       </div>
                     </div>
                     
-                    {/* Card Footer */}
                     <div className="border-t border-white/10 py-2.5 text-center bg-black/60">
                       <p className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400/90 flex items-center justify-center gap-1.5">
                         <ShieldCheck className="w-3 h-3 text-emerald-400" />
@@ -1603,7 +1887,7 @@ const OrderStatus = () => {
   // --- RENDER GLOBAL SYSTEM TRACKER OR STORE LOOKUP ---
   if (isStoreRoute) {
     return (
-      <div className="min-h-screen bg-[#05060a] text-white selection:bg-amber-500/30 font-sans antialiased flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="min-h-screen bg-[#040509] text-white selection:bg-amber-500/30 font-sans antialiased flex flex-col items-center justify-center p-6 relative overflow-hidden">
         <SEO 
           title={`Track Order Status — ${storeName}`}
           description={`Track the real-time delivery status of your purchases on ${storeName}.`}
@@ -1611,13 +1895,11 @@ const OrderStatus = () => {
           canonical={`https://${brandDomain}/order-status`}
         />
 
-        {/* Ambient Orbs */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
           <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[160px]" />
         </div>
 
         <div className="w-full max-w-md space-y-8 relative z-10">
-          {/* Header */}
           <div className="flex flex-col items-center text-center space-y-3">
             <div className="w-16 h-16 rounded-[1.5rem] flex items-center justify-center overflow-hidden border bg-slate-900 border-amber-500/30 shadow-xl" style={{ borderColor: `${brandColor}40` }}>
               {brandLogoUrl ? (
@@ -1632,8 +1914,7 @@ const OrderStatus = () => {
             </div>
           </div>
 
-          {/* Search Card */}
-          <div className="relative overflow-hidden rounded-3xl bg-[#0b0c12]/90 border border-slate-800 p-8 backdrop-blur-2xl shadow-2xl">
+          <div className="relative overflow-hidden rounded-3xl bg-[#0a0b12]/95 border border-white/[0.08] p-8 backdrop-blur-2xl shadow-2xl">
             <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent pointer-events-none" />
             <h3 className="font-extrabold text-base text-center mb-1 text-white">Lookup Order Status</h3>
             <p className="text-xs text-slate-400 font-medium text-center mb-6">Enter recipient phone number or order reference ID to fetch all recent purchase records.</p>
@@ -1645,15 +1926,14 @@ const OrderStatus = () => {
                 onChange={(e) => setSearchPhone(e.target.value)}
                 placeholder="Phone number or order reference..."
                 aria-label="Phone number or order reference"
-                className="w-full py-4 pl-6 pr-14 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-inner font-mono"
+                className="w-full py-4 pl-5 pr-14 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-inner font-mono"
               />
-              <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md" style={{ backgroundColor: brandColor }}>
+              <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md cursor-pointer" style={{ backgroundColor: brandColor }}>
                 <Search className="w-4 h-4 text-black font-bold" />
               </button>
             </form>
           </div>
 
-          {/* Back Action */}
           <div className="flex justify-center">
             <button 
               onClick={() => {
@@ -1665,21 +1945,20 @@ const OrderStatus = () => {
                   navigate("/");
                 }
               }}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-slate-900/80 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all hover:scale-105 active:scale-95 shadow-md"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-slate-900/80 border border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all hover:scale-105 active:scale-95 shadow-md cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-amber-400" /> Back to Store
             </button>
           </div>
         </div>
 
-        {/* Floating WhatsApp Support Button */}
         {renderFloatingSupport()}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#05060a] text-white selection:bg-amber-500/30 font-sans antialiased relative overflow-hidden">
+    <div className="min-h-screen bg-[#040509] text-white selection:bg-amber-500/30 font-sans antialiased relative overflow-hidden">
       <SEO 
         title={`Live Delivery Scanner — ${storeName}`}
         description={`Track your purchases and view live data bundle deliveries in real-time on ${storeName}.`}
@@ -1716,9 +1995,9 @@ const OrderStatus = () => {
             onChange={(e) => setSearchPhone(e.target.value)}
             placeholder="Track order by phone number or reference..."
             aria-label="Track order by phone number or reference"
-            className="w-full py-4 pl-6 pr-14 rounded-2xl bg-[#0b0c12]/90 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-2xl font-mono"
+            className="w-full py-4 pl-6 pr-14 rounded-2xl bg-[#0a0b12]/90 border border-white/[0.08] text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-2xl font-mono"
           />
-          <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md" style={{ backgroundColor: brandColor }}>
+          <button type="submit" aria-label="Search order status" className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 transition-all shadow-md cursor-pointer" style={{ backgroundColor: brandColor }}>
             <Search className="w-4 h-4 text-black font-bold" />
           </button>
         </form>
@@ -1730,8 +2009,7 @@ const OrderStatus = () => {
           </div>
         ) : (
           <div aria-live="polite" className="space-y-6">
-            {/* Telemetry Scanner Card */}
-            <div className="relative rounded-3xl border border-slate-800/90 bg-[#0b0c12]/90 backdrop-blur-2xl overflow-hidden shadow-2xl">
+            <div className="relative rounded-3xl border border-white/[0.08] bg-[#0a0b12]/90 backdrop-blur-2xl overflow-hidden shadow-2xl">
               <div className="p-6 pb-4">
                 <div className="flex items-center justify-between mb-6">
                    <div className="flex items-center gap-3">
@@ -1794,7 +2072,7 @@ const OrderStatus = () => {
 
               <div className="space-y-2">
                 {trackerData?.data.yourOrders.inCurrentBatch.map((o, i) => (
-                  <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0b0c12]/80 border border-slate-800/80 shadow-md">
+                  <div key={i} className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0a0b12]/80 border border-slate-800/80 shadow-md">
                     <div className="flex items-center gap-3">
                        <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center font-mono text-[9px] font-black text-amber-300">{o.network.slice(0, 3)}</div>
                        <div>
@@ -1831,7 +2109,6 @@ const OrderStatus = () => {
         </div>
       </div>
 
-      {/* Floating WhatsApp Support Button */}
       {renderFloatingSupport()}
     </div>
   );

@@ -199,20 +199,22 @@ const DashboardOrders = () => {
       let isRefunded = false;
       let statusMessage = "";
 
-      // Refunds ALWAYS go through verify-and-refund, which checks the provider before paying out.
-      // (A direct refund_failed_order fallback used to run whenever the server rejected the refund,
-      // which refunded orders the provider had already received.)
+      // Refunds ALWAYS go through verify-and-refund, which checks the provider (/order-refund) before paying out.
       const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("verify-and-refund", {
-        body: { order_id: order.id }
+        body: { order_id: order.id, reference: order.id }
       });
       if (!edgeErr && edgeData?.success) {
         isRefunded = true;
-        statusMessage = edgeData.message || `GH₵ ${Number(order.amount).toFixed(2)} credited to your wallet balance.`;
+        const refundedAmt = Number(edgeData.data?.refundedAmount ?? order.amount).toFixed(2);
+        const newBalSuffix = edgeData.data?.newBalance !== undefined
+          ? ` New wallet balance: GH₵ ${Number(edgeData.data.newBalance).toFixed(2)}.`
+          : "";
+        statusMessage = `${edgeData.message || `GH₵ ${refundedAmt} credited to your wallet.`}${newBalSuffix}`;
       } else {
-        const description = edgeErr
-          ? await getFunctionErrorMessage(edgeErr, "Refund could not be verified. Please try again or contact support.")
-          : (edgeData?.error || "Order is ineligible for refund.");
-        toast({ title: "Refund Blocked by Server", description, variant: "destructive" });
+        const description = edgeData?.error || (edgeErr
+          ? await getFunctionErrorMessage(edgeErr, "Order is not eligible for refund.")
+          : "Order is not eligible for refund.");
+        toast({ title: "Refund Not Eligible", description, variant: "destructive" });
         setRefundingId(null);
         return;
       }
@@ -223,16 +225,6 @@ const DashboardOrders = () => {
           description: statusMessage,
         });
         setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "refunded" } : o)));
-
-        supabase.functions.invoke("send-order-sms", {
-          body: {
-            action: "refund",
-            phone: order.customer_phone,
-            order_id: order.id,
-            amount: order.amount,
-            agent_id: user.id
-          }
-        }).catch(console.error);
       }
     } catch (err: any) {
       console.error("Refund error:", err);

@@ -1,6 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
-import { fetchViaDb } from "./db_proxy.ts";
-import { getActiveProviders, resolveProvidersForOrder, Provider } from "./providers.ts";
+import { resolveProvidersForOrder, type Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure } from "./providers/utils.ts";
 import { autoSubmitBeneficiaryNumber } from "./beneficiary_auto_submit.ts";
@@ -103,7 +101,7 @@ export async function dispatchOrderWithFailover(
     const isLastProvider = i === activeProviders.length - 1;
 
     // If this provider previously rejected this order AND there are other active providers remaining that haven't rejected it yet, skip this provider
-    const hasRemainingUntried = activeProviders.some(p => !rejectedProviderIds.has(String(p.id)));
+    const hasRemainingUntried = activeProviders.some((p: Provider) => !rejectedProviderIds.has(String(p.id)));
     if (rejectedProviderIds.has(String(provider.id)) && hasRemainingUntried && activeProviders.length > 1) {
       console.log(`[HybridRouter] Provider ${provider.name} (${provider.id}) previously rejected order ${order.id}. Skipping to untried provider...`);
       continue;
@@ -117,7 +115,6 @@ export async function dispatchOrderWithFailover(
 
       if (res.ok) {
         const isDelivered = res.status === "delivered" || res.status === "success" || res.status === "successful" || res.status === "fulfilled" || res.status === "completed" || res.status === "sent";
-        const isProcessing = res.status === "processing" || res.status === "pending" || res.status === "queued" || res.status === "ongoing";
 
         console.log(`[HybridRouter] Provider ${provider.name} ACCEPTED order ${order.id} (status: ${res.status}). Locking to ${provider.name}.`);
 
@@ -195,8 +192,8 @@ export async function dispatchOrderWithFailover(
         
         if (order.customer_phone) {
           autoSubmitBeneficiaryNumber(supabaseAdmin, order.customer_phone, "provider_rejection_auto_submit", order.id)
-            .then((subRes) => console.log(`[HybridRouter] Beneficiary auto-submission for ${order.customer_phone}:`, subRes.success ? "SUBMITTED" : "FAILED"))
-            .catch((subErr) => console.error(`[HybridRouter] Beneficiary auto-submission error:`, subErr));
+            .then((subRes: { success: boolean; error?: string }) => console.log(`[HybridRouter] Beneficiary auto-submission for ${order.customer_phone}:`, subRes.success ? "SUBMITTED" : "FAILED"))
+            .catch((subErr: unknown) => console.error(`[HybridRouter] Beneficiary auto-submission error:`, subErr));
         }
 
         order.metadata = {
@@ -207,14 +204,14 @@ export async function dispatchOrderWithFailover(
           last_beneficiary_rejection: lastFailureReason,
         };
 
-        // If other providers remain, re-order remaining providers so non-beneficiary providers (DataMart, SKPlug, Spendless) are attempted first
+        // If other providers remain, re-order remaining providers so non-beneficiary providers (BundleZone MTN_EXPRESS, DataMart, SKPlug, Spendless) are attempted first
         if (!isLastProvider) {
           const remaining = activeProviders.slice(i + 1);
-          const nonBenProviders = remaining.filter((p: any) => p.handler_type === "datamart" || p.handler_type === "skdataplug" || p.handler_type === "spendless" || p.settings?.is_beneficiary_fallback === true);
-          const otherRemaining = remaining.filter((p: any) => !nonBenProviders.includes(p));
+          const nonBenProviders = remaining.filter((p: Provider) => (p.handler_type === "bundlezone" && p.settings?.express_mode_enabled === true) || p.handler_type === "datamart" || p.handler_type === "skdataplug" || p.handler_type === "spendless" || p.settings?.is_beneficiary_fallback === true);
+          const otherRemaining = remaining.filter((p: Provider) => !nonBenProviders.includes(p));
           
           if (nonBenProviders.length > 0) {
-            console.log(`[HybridRouter] Re-ordering cascade: Prioritizing ${nonBenProviders.map((p: any) => p.name).join(", ")} for non-beneficiary delivery bypass.`);
+            console.log(`[HybridRouter] Re-ordering cascade: Prioritizing ${nonBenProviders.map((p: Provider) => p.name).join(", ")} for non-beneficiary delivery bypass.`);
             activeProviders.splice(i + 1, remaining.length, ...nonBenProviders, ...otherRemaining);
           }
         }

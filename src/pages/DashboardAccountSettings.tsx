@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { User, Users, Mail, Phone, Shield, Camera, Lock, Eye, EyeOff, Fingerprint, Smartphone, Trash2, Key, Loader2, Plus, AlertTriangle, Bell } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 import { useWebAuthn } from "@/hooks/useWebAuthn";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { toast } from "sonner";
@@ -234,7 +235,7 @@ const DashboardAccountSettings = () => {
             <CardContent className="p-6 flex flex-col items-center text-center">
               <div className="relative group cursor-pointer">
                 <Avatar className="w-24 h-24 border-4 border-card shadow-lg">
-                  <AvatarImage src={profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`} />
+                  <AvatarImage src={getSafeAvatarUrl(profile?.avatar_url, user?.id || user?.email)} />
                   <AvatarFallback className="text-4xl bg-primary/10">
                     {profile?.full_name?.charAt(0) || "U"}
                   </AvatarFallback>
@@ -788,7 +789,7 @@ const DashboardAccountSettings = () => {
                     >
                       <div className="flex items-center gap-3">
                         <Avatar className="w-9 h-9 border border-white/10">
-                          <AvatarImage src={acc.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${acc.userId}`} />
+                          <AvatarImage src={getSafeAvatarUrl(acc.avatarUrl, acc.userId || acc.email)} />
                           <AvatarFallback className="text-xs font-bold">{acc.fullName?.charAt(0) || "U"}</AvatarFallback>
                         </Avatar>
                         <div>

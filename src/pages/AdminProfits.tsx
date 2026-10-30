@@ -236,7 +236,7 @@ const AdminProfits = () => {
               {r === "all" ? "All Time" : `${r}d`}
             </button>
           ))}
-          <Button onClick={fetchData} variant="outline" size="sm" className={`gap-2 ml-2 shadow-sm ${isDark ? "border-white/10 text-white/60 hover:text-white" : ""}`}>
+          <Button onClick={() => fetchData()} variant="outline" size="sm" className={`gap-2 ml-2 shadow-sm ${isDark ? "border-white/10 text-white/60 hover:text-white" : ""}`}>
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </Button>
         </div>

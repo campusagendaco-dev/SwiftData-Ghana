@@ -86,29 +86,45 @@ export function parseProviderResponse(body: string, contentType: string | null):
     const parsed = JSON.parse(body);
     const technicalStatus = String(parsed?.status ?? parsed?.success ?? "").toLowerCase();
     const data = parsed?.data || {};
-    const deliveryStatus = String(parsed?.transaction?.status ?? data?.status ?? data?.orderStatus ?? parsed?.delivery_status ?? parsed?.status_message ?? parsed?.transaction_status ?? "").toLowerCase();
-    const effectiveStatus = deliveryStatus || technicalStatus;
+    const orderNode = data?.order || data?.result || data;
+    const firstErr = Array.isArray(parsed?.errors)
+      ? parsed.errors[0]
+      : (parsed?.errors && typeof parsed.errors === "object" ? parsed.errors : null);
+    const deliveryStatus = String(
+      parsed?.transaction?.status ??
+      data?.order?.status ??
+      data?.result?.status ??
+      data?.status ??
+      data?.orderStatus ??
+      firstErr?.status ??
+      parsed?.delivery_status ??
+      parsed?.status_message ??
+      parsed?.transaction_status ??
+      ""
+    ).toLowerCase();
+    const effectiveStatus = deliveryStatus || (technicalStatus === "true" || technicalStatus === "1" || technicalStatus === "200" ? "" : technicalStatus);
     const message = typeof parsed?.message === "string"
       ? parsed.message
       : (typeof parsed?.error_message === "string"
         ? parsed.error_message
-        : (typeof parsed?.error === "string"
-          ? parsed.error
-          : undefined));
+        : (typeof firstErr?.message === "string"
+          ? firstErr.message
+          : (typeof parsed?.error === "string"
+            ? parsed.error
+            : undefined)));
 
-    if (parsed?.error && typeof parsed.error === "string") {
-      return { ok: false, reason: parsed.error };
-    }
-    
     // NOTE: Real order identifiers must be checked BEFORE `request_id`.
     // Some providers (e.g. BundleZone) return a per-HTTP-request trace ID
-    // (`data.request_id = "REQ-..."`) alongside the real `data.order_id`.
+    // (`data.request_id = "REQ-..."`) alongside the real `data.order.reference` / `data.order_id`.
     // Storing the trace ID made every later status lookup return "Order not found".
     const orderId = String(
+      data?.order?.reference ??
       data?.orderId ??
       data?.order_id ??
       data?.order?.order_id ??
       data?.order?.id ??
+      firstErr?.reference ??
+      firstErr?.order_id ??
       data?.request_id ??
       data?.order?.request_id ??
       parsed?.results?.operatorRequestID ?? 
@@ -128,24 +144,60 @@ export function parseProviderResponse(body: string, contentType: string | null):
       ""
     );
 
-    const isFailed = parsed?.success === false || 
+    // MTN Express / BundleZone: A pending confirmation (`submission_unknown`) is still an existing order.
+    // Keep the same reference and poll status; do NOT treat as failed or trigger a duplicate purchase.
+    if (deliveryStatus === "submission_unknown" || technicalStatus === "submission_unknown") {
+      return {
+        ok: true,
+        id: orderId || String(orderNode?.client_reference || ""),
+        status: "processing",
+        reason: message || "Order status is submission_unknown; awaiting reconciliation."
+      };
+    }
+
+    if (parsed?.error && typeof parsed.error === "string") {
+      return { ok: false, reason: parsed.error };
+    }
+
+    const isExplicitlyRefunded =
+      orderNode?.refunded === true ||
+      technicalStatus === "refunded" ||
+      technicalStatus === "reversed" ||
+      deliveryStatus === "refunded" ||
+      deliveryStatus === "reversed" ||
+      effectiveStatus === "refunded";
+
+    const isFailed = isExplicitlyRefunded ||
+                     parsed?.success === false || 
                      technicalStatus === "false" || 
                      technicalStatus === "error" || 
                      technicalStatus === "failed" || 
                      technicalStatus === "failure" ||
-                     technicalStatus === "refunded" ||
-                     technicalStatus === "reversed" ||
                      deliveryStatus === "failed" ||
-                     deliveryStatus === "refunded" ||
-                     deliveryStatus === "reversed" ||
                      effectiveStatus === "failed" ||
                      message === "FAILED";
 
     if (isFailed) {
-      const code = parsed?.code || parsed?.error_code || data?.code || parsed?.data?.code;
-      const baseReason = message || data?.order?.message || data?.message || (effectiveStatus === "refunded" ? "Provider refunded order" : "Provider rejected this order.");
+      const code = firstErr?.code || parsed?.code || parsed?.error_code || orderNode?.code || data?.code || parsed?.data?.code;
+      const baseReason = message || orderNode?.message || data?.message || (isExplicitlyRefunded ? "Provider refunded order" : "Provider rejected this order.");
       const errReason = code ? `${code}: ${baseReason}` : baseReason;
-      return { ok: false, id: orderId || undefined, status: effectiveStatus || "fulfillment_failed", reason: errReason };
+
+      // BundleZone MTN Express: Do not mark an order refunded until `refunded: true`.
+      // If `failed` is reported with `refunded === false` and `charged === true`, surface `failed_pending_refund`.
+      if (!isExplicitlyRefunded && deliveryStatus === "failed" && orderNode?.refunded === false && orderNode?.charged === true) {
+        return {
+          ok: false,
+          id: orderId || undefined,
+          status: "failed_pending_refund",
+          reason: errReason
+        };
+      }
+
+      const failStatus = isExplicitlyRefunded
+        ? "refunded"
+        : (orderNode?.charged === false && deliveryStatus === "failed" ? "refunded" : (effectiveStatus || "fulfillment_failed"));
+
+      return { ok: false, id: orderId || undefined, status: failStatus, reason: errReason };
     }
 
     const ok = technicalStatus === "success" || 
@@ -162,10 +214,16 @@ export function parseProviderResponse(body: string, contentType: string | null):
                parsed?.code === 200 || 
                data?.order?.success === true ||
                data?.order?.status === "processing" ||
+               data?.order?.status === "completed" ||
                parsed?.ok === true;
 
     if (ok && parsed?.success !== false) {
-      return { ok: true, id: orderId || undefined, status: effectiveStatus || "processing" };
+      // Do not treat HTTP 200 or `success: true` as delivery confirmation when `data.order` is present
+      // unless `deliveryStatus` explicitly confirms completion (`completed` / `delivered` / `fulfilled`).
+      const resolvedOkStatus = (data?.order || data?.result)
+        ? (["completed", "delivered", "fulfilled"].includes(deliveryStatus) ? "fulfilled" : "processing")
+        : (effectiveStatus || "processing");
+      return { ok: true, id: orderId || undefined, status: resolvedOkStatus };
     }
 
     const statusCode = Number(parsed?.statusCode);
@@ -173,7 +231,12 @@ export function parseProviderResponse(body: string, contentType: string | null):
       return { ok: false, reason: message || "Provider rejected this order." };
     }
     
-    if (orderId && orderId !== "undefined" && orderId !== "") return { ok: true, id: orderId, status: effectiveStatus };
+    if (orderId && orderId !== "undefined" && orderId !== "") {
+      const fallbackStatus = (data?.order || data?.result)
+        ? (["completed", "delivered", "fulfilled"].includes(deliveryStatus) ? "fulfilled" : "processing")
+        : (effectiveStatus || "processing");
+      return { ok: true, id: orderId, status: fallbackStatus };
+    }
 
   } catch { /* non-JSON */ }
 

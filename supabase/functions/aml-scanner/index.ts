@@ -162,7 +162,7 @@ serve(async (req: Request) => {
       .select("user_id,full_name,phone,terminal_locked,is_suspended,role")
       .in("user_id", flagged.map(f => f.agent_id));
 
-    const profileMap = new Map((profileRows ?? []).map(p => [p.user_id, p]));
+    const profileMap = new Map<string, any>((profileRows ?? []).map((p: any) => [p.user_id, p]));
 
     const enriched = flagged.map(f => ({
       ...f,

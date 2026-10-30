@@ -122,7 +122,7 @@ const AdminMashUpOrders = () => {
     let q = supabase
       .from("orders")
       .select("*", { count: "estimated" })
-      .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup")
+      .in("network", ["MTN Mash Up", "MTN_COMBO", "MASHUP"])
       .order("created_at", { ascending: false })
       .range(from, to);
 
@@ -130,9 +130,26 @@ const AdminMashUpOrders = () => {
       const cleanSearch = sanitizeSearchTerm(search);
       const isUuid = UUID_REGEX.test(cleanSearch);
       const isHex8 = /^[0-9a-f]{8}$/i.test(cleanSearch);
+      const digitsOnly = cleanSearch.replace(/\D/g, "");
+      const isPhoneQuery = /^(\+?233|0)\d{8,9}$/.test(cleanSearch.replace(/\s+/g, "")) && digitsOnly.length >= 9;
 
       if (isUuid) {
         q = q.or(`id.eq.${cleanSearch},agent_id.eq.${cleanSearch}`);
+      } else if (isPhoneQuery) {
+        const core9 = digitsOnly.slice(-9);
+        const phoneVariants = Array.from(new Set([cleanSearch, `0${core9}`, `233${core9}`, `+233${core9}`, core9]));
+        const { data: matchedProfiles } = await supabase
+          .from("profiles")
+          .select("user_id")
+          .in("phone", phoneVariants);
+        const matchedUserIds = (matchedProfiles || [])
+          .map((p: any) => p.user_id)
+          .filter((id: any) => id && UUID_REGEX.test(id));
+        if (matchedUserIds.length > 0) {
+          q = q.or(`customer_phone.in.(${phoneVariants.join(",")}),agent_id.in.(${matchedUserIds.join(",")})`);
+        } else {
+          q = q.in("customer_phone", phoneVariants);
+        }
       } else {
         const { data: matchedProfiles } = await supabase
           .from("profiles")
@@ -498,7 +515,7 @@ const AdminMashUpOrders = () => {
         .from("orders")
         .select("id", { count: "exact", head: true })
         .eq("status", "processing")
-        .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup");
+        .in("network", ["MTN Mash Up", "MTN_COMBO", "MASHUP"]);
 
       if (countErr) throw countErr;
       const totalCount = count || 0;
@@ -525,7 +542,7 @@ const AdminMashUpOrders = () => {
           status: "fulfilled", 
           failure_reason: "Forced global Mash Up fulfillment via admin dashboard" 
         })
-        .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup");
+        .in("network", ["MTN Mash Up", "MTN_COMBO", "MASHUP"]);
 
       if (error) throw error;
       
@@ -561,27 +578,31 @@ const AdminMashUpOrders = () => {
     setBulkUpdating(false);
   };
 
-  const handleBulkCheckStatus = async (targetOrderIds?: string[]) => {
+  const handleBulkCheckStatus = useCallback(async (targetOrderIds?: string[], isSilent = false) => {
     const isExplicit = Array.isArray(targetOrderIds) && targetOrderIds.length > 0;
     const ids = isExplicit
       ? targetOrderIds
-      : (selectedIds.size > 0 
+      : (selectedIds.size > 0 && !isSilent
           ? Array.from(selectedIds) 
           : allOrders.filter(o => o.status === "processing" || o.status === "paid").map(o => o.id));
 
     if (ids.length === 0) {
-      toast({
-        title: "No Orders to Check 📡",
-        description: "Select orders using the checkboxes, or ensure there are active processing orders on the page.",
-      });
+      if (!isSilent) {
+        toast({
+          title: "No Orders to Check 📡",
+          description: "Select orders using the checkboxes, or ensure there are active processing orders on the page.",
+        });
+      }
       return;
     }
 
     setBulkCheckingStatus(true);
-    toast({
-      title: "Checking Live Provider Status 📡",
-      description: `Querying carrier APIs for ${ids.length} order(s)...`,
-    });
+    if (!isSilent) {
+      toast({
+        title: "Checking Live Provider Status 📡",
+        description: `Querying carrier APIs for ${ids.length} order(s)...`,
+      });
+    }
 
     try {
       const { data, error } = await supabase.functions.invoke("check-order-status", {
@@ -610,29 +631,45 @@ const AdminMashUpOrders = () => {
         }));
       }
 
-      toast({
-        title: `Bulk Status Check Complete! 📡`,
-        description: `Checked ${ids.length} orders: ${summary.fulfilled || 0} Fulfilled ✅, ${summary.failed || 0} Failed ❌, ${summary.processing || 0} In Processing ⏳${updatedCount > 0 ? ` (${updatedCount} updated)` : ""}`,
-      });
+      if (!isSilent || updatedCount > 0) {
+        toast({
+          title: isSilent ? `Auto Status Check (3m) 📡` : `Bulk Status Check Complete! 📡`,
+          description: `Checked ${ids.length} orders: ${summary.fulfilled || 0} Fulfilled ✅, ${summary.failed || 0} Failed ❌, ${summary.processing || 0} In Processing ⏳${updatedCount > 0 ? ` (${updatedCount} updated)` : ""}`,
+        });
+      }
 
-      if (currentUser) {
-        await logAudit(currentUser.id, "bulk_check_mashup_status", {
+      if (currentUser && (!isSilent || updatedCount > 0)) {
+        await logAudit(currentUser.id, isSilent ? "auto_bulk_check_mashup_status" : "bulk_check_mashup_status", {
           total: ids.length,
           summary
         });
       }
 
-      await fetchOrders(true);
+      if (!isSilent || updatedCount > 0) {
+        await fetchOrders(true);
+      }
     } catch (err: any) {
-      toast({
-        title: "Bulk Status Check Error",
-        description: err.message || "Failed to verify statuses with upstream providers",
-        variant: "destructive",
-      });
+      if (!isSilent) {
+        toast({
+          title: "Bulk Status Check Error",
+          description: err.message || "Failed to verify statuses with upstream providers",
+          variant: "destructive",
+        });
+      }
     } finally {
       setBulkCheckingStatus(false);
     }
-  };
+  }, [allOrders, currentUser, fetchOrders, selectedIds, toast]);
+
+  // Automated Bulk Status Check every 3 minutes (180,000 ms)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!bulkCheckingStatus) {
+        handleBulkCheckStatus(undefined, true);
+      }
+    }, 3 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [bulkCheckingStatus, handleBulkCheckStatus]);
 
   const handleHealProcessingOrders = async () => {
     const processingOrders = allOrders.filter(o => o.status === "processing");
@@ -701,7 +738,7 @@ const AdminMashUpOrders = () => {
       const { data: pendingOrders, error: fetchErr } = await supabase
         .from("orders")
         .select("id, customer_phone, package_size")
-        .or("network.eq.MTN Mash Up,network.ilike.%MASH%,network.eq.MTN_COMBO,metadata->>category.eq.mashup")
+        .in("network", ["MTN Mash Up", "MTN_COMBO", "MASHUP"])
         .eq("status", "pending")
         .order("created_at", { ascending: false });
 
@@ -812,7 +849,7 @@ const AdminMashUpOrders = () => {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start">
-          <Button variant="outline" size="sm" className="gap-2" onClick={fetchOrders}>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchOrders()}>
             <RefreshCw className="w-4 h-4" /> Refresh
           </Button>
           <Button
@@ -1167,7 +1204,7 @@ const AdminMashUpOrders = () => {
                         </Badge>
                       )}
                     </div>
-                    {order.failure_reason && (
+                    {order.failure_reason && order.status !== "fulfilled" && order.status !== "processing" && (
                       <p className="text-[10px] text-red-400 mt-0.5 max-w-[120px] truncate mx-auto" title={order.failure_reason}>
                         {order.failure_reason}
                       </p>
@@ -1320,7 +1357,7 @@ const AdminMashUpOrders = () => {
                   Retry Fulfillment
                 </Button>
               )}
-              {order.failure_reason && (
+              {order.failure_reason && order.status !== "fulfilled" && order.status !== "processing" && (
                 <div className="flex-1 text-[9px] text-red-600 dark:text-red-400/80 italic leading-tight">
                   Error: {order.failure_reason}
                 </div>

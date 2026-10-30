@@ -4,9 +4,17 @@ import {
   RefreshCw, BadgeCheck, Timer,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  getCachedHeroVideoMeta,
+  saveCachedHeroVideoMeta,
+  resolveOfflineFirstVideoUrl,
+  getCachedVideoBlobUrl,
+  cacheHeroVideoInBackground,
+  normalizeHeroVideoUrl,
+} from "@/lib/offline-video-cache";
 import PhoneOrderTracker from "@/components/PhoneOrderTracker";
 import StoreVisitorPopup from "@/components/StoreVisitorPopup";
 import PromoCarousel from "@/components/PromoCarousel";
@@ -305,34 +313,167 @@ const HeroLiveBadge = memo(() => {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 const Index = () => {
   const { user } = useAuth();
+  const initialVideoMeta = useRef(getCachedHeroVideoMeta());
+  // Browsers require autoplay videos to start muted before user interaction
   const [isMuted, setIsMuted] = useState(true);
-  const [videoUrl, setVideoUrl] = useState("/assets/videos/ai_video.mp4");
+  const [desiredUnmutedAfterInteraction, setDesiredUnmutedAfterInteraction] = useState(
+    () => initialVideoMeta.current.muted === false
+  );
+  const userManuallyToggledMuteRef = useRef(false);
+  const [rawVideoUrl, setRawVideoUrl] = useState<string>(() => initialVideoMeta.current.url);
+  const [playbackVideoSrc, setPlaybackVideoSrc] = useState<string>(() => initialVideoMeta.current.url);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [liveStats, setLiveStats] = useState({ totalDelivered: 80514, successRate: 99.4, totalAgents: 1240 });
 
+  const ensureVideoPlaying = useCallback(async () => {
+    const el = videoRef.current;
+    if (!el) return;
+    try {
+      await el.play();
+    } catch {
+      // If unmuted autoplay was blocked by browser policy (NotAllowedError), fallback to muted immediately
+      if (!el.muted) {
+        el.muted = true;
+        setIsMuted(true);
+        try {
+          await el.play();
+        } catch {
+          // Ignore if tab is in background or Low Power Mode
+        }
+      }
+    }
+  }, []);
+
+  // Resolve offline-first video source (uses local CacheStorage Blob URL if cached, or caches in background)
+  useEffect(() => {
+    let active = true;
+    const validTargetUrl = normalizeHeroVideoUrl(rawVideoUrl);
+
+    resolveOfflineFirstVideoUrl(validTargetUrl).then(({ playbackUrl }) => {
+      if (!active) return;
+      setPlaybackVideoSrc((prev) => (prev !== playbackUrl ? playbackUrl : prev));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [rawVideoUrl]);
+
+  // Trigger playback whenever playbackVideoSrc changes
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = isMuted;
+    void ensureVideoPlaying();
+  }, [playbackVideoSrc, isMuted, ensureVideoPlaying]);
+
+  // If admin configured video to play with sound (home_page_video_muted = false),
+  // unmute on the user's first interaction with the page (unless they manually clicked mute)
+  useEffect(() => {
+    if (!desiredUnmutedAfterInteraction || userManuallyToggledMuteRef.current) return;
+
+    const unlockAudioOnFirstInteraction = () => {
+      if (userManuallyToggledMuteRef.current) return;
+      const el = videoRef.current;
+      if (el) {
+        el.muted = false;
+        setIsMuted(false);
+        void ensureVideoPlaying();
+      }
+      setDesiredUnmutedAfterInteraction(false);
+    };
+
+    window.addEventListener("pointerdown", unlockAudioOnFirstInteraction, { once: true, passive: true });
+    window.addEventListener("keydown", unlockAudioOnFirstInteraction, { once: true, passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudioOnFirstInteraction);
+      window.removeEventListener("keydown", unlockAudioOnFirstInteraction);
+    };
+  }, [desiredUnmutedAfterInteraction, ensureVideoPlaying]);
+
+  // Recover video seamlessly when switching offline/online or returning to tab
+  const handleVideoErrorOrStall = useCallback(async () => {
+    const validUrl = normalizeHeroVideoUrl(rawVideoUrl);
+    const cachedBlobUrl = await getCachedVideoBlobUrl(validUrl);
+    if (cachedBlobUrl && playbackVideoSrc !== cachedBlobUrl) {
+      setPlaybackVideoSrc(cachedBlobUrl);
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      const freshBlobUrl = await cacheHeroVideoInBackground(validUrl);
+      if (freshBlobUrl && playbackVideoSrc !== freshBlobUrl) {
+        setPlaybackVideoSrc(freshBlobUrl);
+        return;
+      }
+    }
+    void ensureVideoPlaying();
+  }, [rawVideoUrl, playbackVideoSrc, ensureVideoPlaying]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void ensureVideoPlaying();
+      }
+    };
+    const handleOnline = () => {
+      void handleVideoErrorOrStall();
+    };
+    const handleOffline = async () => {
+      const cachedBlobUrl = await getCachedVideoBlobUrl(rawVideoUrl);
+      if (cachedBlobUrl && playbackVideoSrc !== cachedBlobUrl) {
+        setPlaybackVideoSrc(cachedBlobUrl);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [rawVideoUrl, playbackVideoSrc, ensureVideoPlaying, handleVideoErrorOrStall]);
+
   useEffect(() => {
     const fetchSettings = async () => {
-      const { data } = await supabase
-        .from("public_system_settings")
-        .select("home_page_video_url, home_page_video_muted")
-        .eq("id", 1)
-        .maybeSingle();
+      try {
+        const { data } = await supabase
+          .from("public_system_settings")
+          .select("home_page_video_url, home_page_video_muted")
+          .eq("id", 1)
+          .maybeSingle();
 
-      if (data?.home_page_video_url) {
-        setVideoUrl(data.home_page_video_url);
-      }
-      if (data && typeof data.home_page_video_muted === "boolean") {
-        setIsMuted(data.home_page_video_muted);
+        if (data) {
+          const resolvedUrl = normalizeHeroVideoUrl(data.home_page_video_url);
+          const mutedPref = typeof data.home_page_video_muted === "boolean" ? data.home_page_video_muted : true;
+          saveCachedHeroVideoMeta(resolvedUrl, mutedPref);
+          setRawVideoUrl(resolvedUrl);
+          if (!userManuallyToggledMuteRef.current) {
+            if (mutedPref === false) {
+              setDesiredUnmutedAfterInteraction(true);
+            } else {
+              setIsMuted(true);
+              setDesiredUnmutedAfterInteraction(false);
+            }
+          }
+        }
+      } catch {
+        // Offline or network error — rely on cached metadata and CacheStorage Blob URL
       }
     };
     const fetchStats = async () => {
-      const { data } = await supabase.rpc("get_public_stats");
-      if (data) {
-        setLiveStats({
-          totalDelivered: Number(data.total_delivered) || 0,
-          successRate: Number(data.success_rate) || 99.4,
-          totalAgents: Number(data.total_agents) || 0,
-        });
+      try {
+        const { data } = await supabase.rpc("get_public_stats");
+        if (data) {
+          setLiveStats({
+            totalDelivered: Number(data.total_delivered) || 0,
+            successRate: Number(data.success_rate) || 99.4,
+            totalAgents: Number(data.total_agents) || 0,
+          });
+        }
+      } catch {
+        // Ignore when offline
       }
     };
     fetchSettings();
@@ -361,36 +502,49 @@ const Index = () => {
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden pt-24 pb-16 md:pt-36 md:pb-28 px-4 min-h-[70vh] md:min-h-[85vh] flex items-center justify-center">
-        {/* Video Background */}
-        <div className="absolute inset-0 z-0 overflow-hidden">
+        {/* Video Background (Offline-First via CacheStorage Blob + Autoplay Recovery) */}
+        <div className="absolute inset-0 z-0 overflow-hidden bg-[#05060b]">
           <div className="absolute inset-0 bg-black/60 z-10" /> {/* Dark overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/60 z-10" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/65 z-10" />
           <video
-            key={videoUrl}
             ref={videoRef}
+            src={playbackVideoSrc}
             autoPlay
             muted={isMuted}
             loop
             playsInline
-            preload="none"
+            preload="auto"
+            crossOrigin="anonymous"
+            onLoadedData={() => void ensureVideoPlaying()}
+            onCanPlay={() => void ensureVideoPlaying()}
+            onError={() => void handleVideoErrorOrStall()}
+            onStalled={() => void handleVideoErrorOrStall()}
             aria-hidden="true"
-            className="hidden md:block w-full h-full object-cover"
+            className="w-full h-full object-cover"
           >
-            <source src={videoUrl} type="video/mp4" />
             <track kind="captions" src="data:text/vtt,WEBVTT" label="English" default />
           </video>
 
-          {/* Mute/Unmute Toggle (Desktop only) */}
+          {/* Mute/Unmute Toggle */}
           <button
-            onClick={() => setIsMuted(!isMuted)}
-            className="hidden md:flex absolute bottom-10 right-10 z-30 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md items-center justify-center transition-all duration-300 group"
+            type="button"
+            onClick={() => {
+              userManuallyToggledMuteRef.current = true;
+              const nextMuted = !isMuted;
+              setIsMuted(nextMuted);
+              if (videoRef.current) {
+                videoRef.current.muted = nextMuted;
+                void ensureVideoPlaying();
+              }
+            }}
+            className="flex absolute bottom-6 right-5 md:bottom-10 md:right-10 z-30 w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md items-center justify-center transition-all duration-300 group cursor-pointer"
             title={isMuted ? "Unmute Video" : "Mute Video"}
             aria-label={isMuted ? "Unmute background video" : "Mute background video"}
           >
             {isMuted ? (
-              <VolumeX className="w-5 h-5 text-white/70 group-hover:text-white" />
+              <VolumeX className="w-4 h-4 md:w-5 md:h-5 text-white/70 group-hover:text-white" />
             ) : (
-              <Volume2 className="w-5 h-5 text-amber-400 group-hover:scale-110" />
+              <Volume2 className="w-4 h-4 md:w-5 md:h-5 text-amber-400 group-hover:scale-110" />
             )}
           </button>
         </div>
