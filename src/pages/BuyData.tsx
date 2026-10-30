@@ -439,15 +439,15 @@ const BuyData = () => {
 
   useEffect(() => {
     if (selectedPkg) {
-      const prevBody = document.body.style.overflow;
-      const prevHtml = document.documentElement.style.overflow;
       document.body.style.overflow = "hidden";
-      document.documentElement.style.overflow = "hidden";
       setTimeout(() => phoneInputRef.current?.focus(), 100);
       return () => {
-        document.body.style.overflow = prevBody;
-        document.documentElement.style.overflow = prevHtml;
+        document.body.style.overflow = "";
+        document.documentElement.style.overflow = "";
       };
+    } else {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
     }
   }, [selectedPkg]);
 

@@ -181,7 +181,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         )}
       >
         {/* ── Premium Logo Section ── */}
-        <div className="p-6 flex items-center justify-between">
+        <div className="p-4 sm:p-6 flex items-center justify-between shrink-0">
           <Link to="/" className="flex items-center gap-3 group">
             <div className="relative">
               <div className="absolute -inset-1 bg-primary/20 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
@@ -219,7 +219,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         </div>
 
         {/* ── Enhanced User Profile Section ── */}
-        <div className="px-5 py-6">
+        <div className="px-4 py-3 sm:px-5 sm:py-5 shrink-0">
           <div className={cn(
             "p-4 rounded-2xl border relative overflow-hidden group transition-all",
             isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"
@@ -297,7 +297,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         </div>
 
         {/* ── Sophisticated Navigation ── */}
-        <nav className="flex-1 px-4 py-2 space-y-8 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+        <nav className="flex-1 min-h-0 px-4 py-2 space-y-6 overflow-y-auto overscroll-y-contain touch-pan-y scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
           {/* User Menu */}
           <div>
             <p className={cn("px-4 text-[10px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2", isDark ? "text-white/20" : "text-gray-400")}>
@@ -444,7 +444,7 @@ const DashboardSidebar = ({ open, onClose }: DashboardSidebarProps) => {
         </nav>
 
         {/* ── Premium Footer ── */}
-        <div className={cn("p-4 border-t space-y-2", isDark ? "border-white/5" : "border-gray-100")}>
+        <div className={cn("p-3 sm:p-4 border-t space-y-2 shrink-0", isDark ? "border-white/5" : "border-gray-100")}>
           <button
             onClick={openAccountSwitcher}
             className={cn(

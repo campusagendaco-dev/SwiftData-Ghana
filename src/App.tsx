@@ -288,6 +288,12 @@ const AppContent = () => {
     return () => clearTimeout(t);
   }, []);
 
+  // Safeguard: Always clear any leftover body/html scroll locks on route navigation
+  useEffect(() => {
+    document.body.style.overflow = "";
+    document.documentElement.style.overflow = "";
+  }, [location.pathname]);
+
   useEffect(() => {
     let mounted = true;
 

@@ -98,7 +98,7 @@
 
   /* Instant tap responsiveness on iOS & Android - eliminates 300ms click delay */
   a, button, input, select, textarea, [role="button"] {
-    touch-action: manipulation;
+    touch-action: pan-y manipulation;
   }
 
   h1, h2, h3, h4, h5, h6 {

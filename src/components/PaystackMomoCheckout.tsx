@@ -61,14 +61,15 @@ export const PaystackMomoCheckout: React.FC<PaystackMomoCheckoutProps> = ({
 
   // Prevent background page scrolling while modal is open
   useEffect(() => {
-    if (!isOpen) return;
-    const prevBodyOverflow = document.body.style.overflow;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
+    if (!isOpen) {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+      return;
+    }
     document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = prevBodyOverflow;
-      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
     };
   }, [isOpen]);
 
