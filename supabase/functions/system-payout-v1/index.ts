@@ -1011,6 +1011,88 @@ serve(async (req: Request) => {
           }
         }
 
+        // Also upsert providers if passed in body.providers
+        const incomingProviders = Array.isArray(body.providers) ? body.providers : [];
+        if (incomingProviders.length > 0) {
+          for (const p of incomingProviders) {
+            const { created_at, updated_at, balance, last_synced_at, ...cleanP } = p;
+            if (typeof cleanP.api_key === "string") cleanP.api_key = cleanP.api_key.trim();
+            if (typeof cleanP.base_url === "string") cleanP.base_url = cleanP.base_url.trim();
+            if (typeof cleanP.id === "string" && cleanP.id.startsWith("new-")) {
+              const { id: _ignoreId, ...newItem } = cleanP;
+              await supabaseAdmin.from("providers").upsert(newItem, { onConflict: "name" });
+            } else if (cleanP.id) {
+              await supabaseAdmin.from("providers").upsert(cleanP, { onConflict: "id" });
+            }
+          }
+        }
+
+        // Automatically sync updated API keys to Supabase Edge Function Secrets (Deno.env)
+        const mgmtToken = Deno.env.get("SB_MANAGEMENT_TOKEN") || Deno.env.get("SUPABASE_MANAGEMENT_TOKEN") || Deno.env.get("SUPABASE_ACCESS_TOKEN") || "";
+        const projectRef = Deno.env.get("SB_PROJECT_REF") || Deno.env.get("SUPABASE_PROJECT_REF") || "lsocdjpflecduumopijn";
+        if (mgmtToken) {
+          const edgeSecretsToSync: Array<{ name: string; value: string }> = [];
+          const addEdgeSecret = (name: string, val: any) => {
+            if (typeof val === "string" && val.trim().length > 0) {
+              edgeSecretsToSync.push({ name, value: val.trim() });
+            }
+          };
+
+          addEdgeSecret("PAYSTACK_SECRET_KEY", secretUpdates.paystack_secret_key);
+          addEdgeSecret("TXTCONNECT_API_KEY", secretUpdates.txtconnect_api_key);
+          addEdgeSecret("TXTCONNECT_SENDER_ID", secretUpdates.txtconnect_sender_id);
+          addEdgeSecret("MNOTIFY_API_KEY", secretUpdates.mnotify_api_key);
+          addEdgeSecret("DATA_PROVIDER_API_KEY", secretUpdates.data_provider_api_key);
+          addEdgeSecret("PRIMARY_DATA_PROVIDER_API_KEY", secretUpdates.data_provider_api_key);
+          addEdgeSecret("DATA_PROVIDER_BASE_URL", secretUpdates.data_provider_base_url);
+          addEdgeSecret("PRIMARY_DATA_PROVIDER_BASE_URL", secretUpdates.data_provider_base_url);
+          addEdgeSecret("SECONDARY_DATA_PROVIDER_API_KEY", secretUpdates.secondary_data_provider_api_key);
+          addEdgeSecret("SECONDARY_DATA_PROVIDER_BASE_URL", secretUpdates.secondary_data_provider_base_url);
+          addEdgeSecret("AIRTIME_PROVIDER_API_KEY", secretUpdates.airtime_provider_api_key);
+          addEdgeSecret("AIRTIME_PROVIDER_BASE_URL", secretUpdates.airtime_provider_base_url);
+
+          const { data: allDbProviders } = await supabaseAdmin.from("providers").select("handler_type, api_key, base_url, settings");
+          for (const prov of (allDbProviders || [])) {
+            const ht = String(prov.handler_type || "").toLowerCase().trim();
+            const pk = String(prov.api_key || "").trim();
+            const pb = String(prov.base_url || "").trim();
+            if (!pk) continue;
+            if (ht === "datamart") {
+              addEdgeSecret("DATAMART_API_KEY", pk);
+              addEdgeSecret("DATAMARTGH_API_KEY", pk);
+              if (pb) addEdgeSecret("DATAMART_BASE_URL", pb);
+            } else if (ht === "bundlezone") {
+              addEdgeSecret("BUNDLEZONE_API_KEY", pk);
+              if (pb) addEdgeSecret("BUNDLEZONE_BASE_URL", pb);
+              if (prov.settings?.webhook_secret) addEdgeSecret("BUNDLEZONE_WEBHOOK_SECRET", prov.settings.webhook_secret);
+            } else if (ht === "skdataplug") {
+              addEdgeSecret("SKDATAPLUG_API_KEY", pk);
+            } else if (ht === "datahub") {
+              addEdgeSecret("DATA_PROVIDER_API_KEY", pk);
+              addEdgeSecret("PRIMARY_DATA_PROVIDER_API_KEY", pk);
+              if (pb) {
+                addEdgeSecret("DATA_PROVIDER_BASE_URL", pb);
+                addEdgeSecret("PRIMARY_DATA_PROVIDER_BASE_URL", pb);
+              }
+            } else if (ht === "mnotify") {
+              addEdgeSecret("MNOTIFY_API_KEY", pk);
+            } else if (ht === "afaregistration") {
+              addEdgeSecret("AFA_API_KEY", pk);
+            }
+          }
+
+          if (edgeSecretsToSync.length > 0) {
+            await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${mgmtToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(edgeSecretsToSync),
+            }).catch((err) => console.warn("[update_system_settings] Edge secret sync warning:", err.message));
+          }
+        }
+
         // Log update action to audit_logs table
         try {
           await supabaseAdmin.from("audit_logs").insert({

@@ -682,7 +682,7 @@ const AdminSettings = () => {
           'Authorization': `Bearer ${session?.access_token}`,
           'apikey': SUPABASE_PUBLISHABLE_KEY
         },
-        body: JSON.stringify({ action: "update_system_settings", settings: payload })
+        body: JSON.stringify({ action: "update_system_settings", settings: payload, providers })
       });
 
       const data = await response.json();
@@ -895,7 +895,25 @@ const AdminSettings = () => {
         if (error) throw error;
       }
 
-      toast({ title: "Providers Updated", description: "Network routing logic synchronized successfully." });
+      // 3. Also trigger server-side provider & Edge Function Secret sync via system-payout-v1
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          await fetch(`${SUPABASE_URL}/functions/v1/system-payout-v1?t=${Date.now()}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session.access_token}`,
+              "apikey": SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({ action: "update_system_settings", settings: {}, providers: toUpsert }),
+          });
+        }
+      } catch (syncErr) {
+        console.warn("Edge secret sync warning:", syncErr);
+      }
+
+      toast({ title: "Providers & API Keys Updated", description: "Provider credentials, Edge Function secrets, and routing priorities synchronized." });
       fetchProviders();
     } catch (err: any) {
       console.error("Save error:", err);
@@ -2839,7 +2857,16 @@ const AdminSettings = () => {
                               }
                               try {
                                 const { data, error } = await supabase.functions.invoke("sync-provider-data", {
-                                  body: { provider_id: provider.id },
+                                  body: {
+                                    provider_id: provider.id,
+                                    api_key: provider.api_key,
+                                    base_url: provider.base_url,
+                                    name: provider.name,
+                                    priority: provider.priority,
+                                    provider_type: provider.provider_type,
+                                    handler_type: provider.handler_type,
+                                    settings: provider.settings,
+                                  },
                                 });
                                 
                                 if (error) {
@@ -3033,7 +3060,7 @@ const AdminSettings = () => {
                     </div>
                   ))}
                   <Button onClick={handleSaveProviders} disabled={saving} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold h-10 rounded-xl">
-                     Save Provider Priorities
+                     Save Providers & API Keys
                   </Button>
                 </div>
               )}

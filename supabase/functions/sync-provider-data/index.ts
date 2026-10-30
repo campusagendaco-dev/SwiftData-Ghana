@@ -53,8 +53,32 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { provider_id } = await req.json();
+    const reqBody = await req.json();
+    const {
+      provider_id,
+      api_key: reqApiKey,
+      base_url: reqBaseUrl,
+      name: reqName,
+      priority: reqPriority,
+      provider_type: reqProviderType,
+      handler_type: reqHandlerType,
+      settings: reqSettings,
+    } = reqBody;
     if (!provider_id) throw new Error("Missing provider_id");
+
+    // If Admin passed updated provider credentials in the Sync Data request, persist them first
+    if (reqApiKey !== undefined || reqBaseUrl !== undefined || reqHandlerType !== undefined || reqSettings !== undefined) {
+      const preUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (typeof reqApiKey === "string") preUpdates.api_key = reqApiKey.trim();
+      if (typeof reqBaseUrl === "string") preUpdates.base_url = reqBaseUrl.trim();
+      if (typeof reqName === "string" && reqName.trim()) preUpdates.name = reqName.trim();
+      if (typeof reqPriority === "number") preUpdates.priority = reqPriority;
+      if (typeof reqProviderType === "string") preUpdates.provider_type = reqProviderType;
+      if (typeof reqHandlerType === "string") preUpdates.handler_type = reqHandlerType;
+      if (reqSettings && typeof reqSettings === "object") preUpdates.settings = reqSettings;
+
+      await supabaseAdmin.from("providers").update(preUpdates).eq("id", provider_id);
+    }
 
     const { data: provider, error: providerError } = await supabaseAdmin
       .from("providers")
@@ -65,8 +89,46 @@ serve(async (req: Request) => {
     if (providerError || !provider) throw new Error("Provider not found");
 
     const handlerType = (provider.handler_type || "standard").toLowerCase().trim();
+
+    // Sync updated provider API key to Supabase Edge Function Secrets if SUPABASE_MANAGEMENT_TOKEN is available
+    const dbApiKey = (typeof reqApiKey === "string" ? reqApiKey.trim() : (provider.api_key || "").trim());
+    const dbBaseUrl = (typeof reqBaseUrl === "string" ? reqBaseUrl.trim() : (provider.base_url || "").trim());
+    const mgmtToken = Deno.env.get("SB_MANAGEMENT_TOKEN") || Deno.env.get("SUPABASE_MANAGEMENT_TOKEN") || Deno.env.get("SUPABASE_ACCESS_TOKEN") || "";
+    const projectRef = Deno.env.get("SB_PROJECT_REF") || Deno.env.get("SUPABASE_PROJECT_REF") || "lsocdjpflecduumopijn";
+    if (mgmtToken && dbApiKey) {
+      const secretsToPush: Array<{ name: string; value: string }> = [];
+      if (handlerType === "datamart") {
+        secretsToPush.push({ name: "DATAMART_API_KEY", value: dbApiKey }, { name: "DATAMARTGH_API_KEY", value: dbApiKey });
+        if (dbBaseUrl) secretsToPush.push({ name: "DATAMART_BASE_URL", value: dbBaseUrl });
+      } else if (handlerType === "bundlezone") {
+        secretsToPush.push({ name: "BUNDLEZONE_API_KEY", value: dbApiKey });
+        if (dbBaseUrl) secretsToPush.push({ name: "BUNDLEZONE_BASE_URL", value: dbBaseUrl });
+        if (provider.settings?.webhook_secret) {
+          secretsToPush.push({ name: "BUNDLEZONE_WEBHOOK_SECRET", value: String(provider.settings.webhook_secret).trim() });
+        }
+      } else if (handlerType === "skdataplug") {
+        secretsToPush.push({ name: "SKDATAPLUG_API_KEY", value: dbApiKey });
+      } else if (handlerType === "datahub") {
+        secretsToPush.push({ name: "DATA_PROVIDER_API_KEY", value: dbApiKey }, { name: "PRIMARY_DATA_PROVIDER_API_KEY", value: dbApiKey });
+        if (dbBaseUrl) secretsToPush.push({ name: "DATA_PROVIDER_BASE_URL", value: dbBaseUrl }, { name: "PRIMARY_DATA_PROVIDER_BASE_URL", value: dbBaseUrl });
+      } else if (handlerType === "mnotify") {
+        secretsToPush.push({ name: "MNOTIFY_API_KEY", value: dbApiKey });
+      } else if (handlerType === "afaregistration") {
+        secretsToPush.push({ name: "AFA_API_KEY", value: dbApiKey });
+      }
+      if (secretsToPush.length > 0) {
+        await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${mgmtToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(secretsToPush),
+        }).catch((e) => console.warn("[sync-provider-data] Failed to sync Edge Function secret:", e.message));
+      }
+    }
     
-    // Always prioritize Environment Secrets per AGENTS.md rules
+    // Always prioritize Environment Secrets per AGENTS.md rules, while honoring explicit Admin override key passed in request
     const envApiKey = 
       (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") : null) ||
       (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) ||
@@ -75,11 +137,11 @@ serve(async (req: Request) => {
       (handlerType === "korba" ? Deno.env.get("KORBA_SECRET_KEY") : null) ||
       (handlerType === "afaregistration" ? Deno.env.get("AFA_API_KEY") : null);
 
-    const apiKey = envApiKey || provider.api_key || "";
+    const apiKey = (typeof reqApiKey === "string" && reqApiKey.trim()) || envApiKey || provider.api_key || "";
     const envBaseUrl = 
       (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_BASE_URL") : null) ||
       (handlerType === "datamart" ? Deno.env.get("DATAMART_BASE_URL") : null);
-    const baseUrl = (envBaseUrl || provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
+    const baseUrl = ((typeof reqBaseUrl === "string" && reqBaseUrl.trim()) || envBaseUrl || provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
 
     if (!apiKey) throw new Error(`Provider API key missing for ${provider.name}`);
     if (!baseUrl && handlerType !== "mnotify") throw new Error(`Provider Base URL missing for ${provider.name}`);
