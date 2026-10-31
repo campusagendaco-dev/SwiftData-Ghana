@@ -19,13 +19,31 @@ export interface CachedRecipientMeta {
 }
 
 export interface PendingGuestOrderDraft {
-  network: "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
+  network: "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo" | string;
   category: string;
-  pkg: { size: string; price: number };
+  pkg?: { size: string; price: number };
+  packageSize?: string;
+  price?: number;
+  total?: number;
+  fee?: number;
   phone: string;
   email?: string;
   resolvedName?: string | null;
+  metadata?: Record<string, any>;
   savedAt: number;
+}
+
+export interface CachedOrderLookupEntry {
+  orders?: any[];
+  orderData?: any;
+  orderNetwork?: string;
+  orderPackageSize?: string;
+  orderPhone?: string;
+  orderType?: any;
+  orderStatus?: any;
+  statusMessage?: string | null;
+  failed?: boolean;
+  updatedAt: number;
 }
 
 const CATALOG_CACHE_KEY = "swiftdata_buy_catalog_v1";
@@ -147,16 +165,25 @@ export function clearPendingGuestOrderDraft(): void {
   }
 }
 
-export function saveCachedOrderLookup(queryKey: string, orders: any[]): void {
+export function saveCachedOrderLookup(queryKey: string, payload: any[] | Partial<Omit<CachedOrderLookupEntry, "updatedAt">>): void {
   const cleanKey = queryKey.trim().toLowerCase();
-  if (!cleanKey || !Array.isArray(orders) || orders.length === 0) return;
+  if (!cleanKey || !payload) return;
+  if (Array.isArray(payload) && payload.length === 0) return;
   try {
     const raw = localStorage.getItem(ORDER_LOOKUP_CACHE_KEY);
-    const map: Record<string, { orders: any[]; updatedAt: number }> = raw ? JSON.parse(raw) : {};
-    map[cleanKey] = {
-      orders: orders.slice(0, 15),
-      updatedAt: Date.now(),
-    };
+    const map: Record<string, CachedOrderLookupEntry> = raw ? JSON.parse(raw) : {};
+    const existing = map[cleanKey] || { updatedAt: Date.now() };
+    map[cleanKey] = Array.isArray(payload)
+      ? {
+          ...existing,
+          orders: payload.slice(0, 15),
+          updatedAt: Date.now(),
+        }
+      : {
+          ...existing,
+          ...payload,
+          updatedAt: Date.now(),
+        };
     const keys = Object.keys(map);
     if (keys.length > 20) {
       const oldest = keys.sort((a, b) => (map[a]?.updatedAt || 0) - (map[b]?.updatedAt || 0))[0];
@@ -168,13 +195,13 @@ export function saveCachedOrderLookup(queryKey: string, orders: any[]): void {
   }
 }
 
-export function getCachedOrderLookup(queryKey: string): { orders: any[]; updatedAt: number } | null {
+export function getCachedOrderLookup(queryKey: string): CachedOrderLookupEntry | null {
   const cleanKey = queryKey.trim().toLowerCase();
   if (!cleanKey) return null;
   try {
     const raw = localStorage.getItem(ORDER_LOOKUP_CACHE_KEY);
     if (!raw) return null;
-    const map = JSON.parse(raw) as Record<string, { orders: any[]; updatedAt: number }>;
+    const map = JSON.parse(raw) as Record<string, CachedOrderLookupEntry>;
     return map[cleanKey] || null;
   } catch {
     return null;

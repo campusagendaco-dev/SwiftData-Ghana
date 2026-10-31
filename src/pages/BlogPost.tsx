@@ -84,7 +84,7 @@ const BlogPost = () => {
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-black leading-tight tracking-tight">
               {post.title}
             </h1>
-            
+
             <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pt-2 border-b border-white/5 pb-4">
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4" /> {post.date}
@@ -95,9 +95,9 @@ const BlogPost = () => {
               <span className="flex items-center gap-1.5">
                 <User className="w-4 h-4" /> By {post.author}
               </span>
-              <a 
+              <a
                 href={`https://api.whatsapp.com/send?text=${encodeURIComponent("Hey! Check out this helpful guide: " + post.title + " - " + canonicalUrl)}`}
-                target="_blank" 
+                target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-xs font-bold text-[#25D366] hover:text-[#128C7E] transition-colors ml-auto sm:ml-auto"
               >
@@ -112,7 +112,7 @@ const BlogPost = () => {
           </div>
 
           {/* Render blog post content */}
-          <div 
+          <div
             className="prose prose-invert prose-amber max-w-none pt-4 leading-relaxed space-y-6 text-gray-300
               prose-headings:text-white prose-headings:font-black prose-headings:tracking-tight
               prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4 prose-h2:border-b prose-h2:border-white/5 prose-h2:pb-2
@@ -137,7 +137,7 @@ const BlogPost = () => {
                 Get non-expiry MTN, Telecel & AirtelTigo bundles instantly.
               </p>
             </div>
-            <Link 
+            <Link
               to="/buy-data"
               className="inline-flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-300 text-black font-black text-sm px-6 py-3 rounded-xl transition-all shadow-lg shadow-amber-400/10 shrink-0 hover:scale-[1.02]"
             >

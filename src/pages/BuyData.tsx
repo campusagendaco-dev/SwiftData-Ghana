@@ -1006,12 +1006,12 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
       clearPendingGuestOrderDraft();
       setPhone(draft.phone);
       if (draft.resolvedName) setResolvedName(draft.resolvedName);
-      setCheckoutAmount(draft.total);
-      setCheckoutMetadata(draft.metadata);
+      setCheckoutAmount(draft.total ?? draft.price ?? draft.pkg?.price ?? 0);
+      setCheckoutMetadata(draft.metadata || null);
       setCheckoutOpen(true);
       toast({
         title: "Connection Restored — Resuming Order! 🎉",
-        description: `Opening MoMo checkout for your queued ${draft.packageSize} ${draft.network} bundle (${draft.phone}).`,
+        description: `Opening MoMo checkout for your queued ${draft.packageSize || draft.pkg?.size || ""} ${draft.network} bundle (${draft.phone}).`,
       });
     };
 
@@ -1020,6 +1020,10 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
   }, [toast]);
 
   const handleCheckoutSuccess = (ref: string) => {
+    const metaNetwork = checkoutMetadata?.network || (selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork);
+    const metaPackage = checkoutMetadata?.package_size || selectedPkg?.size || "";
+    const metaPhone = checkoutMetadata?.customer_phone || phoneDigits;
+
     setCheckoutOpen(false);
     setSelectedPkg(null);
     setPhone("");
@@ -1030,9 +1034,9 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
 
     const callbackParams = new URLSearchParams({
       reference: ref,
-      network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : selectedNetwork,
-      package: selectedPkg?.size || "",
-      phone: phoneDigits,
+      network: metaNetwork,
+      package: metaPackage,
+      phone: metaPhone,
     });
 
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;

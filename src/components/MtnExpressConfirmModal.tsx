@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, Phone, ShieldAlert, X } from "lucide-react";
 
 interface MtnExpressConfirmModalProps {
@@ -18,10 +19,10 @@ export const MtnExpressConfirmModal: React.FC<MtnExpressConfirmModalProps> = ({
   onConfirm,
   onCancel,
 }) => {
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed inset-0 z-[220] flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[100001] flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
       <div
         className="absolute inset-0 bg-black/80 backdrop-blur-md"
         onClick={onCancel}
@@ -131,7 +132,8 @@ export const MtnExpressConfirmModal: React.FC<MtnExpressConfirmModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

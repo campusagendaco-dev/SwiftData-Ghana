@@ -473,8 +473,8 @@ serve(async (req: Request) => {
       errorReasons.length > 0
         ? errorReasons.join(" | ")
         : failedEndpoints.length > 0
-        ? `${failedEndpoints.length} device token(s) expired and cleaned up`
-        : null;
+          ? `${failedEndpoints.length} device token(s) expired and cleaned up`
+          : null;
 
     // 5. Persist audit log
     try {

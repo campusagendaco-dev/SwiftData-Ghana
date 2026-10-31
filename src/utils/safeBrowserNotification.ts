@@ -52,3 +52,4 @@ export async function showSafeBrowserNotification(
     return false;
   }
 }
+

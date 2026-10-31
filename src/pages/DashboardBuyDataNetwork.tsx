@@ -256,13 +256,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     }
   }, [phone, network, navigate, toast]);
 
-  useEffect(() => {
-    setSelectedSize("");
-    setPhone("");
-    setResolvedName(null);
-    setSelectedTypeOrCategory("affordable");
-  }, [network]);
-
   // Real-time background beneficiary validation for MTN numbers
   useEffect(() => {
     const triggerBeneficiaryCheck = async () => {
@@ -1022,6 +1015,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   const handleCheckoutSuccess = async (ref: string) => {
     await saveBeneficiaryIfNeeded();
     
+    const metaNetwork = checkoutMetadata?.network || (selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network);
+    const metaPackage = checkoutMetadata?.package_size || selectedPackage?.size || "";
+    const metaPhone = checkoutMetadata?.customer_phone || normalizedPhone;
+
     setCheckoutOpen(false);
     setSelectedSize("");
     setPhone("");
@@ -1031,9 +1028,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     
     const callbackParams = new URLSearchParams({
       reference: ref,
-      network: selectedTypeOrCategory === "mashup" ? "MTN Mash Up" : network,
-      package: selectedPackage?.size || "",
-      phone: normalizedPhone,
+      network: metaNetwork,
+      package: metaPackage,
+      phone: metaPhone,
     });
     
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
@@ -1456,7 +1453,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 <Button
                   className="w-full gap-2 font-black text-xs py-6 uppercase tracking-[0.2em] bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20 rounded-2xl disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed"
                   onClick={handleClaimFree}
-                  disabled={claimingFree || !resolvedName || !selectedPackage}
+                  disabled={claimingFree || !isPhoneValid || !selectedPackage}
                 >
                   {claimingFree ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Processing Claim...</>
@@ -1475,7 +1472,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                     if (payMethod === "wallet") void handleWalletBuy();
                     else void handlePaystackBuy();
                   }}
-                  disabled={buying || isCheckingBeneficiary || !resolvedName || !selectedPackage}
+                  disabled={buying || isCheckingBeneficiary || !isPhoneValid || !selectedPackage}
                 >
                   {buying ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Placing order...</>
@@ -1730,9 +1727,9 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                   setShowBeneficiaryModal(false);
                   const method = pendingAction || payMethod;
                   if (method === "wallet") {
-                    handleWalletBuy(true);
+                    void handleWalletBuy(true, true);
                   } else if (method === "paystack") {
-                    handlePaystackBuy(true);
+                    void handlePaystackBuy(true, true);
                   }
                   setPendingAction(null);
                 }}
@@ -1743,6 +1740,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
             )}
           </div>
         </DialogContent>
+      </Dialog>
 
       <MtnExpressConfirmModal
         open={showMtnExpressModal}
@@ -1764,7 +1762,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           }
         }}
       />
-      </Dialog>
     </div>
   );
 };

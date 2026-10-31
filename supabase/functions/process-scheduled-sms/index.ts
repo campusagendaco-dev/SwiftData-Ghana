@@ -290,7 +290,7 @@ serve(async (req: Request) => {
       // Guard against stale backlogged broadcasts (>2 hours past scheduled_at) unless explicitly forced
       if (!forceId && !forceAll && !isRecurring && Date.now() - scheduledMs > 2 * 60 * 60 * 1000) {
         console.warn(`[Scheduled Broadcast ${broadcast.id}] Expiring stale broadcast scheduled at ${broadcast.scheduled_at}`);
-        const cleanResult = { ...prevResult, error: "Expired: broadcast was >2 hours past scheduled time." };
+        const cleanResult: Record<string, any> = { ...prevResult, error: "Expired: broadcast was >2 hours past scheduled time." };
         delete cleanResult.cached_recipients;
         await supabaseAdmin
           .from("scheduled_broadcasts")
@@ -520,7 +520,7 @@ serve(async (req: Request) => {
         console.error(`[Scheduled Broadcast ${broadcast.id}] Error:`, err);
         const errMsg = err instanceof Error ? err.message : String(err);
         const isRateLimit = errMsg.toLowerCase().includes("rate") || errMsg.toLowerCase().includes("too many");
-        const failResult = {
+        const failResult: Record<string, any> = {
           ...prevResult,
           error: errMsg,
           last_error_at: new Date().toISOString(),
