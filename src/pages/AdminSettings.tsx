@@ -1081,7 +1081,7 @@ const AdminSettings = () => {
                       }}
                       className="text-xs h-9 bg-background/90 border border-border rounded-lg px-2.5 py-1 text-foreground font-bold outline-none focus:border-amber-500 min-w-[200px]"
                     >
-                      {providers.filter(p => p.provider_type === "data" || p.handler_type === "datamart" || p.handler_type === "skdataplug" || p.handler_type === "spendless").map(p => (
+                      {providers.filter(p => p.provider_type === "data" || p.handler_type === "hyspeeddata" || p.handler_type === "datamart" || p.handler_type === "skdataplug" || p.handler_type === "spendless").map(p => (
                         <option key={p.id} value={p.id}>
                           {p.name} ({p.is_active ? `Active · GH₵${Number(p.balance || 0).toFixed(2)}` : 'Disabled'})
                         </option>
@@ -2949,10 +2949,18 @@ const AdminSettings = () => {
                           <Label className="text-[10px] text-muted-foreground">API Logic (Handler)</Label>
                           <select 
                             value={provider.handler_type || "standard"} 
-                            onChange={(e) => handleUpdateProvider(provider.id, { handler_type: e.target.value })}
+                            onChange={(e) => {
+                              const nextHandler = e.target.value;
+                              const updates: Record<string, any> = { handler_type: nextHandler };
+                              if (nextHandler === "hyspeeddata" && !provider.base_url) {
+                                updates.base_url = "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api";
+                              }
+                              handleUpdateProvider(provider.id, updates);
+                            }}
                             className="w-full h-8 bg-background border border-border text-foreground rounded-md px-2 text-xs focus:outline-none"
                           >
                             <option value="standard">Standard</option>
+                            <option value="hyspeeddata">SwiftData Reseller / HySpeedData API (v1/api)</option>
                             <option value="bundlezone">BundleZone (bundlezone.shop)</option>
                             <option value="skdataplug">SK Data Plug (SKPlug)</option>
                             <option value="spendless">Spendless</option>

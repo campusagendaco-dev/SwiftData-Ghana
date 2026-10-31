@@ -68,6 +68,7 @@ function isSmeDataBundle(order: any): boolean {
 function resolveProviderApiKey(provider: any, dbSecrets: Record<string, string> = {}): string {
   const handlerType = String(provider?.handler_type || "standard").toLowerCase();
   const envApiKey =
+    (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
     handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
     handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
     handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
@@ -87,6 +88,9 @@ function resolveProviderApiKey(provider: any, dbSecrets: Record<string, string> 
 
 function buildStatusUrl(baseUrl: string, handlerType: string): string {
   const clean = baseUrl.trim().replace(/\/+$/, "");
+  if (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") {
+    return `${clean.replace(/\/v1$/i, "")}/v1/orders`;
+  }
   if (handlerType === "datahub") return `${clean}/order-status`;
   if (handlerType === "datamart") return `${clean}/api/order-status`;
   if (handlerType === "qhowmenzconsult") return `${clean}/orders`;
@@ -112,11 +116,12 @@ async function pollProviderStatus(
   if (handlerType === "korba" && order && isSmeDataBundle(order)) {
     return { ok: false, status: "failed" };
   }
+  const isHySpeed = handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed";
   const url = buildStatusUrl(provider.base_url, handlerType);
-  const isGet = handlerType === "qhowmenzconsult" || handlerType === "skdataplug";
+  const isGet = handlerType === "qhowmenzconsult" || handlerType === "skdataplug" || isHySpeed;
   const finalUrl = handlerType === "skdataplug"
     ? `${url}/${providerOrderId || orderId}/`
-    : (handlerType === "qhowmenzconsult" ? `${url}/${providerOrderId || orderId}` : url);
+    : ((handlerType === "qhowmenzconsult" || isHySpeed) ? `${url}/${encodeURIComponent(providerOrderId || orderId)}` : url);
 
   const body = JSON.stringify({
     reference: orderId,
@@ -134,7 +139,7 @@ async function pollProviderStatus(
         "Content-Type": "application/json",
         "Accept": "application/json",
         ...(handlerType === "qhowmenzconsult" ? {} : { "Authorization": `Bearer ${apiKey}` }),
-        "X-API-Key": apiKey,
+        ...(isHySpeed ? {} : { "X-API-Key": apiKey }),
       },
       body: isGet ? undefined : body,
       signal: AbortSignal.timeout(10000),
@@ -145,10 +150,10 @@ async function pollProviderStatus(
     const json = JSON.parse(text);
 
     const techStatus = String(json?.status ?? json?.success ?? "").toLowerCase();
-    const dataStatus = String(json?.data?.status ?? json?.data?.orderStatus ?? "").toLowerCase();
+    const dataStatus = String(json?.order?.status ?? json?.data?.status ?? json?.data?.orderStatus ?? "").toLowerCase();
     const effective = dataStatus || techStatus;
 
-    const isSuccess = techStatus === "success" || techStatus === "true" || techStatus === "delivered" || techStatus === "processing" || techStatus === "pending" || techStatus === "failed" || json?.success === true || json?.ok === true || Boolean(json?.order_id);
+    const isSuccess = techStatus === "success" || techStatus === "true" || techStatus === "delivered" || techStatus === "processing" || techStatus === "pending" || techStatus === "failed" || json?.success === true || json?.ok === true || Boolean(json?.order_id) || Boolean(json?.order?.reference);
     if (!isSuccess) return { ok: false };
 
     return { ok: true, status: effective || techStatus };

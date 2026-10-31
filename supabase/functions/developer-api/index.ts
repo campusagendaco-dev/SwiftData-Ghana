@@ -85,6 +85,18 @@ function buildProviderUrls(baseUrl: string, endpoint: string = "purchase", handl
   if (!clean) return [];
 
   const urls = new Set<string>();
+  const hType = String(handlerType || "").toLowerCase();
+
+  if (hType === "hyspeeddata" || hType === "swiftreseller" || hType === "hyspeed") {
+    const cleanRoot = clean.replace(/\/v1$/i, "");
+    if (endpoint === "status") {
+      return [`${cleanRoot}/v1/orders`];
+    }
+    if (endpoint === "purchase") {
+      return [`${cleanRoot}/v1/buy-data`];
+    }
+    return [`${cleanRoot}/v1/${endpoint}`];
+  }
   
   if (handlerType === "skdataplug") {
     let cleanBase = clean.replace(/\/order\/?$/, "").replace(/\/status\/?$/, "").replace(/\/balance\/?$/, "").replace(/\/bundles\/?$/, "");
@@ -173,6 +185,7 @@ async function callProviderApi(
   const handlerType = provider.handler_type || "standard";
   const handlerUpper = String(handlerType || provider.name || "").toUpperCase().replace(/[^A-Z0-9]/g, "_");
   const resolvedApiKey =
+    ((handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") && getEnv("HYSPEEDDATA_API_KEY", "SWIFTRESELLER_API_KEY")) ||
     (handlerType === "datahub" && getEnv("DATAHUB_API_KEY")) ||
     (handlerType === "datamart" && getEnv("DATAMART_API_KEY", "DATAMARTGH_API_KEY")) ||
     (handlerType === "skdataplug" && getEnv("SKDATAPLUG_API_KEY", "SKPLUG_API_KEY")) ||
@@ -185,6 +198,7 @@ async function callProviderApi(
     provider.api_key ||
     "";
   const resolvedBaseUrl =
+    ((handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") && getEnv("HYSPEEDDATA_BASE_URL", "SWIFTRESELLER_BASE_URL")) ||
     (handlerType === "datahub" && getEnv("DATAHUB_BASE_URL")) ||
     (handlerType === "datamart" && getEnv("DATAMART_BASE_URL", "DATAMARTGH_BASE_URL")) ||
     (handlerType === "skdataplug" && getEnv("SKDATAPLUG_BASE_URL", "SKPLUG_BASE_URL")) ||
@@ -197,6 +211,36 @@ async function callProviderApi(
     provider.base_url ||
     "";
   let payload = { ...data };
+  const isHySpeed = handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed";
+  if (isHySpeed && endpoint === "purchase") {
+    const rawNet = String(data.networkRaw || data.network || "").toUpperCase();
+    let hyNet = "yello";
+    if (rawNet.includes("BIGTIME") || rawNet.includes("BIG_TIME")) hyNet = "at_bigtime";
+    else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO") || rawNet.includes("ISHARE")) hyNet = "at_ishare";
+    else if (rawNet.includes("TELECEL") || rawNet.includes("VODAFONE") || rawNet === "VOD") hyNet = "telecel";
+    else hyNet = "yello";
+
+    const rawPkgStr = String(data.package_size || data.plan || data.package || data.bundle || data.package_name || data.capacity || "").trim();
+    const parsedCap = parseCapacity(rawPkgStr);
+    const sizeGb = parsedCap > 0 ? parsedCap : (Number(rawPkgStr.replace(/[^0-9.]/g, "")) || 1);
+    const recipientPhone = normalizeRecipient(String(
+      data.recipient ||
+      data.phoneNumber ||
+      data.phone ||
+      data.customer_phone ||
+      data.phone_number ||
+      data.mobile ||
+      data.customerPhone ||
+      ""
+    ));
+
+    payload = {
+      phone: recipientPhone,
+      network: hyNet,
+      size_gb: sizeGb,
+      reference: String(data.reference || data.order_id || data.orderReference || "")
+    };
+  }
   if (handlerType === "skdataplug" && endpoint === "purchase") {
     let providerNetwork = "MTN";
     const rawPkgStr = String(data.package_size || data.plan || data.package || data.bundle || data.package_name || data.capacity || "").trim();
@@ -348,18 +392,22 @@ async function callProviderApi(
       const tid = setTimeout(() => ctrl.abort(), 25000);
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
-        headers["X-API-Key"] = resolvedApiKey;
+        if (!isHySpeed) headers["X-API-Key"] = resolvedApiKey;
         if (handlerType !== "datamart" && handlerType !== "qhowmenzconsult") headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-        headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
+        if (!isHySpeed) headers["X-Idempotency-Key"] = String(data.orderReference || data.reference || "");
         headers["User-Agent"] = "SwiftDataGH/2.0";
 
         const isGet = (handlerType === "datamart" && endpoint === "status") || 
                       (handlerType === "superbdatafy" && endpoint === "status") ||
                       (handlerType === "qhowmenzconsult" && endpoint === "status") ||
-                      (handlerType === "skdataplug" && endpoint === "status");
+                      (handlerType === "skdataplug" && endpoint === "status") ||
+                      (isHySpeed && endpoint === "status");
         
         let reqUrl = url;
-        if (handlerType === "skdataplug") {
+        if (isHySpeed && endpoint === "status") {
+          const ref = String(data.transaction_id || data.reference || data.order_id || "");
+          reqUrl = `${url.replace(/\/+$/, "")}/${encodeURIComponent(ref)}`;
+        } else if (handlerType === "skdataplug") {
           const cleanBase = url.replace(/\/+$/, "").replace(/\/order\/?$/, "").replace(/\/status\/?$/, "");
           if (endpoint === "status") {
              const ref = String(data.transaction_id || data.reference || data.order_id || "");
@@ -407,8 +455,8 @@ async function callProviderApi(
             const p = JSON.parse(text);
             const s = String(p?.status ?? p?.success ?? "").toLowerCase();
             const ok = p?.success === true || s === "success" || s === "true" || p?.status === true || s === "completed" || s === "delivered" || s === "pending";
-            const pStatus = String(p?.transaction?.status ?? p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
-            if (ok) return { ok: true, reason: "", body: lastBody, id: String(p?.transaction?.reference ?? p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
+            const pStatus = String(p?.order?.status ?? p?.transaction?.status ?? p?.data?.status ?? p?.delivery_status ?? p?.status ?? "");
+            if (ok) return { ok: true, reason: "", body: lastBody, id: String(p?.order?.reference ?? p?.transaction?.reference ?? p?.data?.orderNumber ?? p?.data?.reference ?? p?.data?.purchaseId ?? p?.transaction_id ?? p?.id ?? p?.order_id ?? ""), status: pStatus };
             lastReason = parsedMsg || "Provider rejected the order";
           } catch { return { ok: true, reason: "", body: lastBody, status: "" }; }
         } else {

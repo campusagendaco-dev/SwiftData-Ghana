@@ -19,6 +19,9 @@ const adapters: Record<string, ProviderAdapter> = {
   qhowmenzconsult: new StandardAdapter(),
   bossu: new StandardAdapter(),
   bundlezone: new StandardAdapter(),
+  hyspeeddata: new StandardAdapter(),
+  hyspeed: new StandardAdapter(),
+  swiftreseller: new StandardAdapter(),
 };
 
 /**

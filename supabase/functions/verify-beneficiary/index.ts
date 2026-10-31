@@ -65,6 +65,53 @@ serve(async (req: Request) => {
       const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
       const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+      const { data: hsSubmitProvider } = await supabaseClient
+        .from("providers")
+        .select("*")
+        .in("handler_type", ["hyspeeddata", "swiftreseller", "hyspeed"])
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      const hsSubmitApiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || hsSubmitProvider?.api_key || "";
+      const hsSubmitBase = (Deno.env.get("HYSPEEDDATA_BASE_URL") || hsSubmitProvider?.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+
+      if (hsSubmitApiKey) {
+        try {
+          const mtnOnly = validNumbers.filter(n => /^0(24|25|53|54|55|59)\d{7}$/.test(n));
+          if (mtnOnly.length > 0) {
+            const hsSubRes = await fetchViaDb(supabaseClient, `${hsSubmitBase}/v1/submit-numbers`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": hsSubmitApiKey.startsWith("Bearer ") ? hsSubmitApiKey : `Bearer ${hsSubmitApiKey}`,
+              },
+              body: JSON.stringify({ phones: mtnOnly, note: body.note || "SwiftData beneficiary batch" }),
+              disableFallback: true,
+            }, 12);
+            if (hsSubRes.ok) {
+              const hsSubJson = await hsSubRes.json().catch(() => ({}));
+              if (hsSubJson?.success) {
+                return new Response(
+                  JSON.stringify({
+                    success: true,
+                    data: {
+                      submitted: hsSubJson.submitted ?? mtnOnly.length,
+                      numbers: mtnOnly,
+                      invalid: invalidNumbers,
+                      message: `${hsSubJson.submitted ?? mtnOnly.length} number(s) submitted for beneficiary approval`
+                    }
+                  }),
+                  { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+                );
+              }
+            }
+          }
+        } catch (hsSubErr) {
+          console.warn("[verify-beneficiary/submit-numbers] HySpeedData submit warning:", hsSubErr);
+        }
+      }
+
       const { data: provider } = await supabaseClient
         .from("providers")
         .select("*")
@@ -352,6 +399,84 @@ serve(async (req: Request) => {
           }
         } catch (bzErr) {
           console.error("[verify-beneficiary] BundleZone bulk check error:", bzErr);
+        }
+      }
+
+      // ── Check HySpeedData / SwiftData Reseller Bulk Verification (/v1/verify-number/bulk) ──
+      const { data: hsBulkProvider } = await supabaseClient
+        .from("providers")
+        .select("*")
+        .in("handler_type", ["hyspeeddata", "swiftreseller", "hyspeed"])
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      const hsBulkApiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || hsBulkProvider?.api_key || "";
+      const hsBulkBase = (Deno.env.get("HYSPEEDDATA_BASE_URL") || hsBulkProvider?.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+
+      if (hsBulkApiKey && normalizedNumbers.length <= 100) {
+        try {
+          const hsRes = await fetchViaDb(supabaseClient, `${hsBulkBase}/v1/verify-number/bulk`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": hsBulkApiKey.startsWith("Bearer ") ? hsBulkApiKey : `Bearer ${hsBulkApiKey}`,
+            },
+            body: JSON.stringify({ phones: normalizedNumbers }),
+            disableFallback: true,
+          }, 20);
+
+          if (hsRes.ok) {
+            const hsData = await hsRes.json().catch(() => ({}));
+            if (hsData.success && Array.isArray(hsData.results)) {
+              const resMap = new Map<string, any>();
+              hsData.results.forEach((r: any) => {
+                if (r.phone) resMap.set(String(r.phone), r);
+              });
+
+              const hsResults = normalizedNumbers.map((p) => {
+                const match = resMap.get(p);
+                const isVerified = match?.verified === true || match?.servable === true || match?.recommendation === "sell_any" || match?.status === "verified";
+                return {
+                  phone_number: p,
+                  status: isVerified ? "verified" : "not_verified",
+                  verification_status: isVerified ? "VERIFIED" : "NOT_VERIFIED",
+                  can_order: isVerified,
+                  message: match?.message || (isVerified ? "This number can be served — you may sell any bundle size." : "Not yet approved on MTN beneficiary list."),
+                };
+              });
+
+              const vCount = hsResults.filter(r => r.can_order).length;
+              const unverifiedNumbers = hsResults.filter(r => !r.can_order).map(r => r.phone_number);
+              if (unverifiedNumbers.length > 0) {
+                autoSubmitBeneficiaryNumbers(supabaseClient, unverifiedNumbers, "verify_beneficiary_hyspeed_bulk")
+                  .then(subRes => console.log(`[verify-beneficiary] Auto-submitted ${subRes.submittedCount} unverified numbers from HySpeedData check.`))
+                  .catch(e => console.error("[verify-beneficiary] Bulk auto-submit error:", e));
+              }
+
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  data: {
+                    request_id: `REQ-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+                    network: "YELLO",
+                    provider: "hyspeeddata",
+                    count: hsResults.length,
+                    summary: {
+                      total: hsResults.length,
+                      verified: vCount,
+                      not_verified: hsResults.length - vCount,
+                      pending: 0,
+                    },
+                    results: hsResults,
+                  },
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          }
+        } catch (hsBulkErr) {
+          console.error("[verify-beneficiary] HySpeedData bulk check error:", hsBulkErr);
         }
       }
 
@@ -657,6 +782,58 @@ serve(async (req: Request) => {
         JSON.stringify({ success: true, exists: true, verification_status: "VERIFIED", can_order: true, message: "Number verified successfully." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ── Check HySpeedData / SwiftData Reseller Provider (/v1/verify-number) ──
+    const { data: hsProvider } = await supabaseClient
+      .from("providers")
+      .select("*")
+      .in("handler_type", ["hyspeeddata", "swiftreseller", "hyspeed"])
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    const hsApiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || hsProvider?.api_key || "";
+    const hsBaseUrl = (Deno.env.get("HYSPEEDDATA_BASE_URL") || hsProvider?.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+
+    if (!exists && hsApiKey && /^0(24|25|53|54|55|59)\d{7}$/.test(localFormat)) {
+      try {
+        console.log(`[verify-beneficiary] Testing HySpeedData /v1/verify-number for ${localFormat}...`);
+        const hsRes = await fetchViaDb(supabaseClient, `${hsBaseUrl}/v1/verify-number`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": hsApiKey.startsWith("Bearer ") ? hsApiKey : `Bearer ${hsApiKey}`,
+          },
+          body: JSON.stringify({ phone: localFormat }),
+          disableFallback: true,
+        }, 10);
+
+        if (hsRes.ok) {
+          const hsData = await hsRes.json().catch(() => ({}));
+          const firstRes = Array.isArray(hsData?.results) ? hsData.results[0] : null;
+          if (hsData?.success && firstRes) {
+            const isServable = firstRes.verified === true || firstRes.servable === true || firstRes.recommendation === "sell_any" || firstRes.status === "verified";
+            if (isServable) {
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  exists: true,
+                  status: "verified",
+                  verification_status: "VERIFIED",
+                  can_order: true,
+                  provider: "hyspeeddata",
+                  recommendation: "sell_any",
+                  message: firstRes.message || "This number can be served — you may sell any bundle size.",
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          }
+        }
+      } catch (hsErr) {
+        console.warn("[verify-beneficiary] HySpeedData single check error:", hsErr);
+      }
     }
 
     // ── Fallback 2: Check DataMart Provider (/verify-number) ──

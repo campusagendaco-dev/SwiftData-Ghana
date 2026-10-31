@@ -1057,7 +1057,14 @@ serve(async (req: Request) => {
             const pk = String(prov.api_key || "").trim();
             const pb = String(prov.base_url || "").trim();
             if (!pk) continue;
-            if (ht === "datamart") {
+            if (ht === "hyspeeddata" || ht === "swiftreseller" || ht === "hyspeed") {
+              addEdgeSecret("HYSPEEDDATA_API_KEY", pk);
+              addEdgeSecret("SWIFTRESELLER_API_KEY", pk);
+              if (pb) {
+                addEdgeSecret("HYSPEEDDATA_BASE_URL", pb);
+                addEdgeSecret("SWIFTRESELLER_BASE_URL", pb);
+              }
+            } else if (ht === "datamart") {
               addEdgeSecret("DATAMART_API_KEY", pk);
               addEdgeSecret("DATAMARTGH_API_KEY", pk);
               if (pb) addEdgeSecret("DATAMART_BASE_URL", pb);
@@ -1767,6 +1774,7 @@ serve(async (req: Request) => {
 
             // Always prioritize Environment Secrets per AGENTS.md rules
             const envApiKey =
+              (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
               handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
               handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
               handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
@@ -1795,7 +1803,10 @@ serve(async (req: Request) => {
             }
 
             let balanceUrls: string[] = [];
-            if (handlerType === "bundlezone" || baseUrl.includes("bundlezone")) {
+            if (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed" || baseUrl.includes("ihrvvniomtoofrjkmalb")) {
+              const cleanRoot = baseUrl.replace(/\/+$/, "").replace(/\/v1$/i, "");
+              balanceUrls = [`${cleanRoot}/v1/balance`];
+            } else if (handlerType === "bundlezone" || baseUrl.includes("bundlezone")) {
               balanceUrls = [`${baseUrl}/api/balance.php`, `${baseUrl}/api/user.php`];
             } else if (handlerType === "datamart" || baseUrl.includes("datamart")) {
               balanceUrls = [`${baseUrl}/balance`, `${baseUrl}/api/balance`];
@@ -1900,6 +1911,7 @@ serve(async (req: Request) => {
 
           const primaryProvider =
             results.find((r) => r.is_default && r.unit === "GHS" && r.balance > 0) ??
+            results.find((r) => (r.handler_type === "hyspeeddata" || r.handler_type === "swiftreseller") && r.balance > 0) ??
             results.find((r) => r.handler_type === "datamart" && r.balance > 0) ??
             results.find((r) => r.handler_type === "bundlezone" && r.balance > 0) ??
             results.find((r) => r.handler_type === "datahub" && r.balance > 0) ??

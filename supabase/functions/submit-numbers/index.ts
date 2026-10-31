@@ -150,6 +150,76 @@ serve(async (req: Request) => {
       );
     }
 
+    // Check active HySpeedData / SwiftData Reseller provider first
+    const { data: hsProvider } = await supabaseClient
+      .from("providers")
+      .select("*")
+      .in("handler_type", ["hyspeeddata", "swiftreseller", "hyspeed"])
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    const hsApiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || hsProvider?.api_key || "";
+    const hsBase = (Deno.env.get("HYSPEEDDATA_BASE_URL") || hsProvider?.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+
+    if (hsApiKey) {
+      const mtnValid = validNumbers.filter((n) => /^0(24|25|53|54|55|59)\d{7}$/.test(n));
+      if (mtnValid.length > 0) {
+        try {
+          console.log(`[submit-numbers] Submitting ${mtnValid.length} MTN number(s) to ${hsBase}/v1/submit-numbers`);
+          const hsRes = await fetchViaDb(
+            supabaseClient,
+            `${hsBase}/v1/submit-numbers`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": hsApiKey.startsWith("Bearer ") ? hsApiKey : `Bearer ${hsApiKey}`,
+              },
+              body: JSON.stringify({
+                phones: mtnValid,
+                note: body.note || "Public beneficiary submission",
+              }),
+              disableFallback: true,
+            },
+            12
+          );
+          if (hsRes.ok) {
+            const hsJson = await hsRes.json().catch(() => ({}));
+            if (hsJson?.success) {
+              try {
+                const records = mtnValid.map((num) => ({
+                  phone_number: num,
+                  network: "MTN",
+                  status: "submitted",
+                  source: "submit-numbers-api",
+                  submitted_by: "API User",
+                  notes: body.note || "Submitted via /v1/submit-numbers",
+                  provider_status_code: hsRes.status,
+                }));
+                await supabaseClient.from("beneficiary_submissions").upsert(records, { onConflict: "phone_number" });
+              } catch { /* ignore */ }
+
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  data: {
+                    submitted: hsJson.submitted ?? mtnValid.length,
+                    numbers: mtnValid,
+                    invalid: invalidNumbers,
+                    message: `${hsJson.submitted ?? mtnValid.length} number(s) submitted for beneficiary approval`,
+                  },
+                }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+              );
+            }
+          }
+        } catch (hsErr) {
+          console.warn("[submit-numbers] HySpeedData submit fallback warning:", hsErr);
+        }
+      }
+    }
+
     // Retrieve active DataHub provider config
     const { data: provider } = await supabaseClient
       .from("providers")

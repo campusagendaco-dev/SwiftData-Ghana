@@ -75,6 +75,46 @@ export async function autoSubmitBeneficiaryNumbers(
       console.warn("[BeneficiaryAutoSubmit] Database log warning:", dbErr);
     }
 
+    // 1.5. Also submit to active HySpeedData / SwiftData Reseller (/v1/submit-numbers) if configured
+    try {
+      const { data: hsProvider } = await supabaseAdmin
+        .from("providers")
+        .select("api_key, base_url")
+        .in("handler_type", ["hyspeeddata", "swiftreseller", "hyspeed"])
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      const hsApiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || hsProvider?.api_key || "";
+      const hsBase = (Deno.env.get("HYSPEEDDATA_BASE_URL") || hsProvider?.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+
+      if (hsApiKey) {
+        const HS_BATCH = 50;
+        for (let i = 0; i < validMtnNumbers.length; i += HS_BATCH) {
+          const batch = validMtnNumbers.slice(i, i + HS_BATCH);
+          await fetchViaDb(
+            supabaseAdmin,
+            `${hsBase}/v1/submit-numbers`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": hsApiKey.startsWith("Bearer ") ? hsApiKey : `Bearer ${hsApiKey}`,
+              },
+              body: JSON.stringify({
+                phones: batch,
+                note: orderId ? `SwiftData Auto-Submit (Order ${orderId.slice(0, 8)})` : `SwiftData Auto-Submit (${source})`,
+              }),
+              disableFallback: true,
+            },
+            10
+          ).catch((e: any) => console.warn("[BeneficiaryAutoSubmit] HySpeedData batch warning:", e?.message));
+        }
+      }
+    } catch (hsErr) {
+      console.warn("[BeneficiaryAutoSubmit] HySpeedData auto-submit warning:", hsErr);
+    }
+
     // 2. Fetch DataHub credentials (env first, then db)
     const { data: provider } = await supabaseAdmin
       .from("providers")

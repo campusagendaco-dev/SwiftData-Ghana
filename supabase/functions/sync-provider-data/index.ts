@@ -115,6 +115,9 @@ serve(async (req: Request) => {
         secretsToPush.push({ name: "MNOTIFY_API_KEY", value: dbApiKey });
       } else if (handlerType === "afaregistration") {
         secretsToPush.push({ name: "AFA_API_KEY", value: dbApiKey });
+      } else if (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") {
+        secretsToPush.push({ name: "HYSPEEDDATA_API_KEY", value: dbApiKey }, { name: "SWIFTRESELLER_API_KEY", value: dbApiKey });
+        if (dbBaseUrl) secretsToPush.push({ name: "HYSPEEDDATA_BASE_URL", value: dbBaseUrl });
       }
       if (secretsToPush.length > 0) {
         await fetch(`https://api.supabase.com/v1/projects/${projectRef}/secrets`, {
@@ -128,8 +131,10 @@ serve(async (req: Request) => {
       }
     }
     
+    const isHySpeed = handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed";
     // Always prioritize Environment Secrets per AGENTS.md rules, while honoring explicit Admin override key passed in request
     const envApiKey = 
+      (isHySpeed ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) : null) ||
       (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") : null) ||
       (handlerType === "mnotify" ? Deno.env.get("MNOTIFY_API_KEY") : null) ||
       (handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") : null) ||
@@ -139,15 +144,135 @@ serve(async (req: Request) => {
 
     const apiKey = (typeof reqApiKey === "string" && reqApiKey.trim()) || envApiKey || provider.api_key || "";
     const envBaseUrl = 
+      (isHySpeed ? (Deno.env.get("HYSPEEDDATA_BASE_URL") || Deno.env.get("SWIFTRESELLER_BASE_URL")) : null) ||
       (handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_BASE_URL") : null) ||
       (handlerType === "datamart" ? Deno.env.get("DATAMART_BASE_URL") : null);
-    const baseUrl = ((typeof reqBaseUrl === "string" && reqBaseUrl.trim()) || envBaseUrl || provider.base_url || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
+    const baseUrl = ((typeof reqBaseUrl === "string" && reqBaseUrl.trim()) || envBaseUrl || provider.base_url || (isHySpeed ? "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api" : "") || (handlerType === "mnotify" ? "https://api.mnotify.com/api" : ""))?.replace(/\/+$/, "");
 
     if (!apiKey) throw new Error(`Provider API key missing for ${provider.name}`);
     if (!baseUrl && handlerType !== "mnotify") throw new Error(`Provider Base URL missing for ${provider.name}`);
 
     let packagesSynced = 0;
     let balance = provider.balance;
+
+    if (isHySpeed) {
+      console.log(`Syncing HySpeedData / SwiftData Reseller provider: ${provider.name}`);
+      const hsBase = baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+      const hsHeaders: Record<string, string> = {
+        "Authorization": apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      };
+
+      const allPackagesMap = new Map<string, any>();
+
+      // 1. Sync Balance (/v1/balance)
+      try {
+        const balRes = await fetchWithTimeout(`${hsBase}/v1/balance`, { headers: hsHeaders }, 6000);
+        if (balRes.ok) {
+          const balJson = await balRes.json().catch(() => ({}));
+          if (balJson?.balance !== undefined && balJson?.balance !== null) {
+            balance = Number(balJson.balance);
+          }
+        } else {
+          const errJson = await balRes.json().catch(() => ({}));
+          if (balRes.status === 401) {
+            throw new Error(errJson?.error || "Unauthorized (401): Invalid API key for provider");
+          }
+        }
+      } catch (balErr: any) {
+        if (balErr?.message?.includes("401")) throw balErr;
+        console.warn("[sync:hyspeeddata] Balance check warning:", balErr?.message);
+      }
+
+      // 2. Sync Data Packages (/v1/packages)
+      try {
+        const pkgRes = await fetchWithTimeout(`${hsBase}/v1/packages`, { headers: hsHeaders }, 8000);
+        if (pkgRes.ok) {
+          const pkgJson = await pkgRes.json().catch(() => ({}));
+          const pkgList = Array.isArray(pkgJson?.packages) ? pkgJson.packages : [];
+          for (const pkg of pkgList) {
+            const rawNet = String(pkg.network || "yello").toLowerCase();
+            let dbNetwork = "MTN";
+            if (rawNet === "yello" || rawNet.includes("mtn")) dbNetwork = "MTN";
+            else if (rawNet === "telecel" || rawNet.includes("vod")) dbNetwork = "Telecel";
+            else if (rawNet === "at_bigtime") dbNetwork = "AT_BIGTIME";
+            else if (rawNet.includes("at") || rawNet.includes("airtel")) dbNetwork = "AirtelTigo";
+
+            const capGb = Number(pkg.size_gb || pkg.capacity || 0);
+            const name = capGb >= 1 ? `${capGb}GB` : `${Math.round(capGb * 1024)}MB`;
+            allPackagesMap.set(`${dbNetwork}:${name}`, {
+              provider_id: provider.id,
+              network: dbNetwork,
+              package_name: name,
+              capacity_gb: capGb,
+              cost_price: Number(pkg.price || 0),
+              external_id: `${rawNet}_${capGb}`,
+              raw_data: pkg,
+              is_active: true,
+            });
+          }
+        }
+      } catch (pkgErr: any) {
+        console.warn("[sync:hyspeeddata] Data packages sync warning:", pkgErr?.message);
+      }
+
+      // 3. Sync MTN MashUp Packages (/v1/mashup-packages)
+      try {
+        const mashRes = await fetchWithTimeout(`${hsBase}/v1/mashup-packages`, { headers: hsHeaders }, 8000);
+        if (mashRes.ok) {
+          const mashJson = await mashRes.json().catch(() => ({}));
+          const isAvailable = mashJson?.available !== false;
+          const mashList = Array.isArray(mashJson?.packages) ? mashJson.packages : [];
+          for (const mPkg of mashList) {
+            const code = String(mPkg.package_code || "").toUpperCase();
+            const dataMb = Number(mPkg.data_mb || 0);
+            const dataGb = Number(mPkg.data_gb || (dataMb ? dataMb / 1024 : 0));
+            const mins = Number(mPkg.onnet_minutes || 0);
+            const label = dataMb >= 1000 && Number.isInteger(dataGb)
+              ? `${dataGb}GB + ${mins} Mins`
+              : `${dataMb}MB + ${mins} Mins`;
+
+            allPackagesMap.set(`MTN Mash Up:${label}`, {
+              provider_id: provider.id,
+              network: "MTN Mash Up",
+              package_name: label,
+              capacity_gb: dataGb,
+              cost_price: Number(mPkg.price || 0),
+              external_id: code || `MASHUP_${mPkg.price}`,
+              raw_data: { ...mPkg, available: isAvailable },
+              is_active: isAvailable,
+            });
+          }
+        }
+      } catch (mashErr: any) {
+        console.warn("[sync:hyspeeddata] MashUp packages sync warning:", mashErr?.message);
+      }
+
+      const toInsert = Array.from(allPackagesMap.values());
+      if (toInsert.length > 0) {
+        await supabaseAdmin.from("provider_packages").delete().eq("provider_id", provider.id);
+        const { error: insErr } = await supabaseAdmin.from("provider_packages").insert(toInsert);
+        if (!insErr) packagesSynced = toInsert.length;
+      }
+
+      await supabaseAdmin.from("providers").update({
+        balance,
+        consecutive_failures: 0,
+        disabled_reason: null,
+        last_synced_at: new Date().toISOString(),
+      }).eq("id", provider.id);
+
+      return new Response(JSON.stringify({
+        success: true,
+        provider: provider.name,
+        balance,
+        packages_synced: packagesSynced,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (handlerType === "bundlezone") {
       console.log(`Syncing BundleZone provider: ${provider.name}`);

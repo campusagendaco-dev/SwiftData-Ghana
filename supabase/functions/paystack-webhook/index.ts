@@ -2192,6 +2192,7 @@ serve(async (req: Request) => {
       const targetBaseUrl = chosenProvider?.base_url || DATA_PROVIDER_BASE_URL;
       const htChosen = String(chosenProvider?.handler_type || "").toLowerCase();
       const envChosenKey = (
+        (htChosen === "hyspeeddata" || htChosen === "swiftreseller" || htChosen === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
         htChosen === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
         htChosen === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
         htChosen === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :

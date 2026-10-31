@@ -23,8 +23,10 @@ export async function getActiveProviders(supabaseAdmin: any, type: string): Prom
     .eq("is_active", true);
 
   if (type === "data" || type === "airtime") {
-    // Include Korba dynamically for data/airtime since Korba handles all three types
-    query = query.or(`provider_type.eq.${type},handler_type.eq.korba`);
+    // Include Korba and HySpeedData dynamically for data/airtime since they handle all types
+    query = query.or(`provider_type.eq.${type},handler_type.eq.korba,handler_type.eq.hyspeeddata,handler_type.eq.swiftreseller`);
+  } else if (type === "utility") {
+    query = query.or(`provider_type.eq.${type},handler_type.eq.korba,handler_type.eq.hyspeeddata,handler_type.eq.swiftreseller`);
   } else {
     query = query.eq("provider_type", type);
   }
@@ -189,13 +191,21 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     const { data: dmProviders } = await supabaseAdmin
       .from("providers")
       .select("*")
-      .or("handler_type.eq.datamart,name.ilike.%datamart%")
-      .eq("is_active", true);
-    if (dmProviders && dmProviders.length > 0) {
-      console.log(`[resolveProvidersForOrder] Resolved DataMart provider for MTN Mash Up order ${order?.id}`);
-      return dmProviders;
+      .or("handler_type.eq.datamart,handler_type.eq.hyspeeddata,handler_type.eq.swiftreseller,name.ilike.%datamart%")
+      .eq("is_active", true)
+      .order("priority", { ascending: true });
+    const configuredMashUpProviders = (dmProviders || []).filter((p: any) => {
+      const ht = String(p.handler_type || "").toLowerCase();
+      const envKey = (ht === "hyspeeddata" || ht === "swiftreseller" || ht === "hyspeed")
+        ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY"))
+        : Deno.env.get("DATAMART_API_KEY");
+      return Boolean(String(envKey || p.api_key || "").trim());
+    });
+    if (configuredMashUpProviders.length > 0) {
+      console.log(`[resolveProvidersForOrder] Resolved MashUp provider(s) for order ${order?.id}: ${configuredMashUpProviders.map((p: any) => p.name).join(" -> ")}`);
+      return configuredMashUpProviders;
     }
-    console.warn(`[resolveProvidersForOrder] No active DataMart provider found for MTN Mash Up order ${order?.id}`);
+    console.warn(`[resolveProvidersForOrder] No active MashUp provider (DataMart/HySpeedData) found for order ${order?.id}`);
     return [];
   }
 

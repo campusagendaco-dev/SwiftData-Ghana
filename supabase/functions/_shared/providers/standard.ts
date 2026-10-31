@@ -9,6 +9,16 @@ import {
   isDuplicateOrderError
 } from "./utils.ts";
 
+export function isHySpeedHandler(handlerType: string | null | undefined): boolean {
+  const h = String(handlerType || "").toLowerCase().trim();
+  return h === "hyspeeddata" || h === "hyspeed" || h === "swiftreseller";
+}
+
+export function normalizeHySpeedBaseUrl(baseUrl?: string | null): string {
+  const raw = (baseUrl || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").trim().replace(/\/+$/, "");
+  return raw.replace(/\/v1$/i, "");
+}
+
 export class StandardAdapter implements ProviderAdapter {
   mapNetwork(rawNetwork: string): string {
     return mapDataNetworkKey(rawNetwork);
@@ -17,7 +27,67 @@ export class StandardAdapter implements ProviderAdapter {
   // Build the target endpoint URL(s) for the provider
   buildProviderUrls(baseUrl: string, endpoint: string, handlerType: string, data: any): string[] {
     const clean = (baseUrl || "").trim().replace(/\/+$/, "");
-    if (!clean) return [];
+    if (!clean && !isHySpeedHandler(handlerType)) return [];
+
+    if (isHySpeedHandler(handlerType)) {
+      const hsBase = normalizeHySpeedBaseUrl(clean);
+      if (endpoint === "status") {
+        const candidates = Array.from(new Set([
+          String(data?.transaction_id || "").trim(),
+          String(data?.order_id || "").trim(),
+          String(data?.reference || "").trim(),
+        ].filter(Boolean)));
+        return candidates.map(cand => `${hsBase}/v1/orders/${encodeURIComponent(cand)}`);
+      }
+      if (endpoint === "verify-number" || endpoint === "beneficiary") {
+        return [`${hsBase}/v1/verify-number`];
+      }
+      if (endpoint === "verify-number-bulk" || endpoint === "beneficiary-bulk") {
+        return [`${hsBase}/v1/verify-number/bulk`];
+      }
+      if (endpoint === "submit-numbers") {
+        return [`${hsBase}/v1/submit-numbers`];
+      }
+      if (endpoint === "balance") {
+        return [`${hsBase}/v1/balance`];
+      }
+      if (endpoint === "packages" || endpoint === "bundles") {
+        return [`${hsBase}/v1/packages`];
+      }
+      if (endpoint === "mashup_packages") {
+        return [`${hsBase}/v1/mashup-packages`];
+      }
+      if (endpoint === "utility_products") {
+        return [`${hsBase}/v1/utility-products`];
+      }
+
+      const rawNet = String(data?.networkKey || data?.networkRaw || data?.network || "").toUpperCase();
+      const pkgUpper = String(data?.package_size || data?.package_name || data?.bundle || data?.plan || data?.capacity || "").toUpperCase();
+      const orderType = String(data?.order_type || "data").toLowerCase();
+      const isMashUp =
+        rawNet.includes("MASH") ||
+        rawNet.includes("COMBO") ||
+        data?.category === "mashup" ||
+        endpoint === "mashup" ||
+        endpoint === "mashup_purchase" ||
+        Boolean((data as any)?.package_code) ||
+        (pkgUpper.includes("MINS") && rawNet.includes("MTN"));
+
+      if (isMashUp) {
+        return [`${hsBase}/v1/buy-mashup`];
+      }
+      if (orderType === "airtime" || endpoint === "airtime") {
+        return [`${hsBase}/v1/buy-airtime`];
+      }
+      if (orderType === "utility" || endpoint === "utility") {
+        const utilProv = String(data?.utility_provider || (data as any)?.provider_code || rawNet).toUpperCase();
+        if (utilProv.includes("ECG") || (data as any)?.meter) {
+          return [`${hsBase}/v1/buy-ecg`];
+        }
+        return [`${hsBase}/v1/buy-tv`];
+      }
+      return [`${hsBase}/v1/buy-data`];
+    }
 
     if (handlerType === "datamart") {
       if (endpoint === "status") {
@@ -185,6 +255,192 @@ export class StandardAdapter implements ProviderAdapter {
     const pkgSize = String(data.capacity || data.package_size || data.plan || data.package || data.bundle || data.package_name || "");
     const capNum = parseCapacity(pkgSize);
     const capacityStr = String(capNum > 0 ? capNum : pkgSize);
+
+    if (isHySpeedHandler(handlerType)) {
+      const pkgUpper = String(data.package_size || data.package_name || data.bundle || data.plan || data.capacity || "").toUpperCase();
+      const orderType = String(data.order_type || "data").toLowerCase();
+      const isMashUp =
+        rawNet.includes("MASH") ||
+        rawNet.includes("COMBO") ||
+        data.category === "mashup" ||
+        endpoint === "mashup" ||
+        endpoint === "mashup_purchase" ||
+        Boolean((data as any).package_code) ||
+        (pkgUpper.includes("MINS") && rawNet.includes("MTN"));
+
+      if (isMashUp) {
+        let packageCode = String((data as any).package_code || "").trim().toUpperCase();
+        if (!packageCode || !packageCode.startsWith("MASHUP")) {
+          // Try provider_packages mapping first
+          try {
+            const { data: pkgMapping } = await supabaseAdmin
+              .from("provider_packages")
+              .select("external_id, raw_data")
+              .eq("provider_id", provider.id)
+              .or("network.ilike.%MASH%,network.eq.MTN_COMBO")
+              .or(`package_name.eq.${pkgSize},package_name.ilike.%${pkgSize.trim()}%`)
+              .maybeSingle();
+
+            if (pkgMapping?.external_id && String(pkgMapping.external_id).toUpperCase().startsWith("MASHUP")) {
+              packageCode = String(pkgMapping.external_id).toUpperCase();
+            } else if (pkgMapping?.raw_data?.package_code) {
+              packageCode = String(pkgMapping.raw_data.package_code).toUpperCase();
+            }
+          } catch (e) {
+            console.warn("[hyspeeddata-mashup-resolve] Warning:", e);
+          }
+        }
+
+        if (!packageCode || !packageCode.startsWith("MASHUP")) {
+          const cleanPkgKey = pkgSize.toLowerCase().replace(/[^a-z0-9.]/g, "");
+          const MASHUP_CODE_MAP: Record<string, string> = {
+            "511mb176mins": "MASHUP10",
+            "511mb": "MASHUP10",
+            "0.5gb176mins": "MASHUP10",
+            "1gb353mins": "MASHUP20",
+            "1015mb353mins": "MASHUP20",
+            "1015mb": "MASHUP20",
+            "2gb397mins": "MASHUP30",
+            "2013mb397mins": "MASHUP30",
+            "2013mb": "MASHUP30",
+            "3.5gb88mins": "MASHUP35",
+            "3530mb88mins": "MASHUP35",
+            "3530mb": "MASHUP35",
+            "4gb176mins": "MASHUP40",
+            "4043mb176mins": "MASHUP40",
+            "4043mb": "MASHUP40",
+            "3.5gb529mins": "MASHUP50",
+            "3545mb529mins": "MASHUP50",
+            "3545mb": "MASHUP50",
+            "5.5gb264mins": "MASHUP55",
+            "5556mb264mins": "MASHUP55",
+            "5556mb": "MASHUP55",
+            "6gb353mins": "MASHUP60",
+            "6066mb353mins": "MASHUP60",
+            "6066mb": "MASHUP60",
+            "7gb441mins": "MASHUP75",
+            "7100mb441mins": "MASHUP75",
+            "7100mb": "MASHUP75",
+            "6.5gb705mins": "MASHUP80",
+            "6630mb705mins": "MASHUP80",
+            "6630mb": "MASHUP80",
+            "8gb529mins": "MASHUP85",
+            "8074mb529mins": "MASHUP85",
+            "8074mb": "MASHUP85",
+            "8gb881mins": "MASHUP100",
+            "8079mb881mins": "MASHUP100",
+            "8079mb": "MASHUP100",
+            // Legacy aliases
+            "2.6gb1077mins": "MASHUP20",
+            "4.5gb1800mins": "MASHUP30",
+            "3.4gbonly": "MASHUP35",
+            "3.4gb": "MASHUP35",
+            "6gb700mins": "MASHUP40",
+            "10gb1800mins": "MASHUP50",
+            "5.1gbonly": "MASHUP55",
+            "5.1gb": "MASHUP55",
+            "6.8gbonly": "MASHUP60",
+            "6.8gb": "MASHUP60",
+            "8.5only": "MASHUP75",
+            "8.5gbonly": "MASHUP75",
+            "8.5gb": "MASHUP75",
+            "10gbonly": "MASHUP80",
+            "870mb360mins": "MASHUP85",
+            "3.5gb14500mins": "MASHUP100",
+            "3.5gb1450mins": "MASHUP100",
+          };
+          if (MASHUP_CODE_MAP[cleanPkgKey]) {
+            packageCode = MASHUP_CODE_MAP[cleanPkgKey];
+          } else {
+            const explicitMatch = pkgSize.match(/mashup[:_\s-]*(\d+)/i) || pkgSize.match(/combo(?:cost)?[:_\s-]*(\d+)/i);
+            if (explicitMatch) {
+              packageCode = `MASHUP${explicitMatch[1]}`;
+            } else {
+              packageCode = "MASHUP10";
+            }
+          }
+        }
+
+        return {
+          phone: recipient,
+          package_code: packageCode,
+          ...(targetRef ? { reference: targetRef } : {}),
+        };
+      }
+
+      if (orderType === "airtime" || endpoint === "airtime") {
+        let providerCode = "MTN";
+        if (rawNet.includes("TELECEL") || rawNet.includes("VOD")) providerCode = "TELECEL";
+        else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO")) providerCode = "AT";
+        return {
+          phone: recipient,
+          provider_code: providerCode,
+          amount: Number(data.amount || 0),
+          ...(targetRef ? { reference: targetRef } : {}),
+        };
+      }
+
+      if (orderType === "utility" || endpoint === "utility") {
+        const utilProv = String(data.utility_provider || (data as any).provider_code || rawNet).toUpperCase();
+        const accountName = String((data as any).account_name || (data as any).customer_name || (data as any).metadata?.customer_name || "Customer");
+        if (utilProv.includes("ECG") || (data as any).meter) {
+          return {
+            meter: String(data.utility_account_number || (data as any).meter || recipient),
+            provider_code: String((data as any).provider_code || "ecg2").toLowerCase(),
+            amount: Number(data.amount || 0),
+            account_name: accountName,
+          };
+        }
+        return {
+          smartcard: String(data.utility_account_number || (data as any).smartcard || recipient),
+          provider_code: String((data as any).provider_code || data.utility_provider || "DSTV").toUpperCase(),
+          amount: Number(data.amount || 0),
+          account_name: accountName,
+        };
+      }
+
+      // Data bundle purchase (/v1/buy-data)
+      let hsNetwork = "yello";
+      if (rawNet.includes("TELECEL") || rawNet.includes("VOD")) {
+        hsNetwork = "telecel";
+      } else if (rawNet.includes("BIGTIME") || rawNet.includes("BIG_TIME")) {
+        hsNetwork = "at_bigtime";
+      } else if (rawNet.includes("AT") || rawNet.includes("AIRTEL") || rawNet.includes("TIGO") || rawNet.includes("ISHARE")) {
+        const isBigTime = /big\s*time|non[- ]?expiry|no[- ]?expiry/i.test(pkgSize) && rawNet.includes("BIG");
+        hsNetwork = isBigTime ? "at_bigtime" : "at_ishare";
+      } else {
+        hsNetwork = "yello";
+      }
+
+      let sizeGb = capNum > 0 ? capNum : (parseFloat(capacityStr) || 1);
+      try {
+        const dbNet = hsNetwork === "yello" ? "MTN" : (hsNetwork === "telecel" ? "Telecel" : "AirtelTigo");
+        const { data: pkgMapping } = await supabaseAdmin
+          .from("provider_packages")
+          .select("capacity_gb, raw_data")
+          .eq("provider_id", provider.id)
+          .or(`network.eq.${dbNet},network.eq.${hsNetwork}`)
+          .eq("package_name", pkgSize)
+          .maybeSingle();
+        if (pkgMapping?.raw_data?.size_gb) {
+          sizeGb = Number(pkgMapping.raw_data.size_gb);
+        } else if (pkgMapping?.capacity_gb && Number(pkgMapping.capacity_gb) > 0) {
+          sizeGb = Number(pkgMapping.capacity_gb);
+        }
+        if (pkgMapping?.raw_data?.network) {
+          hsNetwork = String(pkgMapping.raw_data.network).toLowerCase();
+        }
+      } catch (e) {
+        console.warn("[hyspeeddata-data-resolve] Warning:", e);
+      }
+
+      return {
+        phone: recipient,
+        network: hsNetwork,
+        size_gb: sizeGb,
+        ...(targetRef ? { reference: targetRef } : {}),
+      };
+    }
 
     if (handlerType === "datamart") {
       const pkgUpper = String(data.package_size || data.package_name || data.bundle || data.plan || data.capacity || "").toUpperCase();
@@ -927,6 +1183,55 @@ export class StandardAdapter implements ProviderAdapter {
     return { ok: true };
   }
 
+  async verifyHySpeedBeneficiary(
+    supabaseAdmin: any,
+    provider: any,
+    phone: string
+  ): Promise<{ ok: boolean; reason?: string; servable?: boolean; recommendation?: string }> {
+    const localPhone = normalizeRecipient(phone);
+    if (!/^0(24|25|53|54|55|59)\d{7}$/.test(localPhone)) {
+      return { ok: true, servable: true, recommendation: "sell_any" };
+    }
+    const apiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || provider?.api_key || "";
+    const hsBase = normalizeHySpeedBaseUrl(Deno.env.get("HYSPEEDDATA_BASE_URL") || provider?.base_url);
+    const url = `${hsBase}/v1/verify-number`;
+
+    if (!apiKey) return { ok: true };
+
+    try {
+      console.log(`[HySpeedData-Verify-Beneficiary] Checking ${localPhone} at ${url}...`);
+      const res = await fetchViaDb(supabaseAdmin, url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ phone: localPhone }),
+        disableFallback: true,
+      }, 10);
+
+      const text = await res.text();
+      let parsed: any = {};
+      try { parsed = JSON.parse(text); } catch { /* ignore */ }
+
+      if (res.ok && parsed.success && Array.isArray(parsed.results) && parsed.results.length > 0) {
+        const item = parsed.results[0];
+        if (item.verified === true || item.servable === true || item.recommendation === "sell_any" || item.status === "verified") {
+          return { ok: true, servable: true, recommendation: "sell_any" };
+        }
+        return {
+          ok: false,
+          servable: false,
+          recommendation: item.recommendation || "activate_first",
+          reason: item.message || `MTN number ${localPhone} is not yet verified (${item.recommendation || "activate_first"}).`
+        };
+      }
+    } catch (err: any) {
+      console.error(`[HySpeedData-Verify-Beneficiary] Check failed for ${localPhone}:`, err);
+    }
+    return { ok: true };
+  }
+
   async refundDataHubOrder(
     supabaseAdmin: any,
     provider: any,
@@ -1133,6 +1438,63 @@ export class StandardAdapter implements ProviderAdapter {
     reference: string
   ): Promise<ProviderResponse> {
     const handlerType = String(provider?.handler_type || "").toLowerCase();
+    if (isHySpeedHandler(handlerType)) {
+      try {
+        const apiKey = Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || provider.api_key || "";
+        const hsBase = normalizeHySpeedBaseUrl(Deno.env.get("HYSPEEDDATA_BASE_URL") || provider.base_url);
+        const candidates = Array.from(new Set([providerOrderId, reference].filter(c => c && c !== "timeout" && c !== "failed_api_call" && c !== "duplicate_cooldown")));
+
+        for (const cand of candidates) {
+          const res = await fetch(`${hsBase}/v1/orders/${encodeURIComponent(cand)}`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+            },
+            signal: AbortSignal.timeout(12000),
+          });
+          if (res.ok) {
+            const json = await res.json().catch(() => ({}));
+            const orderObj = json?.order || json?.data?.order || json?.data;
+            if (json?.success && orderObj && orderObj.status) {
+              const s = String(orderObj.status).toLowerCase().trim();
+              const resolvedId = String(orderObj.reference || orderObj.id || cand);
+              const prepaidToken = orderObj.utility_meta?.token ? String(orderObj.utility_meta.token) : undefined;
+
+              if (["completed", "delivered", "fulfilled"].includes(s)) {
+                return {
+                  ok: true,
+                  status: "fulfilled",
+                  id: resolvedId,
+                  raw: prepaidToken ? { ...orderObj, prepaid_token: prepaidToken } : orderObj,
+                };
+              }
+              if (["pending", "processing", "queued"].includes(s)) {
+                return {
+                  ok: true,
+                  status: "processing",
+                  id: resolvedId,
+                  raw: orderObj,
+                };
+              }
+              if (["failed", "rejected", "cancelled", "refunded"].includes(s)) {
+                return {
+                  ok: false,
+                  status: "fulfillment_failed",
+                  reason: orderObj.message || json.message || json.error || `Order ${s} on provider`,
+                  id: resolvedId,
+                  raw: orderObj,
+                };
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn("[HySpeedData-checkStatus] Error:", err.message);
+      }
+      return { ok: false, status: "not_found", reason: "Order not found on provider." };
+    }
     if (handlerType === "bundlezone") {
       try {
         const apiKey = Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key || "";
@@ -1288,6 +1650,7 @@ export class StandardAdapter implements ProviderAdapter {
   ): Promise<ProviderResponse> {
     const handlerType = String(provider.handler_type || "standard").toLowerCase();
     const apiKey = (
+      isHySpeedHandler(handlerType) ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY") || provider.api_key) :
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_API_KEY") || provider.api_key) :
       handlerType === "skdataplug" ? (Deno.env.get("SKDATAPLUG_API_KEY") || provider.api_key) :
       handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_API_KEY") || provider.api_key) :
@@ -1295,6 +1658,7 @@ export class StandardAdapter implements ProviderAdapter {
       provider.api_key
     ) || "";
     const baseUrl = (
+      isHySpeedHandler(handlerType) ? (Deno.env.get("HYSPEEDDATA_BASE_URL") || Deno.env.get("SWIFTRESELLER_BASE_URL") || provider.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api") :
       handlerType === "datahub" ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") :
       handlerType === "bundlezone" ? (Deno.env.get("BUNDLEZONE_BASE_URL") || provider.base_url || "https://bundlezone.shop") :
       handlerType === "datamart" ? (Deno.env.get("DATAMART_BASE_URL") || provider.base_url || "https://api.datamartgh.shop/api/developer") :
@@ -1304,7 +1668,8 @@ export class StandardAdapter implements ProviderAdapter {
     const urls = this.buildProviderUrls(baseUrl, endpoint, handlerType, data);
     let lastReason = "Provider communication failed";
 
-    const isGet = (handlerType === "datamart" && (endpoint === "status" || endpoint === "mashup_packages")) || 
+    const isGet = (isHySpeedHandler(handlerType) && ["status", "balance", "packages", "bundles", "mashup_packages", "utility_products"].includes(endpoint)) ||
+                  (handlerType === "datamart" && (endpoint === "status" || endpoint === "mashup_packages")) || 
                   (handlerType === "superbdatafy" && endpoint === "status") || 
                   (handlerType === "xcel" && endpoint === "status") ||
                   (handlerType === "qhowmenzconsult" && endpoint === "status") ||
@@ -1328,7 +1693,12 @@ export class StandardAdapter implements ProviderAdapter {
             headers["X-Idempotency-Key"] = idempotencyKey;
           }
 
-          if (handlerType === "xcel") {
+          if (isHySpeedHandler(handlerType)) {
+            delete headers["X-API-Key"];
+            delete headers["X-Idempotency-Key"];
+            headers["Authorization"] = apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`;
+            headers["Content-Type"] = "application/json";
+          } else if (handlerType === "xcel") {
             delete headers["X-API-Key"];
             headers["x-api-key"] = apiKey;
             headers["x-merchant-id"] = String(provider.settings?.merchant_id || "");
@@ -1409,7 +1779,13 @@ export class StandardAdapter implements ProviderAdapter {
             const semantic = parseProviderResponse(text, contentType);
             if (semantic.ok) {
               const returnedId = semantic.id || String(payload?.client_reference || data.reference || data.orderReference || data.order_id || "");
-              return { ok: true, reason: "", id: returnedId, status: semantic.status };
+              return {
+                ok: true,
+                reason: "",
+                id: returnedId,
+                status: semantic.status,
+                ...(semantic.prepaid_token ? { raw: { prepaid_token: semantic.prepaid_token } } : {}),
+              };
             }
             // For status checks, only surface a failure status when the provider EXPLICITLY reported one.
             // Anything else (e.g. success:false "order not found") stays inconclusive so callers never

@@ -26,7 +26,10 @@ function sanitizeForUser(text?: string | null): string {
     /xcel/gi,
     /qhowmenzconsult/gi,
     /newaggregator/gi,
-    /superbdatafy/gi
+    /superbdatafy/gi,
+    /ihrvvniomtoofrjkmalb(\.supabase\.co)?/gi,
+    /hyspeed(data)?/gi,
+    /swiftreseller/gi
   ];
   for (const pattern of scrubPatterns) {
     clean = clean.replace(pattern, "Telecom Operator");
@@ -202,6 +205,7 @@ serve(async (req: Request) => {
       const providerMap = new Map<string, any>((provList || []).map((p: any) => {
         const handlerType = String(p.handler_type || "standard").toLowerCase();
         const envKey =
+          (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
           handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
           handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
           handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
@@ -517,7 +521,20 @@ serve(async (req: Request) => {
           .select("*")
           .eq("id", order.provider_id)
           .maybeSingle();
-        providerInfo = prov;
+        if (prov) {
+          const handlerType = String(prov.handler_type || "standard").toLowerCase();
+          const envKey =
+            (handlerType === "hyspeeddata" || handlerType === "swiftreseller" || handlerType === "hyspeed") ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) :
+            handlerType === "bundlezone" ? Deno.env.get("BUNDLEZONE_API_KEY") :
+            handlerType === "datahub" ? Deno.env.get("DATAHUB_API_KEY") :
+            handlerType === "datamart" ? Deno.env.get("DATAMART_API_KEY") :
+            handlerType === "spendless" ? Deno.env.get("SPENDLESS_API_KEY") :
+            handlerType === "skdataplug" ? Deno.env.get("SKDATAPLUG_API_KEY") :
+            handlerType === "qhowmenzconsult" ? Deno.env.get("QHOWMENZ_API_KEY") :
+            handlerType === "korba" ? (Deno.env.get("KORBA_SECRET_KEY") || Deno.env.get("KORBA_API_KEY")) :
+            Deno.env.get("DATA_PROVIDER_API_KEY");
+          providerInfo = { ...prov, api_key: String(envKey || prov.api_key || "").trim() };
+        }
       }
 
       if (providerInfo) {

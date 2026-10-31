@@ -14,7 +14,7 @@ serve(async (_req: Request) => {
     .from("providers")
     .select("*")
     .eq("is_active", true)
-    .in("handler_type", ["datamart", "datahub", "spendless", "qhowmenzconsult"]);
+    .in("handler_type", ["datamart", "datahub", "spendless", "qhowmenzconsult", "hyspeeddata", "swiftreseller", "hyspeed"]);
 
   if (error || !providers?.length) {
     console.log("[cron-balance-check] No active providers or error:", error?.message);
@@ -25,21 +25,32 @@ serve(async (_req: Request) => {
 
   for (const provider of providers) {
     const isDataHub = provider.handler_type === "datahub";
-    const apiKey = (isDataHub ? Deno.env.get("DATAHUB_API_KEY") : null) || provider.api_key;
-    const baseUrl = (isDataHub ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external") : provider.base_url || "").replace(/\/+$/, "");
+    const isHySpeed = provider.handler_type === "hyspeeddata" || provider.handler_type === "swiftreseller" || provider.handler_type === "hyspeed";
+    const apiKey = (isDataHub ? Deno.env.get("DATAHUB_API_KEY") : (isHySpeed ? (Deno.env.get("HYSPEEDDATA_API_KEY") || Deno.env.get("SWIFTRESELLER_API_KEY")) : null)) || provider.api_key;
+    const baseUrl = (
+      isDataHub
+        ? (Deno.env.get("DATAHUB_BASE_URL") || provider.base_url || "https://user.datahubgh.com/api/external")
+        : isHySpeed
+        ? (Deno.env.get("HYSPEEDDATA_BASE_URL") || provider.base_url || "https://ihrvvniomtoofrjkmalb.supabase.co/functions/v1/api").replace(/\/v1\/?$/i, "")
+        : provider.base_url || ""
+    ).replace(/\/+$/, "");
     if (!apiKey || !baseUrl) continue;
 
     let balance: number | null = null;
 
     try {
       // Build balance URL based on handler type
-      const balanceUrls = provider.handler_type === "datahub" || provider.handler_type === "qhowmenzconsult"
+      const balanceUrls = isHySpeed
+        ? [`${baseUrl}/v1/balance`]
+        : provider.handler_type === "datahub" || provider.handler_type === "qhowmenzconsult"
         ? [`${baseUrl}/balance`]
         : [`${baseUrl}/balance`, `${baseUrl}/api/balance`];
 
       for (const url of balanceUrls) {
         const res = await fetch(url, {
-          headers: { "X-API-Key": apiKey, "Accept": "application/json" },
+          headers: isHySpeed
+            ? { "Authorization": apiKey.startsWith("Bearer ") ? apiKey : `Bearer ${apiKey}`, "Accept": "application/json" }
+            : { "X-API-Key": apiKey, "Accept": "application/json" },
           signal: AbortSignal.timeout(10000),
         });
         if (res.ok) {

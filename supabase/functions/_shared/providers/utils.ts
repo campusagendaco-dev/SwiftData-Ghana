@@ -81,16 +81,17 @@ export function isHtmlResponse(contentType: string | null, body: string): boolea
   );
 }
 
-export function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string; id?: string; status?: string } {
+export function parseProviderResponse(body: string, contentType: string | null): { ok: boolean; reason?: string; id?: string; status?: string; prepaid_token?: string } {
   try {
     const parsed = JSON.parse(body);
     const technicalStatus = String(parsed?.status ?? parsed?.success ?? "").toLowerCase();
     const data = parsed?.data || {};
-    const orderNode = data?.order || data?.result || data;
+    const orderNode = parsed?.order || data?.order || data?.result || data;
     const firstErr = Array.isArray(parsed?.errors)
       ? parsed.errors[0]
       : (parsed?.errors && typeof parsed.errors === "object" ? parsed.errors : null);
     const deliveryStatus = String(
+      parsed?.order?.status ??
       parsed?.transaction?.status ??
       data?.order?.status ??
       data?.result?.status ??
@@ -118,6 +119,8 @@ export function parseProviderResponse(body: string, contentType: string | null):
     // (`data.request_id = "REQ-..."`) alongside the real `data.order.reference` / `data.order_id`.
     // Storing the trace ID made every later status lookup return "Order not found".
     const orderId = String(
+      parsed?.order?.reference ??
+      parsed?.order?.id ??
       data?.order?.reference ??
       data?.orderId ??
       data?.order_id ??
@@ -143,6 +146,15 @@ export function parseProviderResponse(body: string, contentType: string | null):
       parsed?.reference ?? 
       ""
     );
+
+    const prepaidToken = String(
+      parsed?.order?.utility_meta?.token ??
+      data?.order?.utility_meta?.token ??
+      orderNode?.utility_meta?.token ??
+      orderNode?.prepaid_token ??
+      parsed?.prepaid_token ??
+      ""
+    ).trim() || undefined;
 
     // MTN Express / BundleZone: A pending confirmation (`submission_unknown`) is still an existing order.
     // Keep the same reference and poll status; do NOT treat as failed or trigger a duplicate purchase.
@@ -218,12 +230,12 @@ export function parseProviderResponse(body: string, contentType: string | null):
                parsed?.ok === true;
 
     if (ok && parsed?.success !== false) {
-      // Do not treat HTTP 200 or `success: true` as delivery confirmation when `data.order` is present
+      // Do not treat HTTP 200 or `success: true` as delivery confirmation when `order` is present
       // unless `deliveryStatus` explicitly confirms completion (`completed` / `delivered` / `fulfilled`).
-      const resolvedOkStatus = (data?.order || data?.result)
+      const resolvedOkStatus = (parsed?.order || data?.order || data?.result)
         ? (["completed", "delivered", "fulfilled"].includes(deliveryStatus) ? "fulfilled" : "processing")
         : (effectiveStatus || "processing");
-      return { ok: true, id: orderId || undefined, status: resolvedOkStatus };
+      return { ok: true, id: orderId || undefined, status: resolvedOkStatus, prepaid_token: prepaidToken };
     }
 
     const statusCode = Number(parsed?.statusCode);
@@ -232,10 +244,10 @@ export function parseProviderResponse(body: string, contentType: string | null):
     }
     
     if (orderId && orderId !== "undefined" && orderId !== "") {
-      const fallbackStatus = (data?.order || data?.result)
+      const fallbackStatus = (parsed?.order || data?.order || data?.result)
         ? (["completed", "delivered", "fulfilled"].includes(deliveryStatus) ? "fulfilled" : "processing")
         : (effectiveStatus || "processing");
-      return { ok: true, id: orderId, status: fallbackStatus };
+      return { ok: true, id: orderId, status: fallbackStatus, prepaid_token: prepaidToken };
     }
 
   } catch { /* non-JSON */ }
