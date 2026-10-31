@@ -249,6 +249,20 @@ serve(async (req: Request) => {
         console.warn("[sync:hyspeeddata] MashUp packages sync warning:", mashErr?.message);
       }
 
+      // 4. Sync Utility Products (/v1/utility-products)
+      let utilityProducts: any[] = [];
+      try {
+        const utilRes = await fetchWithTimeout(`${hsBase}/v1/utility-products`, { headers: hsHeaders }, 8000);
+        if (utilRes.ok) {
+          const utilJson = await utilRes.json().catch(() => ({}));
+          if (Array.isArray(utilJson?.products)) {
+            utilityProducts = utilJson.products;
+          }
+        }
+      } catch (utilErr: any) {
+        console.warn("[sync:hyspeeddata] Utility products sync warning:", utilErr?.message);
+      }
+
       const toInsert = Array.from(allPackagesMap.values());
       if (toInsert.length > 0) {
         await supabaseAdmin.from("provider_packages").delete().eq("provider_id", provider.id);
@@ -261,6 +275,13 @@ serve(async (req: Request) => {
         consecutive_failures: 0,
         disabled_reason: null,
         last_synced_at: new Date().toISOString(),
+        settings: {
+          ...(provider.settings || {}),
+          supports_mashup: true,
+          supports_utilities: true,
+          supports_beneficiary_check: true,
+          ...(utilityProducts.length > 0 ? { utility_products: utilityProducts } : {}),
+        },
       }).eq("id", provider.id);
 
       return new Response(JSON.stringify({
