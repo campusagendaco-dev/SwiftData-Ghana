@@ -22,6 +22,7 @@ import LastMtnOrderWidget from "@/components/LastMtnOrderWidget";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { MtnExpressConfirmModal } from "@/components/MtnExpressConfirmModal";
+import { getCachedRecipientMeta, saveCachedRecipientMeta } from "@/lib/offline-cache";
 
 type NetworkName = "MTN" | "MTN Mash Up" | "Telecel" | "AirtelTigo";
 type PayMethod = "wallet" | "paystack";
@@ -274,7 +275,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         return;
       }
 
-      if (normalizedPhone === checkedPhone) return;
+      if (normalizedPhone === checkedPhone || (typeof window !== "undefined" && !window.navigator.onLine)) return;
 
       setIsCheckingBeneficiary(true);
       setBeneficiaryError(null);
@@ -320,7 +321,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         const cachedPricing = localStorage.getItem("swift_pricing_cache");
         if (cachedPricing) {
           const parsed = JSON.parse(cachedPricing);
-          if (parsed.expiry > Date.now()) {
+          if (parsed && parsed.globalSettings) {
             setGlobalSettings(parsed.globalSettings);
             setPriceMultiplier(parsed.multipliers[network] || 1);
             if (parsed.korbaMappings) {
@@ -348,7 +349,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         console.error("Cache read error:", e);
       }
 
-      // 2. Perform background fetches
+      // 2. Perform background fetches (skip if offline)
+      if (typeof window !== "undefined" && !window.navigator.onLine) {
+        setSettingsLoading(false);
+        return;
+      }
       const [settingsRes, pricingContext, mappingsRes] = await Promise.all([
         supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, api_price, is_unavailable"),
         fetchApiPricingContext(),
@@ -392,7 +397,10 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         setSavedCustomers(data || []);
       }
     };
-    void loadPricing();
+    void loadPricing().catch((err) => {
+      console.warn("[DashboardBuyDataNetwork] Offline fallback used:", err);
+      setSettingsLoading(false);
+    });
 
     supabase
       .from("system_settings")
@@ -651,6 +659,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   // Reset resolved name when phone changes
   useEffect(() => {
     setResolvedName(null);
+    setResolvedName(isPhoneValid ? getCachedRecipientMeta(normalizedPhone, network)?.resolvedName || null : null);
     lastAttemptRef.current = null;
   }, [phone]);
 
@@ -675,6 +684,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         lastAttemptRef.current = attemptKey;
         if (!error && data?.success) {
           setResolvedName(data.account_name);
+          saveCachedRecipientMeta(normalizedPhone, network, { resolvedName: data.account_name });
         }
       } catch (e) {
         console.error("Auto-resolution failed:", e);
@@ -775,7 +785,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   };
 
   const checkBeneficiaryValidity = async (phoneToCheck: string, networkToCheck: string): Promise<boolean> => {
-    if (!beneficiaryCheckEnabled) {
+    if (!beneficiaryCheckEnabled || (typeof window !== "undefined" && !window.navigator.onLine)) {
       return true;
     }
     const net = String(networkToCheck || "").toUpperCase();
@@ -1243,6 +1253,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                         });
                         if (error || !data?.success) throw new Error(data?.error || "Could not resolve name");
                         setResolvedName(data.account_name);
+          saveCachedRecipientMeta(normalizedPhone, network, { resolvedName: data.account_name });
                       } catch (e: any) {
                         toast({ title: "Verification Failed", description: e.message, variant: "destructive" });
                       } finally {

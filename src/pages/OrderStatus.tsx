@@ -21,6 +21,7 @@ import { playSuccessSound } from "@/lib/sound";
 import { Badge } from "@/components/ui/badge";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { translateFailureReason, isBeneficiaryFailure } from "@/lib/failure-reasons";
+import { getCachedOrderLookup, saveCachedOrderLookup } from "@/lib/offline-cache";
 
 type OrderStatusType = "pending" | "paid" | "processing" | "fulfilled" | "fulfillment_failed" | "error" | "not_paid" | "refunded";
 
@@ -344,9 +345,41 @@ const OrderStatus = () => {
     }
   }, []);
 
+  // Hydrate cached order status immediately for offline / 0ms startup
+  useEffect(() => {
+    if (!reference) return;
+    const cached = getCachedOrderLookup(reference);
+    if (cached) {
+      if (cached.orderData) setOrderData(cached.orderData);
+      if (cached.orderNetwork) setOrderNetwork(cached.orderNetwork);
+      if (cached.orderPackageSize) setOrderPackageSize(cached.orderPackageSize);
+      if (cached.orderPhone) setOrderPhone(cached.orderPhone);
+      if (cached.orderType) setOrderType(cached.orderType);
+      if (cached.orderStatus) setOrderStatus(cached.orderStatus);
+      if (cached.statusMessage) setStatusMessage(cached.statusMessage);
+      if (typeof cached.failed === "boolean") setFailed(cached.failed);
+    }
+  }, [reference]);
+
+  // Persist order status to local offline cache whenever it updates
+  useEffect(() => {
+    if (!reference || (!orderData && orderStatus === "pending")) return;
+    saveCachedOrderLookup(reference, {
+      orderData,
+      orderNetwork,
+      orderPackageSize,
+      orderPhone,
+      orderType,
+      orderStatus,
+      statusMessage,
+      failed,
+    });
+  }, [reference, orderData, orderNetwork, orderPackageSize, orderPhone, orderType, orderStatus, statusMessage, failed]);
+
   // --- SINGLE ORDER LOGIC ---
   const pollStatus = useCallback(async (force = false) => {
     if (!reference || redirectedRef.current || inFlightRef.current) return;
+    if (typeof window !== "undefined" && !window.navigator.onLine) return;
     inFlightRef.current = true;
 
     let shouldInvokeEdgeFunction = force;

@@ -278,9 +278,9 @@ export function SecurityGuard({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden selection:bg-primary selection:text-black">
+    <div className="relative min-h-screen w-full overflow-x-clip selection:bg-primary selection:text-black">
       {/* Main Application Layer */}
-      <div className={`transition-all duration-300 ${isCurrentlyShielded ? "md:blur-xl blur-lg grayscale scale-[0.99] md:scale-[0.98]" : "blur-0"}`}>
+      <div className={isCurrentlyShielded ? "transition-all duration-300 md:blur-xl blur-lg grayscale scale-[0.99] md:scale-[0.98]" : undefined}>
         {children}
       </div>
 

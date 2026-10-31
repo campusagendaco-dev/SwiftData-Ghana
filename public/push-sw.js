@@ -1,6 +1,20 @@
 // SwiftData Ghana Background Service Worker Extensions
 // Listens for push notification payloads from Deno/Supabase backend even when the tab is closed.
 
+const SWIFTDATA_VAPID_PUBLIC_KEY =
+  'BBunKshlnxwoqC83k7a01ApJwKgZ0L-QqEySWnz0EuJL1eS7lneeiKemLOQ9Z7DYD82KptTcbYjeQKaDNN1o5gM';
+
+function urlBase64ToUint8ArraySw(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 self.addEventListener('install', function(event) {
   self.skipWaiting();
 });
@@ -27,13 +41,15 @@ self.addEventListener('push', function(event) {
 
   const title = data.title || 'SwiftData Ghana';
   const tag = data.tag || (data.id ? `swiftdata-order-${data.id}` : `swiftdata-alert-${Date.now()}`);
+  const rawIcon = data.icon && data.icon !== '/pwa-192x192.png' ? data.icon : '/logo.png';
   
   const options = {
     body: data.body || 'You have a new transaction update.',
-    icon: data.icon || '/logo.png',
+    icon: rawIcon,
     badge: '/logo.png',
     tag: tag,
     renotify: true,
+    vibrate: [250, 100, 250, 100, 250],
     data: {
       url: data.url || '/dashboard',
       id: data.id,
@@ -48,11 +64,7 @@ self.addEventListener('push', function(event) {
   } catch (_) {}
 
   try {
-    // Only supply vibration and actions if supported by browser/OS
-    if ('vibrate' in navigator) {
-      options.vibrate = [250, 100, 250, 100, 250];
-    }
-    if ('actions' in Notification.prototype) {
+    if (typeof Notification !== 'undefined' && 'actions' in Notification.prototype) {
       options.actions = [
         { action: 'open', title: 'View Details 🚀' },
         { action: 'close', title: 'Dismiss' }
@@ -67,6 +79,26 @@ self.addEventListener('push', function(event) {
         body: data.body || 'You have a new transaction update.',
         icon: '/logo.png'
       });
+    })
+  );
+});
+
+self.addEventListener('pushsubscriptionchange', function(event) {
+  console.log('[Push Worker] Push subscription rotated by browser — re-subscribing...');
+  event.waitUntil(
+    self.registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8ArraySw(SWIFTDATA_VAPID_PUBLIC_KEY)
+    }).then(async function(newSub) {
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientList) {
+        client.postMessage({
+          type: 'PUSH_SUBSCRIPTION_CHANGED',
+          endpoint: newSub.endpoint
+        });
+      }
+    }).catch(function(err) {
+      console.warn('[Push Worker] pushsubscriptionchange re-subscribe failed:', err);
     })
   );
 });
@@ -245,4 +277,3 @@ self.addEventListener('sync', function(event) {
     event.waitUntil(syncTransactions());
   }
 });
-

@@ -364,7 +364,7 @@ const SidebarContent = ({
       <div className={`absolute top-0 left-0 w-full h-32 blur-[50px] pointer-events-none ${isDark ? "bg-amber-500/8" : "bg-amber-400/5"}`} />
 
       {/* Logo */}
-      <div className="p-5 flex items-center gap-3 relative z-10">
+      <div className="p-5 flex items-center gap-3 relative z-10 shrink-0">
         <div className="relative shrink-0">
           <div className={`p-2 rounded-xl border shadow-sm ${isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"}`}>
             <img src="/logo.png" alt="SwiftData Ghana" className="w-8 h-8" />
@@ -399,7 +399,7 @@ const SidebarContent = ({
       )}
 
       {/* Nav */}
-      <nav className="flex-1 px-3 overflow-y-auto py-1 relative z-10 scrollbar-none space-y-4">
+      <nav className="flex-1 min-h-0 px-3 overflow-y-auto overscroll-y-contain touch-pan-y py-1 relative z-10 scrollbar-none space-y-4" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
         {filteredSections.map((section) => (
           <div key={section.title}>
             <p className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 mb-1.5 ${isDark ? "text-white/25" : "text-gray-400"}`}>

@@ -362,7 +362,7 @@ const DashboardNotifications = () => {
                 Enable native push notifications to receive real-time deposits and store checkout notifications even when the browser is closed.
               </p>
               <Button
-                onClick={subscribeUser}
+                onClick={() => subscribeUser(false)}
                 disabled={subLoading}
                 className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[10px] uppercase tracking-widest h-9"
               >

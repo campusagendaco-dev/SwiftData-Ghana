@@ -1,18 +1,47 @@
 import { useState, useEffect, useRef } from "react";
-import { WifiOff, AlertTriangle, CheckCircle2, X } from "lucide-react";
+import { WifiOff, AlertTriangle, CheckCircle2, X, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useConnectivity } from "@/hooks/useConnectivity";
+import { getQueuedTransactions, syncOfflineQueue } from "@/lib/offline-queue";
+import { getPendingGuestOrderDraft } from "@/lib/offline-cache";
 
 export const OfflineAlert = () => {
   const { isOnline, quality } = useConnectivity();
   const [showRestored, setShowRestored] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [isSyncingQueue, setIsSyncingQueue] = useState(false);
   const prevOnline = useRef(isOnline);
+
+  useEffect(() => {
+    const refreshQueueCount = async () => {
+      const txs = await getQueuedTransactions();
+      const pendingTxs = txs.filter(t => t.status === "pending" || t.status === "processing").length;
+      const hasDraft = getPendingGuestOrderDraft() ? 1 : 0;
+      setQueuedCount(pendingTxs + hasDraft);
+    };
+    void refreshQueueCount();
+
+    const onSyncStatus = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setIsSyncingQueue(Boolean(detail?.isSyncing));
+    };
+
+    window.addEventListener("offline-queue-changed", refreshQueueCount);
+    window.addEventListener("offline-draft-changed", refreshQueueCount);
+    window.addEventListener("offline-sync-status-changed", onSyncStatus);
+    return () => {
+      window.removeEventListener("offline-queue-changed", refreshQueueCount);
+      window.removeEventListener("offline-draft-changed", refreshQueueCount);
+      window.removeEventListener("offline-sync-status-changed", onSyncStatus);
+    };
+  }, []);
 
   // Only show "Back Online" when transitioning from offline → online (not on first mount)
   useEffect(() => {
     if (!prevOnline.current && isOnline) {
       setShowRestored(true);
+      void syncOfflineQueue();
       const timer = setTimeout(() => setShowRestored(false), 5000);
       prevOnline.current = true;
       return () => clearTimeout(timer);
@@ -46,7 +75,11 @@ export const OfflineAlert = () => {
             >
               <WifiOff className="w-3.5 h-3.5" />
             </motion.div>
-            <span className="text-xs font-bold tracking-tight">Offline Mode</span>
+            <span className="text-xs font-bold tracking-tight">
+              {queuedCount > 0
+                ? `Offline Mode • ${queuedCount} order${queuedCount > 1 ? "s" : ""} ready to auto-sync`
+                : "Offline Mode • Cached bundles active"}
+            </span>
           </motion.div>
         )}
 
@@ -66,7 +99,7 @@ export const OfflineAlert = () => {
               <AlertTriangle className="w-3.5 h-3.5 text-black/80" />
             </motion.div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold tracking-tight">Slow Connection</span>
+              <span className="text-xs font-bold tracking-tight">Slow Connection • Fast Cache Enabled</span>
               <div className="w-px h-2.5 bg-black/20" />
             </div>
             <button 
@@ -79,8 +112,8 @@ export const OfflineAlert = () => {
           </motion.div>
         )}
 
-        {/* Back Online Confirmation */}
-        {showRestored && isOnline && !showSlowWarning && (
+        {/* Back Online / Syncing Confirmation */}
+        {(showRestored || isSyncingQueue) && isOnline && !showSlowWarning && (
           <motion.div
             initial={{ scale: 0.8, y: -40, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
@@ -93,9 +126,15 @@ export const OfflineAlert = () => {
               animate={{ scale: 1 }}
               transition={{ type: "spring", delay: 0.1 }}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              {isSyncingQueue ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              )}
             </motion.div>
-            <span className="text-xs font-bold tracking-tight">Restored</span>
+            <span className="text-xs font-bold tracking-tight">
+              {isSyncingQueue ? "Syncing queued orders..." : "Connection Restored"}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>

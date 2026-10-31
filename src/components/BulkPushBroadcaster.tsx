@@ -144,10 +144,10 @@ export function BulkPushBroadcaster({ triggerClassName }: { triggerClassName?: s
         },
       });
 
-      if (error || (data && !data.success)) {
+      if (error || (data && !data.success) || Number(data?.sent || 0) === 0) {
         toast({
           title: "Test Push Failed",
-          description: error?.message || data?.error || "Could not deliver push to your device.",
+          description: error?.message || data?.error || "No active push subscription found on this device. Please enable notifications in Account Settings first.",
           variant: "destructive",
         });
       } else {

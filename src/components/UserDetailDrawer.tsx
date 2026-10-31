@@ -415,13 +415,15 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
       const targetUrl = pushUrl.trim() || "/dashboard";
 
       // 1. Dispatch Web Push notification to registered devices
+      const pushTag = `swiftdata-direct-${user.user_id}-${Date.now()}`;
       const { data: res, error } = await supabase.functions.invoke("send-push-notification", {
         body: {
           user_id: user.user_id,
           title,
           body: messageText,
           url: targetUrl,
-          icon: "/pwa-192x192.png",
+          icon: "/logo.png",
+          tag: pushTag,
         },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
@@ -432,7 +434,7 @@ const UserDetailDrawer = ({ user, onClose }: Props) => {
         title,
         message: messageText,
         type: "system",
-        data: { url: targetUrl },
+        data: { url: targetUrl, skip_auto_push: true },
       });
 
       const devicesSent = Number(res?.sent ?? 0);

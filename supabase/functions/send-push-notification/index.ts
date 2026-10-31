@@ -11,8 +11,14 @@ declare const Deno: any;
 // SwiftData Secure VAPID Credentials
 const DEFAULT_VAPID_PUBLIC = "BBunKshlnxwoqC83k7a01ApJwKgZ0L-QqEySWnz0EuJL1eS7lneeiKemLOQ9Z7DYD82KptTcbYjeQKaDNN1o5gM";
 
-const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") || DEFAULT_VAPID_PUBLIC;
-const VAPID_PRIVATE_KEY = (Deno.env.get("VAPID_PRIVATE_KEY") || "").trim();
+const cleanKey = (val: string | undefined): string =>
+  (val || "").trim().replace(/^["']+|["']+$/g, "").trim();
+
+const VAPID_PUBLIC_KEY = cleanKey(Deno.env.get("VAPID_PUBLIC_KEY")) || DEFAULT_VAPID_PUBLIC;
+const VAPID_PRIVATE_KEY = cleanKey(Deno.env.get("VAPID_PRIVATE_KEY"));
+
+let vapidInitialized = false;
+let vapidInitError: string | null = null;
 
 if (VAPID_PRIVATE_KEY) {
   try {
@@ -21,7 +27,9 @@ if (VAPID_PRIVATE_KEY) {
       VAPID_PUBLIC_KEY,
       VAPID_PRIVATE_KEY
     );
-  } catch (vapidErr) {
+    vapidInitialized = true;
+  } catch (vapidErr: any) {
+    vapidInitError = vapidErr?.message || String(vapidErr);
     console.error("[Push] Failed to initialize VAPID credentials:", vapidErr);
   }
 } else {
@@ -54,19 +62,114 @@ serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { 
+    const {
+      action,
       endpoint,
-      user_id, 
-      user_ids, 
-      broadcast, 
-      title, 
-      body: messageBody, 
-      url, 
-      icon, 
-      id, 
-      tag, 
-      requireInteraction 
+      p256dh,
+      auth,
+      user_id,
+      user_ids,
+      broadcast,
+      title,
+      body: messageBody,
+      url,
+      icon,
+      id,
+      tag,
+      requireInteraction,
     } = body;
+
+    const authHeader = req.headers.get("Authorization");
+    const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
+    const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
+    const anonKey = (Deno.env.get("SUPABASE_ANON_KEY") || "").trim();
+    const token = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
+    const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
+
+    // ── Action: Public/Authenticated Device Subscription Registration ──
+    if (action === "subscribe") {
+      if (!endpoint || typeof endpoint !== "string" || !endpoint.startsWith("https://")) {
+        return new Response(JSON.stringify({ success: false, error: "Valid HTTPS push endpoint is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      let resolvedUserId: string | null = null;
+      if (token && token !== anonKey && token !== serviceRoleKey) {
+        try {
+          const { data: authData } = await supabaseAdmin.auth.getUser(token);
+          if (authData?.user?.id) {
+            resolvedUserId = authData.user.id;
+          }
+        } catch (_e) {
+          // Guest or expired token — allow anonymous device registration
+        }
+      }
+      if (!resolvedUserId && isValidUuid(user_id)) {
+        resolvedUserId = user_id.trim();
+      }
+
+      const { error: upsertErr } = await supabaseAdmin
+        .from("push_subscriptions")
+        .upsert(
+          {
+            user_id: resolvedUserId,
+            endpoint: endpoint.trim(),
+            p256dh: p256dh || null,
+            auth: auth || null,
+          },
+          { onConflict: "endpoint" }
+        );
+
+      if (upsertErr) {
+        console.error("[Push] Subscription upsert error:", upsertErr);
+        return new Response(JSON.stringify({ success: false, error: upsertErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          user_id: resolvedUserId,
+          vapid_public_key: VAPID_PUBLIC_KEY,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // ── Action: Device Subscription Removal ──
+    if (action === "unsubscribe") {
+      if (!endpoint || typeof endpoint !== "string") {
+        return new Response(JSON.stringify({ success: false, error: "Endpoint is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      await supabaseAdmin
+        .from("push_subscriptions")
+        .delete()
+        .eq("endpoint", endpoint.trim());
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Action: Return Public VAPID Key ──
+    if (action === "vapid-public-key") {
+      return new Response(JSON.stringify({ success: true, vapid_public_key: VAPID_PUBLIC_KEY }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const isBroadcast = Boolean(broadcast);
     const hasEndpoint = typeof endpoint === "string" && endpoint.trim().length > 0;
@@ -77,18 +180,12 @@ serve(async (req: Request) => {
     const batchLimit = Math.min(100, Math.max(1, requestedLimit));
 
     // Security Auth Verification (P1-7)
-    const authHeader = req.headers.get("Authorization");
-    const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-    const cronSecret = (Deno.env.get("CRON_SECRET") || "").trim();
-    const token = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
-    const headerCronSecret = (req.headers.get("x-cron-secret") || "").trim();
-
     const isServiceRole = Boolean(serviceRoleKey && token === serviceRoleKey);
     const isCron = Boolean(cronSecret && (token === cronSecret || headerCronSecret === cronSecret));
     let isAdmin = false;
     let authUserId: string | null = null;
 
-    if (!isServiceRole && !isCron && token) {
+    if (!isServiceRole && !isCron && token && token !== anonKey) {
       const adminCheck = await verifyAdmin(req, supabaseAdmin);
       if (adminCheck.success) {
         isAdmin = true;
@@ -137,20 +234,28 @@ serve(async (req: Request) => {
       }
     }
 
-    if (!VAPID_PRIVATE_KEY) {
-      return new Response(JSON.stringify({ error: "Server misconfigured: missing VAPID_PRIVATE_KEY secret" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!VAPID_PRIVATE_KEY || !vapidInitialized) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: vapidInitError
+            ? `Invalid VAPID configuration: ${vapidInitError}`
+            : "Server misconfigured: missing VAPID_PRIVATE_KEY secret",
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     if (!hasEndpoint && !validUserId && validUserIds.length === 0 && !isBroadcast) {
       if (user_id) {
         console.warn(`[Push] Non-UUID user_id provided: "${user_id}". Handled gracefully.`);
-        return new Response(JSON.stringify({ 
-          success: true, 
-          sent: 0, 
-          message: `Invalid or non-UUID user_id: ${user_id}` 
+        return new Response(JSON.stringify({
+          success: true,
+          sent: 0,
+          message: `Invalid or non-UUID user_id: ${user_id}`,
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -188,7 +293,7 @@ serve(async (req: Request) => {
           offset: batchOffset,
           limit: batchLimit,
           has_more: false,
-          message: "All target users processed"
+          message: "All target users processed",
         }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -204,15 +309,19 @@ serve(async (req: Request) => {
 
     if (!subscriptions || subscriptions.length === 0) {
       console.log(`[Push] No subscriptions found at offset ${batchOffset}.`);
-      return new Response(JSON.stringify({ 
-        success: true, 
-        sent: 0, 
+      const isSingleTarget = !isBroadcast && validUserIds.length === 0;
+      return new Response(JSON.stringify({
+        success: !isSingleTarget,
+        sent: 0,
         devices: 0,
         cleaned: 0,
         offset: batchOffset,
         limit: batchLimit,
         has_more: false,
-        message: "No active subscriptions in this range" 
+        error: isSingleTarget
+          ? "No active push subscription found for this device/user. Please enable push notifications on your device first."
+          : undefined,
+        message: "No active subscriptions in this range",
       }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -229,18 +338,21 @@ serve(async (req: Request) => {
     const uniqueSubs = Array.from(uniqueSubsMap.values());
 
     // 2. Universal JSON payload
+    const resolvedIcon = !icon || icon === "/pwa-192x192.png" ? "/logo.png" : icon;
     const payload = JSON.stringify({
       title: title || "SwiftData Ghana",
       body: messageBody || "New update from SwiftData",
       url: url || "/dashboard",
-      icon: icon || "/logo.png",
+      icon: resolvedIcon,
       id: id || undefined,
       tag: tag || (id ? `swiftdata-order-${id}` : `swiftdata-alert-${Date.now()}`),
       requireInteraction: requireInteraction !== undefined ? Boolean(requireInteraction) : true,
     });
 
     let sentCount = 0;
+    let otherFailureCount = 0;
     const failedEndpoints: string[] = [];
+    const errorReasons: string[] = [];
 
     // 3. Batch send in chunks of 25 for controlled concurrency and CPU safety
     const CHUNK_SIZE = 25;
@@ -255,6 +367,12 @@ serve(async (req: Request) => {
       await Promise.allSettled(
         chunk.map(async (sub: any) => {
           try {
+            if (!sub.p256dh || !sub.auth) {
+              failedEndpoints.push(sub.endpoint);
+              errorReasons.push("Subscription missing encryption keys (p256dh/auth)");
+              return;
+            }
+
             const pushSubscription = {
               endpoint: sub.endpoint,
               keys: {
@@ -266,29 +384,47 @@ serve(async (req: Request) => {
             // Wrap each notification in a 2.5s individual timeout
             const sendPromise = webpush.sendNotification(pushSubscription, payload, {
               TTL: 86400, // 24 hours
-              urgency: "high"
+              urgency: "high",
             });
-            const timeoutPromise = new Promise((_, reject) => 
+            const timeoutPromise = new Promise((_, reject) =>
               setTimeout(() => reject(new Error("Push send timeout")), 2500)
             );
 
             await Promise.race([sendPromise, timeoutPromise]);
             sentCount++;
           } catch (err: any) {
-            const errStr = String(err.statusCode || err.message || "");
-            if (err.statusCode === 410 || err.statusCode === 404 || errStr.includes("410") || errStr.includes("404")) {
+            const statusCode = Number(err?.statusCode || 0);
+            const errBody = String(err?.body || err?.message || "");
+            console.warn(`[Push] Delivery failed (${statusCode || "ERR"}):`, errBody);
+
+            if (
+              statusCode === 410 ||
+              statusCode === 404 ||
+              (statusCode === 403 && errBody.toLowerCase().includes("vapid")) ||
+              (statusCode === 401 && errBody.toLowerCase().includes("vapid")) ||
+              errBody.includes("410") ||
+              errBody.includes("404") ||
+              errBody.includes("NotRegistered") ||
+              errBody.includes("expired")
+            ) {
               failedEndpoints.push(sub.endpoint);
+            } else {
+              otherFailureCount++;
+            }
+
+            if (errorReasons.length < 3) {
+              errorReasons.push(`HTTP ${statusCode || "ERR"}: ${errBody.slice(0, 120)}`);
             }
           }
         })
       );
     }
 
-    console.log(`[Push] Delivery summary: ${sentCount} sent, ${failedEndpoints.length} expired out of ${uniqueSubs.length} devices in ${Date.now() - START_TIME}ms.`);
+    console.log(`[Push] Delivery summary: ${sentCount} sent, ${failedEndpoints.length} expired, ${otherFailureCount} failed out of ${uniqueSubs.length} devices in ${Date.now() - START_TIME}ms.`);
 
-    // 4. Clean up expired endpoints asynchronously without blocking
+    // 4. Clean up expired/invalid endpoints asynchronously without blocking
     if (failedEndpoints.length > 0) {
-      console.log(`[Push] Cleaning up ${failedEndpoints.length} expired subscription tokens.`);
+      console.log(`[Push] Cleaning up ${failedEndpoints.length} expired/invalid subscription tokens.`);
       const delChunk = failedEndpoints.slice(0, 100);
       Promise.resolve(
         supabaseAdmin
@@ -297,6 +433,14 @@ serve(async (req: Request) => {
           .in("endpoint", delChunk)
       ).catch((delErr: any) => console.warn("[Push] Cleanup error:", delErr?.message));
     }
+
+    const totalFailures = failedEndpoints.length + otherFailureCount;
+    const errorSummary =
+      errorReasons.length > 0
+        ? errorReasons.join(" | ")
+        : failedEndpoints.length > 0
+        ? `${failedEndpoints.length} device token(s) expired and cleaned up`
+        : null;
 
     // 5. Persist audit log
     try {
@@ -307,9 +451,9 @@ serve(async (req: Request) => {
         url: url || "/dashboard",
         device_count: uniqueSubs.length,
         success_count: sentCount,
-        failure_count: failedEndpoints.length,
-        status: sentCount > 0 ? "delivered" : (failedEndpoints.length > 0 ? "failed" : "no_devices"),
-        error_details: failedEndpoints.length > 0 ? `${failedEndpoints.length} device tokens expired and cleaned up` : null,
+        failure_count: totalFailures,
+        status: sentCount > 0 ? "delivered" : totalFailures > 0 ? "failed" : "no_devices",
+        error_details: errorSummary,
       });
     } catch (logErr) {
       console.warn("[Push] Failed to insert log:", logErr);
@@ -338,24 +482,30 @@ serve(async (req: Request) => {
       }
     }
 
+    const isSingleTarget = !isBroadcast && validUserIds.length === 0;
     const hasMore = uniqueSubs.length >= batchLimit;
+
     return new Response(JSON.stringify({
-      success: true,
+      success: isSingleTarget ? sentCount > 0 : true,
       sent: sentCount,
       devices: uniqueSubs.length,
       cleaned: failedEndpoints.length,
+      failed: totalFailures,
       offset: batchOffset,
       limit: batchLimit,
       has_more: hasMore,
       next_offset: batchOffset + uniqueSubs.length,
-      duration_ms: Date.now() - START_TIME
+      duration_ms: Date.now() - START_TIME,
+      error: isSingleTarget && sentCount === 0
+        ? errorSummary || "Device subscription expired or rejected the notification. Please re-enable push notifications on the device."
+        : undefined,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
     console.error("[Push] Fatal execution error:", error);
-    return new Response(JSON.stringify({ error: error.message || String(error) }), {
+    return new Response(JSON.stringify({ success: false, error: error.message || String(error) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -19,7 +19,6 @@ import {
 import Autoplay from "embla-carousel-autoplay";
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationCenter } from "./NotificationCenter";
-import PromoCarousel from "@/components/PromoCarousel";
 
 const openTutorial = () => window.dispatchEvent(new CustomEvent("open-tutorial"));
 
@@ -711,7 +710,7 @@ const Navbar = () => {
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all touch-pan-y ${
                         isActive(to) ? itemActive : itemIdle
                       }`}
-                      style={isActive(to) ? { ...drawerActiveItemStyle, touchAction: "pan-y manipulation" } : { touchAction: "pan-y manipulation" }}
+                      style={isActive(to) ? { ...drawerActiveItemStyle, touchAction: "pan-y" } : { touchAction: "pan-y" }}
                     >
                       <div
                         className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
@@ -729,7 +728,7 @@ const Navbar = () => {
 
                   <button
                     onClick={() => { setMenuOpen(false); openTutorial(); }}
-                    style={{ touchAction: "pan-y manipulation" }}
+                    style={{ touchAction: "pan-y" }}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium touch-pan-y ${itemIdle}`}
                   >
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
@@ -758,7 +757,7 @@ const Navbar = () => {
                       ].map(({ to, label, icon: Icon }) => (
                         <Link
                           key={to} to={to}
-                          style={{ touchAction: "pan-y manipulation" }}
+                          style={{ touchAction: "pan-y" }}
                           className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium touch-pan-y ${itemIdle}`}
                         >
                           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
@@ -784,7 +783,7 @@ const Navbar = () => {
                           type="button"
                           key={t.id}
                           onClick={() => setThemeId(t.id)}
-                          style={{ touchAction: "pan-y manipulation" }}
+                          style={{ touchAction: "pan-y" }}
                           className={`flex flex-col items-center gap-1.5 rounded-xl p-2 transition-all touch-pan-y ${
                             theme.id === t.id
                               ? isDark ? "bg-white/15 ring-1 ring-white/30" : "bg-gray-100 ring-1 ring-gray-300"
@@ -807,7 +806,7 @@ const Navbar = () => {
                         setMenuOpen(false);
                         openAccountSwitcher();
                       }}
-                      style={{ touchAction: "pan-y manipulation" }}
+                      style={{ touchAction: "pan-y" }}
                       className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all hover:bg-amber-400/10 touch-pan-y"
                     >
                       <div className="flex items-center gap-3">
@@ -833,7 +832,7 @@ const Navbar = () => {
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      style={{ touchAction: "pan-y manipulation" }}
+                      style={{ touchAction: "pan-y" }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400/80 hover:text-red-400 hover:bg-red-500/10 transition-all touch-pan-y"
                     >
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-red-500/[0.12]">
@@ -842,7 +841,7 @@ const Navbar = () => {
                       Sign Out
                     </button>
                   ) : (
-                    <Link to="/login" style={{ touchAction: "pan-y manipulation" }} className="block pt-1">
+                    <Link to="/login" style={{ touchAction: "pan-y" }} className="block pt-1">
                       <div
                         className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-sm font-bold text-black cursor-pointer active:scale-[0.98] transition-transform"
                         style={{
@@ -854,11 +853,6 @@ const Navbar = () => {
                       </div>
                     </Link>
                   )}
-
-                  {/* ── Promo Carousel (Inside scrollable area so it never blocks menu links) ── */}
-                  <div className="pt-3 pb-2">
-                    <PromoCarousel />
-                  </div>
                 </div>
 
                 {/* ── Pinned ad banner (shrink-0 flex footer instead of absolute overlay) ── */}

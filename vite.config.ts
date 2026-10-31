@@ -119,18 +119,60 @@ export default defineConfig(({ mode }) => ({
           /\/assets\//,
           /^\/auth\/callback/,
           /^\/reset-password/,
-          /^\/order-status/,
           /^\/agent\/pending/,
           /^\/sub-agent\/pending/
         ],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            urlPattern: /\/assets\/.*\.(?:js|css)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "swiftdata-hashed-bundles-v1",
+              expiration: {
+                maxEntries: 120,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /\.(?:webp|png|jpg|jpeg|svg|gif|ico|woff2?)(?:\?.*)?$/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "swiftdata-media-assets-v1",
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/rest\/v1\/(?:public_system_settings|global_package_settings|datamart_packages|promo_banners|menu_banners|agent_stores).*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "swiftdata-catalog-api-v1",
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 80,
+                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days offline fallback
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
             handler: "CacheFirst",
             options: {
               cacheName: "google-fonts-cache",
               expiration: {
-                maxEntries: 10,
+                maxEntries: 20,
                 maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
               },
               cacheableResponse: {

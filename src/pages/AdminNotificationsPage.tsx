@@ -365,7 +365,7 @@ const AdminNotificationsPage = () => {
         },
       });
 
-      if (error || (data && !data.success)) {
+      if (error || (data && !data.success) || Number(data?.sent || 0) === 0) {
         toast({
           title: "Push Delivery Failed",
           description: error?.message || data?.error || "Device did not acknowledge notification.",
@@ -374,7 +374,7 @@ const AdminNotificationsPage = () => {
       } else {
         toast({
           title: "Push Delivered! 🚀",
-          description: `Dispatched to ${data?.sent || 1} registered device(s).`,
+          description: `Dispatched to ${data?.sent} registered device(s).`,
         });
         await fetchPushData();
       }

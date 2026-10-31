@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -275,6 +275,23 @@ const PendingGuard = ({ children }: { children: React.ReactNode }) => {
 const AppContent = () => {
   const { user, isAdmin: isAdminUser, loading: authLoading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Listen for Service Worker push click navigation & background sync events
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const handleSwMessage = (event: MessageEvent) => {
+      const payload = event.data;
+      if (!payload || typeof payload !== "object") return;
+      if (payload.type === "NAVIGATE" && typeof payload.url === "string") {
+        navigate(payload.url);
+      } else if (payload.type === "OFFLINE_TRANSACTION_SYNCED") {
+        window.dispatchEvent(new CustomEvent("offline-sync-complete", { detail: payload }));
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handleSwMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", handleSwMessage);
+  }, [navigate]);
   const [maintenance, setMaintenance] = useState<{ is_enabled: boolean; message: string }>({
     is_enabled: false,
     message: "",
@@ -420,6 +437,12 @@ const AppContent = () => {
 
         {/* Public buy page — no login required */}
         <Route path="/buy-data" element={<BuyData />} />
+        <Route path="/buy-data/mtn" element={<BuyData initialNetwork="MTN" />} />
+        <Route path="/mtn-up2u" element={<BuyData initialNetwork="MTN" initialCategory="affordable" />} />
+        <Route path="/mtn-upu" element={<BuyData initialNetwork="MTN" initialCategory="affordable" />} />
+        <Route path="/buy-data/mtn-mash-up" element={<BuyData initialNetwork="MTN Mash Up" initialCategory="mashup" />} />
+        <Route path="/buy-data/telecel" element={<BuyData initialNetwork="Telecel" />} />
+        <Route path="/buy-data/airteltigo" element={<BuyData initialNetwork="AirtelTigo" />} />
         <Route path="/buy-airtime" element={<BuyAirtime />} />
         <Route path="/airtime" element={<Navigate to="/buy-airtime" replace />} />
         <Route path="/buy-utility" element={<BuyUtility />} />

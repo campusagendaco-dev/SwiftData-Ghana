@@ -20,6 +20,15 @@ import { PaystackMomoCheckout } from "@/components/PaystackMomoCheckout";
 import LiveDeliveryBadge from "@/components/LiveDeliveryBadge";
 import BundleSelectorDropdown from "@/components/BundleSelectorDropdown";
 import { MtnExpressConfirmModal } from "@/components/MtnExpressConfirmModal";
+import {
+  getCachedBuyCatalog,
+  saveCachedBuyCatalog,
+  getCachedRecipientMeta,
+  saveCachedRecipientMeta,
+  savePendingGuestOrderDraft,
+  getPendingGuestOrderDraft,
+  clearPendingGuestOrderDraft,
+} from "@/lib/offline-cache";
 
 const NETWORK_ACCENT: Record<string, { dot: string; text: string; soft: string; hex: string }> = {
   MTN: {
@@ -231,13 +240,19 @@ const AdinkraCycle = memo(() => {
 });
 AdinkraCycle.displayName = "AdinkraCycle";
 
-const BuyData = () => {
+interface BuyDataProps {
+  initialNetwork?: NetworkName;
+  initialCategory?: string;
+}
+
+const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
   const { toast } = useToast();
   const { profile } = useAuth();
   const { supported: pushSupported, permissionState: pushPermission, subscribeUser } = usePushNotifications();
   const [customPrices, setCustomPrices] = useState<Record<string, Record<string, number>>>({});
   const { theme, isDark } = useAppTheme();
   const [searchParams] = useSearchParams();
+  const cachedCatalog = useMemo(() => getCachedBuyCatalog(), []);
   const getNetworkFromParam = useCallback((param: string | null): NetworkName | null => {
     if (!param) return null;
     const lower = param.toLowerCase().trim();
@@ -249,32 +264,44 @@ const BuyData = () => {
   }, []);
 
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkName>(() => {
+    if (initialNetwork) return initialNetwork === "MTN Mash Up" ? "MTN" : initialNetwork;
     const fromUrl = getNetworkFromParam(new URLSearchParams(window.location.search).get("network"));
     return fromUrl || "MTN";
   });
 
   useEffect(() => {
+    if (initialNetwork) {
+      setSelectedNetwork(initialNetwork === "MTN Mash Up" ? "MTN" : initialNetwork);
+      if (initialNetwork === "MTN Mash Up" || initialCategory === "mashup") {
+        setSelectedTypeOrCategory("mashup");
+      }
+      return;
+    }
     const fromParam = getNetworkFromParam(searchParams.get("network"));
     if (fromParam && fromParam !== selectedNetwork) {
       setSelectedNetwork(fromParam);
       setSelectedPkg(null);
     }
-  }, [searchParams, getNetworkFromParam]);
+  }, [searchParams, getNetworkFromParam, initialNetwork, initialCategory]);
 
   const [selectedPkg, setSelectedPkg] = useState<{ size: string; price: number } | null>(null);
   const [phone, setPhone] = useState("");
   const [buying, setBuying] = useState(false);
   const [email, setEmail] = useState("");
-  const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>({});
-  const [pkgLoading, setPkgLoading] = useState(true);
-  const [holidayMode, setHolidayMode] = useState(false);
-  const [holidayMessage, setHolidayMessage] = useState("");
-  const [orderingDisabled, setOrderingDisabled] = useState(false);
-  const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>({ MTN: 1, Telecel: 1, AirtelTigo: 1 });
-  const [networkStatusMap, setNetworkStatusMap] = useState<Record<string, string>>({});
-  const [activeGateway, setActiveGateway] = useState<string>("paystack");
-  const [korbaMappings, setKorbaMappings] = useState<{ package_name: string; network: string; raw_data: any }[]>([]);
-  const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>("affordable");
+  const [globalSettings, setGlobalSettings] = useState<Record<string, GlobalPkgSetting>>(() => cachedCatalog?.globalSettings || {});
+  const [pkgLoading, setPkgLoading] = useState<boolean>(false);
+  const [holidayMode, setHolidayMode] = useState<boolean>(() => Boolean(cachedCatalog?.holidayMode));
+  const [holidayMessage, setHolidayMessage] = useState<string>(() => cachedCatalog?.holidayMessage || "");
+  const [orderingDisabled, setOrderingDisabled] = useState<boolean>(() => Boolean(cachedCatalog?.orderingDisabled));
+  const [priceMultipliers, setPriceMultipliers] = useState<Record<string, number>>(() => cachedCatalog?.priceMultipliers || { MTN: 1, Telecel: 1, AirtelTigo: 1 });
+  const [networkStatusMap, setNetworkStatusMap] = useState<Record<string, string>>(() => cachedCatalog?.networkStatusMap || {});
+  const [activeGateway, setActiveGateway] = useState<string>(() => cachedCatalog?.activeGateway || "paystack");
+  const [korbaMappings, setKorbaMappings] = useState<{ package_name: string; network: string; raw_data: any }[]>(() => cachedCatalog?.korbaMappings || []);
+  const [selectedTypeOrCategory, setSelectedTypeOrCategory] = useState<string>(() => {
+    if (initialCategory) return initialCategory;
+    if (initialNetwork === "MTN Mash Up") return "mashup";
+    return "affordable";
+  });
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const promoInputRef = useRef<HTMLInputElement>(null);
 
@@ -290,7 +317,7 @@ const BuyData = () => {
   const [checkoutMetadata, setCheckoutMetadata] = useState<any>(null);
   const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
   const [showMtnExpressModal, setShowMtnExpressModal] = useState(false);
-  const [mtnExpressModeEnabled, setMtnExpressModeEnabled] = useState(true);
+  const [mtnExpressModeEnabled, setMtnExpressModeEnabled] = useState<boolean>(() => cachedCatalog?.mtnExpressModeEnabled ?? true);
 
   // Beneficiary verification state
   const [beneficiaryStatus, setBeneficiaryStatus] = useState<"idle" | "checking" | "verified" | "not_verified" | "not_required">("idle");
@@ -342,40 +369,62 @@ const BuyData = () => {
 
   useEffect(() => {
     const load = async () => {
-      setPkgLoading(true);
-      const [{ data }, { data: sys }, pricingCtx, { data: svc }, { data: mappings }] = await Promise.all([
-        supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, is_unavailable"),
-        supabase.functions.invoke("system-settings", { body: { action: "get" } }),
-        fetchApiPricingContext(),
-        supabase.from("service_status").select("network, status"),
-        supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
-      ]);
-      const map: Record<string, GlobalPkgSetting> = {};
-      (data || []).forEach((r: any) => {
-        const normSize = r.package_size.replace(/\s+/g, "").toUpperCase();
-        map[`${r.network}-${normSize}`] = r;
-      });
-      setGlobalSettings(map);
-      if (mappings) {
-        setKorbaMappings(mappings);
+      if (!navigator.onLine) {
+        setPkgLoading(false);
+        return;
       }
+      try {
+        const [{ data }, { data: sys }, pricingCtx, { data: svc }, { data: mappings }] = await Promise.all([
+          supabase.from("global_package_settings").select("network, package_size, public_price, agent_price, sub_agent_price, is_unavailable"),
+          supabase.functions.invoke("system-settings", { body: { action: "get" } }),
+          fetchApiPricingContext(),
+          supabase.from("service_status").select("network, status"),
+          supabase.from("provider_packages").select("package_name, network, raw_data").eq("provider_id", "1177b72a-a2d7-462d-9366-9dde6e83ccd7")
+        ]);
+        const map: Record<string, GlobalPkgSetting> = {};
+        (data || []).forEach((r: any) => {
+          const normSize = r.package_size.replace(/\s+/g, "").toUpperCase();
+          map[`${r.network}-${normSize}`] = r;
+        });
+        if (Object.keys(map).length > 0) {
+          setGlobalSettings(map);
+        }
+        if (mappings) {
+          setKorbaMappings(mappings);
+        }
 
-      const svcMap: Record<string, string> = {};
-      (svc || []).forEach((s: any) => { svcMap[s.network.toUpperCase()] = s.status; });
-      setNetworkStatusMap(svcMap);
-      if (sys) {
-        setHolidayMode(Boolean(sys.holiday_mode_enabled));
-        setHolidayMessage(String(sys.holiday_message || "Holiday mode active. Orders will resume soon."));
-        setOrderingDisabled(Boolean(sys.disable_ordering));
-        if (sys.active_payment_gateway) {
-          setActiveGateway(sys.active_payment_gateway);
+        const svcMap: Record<string, string> = {};
+        (svc || []).forEach((s: any) => { svcMap[s.network.toUpperCase()] = s.status; });
+        setNetworkStatusMap(svcMap);
+        if (sys) {
+          setHolidayMode(Boolean(sys.holiday_mode_enabled));
+          setHolidayMessage(String(sys.holiday_message || "Holiday mode active. Orders will resume soon."));
+          setOrderingDisabled(Boolean(sys.disable_ordering));
+          if (sys.active_payment_gateway) {
+            setActiveGateway(sys.active_payment_gateway);
+          }
+          if (typeof sys.mtn_express_mode_enabled === "boolean") {
+            setMtnExpressModeEnabled(sys.mtn_express_mode_enabled);
+          }
         }
-        if (typeof sys.mtn_express_mode_enabled === "boolean") {
-          setMtnExpressModeEnabled(sys.mtn_express_mode_enabled);
-        }
+        setPriceMultipliers(pricingCtx.multipliers);
+
+        saveCachedBuyCatalog({
+          globalSettings: Object.keys(map).length > 0 ? map : globalSettings,
+          korbaMappings: mappings || korbaMappings,
+          networkStatusMap: svcMap,
+          priceMultipliers: pricingCtx.multipliers,
+          holidayMode: sys ? Boolean(sys.holiday_mode_enabled) : holidayMode,
+          holidayMessage: sys ? String(sys.holiday_message || "Holiday mode active. Orders will resume soon.") : holidayMessage,
+          orderingDisabled: sys ? Boolean(sys.disable_ordering) : orderingDisabled,
+          activeGateway: sys?.active_payment_gateway || activeGateway,
+          mtnExpressModeEnabled: typeof sys?.mtn_express_mode_enabled === "boolean" ? sys.mtn_express_mode_enabled : mtnExpressModeEnabled,
+        });
+      } catch (err) {
+        console.warn("[BuyData] Using cached offline catalog:", err);
+      } finally {
+        setPkgLoading(false);
       }
-      setPriceMultipliers(pricingCtx.multipliers);
-      setPkgLoading(false);
     };
     load();
   }, []);
@@ -427,15 +476,24 @@ const BuyData = () => {
     setPhone("");
     setEmail("");
     setResolvedName(null);
-    setSelectedTypeOrCategory("affordable");
+    setSelectedTypeOrCategory(selectedNetwork === "MTN Mash Up" ? "mashup" : "affordable");
   }, [selectedNetwork]);
 
   const lastAttemptRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setResolvedName(null);
+    if (isPhoneValid) {
+      const cached = getCachedRecipientMeta(phoneDigits, selectedNetwork);
+      if (cached?.resolvedName) {
+        setResolvedName(cached.resolvedName);
+      } else {
+        setResolvedName(null);
+      }
+    } else {
+      setResolvedName(null);
+    }
     lastAttemptRef.current = null;
-  }, [phone]);
+  }, [phone, isPhoneValid, phoneDigits, selectedNetwork]);
 
   useEffect(() => {
     if (selectedPkg) {
@@ -478,11 +536,25 @@ const BuyData = () => {
       return;
     }
 
+    const cachedRecipient = getCachedRecipientMeta(phoneDigits, selectedNetwork);
+    if (cachedRecipient?.beneficiaryStatus) {
+      setBeneficiaryStatus(cachedRecipient.beneficiaryStatus);
+      setBeneficiaryMessage(cachedRecipient.beneficiaryMessage || "");
+      if (!navigator.onLine) return;
+    }
+
+    if (!navigator.onLine) {
+      setBeneficiaryStatus("idle");
+      return;
+    }
+
     const checkKey = `${selectedNetwork}-${phoneDigits}`;
     if (lastBeneficiaryCheckRef.current === checkKey) return;
 
     let isMounted = true;
-    setBeneficiaryStatus("checking");
+    if (!cachedRecipient?.beneficiaryStatus) {
+      setBeneficiaryStatus("checking");
+    }
 
     const timer = setTimeout(async () => {
       try {
@@ -499,25 +571,33 @@ const BuyData = () => {
         lastBeneficiaryCheckRef.current = checkKey;
 
         if (error || !data) {
-          setBeneficiaryStatus("idle");
+          if (!cachedRecipient?.beneficiaryStatus) setBeneficiaryStatus("idle");
           return;
         }
 
         if (data.verification_status === "VERIFIED" || (data.exists && !data.is_non_beneficiary)) {
+          const msg = "Whitelisted on MTN beneficiary list • Ready for instant delivery";
           setBeneficiaryStatus("verified");
-          setBeneficiaryMessage("Whitelisted on MTN beneficiary list • Ready for instant delivery");
+          setBeneficiaryMessage(msg);
+          saveCachedRecipientMeta(phoneDigits, selectedNetwork, { beneficiaryStatus: "verified", beneficiaryMessage: msg });
         } else if (data.verification_status === "NOT_REQUIRED" || data.status === "not_required") {
+          const msg = "Whitelisting not required.";
           setBeneficiaryStatus("not_required");
-          setBeneficiaryMessage("Whitelisting not required.");
+          setBeneficiaryMessage(msg);
+          saveCachedRecipientMeta(phoneDigits, selectedNetwork, { beneficiaryStatus: "not_required", beneficiaryMessage: msg });
         } else if (data.can_order === true) {
+          const msg = data.message || "Eligible for carrier delivery";
           setBeneficiaryStatus("verified");
-          setBeneficiaryMessage(data.message || "Eligible for carrier delivery");
+          setBeneficiaryMessage(msg);
+          saveCachedRecipientMeta(phoneDigits, selectedNetwork, { beneficiaryStatus: "verified", beneficiaryMessage: msg });
         } else {
+          const msg = data.message || "Not found on MTN carrier beneficiary whitelist.";
           setBeneficiaryStatus("not_verified");
-          setBeneficiaryMessage(data.message || "Not found on MTN carrier beneficiary whitelist.");
+          setBeneficiaryMessage(msg);
+          saveCachedRecipientMeta(phoneDigits, selectedNetwork, { beneficiaryStatus: "not_verified", beneficiaryMessage: msg });
         }
       } catch (e) {
-        if (isMounted) setBeneficiaryStatus("idle");
+        if (isMounted && !cachedRecipient?.beneficiaryStatus) setBeneficiaryStatus("idle");
       }
     }, 350);
 
@@ -563,7 +643,7 @@ const BuyData = () => {
   // Auto-resolve recipient name
   useEffect(() => {
     const attemptKey = `${selectedNetwork}-${phoneDigits}`;
-    if (!isPhoneValid || resolvedName || resolvingName || lastAttemptRef.current === attemptKey) return;
+    if (!isPhoneValid || resolvedName || resolvingName || lastAttemptRef.current === attemptKey || !navigator.onLine) return;
 
     const timer = setTimeout(async () => {
       setResolvingName(true);
@@ -579,6 +659,7 @@ const BuyData = () => {
         lastAttemptRef.current = attemptKey;
         if (!error && data?.success) {
           setResolvedName(data.account_name);
+          saveCachedRecipientMeta(phoneDigits, selectedNetwork, { resolvedName: data.account_name });
         }
       } catch (e) {
         console.error("Auto-resolution failed:", e);
@@ -889,11 +970,54 @@ const BuyData = () => {
       } : {}),
     };
 
+    if (!navigator.onLine) {
+      savePendingGuestOrderDraft({
+        network: orderNetwork,
+        category: selectedTypeOrCategory,
+        packageSize: selectedPkg.size,
+        price: selectedPkg.price,
+        total,
+        fee,
+        phone: phoneDigits,
+        email,
+        resolvedName,
+        metadata: meta,
+      });
+      setSelectedPkg(null);
+      toast({
+        title: "Offline Order Queued! ⚡",
+        description: `Your ${selectedPkg.size} ${orderNetwork} order for ${phoneDigits} is saved. MoMo checkout will open automatically the moment your internet returns.`,
+      });
+      return;
+    }
+
     setCheckoutAmount(total);
     setCheckoutMetadata(meta);
     setSelectedPkg(null);
     setCheckoutOpen(true);
   };
+
+  // Automatically resume pending offline guest order draft when connection returns
+  useEffect(() => {
+    const resumePendingDraft = () => {
+      if (!navigator.onLine) return;
+      const draft = getPendingGuestOrderDraft();
+      if (!draft) return;
+      clearPendingGuestOrderDraft();
+      setPhone(draft.phone);
+      if (draft.resolvedName) setResolvedName(draft.resolvedName);
+      setCheckoutAmount(draft.total);
+      setCheckoutMetadata(draft.metadata);
+      setCheckoutOpen(true);
+      toast({
+        title: "Connection Restored — Resuming Order! 🎉",
+        description: `Opening MoMo checkout for your queued ${draft.packageSize} ${draft.network} bundle (${draft.phone}).`,
+      });
+    };
+
+    window.addEventListener("online", resumePendingDraft);
+    return () => window.removeEventListener("online", resumePendingDraft);
+  }, [toast]);
 
   const handleCheckoutSuccess = (ref: string) => {
     setCheckoutOpen(false);
@@ -1125,6 +1249,116 @@ const BuyData = () => {
     }
   }, [selectedNetwork]);
 
+  const seoMeta = useMemo(() => {
+    const pathname = typeof window !== "undefined" ? window.location.pathname.toLowerCase() : "/buy-data";
+    const isUp2uRoute = pathname.includes("up2u") || pathname.includes("upu");
+    const isMashUpRoute = pathname.includes("mash-up") || selectedNetwork === "MTN Mash Up";
+    const isMtnRoute = pathname === "/buy-data/mtn" || (initialNetwork === "MTN" && !isUp2uRoute);
+    const isTelecelRoute = pathname === "/buy-data/telecel" || initialNetwork === "Telecel";
+    const isAirtelTigoRoute = pathname === "/buy-data/airteltigo" || initialNetwork === "AirtelTigo";
+
+    const prices = packages.map(p => p.price).filter(p => p > 0);
+    const lowPrice = prices.length ? Math.min(...prices).toFixed(2) : "2.70";
+    const highPrice = prices.length ? Math.max(...prices).toFixed(2) : "380.00";
+
+    let title = "Buy Cheap Data Bundles Ghana 2026 | #1 Best Data Site (Cheaper than DataMart & DataSika) — SwiftData";
+    let description = "Buy cheapest non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana with instant MoMo delivery. #1 alternative to DataMart, DataSika & MTN Up2U. Works offline, no account required.";
+    let canonical = "https://swiftdatagh.shop/buy-data";
+    let h1Main = "Buy";
+    let h1Highlight = "Data Bundles";
+    let subtitle = "Select your mobile network, pick a package size & complete payment instantly with Mobile Money or Card.";
+    let productName = "Ghana Non-Expiry Data Bundles (MTN, Telecel, AirtelTigo)";
+
+    if (isUp2uRoute) {
+      title = "MTN Up2U (MTN UPU) Cheap Non-Expiry Data Bundles Ghana 2026 | SwiftData";
+      description = "Looking for MTN Up2U (MTN UPU) data bundles in Ghana? Buy cheaper non-expiry MTN SME & Up2U alternative bundles starting from GH₵4.40 with instant MoMo delivery on SwiftData.";
+      canonical = "https://swiftdatagh.shop/mtn-up2u";
+      h1Main = "MTN Up2U &";
+      h1Highlight = "Non-Expiry Data";
+      subtitle = "Get more data for less than standard MTN Up2U / *141# bundles — 100% non-expiry MTN SME & Mash Up packages delivered via Mobile Money.";
+      productName = "MTN Up2U & Non-Expiry Data Bundles Ghana";
+    } else if (isMashUpRoute) {
+      title = "Buy Cheap MTN Mash Up & Pulse Bundles Online Ghana 2026 | SwiftData";
+      description = "Buy cheap MTN Mash Up bundles in Ghana online with Mobile Money. Instant delivery, no beneficiary whitelisting needed, cheaper than *567# and DataMart.";
+      canonical = "https://swiftdatagh.shop/buy-data/mtn-mash-up";
+      h1Main = "Buy MTN";
+      h1Highlight = "Mash Up Bundles";
+      subtitle = "Instant MTN Mash Up data + voice combos with zero whitelisting required. Delivered in seconds via MoMo.";
+      productName = "MTN Mash Up Data Bundles Ghana";
+    } else if (isMtnRoute) {
+      title = "Buy Cheap MTN Data Bundles Ghana (Non-Expiry SME & Up2U) 2026 | SwiftData";
+      description = "Buy cheapest non-expiry MTN data bundles in Ghana from GH₵4.40/1GB. Faster and cheaper than DataMart, DataSika & *138#. Instant MTN MoMo delivery.";
+      canonical = "https://swiftdatagh.shop/buy-data/mtn";
+      h1Main = "Buy Cheap";
+      h1Highlight = "MTN Data Bundles";
+      subtitle = "Official non-expiry MTN SME & Mash Up data bundles in Ghana — lowest prices, instant MoMo delivery, works even on slow networks.";
+      productName = "MTN Non-Expiry Data Bundles Ghana";
+    } else if (isTelecelRoute) {
+      title = "Buy Cheap Telecel (Vodafone) Data Bundles Ghana — 60-Day Rollover | SwiftData";
+      description = "Buy cheap Telecel Ghana (formerly Vodafone) data bundles from GH₵20/5GB. 60-day validity with rollover, instant MoMo delivery, no signup required.";
+      canonical = "https://swiftdatagh.shop/buy-data/telecel";
+      h1Main = "Buy Cheap";
+      h1Highlight = "Telecel Data Bundles";
+      subtitle = "High-speed Telecel Ghana 4G+ bundles with 60-day validity and data rollover. Instant delivery via Mobile Money.";
+      productName = "Telecel Ghana Data Bundles";
+    } else if (isAirtelTigoRoute) {
+      title = "Buy Cheap AirtelTigo (AT) BigTime Non-Expiry Data Bundles Ghana | SwiftData";
+      description = "Buy cheapest AirtelTigo (AT) BigTime non-expiry data bundles in Ghana from GH₵3.95/1GB. Zero expiry, instant MoMo delivery, #1 rated above DataMart & DataSika.";
+      canonical = "https://swiftdatagh.shop/buy-data/airteltigo";
+      h1Main = "Buy Cheap";
+      h1Highlight = "AirtelTigo Data";
+      subtitle = "AirtelTigo (AT) BigTime non-expiry data bundles starting from GH₵3.95 — never expires, instant delivery.";
+      productName = "AirtelTigo (AT) Non-Expiry Data Bundles Ghana";
+    }
+
+    const structuredData = [
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        name: productName,
+        description,
+        brand: { "@type": "Brand", name: "SwiftData Ghana" },
+        sku: `SWIFTDATA-${selectedNetwork.replace(/\s+/g, "-").toUpperCase()}`,
+        offers: {
+          "@type": "AggregateOffer",
+          priceCurrency: "GHS",
+          lowPrice,
+          highPrice,
+          offerCount: String(Math.max(packages.length, 6)),
+          availability: "https://schema.org/InStock",
+          url: canonical,
+        },
+        aggregateRating: {
+          "@type": "AggregateRating",
+          ratingValue: "4.9",
+          bestRating: "5",
+          ratingCount: "2850",
+        },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: "https://swiftdatagh.shop/" },
+          { "@type": "ListItem", position: 2, name: "Buy Data", item: "https://swiftdatagh.shop/buy-data" },
+          ...(canonical !== "https://swiftdatagh.shop/buy-data"
+            ? [{ "@type": "ListItem", position: 3, name: `${h1Main} ${h1Highlight}`, item: canonical }]
+            : []),
+        ],
+      },
+    ];
+
+    return {
+      title,
+      description,
+      canonical,
+      h1Main,
+      h1Highlight,
+      subtitle,
+      structuredData,
+    };
+  }, [selectedNetwork, initialNetwork, packages]);
+
   return (
     <div className="relative min-h-screen bg-transparent text-foreground pt-16 md:pt-24 pb-24 font-sans antialiased">
       {/* Dark Ambient Depth Shade */}
@@ -1155,10 +1389,12 @@ const BuyData = () => {
 
       <div className="relative z-10">
       <SEO
-        title="Buy Cheap Data Bundles Ghana 2026 | #1 Best Data Site ★★★★★ — SwiftData"
-        description="Buy cheapest non-expiry MTN, Telecel & AirtelTigo data bundles in Ghana with instant MoMo delivery. 5.0/5 stars rated, no account required. Cheaper than Datamart."
-        keywords="mtnupu, mtn upu, mtn up2u, mtnupu sites, mtn upu sites, mtn up2u sites, cheapest data bundle in ghana, buy cheap data in ghana, mtn cheap data bundle code, how to buy cheap mtn data, telecel cheap data bundles, airteltigo cheap data bundles, non expiry data ghana, best data site in ghana, buy MTN data Ghana, buy Telecel data, buy AirtelTigo data, cheap data bundles, non-expiry data, datamart alternative"
-        canonical="https://swiftdatagh.com/buy-data"
+        title={seoMeta.title}
+        description={seoMeta.description}
+        keywords="mtnupu, mtn upu, mtn up2u, mtnupu sites, mtn upu sites, mtn up2u sites, datamart, datamart ghana, datasika, datasika ghana, cheapest data bundle in ghana, buy cheap data in ghana, mtn cheap data bundle code, how to buy cheap mtn data, telecel cheap data bundles, airteltigo cheap data bundles, non expiry data ghana, best data site in ghana, buy MTN data Ghana, buy Telecel data, buy AirtelTigo data, cheap data bundles, non-expiry data, datamart alternative, datasika alternative"
+        canonical={seoMeta.canonical}
+        url={seoMeta.canonical}
+        structuredData={seoMeta.structuredData}
       />
 
       {/* Hero Banner Section */}
@@ -1175,11 +1411,11 @@ const BuyData = () => {
               </div>
 
               <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-foreground tracking-tight">
-                Buy <span className="text-amber-500">Data Bundles</span>
+                {seoMeta.h1Main} <span className="text-amber-500">{seoMeta.h1Highlight}</span>
               </h1>
 
               <p className="text-sm text-muted-foreground font-medium leading-relaxed">
-                Select your mobile network, pick a package size &amp; complete payment instantly with Mobile Money or Card.
+                {seoMeta.subtitle}
               </p>
 
               <div className="flex flex-wrap items-center gap-2 pt-1">

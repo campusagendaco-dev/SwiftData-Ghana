@@ -9,22 +9,24 @@ interface SEOProps {
   type?: string;
   canonical?: string;
   jsonLd?: object | object[];
+  structuredData?: object | object[];
 }
 
 const SEO = ({
   title,
   description,
   keywords,
-  url = "https://swiftdatagh.com",
-  image = "https://swiftdatagh.com/og-image.png",
+  url = "https://swiftdatagh.shop",
+  image = "https://swiftdatagh.shop/og-image.png",
   type = "website",
   canonical,
   jsonLd,
+  structuredData,
 }: SEOProps) => {
   useEffect(() => {
     if (title) {
-      document.title = title.includes("SwiftData") 
-        ? title 
+      document.title = title.includes("SwiftData")
+        ? title
         : `${title} | SwiftData Ghana`;
     }
 
@@ -53,13 +55,14 @@ const SEO = ({
       updateMeta("twitter:title", title);
     }
 
-    const currentUrl = url || window.location.href;
-    const finalCanonical = canonical || currentUrl;
+    const rawCanonical = canonical || url || window.location.href;
+    const finalCanonical = rawCanonical.replace(/^https:\/\/swiftdatagh\.com/i, "https://swiftdatagh.shop");
+    const finalImage = image.replace(/^https:\/\/swiftdatagh\.com/i, "https://swiftdatagh.shop");
 
-    updateMeta("og:url", currentUrl, "property");
+    updateMeta("og:url", finalCanonical, "property");
     updateMeta("og:type", type, "property");
-    updateMeta("og:image", image, "property");
-    updateMeta("twitter:image", image);
+    updateMeta("og:image", finalImage, "property");
+    updateMeta("twitter:image", finalImage);
     updateMeta("twitter:card", "summary_large_image");
 
     let link = document.querySelector('link[rel="canonical"]');
@@ -70,18 +73,34 @@ const SEO = ({
     }
     link.setAttribute("href", finalCanonical);
 
-    // JSON-LD Schema
-    if (jsonLd) {
+    // Ensure hreflang tags point to canonical URL for Ghana & global English
+    const upsertHreflang = (hreflang: string, href: string) => {
+      let hl = document.querySelector(`link[rel="alternate"][hreflang="${hreflang}"]`);
+      if (!hl) {
+        hl = document.createElement("link");
+        hl.setAttribute("rel", "alternate");
+        hl.setAttribute("hreflang", hreflang);
+        document.head.appendChild(hl);
+      }
+      hl.setAttribute("href", href);
+    };
+    upsertHreflang("en-GH", finalCanonical);
+    upsertHreflang("en", finalCanonical);
+    upsertHreflang("x-default", finalCanonical);
+
+    // JSON-LD Schema (supports either jsonLd or structuredData prop)
+    const schemaPayload = structuredData || jsonLd;
+    if (schemaPayload) {
       const existingScript = document.getElementById("page-json-ld");
       if (existingScript) existingScript.remove();
 
       const script = document.createElement("script");
       script.id = "page-json-ld";
       script.type = "application/ld+json";
-      script.innerHTML = JSON.stringify(jsonLd);
+      script.innerHTML = JSON.stringify(schemaPayload);
       document.head.appendChild(script);
     }
-  }, [title, description, keywords, url, image, type, canonical, jsonLd]);
+  }, [title, description, keywords, url, image, type, canonical, jsonLd, structuredData]);
 
   return null;
 };

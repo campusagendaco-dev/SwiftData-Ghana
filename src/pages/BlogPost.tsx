@@ -12,29 +12,50 @@ const BlogPost = () => {
     return <Navigate to="/blog" replace />;
   }
 
-  // Schema.org Article Structured Data
-  const articleSchema = {
-    "@context": "https://schema.org",
-    "@type": "NewsArticle",
-    "headline": post.title,
-    "image": [post.image],
-    "datePublished": new Date(post.date).toISOString().split('T')[0] + "T08:00:00+00:00",
-    "dateModified": new Date(post.date).toISOString().split('T')[0] + "T08:00:00+00:00",
-    "author": {
-      "@type": "Organization",
-      "name": "SwiftData Ghana",
-      "url": "https://swiftdatagh.shop"
+  const canonicalUrl = `https://swiftdatagh.shop/blog/${post.slug}`;
+  const fullImageUrl = post.image.startsWith("http")
+    ? post.image
+    : `https://swiftdatagh.shop${post.image}`;
+  const isoDate = new Date(post.date).toISOString().split("T")[0] + "T08:00:00+00:00";
+
+  // Schema.org Article + BreadcrumbList Structured Data
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      headline: post.title,
+      image: [fullImageUrl],
+      datePublished: isoDate,
+      dateModified: isoDate,
+      mainEntityOfPage: {
+        "@type": "WebPage",
+        "@id": canonicalUrl,
+      },
+      author: {
+        "@type": "Organization",
+        name: "SwiftData Ghana",
+        url: "https://swiftdatagh.shop",
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "SwiftData Ghana",
+        logo: {
+          "@type": "ImageObject",
+          url: "https://swiftdatagh.shop/logo.png",
+        },
+      },
+      description: post.excerpt,
     },
-    "publisher": {
-      "@type": "Organization",
-      "name": "SwiftData Ghana",
-      "logo": {
-        "@type": "ImageObject",
-        "url": "https://swiftdatagh.shop/logo.png"
-      }
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: "https://swiftdatagh.shop/" },
+        { "@type": "ListItem", position: 2, name: "Guides & Blog", item: "https://swiftdatagh.shop/blog" },
+        { "@type": "ListItem", position: 3, name: post.title, item: canonicalUrl },
+      ],
     },
-    "description": post.excerpt
-  };
+  ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white pt-28 pb-20 px-4">
@@ -42,15 +63,12 @@ const BlogPost = () => {
         title={post.title}
         description={post.excerpt}
         keywords={post.keywords.join(", ")}
-        url={`https://swiftdatagh.shop/blog/${post.slug}`}
-        image={post.image}
+        url={canonicalUrl}
+        canonical={canonicalUrl}
+        image={fullImageUrl}
         type="article"
+        structuredData={structuredData}
       />
-
-      {/* Injecting Structured Data */}
-      <script type="application/ld+json">
-        {JSON.stringify(articleSchema)}
-      </script>
 
       <div className="max-w-3xl mx-auto">
         <Link to="/blog" className="inline-flex items-center gap-2 text-muted-foreground hover:text-white transition-colors mb-8 group">
@@ -78,7 +96,7 @@ const BlogPost = () => {
                 <User className="w-4 h-4" /> By {post.author}
               </span>
               <a 
-                href={`https://api.whatsapp.com/send?text=${encodeURIComponent("Hey! Check out this helpful guide: " + post.title + " - https://swiftdatagh.shop/blog/" + post.slug)}`}
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent("Hey! Check out this helpful guide: " + post.title + " - " + canonicalUrl)}`}
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-xs font-bold text-[#25D366] hover:text-[#128C7E] transition-colors ml-auto sm:ml-auto"
@@ -90,7 +108,7 @@ const BlogPost = () => {
           </header>
 
           <div className="aspect-[16/9] rounded-2xl overflow-hidden bg-secondary/30 border border-white/5">
-            <img src={post.image} alt={post.title} width={1200} height={675} className="w-full h-full object-cover" />
+            <img src={post.image} alt={post.title} width={1200} height={675} loading="lazy" className="w-full h-full object-cover" />
           </div>
 
           {/* Render blog post content */}
