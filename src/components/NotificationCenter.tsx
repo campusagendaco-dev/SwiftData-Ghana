@@ -7,9 +7,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
@@ -25,6 +23,10 @@ interface UserNotification {
   link?: string;
   created_at: string;
 }
+
+// Module-level deduplication set so multiple mounted NotificationCenter instances
+// (e.g. desktop + mobile header slots) never fire duplicate toasts or double audio chimes.
+const processedRealtimeNotifIds = new Set<string>();
 
 function timeAgo(dateString: string) {
   const date = new Date(dateString);
@@ -78,13 +80,13 @@ export const NotificationCenter = ({ isDark }: { isDark: boolean }) => {
       .from("user_notifications")
       .update({ read: true })
       .eq("id", id);
-    
+
     if (user?.id) {
       q = q.eq("user_id", user.id);
     }
 
     const { error } = await q;
-    
+
     if (!error) {
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, read: true } : n))
@@ -135,9 +137,8 @@ export const NotificationCenter = ({ isDark }: { isDark: boolean }) => {
       }
     };
 
-    // Generate unique ephemeral channel ID to prevent race conditions in strict mode
     const channelId = `user-notifs-${user.id}-${Math.random().toString(36).substring(7)}`;
-    
+
     const channel = supabase
       .channel(channelId)
       .on(
@@ -150,27 +151,42 @@ export const NotificationCenter = ({ isDark }: { isDark: boolean }) => {
         },
         (payload) => {
           const newNotif = payload.new as UserNotification;
-          setNotifications((prev) => [newNotif, ...prev]);
-          
-          // TRG: Trigger instant in-app popup (Toast)
-          const notifyMethod = newNotif.type === "error" ? toast.error : 
-                              newNotif.type === "warning" ? toast.warning : 
-                              newNotif.type === "success" ? toast.success : 
-                              toast.info;
-          
+          setNotifications((prev) => [newNotif, ...prev.filter((n) => n.id !== newNotif.id).slice(0, 19)]);
+
+          // Deduplicate toast & audio chime across multiple mounted NotificationCenter instances
+          if (newNotif.id && processedRealtimeNotifIds.has(newNotif.id)) {
+            return;
+          }
+          if (newNotif.id) {
+            processedRealtimeNotifIds.add(newNotif.id);
+            if (processedRealtimeNotifIds.size > 200) {
+              const first = processedRealtimeNotifIds.values().next().value;
+              if (first) processedRealtimeNotifIds.delete(first);
+            }
+          }
+
+          const notifyMethod =
+            newNotif.type === "error"
+              ? toast.error
+              : newNotif.type === "warning"
+              ? toast.warning
+              : newNotif.type === "success"
+              ? toast.success
+              : toast.info;
+
           notifyMethod(newNotif.title, {
             description: newNotif.message,
             duration: 6000,
-            action: newNotif.link ? {
-              label: "View",
-              onClick: () => navigate(newNotif.link!)
-            } : undefined
+            action: newNotif.link
+              ? {
+                  label: "View",
+                  onClick: () => navigate(newNotif.link!),
+                }
+              : undefined,
           });
 
-          // Play real-time ping alert audio sound
           playPing();
-          
-          // Apply pulse animation to the red badge element directly
+
           const pulseEl = document.getElementById("notification-ring");
           if (pulseEl) {
             pulseEl.classList.add("animate-ping");

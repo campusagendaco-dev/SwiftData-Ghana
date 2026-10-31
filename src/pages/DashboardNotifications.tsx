@@ -79,7 +79,8 @@ const DashboardNotifications = () => {
         .from("user_notifications")
         .select("*")
         .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(100);
 
       if (error) throw error;
       if (data) setNotifications(data as UserNotification[]);
@@ -107,7 +108,7 @@ const DashboardNotifications = () => {
         },
         (payload) => {
           const newNotif = payload.new as UserNotification;
-          setNotifications((prev) => [newNotif, ...prev]);
+          setNotifications((prev) => [newNotif, ...prev.filter(n => n.id !== newNotif.id).slice(0, 99)]);
 
           if (soundEnabled) {
             playAlertSound();
@@ -216,10 +217,11 @@ const DashboardNotifications = () => {
 
   // Helper filters
   const getFilteredNotifications = () => {
+    const q = searchQuery.toLowerCase();
     return notifications.filter(n => {
       const matchesSearch =
-        n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        n.message.toLowerCase().includes(searchQuery.toLowerCase());
+        (n.title || "").toLowerCase().includes(q) ||
+        (n.message || "").toLowerCase().includes(q);
       
       if (!matchesSearch) return false;
 
@@ -752,7 +754,6 @@ const DashboardNotifications = () => {
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.98 }}
-                        layout="position"
                         className={`rounded-2xl border transition-all duration-300 group overflow-hidden ${
                           isSelected 
                             ? isDark 

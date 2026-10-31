@@ -282,8 +282,27 @@ serve(async (req: Request) => {
         break;
       }
 
-      // Mark as processing to prevent concurrent double-firing
       const prevResult = (broadcast.result || {}) as Record<string, any>;
+      const targetFilters = broadcast.target_filters || {};
+      const scheduledMs = broadcast.scheduled_at ? new Date(broadcast.scheduled_at).getTime() : Date.now();
+      const isRecurring = Boolean(targetFilters.recurring);
+
+      // Guard against stale backlogged broadcasts (>2 hours past scheduled_at) unless explicitly forced
+      if (!forceId && !forceAll && !isRecurring && Date.now() - scheduledMs > 2 * 60 * 60 * 1000) {
+        console.warn(`[Scheduled Broadcast ${broadcast.id}] Expiring stale broadcast scheduled at ${broadcast.scheduled_at}`);
+        const cleanResult = { ...prevResult, error: "Expired: broadcast was >2 hours past scheduled time." };
+        delete cleanResult.cached_recipients;
+        await supabaseAdmin
+          .from("scheduled_broadcasts")
+          .update({
+            status: "cancelled",
+            result: cleanResult,
+          })
+          .eq("id", broadcast.id);
+        continue;
+      }
+
+      // Mark as processing to prevent concurrent double-firing
       const { error: claimErr } = await supabaseAdmin
         .from("scheduled_broadcasts")
         .update({ 
@@ -298,7 +317,6 @@ serve(async (req: Request) => {
       try {
         const smsBody = broadcast.title ? `${broadcast.title}\n${broadcast.message}` : broadcast.message;
         const targetType: string = broadcast.target_type || "all";
-        const targetFilters = broadcast.target_filters || {};
 
         // Resume from saved offset (supports chunked sending across cron runs)
         const resumeOffset: number = Number(prevResult.next_offset ?? 0);
@@ -502,14 +520,18 @@ serve(async (req: Request) => {
         console.error(`[Scheduled Broadcast ${broadcast.id}] Error:`, err);
         const errMsg = err instanceof Error ? err.message : String(err);
         const isRateLimit = errMsg.toLowerCase().includes("rate") || errMsg.toLowerCase().includes("too many");
+        const failResult = {
+          ...prevResult,
+          error: errMsg,
+          last_error_at: new Date().toISOString(),
+        };
+        if (!isRateLimit) {
+          delete failResult.cached_recipients;
+        }
 
         await supabaseAdmin.from("scheduled_broadcasts").update({
           status: isRateLimit ? "pending" : "failed",
-          result: { 
-            ...prevResult,
-            error: errMsg,
-            last_error_at: new Date().toISOString()
-          },
+          result: failResult,
         }).eq("id", broadcast.id);
         results.push({ id: broadcast.id, error: errMsg });
       }

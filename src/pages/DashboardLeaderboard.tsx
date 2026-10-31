@@ -289,12 +289,13 @@ const DashboardLeaderboard = () => {
           toast.success(`You climbed the rankings! 🚀`, {
             description: `You're now #${todayRank} today${weekRank < (stored.week ?? weekRank) ? ` and #${weekRank} this week` : ""}.`,
           });
-          if ("Notification" in window && Notification.permission === "granted") {
-            new Notification("SwiftData – You climbed! 🏆", {
+          import("@/utils/safeBrowserNotification").then(({ showSafeBrowserNotification }) => {
+            void showSafeBrowserNotification("SwiftData – You climbed! 🏆", {
               body: `You're now ranked #${todayRank} on the leaderboard.`,
-              icon: "/favicon.ico",
+              icon: "/logo.png",
+              url: "/dashboard/leaderboard",
             });
-          }
+          });
         }
 
         localStorage.setItem(RANK_KEY, JSON.stringify({ today: todayRank, week: weekRank }));

@@ -312,7 +312,7 @@ serve(async (req: Request) => {
               queued_by: actor.id,
               started_at: new Date().toISOString(),
             },
-            created_by: actor.id,
+            created_by: actor.id && actor.id !== "00000000-0000-0000-0000-000000000000" ? actor.id : null,
           })
           .select("id")
           .single();
@@ -403,7 +403,7 @@ serve(async (req: Request) => {
             queued_by: actor.id,
             started_at: new Date().toISOString(),
           },
-          created_by: actor.id,
+          created_by: actor.id && actor.id !== "00000000-0000-0000-0000-000000000000" ? actor.id : null,
         })
         .select("id")
         .single();

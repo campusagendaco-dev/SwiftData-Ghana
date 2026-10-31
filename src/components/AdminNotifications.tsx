@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { safeRemoveChannel } from "@/lib/safe-realtime";
 import { useToast } from "@/hooks/use-toast";
 import { playSound, safeVibrate } from "@/lib/sound";
+import { showSafeBrowserNotification } from "@/utils/safeBrowserNotification";
 
 const AdminNotifications = () => {
   const { toast } = useToast();
@@ -10,10 +11,6 @@ const AdminNotifications = () => {
   toastRef.current = toast;
 
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-
     let activeTone = "/sounds/notification_system.mp3";
     let isVibeEnabled = true;
     let vibePatternStr = "200,100,200";
@@ -50,13 +47,15 @@ const AdminNotifications = () => {
 
     const notify = (title: string, body: string) => {
       toastRef.current({ title, description: body });
-      
+
       // Play premium chime sound for incoming admin alerts
       playPing();
 
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(title, { body, icon: "/favicon.png" });
-      }
+      void showSafeBrowserNotification(title, {
+        body,
+        icon: "/logo.png",
+        url: "/admin",
+      });
     };
 
     const rand = Math.random().toString(36).substring(7);

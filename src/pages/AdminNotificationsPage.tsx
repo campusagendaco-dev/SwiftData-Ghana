@@ -249,9 +249,11 @@ const AdminNotificationsPage = () => {
     const [notifRes, tmplRes, schedRes] = await Promise.all([
       supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(50),
       (supabase as any).from("sms_templates").select("*").order("created_at", { ascending: false }),
-      (supabase as any).from("scheduled_broadcasts").select("*")
+      (supabase as any).from("scheduled_broadcasts")
+        .select("id, title, message, target_type, target_filters, scheduled_at, status, created_at")
         .in("status", ["pending", "processing"])
-        .order("scheduled_at", { ascending: true }),
+        .order("scheduled_at", { ascending: true })
+        .limit(25),
     ]);
     setNotifications((notifRes.data || []) as NotificationRow[]);
     setTemplates((tmplRes.data || []) as SmsTemplate[]);
@@ -684,6 +686,15 @@ const AdminNotificationsPage = () => {
     await (supabase as any).from("scheduled_broadcasts").update({ status: "cancelled" }).eq("id", id);
     setScheduledBroadcasts((prev) => prev.filter((b) => b.id !== id));
     toast({ title: "Broadcast cancelled" });
+  };
+
+  const handleClearAllScheduled = async () => {
+    await (supabase as any)
+      .from("scheduled_broadcasts")
+      .update({ status: "cancelled" })
+      .in("status", ["pending", "processing"]);
+    setScheduledBroadcasts([]);
+    toast({ title: "Scheduled queue cleared", description: "All pending broadcasts have been cancelled." });
   };
 
   const handleDeleteNotification = async (id: string) => {
@@ -1353,7 +1364,19 @@ const AdminNotificationsPage = () => {
               <CardHeader className="border-b border-white/5 pb-3">
                 <CardTitle className="text-base flex items-center gap-2 text-white">
                   <Clock className="w-4 h-4 text-amber-500" /> Scheduled Queue
-                  <Badge className="ml-auto text-[10px] bg-white/5 border-white/10 border text-white/50">{scheduledBroadcasts.length}</Badge>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Badge className="text-[10px] bg-white/5 border-white/10 border text-white/50">{scheduledBroadcasts.length}</Badge>
+                    {scheduledBroadcasts.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleClearAllScheduled}
+                        className="h-7 px-2.5 text-[10px] font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg"
+                      >
+                        Clear Queue
+                      </Button>
+                    )}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-4">
