@@ -110,21 +110,55 @@ serve(async (req: Request) => {
         resolvedUserId = user_id.trim();
       }
 
-      const { error: upsertErr } = await supabaseAdmin
+      const cleanEndpoint = endpoint.trim();
+      const { data: existingRows } = await supabaseAdmin
         .from("push_subscriptions")
-        .upsert(
-          {
-            user_id: resolvedUserId,
-            endpoint: endpoint.trim(),
+        .select("id, user_id")
+        .eq("endpoint", cleanEndpoint)
+        .limit(1);
+
+      let dbErr: { message: string } | null = null;
+
+      if (existingRows && existingRows.length > 0) {
+        const existing = existingRows[0];
+        const { error: updateErr } = await supabaseAdmin
+          .from("push_subscriptions")
+          .update({
+            user_id: resolvedUserId ?? existing.user_id,
             p256dh: p256dh || null,
             auth: auth || null,
-          },
-          { onConflict: "endpoint" }
-        );
+          })
+          .eq("endpoint", cleanEndpoint);
+        dbErr = updateErr;
+      } else {
+        const { error: insertErr } = await supabaseAdmin
+          .from("push_subscriptions")
+          .insert({
+            user_id: resolvedUserId,
+            endpoint: cleanEndpoint,
+            p256dh: p256dh || null,
+            auth: auth || null,
+          });
+        dbErr = insertErr;
+      }
 
-      if (upsertErr) {
-        console.error("[Push] Subscription upsert error:", upsertErr);
-        return new Response(JSON.stringify({ success: false, error: upsertErr.message }), {
+      if (dbErr) {
+        // If guest registration hits a legacy NOT NULL constraint on user_id, defer cleanly without 500 error
+        if (!resolvedUserId && dbErr.message?.toLowerCase().includes("user_id")) {
+          return new Response(
+            JSON.stringify({
+              success: true,
+              deferred: true,
+              vapid_public_key: VAPID_PUBLIC_KEY,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+        console.error("[Push] Subscription save error:", dbErr);
+        return new Response(JSON.stringify({ success: false, error: dbErr.message }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

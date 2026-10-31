@@ -110,6 +110,11 @@ async function getOrRegisterServiceWorker(): Promise<ServiceWorkerRegistration> 
   return await Promise.race([navigator.serviceWorker.ready, timeoutPromise]);
 }
 
+// Module-level deduplication so multiple mounted components using usePushNotifications()
+// do not fire parallel duplicate registration requests on page load
+let inFlightSyncPromise: Promise<boolean> | null = null;
+let lastSyncedSignature: string | null = null;
+
 async function persistSubscriptionToBackend(params: {
   endpoint: string;
   p256dh: string;
@@ -117,23 +122,13 @@ async function persistSubscriptionToBackend(params: {
   userId: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   const { endpoint, p256dh, auth, userId } = params;
+  const syncSig = `${endpoint}::${userId || "anon"}`;
 
-  // Tier 1: SECURITY DEFINER RPC (works for both guest anon and authenticated users)
-  try {
-    const { data: rpcData, error: rpcErr } = await supabase.rpc("register_push_subscription" as any, {
-      p_endpoint: endpoint,
-      p_p256dh: p256dh,
-      p_auth: auth,
-      p_user_id: userId,
-    });
-    if (!rpcErr && rpcData !== false) {
-      return { ok: true };
-    }
-  } catch (_rpcEx) {
-    // Fall through to Tier 2
+  if (lastSyncedSignature === syncSig) {
+    return { ok: true };
   }
 
-  // Tier 2: Edge Function action="subscribe" (uses service_role key on server)
+  // Tier 1: Edge Function action="subscribe" (uses service_role key on server, zero RLS or missing-RPC 404 issues)
   try {
     const { data: fnData, error: fnErr } = await supabase.functions.invoke("send-push-notification", {
       body: {
@@ -145,13 +140,14 @@ async function persistSubscriptionToBackend(params: {
       },
     });
     if (!fnErr && fnData?.success) {
+      lastSyncedSignature = syncSig;
       return { ok: true };
     }
   } catch (_fnEx) {
-    // Fall through to Tier 3
+    // Fall through to Tier 2
   }
 
-  // Tier 3: Direct table upsert
+  // Tier 2: Direct table upsert fallback
   try {
     const { error: upsertErr } = await supabase.from("push_subscriptions" as any).upsert(
       {
@@ -163,6 +159,7 @@ async function persistSubscriptionToBackend(params: {
       { onConflict: "endpoint" }
     );
     if (!upsertErr) {
+      lastSyncedSignature = syncSig;
       return { ok: true };
     }
     return { ok: false, error: upsertErr.message };
@@ -218,151 +215,170 @@ export function usePushNotifications() {
         return false;
       }
 
+      // Deduplicate concurrent silent background syncs across multiple mounted components
+      if (silent && inFlightSyncPromise) {
+        const ok = await inFlightSyncPromise;
+        if (ok) setIsSubscribed(true);
+        return ok;
+      }
+
       if (!silent) setLoading(true);
-      try {
-        let permission = Notification.permission;
-        if (permission !== "granted") {
-          try {
-            const reqRes = Notification.requestPermission();
-            if (reqRes && typeof reqRes.then === "function") {
-              permission = await reqRes;
-            } else {
-              permission = await new Promise<NotificationPermission>((resolve) => {
-                Notification.requestPermission((p) => resolve(p));
+
+      const runSubscription = async (): Promise<boolean> => {
+        try {
+          let permission = Notification.permission;
+          if (permission !== "granted") {
+            try {
+              const reqRes = Notification.requestPermission();
+              if (reqRes && typeof reqRes.then === "function") {
+                permission = await reqRes;
+              } else {
+                permission = await new Promise<NotificationPermission>((resolve) => {
+                  Notification.requestPermission((p) => resolve(p));
+                });
+              }
+            } catch (permErr) {
+              console.warn("[Push] Error during requestPermission call:", permErr);
+              permission = Notification.permission;
+            }
+            setPermissionState(permission);
+          } else {
+            setPermissionState("granted");
+          }
+
+          if (permission !== "granted") {
+            if (!silent) {
+              toast({
+                title: permission === "denied" ? "Notifications Blocked in Browser" : "Permission Not Granted",
+                description:
+                  permission === "denied"
+                    ? "Click the lock icon (🔒) in your browser address bar and set Notifications to Allow."
+                    : "Please allow notifications when prompted by your browser.",
+                variant: "destructive",
+              });
+              setLoading(false);
+            }
+            return false;
+          }
+
+          const registration = await getOrRegisterServiceWorker();
+          if (!registration || !registration.pushManager) {
+            throw new Error("PushManager is not available on Service Worker registration");
+          }
+
+          const expectedServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+          let subscription = await registration.pushManager.getSubscription();
+
+          // If an existing subscription uses a different VAPID key, unsubscribe and re-create
+          if (subscription && !keysMatch(subscription.options?.applicationServerKey, expectedServerKey)) {
+            console.log("[Push] Existing subscription has mismatched VAPID key — rotating subscription...");
+            try {
+              await subscription.unsubscribe();
+            } catch (_unsubErr) {
+              // Ignore unsubscribe error
+            }
+            subscription = null;
+          }
+
+          if (!subscription) {
+            try {
+              subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: expectedServerKey,
+              });
+            } catch (_subErr: any) {
+              // Handle InvalidStateError if browser had a stale subscription
+              const stale = await registration.pushManager.getSubscription();
+              if (stale) {
+                await stale.unsubscribe().catch(() => {});
+              }
+              subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: expectedServerKey,
               });
             }
-          } catch (permErr) {
-            console.warn("[Push] Error during requestPermission call:", permErr);
-            permission = Notification.permission;
           }
-          setPermissionState(permission);
-        } else {
-          setPermissionState("granted");
-        }
 
-        if (permission !== "granted") {
+          if (!subscription || !subscription.endpoint) {
+            throw new Error("Failed to obtain PushSubscription from browser push manager");
+          }
+
+          // Extract W3C encryption keys (p256dh and auth)
+          const subJson = subscription.toJSON();
+          let p256dh = subJson.keys?.p256dh || "";
+          let auth = subJson.keys?.auth || "";
+
+          if (!p256dh && typeof subscription.getKey === "function") {
+            try {
+              const rawP256 = subscription.getKey("p256dh");
+              if (rawP256) {
+                p256dh = arrayBufferToBase64Url(rawP256);
+              }
+            } catch (_err) {
+              // Ignore fallback error
+            }
+          }
+          if (!auth && typeof subscription.getKey === "function") {
+            try {
+              const rawAuth = subscription.getKey("auth");
+              if (rawAuth) {
+                auth = arrayBufferToBase64Url(rawAuth);
+              }
+            } catch (_err) {
+              // Ignore fallback error
+            }
+          }
+
+          const saveResult = await persistSubscriptionToBackend({
+            endpoint: subscription.endpoint,
+            p256dh,
+            auth,
+            userId: user?.id || null,
+          });
+
+          if (!saveResult.ok) {
+            throw new Error(saveResult.error || "Could not register push token with server");
+          }
+
+          setIsSubscribed(true);
+          try {
+            localStorage.setItem("swift_push_subscribed", "true");
+          } catch (_err) {
+            // Storage restricted in private browsing modes
+          }
+
           if (!silent) {
             toast({
-              title: permission === "denied" ? "Notifications Blocked in Browser" : "Permission Not Granted",
-              description:
-                permission === "denied"
-                  ? "Click the lock icon (🔒) in your browser address bar and set Notifications to Allow."
-                  : "Please allow notifications when prompted by your browser.",
+              title: "Push Notifications Enabled! 🔔",
+              description: "You'll now receive instant lock-screen alerts for your orders and wallet updates.",
+            });
+            setLoading(false);
+          }
+          return true;
+        } catch (err: any) {
+          if (silent) {
+            console.warn("[Push] Background push sync deferred:", err?.message || err);
+          } else {
+            console.error("[Push] Error setting up notifications:", err);
+            toast({
+              title: "Could Not Enable Push Alerts",
+              description: err?.message || "Please check your browser notification settings and try again.",
               variant: "destructive",
             });
             setLoading(false);
           }
           return false;
         }
+      };
 
-        const registration = await getOrRegisterServiceWorker();
-        if (!registration || !registration.pushManager) {
-          throw new Error("PushManager is not available on Service Worker registration");
-        }
-
-        const expectedServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-        let subscription = await registration.pushManager.getSubscription();
-
-        // If an existing subscription uses a different VAPID key, unsubscribe and re-create
-        if (subscription && !keysMatch(subscription.options?.applicationServerKey, expectedServerKey)) {
-          console.log("[Push] Existing subscription has mismatched VAPID key — rotating subscription...");
-          try {
-            await subscription.unsubscribe();
-          } catch (_unsubErr) {
-            // Ignore unsubscribe error
-          }
-          subscription = null;
-        }
-
-        if (!subscription) {
-          try {
-            subscription = await registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: expectedServerKey,
-            });
-          } catch (subErr: any) {
-            // Handle InvalidStateError if browser had a stale subscription
-            const stale = await registration.pushManager.getSubscription();
-            if (stale) {
-              await stale.unsubscribe().catch(() => {});
-            }
-            subscription = await registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: expectedServerKey,
-            });
-          }
-        }
-
-        if (!subscription || !subscription.endpoint) {
-          throw new Error("Failed to obtain PushSubscription from browser push manager");
-        }
-
-        // Extract W3C encryption keys (p256dh and auth)
-        const subJson = subscription.toJSON();
-        let p256dh = subJson.keys?.p256dh || "";
-        let auth = subJson.keys?.auth || "";
-
-        if (!p256dh && typeof subscription.getKey === "function") {
-          try {
-            const rawP256 = subscription.getKey("p256dh");
-            if (rawP256) {
-              p256dh = arrayBufferToBase64Url(rawP256);
-            }
-          } catch (_err) {
-            // Ignore fallback error
-          }
-        }
-        if (!auth && typeof subscription.getKey === "function") {
-          try {
-            const rawAuth = subscription.getKey("auth");
-            if (rawAuth) {
-              auth = arrayBufferToBase64Url(rawAuth);
-            }
-          } catch (_err) {
-            // Ignore fallback error
-          }
-        }
-
-        const saveResult = await persistSubscriptionToBackend({
-          endpoint: subscription.endpoint,
-          p256dh,
-          auth,
-          userId: user?.id || null,
+      if (silent) {
+        inFlightSyncPromise = runSubscription().finally(() => {
+          inFlightSyncPromise = null;
         });
-
-        if (!saveResult.ok) {
-          throw new Error(saveResult.error || "Could not register push token with server");
-        }
-
-        setIsSubscribed(true);
-        try {
-          localStorage.setItem("swift_push_subscribed", "true");
-        } catch (_err) {
-          // Storage restricted in private browsing modes
-        }
-
-        if (!silent) {
-          toast({
-            title: "Push Notifications Enabled! 🔔",
-            description: "You'll now receive instant lock-screen alerts for your orders and wallet updates.",
-          });
-          setLoading(false);
-        }
-        return true;
-      } catch (err: any) {
-        if (silent) {
-          console.warn("[Push] Background push sync deferred:", err?.message || err);
-        } else {
-          console.error("[Push] Error setting up notifications:", err);
-          toast({
-            title: "Could Not Enable Push Alerts",
-            description: err?.message || "Please check your browser notification settings and try again.",
-            variant: "destructive",
-          });
-          setLoading(false);
-        }
-        return false;
+        return await inFlightSyncPromise;
       }
+
+      return await runSubscription();
     },
     [supported, user?.id, toast]
   );
@@ -389,23 +405,20 @@ export function usePushNotifications() {
       if (subscription) {
         const endpoint = subscription.endpoint;
         await subscription.unsubscribe();
+        lastSyncedSignature = null;
 
-        // Remove from backend via RPC, Edge Function, or direct delete
+        // Remove from backend via Edge Function or direct delete
         try {
-          await supabase.rpc("unregister_push_subscription" as any, { p_endpoint: endpoint });
+          await supabase.functions.invoke("send-push-notification", {
+            body: { action: "unsubscribe", endpoint },
+          });
         } catch (_e) {
-          try {
-            await supabase.functions.invoke("send-push-notification", {
-              body: { action: "unsubscribe", endpoint },
-            });
-          } catch (_e2) {
-            if (user?.id) {
-              await supabase
-                .from("push_subscriptions" as any)
-                .delete()
-                .eq("user_id", user.id)
-                .eq("endpoint", endpoint);
-            }
+          if (user?.id) {
+            await supabase
+              .from("push_subscriptions" as any)
+              .delete()
+              .eq("user_id", user.id)
+              .eq("endpoint", endpoint);
           }
         }
       }
