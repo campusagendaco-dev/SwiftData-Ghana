@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, Zap, AlertTriangle } from "lucide-react";
+import { Wallet, Loader2, CreditCard, X, RefreshCw, ArrowRight, Tag, CheckCircle2, Gift, Users2, ShieldCheck, WifiOff, AlertTriangle } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
 import { getNetworkCardColors, detectNetwork, isValidGhanaPhone } from "@/lib/utils";
 import OrderStatusBanner from "@/components/OrderStatusBanner";
@@ -154,7 +154,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
   );
   const [parentAssignedPrices, setParentAssignedPrices] = useState<Record<string, Record<string, string | number>>>({});
   const [priceMultiplier, setPriceMultiplier] = useState(1);
-  const [activeGateway, setActiveGateway] = useState<string>("paystack");
   const [lastOrder, setLastOrder] = useState<{
     id: string; network: string; packageSize: string; phone: string; status: string;
   } | null>(null);
@@ -242,7 +241,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     if (detected) {
       const isMtnMashupCompatible = detected === "MTN" && network === "MTN Mash Up";
       if (detected !== network && !isMtnMashupCompatible) {
-        const route = networkRouteMap[detected];
+        const route = networkRouteMap[detected as NetworkName];
         navigate(`/dashboard/buy-data/${route}`, { 
           replace: true, 
           state: { phone } 
@@ -331,9 +330,6 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
             if (parsed.agent_activation_fee) {
               setActivationFee(Number(parsed.agent_activation_fee));
             }
-            if (parsed.active_payment_gateway) {
-              setActiveGateway(parsed.active_payment_gateway);
-            }
             setBeneficiaryCheckEnabled(parsed.beneficiary_verification_enabled !== false);
             setAllowNonBeneficiaryContinue(parsed.allow_non_beneficiary_continue !== false);
           }
@@ -400,7 +396,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       .select("agent_activation_fee, active_payment_gateway, beneficiary_verification_enabled, allow_non_beneficiary_continue")
       .eq("id", 1)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: any }) => {
         if (data) {
           const fee = Number(data.agent_activation_fee || 0);
           const gateway = data.active_payment_gateway || "";
@@ -408,12 +404,11 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
           const allowContinue = data.allow_non_beneficiary_continue !== false;
 
           setActivationFee(fee);
-          supabase.functions.invoke("system-settings", { body: { action: "get" } }).then(({ data: sysData }) => {
+          supabase.functions.invoke("system-settings", { body: { action: "get" } }).then(({ data: sysData }: { data: any }) => {
             if (sysData && typeof sysData.mtn_express_mode_enabled === "boolean") {
               setMtnExpressModeEnabled(sysData.mtn_express_mode_enabled);
             }
           }).catch(() => {});
-          setActiveGateway(gateway);
           setBeneficiaryCheckEnabled(benEnabled);
           setAllowNonBeneficiaryContinue(allowContinue);
 
@@ -439,7 +434,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
 
     // 1. Get standard base packages (which are Affordable by default)
     const baseList = basePackages[network] || [];
-    baseList.forEach(pkg => {
+    baseList.forEach((pkg: { size: string; price: number; validity: string; popular?: boolean }) => {
       list.push({
         size: pkg.size,
         price: pkg.price,
@@ -451,7 +446,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     });
 
     if (network === "MTN" && basePackages["MTN Mash Up"]) {
-      basePackages["MTN Mash Up"].forEach(pkg => {
+      basePackages["MTN Mash Up"].forEach((pkg: { size: string; price: number; validity: string; popular?: boolean }) => {
         list.push({
           size: pkg.size,
           price: pkg.price,
@@ -654,7 +649,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     setResolvedName(null);
     setResolvedName(isPhoneValid ? getCachedRecipientMeta(normalizedPhone, network)?.resolvedName || null : null);
     lastAttemptRef.current = null;
-  }, [phone]);
+  }, [phone, isPhoneValid, normalizedPhone, network]);
 
   // Auto-resolve recipient name
   useEffect(() => {
@@ -1036,7 +1031,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
   };
 
-  const handleCheckoutFailure = (error: string) => {
+  const handleCheckoutFailure = (_error?: string) => {
     setBuying(false);
   };
 
@@ -1119,7 +1114,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
         <BundleSelectorDropdown
           options={dropdownOptions}
           value={selectedTypeOrCategory}
-          onChange={(val) => {
+          onChange={(val: string) => {
             setSelectedTypeOrCategory(val);
             setSelectedSize("");
           }}
@@ -1229,7 +1224,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                 type="tel"
                 inputMode="numeric"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value)}
                 className={`bg-secondary/30 border-border/50 focus:border-primary/50 transition-all h-11 text-base ${resolvedName ? "border-emerald-500/50 bg-emerald-500/5" : ""}`}
                 placeholder="0241234567"
                 maxLength={12}
@@ -1325,7 +1320,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       <Input
                         id="beneficiary-name"
                         value={beneficiaryName}
-                        onChange={(e) => setBeneficiaryName(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBeneficiaryName(e.target.value)}
                         placeholder="e.g. Yaw Sarpong"
                         className="bg-secondary/40 border-border/50 h-8 text-xs focus:border-primary/50 text-white"
                       />
@@ -1358,7 +1353,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
                       type="text"
                       placeholder="Enter code"
                       value={promoCode}
-                      onChange={(e) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); }}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPromoCode(e.target.value.toUpperCase()); setPromoResult(null); }}
                       className="uppercase font-mono text-sm h-10 bg-secondary/30"
                     />
                     <Button onClick={handleApplyPromo} disabled={promoValidating || !promoCode.trim()} variant="secondary" size="sm" className="font-bold h-10 px-4">
@@ -1662,7 +1657,7 @@ const DashboardBuyDataNetwork = ({ network }: DashboardBuyDataNetworkProps) => {
       />
 
       {/* Beneficiary Warning Modal */}
-      <Dialog open={showBeneficiaryModal} onOpenChange={(open) => {
+      <Dialog open={showBeneficiaryModal} onOpenChange={(open: boolean) => {
         setShowBeneficiaryModal(open);
         if (!open) setPendingAction(null);
       }}>

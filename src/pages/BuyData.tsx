@@ -2,14 +2,13 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useSearchParams } from "react-router-dom";
-import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, Bell, BellRing, CheckCircle2, Sparkles } from "lucide-react";
+import { ShieldCheck, Zap, Loader2, AlertTriangle, X, CreditCard, Gift, Tag, Clock, Check, ArrowRight, Package, ChevronDown, BellRing, CheckCircle2, Sparkles } from "lucide-react";
 import { basePackages, getPublicPrice } from "@/lib/data";
-import { cn, getNetworkCardColors } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
-import { getFunctionErrorMessage } from "@/lib/function-errors";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import { fetchApiPricingContext, applyPriceMultiplier } from "@/lib/api-source-pricing";
 import { invokePublicFunction } from "@/lib/public-function-client";
@@ -250,7 +249,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
   const { profile } = useAuth();
   const { supported: pushSupported, permissionState: pushPermission, subscribeUser } = usePushNotifications();
   const [customPrices, setCustomPrices] = useState<Record<string, Record<string, number>>>({});
-  const { theme, isDark } = useAppTheme();
+  const { isDark } = useAppTheme();
   const [searchParams] = useSearchParams();
   const cachedCatalog = useMemo(() => getCachedBuyCatalog(), []);
   const getNetworkFromParam = useCallback((param: string | null): NetworkName | null => {
@@ -278,9 +277,14 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
       return;
     }
     const fromParam = getNetworkFromParam(searchParams.get("network"));
-    if (fromParam && fromParam !== selectedNetwork) {
-      setSelectedNetwork(fromParam);
-      setSelectedPkg(null);
+    if (fromParam) {
+      setSelectedNetwork((prev) => {
+        if (fromParam !== prev) {
+          setSelectedPkg(null);
+          return fromParam;
+        }
+        return prev;
+      });
     }
   }, [searchParams, getNetworkFromParam, initialNetwork, initialCategory]);
 
@@ -409,16 +413,17 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
         }
         setPriceMultipliers(pricingCtx.multipliers);
 
+        const prevCache = getCachedBuyCatalog();
         saveCachedBuyCatalog({
-          globalSettings: Object.keys(map).length > 0 ? map : globalSettings,
-          korbaMappings: mappings || korbaMappings,
+          globalSettings: Object.keys(map).length > 0 ? map : (prevCache?.globalSettings || {}),
+          korbaMappings: mappings || prevCache?.korbaMappings || [],
           networkStatusMap: svcMap,
           priceMultipliers: pricingCtx.multipliers,
-          holidayMode: sys ? Boolean(sys.holiday_mode_enabled) : holidayMode,
-          holidayMessage: sys ? String(sys.holiday_message || "Holiday mode active. Orders will resume soon.") : holidayMessage,
-          orderingDisabled: sys ? Boolean(sys.disable_ordering) : orderingDisabled,
-          activeGateway: sys?.active_payment_gateway || activeGateway,
-          mtnExpressModeEnabled: typeof sys?.mtn_express_mode_enabled === "boolean" ? sys.mtn_express_mode_enabled : mtnExpressModeEnabled,
+          holidayMode: sys ? Boolean(sys.holiday_mode_enabled) : Boolean(prevCache?.holidayMode),
+          holidayMessage: sys ? String(sys.holiday_message || "Holiday mode active. Orders will resume soon.") : (prevCache?.holidayMessage || ""),
+          orderingDisabled: sys ? Boolean(sys.disable_ordering) : Boolean(prevCache?.orderingDisabled),
+          activeGateway: sys?.active_payment_gateway || prevCache?.activeGateway || "paystack",
+          mtnExpressModeEnabled: typeof sys?.mtn_express_mode_enabled === "boolean" ? sys.mtn_express_mode_enabled : (prevCache?.mtnExpressModeEnabled ?? true),
         });
       } catch (err) {
         console.warn("[BuyData] Using cached offline catalog:", err);
@@ -677,7 +682,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
     const dbNetwork = selectedNetwork;
 
     const baseList = basePackages[dbNetwork] || [];
-    baseList.forEach(pkg => {
+    baseList.forEach((pkg: { size: string; price: number; validity: string; popular?: boolean }) => {
       list.push({
         size: pkg.size,
         price: pkg.price,
@@ -689,7 +694,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
     });
 
     if (dbNetwork === "MTN" && basePackages["MTN Mash Up"]) {
-      basePackages["MTN Mash Up"].forEach(pkg => {
+      basePackages["MTN Mash Up"].forEach((pkg: { size: string; price: number; validity: string; popular?: boolean }) => {
         list.push({
           size: pkg.size,
           price: pkg.price,
@@ -1042,7 +1047,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
     window.location.href = `${getAppBaseUrl()}/order-status?${callbackParams.toString()}`;
   };
 
-  const handleCheckoutFailure = (error: string) => {
+  const handleCheckoutFailure = (_error?: string) => {
     setBuying(false);
   };
 
@@ -1072,7 +1077,6 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
           const details = getPackageDetails(pkg);
           const isTelecel = selectedNetwork === "Telecel";
           const isAirtelTigo = selectedNetwork === "AirtelTigo";
-          const isMTN = selectedNetwork === "MTN" || selectedNetwork === "MTN Mash Up";
 
           if (isTelecel) {
             return (
@@ -1496,7 +1500,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
           <BundleSelectorDropdown
             options={dropdownOptions}
             value={selectedTypeOrCategory}
-            onChange={(val) => {
+            onChange={(val: string) => {
               setSelectedTypeOrCategory(val);
               setSelectedPkg(null);
             }}
@@ -1728,7 +1732,7 @@ const BuyData = ({ initialNetwork, initialCategory }: BuyDataProps = {}) => {
                           <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-sm">
                             <div className="flex items-center gap-2">
                               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                              <span className="truncate">MTN Whitelisted • Ready for Instant Delivery</span>
+                              <span className="truncate">{beneficiaryMessage || "MTN Whitelisted • Ready for Instant Delivery"}</span>
                             </div>
                             <span className="text-[9px] font-mono font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 px-2 py-0.5 rounded-full shrink-0">
                               WHITELISTED
