@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isOrderPausedFromApi } from "../_shared/providers.ts";
 import { log } from "../_shared/logger.ts";
 
 declare const Deno: any;
@@ -110,7 +111,13 @@ serve(async (req: Request) => {
 
     // Strictly ensure only verified telecom orders are processed
     const isExplicit = Array.isArray(order_ids) && order_ids.length > 0;
+    const resumeApi = body?.resume_api === true;
     const eligibleOrders = candidateOrders.filter((o: any) => {
+      // Never auto-route orders paused by admin unless resume_api: true is explicitly requested
+      if (!resumeApi && isOrderPausedFromApi(o)) {
+        return false;
+      }
+
       const isPaid = o.payment_method === "wallet" || 
                      o.payment_method === "credit" || 
                      Number(o.paystack_verified_amount || 0) > 0 || 
@@ -163,6 +170,15 @@ serve(async (req: Request) => {
 
     for (const order of eligibleOrders) {
       const currentRetry = Number(order.retry_count || 0);
+      const cleanedMeta = { ...(order.metadata || {}) };
+      if (resumeApi) {
+        delete cleanedMeta.api_paused;
+        delete cleanedMeta.paused_at;
+        delete cleanedMeta.paused_by;
+        cleanedMeta.resumed_at = new Date().toISOString();
+        order.metadata = cleanedMeta;
+        order.provider_order_id = null;
+      }
 
       // Claim the order atomically
       const { data: claimed, error: claimErr } = await supabaseAdmin
@@ -173,6 +189,7 @@ serve(async (req: Request) => {
           last_retry_at: new Date().toISOString(),
           // Clear fake provider order IDs so router doesn't lock to a failed provider
           provider_order_id: null,
+          ...(resumeApi ? { metadata: cleanedMeta, failure_reason: null } : {}),
         })
         .eq("id", order.id)
         .select("id")

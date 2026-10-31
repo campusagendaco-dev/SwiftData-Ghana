@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { verifyAdmin } from "../_shared/auth.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isOrderPausedFromApi } from "../_shared/providers.ts";
 
 function parseCapacity(packageSize: string | null | undefined): number {
   if (!packageSize) return 0;
@@ -34,7 +35,7 @@ serve(async (req) => {
       });
     }
 
-    const { order_ids, target, provider_id } = await req.json().catch(() => ({ order_ids: null, target: "all_beneficiary", provider_id: null }));
+    const { order_ids, target, provider_id, resume_api } = await req.json().catch(() => ({ order_ids: null, target: "all_beneficiary", provider_id: null, resume_api: false }));
 
     // 1. Resolve the target provider selected by admin (or marked as fallback)
     let chosenProvider: any = null;
@@ -118,6 +119,11 @@ serve(async (req) => {
     // 3. Process orders to the selected provider
     for (const ord of orders) {
       try {
+        if (!resume_api && isOrderPausedFromApi(ord)) {
+          skippedCount++;
+          results.push({ id: ord.id, status: "skipped", reason: "Paused by admin — held from entering API provider" });
+          continue;
+        }
         const phone = ord.customer_phone;
         if (!phone) {
           skippedCount++;

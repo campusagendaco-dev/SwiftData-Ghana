@@ -1,4 +1,4 @@
-import { resolveProvidersForOrder, type Provider } from "./providers.ts";
+import { resolveProvidersForOrder, isOrderPausedFromApi, type Provider } from "./providers.ts";
 import { getProviderAdapter } from "./providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError, isBeneficiaryFailure } from "./providers/utils.ts";
 import { autoSubmitBeneficiaryNumber } from "./beneficiary_auto_submit.ts";
@@ -56,6 +56,16 @@ export async function dispatchOrderWithFailover(
   supabaseAdmin: any,
   order: any
 ): Promise<DispatchResult> {
+  if (isOrderPausedFromApi(order)) {
+    console.log(`[HybridRouter] Order ${order?.id} is paused by admin from entering API provider. Skipping dispatch.`);
+    return {
+      ok: false,
+      status: "processing",
+      provider_order_id: "paused_by_admin",
+      reason: "Paused by admin — held from entering API provider",
+    };
+  }
+
   // Fallback to metadata payment_phone if customer_phone is missing/null
   if (!order.customer_phone && (order.metadata?.payment_phone || order.metadata?.customer_phone || order.metadata?.phone || order.metadata?.recipient_phone)) {
     order.customer_phone = order.metadata.payment_phone || order.metadata.customer_phone || order.metadata.phone || order.metadata.recipient_phone;

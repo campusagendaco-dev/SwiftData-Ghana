@@ -126,6 +126,16 @@ export function getProviderDetails(
 
   const rawRefStr = String(providerOrderId || metadata?.provider_order_id || "").trim();
 
+  // Check if order is paused/held by admin from entering API provider
+  if (rawRefStr === "paused_by_admin" || metadata?.api_paused === true || rawRefStr === "manual_fulfillment_mode") {
+    return {
+      name: rawRefStr === "manual_fulfillment_mode" ? "API Hold (Global)" : "Paused (Admin Hold)",
+      badgeClass: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+      refId: null,
+      isPendingDispatch: true,
+    };
+  }
+
   // If reference explicitly begins with an unmistakable vendor prefix (e.g. SKP), resolve to that provider
   if (rawRefStr.startsWith("SKP")) {
     const skProvider = allProviders.find(p => p.handler_type === "skdataplug" || p.name?.toLowerCase().includes("skplug"));

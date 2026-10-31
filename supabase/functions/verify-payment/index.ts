@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { fetchViaDb } from "../_shared/db_proxy.ts";
 import { sendPaymentSms } from "../_shared/sms.ts";
 import { corsHeaders } from "../_shared/cors.ts";
-import { getActiveProviders, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
+import { getActiveProviders, isOrderPausedFromApi, logProviderError, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { notifyApiClient } from "../_shared/webhooks.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
@@ -527,12 +527,14 @@ serve(async (req: any) => {
       const hasActiveProviderRef = ord.provider_order_id &&
         ord.provider_order_id !== "" &&
         ord.provider_order_id !== "failed_api_call" &&
-        ord.provider_order_id !== "timeout";
+        ord.provider_order_id !== "timeout" &&
+        ord.provider_order_id !== "paused_by_admin" &&
+        ord.provider_order_id !== "manual_fulfillment_mode";
 
       const hasEnteredProvider = Boolean(
         hasActiveProviderRef ||
-        (ord.provider_id && ord.provider_order_id !== "failed_api_call" && ord.provider_order_id !== "timeout") ||
-        ord.status === "processing"
+        (ord.provider_id && ord.provider_order_id !== "failed_api_call" && ord.provider_order_id !== "timeout" && ord.provider_order_id !== "paused_by_admin" && ord.provider_order_id !== "manual_fulfillment_mode") ||
+        (ord.status === "processing" && ord.provider_order_id !== "paused_by_admin" && ord.provider_order_id !== "manual_fulfillment_mode")
       );
 
       if (hasEnteredProvider) {
@@ -784,8 +786,66 @@ serve(async (req: any) => {
 
     const isSentinelOrderId = (id?: string | null) => {
       const s = String(id || "").toLowerCase();
-      return !s || s === "timeout" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "duplicate_cooldown" || s === "refunded";
+      return !s || s === "timeout" || s.startsWith("failed_api_call") || s === "manual_fulfillment_mode" || s === "paused_by_admin" || s === "duplicate_cooldown" || s === "refunded";
     };
+
+    // Allow verified Admin or Service Role to explicitly resume an API-paused order
+    let resumeApi = false;
+    if (body?.resume_api === true) {
+      if (isServiceRole) {
+        resumeApi = true;
+      } else {
+        const adminCheck = await verifyAdmin(req, supabaseAdmin).catch(() => ({ success: false }));
+        resumeApi = Boolean(adminCheck?.success);
+      }
+    }
+
+    if (resumeApi && existingOrder) {
+      const cleanedMeta = { ...(existingOrder.metadata || {}) };
+      delete cleanedMeta.api_paused;
+      delete cleanedMeta.paused_at;
+      delete cleanedMeta.paused_by;
+      cleanedMeta.resumed_at = new Date().toISOString();
+      const nextProviderOrderId =
+        existingOrder.provider_order_id === "paused_by_admin" || existingOrder.provider_order_id === "manual_fulfillment_mode"
+          ? null
+          : existingOrder.provider_order_id;
+      await supabaseAdmin.from("orders").update({
+        metadata: cleanedMeta,
+        provider_order_id: nextProviderOrderId,
+        failure_reason: null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", targetReference);
+      existingOrder.metadata = cleanedMeta;
+      existingOrder.provider_order_id = nextProviderOrderId;
+      existingOrder.failure_reason = null;
+      console.log(`[verify-payment] Admin resumed API dispatch for order ${targetReference}`);
+    }
+
+    // If order is already paid/verified and paused by admin, immediately return without hitting providers
+    if (
+      !resumeApi &&
+      isOrderPausedFromApi(existingOrder) &&
+      (existingOrder?.provider_order_id === "paused_by_admin" ||
+        existingOrder?.payment_method === "wallet" ||
+        existingOrder?.payment_method === "api" ||
+        Number(existingOrder?.paystack_verified_amount || 0) > 0)
+    ) {
+      console.log(`[verify-payment] Order ${targetReference} is paused by admin from entering API provider. Holding in processing.`);
+      if (existingOrder.provider_order_id !== "paused_by_admin" || existingOrder.status !== "processing") {
+        await supabaseAdmin.from("orders").update({
+          status: "processing",
+          provider_order_id: "paused_by_admin",
+          failure_reason: "Paused by admin — held from entering API provider",
+        }).eq("id", targetReference);
+      }
+      return new Response(JSON.stringify({
+        status: "processing",
+        provider_order_id: "paused_by_admin",
+        paused: true,
+        message: "Order is paused by admin and held from entering the API provider."
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const hasActiveProviderOrder = Boolean(
       existingOrder?.provider_id &&
@@ -1673,6 +1733,33 @@ serve(async (req: any) => {
     const recipient = normalizeRecipient(customerPhone);
     const effectiveOrderType = currentOrderType === "free_data_claim" ? "data" : currentOrderType;
 
+    // Check per-order admin pause BEFORE dispatching to any external provider
+    if (!resumeApi && (isOrderPausedFromApi(claimedOrder) || isOrderPausedFromApi(existingOrder))) {
+      console.log(`[verify-payment] Order ${targetReference} is paused by admin. Holding order from entering API provider.`);
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        provider_order_id: "paused_by_admin",
+        failure_reason: "Paused by admin — held from entering API provider"
+      }).eq("id", targetReference);
+
+      log(supabaseAdmin, {
+        level: "info",
+        source: "verify-payment",
+        event: "order.paused_by_admin",
+        message: `Order paused by admin and held from entering API provider`,
+        order_id: targetReference,
+        agent_id: claimedOrder.agent_id,
+        data: { network, package_size: packageSize, amount: claimedOrder.amount }
+      });
+
+      return new Response(JSON.stringify({
+        status: "processing",
+        provider_order_id: "paused_by_admin",
+        paused: true,
+        message: "Order placed and verified. Held from entering API provider (Paused by Admin)."
+      }), { headers: corsHeaders });
+    }
+
     // Fetch manual fulfillment mode from system settings
     const { data: globalSettings } = await supabaseAdmin
       .from("v_system_settings_with_secrets")
@@ -1681,7 +1768,7 @@ serve(async (req: any) => {
       .maybeSingle();
     const isManualFulfillmentMode = globalSettings?.manual_fulfillment_mode === true;
 
-    if (isManualFulfillmentMode) {
+    if (isManualFulfillmentMode && !resumeApi) {
       console.log(`[verify-payment] Manual fulfillment mode is active. Queuing order ${targetReference} in processing status.`);
       await supabaseAdmin.from("orders").update({
         status: "processing",

@@ -11,7 +11,7 @@ import {
   Search, RotateCcw, Loader2, RefreshCw,
   TrendingUp, ShoppingCart, Clock,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  CheckCircle2, PlayCircle, UserCheck, Download,
+  CheckCircle2, PlayCircle, PauseCircle, UserCheck, Download,
   Coins, ShieldAlert, Zap, Check, X,
   DollarSign, Sparkles, AlertCircle, AlertTriangle, Copy, Activity,
   Calendar, FileSpreadsheet, Edit3, FileText, Smartphone
@@ -100,6 +100,36 @@ function isBeneficiaryFailure(order: Pick<OrderRow, "status" | "failure_reason">
   return reason.includes("beneficiary") || reason.includes("not added");
 }
 
+function isOrderApiPaused(order: Pick<OrderRow, "provider_order_id" | "metadata" | "status">): boolean {
+  return (
+    order.provider_order_id === "paused_by_admin" ||
+    order.metadata?.api_paused === true ||
+    order.provider_order_id === "manual_fulfillment_mode" ||
+    order.status === "paused"
+  );
+}
+
+function canPauseOrResumeOrder(order: OrderRow): boolean {
+  const isNonTelecom = [
+    "wallet_topup",
+    "store_wallet_topup",
+    "agent_activation",
+    "sub_agent_activation",
+    "vendor_activation",
+    "free_data_claim",
+  ].includes(String(order.order_type || "").toLowerCase());
+  if (isNonTelecom) return false;
+  if (order.status === "fulfilled" || order.status === "completed" || order.status === "cancelled" || order.auto_refunded) {
+    return false;
+  }
+  if (isOrderApiPaused(order)) return true;
+  const provRef = String(order.provider_order_id || "").trim();
+  const hasLiveExternalRef =
+    provRef.length > 0 &&
+    !["failed_api_call", "timeout", "dispatching", "duplicate_cooldown", "paused_by_admin", "manual_fulfillment_mode", "refunded"].includes(provRef);
+  return !hasLiveExternalRef;
+}
+
 function formatOrderFailureReason(
   order: Pick<OrderRow, "failure_reason"> & {
     network?: string | null;
@@ -112,7 +142,7 @@ function formatOrderFailureReason(
   if (order.status === "fulfilled") return "";
   const provRef = String(order.provider_order_id || "").trim();
   const hasActiveProviderRef =
-    provRef.length > 0 && !["failed_api_call", "timeout", "dispatching"].includes(provRef);
+    provRef.length > 0 && !["failed_api_call", "timeout", "dispatching", "paused_by_admin", "manual_fulfillment_mode"].includes(provRef);
   if (order.status === "processing" && hasActiveProviderRef) {
     return "";
   }
@@ -198,6 +228,12 @@ export default function AdminOrders() {
   const [resendingSmsId, setResendingSmsId] = useState<string | null>(null);
   const [bulkResendingSms, setBulkResendingSms] = useState(false);
   const [bulkCheckingStatus, setBulkCheckingStatus] = useState(false);
+
+  // API Pause / Hold State
+  const [pausingOrderId, setPausingOrderId] = useState<string | null>(null);
+  const [bulkPausing, setBulkPausing] = useState(false);
+  const [globalApiPaused, setGlobalApiPaused] = useState(false);
+  const [togglingGlobalPause, setTogglingGlobalPause] = useState(false);
 
   const handleQuickResendSms = async (order: OrderRow) => {
     if (!order.customer_phone) {
@@ -307,10 +343,212 @@ export default function AdminOrders() {
     setProviders(data || []);
   }, []);
 
+  const fetchGlobalPauseState = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("system_settings")
+        .select("manual_fulfillment_mode")
+        .eq("id", 1)
+        .maybeSingle();
+      if (data) {
+        setGlobalApiPaused(Boolean((data as any).manual_fulfillment_mode));
+      }
+    } catch (err) {
+      console.error("Failed to fetch global API pause setting:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchProviders();
     fetchAutoRouterQueueCount();
-  }, [fetchProviders, fetchAutoRouterQueueCount]);
+    fetchGlobalPauseState();
+  }, [fetchProviders, fetchAutoRouterQueueCount, fetchGlobalPauseState]);
+
+  const handleToggleGlobalApiPause = async () => {
+    const nextPaused = !globalApiPaused;
+    const promptMsg = nextPaused
+      ? "PAUSE ALL API DISPATCH?\n\nAll newly placed orders will be held in 'Processing (API Hold)' after payment verification and will NOT enter any external API provider until you resume."
+      : "RESUME AUTOMATIC API DISPATCH?\n\nNew orders will automatically route to your active API providers again.";
+    if (!confirm(promptMsg)) return;
+
+    setTogglingGlobalPause(true);
+    try {
+      const { error } = await (supabase.from("system_settings") as any)
+        .update({ manual_fulfillment_mode: nextPaused, updated_at: new Date().toISOString() })
+        .eq("id", 1);
+      if (error) throw error;
+
+      setGlobalApiPaused(nextPaused);
+      if (currentUser) {
+        await logAudit(currentUser.id, "toggle_global_api_pause", { manual_fulfillment_mode: nextPaused });
+      }
+      toast({
+        title: nextPaused ? "Global API Hold Activated ⏸️" : "Auto-API Dispatch Resumed ▶️",
+        description: nextPaused
+          ? "New orders will now be paused before entering any API provider."
+          : "New orders will now flow automatically to active API providers.",
+      });
+    } catch (err: any) {
+      toast({ title: "Failed to toggle API Hold", description: err.message, variant: "destructive" });
+    } finally {
+      setTogglingGlobalPause(false);
+    }
+  };
+
+  const handleTogglePauseOrder = async (order: OrderRow) => {
+    const currentlyPaused = isOrderApiPaused(order);
+    setPausingOrderId(order.id);
+    try {
+      if (currentlyPaused) {
+        // Resume order and dispatch to active API provider
+        const { data, error } = await invokePublicFunctionAsUser("verify-payment", {
+          body: { reference: order.id, force: true, resume_api: true },
+        });
+        if (error) {
+          const description = await getFunctionErrorMessage(error, "Could not resume and dispatch this order.");
+          toast({ title: "Resume failed", description, variant: "destructive" });
+        } else {
+          if (currentUser) {
+            await logAudit(currentUser.id, "admin_resume_order_api", {
+              order_id: order.id,
+              status: data?.status,
+              provider_order_id: data?.provider_order_id,
+            });
+          }
+          toast({
+            title: data?.status === "fulfilled" ? "Order Resumed & Fulfilled! 🎉" : "Order Resumed & Sent to API ▶️",
+            description: data?.message || `Order #${order.id.slice(0, 8)} released to active API provider.`,
+          });
+        }
+        await fetchOrders(true);
+        await fetchAutoRouterQueueCount();
+      } else {
+        // Pause order from entering API provider
+        const nextMeta = {
+          ...(order.metadata || {}),
+          api_paused: true,
+          paused_at: new Date().toISOString(),
+          paused_by: currentUser?.email || currentUser?.id || "admin",
+        };
+        const nextStatus = order.status === "paid" ? "processing" : order.status;
+        const { error } = await (supabase.from("orders") as any)
+          .update({
+            status: nextStatus,
+            provider_order_id: "paused_by_admin",
+            failure_reason: "Paused by admin — held from entering API provider",
+            metadata: nextMeta,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id);
+
+        if (error) throw error;
+
+        setAllOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  status: nextStatus,
+                  provider_order_id: "paused_by_admin",
+                  failure_reason: "Paused by admin — held from entering API provider",
+                  metadata: nextMeta,
+                }
+              : o
+          )
+        );
+
+        if (currentUser) {
+          await logAudit(currentUser.id, "admin_pause_order_api", { order_id: order.id });
+        }
+        toast({
+          title: "Order Paused (API Hold) ⏸️",
+          description: `Order #${order.id.slice(0, 8)} is now held and blocked from entering any API provider.`,
+        });
+        await fetchAutoRouterQueueCount();
+      }
+    } catch (err: any) {
+      toast({
+        title: currentlyPaused ? "Failed to Resume Order" : "Failed to Pause Order",
+        description: err.message || "An error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setPausingOrderId(null);
+    }
+  };
+
+  const handleBulkPauseOrders = async (shouldPause: boolean) => {
+    if (selectedIds.size === 0) return;
+    const selectedEligible = allOrders.filter((o) => selectedIds.has(o.id) && canPauseOrResumeOrder(o));
+    if (selectedEligible.length === 0) {
+      toast({
+        title: "No Eligible Orders Selected",
+        description: "Only unfulfilled telecom orders that haven't entered an external provider can be paused or resumed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBulkPausing(true);
+    try {
+      const ids = selectedEligible.map((o) => o.id);
+      if (shouldPause) {
+        let pausedCount = 0;
+        for (const ord of selectedEligible) {
+          const nextMeta = {
+            ...(ord.metadata || {}),
+            api_paused: true,
+            paused_at: new Date().toISOString(),
+            paused_by: currentUser?.email || currentUser?.id || "admin",
+          };
+          const nextStatus = ord.status === "paid" ? "processing" : ord.status;
+          const { error } = await (supabase.from("orders") as any)
+            .update({
+              status: nextStatus,
+              provider_order_id: "paused_by_admin",
+              failure_reason: "Paused by admin — held from entering API provider",
+              metadata: nextMeta,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", ord.id);
+          if (!error) pausedCount++;
+        }
+        if (currentUser) {
+          await logAudit(currentUser.id, "bulk_pause_orders_api", { order_ids: ids, count: pausedCount });
+        }
+        toast({
+          title: `Paused ${pausedCount} Order(s) ⏸️`,
+          description: "Selected orders are now held from entering any API provider.",
+        });
+        setSelectedIds(new Set());
+        await fetchOrders(true);
+        await fetchAutoRouterQueueCount();
+      } else {
+        const { data, error } = await supabase.functions.invoke("admin-retry-autorouter", {
+          body: { order_ids: ids, resume_api: true },
+        });
+        if (error) throw error;
+        if (currentUser) {
+          await logAudit(currentUser.id, "bulk_resume_orders_api", { order_ids: ids, result: data?.summary });
+        }
+        toast({
+          title: "Orders Resumed & Dispatched! 🚀",
+          description: data?.message || `Resumed and routed ${ids.length} order(s) to active API providers.`,
+        });
+        setSelectedIds(new Set());
+        await fetchOrders(true);
+        await fetchAutoRouterQueueCount();
+      }
+    } catch (err: any) {
+      toast({
+        title: shouldPause ? "Bulk Pause Failed" : "Bulk Resume Failed",
+        description: err.message || "Operation failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setBulkPausing(false);
+    }
+  };
 
   const syncAllProviderBalances = async () => {
     setSyncingBalances(true);
@@ -458,8 +696,10 @@ export default function AdminOrders() {
     }
 
     // Status Filter
-    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue" && statusFilter !== "parked") {
+    if (statusFilter !== "all" && statusFilter !== "in_queue" && statusFilter !== "auto_router_queue" && statusFilter !== "parked" && statusFilter !== "paused_api") {
       q = q.eq("status", statusFilter);
+    } else if (statusFilter === "paused_api") {
+      q = q.or("provider_order_id.eq.paused_by_admin,provider_order_id.eq.manual_fulfillment_mode,metadata->>api_paused.eq.true");
     } else if (statusFilter === "parked") {
       const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       q = q.eq("status", "processing").lte("created_at", thirtyMinsAgo);
@@ -816,11 +1056,30 @@ export default function AdminOrders() {
 
     setUpdatingSingleStatus(true);
     try {
+      const isSettingPause = newOrderStatus === "paused_by_admin";
+      const targetDbStatus = isSettingPause ? "processing" : newOrderStatus;
+      const updatedMeta = { ...(orderToEditStatus.metadata || {}) };
+      if (isSettingPause) {
+        updatedMeta.api_paused = true;
+        updatedMeta.paused_at = new Date().toISOString();
+      } else {
+        delete updatedMeta.api_paused;
+        delete updatedMeta.paused_at;
+      }
+
+      const nextProviderOrderId = isSettingPause
+        ? "paused_by_admin"
+        : orderToEditStatus.provider_order_id === "paused_by_admin" || orderToEditStatus.provider_order_id === "manual_fulfillment_mode"
+        ? null
+        : orderToEditStatus.provider_order_id;
+
       const { error } = await (supabase
         .from("orders") as any)
         .update({
-          status: newOrderStatus,
-          failure_reason: newStatusReason.trim() || null,
+          status: targetDbStatus,
+          provider_order_id: nextProviderOrderId,
+          metadata: updatedMeta,
+          failure_reason: newStatusReason.trim() || (isSettingPause ? "Paused by admin — held from entering API provider" : null),
           updated_at: new Date().toISOString()
         })
         .eq("id", orderToEditStatus.id);
@@ -1040,6 +1299,11 @@ export default function AdminOrders() {
 
   const handleBulkStatusUpdate = async () => {
     if (!bulkStatus || selectedIds.size === 0) return;
+    if (bulkStatus === "paused_by_admin") {
+      await handleBulkPauseOrders(true);
+      setBulkStatus("");
+      return;
+    }
     setBulkUpdating(true);
     const ids = Array.from(selectedIds);
     const { error } = await (supabase
@@ -1280,6 +1544,13 @@ export default function AdminOrders() {
       };
     }
 
+    if (isOrderApiPaused(order)) {
+      return {
+        className: "bg-violet-500/20 text-violet-300 border-violet-500/40 font-extrabold shadow-sm backdrop-blur-md",
+        label: order.provider_order_id === "manual_fulfillment_mode" ? "API Hold (Global)" : "Paused (API Hold)",
+      };
+    }
+
     if (order.provider_order_id === "duplicate_cooldown" || (order.status === "processing" && String(order.failure_reason || "").toLowerCase().includes("duplicate"))) {
       return {
         className: "bg-amber-500/20 text-amber-400 border-amber-500/30 font-semibold shadow-sm backdrop-blur-md",
@@ -1304,6 +1575,7 @@ export default function AdminOrders() {
 
   const getStatusIcon = (order: OrderRow) => {
     if (isBeneficiaryFailure(order)) return Clock;
+    if (isOrderApiPaused(order)) return PauseCircle;
     if (order.provider_order_id === "duplicate_cooldown" || (order.status === "processing" && String(order.failure_reason || "").toLowerCase().includes("duplicate"))) {
       return Clock;
     }
@@ -1327,6 +1599,9 @@ export default function AdminOrders() {
       if (typeFilter === "sub_agents" && !o.is_sub_agent) return false;
       if (statusFilter === "in_queue") {
         return isBeneficiaryFailure(o) || (o.customer_phone && beneficiaryStatus[o.customer_phone]);
+      }
+      if (statusFilter === "paused_api") {
+        return isOrderApiPaused(o);
       }
       if (statusFilter === "parked") {
         const ageMinutes = Math.floor((Date.now() - new Date(o.created_at).getTime()) / (60 * 1000));
@@ -1372,6 +1647,7 @@ export default function AdminOrders() {
   }, 0);
   
   const inQueueCount = allOrders.filter(o => isBeneficiaryFailure(o) || (o.customer_phone && beneficiaryStatus[o.customer_phone])).length;
+  const pausedCount = allOrders.filter(o => isOrderApiPaused(o)).length;
   const parkedCount = allOrders.filter(o => o.status === "processing" && Math.floor((Date.now() - new Date(o.created_at).getTime()) / (60 * 1000)) >= 30).length;
   const failed = allOrders.filter((o) => o.status === "fulfillment_failed" && !isBeneficiaryFailure(o)).length;
   const pending = allOrders.filter((o) => o.status === "pending" || o.status === "paid").length;
@@ -1525,6 +1801,26 @@ export default function AdminOrders() {
             >
               {bulkCheckingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               {bulkCheckingStatus ? "Checking Status..." : `Bulk Check Status (${allOrders.filter(o => o.status === "processing").length}) • 3m Auto`}
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={handleToggleGlobalApiPause}
+              disabled={togglingGlobalPause}
+              className={cn(
+                "gap-2 h-10 rounded-xl text-xs font-extrabold transition-all active:scale-95 border",
+                globalApiPaused
+                  ? "bg-violet-600 hover:bg-violet-500 text-white border-violet-400/50 shadow-lg shadow-violet-950/50 animate-pulse"
+                  : "bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border-violet-500/30"
+              )}
+              title={
+                globalApiPaused
+                  ? "All new orders are currently held from entering API providers. Click to resume automatic API dispatch."
+                  : "Click to hold all new incoming orders from entering any API provider."
+              }
+            >
+              {togglingGlobalPause ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PauseCircle className="w-3.5 h-3.5" />}
+              {globalApiPaused ? "⏸ Global API Hold: ON" : "Pause All API Dispatch"}
             </Button>
 
             <Button
@@ -1734,6 +2030,7 @@ export default function AdminOrders() {
           >
             <option value="all">All Statuses</option>
             <option value="auto_router_queue">⚡ Auto-Router Queue ({autoRouterQueueCount})</option>
+            <option value="paused_api">⏸️ Paused / API Hold {pausedCount > 0 ? `(${pausedCount})` : ""}</option>
             <option value="parked">⚠️ Parked / Stalled (&gt;30m) {parkedCount > 0 ? `(${parkedCount})` : ""}</option>
             <option value="in_queue">In Queue (Beneficiary Approval)</option>
             <option value="fulfilled">Fulfilled (Successful)</option>
@@ -1878,6 +2175,7 @@ export default function AdminOrders() {
               className="text-xs h-8 bg-background/80 border border-border rounded-lg px-2.5 text-foreground outline-none font-medium"
             >
               <option value="">Set Bulk Status</option>
+              <option value="paused_by_admin">⏸️ Pause API Dispatch</option>
               <option value="fulfilled">Fulfilled</option>
               <option value="processing">Processing</option>
               <option value="paid">Paid</option>
@@ -1893,6 +2191,28 @@ export default function AdminOrders() {
             >
               {bulkUpdating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Apply Bulk Change
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || bulkPausing}
+              onClick={() => handleBulkPauseOrders(true)}
+              className="h-8 gap-1.5 rounded-lg text-xs font-bold border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
+              title="Pause selected orders from entering any external API provider"
+            >
+              {bulkPausing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PauseCircle className="w-3.5 h-3.5" />}
+              Pause API ({selectedIds.size})
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || bulkPausing}
+              onClick={() => handleBulkPauseOrders(false)}
+              className="h-8 gap-1.5 rounded-lg text-xs font-bold border-violet-500/40 bg-violet-500/20 text-violet-200 hover:bg-violet-500/30"
+              title="Resume selected paused orders and dispatch them to active API providers"
+            >
+              {bulkPausing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+              Resume API ({selectedIds.size})
             </Button>
             <Button
               size="sm"
@@ -2207,6 +2527,34 @@ export default function AdminOrders() {
                               {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
                               Status
                             </Button>
+                            {canPauseOrResumeOrder(order) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={cn(
+                                  "text-[10px] gap-1 h-7 px-2 rounded-lg font-bold",
+                                  isOrderApiPaused(order)
+                                    ? "border-violet-500/40 bg-violet-500/20 text-violet-200 hover:bg-violet-500/30"
+                                    : "border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20"
+                                )}
+                                disabled={pausingOrderId === order.id}
+                                onClick={() => handleTogglePauseOrder(order)}
+                                title={
+                                  isOrderApiPaused(order)
+                                    ? "Resume order and dispatch to active API provider"
+                                    : "Pause order and prevent it from entering any API provider"
+                                }
+                              >
+                                {pausingOrderId === order.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : isOrderApiPaused(order) ? (
+                                  <PlayCircle className="w-3 h-3" />
+                                ) : (
+                                  <PauseCircle className="w-3 h-3" />
+                                )}
+                                {isOrderApiPaused(order) ? "Resume API" : "Pause API"}
+                              </Button>
+                            )}
                             {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                               <Button
                                 size="sm"
@@ -2395,6 +2743,29 @@ export default function AdminOrders() {
                     {checkingStatusId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
                     Status
                   </Button>
+                  {canPauseOrResumeOrder(order) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={cn(
+                        "text-xs gap-1 h-8 px-2 rounded-lg font-bold",
+                        isOrderApiPaused(order)
+                          ? "border-violet-500/40 bg-violet-500/20 text-violet-200"
+                          : "border-violet-500/30 bg-violet-500/10 text-violet-300"
+                      )}
+                      disabled={pausingOrderId === order.id}
+                      onClick={() => handleTogglePauseOrder(order)}
+                    >
+                      {pausingOrderId === order.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : isOrderApiPaused(order) ? (
+                        <PlayCircle className="w-3 h-3" />
+                      ) : (
+                        <PauseCircle className="w-3 h-3" />
+                      )}
+                      {isOrderApiPaused(order) ? "Resume API" : "Pause API"}
+                    </Button>
+                  )}
                   {(order.status === "pending" || order.status === "fulfillment_failed" || order.status === "paid") && (
                     <Button
                       size="sm"
@@ -2571,6 +2942,7 @@ export default function AdminOrders() {
                   className="w-full h-11 bg-secondary/50 border border-border rounded-xl px-3 py-2 text-foreground font-bold text-xs outline-none focus:border-amber-500/50"
                 >
                   <option value="fulfilled">✅ Fulfilled (Completed successfully)</option>
+                  <option value="paused_by_admin">⏸️ Paused (Hold from API Provider)</option>
                   <option value="processing">⏳ Processing (Pending provider callback)</option>
                   <option value="paid">💳 Paid (Awaiting fulfillment queue)</option>
                   <option value="fulfillment_failed">❌ Fulfillment Failed</option>

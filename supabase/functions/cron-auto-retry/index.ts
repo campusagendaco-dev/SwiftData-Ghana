@@ -1,6 +1,7 @@
 import { serve } from "https://raw.githubusercontent.com/denoland/deno_std/0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchOrderWithFailover } from "../_shared/provider_router.ts";
+import { isOrderPausedFromApi } from "../_shared/providers.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { isNonRetryableTerminalError, isDuplicateOrderError } from "../_shared/providers/utils.ts";
 import { log } from "../_shared/logger.ts";
@@ -210,6 +211,14 @@ serve(async (req) => {
       if (r?.key && r?.value) dbSecrets[String(r.key)] = String(r.value);
     });
 
+    // Fetch global manual fulfillment mode to avoid auto-routing held orders when global API pause is active
+    const { data: globalSysSettings } = await supabaseAdmin
+      .from("system_settings")
+      .select("manual_fulfillment_mode")
+      .eq("id", 1)
+      .maybeSingle();
+    const isGlobalApiPaused = globalSysSettings?.manual_fulfillment_mode === true;
+
     // 5. Proactively poll in-transit processing orders with active provider IDs (detect refunded or delivered orders)
     const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
     const { data: inTransitProcessingOrders } = await supabaseAdmin
@@ -218,7 +227,7 @@ serve(async (req) => {
       .eq("status", "processing")
       .not("provider_id", "is", null)
       .not("provider_order_id", "is", null)
-      .not("provider_order_id", "in", "(failed_api_call,timeout,duplicate_cooldown,manual_fulfillment_mode)")
+      .not("provider_order_id", "in", "(failed_api_call,timeout,duplicate_cooldown,manual_fulfillment_mode,paused_by_admin)")
       .not("order_type", "in", excludedTypes)
       .lte("created_at", threeMinutesAgo)
       .gte("created_at", twoDaysAgo)
@@ -348,6 +357,16 @@ serve(async (req) => {
     };
 
     for (const order of candidateOrders) {
+      if (isGlobalApiPaused) {
+        console.log(`[cron-auto-retry] Global API dispatch pause (manual_fulfillment_mode) is active. Skipping order ${order.id}.`);
+        continue;
+      }
+
+      if (isOrderPausedFromApi(order) || order.provider_order_id === "manual_fulfillment_mode") {
+        console.log(`[cron-auto-retry] Order ${order.id} is paused by admin (${order.provider_order_id || "api_paused"}). Skipping auto-retry.`);
+        continue;
+      }
+
       const currentRetry = Number(order.retry_count || 0);
       if (currentRetry >= 3) {
         console.log(`[cron-auto-retry] Order ${order.id} has reached max retries (${currentRetry}/3). Skipping.`);
@@ -406,6 +425,8 @@ serve(async (req) => {
         order.provider_order_id !== "timeout" &&
         order.provider_order_id !== "routed" &&
         order.provider_order_id !== "duplicate_cooldown" &&
+        order.provider_order_id !== "paused_by_admin" &&
+        order.provider_order_id !== "manual_fulfillment_mode" &&
         order.provider_order_id !== "refunded"
       );
       if (hasActiveProviderRef && !isRefunded) {

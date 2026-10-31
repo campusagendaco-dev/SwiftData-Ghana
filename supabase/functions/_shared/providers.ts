@@ -59,7 +59,20 @@ export async function logProviderError(supabaseAdmin: any, providerId: string, o
   });
 }
 
+export function isOrderPausedFromApi(order: any): boolean {
+  if (!order) return false;
+  return (
+    order?.provider_order_id === "paused_by_admin" ||
+    order?.metadata?.api_paused === true ||
+    order?.status === "paused"
+  );
+}
+
 export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): Promise<Provider[]> {
+  if (isOrderPausedFromApi(order)) {
+    console.log(`[resolveProvidersForOrder] Order ${order?.id} is paused by admin from entering API provider.`);
+    return [];
+  }
   let orderType = (order?.order_type || "data") as string;
   if (orderType.toLowerCase() === "api") {
     if (String(order?.package_size).toUpperCase() === "AIRTIME") {
@@ -284,6 +297,7 @@ export async function resolveProvidersForOrder(supabaseAdmin: any, order: any): 
     !order.provider_order_id.startsWith("failed_api_call") &&
     order.provider_order_id !== "timeout" &&
     order.provider_order_id !== "manual_fulfillment_mode" &&
+    order.provider_order_id !== "paused_by_admin" &&
     order.provider_order_id !== "duplicate_cooldown" &&
     order.provider_order_id !== "refunded" &&
     !isRefundedStatus

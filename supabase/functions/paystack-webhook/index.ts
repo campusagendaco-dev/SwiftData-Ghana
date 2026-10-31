@@ -6,7 +6,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { normalizePhone, getSmsConfig, sendSmsViaTxtConnect, formatTemplate, sendPaymentSms } from "../_shared/sms.ts";
 import { sendWhatsAppMessage } from "../_shared/whatsapp.ts";
 import { notifyApiClient, notifyWalletCredit } from "../_shared/webhooks.ts";
-import { getActiveProviders, resolveProvidersForOrder } from "../_shared/providers.ts";
+import { getActiveProviders, isOrderPausedFromApi, resolveProvidersForOrder } from "../_shared/providers.ts";
 import { log, notifyAdmins } from "../_shared/logger.ts";
 import { getProviderAdapter } from "../_shared/providers/registry.ts";
 import { handleGuestBeneficiaryFailure, isGuestOrder, isBeneficiaryFailure } from "../_shared/guest-refund.ts";
@@ -1630,6 +1630,27 @@ serve(async (req: Request) => {
       }
       
       return new Response(JSON.stringify({ received: true, fulfilled: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Check per-order admin pause BEFORE dispatching to any external provider
+    if (isOrderPausedFromApi(existingOrder)) {
+      console.log(`[Webhook] Order ${orderId} is paused by admin. Holding order in processing status without calling provider.`);
+      await supabaseAdmin.from("orders").update({
+        status: "processing",
+        provider_order_id: "paused_by_admin",
+        failure_reason: "Paused by admin — held from entering API provider"
+      }).eq("id", orderId);
+
+      return new Response(JSON.stringify({
+        received: true,
+        fulfilled: false,
+        status: "processing",
+        paused: true,
+        message: "Order payment verified. Held from entering API provider (Paused by Admin)."
+      }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
