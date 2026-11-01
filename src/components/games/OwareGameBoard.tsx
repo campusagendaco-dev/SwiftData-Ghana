@@ -15,7 +15,17 @@ import {
 
 export type OwareRuleVariant = "nam-nam" | "abapa";
 
+const PITS_PER_PLAYER = 6;
+const TOTAL_PIT_COUNT = PITS_PER_PLAYER * 2;
+const SEEDS_NEEDED_TO_WIN = 25;
+const MAXIMUM_RELAY_SEGMENTS = 200;
+const HAND_MOVE_DURATION_MS = 220;
+const HAND_DROP_PAUSE_MS = 85;
+const HAND_MAXIMUM_SEEDS_DRAWN = 12;
+const MAXIMUM_SEEDS_DRAWN_PER_PIT = 28;
+
 export interface OwareAnimationStep {
+  type?: "pickup" | "drop" | "capture";
   pits: number[];
   scores: { creator: number; opponent: number };
   activePit: number;
@@ -24,6 +34,8 @@ export interface OwareAnimationStep {
   harvestedPit?: number;
   harvestedBy?: "creator" | "opponent";
   isRelayScoop?: boolean;
+  lastSownPit?: number | null;
+  capturedPits?: number[];
 }
 
 export interface OwareState {
@@ -52,169 +64,186 @@ export const INITIAL_OWARE_STATE: OwareState = {
   moveCount: 0,
 };
 
+export function sumSeedsOnSide(pits: number[], side: "creator" | "opponent"): number {
+  const start = side === "creator" ? 0 : PITS_PER_PLAYER;
+  return pits.slice(start, start + PITS_PER_PLAYER).reduce((total, seeds) => total + seeds, 0);
+}
+
 /**
- * 1. GHANAIAN OWARE NAM-NAM ENGINE (Continuous Relay Sowing & 4-Seed Harvest)
- * - Pick up all seeds from chosen bowl and sow counter-clockwise.
- * - Pass-through 4-Seed Rule: If any bowl reaches 4 seeds BEFORE the last seed in hand is dropped,
- *   the owner of that row immediately harvests those 4 seeds!
- * - Last-Seed 4-Seed Rule: If the VERY LAST seed in hand lands in a bowl (either row) and makes it 4 seeds,
- *   the ACTIVE SOWER harvests those 4 seeds, and the turn ends (bowl is now empty).
- * - Continuous Relay Rule: If the last seed in hand lands in a non-empty bowl (now > 1 seed and != 4),
- *   the active player immediately scoops up all seeds from that bowl and continues sowing!
- * - Turn ends when the last seed in hand lands in an empty bowl (making it 1 seed).
- * - Final 8 Seeds Rule: When <= 8 seeds remain on the board and a 4-seed harvest occurs, the remaining 4 seeds
- *   are also swept by the harvesting player.
+ * 1. GHANAIAN OWARE NAM-NAM / RELAY ENGINE (Continuous Relay Sowing, 12+ Skip-Origin,
+ *    4-Seed Harvest & Mandatory Feeding Rule)
  */
 export function simulateNamNamMoveWithSteps(
   state: OwareState,
   startPit: number,
   player: "creator" | "opponent",
-  recordSteps = false
+  recordSteps = false,
+  skipFeedingValidation = false
 ): { nextState: OwareState; steps: OwareAnimationStep[] } | null {
   if (state.winner) return null;
   if (player === "creator" && (startPit < 0 || startPit > 5)) return null;
   if (player === "opponent" && (startPit < 6 || startPit > 11)) return null;
   if (!state.pits[startPit] || state.pits[startPit] <= 0) return null;
 
+  const opponent: "creator" | "opponent" = player === "creator" ? "opponent" : "creator";
+
+  // Mandatory Feeding Rule: if opponent has 0 seeds, player must play a move that gives them seeds (if any exists)
+  if (!skipFeedingValidation && sumSeedsOnSide(state.pits, opponent) === 0) {
+    const myStart = player === "creator" ? 0 : 6;
+    const myEnd = player === "creator" ? 5 : 11;
+    let canAnyMoveFeed = false;
+    for (let p = myStart; p <= myEnd; p++) {
+      if (state.pits[p] <= 0) continue;
+      const candidate = simulateNamNamMoveWithSteps(state, p, player, false, true);
+      if (candidate && sumSeedsOnSide(candidate.nextState.pits, opponent) > 0) {
+        canAnyMoveFeed = true;
+        break;
+      }
+    }
+    if (canAnyMoveFeed) {
+      const thisCandidate = simulateNamNamMoveWithSteps(state, startPit, player, false, true);
+      if (!thisCandidate || sumSeedsOnSide(thisCandidate.nextState.pits, opponent) === 0) {
+        return null;
+      }
+    }
+  }
+
   const pits = [...state.pits];
   const scores = { ...state.scores };
   const steps: OwareAnimationStep[] = [];
 
-  let inHand = pits[startPit];
-  pits[startPit] = 0;
+  let segmentOriginPitIndex = startPit;
   let currentPit = startPit;
-  let laps = 1;
-  let safetyCounter = 0;
+  let laps = 0;
   const scoreBefore = scores[player];
 
-  if (recordSteps) {
-    steps.push({
-      pits: [...pits],
-      scores: { ...scores },
-      activePit: startPit,
-      inHand,
-      eventText: `Scooped ${inHand} seeds from Bowl #${startPit + 1}`,
-    });
-  }
-
-  while (inHand > 0 && safetyCounter < 240) {
-    safetyCounter += 1;
-    currentPit = (currentPit + 1) % 12;
-    pits[currentPit] += 1;
-    inHand -= 1;
-
-    const isLastSeedInHand = inHand === 0;
-
-    // Check 4-Seed Harvest Rule
-    if (pits[currentPit] === 4) {
-      pits[currentPit] = 0;
-      // If it was the very last seed in hand, active sower captures the 4 seeds!
-      // Otherwise, the owner of the row (0..5 = creator, 6..11 = opponent) captures them!
-      const harvester: "creator" | "opponent" = isLastSeedInHand
-        ? player
-        : currentPit <= 5
-        ? "creator"
-        : "opponent";
-
-      scores[harvester] += 4;
-
-      // Final 8 seeds sweep rule: if exactly 4 seeds remain on the entire board after a harvest, harvester sweeps them too
-      const totalRemainingOnBoard = pits.reduce((a, b) => a + b, 0) + inHand;
-      if (totalRemainingOnBoard === 4 && inHand === 0) {
-        for (let i = 0; i < 12; i++) pits[i] = 0;
-        scores[harvester] += 4;
-      }
-
-      if (recordSteps) {
-        steps.push({
-          pits: [...pits],
-          scores: { ...scores },
-          activePit: currentPit,
-          inHand,
-          harvestedPit: currentPit,
-          harvestedBy: harvester,
-          eventText: isLastSeedInHand
-            ? `🔥 Final seed made 4 in Bowl #${currentPit + 1}! +4 harvested!`
-            : `✨ Bowl #${currentPit + 1} reached 4 seeds! +4 harvested!`,
-        });
-      }
-
-      // If it was the last seed in hand, the bowl is now empty (0) after harvesting, so turn ends!
-      if (isLastSeedInHand) {
-        break;
-      }
-      continue;
-    }
+  for (let segment = 0; segment < MAXIMUM_RELAY_SEGMENTS; segment++) {
+    let inHand = pits[segmentOriginPitIndex];
+    if (inHand <= 0) break;
+    laps += 1;
+    pits[segmentOriginPitIndex] = 0;
+    currentPit = segmentOriginPitIndex;
 
     if (recordSteps) {
       steps.push({
+        type: "pickup",
         pits: [...pits],
         scores: { ...scores },
-        activePit: currentPit,
+        activePit: segmentOriginPitIndex,
         inHand,
+        isRelayScoop: segment > 0,
+        lastSownPit: segment > 0 ? segmentOriginPitIndex : null,
+        eventText:
+          segment === 0
+            ? `Scooped ${inHand} seeds from Bowl #${segmentOriginPitIndex + 1}`
+            : `🔄 NAM-NAM RELAY! Scooped ${inHand} seeds from Bowl #${segmentOriginPitIndex + 1} (Lap #${laps})`,
       });
     }
 
-    // Relay Rule: Last seed landed in a bowl that ALREADY had seeds (now > 1 and != 4)
-    if (isLastSeedInHand && pits[currentPit] > 1) {
-      inHand = pits[currentPit];
-      pits[currentPit] = 0;
-      laps += 1;
+    let endedByLastSeedCapture = false;
+
+    while (inHand > 0) {
+      currentPit = (currentPit + 1) % TOTAL_PIT_COUNT;
+      // A pit with 12 or more seeds skips its own origin pit on that segment
+      if (currentPit === segmentOriginPitIndex) continue;
+
+      pits[currentPit] += 1;
+      inHand -= 1;
+
+      const isLastSeedInHand = inHand === 0;
 
       if (recordSteps) {
         steps.push({
+          type: "drop",
           pits: [...pits],
           scores: { ...scores },
           activePit: currentPit,
           inHand,
-          isRelayScoop: true,
-          eventText: `🔄 NAM-NAM RELAY! Scooped ${inHand} seeds from Bowl #${currentPit + 1} (Lap #${laps})`,
+          lastSownPit: currentPit,
         });
       }
-    }
-  }
 
-  const nextTurn: "creator" | "opponent" = player === "creator" ? "opponent" : "creator";
-  const nextTurnStart = nextTurn === "creator" ? 0 : 6;
-  const nextTurnEnd = nextTurn === "creator" ? 5 : 11;
-  const nextTurnSeeds = pits.slice(nextTurnStart, nextTurnEnd + 1).reduce((a, b) => a + b, 0);
-  const currentTurnSeeds = pits
-    .slice(player === "creator" ? 0 : 6, (player === "creator" ? 5 : 11) + 1)
-    .reduce((a, b) => a + b, 0);
+      // Check 4-Seed Harvest Rule
+      if (pits[currentPit] === 4) {
+        const capturedCount = pits[currentPit];
+        pits[currentPit] = 0;
+        const harvester: "creator" | "opponent" = isLastSeedInHand
+          ? player
+          : currentPit <= 5
+          ? "creator"
+          : "opponent";
 
-  // If next player has 0 seeds on their side, check if current player must keep turn or if board is cleared
-  let finalTurn: "creator" | "opponent" = nextTurn;
-  if (nextTurnSeeds === 0 && currentTurnSeeds > 0) {
-    // If opponent's row is empty, check if any move from current player can reach opponent's row
-    const canFeed = pits
-      .slice(player === "creator" ? 0 : 6, (player === "creator" ? 5 : 11) + 1)
-      .some((count, idx) => count + idx >= 6);
-    if (canFeed) {
-      finalTurn = player; // Same player plays again to feed
-    } else {
-      // Harvest remaining seeds
-      for (let i = 0; i < 12; i++) {
-        if (i <= 5) scores.creator += pits[i];
-        else scores.opponent += pits[i];
-        pits[i] = 0;
+        scores[harvester] += capturedCount;
+
+        // Final 8 seeds sweep rule: if <= 4 seeds remain on the entire board when hand is empty, harvester sweeps them
+        const totalRemainingOnBoard = pits.reduce((a, b) => a + b, 0) + inHand;
+        if (totalRemainingOnBoard === 4 && inHand === 0) {
+          for (let i = 0; i < TOTAL_PIT_COUNT; i++) pits[i] = 0;
+          scores[harvester] += 4;
+        }
+
+        if (recordSteps) {
+          steps.push({
+            type: "capture",
+            pits: [...pits],
+            scores: { ...scores },
+            activePit: currentPit,
+            inHand,
+            harvestedPit: currentPit,
+            harvestedBy: harvester,
+            lastSownPit: currentPit,
+            capturedPits: [currentPit],
+            eventText: isLastSeedInHand
+              ? `🔥 Final seed made 4 in Bowl #${currentPit + 1}! +4 harvested!`
+              : `✨ Bowl #${currentPit + 1} reached 4 seeds! +4 harvested!`,
+          });
+        }
+
+        if (isLastSeedInHand) {
+          endedByLastSeedCapture = true;
+          break;
+        }
       }
     }
+
+    if (endedByLastSeedCapture) break;
+    const landedInEmptyPit = pits[currentPit] === 1;
+    if (landedInEmptyPit) break;
+    segmentOriginPitIndex = currentPit;
+  }
+
+  const nextTurn: "creator" | "opponent" = opponent;
+  const nextTurnSeeds = sumSeedsOnSide(pits, nextTurn);
+  const currentTurnSeeds = sumSeedsOnSide(pits, player);
+
+  let finalTurn: "creator" | "opponent" = nextTurn;
+  if (nextTurnSeeds === 0 && currentTurnSeeds > 0) {
+    const myStart = player === "creator" ? 0 : 6;
+    const myEnd = player === "creator" ? 5 : 11;
+    const canFeed = pits
+      .slice(myStart, myEnd + 1)
+      .some((count, idx) => count + idx >= PITS_PER_PLAYER);
+    if (canFeed) {
+      finalTurn = player;
+    } else {
+      scores.creator += sumSeedsOnSide(pits, "creator");
+      scores.opponent += sumSeedsOnSide(pits, "opponent");
+      for (let i = 0; i < TOTAL_PIT_COUNT; i++) pits[i] = 0;
+    }
   } else if (nextTurnSeeds === 0 && currentTurnSeeds === 0) {
-    for (let i = 0; i < 12; i++) pits[i] = 0;
+    for (let i = 0; i < TOTAL_PIT_COUNT; i++) pits[i] = 0;
   }
 
   let winner: "creator" | "opponent" | "draw" | null = null;
   const totalMoveCount = (state.moveCount || 0) + 1;
   const boardEmpty = pits.every((p) => p === 0);
 
-  if (scores.creator >= 25) winner = "creator";
-  else if (scores.opponent >= 25) winner = "opponent";
+  if (scores.creator >= SEEDS_NEEDED_TO_WIN) winner = "creator";
+  else if (scores.opponent >= SEEDS_NEEDED_TO_WIN) winner = "opponent";
   else if (boardEmpty || totalMoveCount >= 100) {
-    const remCreator = pits.slice(0, 6).reduce((a, b) => a + b, 0);
-    const remOpponent = pits.slice(6, 12).reduce((a, b) => a + b, 0);
-    scores.creator += remCreator;
-    scores.opponent += remOpponent;
-    for (let i = 0; i < 12; i++) pits[i] = 0;
+    scores.creator += sumSeedsOnSide(pits, "creator");
+    scores.opponent += sumSeedsOnSide(pits, "opponent");
+    for (let i = 0; i < TOTAL_PIT_COUNT; i++) pits[i] = 0;
     if (scores.creator > scores.opponent) winner = "creator";
     else if (scores.opponent > scores.creator) winner = "opponent";
     else winner = "draw";
@@ -306,10 +335,12 @@ export function simulateAbapaMoveWithSteps(
 
   if (recordSteps) {
     steps.push({
+      type: "pickup",
       pits: [...nextPits],
       scores: { ...state.scores },
       activePit: pitIndex,
       inHand: remaining,
+      lastSownPit: null,
       eventText: `Scooped ${remaining} seeds from Bowl #${pitIndex + 1}`,
     });
   }
@@ -323,10 +354,12 @@ export function simulateAbapaMoveWithSteps(
 
     if (recordSteps) {
       steps.push({
+        type: "drop",
         pits: [...nextPits],
         scores: { ...state.scores },
         activePit: currentPit,
         inHand: remaining,
+        lastSownPit: currentPit,
       });
     }
   }
@@ -360,6 +393,7 @@ export function simulateAbapaMoveWithSteps(
     finalPits = tempPits;
   } else if (captured > 0 && oppRemainingAfterCapture === 0) {
     captured = 0;
+    capturedIndices.length = 0;
   }
 
   const nextScores = {
@@ -368,15 +402,20 @@ export function simulateAbapaMoveWithSteps(
   };
 
   if (recordSteps && captured > 0) {
-    steps.push({
-      pits: [...finalPits],
-      scores: { ...nextScores },
-      activePit: capturedIndices[0] ?? currentPit,
-      inHand: 0,
-      harvestedPit: capturedIndices[0] ?? currentPit,
-      harvestedBy: player,
-      eventText: `🔥 Abapa Capture! Harvested +${captured} seeds!`,
-    });
+    for (const capIdx of capturedIndices) {
+      steps.push({
+        type: "capture",
+        pits: [...finalPits],
+        scores: { ...nextScores },
+        activePit: capIdx,
+        inHand: captured,
+        harvestedPit: capIdx,
+        harvestedBy: player,
+        lastSownPit: currentPit,
+        capturedPits: capturedIndices,
+        eventText: `🔥 Abapa Capture! Harvested +${captured} seeds!`,
+      });
+    }
   }
 
   const nextTurn: "creator" | "opponent" = player === "creator" ? "opponent" : "creator";
@@ -389,9 +428,9 @@ export function simulateAbapaMoveWithSteps(
   let winner: "creator" | "opponent" | "draw" | null = null;
   const totalMoveCount = (state.moveCount || 0) + 1;
 
-  if (nextScores.creator >= 25) {
+  if (nextScores.creator >= SEEDS_NEEDED_TO_WIN) {
     winner = "creator";
-  } else if (nextScores.opponent >= 25) {
+  } else if (nextScores.opponent >= SEEDS_NEEDED_TO_WIN) {
     winner = "opponent";
   } else if (nextTurnSeeds === 0 || totalMoveCount >= 80) {
     const remCreator = finalPits.slice(0, 6).reduce((a, b) => a + b, 0);
@@ -442,6 +481,22 @@ export function simulateOwareMove(
   return res ? res.nextState : null;
 }
 
+/** Returns all legal pit indices for the given player, enforcing Mandatory Feeding when opponent has 0 seeds */
+export function getLegalOwareMoves(
+  state: OwareState,
+  player: "creator" | "opponent" = state.turn
+): number[] {
+  if (state.winner) return [];
+  const firstOwnPit = player === "creator" ? 0 : PITS_PER_PLAYER;
+  const legalPits: number[] = [];
+  for (let pitIndex = firstOwnPit; pitIndex < firstOwnPit + PITS_PER_PLAYER; pitIndex++) {
+    if (state.pits[pitIndex] > 0 && simulateOwareMove(state, pitIndex, player)) {
+      legalPits.push(pitIndex);
+    }
+  }
+  return legalPits;
+}
+
 /** Heuristic evaluation for Grandmaster Oware Alpha-Beta Minimax (supports both Nam-Nam & Abapa) */
 function evaluateOwareBoard(state: OwareState): number {
   if (state.winner === "opponent") return 100000;
@@ -461,7 +516,7 @@ function evaluateOwareBoard(state: OwareState): number {
     const s = state.pits[i];
     aiSeeds += s;
     if (variant === "nam-nam") {
-      if (s === 3) aiVulnerablePits += 1; // In Nam-Nam, 3 seeds can be sniped by human's last seed to make 4
+      if (s === 3) aiVulnerablePits += 1;
     } else {
       if (s === 1 || s === 2) aiVulnerablePits += 1;
       if (s >= 8) aiKuloBonus += 14;
@@ -493,125 +548,250 @@ function minimaxOware(
   beta: number,
   maximizing: boolean
 ): number {
-  if (depth === 0 || state.winner) {
+  const activePlayer = maximizing ? "opponent" : "creator";
+  const legalMoves = getLegalOwareMoves(state, activePlayer);
+
+  if (depth === 0 || state.winner || legalMoves.length === 0) {
     return evaluateOwareBoard(state);
   }
 
   if (maximizing) {
     let maxEval = -Infinity;
-    let moved = false;
-    for (let i = 6; i <= 11; i++) {
-      if (state.pits[i] <= 0) continue;
+    for (const i of legalMoves) {
       const next = simulateOwareMove(state, i, "opponent");
       if (!next) continue;
-      moved = true;
       const nextIsMax = next.turn === "opponent";
       const val = minimaxOware(next, depth - 1, alpha, beta, nextIsMax);
       if (val > maxEval) maxEval = val;
       if (val > alpha) alpha = val;
       if (beta <= alpha) break;
     }
-    return moved ? maxEval : evaluateOwareBoard(state);
+    return maxEval;
   } else {
     let minEval = Infinity;
-    let moved = false;
-    for (let i = 0; i <= 5; i++) {
-      if (state.pits[i] <= 0) continue;
+    for (const i of legalMoves) {
       const next = simulateOwareMove(state, i, "creator");
       if (!next) continue;
-      moved = true;
       const nextIsMax = next.turn === "opponent";
       const val = minimaxOware(next, depth - 1, alpha, beta, nextIsMax);
       if (val < minEval) minEval = val;
       if (val < beta) beta = val;
       if (beta <= alpha) break;
     }
-    return moved ? minEval : evaluateOwareBoard(state);
+    return minEval;
   }
 }
 
-/** Choose best Human-Sense Challenger move (Medium Difficulty with natural human hand-eye variance) */
-function pickBestAiMove(state: OwareState, playerLevel = 1): number {
-  const validPits: number[] = [];
-  for (let i = 6; i <= 11; i++) {
-    if (state.pits[i] > 0 && simulateOwareMove(state, i, "opponent")) {
-      validPits.push(i);
-    }
-  }
+/**
+ * Choose best Oware move using Alpha-Beta Minimax with tie-breaking among equal-value best moves
+ * and configurable search depth (`2` = Easy, `4` = Medium, `6` = Hard).
+ */
+function pickBestAiMove(state: OwareState, playerLevel = 1, customDepth?: number): number {
+  const validPits = getLegalOwareMoves(state, "opponent");
   if (validPits.length === 0) return -1;
 
-  // Medium difficulty lookahead (depth 2..3 depending on player level) + human intuition variance
-  const searchDepth = playerLevel >= 5 ? 3 : 2;
-  const noiseSigma = Math.max(18, 42 - playerLevel * 3);
+  const searchDepth = customDepth ?? (playerLevel >= 5 ? 4 : 3);
+  const noiseSigma = customDepth === 6 ? 4 : Math.max(12, 34 - playerLevel * 3);
 
-  let bestPit = validPits[0];
-  let bestScore = -Infinity;
+  let bestValue = -Infinity;
+  let bestMoves: number[] = [];
 
   for (const pit of validPits) {
     const sim1 = simulateOwareMove(state, pit, "opponent");
     if (!sim1) continue;
     const rawScore = minimaxOware(
       sim1,
-      searchDepth,
+      Math.max(1, searchDepth - 1),
       -Infinity,
       Infinity,
       sim1.turn === "opponent"
     );
-    // Add natural human evaluation jitter so opponent plays like a 94% Human Sense club player
-    const humanScore = rawScore + sampleGaussianError(noiseSigma);
-    if (humanScore > bestScore) {
-      bestScore = humanScore;
-      bestPit = pit;
+    const evaluatedScore = Math.round((rawScore + sampleGaussianError(noiseSigma)) / 4) * 4;
+    if (evaluatedScore > bestValue) {
+      bestValue = evaluatedScore;
+      bestMoves = [pit];
+    } else if (evaluatedScore === bestValue) {
+      bestMoves.push(pit);
     }
   }
 
-  return bestPit;
+  return bestMoves[Math.floor(Math.random() * bestMoves.length)] ?? validPits[0];
 }
 
 /**
- * Authentic Olive-Green & Sage-Grey Nickernut Seed Pebble (matches reference photo)
+ * Authentic Olive-Green, Amber & Sage-Grey Nickernut Seed Pebbles
+ * Arranged in a Fibonacci Golden-Angle Spiral (`goldenAngle = idx * 2.39996 + pitSeedOffset`)
+ * up to `MAXIMUM_SEEDS_DRAWN_PER_PIT = 28`!
  */
 const SEED_PALETTES = [
   "radial-gradient(circle at 32% 28%, #b8c470 0%, #8b9a46 58%, #546022 100%)", // Olive green
   "radial-gradient(circle at 32% 28%, #d2d1c5 0%, #a5a392 58%, #696759 100%)", // Sage pebble grey
+  "radial-gradient(circle at 32% 28%, #f4e3b5 0%, #e0a84b 58%, #8f5c16 100%)", // Warm golden seed
   "radial-gradient(circle at 32% 28%, #aebc62 0%, #7d8c38 58%, #4a551c 100%)", // Deep olive
   "radial-gradient(circle at 32% 28%, #c5c8a8 0%, #969b74 58%, #5e6342 100%)", // Moss grey-green
   "radial-gradient(circle at 32% 28%, #dcdad0 0%, #b2afa0 58%, #757264 100%)", // Warm stone grey
 ];
 
-const SEED_OFFSETS: { x: number; y: number; rot: number }[] = [
-  { x: -24, y: -20, rot: -15 },
-  { x: 22, y: -18, rot: 25 },
-  { x: -18, y: 22, rot: 12 },
-  { x: 20, y: 20, rot: -28 },
-  { x: 0, y: 0, rot: 8 },
-  { x: 0, y: -28, rot: -5 },
-  { x: -28, y: 2, rot: 35 },
-  { x: 28, y: 3, rot: -18 },
-  { x: 2, y: 28, rot: 20 },
-  { x: -12, y: -8, rot: 42 },
-  { x: 13, y: -7, rot: -32 },
-  { x: -9, y: 12, rot: 15 },
-];
-
-function NickernutSeedCluster({ count, pitSeedOffset }: { count: number; pitSeedOffset: number }) {
-  const visibleCount = Math.min(count, 12);
+function NickernutSeedCluster({
+  count,
+  pitSeedOffset,
+  maxDrawn = MAXIMUM_SEEDS_DRAWN_PER_PIT,
+  seedSizeClass = "w-3.5 h-3 sm:w-4 sm:h-3.5",
+}: {
+  count: number;
+  pitSeedOffset: number;
+  maxDrawn?: number;
+  seedSizeClass?: string;
+}) {
+  const visibleCount = Math.min(count, maxDrawn);
   return (
-    <div className="relative w-full h-full flex items-center justify-center pointer-events-none">
+    <div className="relative w-full h-full pointer-events-none">
       {Array.from({ length: visibleCount }).map((_, idx) => {
-        const pos = SEED_OFFSETS[idx % SEED_OFFSETS.length];
+        const goldenAngle = idx * 2.39996 + pitSeedOffset;
+        const distanceFromCentre =
+          visibleCount === 1
+            ? 0
+            : Math.sqrt((idx + 0.5) / Math.max(8, Math.min(visibleCount + 2, maxDrawn))) * 34;
+        const leftPercent = 50 + Math.cos(goldenAngle) * distanceFromCentre;
+        const topPercent = 50 + Math.sin(goldenAngle) * distanceFromCentre;
+        const rotDeg = Math.round(((goldenAngle * 180) / Math.PI) % 360);
         const bg = SEED_PALETTES[(pitSeedOffset + idx) % SEED_PALETTES.length];
         return (
           <span
             key={idx}
-            className="absolute w-3.5 h-3 sm:w-4 sm:h-3.5 rounded-[52%_48%_48%_52%] shadow-[0_3px_5px_rgba(0,0,0,0.75),inset_0_1px_2px_rgba(255,255,255,0.45)] border border-black/30 transition-all duration-150"
+            className={`absolute ${seedSizeClass} -translate-x-1/2 -translate-y-1/2 rounded-[52%_48%_48%_52%] shadow-[0_3px_5px_rgba(0,0,0,0.75),inset_0_1px_2px_rgba(255,255,255,0.45)] border border-black/30 transition-all duration-150`}
             style={{
+              left: `${leftPercent.toFixed(1)}%`,
+              top: `${topPercent.toFixed(1)}%`,
               background: bg,
-              transform: `translate(${pos.x}%, ${pos.y}%) rotate(${pos.rot}deg)`,
+              transform: `translate(-50%, -50%) rotate(${rotDeg}deg)`,
             }}
           />
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Animated SVG Sowing Hand that glides from bowl to bowl scooping & dropping seeds
+ * (Modeled after the reference Oware `<svg class="hand-svg" viewBox="0 0 100 140">` + `hand-seeds` + `hand-count`)
+ */
+function OwareAnimatedHand({
+  visible,
+  x,
+  y,
+  widthPx,
+  isTopPlayer,
+  isInstant,
+  isPulsing,
+  seedCount,
+}: {
+  visible: boolean;
+  x: number;
+  y: number;
+  widthPx: number;
+  isTopPlayer: boolean;
+  isInstant: boolean;
+  isPulsing: boolean;
+  seedCount: number;
+}) {
+  const heightPx = widthPx * 1.4;
+  const skinLight = isTopPlayer ? "#f0c08a" : "#d79a5b";
+  const skinDark = isTopPlayer ? "#c58b52" : "#a8683a";
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute z-30"
+      style={{
+        width: `${widthPx}px`,
+        height: `${heightPx}px`,
+        left: `${x - widthPx / 2}px`,
+        top: `${y - heightPx * 0.2}px`,
+        opacity: visible ? 1 : 0,
+        transformOrigin: "50% 20%",
+        transform: isPulsing ? "scale(0.88)" : "scale(1)",
+        transitionProperty: isInstant ? "none" : "left, top, opacity, transform",
+        transitionDuration: isInstant ? "0ms" : `${HAND_MOVE_DURATION_MS}ms`,
+        transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+        filter: "drop-shadow(0 12px 10px rgba(0, 0, 0, 0.6))",
+      }}
+    >
+      <svg
+        viewBox="0 0 100 140"
+        className="block w-full h-full overflow-visible"
+        style={{
+          transformOrigin: "50% 20%",
+          transform: isTopPlayer ? "rotate(180deg)" : "none",
+        }}
+      >
+        <defs>
+          <linearGradient id={`oware-hand-skin-${isTopPlayer ? "top" : "bot"}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={skinLight} />
+            <stop offset="100%" stopColor={skinDark} />
+          </linearGradient>
+        </defs>
+        <g
+          fill={`url(#oware-hand-skin-${isTopPlayer ? "top" : "bot"})`}
+          stroke="rgba(60,30,10,0.6)"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        >
+          <rect x="29" y="118" width="42" height="90" rx="6" />
+          <rect x="2" y="62" width="15" height="48" rx="7.5" transform="rotate(-28 9 100)" />
+          <rect x="20" y="24" width="14" height="64" rx="7" />
+          <rect x="35.5" y="10" width="14" height="78" rx="7" />
+          <rect x="51" y="18" width="14" height="70" rx="7" />
+          <rect x="66.5" y="36" width="13" height="52" rx="6.5" />
+          <rect x="18" y="66" width="62" height="68" rx="26" />
+        </g>
+        <g fill="rgba(255,255,255,0.35)">
+          <rect x="23" y="27" width="8" height="9" rx="3.5" />
+          <rect x="38.5" y="13" width="8" height="9" rx="3.5" />
+          <rect x="54" y="21" width="8" height="9" rx="3.5" />
+          <rect x="69" y="39" width="7" height="8" rx="3" />
+        </g>
+        <path
+          d="M30 100 Q50 112 70 100"
+          fill="none"
+          stroke="rgba(60,30,10,0.38)"
+          strokeWidth="1.5"
+        />
+      </svg>
+
+      {/* Seeds held in fingertips */}
+      <div
+        className="absolute"
+        style={{
+          left: "50%",
+          top: "20%",
+          width: "44%",
+          aspectRatio: "1 / 1",
+          transform: "translate(-50%, -50%)",
+        }}
+      >
+        <NickernutSeedCluster
+          count={Math.min(seedCount, HAND_MAXIMUM_SEEDS_DRAWN)}
+          pitSeedOffset={3}
+          maxDrawn={HAND_MAXIMUM_SEEDS_DRAWN}
+          seedSizeClass="w-2.5 h-2.5"
+        />
+      </div>
+
+      {/* Seed count badge next to fingertips */}
+      {seedCount > 0 && (
+        <span
+          className="absolute px-2 py-0.5 rounded-full bg-slate-950/95 border border-amber-400/70 text-amber-300 font-black font-mono text-xs shadow-lg"
+          style={{
+            left: "88%",
+            top: "20%",
+            transform: "translateY(-50%)",
+          }}
+        >
+          {seedCount}
+        </span>
+      )}
     </div>
   );
 }
@@ -681,15 +861,70 @@ export function OwareGameBoard({
   const [isAnimating, setIsAnimating] = useState(false);
   const [hoveredPit, setHoveredPit] = useState<number | null>(null);
   const [showRules, setShowRules] = useState(false);
+  const [aiDifficultyDepth, setAiDifficultyDepth] = useState<number>(4); // 2 = Easy, 4 = Medium, 6 = Hard
   const [muted, setMuted] = useState(() => !getGameSensoryPreferences().soundEnabled);
   const [vibrationEnabled, setVibrationEnabled] = useState(
     () => getGameSensoryPreferences().vibrationEnabled
   );
+
+  // Animated Hand overlay state (glides from bowl to bowl scooping & dropping seeds)
+  const [handPose, setHandPose] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    widthPx: number;
+    isTopPlayer: boolean;
+    isInstant: boolean;
+    isPulsing: boolean;
+    seedCount: number;
+  }>({
+    visible: false,
+    x: 220,
+    y: 120,
+    widthPx: 72,
+    isTopPlayer: false,
+    isInstant: true,
+    isPulsing: false,
+    seedCount: 0,
+  });
+
+  const boardPlanksRef = useRef<HTMLDivElement | null>(null);
   const animTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (animTimerRef.current) window.clearTimeout(animTimerRef.current);
+    };
+  }, []);
+
+  // Measure the center of a pit button inside the hinged ebony board container
+  const getPitCenterInsideBoard = useCallback((pitIndex: number) => {
+    const boardEl = boardPlanksRef.current;
+    if (!boardEl) return { x: 220, y: 120, widthPx: 72 };
+    const pitEl = boardEl.querySelector(`[data-pit-index="${pitIndex}"]`) as HTMLElement | null;
+    const boardRect = boardEl.getBoundingClientRect();
+    if (!pitEl) {
+      return {
+        x: boardRect.width / 2,
+        y: boardRect.height / 2,
+        widthPx: 72,
+      };
+    }
+    const pitRect = pitEl.getBoundingClientRect();
+    return {
+      x: pitRect.left - boardRect.left + pitRect.width / 2,
+      y: pitRect.top - boardRect.top + pitRect.height / 2,
+      widthPx: Math.max(54, Math.min(96, pitRect.width * 1.25)),
+    };
+  }, []);
+
+  const getHandRestPosition = useCallback((moverSide: "creator" | "opponent") => {
+    const boardEl = boardPlanksRef.current;
+    const w = boardEl ? boardEl.offsetWidth : 440;
+    const h = boardEl ? boardEl.offsetHeight : 240;
+    return {
+      x: w / 2,
+      y: moverSide === "creator" ? h + 22 : -22,
     };
   }, []);
 
@@ -706,7 +941,7 @@ export function OwareGameBoard({
     }
   }, [initialState, game.moveCount, game.variant, isAnimating]);
 
-  // Step-by-step animated sowing player
+  // Step-by-step animated sowing player with live SVG Hand gliding across bowls
   const playAnimatedMove = useCallback(
     (
       steps: OwareAnimationStep[],
@@ -722,22 +957,52 @@ export function OwareGameBoard({
       }
 
       setIsAnimating(true);
-      // Cap total animation frames to ~18 steps so long relay chains remain snappy and thrilling
-      const stride = steps.length > 20 ? Math.ceil(steps.length / 18) : 1;
+      const isTopPlayer = moverSide === "opponent";
+      const restPos = getHandRestPosition(moverSide);
+      const firstPitMeasure = getPitCenterInsideBoard(steps[0].activePit);
+
+      // Summon hand at player's edge before gliding to the starting bowl
+      setHandPose({
+        visible: true,
+        x: restPos.x,
+        y: restPos.y,
+        widthPx: firstPitMeasure.widthPx,
+        isTopPlayer,
+        isInstant: true,
+        isPulsing: false,
+        seedCount: 0,
+      });
+
+      // Cap total animation frames to ~22 steps so long relay chains remain snappy and thrilling
+      const stride = steps.length > 24 ? Math.ceil(steps.length / 22) : 1;
       const sampledSteps = steps.filter(
         (s, idx) =>
           idx === 0 ||
           idx === steps.length - 1 ||
+          s.type === "pickup" ||
+          s.type === "capture" ||
           Boolean(s.harvestedPit !== undefined) ||
           Boolean(s.isRelayScoop) ||
           idx % stride === 0
       );
 
       let cursor = 0;
-      const stepInterval = sampledSteps.length > 12 ? 125 : 165;
+      const stepInterval =
+        sampledSteps.length > 14 ? HAND_MOVE_DURATION_MS : HAND_MOVE_DURATION_MS + HAND_DROP_PAUSE_MS;
 
       const tick = () => {
         if (cursor >= sampledSteps.length) {
+          const endRest = getHandRestPosition(moverSide);
+          setHandPose((prev) => ({
+            ...prev,
+            visible: false,
+            x: endRest.x,
+            y: endRest.y,
+            isInstant: false,
+            isPulsing: false,
+            seedCount: 0,
+          }));
+
           setAnimStep(null);
           setIsAnimating(false);
           setGame(finalState);
@@ -769,6 +1034,22 @@ export function OwareGameBoard({
         const currentFrame = sampledSteps[cursor];
         setAnimStep(currentFrame);
 
+        const pitCoords = getPitCenterInsideBoard(currentFrame.activePit);
+        setHandPose({
+          visible: true,
+          x: pitCoords.x,
+          y: pitCoords.y,
+          widthPx: pitCoords.widthPx,
+          isTopPlayer,
+          isInstant: false,
+          isPulsing: true,
+          seedCount: currentFrame.inHand,
+        });
+
+        window.setTimeout(() => {
+          setHandPose((prev) => ({ ...prev, isPulsing: false }));
+        }, HAND_DROP_PAUSE_MS);
+
         if (!muted) {
           if (currentFrame.harvestedPit !== undefined) {
             playSuccessSound();
@@ -783,9 +1064,17 @@ export function OwareGameBoard({
         animTimerRef.current = window.setTimeout(tick, stepInterval);
       };
 
-      tick();
+      animTimerRef.current = window.setTimeout(tick, 45);
     },
-    [muted, mySide, onStateChange, onMatchComplete, onPointsEarned]
+    [
+      muted,
+      mySide,
+      getPitCenterInsideBoard,
+      getHandRestPosition,
+      onStateChange,
+      onMatchComplete,
+      onPointsEarned,
+    ]
   );
 
   const variant: OwareRuleVariant = game.variant || "nam-nam";
@@ -825,9 +1114,9 @@ export function OwareGameBoard({
       !game.winner &&
       game.turn === "opponent"
     ) {
-      const humanDelay = 680 + Math.floor(Math.random() * 480);
+      const humanDelay = 620 + Math.floor(Math.random() * 420);
       const timer = window.setTimeout(() => {
-        const aiPit = pickBestAiMove(game, playerLevel);
+        const aiPit = pickBestAiMove(game, playerLevel, aiDifficultyDepth);
         if (aiPit === -1) return;
         const simResult =
           variant === "nam-nam"
@@ -840,11 +1129,14 @@ export function OwareGameBoard({
 
       return () => window.clearTimeout(timer);
     }
-  }, [mode, game, isAnimating, variant, playerLevel, playAnimatedMove]);
+  }, [mode, game, isAnimating, variant, playerLevel, aiDifficultyDepth, playAnimatedMove]);
 
   // Display state (either live animation frame or settled game state)
   const displayPits = animStep ? animStep.pits : game.pits;
   const displayScores = animStep ? animStep.scores : game.scores;
+  const legalMovesForTurn = !game.winner && !isAnimating ? getLegalOwareMoves(game, game.turn) : [];
+  const otherSide: "creator" | "opponent" = game.turn === "creator" ? "opponent" : "creator";
+  const mustFeedOpponent = !game.winner && sumSeedsOnSide(game.pits, otherSide) === 0;
 
   // Top row (North: Opponent pits 11 down to 6 left-to-right so counter-clockwise flow is visually accurate)
   const northIndices = [11, 10, 9, 8, 7, 6];
@@ -913,6 +1205,19 @@ export function OwareGameBoard({
               🏆 Abapa (2/3 Capture)
             </button>
           </div>
+
+          {mode !== "p2p" && (
+            <select
+              aria-label="Computer difficulty"
+              value={aiDifficultyDepth}
+              onChange={(e) => setAiDifficultyDepth(Number(e.target.value))}
+              className="h-7 rounded-xl bg-slate-950 border border-white/15 px-2 text-[10px] font-black text-amber-300"
+            >
+              <option value={2}>Easy (Depth 2)</option>
+              <option value={4}>Medium (Depth 4)</option>
+              <option value={6}>Hard (Depth 6)</option>
+            </select>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1024,7 +1329,11 @@ export function OwareGameBoard({
                 `🏅 ${game.winner === "creator" ? creatorName : effectiveOpponentName} Won the Oware Match!`
               )
             ) : isMyTurn ? (
-              "🟢 YOUR TURN — Tap any of your glowing terracotta bowls to sow!"
+              mustFeedOpponent ? (
+                "🟢 YOUR TURN — Your opponent has no seeds, so you must pick a glowing bowl that feeds them!"
+              ) : (
+                "🟢 YOUR TURN — Tap any of your glowing terracotta bowls to sow!"
+              )
             ) : (
               `⏳ ${game.turn === "creator" ? creatorName : effectiveOpponentName} is sowing...`
             )}
@@ -1080,8 +1389,10 @@ export function OwareGameBoard({
             </div>
           </div>
 
-          {/* TWO HINGED MATTE-BLACK EBONY PLANKS WITH BRASS HINGES & 12 TERRACOTTA BOWLS */}
-          <div className="lg:col-span-6 relative space-y-1.5">
+          {/* TWO HINGED MATTE-BLACK EBONY PLANKS WITH BRASS HINGES, 12 TERRACOTTA BOWLS & ANIMATED SOWING HAND */}
+          <div ref={boardPlanksRef} className="lg:col-span-6 relative space-y-1.5">
+            <OwareAnimatedHand {...handPose} />
+
             {/* TOP EBONY PLANK — Opponent's 6 Carved Terracotta Bowls (North: 11..6) */}
             <div
               className="relative px-3.5 sm:px-6 py-3.5 sm:py-5 rounded-[44px] sm:rounded-[64px] border-2 border-[#34363c] shadow-[0_14px_28px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.1)]"
@@ -1106,16 +1417,20 @@ export function OwareGameBoard({
                   const isLegal =
                     mySide === "opponent" &&
                     isMyTurn &&
-                    count > 0 &&
-                    Boolean(simulateOwareMove(game, pitIdx, "opponent"));
+                    legalMovesForTurn.includes(pitIdx);
                   const isActiveAnim = animStep?.activePit === pitIdx;
-                  const isHarvestedAnim = animStep?.harvestedPit === pitIdx;
+                  const isLastSownAnim = animStep?.lastSownPit === pitIdx;
+                  const isHarvestedAnim =
+                    animStep?.harvestedPit === pitIdx ||
+                    Boolean(animStep?.capturedPits?.includes(pitIdx));
                   const isRelayAnim = animStep?.activePit === pitIdx && animStep?.isRelayScoop;
 
                   return (
                     <button
                       key={pitIdx}
                       type="button"
+                      data-pit-index={pitIdx}
+                      aria-label={`Pit ${pitIdx + 1}, ${count} seeds`}
                       disabled={!isLegal}
                       onMouseEnter={() => setHoveredPit(pitIdx)}
                       onMouseLeave={() => setHoveredPit(null)}
@@ -1123,13 +1438,13 @@ export function OwareGameBoard({
                       style={terracottaBowlStyle}
                       className={`group relative aspect-square rounded-full flex flex-col items-center justify-center p-1.5 transition-all duration-150 border-[3px] ${
                         isHarvestedAnim
-                          ? "border-amber-300 ring-4 ring-amber-400 scale-110 z-20"
+                          ? "border-[#ff5a4d] ring-4 ring-[#ff5a4d]/70 scale-110 z-20"
                           : isRelayAnim
                           ? "border-sky-400 ring-4 ring-sky-400/50 scale-110 z-20"
-                          : isActiveAnim
-                          ? "border-amber-400 ring-4 ring-amber-400/40 scale-105 z-10"
+                          : isLastSownAnim || isActiveAnim
+                          ? "border-[#5ad1c4] ring-4 ring-[#5ad1c4]/55 scale-105 z-10"
                           : isLegal
-                          ? "border-emerald-400 hover:scale-105 cursor-pointer ring-4 ring-emerald-500/25"
+                          ? "border-[#f2c14e] hover:border-[#ffe08a] hover:scale-105 cursor-pointer ring-4 ring-[#f2c14e]/35"
                           : "border-[#2d1206] cursor-default"
                       }`}
                     >
@@ -1193,16 +1508,20 @@ export function OwareGameBoard({
                   const isLegal =
                     mySide === "creator" &&
                     isMyTurn &&
-                    count > 0 &&
-                    Boolean(simulateOwareMove(game, pitIdx, "creator"));
+                    legalMovesForTurn.includes(pitIdx);
                   const isActiveAnim = animStep?.activePit === pitIdx;
-                  const isHarvestedAnim = animStep?.harvestedPit === pitIdx;
+                  const isLastSownAnim = animStep?.lastSownPit === pitIdx;
+                  const isHarvestedAnim =
+                    animStep?.harvestedPit === pitIdx ||
+                    Boolean(animStep?.capturedPits?.includes(pitIdx));
                   const isRelayAnim = animStep?.activePit === pitIdx && animStep?.isRelayScoop;
 
                   return (
                     <button
                       key={pitIdx}
                       type="button"
+                      data-pit-index={pitIdx}
+                      aria-label={`Pit ${pitIdx + 1}, ${count} seeds`}
                       disabled={!isLegal}
                       onMouseEnter={() => setHoveredPit(pitIdx)}
                       onMouseLeave={() => setHoveredPit(null)}
@@ -1210,13 +1529,13 @@ export function OwareGameBoard({
                       style={terracottaBowlStyle}
                       className={`group relative aspect-square rounded-full flex flex-col items-center justify-center p-1.5 transition-all duration-150 border-[3px] ${
                         isHarvestedAnim
-                          ? "border-amber-300 ring-4 ring-amber-400 scale-110 z-20"
+                          ? "border-[#ff5a4d] ring-4 ring-[#ff5a4d]/70 scale-110 z-20"
                           : isRelayAnim
                           ? "border-sky-400 ring-4 ring-sky-400/50 scale-110 z-20"
-                          : isActiveAnim
-                          ? "border-amber-400 ring-4 ring-amber-400/40 scale-105 z-10"
+                          : isLastSownAnim || isActiveAnim
+                          ? "border-[#5ad1c4] ring-4 ring-[#5ad1c4]/55 scale-105 z-10"
                           : isLegal
-                          ? "border-emerald-400 hover:scale-105 cursor-pointer ring-4 ring-emerald-500/30"
+                          ? "border-[#f2c14e] hover:border-[#ffe08a] hover:scale-105 cursor-pointer ring-4 ring-[#f2c14e]/35"
                           : "border-[#2d1206] cursor-default"
                       }`}
                     >
