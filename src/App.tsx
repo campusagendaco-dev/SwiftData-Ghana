@@ -146,6 +146,8 @@ const BlogList = lazy(() => import("./pages/BlogList"));
 const BlogPost = lazy(() => import("./pages/BlogPost"));
 const SubmitBeneficiaryNumbers = lazy(() => import("./pages/SubmitBeneficiaryNumbers"));
 const VerifyBeneficiaryNumbers = lazy(() => import("./pages/VerifyBeneficiaryNumbers"));
+const ChallengeArena = lazy(() => import("./pages/ChallengeArena"));
+const AdminChallengeArena = lazy(() => import("./pages/AdminChallengeArena"));
 
 const queryClient = new QueryClient();
 
@@ -452,6 +454,8 @@ const AppContent = () => {
         <Route path="/verify-numbers" element={<VerifyBeneficiaryNumbers />} />
         <Route path="/check-numbers" element={<Navigate to="/verify-numbers" replace />} />
         <Route path="/beneficiary-check" element={<Navigate to="/verify-numbers" replace />} />
+        <Route path="/challenges" element={<ChallengeArena />} />
+        <Route path="/games" element={<Navigate to="/challenges" replace />} />
 
         {/* Sub agent routes */}
         <Route path="/store/:slug/sub-agent" element={<SubAgentSignup />} />
@@ -491,6 +495,8 @@ const AppContent = () => {
           <Route path="submit-beneficiary" element={<Navigate to="/dashboard/submit-numbers" replace />} />
           <Route path="verify-numbers" element={<VerifyBeneficiaryNumbers />} />
           <Route path="check-numbers" element={<Navigate to="/dashboard/verify-numbers" replace />} />
+          <Route path="challenges" element={<ChallengeArena />} />
+          <Route path="games" element={<Navigate to="/dashboard/challenges" replace />} />
 
           {/* Paid agent-only pages */}
           <Route path="agent-prices" element={<AgentFeatureGuard><DashboardPricing /></AgentFeatureGuard>} />
@@ -571,6 +577,7 @@ const AppContent = () => {
           <Route path="swift-vendor" element={<AdminSwiftVendorPro />} />
           <Route path="ai-strategy" element={<AdminAIStrategy />} />
           <Route path="api-network" element={<AdminAPINetwork />} />
+          <Route path="challenges" element={<AdminChallengeArena />} />
           <Route path="account-settings" element={<DashboardAccountSettings />} />
         </Route>
 

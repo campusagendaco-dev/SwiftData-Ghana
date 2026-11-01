@@ -109,6 +109,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Support Tickets", icon: LifeBuoy,   path: "/admin/tickets", permKey: "support" },
       { label: "Notifications",   icon: Bell,        path: "/admin/notifications", permKey: "support" },
       { label: "Engagement Hub",  icon: Sparkles,    path: "/admin/engagement", permKey: "support" },
+      { label: "Game Challenges", icon: Sparkles,    path: "/admin/challenges", permKey: "support" },
     ],
   },
   {

@@ -51,6 +51,7 @@ import { Clock } from "lucide-react";
 
 const userNavItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { to: "/dashboard/challenges", label: "Game Challenges (Win Data)", icon: Trophy },
   { to: "/dashboard/profile", label: "My Profile", icon: User },
   { to: "/dashboard/account-settings", label: "Account & Security", icon: UserCog },
   { to: "/dashboard/wallet", label: "Account Balance", icon: Wallet },
