@@ -29,6 +29,7 @@ import {
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
+import { ChallengeHowItWorks } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 
 declare global {
@@ -576,6 +577,16 @@ export default function ChallengeArena() {
           </div>
         </div>
       </div>
+
+      {/* ── Interactive 4-Step Animated Guide & Game Mechanics Preview ── */}
+      {!activeChallenge && (
+        <ChallengeHowItWorks
+          onQuickStart={(g, m) => {
+            setSelectedGame(g);
+            setSelectedMode(m);
+          }}
+        />
+      )}
 
       {/* ── Active Game Stage (When Playing or Waiting in Room) ── */}
       {activeChallenge ? (
