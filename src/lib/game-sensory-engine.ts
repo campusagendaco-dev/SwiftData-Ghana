@@ -21,19 +21,65 @@ function getAudioContext(): AudioContext | null {
   }
 }
 
-export function setGameSensoryPreferences(opts: { sound?: boolean; vibration?: boolean }) {
+export function setGameSensoryPreferences(opts: {
+  sound?: boolean;
+  vibration?: boolean;
+  soundEnabled?: boolean;
+  vibrationEnabled?: boolean;
+}) {
   if (typeof opts.sound === "boolean") soundEnabled = opts.sound;
+  if (typeof opts.soundEnabled === "boolean") soundEnabled = opts.soundEnabled;
   if (typeof opts.vibration === "boolean") vibrationEnabled = opts.vibration;
+  if (typeof opts.vibrationEnabled === "boolean") vibrationEnabled = opts.vibrationEnabled;
 }
 
 export function getGameSensoryPreferences() {
   return { soundEnabled, vibrationEnabled };
 }
 
-export function triggerHapticSensor(pattern: number | number[]) {
+export type HapticPreset =
+  | "aim_tick"
+  | "pocket_drop"
+  | "seed_drop"
+  | "dice_roll"
+  | "victory"
+  | "level_up"
+  | "slice"
+  | "bomb";
+
+export function triggerHapticSensor(pattern: number | number[] | HapticPreset) {
   if (!vibrationEnabled || typeof navigator === "undefined" || !("vibrate" in navigator)) return;
   try {
-    navigator.vibrate(pattern);
+    let vibPattern: number | number[] = 15;
+    if (typeof pattern === "string") {
+      switch (pattern) {
+        case "aim_tick":
+          vibPattern = 10;
+          break;
+        case "seed_drop":
+          vibPattern = 14;
+          break;
+        case "slice":
+          vibPattern = 18;
+          break;
+        case "dice_roll":
+          vibPattern = [22, 30, 22, 40];
+          break;
+        case "pocket_drop":
+          vibPattern = [38, 42, 70];
+          break;
+        case "bomb":
+          vibPattern = [140, 60, 180];
+          break;
+        case "level_up":
+        case "victory":
+          vibPattern = [65, 45, 65, 45, 150];
+          break;
+      }
+    } else {
+      vibPattern = pattern;
+    }
+    navigator.vibrate(vibPattern);
   } catch (_e) {
     // Ignore on unsupported desktop browsers
   }
@@ -82,7 +128,6 @@ export function playBallClackSound(impactSpeed = 8) {
   try {
     const now = ctx.currentTime;
 
-    // Primary resin click (1750 - 2200 Hz)
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -148,7 +193,6 @@ export function playPocketDropSound() {
   if (!ctx) return;
   try {
     const now = ctx.currentTime;
-    // 1. Hollow leather pocket drop
     const oscDrop = ctx.createOscillator();
     const gainDrop = ctx.createGain();
     oscDrop.type = "sine";
@@ -161,7 +205,6 @@ export function playPocketDropSound() {
     oscDrop.start(now);
     oscDrop.stop(now + 0.16);
 
-    // 2. Pleasant reward chime on the chrome return rail
     const oscChime = ctx.createOscillator();
     const gainChime = ctx.createGain();
     oscChime.type = "triangle";
@@ -249,6 +292,93 @@ export function playDiceRattleSound() {
 }
 
 /**
+ * Market Slash: Crisp blade swoosh + juicy fruit pop/squish (matches game_play_2_.mp4)
+ */
+export function playFruitSliceSound(comboCount = 1) {
+  triggerHapticSensor(comboCount > 1 ? [18, 25, 28] : 18);
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const pitchBoost = Math.min(360, (comboCount - 1) * 65);
+
+    // 1. Blade swoosh + juicy pop
+    const oscPop = ctx.createOscillator();
+    const gainPop = ctx.createGain();
+    oscPop.type = "sine";
+    oscPop.frequency.setValueAtTime(520 + pitchBoost, now);
+    oscPop.frequency.exponentialRampToValueAtTime(980 + pitchBoost, now + 0.055);
+    gainPop.gain.setValueAtTime(0.32, now);
+    gainPop.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
+    oscPop.connect(gainPop);
+    gainPop.connect(ctx.destination);
+    oscPop.start(now);
+    oscPop.stop(now + 0.09);
+
+    // 2. Crisp high-frequency slice shimmer
+    const oscSlice = ctx.createOscillator();
+    const gainSlice = ctx.createGain();
+    oscSlice.type = "triangle";
+    oscSlice.frequency.setValueAtTime(1650 + pitchBoost, now);
+    oscSlice.frequency.exponentialRampToValueAtTime(420, now + 0.045);
+    gainSlice.gain.setValueAtTime(0.2, now);
+    gainSlice.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    oscSlice.connect(gainSlice);
+    gainSlice.connect(ctx.destination);
+    oscSlice.start(now);
+    oscSlice.stop(now + 0.055);
+  } catch (_e) {}
+}
+
+/**
+ * Market Slash: Bomb explosion deep boom + shockwave vibration
+ */
+export function playBombExplosionSound() {
+  triggerHapticSensor("bomb");
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(145, now);
+    osc.frequency.exponentialRampToValueAtTime(28, now + 0.38);
+    gain.gain.setValueAtTime(0.48, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.45);
+  } catch (_e) {}
+}
+
+/**
+ * Market Slash: Stall Cleared celebratory chime (+150 / +300 / +450 bonus)
+ */
+export function playStallClearedSound() {
+  triggerHapticSensor([50, 35, 85]);
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const notes = [587.33, 783.99, 1046.5]; // D5, G5, C6
+    notes.forEach((freq, idx) => {
+      const now = ctx.currentTime + idx * 0.075;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.28, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.26);
+    });
+  } catch (_e) {}
+}
+
+/**
  * Celebratory Level-Up / Target Data Bundle Unlocked Fanfare
  */
 export function playLevelUpFanfare() {
@@ -283,67 +413,96 @@ export interface HumanChallengerPersona {
   avatarInitials: string;
 }
 
-export const HUMAN_CHALLENGER_PERSONAS: HumanChallengerPersona[] = [
-  {
-    name: "Kwame Asante",
+const PERSONA_MAP: Record<"oware" | "ludo" | "dame" | "pool" | "slash", HumanChallengerPersona> = {
+  oware: {
+    name: "Nana Kwame Asante",
     city: "Kumasi",
-    humanSensePercent: 92,
-    styleTag: "Tactical Club Player",
-    avatarInitials: "KA",
+    humanSensePercent: 93,
+    styleTag: "Kumasi Cultural Centre Master",
+    avatarInitials: "NK",
   },
-  {
-    name: "Kojo Mensah",
+  ludo: {
+    name: "Abena Osei",
     city: "Accra (Osu)",
+    humanSensePercent: 91,
+    styleTag: "Osu Night Market Tactician",
+    avatarInitials: "AO",
+  },
+  dame: {
+    name: "Kofi Mensah",
+    city: "Cape Coast",
     humanSensePercent: 94,
-    styleTag: "Sharp Cut-Shot Specialist",
+    styleTag: "Victoria Park Draughts Pro",
     avatarInitials: "KM",
   },
-  {
-    name: "Nana Yaw Boateng",
-    city: "Takoradi",
-    humanSensePercent: 91,
-    styleTag: "Smooth Pace & Control",
-    avatarInitials: "NY",
+  pool: {
+    name: "Yaw Boateng",
+    city: "East Legon",
+    humanSensePercent: 92,
+    styleTag: "Snooker & 8-Ball Club Striker",
+    avatarInitials: "YB",
   },
-  {
-    name: "Ebo Quansah",
-    city: "Cape Coast",
-    humanSensePercent: 93,
-    styleTag: "Aggressive Break & Run",
-    avatarInitials: "EQ",
+  slash: {
+    name: "Auntie Ama Serwaa",
+    city: "Makola & Kejetia",
+    humanSensePercent: 94,
+    styleTag: "Makola Fruit Stall Queen",
+    avatarInitials: "AS",
   },
-  {
-    name: "Ibrahim Mohammed",
-    city: "Tamale",
-    humanSensePercent: 95,
-    styleTag: "Regional Champion",
-    avatarInitials: "IM",
-  },
-];
+};
 
-export const DATA_TARGET_CATALOG: Record<
-  "1GB" | "2GB" | "5GB",
-  { size: "1GB" | "2GB" | "5GB"; pointsRequired: number; badge: string; desc: string }
-> = {
-  "1GB": {
+export const HUMAN_CHALLENGER_PERSONAS: HumanChallengerPersona[] &
+  Record<"oware" | "ludo" | "dame" | "pool" | "slash", HumanChallengerPersona> = Object.assign(
+  [
+    PERSONA_MAP.oware,
+    PERSONA_MAP.ludo,
+    PERSONA_MAP.dame,
+    PERSONA_MAP.pool,
+    PERSONA_MAP.slash,
+  ],
+  PERSONA_MAP
+);
+
+export type DataTargetTier = "1GB" | "2GB" | "5GB";
+
+export interface DataTargetOption {
+  size: DataTargetTier;
+  label: string;
+  pointsRequired: number;
+  badge: string;
+  desc: string;
+}
+
+const DATA_TARGET_LIST: DataTargetOption[] = [
+  {
     size: "1GB",
+    label: "1GB Free Data Bundle",
     pointsRequired: 1000,
     badge: "Starter Goal (Lvl 3)",
-    desc: "Accumulate 1,000 Arena Points across matches & potted balls to unlock 1GB Free Data!",
+    desc: "Accumulate 1,000 Arena Points across matches, sliced fruit & potted balls to unlock 1GB Free Data!",
   },
-  "2GB": {
+  {
     size: "2GB",
+    label: "2GB Free Data Bundle",
     pointsRequired: 2000,
     badge: "Pro Goal (Lvl 6)",
     desc: "Accumulate 2,000 Arena Points across levels to unlock a 2GB Data Bundle!",
   },
-  "5GB": {
+  {
     size: "5GB",
+    label: "5GB Non-Expiry Data Bundle",
     pointsRequired: 4500,
     badge: "Master Goal (Lvl 10)",
     desc: "Accumulate 4,500 Arena Points to claim a massive 5GB Non-Expiry Data Bundle!",
   },
-};
+];
+
+export const DATA_TARGET_CATALOG: DataTargetOption[] & Record<DataTargetTier, DataTargetOption> =
+  Object.assign(DATA_TARGET_LIST, {
+    "1GB": DATA_TARGET_LIST[0],
+    "2GB": DATA_TARGET_LIST[1],
+    "5GB": DATA_TARGET_LIST[2],
+  });
 
 export interface PlayerLevelStatus {
   level: number;
@@ -364,26 +523,25 @@ export function getPlayerLevelStatus(totalPoints: number): PlayerLevelStatus {
   const levelProgressPercent = Math.min(100, Math.round((pointsInCurrentLevel / stepPts) * 100));
 
   const titles: Record<number, string> = {
-    1: "Level 1 • Club Contender (Medium)",
-    2: "Level 2 • Rising Striker (Medium)",
-    3: "Level 3 • Regional Hustler (Medium+)",
-    4: "Level 4 • Division Specialist",
-    5: "Level 5 • Kumasi Open Semi-Finalist",
-    6: "Level 6 • Accra Premier Contender",
-    7: "Level 7 • National Tour Pro",
-    8: "Level 8 • Gold Coast Master",
-    9: "Level 9 • Supreme Arena Tactician",
-    10: "Level 10 • Ghana Legend",
+    1: "Club Contender (Medium)",
+    2: "Rising Striker (Medium)",
+    3: "Regional Hustler (Medium+)",
+    4: "Division Specialist",
+    5: "Kumasi Open Semi-Finalist",
+    6: "Accra Premier Contender",
+    7: "National Tour Pro",
+    8: "Gold Coast Master",
+    9: "Supreme Arena Tactician",
+    10: "Ghana Legend",
   };
 
   // Medium difficulty starts with natural human hand-eye variance (0.032 rad ~= 1.8 deg)
-  // so the opponent makes normal shots (~75%) while missing ~30-35% of tough thin cuts!
   const aiErrorSigmaRad = Math.max(0.014, 0.034 - (level - 1) * 0.0022);
   const persona = HUMAN_CHALLENGER_PERSONAS[(level - 1) % HUMAN_CHALLENGER_PERSONAS.length];
 
   return {
     level,
-    title: titles[level] || `Level ${level} • Arena Pro`,
+    title: titles[level] || `Arena Pro`,
     pointsInCurrentLevel,
     pointsForNextLevel: stepPts,
     levelProgressPercent,

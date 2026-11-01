@@ -21,10 +21,444 @@ import {
   ShieldCheck,
   ArrowRight,
   Zap,
+  FastForward,
+  BookOpen,
+  X,
 } from "lucide-react";
 
+export type ArenaGameType = "oware" | "ludo" | "dame" | "pool" | "slash";
+
 interface ChallengeHowItWorksProps {
-  onQuickStart?: (game: "oware" | "ludo" | "dame" | "pool", mode: "p2p" | "ai" | "free_data") => void;
+  onQuickStart?: (game: ArenaGameType, mode: "p2p" | "ai" | "free_data") => void;
+}
+
+interface GameStepGuide {
+  title: string;
+  tagline: string;
+  emoji: string;
+  badge: string;
+  accentGradient: string;
+  steps: {
+    stepNum: string;
+    heading: string;
+    detail: string;
+    tip: string;
+  }[];
+}
+
+export const GAME_STEP_GUIDES: Record<ArenaGameType, GameStepGuide> = {
+  slash: {
+    title: "Market Slash (Makola & Kejetia Edition)",
+    tagline: "Swipe fast across the wooden board to slice fruits, build combos & dodge bombs!",
+    emoji: "🍉",
+    badge: "🔪 Swipe Action",
+    accentGradient: "from-amber-500 to-orange-600",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Swipe Across Flying Market Fruits",
+        detail:
+          "Drag your finger or mouse quickly across Watermelons, Papayas (Pawpaw), and Pineapples tossed up from the market stall.",
+        tip: "Short, quick swipes give you the cleanest blade arc!",
+      },
+      {
+        stepNum: "02",
+        heading: "Slice Multi-Fruit Combos (+20 / +30 Pts)",
+        detail:
+          "Cut 2, 3, or 4 fruits in a single swipe to trigger a COMBO multiplier and paint juicy splatters on the cutting board.",
+        tip: "Wait until fruits peak together at the top of their arc for easy 3x combos.",
+      },
+      {
+        stepNum: "03",
+        heading: "Clear All 5 Market Stalls (+150 to +750 Bonus)",
+        detail:
+          "Advance from 1/5 Morning Market → 2/5 Busy Stall → 3/5 Rush Hour → 4/5 Kejetia Peak → 5/5 Makola Finale!",
+        tip: "Every stall cleared awards a huge confetti point bonus + Arena Level points.",
+      },
+      {
+        stepNum: "04",
+        heading: "Dodge Sparking Bombs & Avoid 3 Misses",
+        detail:
+          "Never slice a sparking black Bomb (instant Game Over!) and don't let 3 unsliced fruits drop off the bottom of the board.",
+        tip: "Watch closely when bombs hide behind big watermelons!",
+      },
+    ],
+  },
+  pool: {
+    title: "8-Ball Pool (Landscape Pro)",
+    tagline: "Turn your phone sideways, aim with the cue laser &Gyro sensor, and sink the 8-Ball!",
+    emoji: "🎱",
+    badge: "📱 Rotate Phone",
+    accentGradient: "from-sky-500 to-blue-600",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Rotate Phone Sideways & Aim Cue Laser",
+        detail:
+          "Drag on the Championship Blue table (or use the Fine-Tune buttons / Gyro Tilt Sensor) to align the dual-circle ghost ball sight.",
+        tip: "Tap the Gyro Tilt button if you want phone-tilt micro-aiming!",
+      },
+      {
+        stepNum: "02",
+        heading: "Set Cue Spin & Pull Back Power Slider",
+        detail:
+          "Adjust the Cue Spin pad on the left, then drag down the Right Power Meter (15%–100%) and release to strike.",
+        tip: "Use softer power (35%–55%) on thin cut shots so the cue ball doesn't scratch.",
+      },
+      {
+        stepNum: "03",
+        heading: "Claim Solids (1–7) or Stripes (9–15)",
+        detail:
+          "The first ball legally potted after the break locks in your group. Pot a ball to keep your turn (+40 Arena Pts per ball!).",
+        tip: "If the cue ball drops in a pocket, your opponent gets Ball-in-Hand.",
+      },
+      {
+        stepNum: "04",
+        heading: "Sink the Black 8-Ball Last to Win",
+        detail:
+          "Once all 7 of your group balls are cleared, sink the Black 8-Ball to win the match and +300 Arena Points!",
+        tip: "Never pot the 8-Ball early — that is an instant loss of frame.",
+      },
+    ],
+  },
+  oware: {
+    title: "Ghana Oware (Nam-Nam & Abapa)",
+    tagline: "Authentic 12-bowl Akan hinged ebony & terracotta board with continuous relay sowing!",
+    emoji: "🪨",
+    badge: "Most Popular",
+    accentGradient: "from-amber-500 to-orange-500",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Tap Any of Your 6 Bottom Terracotta Bowls",
+        detail:
+          "Scoop all nickernut seeds from your chosen bowl and drop them one-by-one counter-clockwise around the board.",
+        tip: "You can switch between Nam-Nam Relay and Abapa Tournament rules before move 1.",
+      },
+      {
+        stepNum: "02",
+        heading: "Continuous Nam-Nam Relay Sowing",
+        detail:
+          "In Nam-Nam mode, if your last seed lands in a non-empty bowl, you automatically scoop those seeds and keep sowing!",
+        tip: "Your turn only ends when your last seed drops into an empty bowl.",
+      },
+      {
+        stepNum: "03",
+        heading: "The 4-Seed Harvest Rule (+4 🔥)",
+        detail:
+          "Whenever any bowl reaches 4 seeds during sowing, the row owner harvests them. If your very last seed makes 4, YOU capture them!",
+        tip: "Each harvested seed earns +15 Arena Points toward your Free Data goal.",
+      },
+      {
+        stepNum: "04",
+        heading: "Capture 25+ Seeds to Win",
+        detail:
+          "Outscore your opponent (or Nana Kwame Asante • 93% Human Sense) by capturing 25 or more seeds into your Kulo storehouse!",
+        tip: "Count your opponent's seeds before sowing so you don't feed them a 4-seed bowl.",
+      },
+    ],
+  },
+  ludo: {
+    title: "Ghana Ludo (Kick Edition)",
+    tagline: "Roll the 3D Blue Dice, kick opponent tokens back to their yard & race 2 tokens home!",
+    emoji: "🎲",
+    badge: "Fast Action",
+    accentGradient: "from-rose-500 to-amber-500",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Tap the 3D Blue Dice to Roll",
+        detail:
+          "You start with 1 active token on your ★ Start square and 3 tokens in your Yard. Roll a 6 to deploy from your Yard!",
+        tip: "Rolling a 6 always grants you an immediate Bonus Roll.",
+      },
+      {
+        stepNum: "02",
+        heading: "Kick Opponent Tokens Back to Yard (💥)",
+        detail:
+          "Land on an opponent's token on any non-star square to kick it back to their Yard and earn a Bonus Roll (+50 Arena Pts!).",
+        tip: "Tokens resting on the 4 ★ Safe Star squares cannot be kicked.",
+      },
+      {
+        stepNum: "03",
+        heading: "Enter Your Colored Home Stretch",
+        detail:
+          "After completing a full lap around the 15×15 cross track, guide your tokens safely up your colored Home Stretch.",
+        tip: "Opponents cannot enter your colored Home Stretch.",
+      },
+      {
+        stepNum: "04",
+        heading: "Get 2 Tokens Home to Win (+300 Pts)",
+        detail:
+          "The first player to bring 2 tokens into the Center Home Triangle wins the cash pot or Free Data points!",
+        tip: "Balance attacking opponent tokens with advancing your lead runner.",
+      },
+    ],
+  },
+  dame: {
+    title: "Ghanaian Dame (8×8 Draughts)",
+    tagline: "Classic Ghanaian checkers with mandatory diagonal jump captures and Crowned Kings!",
+    emoji: "♟️",
+    badge: "Pure Skill",
+    accentGradient: "from-emerald-500 to-teal-500",
+    steps: [
+      {
+        stepNum: "01",
+        heading: "Tap a Piece to Highlight Diagonal Moves",
+        detail:
+          "All pieces move diagonally on the dark wood squares. Tap your gold/red piece to see valid green target squares.",
+        tip: "Pieces that have a legal move glow with an emerald ring.",
+      },
+      {
+        stepNum: "02",
+        heading: "Mandatory Jump Captures ('Chop!')",
+        detail:
+          "Whenever an opponent piece can be jumped diagonally (forward or backward), the jump capture is mandatory (+45 Arena Pts!).",
+        tip: "Chain multiple jumps together to clear your opponent's defense.",
+      },
+      {
+        stepNum: "03",
+        heading: "Reach the Back Row to Crown a King (👑)",
+        detail:
+          "When your piece reaches the far opposite row, it is crowned a King and can move & capture in all 4 diagonal directions.",
+        tip: "Protect your back row so your opponent cannot easily make a King.",
+      },
+      {
+        stepNum: "04",
+        heading: "Capture All Opponent Pieces to Win",
+        detail:
+          "Capture all opponent pieces or block them from making any legal move to claim victory and +300 Arena Points!",
+        tip: "Control the center squares to restrict Kofi Mensah's movement.",
+      },
+    ],
+  },
+};
+
+export function GameInstructionPromptModal({
+  gameType,
+  open,
+  onSkip,
+  onStartGame,
+}: {
+  gameType: ArenaGameType;
+  open: boolean;
+  onSkip: () => void;
+  onStartGame: () => void;
+}) {
+  const [mode, setMode] = useState<"choice" | "steps">("choice");
+  const [stepIdx, setStepIdx] = useState(0);
+
+  useEffect(() => {
+    if (open) {
+      setMode("choice");
+      setStepIdx(0);
+    }
+  }, [open, gameType]);
+
+  if (!open) return null;
+
+  const guide = GAME_STEP_GUIDES[gameType] || GAME_STEP_GUIDES.slash;
+  const currentStep = guide.steps[stepIdx] || guide.steps[0];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-lg rounded-3xl bg-slate-950 border-2 border-amber-500/50 shadow-[0_25px_70px_rgba(0,0,0,0.9)] overflow-hidden text-white">
+        {/* Top Modal Header */}
+        <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-slate-900 to-amber-950/50 border-b border-white/10 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${guide.accentGradient} flex items-center justify-center text-2xl shadow-lg`}
+            >
+              {guide.emoji}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black">
+                  {guide.badge}
+                </Badge>
+                <span className="text-[10px] font-bold text-emerald-400">
+                  Quick Game Instructions
+                </span>
+              </div>
+              <h3 className="text-sm sm:text-base font-black text-white">{guide.title}</h3>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSkip}
+            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+            title="Skip Instructions"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-5 sm:p-6 space-y-5">
+          {mode === "choice" ? (
+            <>
+              <div className="p-4 rounded-2xl bg-slate-900/90 border border-white/10 space-y-2">
+                <p className="text-xs sm:text-sm text-slate-200 font-semibold leading-relaxed">
+                  {guide.tagline}
+                </p>
+                <p className="text-[11px] text-amber-300/90">
+                  Would you like to follow the quick 4-step walkthrough for{" "}
+                  <strong>{guide.title}</strong>, or skip straight to setup &amp; play?
+                </p>
+              </div>
+
+              {/* 4 Mini Step Pills Preview */}
+              <div className="grid grid-cols-2 gap-2">
+                {guide.steps.map((s, idx) => (
+                  <button
+                    key={s.stepNum}
+                    type="button"
+                    onClick={() => {
+                      setStepIdx(idx);
+                      setMode("steps");
+                    }}
+                    className="p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-white/10 hover:border-amber-400/50 text-left transition-all cursor-pointer"
+                  >
+                    <span className="text-[10px] font-mono font-black text-amber-400">
+                      STEP {s.stepNum}
+                    </span>
+                    <p className="text-xs font-bold text-white line-clamp-1 mt-0.5">
+                      {s.heading}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Primary Choice Buttons: Skip vs Follow Steps */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onSkip}
+                  className="h-12 rounded-2xl border-white/20 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs gap-2"
+                >
+                  <FastForward className="w-4 h-4 text-amber-400" />
+                  Skip &amp; Play Now
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setStepIdx(0);
+                    setMode("steps");
+                  }}
+                  className={`h-12 rounded-2xl bg-gradient-to-r ${guide.accentGradient} text-slate-950 font-black text-xs gap-2 shadow-lg`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Follow Steps (1 → 4)
+                </Button>
+              </div>
+            </>
+          ) : (
+            /* Step-by-Step Interactive Walkthrough */
+            <div className="space-y-4">
+              {/* Step Progress Indicators */}
+              <div className="grid grid-cols-4 gap-2">
+                {guide.steps.map((s, i) => {
+                  const active = i === stepIdx;
+                  const done = i < stepIdx;
+                  return (
+                    <button
+                      key={s.stepNum}
+                      type="button"
+                      onClick={() => setStepIdx(i)}
+                      className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                        active
+                          ? "bg-amber-500/20 border-amber-400 text-amber-300 font-black"
+                          : done
+                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-bold"
+                          : "bg-slate-900 border-white/10 text-slate-400"
+                      }`}
+                    >
+                      <span className="text-[10px] font-mono block">Step {s.stepNum}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Step Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-amber-500/30 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
+                    STEP {currentStep.stepNum} OF 04
+                  </Badge>
+                  <button
+                    type="button"
+                    onClick={onSkip}
+                    className="text-[11px] font-bold text-slate-400 hover:text-amber-300 underline cursor-pointer"
+                  >
+                    Skip Instructions →
+                  </button>
+                </div>
+
+                <h4 className="text-base sm:text-lg font-black text-white">
+                  {currentStep.heading}
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                  {currentStep.detail}
+                </p>
+
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] text-emerald-200 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    <strong>Pro Tip:</strong> {currentStep.tip}
+                  </span>
+                </div>
+              </div>
+
+              {/* Step Footer Navigation */}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={stepIdx === 0}
+                  onClick={() => setStepIdx((s) => Math.max(0, s - 1))}
+                  className="h-10 rounded-xl border-white/15 bg-slate-900 text-white text-xs font-bold gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Previous
+                </Button>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={onSkip}
+                    className="h-10 rounded-xl text-xs font-bold text-slate-300 hover:text-white"
+                  >
+                    Skip
+                  </Button>
+
+                  {stepIdx < guide.steps.length - 1 ? (
+                    <Button
+                      type="button"
+                      onClick={() => setStepIdx((s) => s + 1)}
+                      className="h-10 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs gap-1"
+                    >
+                      Next Step <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={onStartGame}
+                      className="h-10 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs gap-1.5 shadow-lg"
+                    >
+                      Got It — Play Now! <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const PRO_STEPS = [
@@ -32,13 +466,13 @@ const PRO_STEPS = [
     id: 0,
     num: "01",
     shortTitle: "Select Game",
-    title: "Choose Your Arena Game (Oware, Ludo, 8-Ball Pool & Dame)",
+    title: "Choose Your Arena Game (Market Slash, Pool, Oware, Ludo & Dame)",
     description:
-      "Pick any of our 4 iconic games — including our Landscape 8-Ball Pool where you turn your phone sideways for full cue-laser precision!",
+      "Pick any of our 5 Pro games — including Market Slash (swipe fruits & dodge bombs!) and Landscape 8-Ball Pool!",
     bullets: [
-      "Ghana Oware & Ludo: Authentic Nam-Nam 4-seed harvest & 15×15 4-corner Ludo with 3D Blue Dice.",
+      "Market Slash (NEW!): Slice Watermelons, Papayas & Pineapples across 5 Ghanaian market stalls while dodging bombs.",
       "8-Ball Pool (Landscape Pro): Turn your phone sideways! Aim the cue laser, control power & sink the 8-Ball.",
-      "Ghanaian Dame: 8×8 draughts with mandatory diagonal jump captures & Crowned Kings.",
+      "Ghana Oware, Ludo & Dame: Authentic Nam-Nam 4-seed harvest, 3D Blue Dice Ludo & 8×8 Draughts.",
     ],
     icon: Gamepad2,
     accent: "amber",
@@ -51,11 +485,11 @@ const PRO_STEPS = [
     shortTitle: "Pick Mode",
     title: "Select How You Want to Compete",
     description:
-      "Compete live against another user, play immediately against the Grandmaster AI, or enter the Daily Free Data Arena.",
+      "Compete live against another user, play immediately against our 91%–95% Human-Sense Champions, or accumulate points in the Free Data Arena.",
     bullets: [
-      "Open 1v1 Lobby: Post a challenge room or join a waiting player using a 6-digit Room Code.",
-      "Instant AI (1.8×): Zero waiting — challenge the Grandmaster AI for a 1.8× cash payout.",
-      "Free Data Mode: GH₵0.00 entry fee — defeat the Grandmaster AI to claim free data bundles.",
+      "Open 1v1 Lobby: Post a challenge room (auto-notifies all users) or invite a friend directly.",
+      "Human-Sense Mode (1.8×): Play vs Medium-Difficulty Ghanaian Champions for a 1.8× cash payout.",
+      "Free Data Mode: Accumulate Arena Points across levels toward your 1GB, 2GB, or 5GB Free Data target!",
     ],
     icon: Users,
     accent: "emerald",
@@ -83,13 +517,13 @@ const PRO_STEPS = [
     id: 3,
     num: "04",
     shortTitle: "Claim Prize",
-    title: "Win Instant Cash or Data Bundles",
+    title: "Win Instant Cash or Target Free Data Bundles",
     description:
-      "As soon as the winning move is played, your reward is unlocked automatically with zero manual delay.",
+      "As soon as your match ends or your target points bar hits 100%, claim your reward with zero manual delay.",
     bullets: [
       "1.8× Cash Payout: Credited directly into your SwiftData Wallet balance upon victory.",
-      "Convert to Data Bundle: Swap your cash winnings into MTN, Telecel, or AirtelTigo data.",
-      "Free Data Delivery: Dispatch your won Free Data reward directly to any Ghanaian phone number.",
+      "Target Data Bundles: Unlock 1GB (1,000 Pts), 2GB (2,000 Pts), or 5GB (4,500 Pts) Free Data!",
+      "Instant Delivery: Dispatch your won Free Data reward directly to any Ghanaian phone number.",
     ],
     icon: Trophy,
     accent: "purple",
@@ -106,7 +540,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
   const [activeStep, setActiveStep] = useState(0);
   const [autoPlay, setAutoPlay] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [activeGameDemo, setActiveGameDemo] = useState<"oware" | "ludo" | "dame">("oware");
+  const [activeGameDemo, setActiveGameDemo] = useState<ArenaGameType>("slash");
   const [demoFrame, setDemoFrame] = useState(0);
 
   // Smooth 60fps-like progress bar + auto-step advance
@@ -132,7 +566,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
   useEffect(() => {
     if (!expanded) return;
     const timer = window.setInterval(() => {
-      setDemoFrame((f) => (f + 1) % 6);
+      setDemoFrame((f) => (f + 1) % 5);
     }, 900);
     return () => window.clearInterval(timer);
   }, [expanded]);
@@ -159,7 +593,9 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                 Interactive Onboarding
               </span>
               <span className="w-1 h-1 rounded-full bg-white/30" />
-              <span className="text-[10px] font-bold text-emerald-400">30-Second Visual Guide</span>
+              <span className="text-[10px] font-bold text-emerald-400">
+                Tap Any Game to Follow Steps or Skip
+              </span>
             </div>
             <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
               How to Participate &amp; Win in the Challenge Arena
@@ -205,7 +641,11 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
               onClick={() => setAutoPlay((a) => !a)}
               className="h-8 px-2.5 text-xs text-slate-300 hover:text-white gap-1.5 border border-white/10 rounded-xl"
             >
-              {autoPlay ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
+              {autoPlay ? (
+                <Pause className="w-3.5 h-3.5 text-amber-400" />
+              ) : (
+                <Play className="w-3.5 h-3.5 text-emerald-400" />
+              )}
               <span className="hidden sm:inline">{autoPlay ? "Pause" : "Auto-Play"}</span>
             </Button>
           )}
@@ -310,7 +750,7 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                   })}
                 </div>
 
-                {/* ── Main Split Showcase Stage (Left: Executive Details, Right: Interactive Animated Canvas) ── */}
+                {/* ── Main Split Showcase Stage ── */}
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={activeStep}
@@ -396,33 +836,27 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
 
                     {/* Right Column: Live Animated Visual Stage (7 cols) */}
                     <div className="lg:col-span-7 rounded-2xl bg-slate-950 border border-white/10 p-4 sm:p-5 flex flex-col justify-center relative overflow-hidden min-h-[230px]">
-                      {/* STEP 01 VISUAL: 3 Game Cards with Animated Focus Ring */}
+                      {/* STEP 01 VISUAL: 5 Game Cards with Animated Focus Ring */}
                       {activeStep === 0 && (
                         <div className="space-y-3">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">
-                              Live Game Selection Preview — Tap any card to select
+                              Live Game Selection Preview — Tap any card to view steps or play
                             </span>
                             <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px]">
-                              4 Pro Arena Games
+                              5 Pro Arena Games
                             </Badge>
                           </div>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                             {[
                               {
-                                id: "oware" as const,
-                                name: "Ghana Oware",
-                                sub: "Nam-Nam Relay & Abapa",
-                                badge: "Popular",
-                                img: "/oware-challenge-icon.jpg",
-                              },
-                              {
-                                id: "ludo" as const,
-                                name: "Ghana Ludo",
-                                sub: "3D Blue Dice & Kick",
-                                badge: "Fast Action",
-                                img: "/ludo-challenge-icon.png",
+                                id: "slash" as const,
+                                name: "Market Slash",
+                                sub: "Slice Fruit & Bombs",
+                                badge: "🍉 NEW",
+                                img: null,
+                                emoji: "🍉",
                               },
                               {
                                 id: "pool" as const,
@@ -430,16 +864,34 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                 sub: "Rotate Phone Sideways",
                                 badge: "📱 Landscape",
                                 img: "/pool-challenge-icon.jpg",
+                                emoji: "🎱",
+                              },
+                              {
+                                id: "oware" as const,
+                                name: "Ghana Oware",
+                                sub: "Nam-Nam Relay",
+                                badge: "Popular",
+                                img: "/oware-challenge-icon.jpg",
+                                emoji: "🪨",
+                              },
+                              {
+                                id: "ludo" as const,
+                                name: "Ghana Ludo",
+                                sub: "3D Blue Dice & Kick",
+                                badge: "Fast Action",
+                                img: "/ludo-challenge-icon.png",
+                                emoji: "🎲",
                               },
                               {
                                 id: "dame" as const,
-                                name: "Ghanaian Dame",
-                                sub: "8×8 Draughts & Kings",
+                                name: "Ghana Dame",
+                                sub: "8×8 Draughts",
                                 badge: "Pure Skill",
                                 img: null,
+                                emoji: "♟️",
                               },
                             ].map((g, idx) => {
-                              const focused = demoFrame % 4 === idx;
+                              const focused = demoFrame % 5 === idx;
                               return (
                                 <motion.div
                                   key={g.id}
@@ -449,29 +901,29 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                   }}
                                   transition={{ type: "spring", stiffness: 300, damping: 22 }}
                                   onClick={() => {
-                                    if (g.id !== "pool") setActiveGameDemo(g.id);
+                                    setActiveGameDemo(g.id);
                                     onQuickStart?.(g.id, "p2p");
                                   }}
-                                  className={`p-3.5 rounded-2xl border cursor-pointer transition-colors relative ${
+                                  className={`p-3 rounded-2xl border cursor-pointer transition-colors relative ${
                                     focused
                                       ? "bg-gradient-to-b from-amber-500/20 to-slate-900 border-amber-400 shadow-[0_8px_25px_rgba(245,158,11,0.2)]"
                                       : "bg-slate-900/70 border-white/10 hover:border-white/25"
                                   }`}
                                 >
-                                  <div className="flex items-center justify-between mb-2.5">
+                                  <div className="flex items-center justify-between mb-2">
                                     {g.img ? (
                                       <img
                                         src={g.img}
                                         alt={g.name}
-                                        className="w-10 h-10 rounded-xl object-cover border border-white/20 shadow"
+                                        className="w-9 h-9 rounded-xl object-cover border border-white/20 shadow"
                                       />
                                     ) : (
-                                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-xl">
-                                        ♟️
+                                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-lg">
+                                        {g.emoji}
                                       </div>
                                     )}
                                     <Badge
-                                      className={`text-[9px] font-black ${
+                                      className={`text-[8px] font-black px-1.5 ${
                                         focused
                                           ? "bg-amber-400 text-slate-950"
                                           : "bg-slate-800 text-slate-300"
@@ -480,8 +932,8 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                       {focused ? "✓ Active" : g.badge}
                                     </Badge>
                                   </div>
-                                  <p className="text-xs font-black text-white">{g.name}</p>
-                                  <p className="text-[10px] text-slate-400 mt-0.5">{g.sub}</p>
+                                  <p className="text-[11px] font-black text-white truncate">{g.name}</p>
+                                  <p className="text-[9px] text-slate-400 mt-0.5 truncate">{g.sub}</p>
                                 </motion.div>
                               );
                             })}
@@ -507,23 +959,23 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                                 mode: "p2p" as const,
                                 title: "Open 1v1 PvP",
                                 tag: "Room Code #GH842K",
-                                desc: "Create or join a live table & share code on WhatsApp.",
+                                desc: "Create or join a live table & notify all users via SMS/Web.",
                                 icon: Users,
                                 color: "text-amber-400 border-amber-400 bg-amber-500/15",
                               },
                               {
                                 mode: "ai" as const,
-                                title: "Instant AI (1.8×)",
-                                tag: "Zero Wait Time",
-                                desc: "Play vs Grandmaster AI immediately for 1.8× cash.",
+                                title: "Human Sense (1.8×)",
+                                tag: "Medium Difficulty",
+                                desc: "Play vs 91%–95% Human-Sense Champions for 1.8× cash.",
                                 icon: Sparkles,
                                 color: "text-emerald-400 border-emerald-400 bg-emerald-500/15",
                               },
                               {
                                 mode: "free_data" as const,
                                 title: "Free Data Arena",
-                                tag: "GH₵0.00 Entry",
-                                desc: "Beat the Grandmaster AI to win a 1GB Data Bundle!",
+                                tag: "1GB / 2GB / 5GB",
+                                desc: "Accumulate Arena Points across levels to unlock Free Data!",
                                 icon: Gift,
                                 color: "text-purple-400 border-purple-400 bg-purple-500/15",
                               },
@@ -571,7 +1023,6 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-                            {/* Funding Sources */}
                             <div className="space-y-2">
                               <div
                                 className={`p-2.5 rounded-xl border transition-all flex items-center gap-2.5 ${
@@ -601,7 +1052,6 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                               </div>
                             </div>
 
-                            {/* Center Escrow Vault */}
                             <div className="p-3.5 rounded-2xl bg-indigo-950/50 border-2 border-indigo-400/60 text-center space-y-1 shadow-lg">
                               <ShieldCheck className="w-6 h-6 text-indigo-300 mx-auto animate-pulse" />
                               <p className="text-[10px] font-bold uppercase text-indigo-300">
@@ -615,7 +1065,6 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                               </span>
                             </div>
 
-                            {/* Winner Release */}
                             <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center space-y-1">
                               <Trophy className="w-6 h-6 text-amber-400 mx-auto" />
                               <p className="text-[10px] font-bold uppercase text-emerald-300">
@@ -675,12 +1124,12 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                             >
                               <div className="flex items-center justify-between mb-2">
                                 <Badge className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px]">
-                                  Option 2 • Data Bundle
+                                  Option 2 • Target Data Bundle
                                 </Badge>
                                 <Gift className="w-4 h-4 text-purple-400" />
                               </div>
                               <p className="text-base font-black text-white">
-                                🎁 1GB Free Data Bundle
+                                🎁 1GB / 2GB / 5GB Data Bundle
                               </p>
                               <p className="text-[11px] text-slate-300 mt-1">
                                 Enter any MTN, Telecel, or AirtelTigo number to dispatch your data bundle reward!
@@ -694,15 +1143,17 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
                 </AnimatePresence>
               </>
             ) : (
-              /* ── TAB 2: PRO INTERACTIVE GAME RULES SIMULATOR (Oware • Ludo • Dame) ── */
+              /* ── TAB 2: PRO INTERACTIVE GAME RULES SIMULATOR ── */
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {(
                       [
-                        { id: "oware", label: "🪨 Ghana Oware (Nam-Nam & Abapa)" },
-                        { id: "ludo", label: "🎲 Ghana Ludo (Kick Edition)" },
-                        { id: "dame", label: "♟️ Ghanaian Dame (Draughts)" },
+                        { id: "slash", label: "🍉 Market Slash (Fruit & Bombs)" },
+                        { id: "pool", label: "🎱 8-Ball Pool (Landscape)" },
+                        { id: "oware", label: "🪨 Ghana Oware (Nam-Nam)" },
+                        { id: "ludo", label: "🎲 Ghana Ludo (Kick)" },
+                        { id: "dame", label: "♟️ Ghanaian Dame" },
                       ] as const
                     ).map((tab) => (
                       <button
@@ -731,225 +1182,22 @@ export function ChallengeHowItWorks({ onQuickStart }: ChallengeHowItWorksProps) 
 
                 {/* Game-Specific Visual Simulator Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-white/10">
-                  {/* Left: 3 Rule Cards (6 cols) */}
-                  <div className="lg:col-span-6 space-y-2.5">
-                    {activeGameDemo === "oware" && (
-                      <>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30">
-                          <p className="text-xs font-black text-amber-400">
-                            1. Counter-Clockwise Nam-Nam Relay Sowing
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Tap any of your 6 terracotta bowls to scoop all seeds and drop them one-by-one counter-clockwise. If your last seed lands in a bowl that already has seeds, you scoop them up and continue sowing!
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
-                          <p className="text-xs font-black text-emerald-400">
-                            2. The 4-Seed Harvest Rule (+4 🔥)
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Whenever any bowl reaches <strong>4 seeds</strong> during sowing, the row owner harvests them. If your <strong>very last seed</strong> makes 4 in ANY bowl, <strong>YOU capture those 4 seeds</strong>!
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-white/10">
-                          <p className="text-xs font-black text-white">
-                            3. Abapa Tournament Switcher Available
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Prefer international tournament rules? Toggle <strong>🏆 Abapa (2/3 Capture)</strong> at the top of the Oware board before the first move.
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    {activeGameDemo === "ludo" && (
-                      <>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-indigo-500/30">
-                          <p className="text-xs font-black text-indigo-400">
-                            1. Roll 6 on the 3D Blue Dice to Deploy
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Each player starts with 1 active token on their ★ Start square and 3 in the Yard. Roll a <strong>6</strong> to deploy a token from your Yard and earn a <strong>Bonus Roll</strong>!
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-red-500/30">
-                          <p className="text-xs font-black text-red-400">
-                            2. Kick Opponent Tokens Back to Yard (💥)
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Land on an opponent&apos;s token outside the 4 ★ Safe Star squares to kick it back to their Yard and earn an immediate Bonus Roll!
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
-                          <p className="text-xs font-black text-emerald-400">
-                            3. Race 2 Tokens into Center Home (🏠)
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            First player to guide <strong>2 tokens</strong> up their colored Home Stretch into the Center Triangle wins!
-                          </p>
-                        </div>
-                      </>
-                    )}
-
-                    {activeGameDemo === "dame" && (
-                      <>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30">
-                          <p className="text-xs font-black text-amber-400">
-                            1. Diagonal Movement on Dark Squares
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Tap any glowing piece to highlight its valid diagonal moves in green, then tap the target square.
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-rose-500/30">
-                          <p className="text-xs font-black text-rose-400">
-                            2. Mandatory Jump Capture (&quot;Chop&quot;)
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Whenever an opponent piece can be jumped diagonally (forward or backward), the jump is <strong>mandatory</strong>!
-                          </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30">
-                          <p className="text-xs font-black text-emerald-400">
-                            3. Crowned Kings (👑)
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-0.5">
-                            Reach the far back row to crown your piece a King that moves and captures in all 4 diagonal directions.
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Right: Live Animated Board Simulation Stage (6 cols) */}
-                  <div className="lg:col-span-6 p-4 rounded-2xl bg-slate-950 border border-white/10">
-                    {activeGameDemo === "oware" && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-black text-orange-300">
-                            Live Sowing Demo (Hinged Ebony &amp; Terracotta Bowls)
-                          </span>
-                          <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
-                            {demoFrame < 4
-                              ? `✋ Dropping seed in Bowl #${(demoFrame % 4) + 1}`
-                              : "🔥 Bowl #4 reached 4 seeds → +4 Harvest!"}
-                          </Badge>
-                        </div>
-                        <div className="p-3 rounded-3xl bg-[#18191c] border-2 border-[#34363c] grid grid-cols-4 gap-3">
-                          {[0, 1, 2, 3].map((idx) => {
-                            const active = demoFrame % 4 === idx;
-                            const harvested = idx === 3 && demoFrame >= 3;
-                            const seeds = harvested ? 4 : idx === 0 && demoFrame > 0 ? 0 : 3 + (demoFrame > idx ? 1 : 0);
-                            return (
-                              <div
-                                key={idx}
-                                className={`aspect-square rounded-full flex flex-col items-center justify-center relative border-2 transition-all ${
-                                  harvested
-                                    ? "border-amber-300 ring-4 ring-amber-400/50 scale-105"
-                                    : active
-                                    ? "border-emerald-400 scale-105"
-                                    : "border-[#2d1206]"
-                                }`}
-                                style={{
-                                  background:
-                                    "radial-gradient(circle at 36% 30%, #e06d34 0%, #c64f18 55%, #4a1502 100%)",
-                                }}
-                              >
-                                <span className="text-xs sm:text-sm font-black text-white font-mono">
-                                  {harvested ? "+4🔥" : seeds}
-                                </span>
-                                <span className="text-[9px] text-amber-200/80 font-mono">
-                                  Bowl #{idx + 1}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
+                  <div className="lg:col-span-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {GAME_STEP_GUIDES[activeGameDemo].steps.map((st) => (
+                      <div
+                        key={st.stepNum}
+                        className="p-3.5 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-1.5"
+                      >
+                        <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono">
+                          STEP {st.stepNum}
+                        </Badge>
+                        <p className="text-xs font-black text-white">{st.heading}</p>
+                        <p className="text-[11px] text-slate-300 leading-relaxed">{st.detail}</p>
+                        <p className="text-[10px] text-emerald-300 font-semibold pt-1">
+                          💡 {st.tip}
+                        </p>
                       </div>
-                    )}
-
-                    {activeGameDemo === "ludo" && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-black text-indigo-300">
-                            Live 15×15 Track &amp; 3D Blue Dice Demo
-                          </span>
-                          <Badge className="bg-indigo-600 text-white font-black text-[10px]">
-                            {demoFrame % 2 === 0 ? "🎲 Rolled 6 → Bonus Turn!" : "💥 Kicked Yellow Token!"}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-5 gap-2 p-3 rounded-2xl bg-[#eef6fb] border-2 border-slate-400">
-                          {[0, 1, 2, 3, 4].map((step) => {
-                            const redHere = demoFrame % 5 === step;
-                            return (
-                              <div
-                                key={step}
-                                className={`h-14 rounded-xl border flex flex-col items-center justify-center relative ${
-                                  step === 0
-                                    ? "bg-[#dc2626] text-white"
-                                    : step === 4
-                                    ? "bg-[#15803d] text-white"
-                                    : "bg-white text-slate-800"
-                                }`}
-                              >
-                                {redHere ? (
-                                  <span className="w-7 h-7 rounded-full bg-red-600 border-2 border-white shadow-md flex items-center justify-center text-xs font-black text-white animate-bounce">
-                                    R1
-                                  </span>
-                                ) : step === 3 ? (
-                                  <span className="w-6 h-6 rounded-full bg-yellow-400 border border-slate-900 flex items-center justify-center text-[10px] font-black text-slate-950">
-                                    Y1
-                                  </span>
-                                ) : (
-                                  <span className="text-xs font-black opacity-75">
-                                    {step === 0 ? "★ START" : step === 4 ? "🏠 HOME" : `Step ${step}`}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {activeGameDemo === "dame" && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-black text-amber-300">
-                            Live Mandatory Jump (&quot;Chop&quot;) &amp; King Demo
-                          </span>
-                          <Badge className="bg-amber-500 text-slate-950 font-black text-[10px]">
-                            {demoFrame % 2 === 0 ? "Select Gold Piece" : "🔥 Jumped & Crowned King!"}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-[#2b1408] border-2 border-[#6b3719]">
-                          {[0, 1, 2].map((sq) => {
-                            const jumped = demoFrame % 2 === 1;
-                            return (
-                              <div
-                                key={sq}
-                                className="h-14 rounded-xl bg-[#1a0b04] border border-amber-500/30 flex items-center justify-center"
-                              >
-                                {sq === 0 && !jumped && (
-                                  <span className="w-8 h-8 rounded-full bg-amber-400 border-2 border-white shadow" />
-                                )}
-                                {sq === 1 && !jumped && (
-                                  <span className="w-8 h-8 rounded-full bg-rose-600 border-2 border-rose-200 shadow" />
-                                )}
-                                {sq === 1 && jumped && (
-                                  <span className="text-xs font-black text-amber-400">CHOP! 🔥</span>
-                                )}
-                                {sq === 2 && jumped && (
-                                  <span className="w-9 h-9 rounded-full bg-amber-400 border-2 border-white shadow flex items-center justify-center text-slate-950 animate-bounce">
-                                    <Crown className="w-4 h-4 stroke-[2.5]" />
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               </div>

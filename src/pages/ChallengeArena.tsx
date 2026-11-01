@@ -39,7 +39,8 @@ import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGam
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
 import { EightBallPoolBoard, INITIAL_POOL_STATE } from "@/components/games/EightBallPoolBoard";
-import { ChallengeHowItWorks } from "@/components/games/ChallengeHowItWorks";
+import { MarketSlashBoard, INITIAL_SLASH_STATE } from "@/components/games/MarketSlashBoard";
+import { ChallengeHowItWorks, GameInstructionPromptModal } from "@/components/games/ChallengeHowItWorks";
 import { playSuccessSound } from "@/lib/sound";
 import {
   DATA_TARGET_CATALOG,
@@ -56,7 +57,7 @@ declare global {
   }
 }
 
-type GameType = "oware" | "ludo" | "dame" | "pool";
+type GameType = "oware" | "ludo" | "dame" | "pool" | "slash";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
 
@@ -76,6 +77,14 @@ const GAME_CATALOG: {
   emoji: string;
   gradient: string;
 }[] = [
+  {
+    id: "slash",
+    name: "Market Slash (Makola & Kejetia)",
+    subtitle: "Swipe fast across the wooden board to slice Watermelons, Papayas & Pineapples across 5 market stalls while dodging bombs!",
+    badge: "🔪 Swipe & Slice",
+    emoji: "🍉",
+    gradient: "from-orange-600/35 via-amber-900/25 to-slate-950 border-orange-500/50",
+  },
   {
     id: "oware",
     name: "Ghana Oware (Nam-Nam & Abapa)",
@@ -113,6 +122,7 @@ const GAME_CATALOG: {
 const QUICK_STAKES = [2, 5, 10, 20, 50];
 
 function getInitialBoardForGame(gameType: GameType) {
+  if (gameType === "slash") return INITIAL_SLASH_STATE;
   if (gameType === "oware") return INITIAL_OWARE_STATE;
   if (gameType === "ludo") return INITIAL_LUDO_STATE;
   if (gameType === "pool") return INITIAL_POOL_STATE;
@@ -200,6 +210,7 @@ export default function ChallengeArena() {
   // Join challenge modal state for MoMo / Guest
   const [joiningChallengeId, setJoiningChallengeId] = useState<string | null>(null);
   const [filterGame, setFilterGame] = useState<string>("all");
+  const [instructionModalOpen, setInstructionModalOpen] = useState<boolean>(false);
 
   const levelInfo = getPlayerLevelStatus(arenaPoints);
   const selectedTargetOption =
@@ -1049,9 +1060,18 @@ export default function ChallengeArena() {
           onQuickStart={(g, m) => {
             setSelectedGame(g);
             setSelectedMode(m);
+            setInstructionModalOpen(true);
           }}
         />
       )}
+
+      {/* ── On-Select Game Instruction Modal (Skip or Follow 4 Steps) ── */}
+      <GameInstructionPromptModal
+        gameType={selectedGame}
+        open={instructionModalOpen}
+        onSkip={() => setInstructionModalOpen(false)}
+        onStartGame={() => setInstructionModalOpen(false)}
+      />
 
       {/* ── Active Game Stage (When Playing or Waiting in Room) ── */}
       {activeChallenge ? (
@@ -1400,6 +1420,22 @@ export default function ChallengeArena() {
                     playerLevel={levelInfo.level}
                   />
                 )}
+                {activeChallenge.game_type === "slash" && (
+                  <MarketSlashBoard
+                    mode={activeChallenge.mode}
+                    mySide={mySide}
+                    creatorName={activeChallenge.creator_name}
+                    opponentName={
+                      activeChallenge.opponent_name || HUMAN_CHALLENGER_PERSONAS.slash.name
+                    }
+                    initialState={activeChallenge.board_state}
+                    onStateChange={handleBoardStateChange}
+                    onMatchComplete={handleMatchComplete}
+                    onPointsEarned={handlePointsEarned}
+                    playerLevel={levelInfo.level}
+                    onBackToLobby={() => setActiveChallenge(null)}
+                  />
+                )}
               </>
             )}
           </CardContent>
@@ -1421,9 +1457,18 @@ export default function ChallengeArena() {
             <CardContent className="space-y-4">
               {/* 1. Choose Game */}
               <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                  1. Choose Arena Game
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                    1. Choose Arena Game (Tap to View Steps or Skip)
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => setInstructionModalOpen(true)}
+                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                  >
+                    📖 View Game Steps
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {GAME_CATALOG.map((g) => {
                     const active = selectedGame === g.id;
@@ -1431,8 +1476,11 @@ export default function ChallengeArena() {
                       <button
                         key={g.id}
                         type="button"
-                        onClick={() => setSelectedGame(g.id)}
-                        className={`p-3 rounded-2xl border text-left transition-all ${
+                        onClick={() => {
+                          setSelectedGame(g.id);
+                          setInstructionModalOpen(true);
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                           active
                             ? `bg-gradient-to-br ${g.gradient} ring-2 ring-amber-400`
                             : "bg-slate-950/60 border-white/10 hover:border-white/25"
@@ -1735,7 +1783,7 @@ export default function ChallengeArena() {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {["all", "oware", "ludo", "pool", "dame"].map((g) => (
+                  {["all", "slash", "pool", "oware", "ludo", "dame"].map((g) => (
                     <button
                       key={g}
                       type="button"
