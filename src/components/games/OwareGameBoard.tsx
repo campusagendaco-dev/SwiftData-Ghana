@@ -123,7 +123,86 @@ export function simulateOwareMove(
   };
 }
 
-/** Choose best AI move using 3-ply Minimax lookahead */
+/** Heuristic evaluation for Grandmaster Oware Alpha-Beta Minimax */
+function evaluateOwareBoard(state: OwareState): number {
+  if (state.winner === "opponent") return 100000;
+  if (state.winner === "creator") return -100000;
+  if (state.winner === "draw") return 0;
+
+  // 1. Captured seed differential (dominant weight)
+  let score = (state.scores.opponent - state.scores.creator) * 48;
+
+  // 2. Active seed control & starvation pressure
+  let aiSeeds = 0;
+  let humanSeeds = 0;
+  let aiVulnerablePits = 0;
+  let humanVulnerablePits = 0;
+  let aiKuloBonus = 0;
+
+  for (let i = 6; i <= 11; i++) {
+    const s = state.pits[i];
+    aiSeeds += s;
+    if (s === 1 || s === 2) aiVulnerablePits += 1; // Vulnerable to 2/3 capture
+    if (s >= 8) aiKuloBonus += 14; // Strong Kulo hoarding pit
+  }
+
+  for (let i = 0; i <= 5; i++) {
+    const s = state.pits[i];
+    humanSeeds += s;
+    if (s === 1 || s === 2) humanVulnerablePits += 1; // Target for AI capture!
+  }
+
+  score += (aiSeeds - humanSeeds) * 3;
+  score -= aiVulnerablePits * 34; // Heavily penalize leaving 1 or 2 seeds exposed
+  score += humanVulnerablePits * 24; // Reward forcing human pits into 1 or 2 seeds
+  score += aiKuloBonus;
+
+  return score;
+}
+
+function minimaxOware(
+  state: OwareState,
+  depth: number,
+  alpha: number,
+  beta: number,
+  maximizing: boolean
+): number {
+  if (depth === 0 || state.winner) {
+    return evaluateOwareBoard(state);
+  }
+
+  if (maximizing) {
+    let maxEval = -Infinity;
+    let moved = false;
+    for (let i = 6; i <= 11; i++) {
+      if (state.pits[i] <= 0) continue;
+      const next = simulateOwareMove(state, i, "opponent");
+      if (!next) continue;
+      moved = true;
+      const val = minimaxOware(next, depth - 1, alpha, beta, false);
+      if (val > maxEval) maxEval = val;
+      if (val > alpha) alpha = val;
+      if (beta <= alpha) break;
+    }
+    return moved ? maxEval : evaluateOwareBoard(state);
+  } else {
+    let minEval = Infinity;
+    let moved = false;
+    for (let i = 0; i <= 5; i++) {
+      if (state.pits[i] <= 0) continue;
+      const next = simulateOwareMove(state, i, "creator");
+      if (!next) continue;
+      moved = true;
+      const val = minimaxOware(next, depth - 1, alpha, beta, true);
+      if (val < minEval) minEval = val;
+      if (val < beta) beta = val;
+      if (beta <= alpha) break;
+    }
+    return moved ? minEval : evaluateOwareBoard(state);
+  }
+}
+
+/** Choose best AI move using 6-ply Alpha-Beta Pruning Grandmaster lookahead */
 function pickBestAiMove(state: OwareState): number {
   const validPits: number[] = [];
   for (let i = 6; i <= 11; i++) {
@@ -137,28 +216,10 @@ function pickBestAiMove(state: OwareState): number {
   for (const pit of validPits) {
     const sim1 = simulateOwareMove(state, pit, "opponent");
     if (!sim1) continue;
-
-    // Evaluate AI advantage + worst human response
-    let minReplyScore = Infinity;
-    let hasHumanReply = false;
-    for (let h = 0; h <= 5; h++) {
-      if (sim1.pits[h] <= 0) continue;
-      hasHumanReply = true;
-      const sim2 = simulateOwareMove(sim1, h, "creator");
-      if (!sim2) continue;
-      const evalScore =
-        (sim2.scores.opponent - sim2.scores.creator) * 4 +
-        sim2.pits.slice(6, 12).reduce((a, b) => a + b, 0) -
-        sim2.pits.slice(0, 6).reduce((a, b) => a + b, 0);
-      if (evalScore < minReplyScore) minReplyScore = evalScore;
-    }
-
-    const finalScore = hasHumanReply
-      ? minReplyScore
-      : (sim1.scores.opponent - sim1.scores.creator) * 10;
-
-    if (finalScore > bestScore) {
-      bestScore = finalScore;
+    // 6-ply deep search makes the Grandmaster AI extraordinarily tough to beat
+    const score = minimaxOware(sim1, 5, -Infinity, Infinity, false);
+    if (score > bestScore) {
+      bestScore = score;
       bestPit = pit;
     }
   }

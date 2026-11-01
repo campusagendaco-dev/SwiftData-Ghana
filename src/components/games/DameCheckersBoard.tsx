@@ -155,7 +155,7 @@ export function applyDameMove(
   const oppMoves = getLegalDameMoves(nextBoard, oppSide);
 
   let winner: "creator" | "opponent" | "draw" | null = null;
-  if (nextCaptured.creator >= 12 || oppMoves.length === 0) {
+  if (nextCaptured.creator >= 12 || nextCaptured.opponent >= 12 || oppMoves.length === 0) {
     winner = side;
   }
 
@@ -169,6 +169,96 @@ export function applyDameMove(
     winner,
     moveCount: (state.moveCount || 0) + 1,
   };
+}
+
+/** Grandmaster Dame 5-Ply Alpha-Beta Board Evaluator */
+function evaluateDameBoard(state: DameState): number {
+  if (state.winner === "opponent") return 100000;
+  if (state.winner === "creator") return -100000;
+
+  let score = (state.capturedCount.opponent - state.capturedCount.creator) * 145;
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = state.board[r][c];
+      if (!p) continue;
+      const val = p.king ? 265 : 100;
+      const isEdge = c === 0 || c === 7;
+      const isCenter = r >= 2 && r <= 5 && c >= 2 && c <= 5;
+
+      if (p.side === "opponent") {
+        score += val;
+        if (!p.king) score += r * 7; // Advance toward promotion
+        if (r === 0) score += 45; // Guard back row so human cannot crown Kings!
+        if (isEdge) score += 16; // Safe from being jumped on board edges
+        if (isCenter) score += 18;
+      } else {
+        score -= val;
+        if (!p.king) score -= (7 - r) * 7;
+        if (r === 7) score -= 35;
+        if (isEdge) score -= 12;
+        if (isCenter) score -= 15;
+      }
+    }
+  }
+
+  return score;
+}
+
+function minimaxDame(
+  state: DameState,
+  depth: number,
+  alpha: number,
+  beta: number,
+  maximizing: boolean
+): number {
+  if (depth === 0 || state.winner) {
+    return evaluateDameBoard(state);
+  }
+
+  const side = maximizing ? "opponent" : "creator";
+  const moves = getLegalDameMoves(state.board, side);
+  if (moves.length === 0) {
+    return maximizing ? -100000 : 100000;
+  }
+
+  if (maximizing) {
+    let maxEval = -Infinity;
+    for (const m of moves) {
+      const next = applyDameMove(state, m, "opponent");
+      const val = minimaxDame(next, depth - 1, alpha, beta, false);
+      if (val > maxEval) maxEval = val;
+      if (val > alpha) alpha = val;
+      if (beta <= alpha) break;
+    }
+    return maxEval;
+  } else {
+    let minEval = Infinity;
+    for (const m of moves) {
+      const next = applyDameMove(state, m, "creator");
+      const val = minimaxDame(next, depth - 1, alpha, beta, true);
+      if (val < minEval) minEval = val;
+      if (val < beta) beta = val;
+      if (beta <= alpha) break;
+    }
+    return minEval;
+  }
+}
+
+function pickBestDameAiMove(state: DameState, legal: DameMove[]): DameMove {
+  let bestMove = legal[0];
+  let bestScore = -Infinity;
+
+  for (const m of legal) {
+    const sim = applyDameMove(state, m, "opponent");
+    const score = minimaxDame(sim, 4, -Infinity, Infinity, false);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = m;
+    }
+  }
+
+  return bestMove;
 }
 
 interface DameCheckersBoardProps {
@@ -243,7 +333,7 @@ export function DameCheckersBoard({
     [isMyTurn, game, selectedMoves, allLegalMoves, mySide, onStateChange, onMatchComplete]
   );
 
-  // AI Opponent Turn
+  // Grandmaster AI Opponent Turn
   useEffect(() => {
     if ((mode === "ai" || mode === "free_data") && !game.winner && game.turn === "opponent") {
       const timer = setTimeout(() => {
@@ -255,24 +345,7 @@ export function DameCheckersBoard({
           return;
         }
 
-        // Prioritize captures, king promotions, and center control
-        let bestMove = legal[0];
-        let bestScore = -Infinity;
-        for (const m of legal) {
-          let score = 0;
-          if (m.captured) score += 50;
-          if (m.toR === 7) score += 35;
-          if (m.toC >= 2 && m.toC <= 5) score += 8;
-          // Look ahead 1 reply to avoid blundering into a capture
-          const sim = applyDameMove(game, m, "opponent");
-          const humanReplies = getLegalDameMoves(sim.board, "creator");
-          if (humanReplies.some((hr) => hr.captured)) score -= 25;
-          if (score > bestScore) {
-            bestScore = score;
-            bestMove = m;
-          }
-        }
-
+        const bestMove = pickBestDameAiMove(game, legal);
         const nextState = applyDameMove(game, bestMove, "opponent");
         playSound("click");
         setGame(nextState);
@@ -383,4 +456,3 @@ export function DameCheckersBoard({
     </div>
   );
 }
-

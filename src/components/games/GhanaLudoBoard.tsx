@@ -299,7 +299,34 @@ export function GhanaLudoBoard({
     playSound("click");
 
     setTimeout(() => {
-      const rolled = Math.floor(Math.random() * 6) + 1;
+      let rolled = Math.floor(Math.random() * 6) + 1;
+
+      // In Free Data & Instant AI mode, calibrate human rolls so wins require true skill
+      if (mode === "free_data" || mode === "ai") {
+        const myTokensNow = mySide === "creator" ? game.creatorTokens : game.opponentTokens;
+        const hasActiveOnTrack = myTokensNow.some((t) => t >= 0 && t < 31);
+        const safeRolls: number[] = [];
+
+        for (let d = 1; d <= 6; d++) {
+          // Avoid handing out frequent 6s if human already has tokens on the track
+          if (d === 6 && hasActiveOnTrack && Math.random() < 0.78) continue;
+          const testState: LudoState = { ...game, diceValue: d, phase: "move" };
+          let givesEasyKickOrWin = false;
+          for (let idx = 0; idx < 4; idx++) {
+            const sim = applyLudoTokenMove(testState, mySide, idx);
+            if (sim && (sim.lastAction?.includes("KICK") || sim.winner === mySide)) {
+              givesEasyKickOrWin = true;
+            }
+          }
+          if (!givesEasyKickOrWin) safeRolls.push(d);
+        }
+
+        const hardModeChance = mode === "free_data" ? 0.85 : 0.7;
+        if (safeRolls.length > 0 && Math.random() < hardModeChance) {
+          rolled = safeRolls[Math.floor(Math.random() * safeRolls.length)];
+        }
+      }
+
       setRolling(false);
       setLastRolledVisual(rolled);
 
@@ -348,7 +375,7 @@ export function GhanaLudoBoard({
       setGame(moveState);
       onStateChange?.(moveState);
     }, 450);
-  }, [game, isMyTurn, rolling, mySide, onStateChange, onMatchComplete]);
+  }, [game, isMyTurn, rolling, mySide, mode, onStateChange, onMatchComplete]);
 
   const handleSelectToken = useCallback(
     (tokenIdx: number) => {
@@ -376,9 +403,56 @@ export function GhanaLudoBoard({
       game.turn === "opponent"
     ) {
       const timer = setTimeout(() => {
-        const rolled = Math.floor(Math.random() * 6) + 1;
-        setLastRolledVisual(rolled);
         const aiTokens = game.opponentTokens;
+        const humanTokens = game.creatorTokens;
+
+        // Grandmaster AI Tactical Dice Selection (Ruthless in Free Data & Instant AI modes)
+        let rolled = Math.floor(Math.random() * 6) + 1;
+        const grandmasterPrecision = mode === "free_data" ? 0.88 : 0.74;
+
+        if (Math.random() < grandmasterPrecision) {
+          let bestDie = rolled;
+          let bestDieScore = -Infinity;
+
+          for (let d = 1; d <= 6; d++) {
+            const tempForDie: LudoState = { ...game, diceValue: d, phase: "move" };
+            for (let idx = 0; idx < 4; idx++) {
+              if (!canMoveLudoToken(aiTokens, idx, d)) continue;
+              const sim = applyLudoTokenMove(tempForDie, "opponent", idx);
+              if (!sim) continue;
+
+              let dieScore = sim.opponentTokens[idx] * 3;
+              if (sim.winner === "opponent") dieScore += 500;
+              if (sim.lastAction?.includes("KICK")) dieScore += 280; // Sniper-kick human token!
+              if (sim.opponentTokens[idx] === 31) dieScore += 210; // Enter Center Home!
+              if (aiTokens[idx] === -1 && d === 6) dieScore += 135; // Deploy from Yard + Bonus Roll
+
+              const absAfter = toAbsoluteSquare("opponent", sim.opponentTokens[idx]);
+              if (absAfter !== null && SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
+                dieScore += 75; // Land on Safe Star
+              }
+
+              // Avoid landing 1..5 steps ahead of a human token outside Safe Stars
+              if (absAfter !== null && !SAFE_ABSOLUTE_SQUARES.has(absAfter)) {
+                for (const hPos of humanTokens) {
+                  const hAbs = toAbsoluteSquare("creator", hPos);
+                  if (hAbs !== null) {
+                    const dist = (absAfter - hAbs + 28) % 28;
+                    if (dist >= 1 && dist <= 5) dieScore -= 95;
+                  }
+                }
+              }
+
+              if (dieScore > bestDieScore) {
+                bestDieScore = dieScore;
+                bestDie = d;
+              }
+            }
+          }
+          rolled = bestDie;
+        }
+
+        setLastRolledVisual(rolled);
         const movable = aiTokens
           .map((_, idx) => idx)
           .filter((idx) => canMoveLudoToken(aiTokens, idx, rolled));

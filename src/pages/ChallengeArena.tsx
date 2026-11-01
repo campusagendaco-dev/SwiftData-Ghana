@@ -29,7 +29,6 @@ import {
 import { OwareGameBoard, INITIAL_OWARE_STATE } from "@/components/games/OwareGameBoard";
 import { GhanaLudoBoard, INITIAL_LUDO_STATE } from "@/components/games/GhanaLudoBoard";
 import { DameCheckersBoard, INITIAL_DAME_STATE } from "@/components/games/DameCheckersBoard";
-import { AmpeQuickDuel, INITIAL_AMPE_STATE } from "@/components/games/AmpeQuickDuel";
 import { playSuccessSound } from "@/lib/sound";
 
 declare global {
@@ -38,7 +37,7 @@ declare global {
   }
 }
 
-type GameType = "oware" | "ludo" | "dame" | "ampe";
+type GameType = "oware" | "ludo" | "dame";
 type ChallengeMode = "p2p" | "ai" | "free_data";
 type PaymentSource = "wallet" | "momo" | "free";
 
@@ -74,14 +73,6 @@ const GAME_CATALOG: {
     emoji: "♟️",
     gradient: "from-emerald-600/30 via-teal-900/20 to-slate-950 border-emerald-500/40",
   },
-  {
-    id: "ampe",
-    name: "Ampe 60s Duel",
-    subtitle: "High-energy Ghanaian rhythm & foot-thrust prediction (Ohyiwa vs Opare).",
-    badge: "60-Sec Win",
-    emoji: "⚡",
-    gradient: "from-purple-600/30 via-indigo-900/20 to-slate-950 border-purple-500/40",
-  },
 ];
 
 const QUICK_STAKES = [2, 5, 10, 20, 50];
@@ -90,7 +81,7 @@ function getInitialBoardForGame(gameType: GameType) {
   if (gameType === "oware") return INITIAL_OWARE_STATE;
   if (gameType === "ludo") return INITIAL_LUDO_STATE;
   if (gameType === "dame") return INITIAL_DAME_STATE;
-  return INITIAL_AMPE_STATE;
+  return INITIAL_DAME_STATE;
 }
 
 export default function ChallengeArena() {
@@ -111,7 +102,7 @@ export default function ChallengeArena() {
     house_commission_percent: 10,
     min_stake_ghs: 2,
     max_stake_ghs: 200,
-    enabled_games: { oware: true, ludo: true, dame: true, ampe: true },
+    enabled_games: { oware: true, ludo: true, dame: true },
   });
   const [challenges, setChallenges] = useState<any[]>([]);
   const [recentClaims, setRecentClaims] = useState<any[]>([]);
@@ -549,7 +540,7 @@ export default function ChallengeArena() {
               </Badge>
             </div>
             <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white">
-              Play Oware, Ghana Ludo, Dame &amp; Ampe — Win Cash or Free Data!
+              Play Oware, Ghana Ludo &amp; Dame — Win Cash or Free Data!
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
               Create an <strong>Open Challenge</strong> using your <strong>Wallet Balance</strong> or{" "}
@@ -770,17 +761,6 @@ export default function ChallengeArena() {
                     onMatchComplete={handleMatchComplete}
                   />
                 )}
-                {activeChallenge.game_type === "ampe" && (
-                  <AmpeQuickDuel
-                    mode={activeChallenge.mode}
-                    mySide={mySide}
-                    creatorName={activeChallenge.creator_name}
-                    opponentName={activeChallenge.opponent_name || "Nana Ampe AI"}
-                    initialState={activeChallenge.board_state}
-                    onStateChange={handleBoardStateChange}
-                    onMatchComplete={handleMatchComplete}
-                  />
-                )}
               </>
             )}
           </CardContent>
@@ -805,7 +785,7 @@ export default function ChallengeArena() {
                 <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
                   1. Choose Ghanaian Traditional Game
                 </Label>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {GAME_CATALOG.map((g) => {
                     const active = selectedGame === g.id;
                     return (
@@ -893,7 +873,7 @@ export default function ChallengeArena() {
                   <Label className="text-xs font-bold uppercase tracking-wider text-amber-400">
                     3. Stake Source (Wallet Balance or Mobile Money)
                   </Label>
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <button
                       type="button"
                       onClick={() => setPaymentSource("wallet")}
@@ -1034,7 +1014,7 @@ export default function ChallengeArena() {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {["all", "oware", "ludo", "dame", "ampe"].map((g) => (
+                  {["all", "oware", "ludo", "dame"].map((g) => (
                     <button
                       key={g}
                       type="button"

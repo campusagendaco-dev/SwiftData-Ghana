@@ -33,7 +33,7 @@ export default function AdminChallengeArena() {
     house_commission_percent: 10,
     min_stake_ghs: 2,
     max_stake_ghs: 200,
-    enabled_games: { oware: true, ludo: true, dame: true, ampe: true },
+    enabled_games: { oware: true, ludo: true, dame: true },
   });
 
   const [challenges, setChallenges] = useState<any[]>([]);

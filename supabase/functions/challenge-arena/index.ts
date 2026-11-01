@@ -262,7 +262,7 @@ serve(async (req: Request) => {
       house_commission_percent: 10,
       min_stake_ghs: 2,
       max_stake_ghs: 200,
-      enabled_games: { oware: true, ludo: true, dame: true, ampe: true },
+      enabled_games: { oware: true, ludo: true, dame: true },
     };
 
     // ── 1. GET LOBBY DATA ───────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ serve(async (req: Request) => {
       }
 
       const gameType = String(body.game_type || "oware").toLowerCase();
-      if (!["oware", "ludo", "dame", "ampe"].includes(gameType)) {
+      if (!["oware", "ludo", "dame"].includes(gameType)) {
         return jsonResponse({ success: false, error: "Unsupported game type" }, 400);
       }
       if (settings.enabled_games && settings.enabled_games[gameType] === false) {
