@@ -51,8 +51,8 @@ const GAME_CATALOG: {
 }[] = [
   {
     id: "oware",
-    name: "Oware (Abapa)",
-    subtitle: "Traditional Akan 12-pit Mancala strategy game. First to capture 25 seeds wins!",
+    name: "Ghana Oware (Nam-Nam & Abapa)",
+    subtitle: "Authentic Akan 12-bowl Oware with continuous Nam-Nam relay sowing (4-seed harvest) & Abapa tournament rules!",
     badge: "Most Popular",
     emoji: "🪨",
     gradient: "from-amber-600/30 via-amber-900/20 to-slate-950 border-amber-500/40",
