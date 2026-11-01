@@ -60,10 +60,21 @@ interface FrameAudioEvent {
 // Virtual table dimensions (felt playing area: 800 x 400)
 const TABLE_W = 800;
 const TABLE_H = 400;
+const TABLE_CENTER_Y = TABLE_H / 2;
 const BALL_R = 13.5;
 const POCKET_R = 27;
-const FRICTION = 0.986;
-const MIN_SPEED = 0.08;
+const BAULK_LINE_X = 205;
+const D_ZONE_RADIUS = 68;
+
+// Multi-substep high-precision physics constants (modeled after championship Snooker/Pool engine)
+const PHYSICS_SUBSTEPS = 8;
+const FRICTION_PER_SUBSTEP = Math.pow(0.987, 1 / PHYSICS_SUBSTEPS);
+const MINIMUM_MOVING_SPEED = 0.04;
+const BALL_RESTITUTION = 0.96;
+const CUSHION_RESTITUTION = 0.78;
+const MAXIMUM_SHOT_SPEED = 26;
+const MAXIMUM_PULL_DISTANCE = 160;
+const MINIMUM_PULL_DISTANCE = 10;
 
 const POCKETS = [
   { x: 10, y: 10 },
@@ -101,9 +112,112 @@ const HUMAN_THOUGHT_PHRASES = [
   "Pulling back right cue stick power tray...",
 ];
 
+/**
+ * Checks whether a table coordinate `(x, y)` is free of any active ball overlap.
+ */
+function isPositionFree(
+  balls: PoolBall[],
+  x: number,
+  y: number,
+  ignoredBallId: number
+): boolean {
+  return balls.every(
+    (ball) =>
+      ball.potted ||
+      ball.id === ignoredBallId ||
+      Math.hypot(ball.x - x, ball.y - y) >= BALL_R * 2 + 0.5
+  );
+}
+
+/**
+ * Constrains cue ball placement inside the Baulk D-Zone on the break shot,
+ * or anywhere within the table cushions on a mid-game Ball-in-Hand foul.
+ */
+function constrainCueBallPosition(
+  position: { x: number; y: number },
+  constrainToDZoneOnly: boolean
+): { x: number; y: number } {
+  const minX = BALL_R + 10;
+  const maxX = TABLE_W - BALL_R - 10;
+  const minY = BALL_R + 10;
+  const maxY = TABLE_H - BALL_R - 10;
+
+  if (constrainToDZoneOnly) {
+    const offsetX = Math.min(position.x, BAULK_LINE_X) - BAULK_LINE_X;
+    const offsetY = position.y - TABLE_CENTER_Y;
+    const distanceFromCentre = Math.hypot(offsetX, offsetY);
+    const maxRadius = D_ZONE_RADIUS - BALL_R;
+    const scale = distanceFromCentre > maxRadius ? maxRadius / distanceFromCentre : 1;
+    return {
+      x: Number(Math.max(minX, BAULK_LINE_X + offsetX * scale).toFixed(1)),
+      y: Number(Math.max(minY, Math.min(maxY, TABLE_CENTER_Y + offsetY * scale)).toFixed(1)),
+    };
+  }
+
+  return {
+    x: Number(Math.max(minX, Math.min(maxX, position.x)).toFixed(1)),
+    y: Number(Math.max(minY, Math.min(maxY, position.y)).toFixed(1)),
+  };
+}
+
+/**
+ * Respots a ball at its designated spot `(spotX, spotY)` or the closest non-overlapping point
+ * along the horizontal centerline, ensuring balls never clip into each other.
+ */
+function respotBallOnTable(
+  balls: PoolBall[],
+  ball: PoolBall,
+  spotX: number,
+  spotY: number
+): void {
+  ball.potted = false;
+  ball.vx = 0;
+  ball.vy = 0;
+  const minX = BALL_R + 10;
+  const maxX = TABLE_W - BALL_R - 10;
+
+  for (let offset = 0; offset < TABLE_W; offset += 2) {
+    for (const direction of [1, -1]) {
+      const candidateX = spotX + offset * direction;
+      const isInsidePlayArea = candidateX >= minX && candidateX <= maxX;
+      if (isInsidePlayArea && isPositionFree(balls, candidateX, spotY, ball.id)) {
+        ball.x = Number(candidateX.toFixed(1));
+        ball.y = Number(spotY.toFixed(1));
+        return;
+      }
+    }
+  }
+  ball.x = spotX;
+  ball.y = spotY;
+}
+
+/**
+ * Returns the legal first-contact target ball IDs for the current player:
+ * - Open table: any solid or stripe (1..7, 9..15), never the 8-ball.
+ * - Group assigned with balls remaining: only that group's balls.
+ * - Group cleared (clearance phase): only the 8-ball ([8]).
+ */
+function getLegalTargetIds(
+  balls: PoolBall[],
+  group: "solids" | "stripes" | null
+): number[] {
+  if (!group) {
+    return [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15];
+  }
+  const groupIds =
+    group === "solids" ? [1, 2, 3, 4, 5, 6, 7] : [9, 10, 11, 12, 13, 14, 15];
+  const remainingInGroup = balls.filter(
+    (b) => !b.potted && groupIds.includes(b.id)
+  );
+  if (remainingInGroup.length > 0) {
+    return groupIds;
+  }
+  return [8];
+}
+
 export function createInitialPoolBalls(): PoolBall[] {
   const balls: PoolBall[] = [
-    { id: 0, x: 205, y: TABLE_H / 2, vx: 0, vy: 0, potted: false },
+    { id: 0, x: BAULK_LINE_X - 28, y: TABLE_CENTER_Y, vx: 0, vy: 0, potted: false },
   ];
 
   const rackLayout: number[][] = [
@@ -115,18 +229,19 @@ export function createInitialPoolBalls(): PoolBall[] {
   ];
 
   const apexX = 550;
-  const apexY = TABLE_H / 2;
-  const dx = BALL_R * 1.76;
-  const dy = BALL_R * 2.04;
+  const apexY = TABLE_CENTER_Y;
+  // Tighter triangular pyramid spacing (`BALL_R * Math.sqrt(3) + 0.5`) for crisp break-shot energy transfer
+  const rowSpacingX = BALL_R * Math.sqrt(3) + 0.45;
+  const colSpacingY = BALL_R * 2 + 0.4;
 
-  for (let col = 0; col < rackLayout.length; col++) {
-    const colIds = rackLayout[col];
-    const startY = apexY - ((colIds.length - 1) * dy) / 2;
-    for (let r = 0; r < colIds.length; r++) {
+  for (let rowIndex = 0; rowIndex < rackLayout.length; rowIndex++) {
+    const rowIds = rackLayout[rowIndex];
+    for (let posInRow = 0; posInRow <= rowIndex; posInRow++) {
+      const ballY = apexY + (posInRow - rowIndex / 2) * colSpacingY;
       balls.push({
-        id: colIds[r],
-        x: Number((apexX + col * dx).toFixed(2)),
-        y: Number((startY + r * dy).toFixed(2)),
+        id: rowIds[posInRow],
+        x: Number((apexX + rowIndex * rowSpacingX).toFixed(2)),
+        y: Number(ballY.toFixed(2)),
         vx: 0,
         vy: 0,
         potted: false,
@@ -199,6 +314,9 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   const [fineWheelOffset, setFineWheelOffset] = useState<number>(0); // visual scroll offset of left fine-aim tray ticks
   const [spinOffset, setSpinOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDraggingCueBall, setIsDraggingCueBall] = useState<boolean>(false);
+  const [aimDragStart, setAimDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [aimDragCurrent, setAimDragCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
 
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [isOpponentAiming, setIsOpponentAiming] = useState<boolean>(false);
@@ -422,8 +540,10 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
   };
 
   /**
-   * Simulates a complete physics shot synchronously into keyframes + acoustic/haptic events,
-   * then plays them back smoothly at 60 FPS with velocity-scaled Web Audio clacks & vibrations!
+   * Simulates a complete physics shot synchronously using 8 substeps per frame (`PHYSICS_SUBSTEPS = 8`),
+   * exact impulse restitution (`BALL_RESTITUTION = 0.96`, `CUSHION_RESTITUTION = 0.78`),
+   * `firstContactBallId` legal-target foul checking, and `respotBallOnTable` non-overlapping spotting,
+   * then plays the frames back smoothly at 60 FPS via `requestAnimationFrame`!
    */
   const executeShot = useCallback(
     (angleRad: number, powerPercent: number, shooter: "creator" | "opponent") => {
@@ -434,146 +554,191 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       const cue = simBalls.find((b) => b.id === 0);
       if (!cue || cue.potted) return;
 
+      const preShotGroup =
+        shooter === "creator" ? current.creatorGroup : current.opponentGroup;
+      const legalTargetIdsBeforeShot = getLegalTargetIds(simBalls, preShotGroup);
+
       playCueStrikeSound(powerPercent);
 
-      const maxSpeed = 23.5;
-      const speed = Math.max(3.5, (powerPercent / 100) * maxSpeed);
-      // Apply subtle spin offset influence
+      const normalizedPower = Math.max(0.12, Math.min(1, powerPercent / 100));
+      const speed = normalizedPower * MAXIMUM_SHOT_SPEED;
       const spinAngleAdjust = spinOffset.x * 0.0035;
       const spinSpeedBoost = 1 - spinOffset.y * 0.018;
       cue.vx = Math.cos(angleRad + spinAngleAdjust) * speed * spinSpeedBoost;
       cue.vy = Math.sin(angleRad + spinAngleAdjust) * speed * spinSpeedBoost;
 
-      const pottedThisShot: number[] = [];
-      let firstContactId: number | null = null;
+      const shotReport: {
+        firstContactBallId: number | null;
+        pottedBalls: number[];
+      } = {
+        firstContactBallId: null,
+        pottedBalls: [],
+      };
+
       const frames: { balls: PoolBall[]; events: FrameAudioEvent[] }[] = [];
       let pendingEvents: FrameAudioEvent[] = [];
 
-      for (let step = 0; step < 480; step++) {
-        let moving = false;
+      const bounceOffCushions = (ball: PoolBall, currentSpd: number) => {
+        const minimumX = BALL_R + 6;
+        const maximumX = TABLE_W - BALL_R - 6;
+        const minimumY = BALL_R + 6;
+        const maximumY = TABLE_H - BALL_R - 6;
 
-        for (const b of simBalls) {
-          if (b.potted) continue;
-          b.x += b.vx;
-          b.y += b.vy;
-          b.vx *= FRICTION;
-          b.vy *= FRICTION;
+        if (ball.x < minimumX) {
+          ball.x = minimumX;
+          ball.vx = -ball.vx * CUSHION_RESTITUTION;
+          if (currentSpd > 1.1) pendingEvents.push({ type: "rail", speed: currentSpd });
+        } else if (ball.x > maximumX) {
+          ball.x = maximumX;
+          ball.vx = -ball.vx * CUSHION_RESTITUTION;
+          if (currentSpd > 1.1) pendingEvents.push({ type: "rail", speed: currentSpd });
+        }
+        if (ball.y < minimumY) {
+          ball.y = minimumY;
+          ball.vy = -ball.vy * CUSHION_RESTITUTION;
+          if (currentSpd > 1.1) pendingEvents.push({ type: "rail", speed: currentSpd });
+        } else if (ball.y > maximumY) {
+          ball.y = maximumY;
+          ball.vy = -ball.vy * CUSHION_RESTITUTION;
+          if (currentSpd > 1.1) pendingEvents.push({ type: "rail", speed: currentSpd });
+        }
+      };
 
-          const spd = Math.hypot(b.vx, b.vy);
-          if (spd < MIN_SPEED) {
-            b.vx = 0;
-            b.vy = 0;
-          } else {
-            moving = true;
+      const potBallIfInPocket = (ball: PoolBall, currentSpd: number) => {
+        const isInsideAnyPocket = POCKETS.some(
+          (pocket) => Math.hypot(ball.x - pocket.x, ball.y - pocket.y) < POCKET_R
+        );
+        if (!isInsideAnyPocket) return;
+        ball.potted = true;
+        ball.vx = 0;
+        ball.vy = 0;
+        if (!shotReport.pottedBalls.includes(ball.id)) {
+          shotReport.pottedBalls.push(ball.id);
+        }
+        pendingEvents.push({ type: "pocket", speed: currentSpd });
+      };
+
+      const resolveBallCollision = (firstBall: PoolBall, secondBall: PoolBall) => {
+        const deltaX = secondBall.x - firstBall.x;
+        const deltaY = secondBall.y - firstBall.y;
+        const distanceBetweenCentres = Math.hypot(deltaX, deltaY);
+        if (distanceBetweenCentres === 0 || distanceBetweenCentres >= BALL_R * 2) return;
+
+        if (shotReport.firstContactBallId === null) {
+          if (firstBall.id === 0) shotReport.firstContactBallId = secondBall.id;
+          else if (secondBall.id === 0) shotReport.firstContactBallId = firstBall.id;
+        }
+
+        const normalX = deltaX / distanceBetweenCentres;
+        const normalY = deltaY / distanceBetweenCentres;
+        const overlapDistance = BALL_R * 2 - distanceBetweenCentres;
+        firstBall.x -= (normalX * overlapDistance) / 2;
+        firstBall.y -= (normalY * overlapDistance) / 2;
+        secondBall.x += (normalX * overlapDistance) / 2;
+        secondBall.y += (normalY * overlapDistance) / 2;
+
+        const approachSpeed =
+          (secondBall.vx - firstBall.vx) * normalX +
+          (secondBall.vy - firstBall.vy) * normalY;
+        if (approachSpeed >= 0) return;
+
+        const impulse = (-approachSpeed * (1 + BALL_RESTITUTION)) / 2;
+        firstBall.vx -= impulse * normalX;
+        firstBall.vy -= impulse * normalY;
+        secondBall.vx += impulse * normalX;
+        secondBall.vy += impulse * normalY;
+
+        if (impulse > 0.55) {
+          pendingEvents.push({ type: "clack", speed: impulse });
+        }
+      };
+
+      const advancePhysicsSubstep = () => {
+        const movingBalls = simBalls.filter((b) => !b.potted);
+        for (const ball of movingBalls) {
+          ball.x += ball.vx / PHYSICS_SUBSTEPS;
+          ball.y += ball.vy / PHYSICS_SUBSTEPS;
+          ball.vx *= FRICTION_PER_SUBSTEP;
+          ball.vy *= FRICTION_PER_SUBSTEP;
+          const spd = Math.hypot(ball.vx, ball.vy);
+          if (spd < MINIMUM_MOVING_SPEED) {
+            ball.vx = 0;
+            ball.vy = 0;
           }
-
-          for (const p of POCKETS) {
-            if (Math.hypot(b.x - p.x, b.y - p.y) < POCKET_R) {
-              b.potted = true;
-              b.vx = 0;
-              b.vy = 0;
-              pottedThisShot.push(b.id);
-              pendingEvents.push({ type: "pocket", speed: spd });
-              break;
-            }
-          }
-          if (b.potted) continue;
-
-          if (b.x < BALL_R + 6) {
-            b.x = BALL_R + 6;
-            b.vx = Math.abs(b.vx) * 0.84;
-            if (spd > 1.2) pendingEvents.push({ type: "rail", speed: spd });
-          } else if (b.x > TABLE_W - BALL_R - 6) {
-            b.x = TABLE_W - BALL_R - 6;
-            b.vx = -Math.abs(b.vx) * 0.84;
-            if (spd > 1.2) pendingEvents.push({ type: "rail", speed: spd });
-          }
-          if (b.y < BALL_R + 6) {
-            b.y = BALL_R + 6;
-            b.vy = Math.abs(b.vy) * 0.84;
-            if (spd > 1.2) pendingEvents.push({ type: "rail", speed: spd });
-          } else if (b.y > TABLE_H - BALL_R - 6) {
-            b.y = TABLE_H - BALL_R - 6;
-            b.vy = -Math.abs(b.vy) * 0.84;
-            if (spd > 1.2) pendingEvents.push({ type: "rail", speed: spd });
+          potBallIfInPocket(ball, spd);
+          if (!ball.potted) {
+            bounceOffCushions(ball, spd);
           }
         }
 
-        for (let i = 0; i < simBalls.length; i++) {
-          const b1 = simBalls[i];
-          if (b1.potted) continue;
-          for (let j = i + 1; j < simBalls.length; j++) {
-            const b2 = simBalls[j];
-            if (b2.potted) continue;
-
-            const dx = b2.x - b1.x;
-            const dy = b2.y - b1.y;
-            const dist = Math.hypot(dx, dy);
-            const minDist = BALL_R * 2;
-
-            if (dist > 0 && dist < minDist) {
-              if (firstContactId === null && (b1.id === 0 || b2.id === 0)) {
-                firstContactId = b1.id === 0 ? b2.id : b1.id;
-              }
-
-              const overlap = (minDist - dist) / 2 + 0.05;
-              const nx = dx / dist;
-              const ny = dy / dist;
-              b1.x -= nx * overlap;
-              b1.y -= ny * overlap;
-              b2.x += nx * overlap;
-              b2.y += ny * overlap;
-
-              const kx = b1.vx - b2.vx;
-              const ky = b1.vy - b2.vy;
-              const p = nx * kx + ny * ky;
-              if (p > 0) {
-                b1.vx -= p * nx * 0.96;
-                b1.vy -= p * ny * 0.96;
-                b2.vx += p * nx * 0.96;
-                b2.vy += p * ny * 0.96;
-                if (p > 0.65) {
-                  pendingEvents.push({ type: "clack", speed: p });
-                }
-              }
-            }
+        const remainingBalls = simBalls.filter((b) => !b.potted);
+        for (let firstIndex = 0; firstIndex < remainingBalls.length; firstIndex++) {
+          for (
+            let secondIndex = firstIndex + 1;
+            secondIndex < remainingBalls.length;
+            secondIndex++
+          ) {
+            resolveBallCollision(remainingBalls[firstIndex], remainingBalls[secondIndex]);
           }
         }
+      };
 
-        if (step % 2 === 0) {
-          frames.push({
-            balls: simBalls.map((b) => ({
-              ...b,
-              x: Number(b.x.toFixed(1)),
-              y: Number(b.y.toFixed(1)),
-            })),
-            events: pendingEvents,
-          });
-          pendingEvents = [];
+      const isAnyBallMoving = () =>
+        simBalls.some((b) => !b.potted && (b.vx !== 0 || b.vy !== 0));
+
+      for (let frameStep = 0; frameStep < 320; frameStep++) {
+        for (let substep = 0; substep < PHYSICS_SUBSTEPS; substep++) {
+          advancePhysicsSubstep();
         }
 
-        if (!moving && step > 4) break;
+        frames.push({
+          balls: simBalls.map((b) => ({
+            ...b,
+            x: Number(b.x.toFixed(1)),
+            y: Number(b.y.toFixed(1)),
+          })),
+          events: pendingEvents,
+        });
+        pendingEvents = [];
+
+        if (!isAnyBallMoving() && frameStep > 2) break;
       }
+
+      const pottedThisShot = shotReport.pottedBalls;
+      const firstContactId = shotReport.firstContactBallId;
 
       let creatorGroup = current.creatorGroup;
       let opponentGroup = current.opponentGroup;
       const otherPlayer: "creator" | "opponent" = shooter === "creator" ? "opponent" : "creator";
       const shooterLabel = shooter === "creator" ? creatorName : displayOpponentName;
+      const otherLabel = otherPlayer === "creator" ? creatorName : displayOpponentName;
 
       const cueScratched = pottedThisShot.includes(0);
-      const eightBallPotted = pottedThisShot.includes(8);
+      let eightBallPotted = pottedThisShot.includes(8);
+      let eightRespottedOnBreak = false;
 
-      if (cueScratched) {
-        const cueBall = simBalls.find((b) => b.id === 0)!;
-        cueBall.potted = false;
-        cueBall.x = 195;
-        cueBall.y = TABLE_H / 2 + (Math.random() * 40 - 20);
-        cueBall.vx = 0;
-        cueBall.vy = 0;
+      // If the 8-ball is potted on the opening break shot, respot it safely on the foot spot!
+      if (eightBallPotted && current.shotCount === 0) {
+        const eightBallObj = simBalls.find((b) => b.id === 8);
+        if (eightBallObj) {
+          respotBallOnTable(simBalls, eightBallObj, 550, TABLE_CENTER_Y);
+          eightBallPotted = false;
+          eightRespottedOnBreak = true;
+        }
       }
 
+      // If cue ball was potted, respot it safely inside the D-Zone without overlapping any ball!
+      if (cueScratched) {
+        const cueBallObj = simBalls.find((b) => b.id === 0)!;
+        respotBallOnTable(simBalls, cueBallObj, BAULK_LINE_X - 28, TABLE_CENTER_Y);
+      }
+
+      const isWrongFirstContact =
+        firstContactId !== null && !legalTargetIdsBeforeShot.includes(firstContactId);
+      const isFoul = cueScratched || firstContactId === null || isWrongFirstContact;
+
       let newlyAssigned = false;
-      if (!creatorGroup && !opponentGroup && !cueScratched && !eightBallPotted) {
+      if (!creatorGroup && !opponentGroup && !isFoul && !eightBallPotted) {
         const firstObjectPot = pottedThisShot.find((id) => id >= 1 && id <= 15 && id !== 8);
         if (firstObjectPot !== undefined) {
           const pickedGroup: "solids" | "stripes" = firstObjectPot <= 7 ? "solids" : "stripes";
@@ -603,72 +768,67 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
       );
 
       if (eightBallPotted) {
-        const hadClearedGroupBeforeOrDuring =
-          activeShooterGroup !== null && remainingGroupBalls === 0 && !cueScratched;
-        if (hadClearedGroupBeforeOrDuring) {
+        const legallyTargetingEight =
+          legalTargetIdsBeforeShot.includes(8) ||
+          (activeShooterGroup !== null && remainingGroupBalls === 0);
+        if (legallyTargetingEight && !isFoul) {
           winner = shooter;
           actionSummary = `🏆 ${shooterLabel} legally sank the 8-Ball and won the frame!`;
         } else {
           winner = otherPlayer;
-          actionSummary = `⚠️ ${shooterLabel} potted the 8-Ball early/foul! ${
-            otherPlayer === "creator" ? creatorName : displayOpponentName
-          } wins the frame!`;
+          actionSummary = `⚠️ ${shooterLabel} committed an 8-Ball foul! ${otherLabel} wins the frame!`;
         }
-      } else if (cueScratched) {
+      } else if (isFoul) {
         nextTurn = otherPlayer;
         nextBallInHand = true;
-        actionSummary = `⚠️ Foul (Cue ball scratch)! Ball-in-hand for ${
-          otherPlayer === "creator" ? creatorName : displayOpponentName
-        }.`;
+        if (cueScratched) {
+          actionSummary = `⚠️ Foul by ${shooterLabel} (Cue ball scratch)! Ball-in-hand for ${otherLabel}.`;
+        } else if (firstContactId === null) {
+          actionSummary = `⚠️ Foul by ${shooterLabel} (Cue ball missed all balls)! Ball-in-hand for ${otherLabel}.`;
+        } else {
+          const hitMeta = BALL_COLORS[firstContactId] || { name: `Ball #${firstContactId}` };
+          actionSummary = `⚠️ Foul by ${shooterLabel} (Hit ${hitMeta.name} first)! Ball-in-hand for ${otherLabel}.`;
+        }
       } else {
         if (pottedOwnBalls.length > 0) {
           nextTurn = shooter;
           actionSummary = newlyAssigned
             ? `🔥 ${shooterLabel} potted Ball #${pottedOwnBalls[0]} and claimed ${activeShooterGroup?.toUpperCase()}! Extra shot!`
             : `🔥 ${shooterLabel} sank ${pottedOwnBalls.map((n) => `#${n}`).join(", ")}! Extra shot!`;
+        } else if (eightRespottedOnBreak) {
+          nextTurn = shooter;
+          actionSummary = `🎱 8-Ball potted on the break and respotted! ${shooterLabel} continues!`;
         } else if (pottedThisShot.length > 0) {
           nextTurn = otherPlayer;
           actionSummary = `${shooterLabel} potted opponent's ball (${pottedThisShot
             .map((n) => `#${n}`)
-            .join(", ")}). Next turn: ${
-            otherPlayer === "creator" ? creatorName : displayOpponentName
-          }!`;
-        } else if (firstContactId === null) {
-          nextTurn = otherPlayer;
-          nextBallInHand = true;
-          actionSummary = `⚠️ Foul — cue ball missed all object balls! Ball-in-hand for ${
-            otherPlayer === "creator" ? creatorName : displayOpponentName
-          }!`;
+            .join(", ")}). Next turn: ${otherLabel}!`;
         } else {
           nextTurn = otherPlayer;
-          actionSummary = `${shooterLabel} completed their shot. Next turn: ${
-            otherPlayer === "creator" ? creatorName : displayOpponentName
-          }!`;
+          actionSummary = `${shooterLabel} missed. Next turn: ${otherLabel} to play!`;
         }
       }
 
       setIsSimulating(true);
       let frameIdx = 0;
-      const stepInterval = setInterval(() => {
+      let rafId = 0;
+
+      const playNextFrame = () => {
         if (frameIdx < frames.length) {
           const frame = frames[frameIdx];
-          const nextFrame = frames[frameIdx + 1];
-          const combinedEvents = [
-            ...(frame.events || []),
-            ...(nextFrame?.events || []),
-          ];
+          const events = frame.events || [];
 
-          const hasPocket = combinedEvents.some((e) => e.type === "pocket");
+          const hasPocket = events.some((e) => e.type === "pocket");
           if (hasPocket) {
             playPocketDropSound();
           } else {
-            const loudestClack = combinedEvents
+            const loudestClack = events
               .filter((e) => e.type === "clack")
               .sort((a, b) => b.speed - a.speed)[0];
             if (loudestClack) {
               playBallClackSound(loudestClack.speed);
             } else {
-              const railHit = combinedEvents.find((e) => e.type === "rail");
+              const railHit = events.find((e) => e.type === "rail");
               if (railHit) playRailBounceSound(railHit.speed);
             }
           }
@@ -677,9 +837,10 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             ...prev,
             balls: frame.balls,
           }));
-          frameIdx += 2;
+          frameIdx += 1;
+          rafId = window.requestAnimationFrame(playNextFrame);
         } else {
-          clearInterval(stepInterval);
+          window.cancelAnimationFrame(rafId);
           const finalState: EightBallPoolState = {
             balls: simBalls.map((b) => ({
               ...b,
@@ -704,7 +865,7 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
             (mode === "p2p" && shooter === mySide) ||
             (mode !== "p2p" && shooter === "creator");
 
-          if ((cueScratched || firstContactId === null) && isHumanShot) {
+          if (isFoul && isHumanShot) {
             playFoulAlertSound();
             setPotStreak(0);
           } else if (isHumanShot && pottedOwnBalls.length > 0 && !eightBallPotted) {
@@ -718,7 +879,10 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                 : `+${earnedPts} PTS (Ball Potted 🎱)`;
             setFloatingRewardText(label);
             setTimeout(() => setFloatingRewardText(null), 2400);
-            onPointsEarned?.(earnedPts, `Potted Ball ${pottedOwnBalls.map((b) => `#${b}`).join(", ")}`);
+            onPointsEarned?.(
+              earnedPts,
+              `Potted Ball ${pottedOwnBalls.map((b) => `#${b}`).join(", ")}`
+            );
           } else if (isHumanShot) {
             setPotStreak(0);
           }
@@ -740,7 +904,9 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
 
           onStateChange?.(finalState);
         }
-      }, 22);
+      };
+
+      rafId = window.requestAnimationFrame(playNextFrame);
     },
     [
       isSimulating,
@@ -950,21 +1116,24 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     return { svgX: relX * TABLE_W, svgY: relY * TABLE_H };
   };
 
-  // Pointer aiming OR Ball-in-Hand placement on the SVG pool table
+  // Pointer aiming, Slingshot pull-back, OR Ball-in-Hand placement on the SVG pool table
   const handleTablePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isMyTurn) return;
     const cue = state.balls.find((b) => b.id === 0);
     if (!cue || cue.potted) return;
 
     const { svgX, svgY } = clientToSvgCoords(e.clientX, e.clientY);
+    e.currentTarget.setPointerCapture(e.pointerId);
 
-    // If Ball-in-Hand is active and user touches near the cue ball, let them drag & place it!
+    // 1. If Ball-in-Hand is active and user touches near the cue ball (or inside D-zone), let them drag/place it!
     if (state.ballInHand && Math.hypot(svgX - cue.x, svgY - cue.y) <= BALL_R * 2.8) {
       setIsDraggingCueBall(true);
-      e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
 
+    // 2. Otherwise start Slingshot / Direct Table Aiming
+    setAimDragStart({ x: svgX, y: svgY });
+    setAimDragCurrent({ x: svgX, y: svgY });
     const angle = Math.atan2(svgY - cue.y, svgX - cue.x);
     setAimAngle(angle);
   };
@@ -975,36 +1144,72 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
     if (!cue || cue.potted) return;
 
     const { svgX, svgY } = clientToSvgCoords(e.clientX, e.clientY);
+    setHoverPosition({ x: svgX, y: svgY });
 
     if (isDraggingCueBall && state.ballInHand) {
-      const maxX = state.shotCount === 0 ? 205 : TABLE_W - BALL_R - 14;
-      const clampedX = Math.max(BALL_R + 14, Math.min(maxX, svgX));
-      const clampedY = Math.max(BALL_R + 14, Math.min(TABLE_H - BALL_R - 14, svgY));
-
-      // Ensure cue ball doesn't overlap another ball
-      const overlapsOther = state.balls.some(
-        (b) => b.id !== 0 && !b.potted && Math.hypot(b.x - clampedX, b.y - clampedY) < BALL_R * 2.1
+      const constrained = constrainCueBallPosition(
+        { x: svgX, y: svgY },
+        state.shotCount === 0
       );
-      if (!overlapsOther) {
+
+      if (isPositionFree(state.balls, constrained.x, constrained.y, 0)) {
         setState((prev) => ({
           ...prev,
           balls: prev.balls.map((b) =>
-            b.id === 0 ? { ...b, x: Number(clampedX.toFixed(1)), y: Number(clampedY.toFixed(1)) } : b
+            b.id === 0 ? { ...b, x: constrained.x, y: constrained.y } : b
           ),
         }));
       }
       return;
     }
 
-    if (e.buttons === 1) {
-      const angle = Math.atan2(svgY - cue.y, svgX - cue.x);
-      setAimAngle(angle);
+    if (aimDragStart) {
+      setAimDragCurrent({ x: svgX, y: svgY });
+      const pullVectorX = aimDragStart.x - svgX;
+      const pullVectorY = aimDragStart.y - svgY;
+      const pullDistance = Math.hypot(pullVectorX, pullVectorY);
+
+      if (pullDistance >= MINIMUM_PULL_DISTANCE) {
+        // Slingshot backwards drag: aim along pull vector and scale shot power!
+        setAimAngle(Math.atan2(pullVectorY, pullVectorX));
+        const pct = Math.round(
+          Math.max(
+            15,
+            Math.min(100, (Math.min(pullDistance, MAXIMUM_PULL_DISTANCE) / MAXIMUM_PULL_DISTANCE) * 100)
+          )
+        );
+        setShotPower(pct);
+      } else {
+        setAimAngle(Math.atan2(svgY - cue.y, svgX - cue.x));
+      }
     }
   };
 
   const handleTablePointerUp = () => {
     if (isDraggingCueBall) {
       setIsDraggingCueBall(false);
+      return;
+    }
+    if (aimDragStart && aimDragCurrent) {
+      const pullVectorX = aimDragStart.x - aimDragCurrent.x;
+      const pullVectorY = aimDragStart.y - aimDragCurrent.y;
+      const pullDistance = Math.hypot(pullVectorX, pullVectorY);
+      setAimDragStart(null);
+      setAimDragCurrent(null);
+
+      // If the player pulled back like a slingshot (>= 42px), release fires the shot immediately!
+      if (isMyTurn && pullDistance >= 42) {
+        const angle = Math.atan2(pullVectorY, pullVectorX);
+        const pct = Math.round(
+          Math.max(
+            18,
+            Math.min(100, (Math.min(pullDistance, MAXIMUM_PULL_DISTANCE) / MAXIMUM_PULL_DISTANCE) * 100)
+          )
+        );
+        setAimAngle(angle);
+        setShotPower(pct);
+        executeShot(angle, pct, state.turn);
+      }
     }
   };
 
@@ -1570,13 +1775,19 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
 
                     <rect x={0} y={0} width={TABLE_W} height={TABLE_H} fill="url(#poolFeltBlue)" />
 
-                    {/* Baulk Line & Foot Spot */}
+                    {/* Baulk Line, D-Zone Semicircle & Foot Spot */}
                     <line
-                      x1={205}
+                      x1={BAULK_LINE_X}
                       y1={0}
-                      x2={205}
+                      x2={BAULK_LINE_X}
                       y2={TABLE_H}
-                      stroke="rgba(255,255,255,0.22)"
+                      stroke="rgba(255,255,255,0.28)"
+                      strokeWidth={1.5}
+                    />
+                    <path
+                      d={`M ${BAULK_LINE_X} ${TABLE_CENTER_Y - D_ZONE_RADIUS} A ${D_ZONE_RADIUS} ${D_ZONE_RADIUS} 0 0 0 ${BAULK_LINE_X} ${TABLE_CENTER_Y + D_ZONE_RADIUS}`}
+                      fill="none"
+                      stroke="rgba(255,255,255,0.28)"
                       strokeWidth={1.5}
                     />
                     <line
@@ -1741,6 +1952,35 @@ export const EightBallPoolBoard: React.FC<EightBallPoolBoardProps> = ({
                         </g>
                       );
                     })}
+                    {/* Ghost Cue Ball Preview when dragging Ball-in-Hand + Slingshot Power Bar */}
+                    {isDraggingCueBall && state.ballInHand && hoverPosition && (() => {
+                      const ghostPos = constrainCueBallPosition(
+                        hoverPosition,
+                        state.shotCount === 0
+                      );
+                      return (
+                        <circle
+                          cx={ghostPos.x}
+                          cy={ghostPos.y}
+                          r={BALL_R}
+                          fill="#ffffff"
+                          opacity={0.55}
+                          stroke="#38bdf8"
+                          strokeWidth={2}
+                          strokeDasharray="3 2"
+                        />
+                      );
+                    })()}
+                    {aimDragStart && aimDragCurrent && isMyTurn && (
+                      <rect
+                        x={24}
+                        y={TABLE_H - 14}
+                        width={(shotPower / 100) * 180}
+                        height={6}
+                        rx={3}
+                        fill={`hsl(${120 - (shotPower / 100) * 120}, 85%, 52%)`}
+                      />
+                    )}
                   </svg>
                 </div>
               </div>
